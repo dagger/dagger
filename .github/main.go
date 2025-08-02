@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	daggerVersion      = "v0.18.10"
+	daggerVersion      = "v0.18.14"
 	upstreamRepository = "dagger/dagger"
 	ubuntuVersion      = "24.04"
 	defaultRunner      = "ubuntu-" + ubuntuVersion
@@ -204,7 +204,7 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"}, &dagger.GhaJobOpts{
 				Runner: AltPlatinumRunner(),
 			}},
-			{"container", []string{"TestContainer"}, &dagger.GhaJobOpts{}},
+			{"container", []string{"TestContainer", "TestDockerfile"}, &dagger.GhaJobOpts{}},
 			{"LLM", []string{"TestLLM"}, &dagger.GhaJobOpts{}},
 			{"cli-engine", []string{"TestCLI", "TestEngine"}, &dagger.GhaJobOpts{}},
 			{"client-generator", []string{"TestClientGenerator"}, &dagger.GhaJobOpts{}},
@@ -306,9 +306,8 @@ func (ci *CI) withEvalsWorkflow() *CI {
 		},
 	}).WithJob(gha.Job(
 		"testdev",
-		"--docs ./core/llm_docs.md evals-across-models --system-prompt ./core/llm_dagger_prompt.md check",
+		"evals",
 		dagger.GhaJobOpts{
-			Module:        "modules/evaluator",
 			DaggerVersion: ".", // testdev, so run against local dagger
 			Runner:        AltGoldRunner(),
 			// NOTE: avoid running for forks

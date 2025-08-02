@@ -124,12 +124,13 @@ func (c *Client) LocalDirExport(
 		return fmt.Errorf("failed to convert result: %w", err)
 	}
 
+	// TODO: lift this to dagger
 	exporter, err := c.Worker.Exporter(bkclient.ExporterLocal, c.SessionManager)
 	if err != nil {
 		return err
 	}
 
-	expInstance, err := exporter.Resolve(ctx, 0, nil)
+	expResult, err := exporter.Resolve(ctx, 0, nil)
 	if err != nil {
 		return fmt.Errorf("failed to resolve exporter: %w", err)
 	}
@@ -144,7 +145,7 @@ func (c *Client) LocalDirExport(
 		Merge: merge,
 	}.AppendToOutgoingContext(ctx)
 
-	_, descRef, err := expInstance.Export(ctx, cacheRes, nil, clientMetadata.ClientID)
+	_, descRef, err := expResult.Export(ctx, cacheRes, nil, clientMetadata.ClientID)
 	if err != nil {
 		return fmt.Errorf("failed to export: %w", err)
 	}

@@ -34,7 +34,7 @@ type shellWorkdir struct {
 
 // ChangeDir changes the current working directory
 func (h *shellCallHandler) ChangeDir(ctx context.Context, path string) error {
-	if h.debug {
+	if h.Debug() {
 		shellDebug(ctx, "changeDir (before)", path, h.Workdir(), h.debugLoadedModules())
 
 		defer func() {
@@ -273,7 +273,7 @@ func (h *shellCallHandler) maybeLoadModule(ctx context.Context, path string) (*m
 // parseModRef transforms user input into a full module reference that can be used with
 // dag.ModuleSource().
 func (h *shellCallHandler) parseModRef(ctx context.Context, path string) (rcfg *configuredModule, rerr error) {
-	if h.debug {
+	if h.Debug() {
 		shellDebug(ctx, "parseModRef (before)", path)
 
 		defer func() {
@@ -324,7 +324,7 @@ type configuredModule struct {
 }
 
 func (h *shellCallHandler) getModuleConfig(ctx context.Context, ref string) (rcfg *configuredModule, rerr error) {
-	if h.debug {
+	if h.Debug() {
 		defer func() {
 			shellDebug(ctx, "getModuleConfig", ref, rcfg)
 		}()
@@ -493,10 +493,7 @@ func newModuleContext(ctx context.Context, def *moduleDef) (rctx moduleContext, 
 		}, nil
 	}
 
-	cancelCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	eg, gctx := errgroup.WithContext(cancelCtx)
+	eg, gctx := errgroup.WithContext(ctx)
 
 	var root string
 	var version string

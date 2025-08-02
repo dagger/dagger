@@ -153,6 +153,22 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * check if a file or directory exists
+     */
+    public function exists(string $path, ?ExistsType $expectedType = null, ?bool $doNotFollowSymlinks = false): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exists');
+        $leafQueryBuilder->setArgument('path', $path);
+        if (null !== $expectedType) {
+        $leafQueryBuilder->setArgument('expectedType', $expectedType);
+        }
+        if (null !== $doNotFollowSymlinks) {
+        $leafQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
+        }
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'exists');
+    }
+
+    /**
      * The exit code of the last executed command
      *
      * Returns an error if no command was executed
@@ -217,6 +233,29 @@ class Container extends Client\AbstractObject implements Client\IdAble
         $leafQueryBuilder->setArgument('expand', $expand);
         }
         return (string)$this->queryLeaf($leafQueryBuilder, 'export');
+    }
+
+    /**
+     * Exports the container as an image to the host's container image store.
+     */
+    public function exportImage(
+        string $name,
+        ?array $platformVariants = null,
+        ?ImageLayerCompression $forcedCompression = null,
+        ?ImageMediaTypes $mediaTypes = null,
+    ): void {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exportImage');
+        $leafQueryBuilder->setArgument('name', $name);
+        if (null !== $platformVariants) {
+        $leafQueryBuilder->setArgument('platformVariants', $platformVariants);
+        }
+        if (null !== $forcedCompression) {
+        $leafQueryBuilder->setArgument('forcedCompression', $forcedCompression);
+        }
+        if (null !== $mediaTypes) {
+        $leafQueryBuilder->setArgument('mediaTypes', $mediaTypes);
+        }
+        $this->queryLeaf($leafQueryBuilder, 'exportImage');
     }
 
     /**

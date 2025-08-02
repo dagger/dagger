@@ -2,9 +2,12 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"slices"
@@ -13,6 +16,8 @@ import (
 	"time"
 
 	containerdfs "github.com/containerd/continuity/fs"
+	fscopy "github.com/dagger/dagger/engine/sources/local/copy"
+	"github.com/dustin/go-humanize"
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -22,9 +27,11 @@ import (
 	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
@@ -51,6 +58,13 @@ func (*Directory) TypeDescription() string {
 	return "A directory."
 }
 
+func (dir *Directory) getResult() bkcache.ImmutableRef {
+	return dir.Result
+}
+func (dir *Directory) setResult(ref bkcache.ImmutableRef) {
+	dir.Result = ref
+}
+
 var _ HasPBDefinitions = (*Directory)(nil)
 
 func (dir *Directory) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
@@ -59,7 +73,7 @@ func (dir *Directory) PBDefinitions(ctx context.Context) ([]*pb.Definition, erro
 		defs = append(defs, dir.LLB)
 	}
 	for _, bnd := range dir.Services {
-		ctr := bnd.Service.Self.Container
+		ctr := bnd.Service.Self().Container
 		if ctr == nil {
 			continue
 		}
@@ -241,66 +255,39 @@ func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, svcs *Servi
 
 func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error) {
 	src = path.Join(dir.Dir, src)
-
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
-	detach, _, err := svcs.StartBindings(ctx, dir.Services)
-	if err != nil {
-		return nil, err
-	}
-	defer detach()
-
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: dir.LLB,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	ref, err := res.SingleRef()
-	if err != nil {
-		return nil, err
-	}
-	// empty directory, i.e. llb.Scratch()
-	if ref == nil {
-		if clean := path.Clean(src); clean == "." || clean == "/" {
-			return []string{}, nil
-		}
-		return nil, fmt.Errorf("%s: no such file or directory", src)
-	}
-
-	entries, err := ref.ReadDir(ctx, bkgw.ReadDirRequest{
-		Path: src,
-	})
-	if err != nil {
-		return nil, err
-	}
-
+	paths := []string{}
 	useSlash, err := SupportsDirSlash(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	paths := []string{}
-	for _, entry := range entries {
-		path := entry.Path
-		if useSlash && os.FileMode(entry.Mode).IsDir() {
-			path += "/"
+	_, err = execInMount(ctx, dir, func(root string) error {
+		resolvedDir, err := containerdfs.RootPath(root, src)
+		if err != nil {
+			return err
 		}
-		paths = append(paths, path)
+		entries, err := os.ReadDir(resolvedDir)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			path := entry.Name()
+			if useSlash && entry.IsDir() {
+				path += "/"
+			}
+			paths = append(paths, path)
+		}
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, errEmptyResultRef) {
+			// empty directory, i.e. llb.Scratch()
+			if clean := path.Clean(src); clean == "." || clean == "/" {
+				return []string{}, nil
+			}
+			return nil, fmt.Errorf("%s: no such file or directory", src)
+		}
+		return nil, err
 	}
-
 	return paths, nil
 }
 
@@ -424,6 +411,120 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 	return dir, nil
 }
 
+func (dir *Directory) WithNewFileDagOp(ctx context.Context, dest string, content []byte, permissions fs.FileMode, ownership *Ownership) (*Directory, error) {
+	dir = dir.Clone()
+
+	err := validateFileName(dest)
+	if err != nil {
+		return nil, err
+	}
+
+	if permissions == 0 {
+		permissions = 0o644
+	}
+
+	return execInMount(ctx, dir, func(root string) error {
+		resolvedDest, err := containerdfs.RootPath(root, path.Join(dir.Dir, dest))
+		if err != nil {
+			return err
+		}
+		destPathDir, _ := filepath.Split(resolvedDest)
+		err = os.MkdirAll(filepath.Dir(destPathDir), 0755)
+		if err != nil {
+			return err
+		}
+		dst, err := os.OpenFile(resolvedDest, os.O_RDWR|os.O_CREATE|os.O_TRUNC, permissions)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if dst != nil {
+				_ = dst.Close()
+			}
+		}()
+
+		_, err = dst.Write(content)
+		if err != nil {
+			return err
+		}
+
+		err = dst.Close()
+		if err != nil {
+			return err
+		}
+		dst = nil
+
+		if ownership != nil {
+			err = os.Chown(resolvedDest, ownership.UID, ownership.GID)
+			if err != nil {
+				return fmt.Errorf("failed to set chown %s: err", resolvedDest)
+			}
+		}
+
+		return nil
+	}, withSavedSnapshot("withNewFile %s (%s)", dest, humanize.Bytes(uint64(len(content)))))
+}
+
+func (dir *Directory) WithPatch(ctx context.Context, patch string) (*Directory, error) {
+	dir = dir.Clone()
+
+	parentRef, err := getRefOrEvaluate(ctx, dir)
+	if err != nil {
+		return nil, err
+	}
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	opt, ok := buildkit.CurrentOpOpts(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit opts in context")
+	}
+	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close()
+
+	newRef, err := query.BuildkitCache().New(ctx, parentRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("patch"))
+	if err != nil {
+		return nil, err
+	}
+	err = MountRef(ctx, newRef, bkSessionGroup, func(root string) (rerr error) {
+		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
+		if err != nil {
+			return err
+		}
+		apply := exec.Command("git", "apply", "-")
+		apply.Dir = resolvedDir
+		apply.Stdin = strings.NewReader(patch)
+		apply.Stdout = stdio.Stdout
+		apply.Stderr = stdio.Stderr
+		if err := apply.Run(); err != nil {
+			// NB: we could technically populate a buildkit.ExecError here, but that
+			// feels like it leaks implementation details; "exit status 128" isn't
+			// exactly clear
+			return errors.New("failed to apply patch")
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dir.Result = snap
+	return dir, nil
+}
+
 func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory, error) {
 	dir = dir.Clone()
 
@@ -530,8 +631,60 @@ func (dir *Directory) WithDirectory(ctx context.Context, destDir string, src *Di
 	return dir, nil
 }
 
+func copyFile(srcPath, dstPath string) (err error) {
+	srcStat, err := os.Stat(srcPath)
+	if err != nil {
+		return err
+	}
+	srcPerm := srcStat.Mode().Perm()
+	src, err := os.Open(srcPath)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	dst, err := os.OpenFile(dstPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, srcPerm)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = os.Remove(dstPath)
+		}
+	}()
+	defer func() {
+		if dst != nil {
+			dst.Close()
+		}
+	}()
+	_, err = io.Copy(dst, src)
+	if err != nil {
+		return err
+	}
+	err = dst.Close()
+	if err != nil {
+		return err
+	}
+	dst = nil
+
+	modTime := srcStat.ModTime()
+	return os.Chtimes(dstPath, modTime, modTime)
+}
+
+func isDir(path string) (bool, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	return fi.Mode().IsDir(), nil
+}
+
 func (dir *Directory) WithFile(
 	ctx context.Context,
+	srv *dagql.Server,
 	destPath string,
 	src *File,
 	permissions *int,
@@ -539,37 +692,87 @@ func (dir *Directory) WithFile(
 ) (*Directory, error) {
 	dir = dir.Clone()
 
-	destSt, err := dir.State()
+	srcCacheRef, err := getRefOrEvaluate(ctx, src)
 	if err != nil {
 		return nil, err
 	}
 
-	srcSt, err := src.State()
+	dirCacheRef, err := getRefOrEvaluate(ctx, dir)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := dir.SetState(ctx, mergeStates(mergeStateInput{
-		Dest:         destSt,
-		DestDir:      path.Join(dir.Dir, path.Dir(destPath)),
-		DestFileName: path.Base(destPath),
-		Src:          srcSt,
-		SrcDir:       path.Dir(src.File),
-		SrcFileName:  path.Base(src.File),
-		Permissions:  permissions,
-		Owner:        owner,
-	})); err != nil {
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
 		return nil, err
 	}
 
-	dir.Services.Merge(src.Services)
-
+	destPath = path.Join(dir.Dir, destPath)
+	newRef, err := query.BuildkitCache().New(ctx, dirCacheRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(fmt.Sprintf("withfile %s %s", destPath, src.File)))
+	if err != nil {
+		return nil, err
+	}
+	err = MountRef(ctx, newRef, bkSessionGroup, func(dirRoot string) error {
+		destPath, err := containerdfs.RootPath(dirRoot, destPath)
+		if err != nil {
+			return err
+		}
+		destIsDir, err := isDir(destPath)
+		if err != nil {
+			return err
+		}
+		if destIsDir {
+			_, srcFilename := filepath.Split(src.File)
+			destPath = path.Join(destPath, srcFilename)
+		}
+		destPathDir, _ := filepath.Split(destPath)
+		err = os.MkdirAll(filepath.Dir(destPathDir), 0755)
+		if err != nil {
+			return err
+		}
+		err = MountRef(ctx, srcCacheRef, bkSessionGroup, func(srcRoot string) error {
+			srcPath, err := containerdfs.RootPath(srcRoot, src.File)
+			if err != nil {
+				return err
+			}
+			return copyFile(srcPath, destPath)
+		})
+		if err != nil {
+			return err
+		}
+		if permissions != nil {
+			if err := os.Chmod(destPath, os.FileMode(*permissions)); err != nil {
+				return fmt.Errorf("failed to set chmod %s: err", destPath)
+			}
+		}
+		if owner != nil {
+			if err := os.Chown(destPath, owner.UID, owner.GID); err != nil {
+				return fmt.Errorf("failed to set chown %s: err", destPath)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dir.Result = snap
 	return dir, nil
 }
 
 // TODO: address https://github.com/dagger/dagger/pull/6556/files#r1482830091
 func (dir *Directory) WithFiles(
 	ctx context.Context,
+	srv *dagql.Server,
 	destDir string,
 	src []*File,
 	permissions *int,
@@ -581,6 +784,7 @@ func (dir *Directory) WithFiles(
 	for _, file := range src {
 		dir, err = dir.WithFile(
 			ctx,
+			srv,
 			path.Join(destDir, path.Base(file.File)),
 			file,
 			permissions,
@@ -665,28 +869,19 @@ func mergeStates(input mergeStateInput) llb.State {
 
 func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (*Directory, error) {
 	dir = dir.Clone()
-
-	st, err := dir.State()
-	if err != nil {
-		return nil, err
-	}
-
-	t := time.Unix(int64(unix), 0)
-	st = llb.Scratch().File(
-		llb.Copy(st, dir.Dir, ".", &llb.CopyInfo{
-			CopyDirContentsOnly: true,
-			CreatedTime:         &t,
-		}),
-	)
-
-	err = dir.SetState(ctx, st)
-	if err != nil {
-		return nil, err
-	}
-
-	dir.Dir = ""
-
-	return dir, nil
+	return execInMount(ctx, dir, func(root string) error {
+		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
+		if err != nil {
+			return err
+		}
+		return filepath.WalkDir(resolvedDir, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			modTime := time.Unix(int64(unix), 0)
+			return os.Chtimes(path, modTime, modTime)
+		})
+	}, withSavedSnapshot("withTimestamps %d", unix))
 }
 
 func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permissions fs.FileMode) (*Directory, error) {
@@ -700,23 +895,17 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permiss
 	// be sure to create the file under the working directory
 	dest = path.Join(dir.Dir, dest)
 
-	st, err := dir.State()
-	if err != nil {
-		return nil, err
-	}
-
 	if permissions == 0 {
 		permissions = 0755
 	}
 
-	st = st.File(llb.Mkdir(dest, permissions, llb.WithParents(true)))
-
-	err = dir.SetState(ctx, st)
-	if err != nil {
-		return nil, err
-	}
-
-	return dir, nil
+	return execInMount(ctx, dir, func(root string) error {
+		resolvedDir, err := containerdfs.RootPath(root, dest)
+		if err != nil {
+			return err
+		}
+		return os.MkdirAll(resolvedDir, permissions)
+	}, withSavedSnapshot("withNewDirectory %s", dest))
 }
 
 func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, error) {
@@ -753,29 +942,90 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 	return dir, nil
 }
 
-func (dir *Directory) Without(ctx context.Context, paths ...string) (*Directory, error) {
+func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...string) (*Directory, error) {
 	dir = dir.Clone()
-
-	st, err := dir.State()
-	if err != nil {
-		return nil, err
-	}
-
-	var action *llb.FileAction
-	for _, path := range paths {
-		path = filepath.Join(dir.Dir, path)
-		if action == nil {
-			action = llb.Rm(path, llb.WithAllowWildcard(true), llb.WithAllowNotFound(true))
-		} else {
-			action = action.Rm(path, llb.WithAllowWildcard(true), llb.WithAllowNotFound(true))
+	return execInMount(ctx, dir, func(root string) error {
+		for _, p := range paths {
+			p = path.Join(dir.Dir, p)
+			var matches []string
+			if strings.Contains(p, "*") {
+				var err error
+				matches, err = fscopy.ResolveWildcards(root, p, true)
+				if err != nil {
+					return err
+				}
+			} else {
+				matches = []string{p}
+			}
+			for _, m := range matches {
+				fullPath, err := RootPathWithoutFinalSymlink(root, m)
+				if err != nil {
+					return err
+				}
+				err = os.RemoveAll(fullPath)
+				if err != nil {
+					return err
+				}
+			}
 		}
-	}
-	err = dir.SetState(ctx, st.File(action))
+		return nil
+	}, withSavedSnapshot("without %s", strings.Join(paths, ",")))
+}
+
+func (dir *Directory) Exists(ctx context.Context, srv *dagql.Server, targetPath string, targetType ExistsType, doNotFollowSymlinks bool) (bool, error) {
+	res, err := dir.Evaluate(ctx)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
 
-	return dir, nil
+	ref, err := res.SingleRef()
+	if err != nil {
+		return false, err
+	}
+	if ref == nil {
+		return false, nil
+	}
+
+	immutableRef, err := ref.CacheRef(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	osStatFunc := os.Stat
+	if targetType == ExistsTypeSymlink || doNotFollowSymlinks {
+		// symlink testing requires the Lstat call, which does NOT follow symlinks
+		osStatFunc = os.Lstat
+	}
+
+	var fileInfo os.FileInfo
+	err = MountRef(ctx, immutableRef, nil, func(root string) error {
+		fileInfo, err = osStatFunc(path.Join(root, dir.Dir, targetPath))
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	})
+	if err != nil {
+		return false, err
+	}
+	if fileInfo == nil {
+		return false, nil // ErrNotExist occurred
+	}
+
+	m := fileInfo.Mode()
+
+	switch targetType {
+	case ExistsTypeDirectory:
+		return m.IsDir(), nil
+	case ExistsTypeRegular:
+		return m.IsRegular(), nil
+	case ExistsTypeSymlink:
+		return m&fs.ModeSymlink != 0, nil
+	case "":
+		return true, nil
+	default:
+		return false, fmt.Errorf("invalid path type %s", targetType)
+	}
 }
 
 func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (rerr error) {
@@ -832,61 +1082,23 @@ func (dir *Directory) Root() (*Directory, error) {
 
 func (dir *Directory) WithSymlink(ctx context.Context, srv *dagql.Server, target, linkName string) (*Directory, error) {
 	dir = dir.Clone()
-
-	res, err := dir.Evaluate(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	ref, err := res.SingleRef()
-	if err != nil {
-		return nil, err
-	}
-
-	var parentRef bkcache.ImmutableRef
-	if ref != nil {
-		parentRef, err = ref.CacheRef(ctx)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	linkName = path.Join(dir.Dir, linkName)
-	newRef, err := query.BuildkitCache().New(ctx, parentRef, nil, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription(fmt.Sprintf("symlink %s -> %s", linkName, target)))
-	if err != nil {
-		return nil, err
-	}
-	err = MountRef(ctx, newRef, nil, func(root string) error {
-		fullLinkName, err := containerdfs.RootPath(root, linkName)
+	return execInMount(ctx, dir, func(root string) error {
+		linkName = path.Join(dir.Dir, linkName)
+		linkDir, linkBasename := filepath.Split(linkName)
+		resolvedLinkDir, err := containerdfs.RootPath(root, linkDir)
 		if err != nil {
 			return err
 		}
-
-		linkNameDirPath, _ := filepath.Split(fullLinkName)
-		err = os.MkdirAll(filepath.Dir(linkNameDirPath), 0755)
+		err = os.MkdirAll(resolvedLinkDir, 0755)
 		if err != nil {
 			return err
 		}
-		return os.Symlink(target, fullLinkName)
-	})
-	if err != nil {
-		return nil, err
-	}
-	snap, err := newRef.Commit(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dir.Result = snap
-	return dir, nil
+		resolvedLinkName := path.Join(resolvedLinkDir, linkBasename)
+		return os.Symlink(target, resolvedLinkName)
+	}, withSavedSnapshot("symlink %s -> %s", linkName, target))
 }
 
-func (dir *Directory) mount(ctx context.Context, f func(string) error) error {
+func (dir *Directory) Mount(ctx context.Context, f func(string) error) error {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -895,37 +1107,19 @@ func (dir *Directory) mount(ctx context.Context, f func(string) error) error {
 	if err != nil {
 		return fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get buildkit client: %w", err)
-	}
 	detach, _, err := svcs.StartBindings(ctx, dir.Services)
 	if err != nil {
 		return err
 	}
 	defer detach()
 
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: dir.LLB,
-	})
-	if err != nil {
-		return err
-	}
-
-	ref, err := res.SingleRef()
-	if err != nil {
-		return err
-	}
-	// empty directory, i.e. llb.Scratch()
-	if ref == nil {
-		tmp, err := os.MkdirTemp("", "mount")
+	return mountLLB(ctx, dir.LLB, func(root string) error {
+		src, err := containerdfs.RootPath(root, dir.Dir)
 		if err != nil {
 			return err
 		}
-		defer os.RemoveAll(tmp)
-		return f(tmp)
-	}
-	return ref.Mount(ctx, f)
+		return f(src)
+	})
 }
 
 func validateFileName(file string) error {
@@ -938,4 +1132,58 @@ func validateFileName(file string) error {
 
 func SupportsDirSlash(ctx context.Context) (bool, error) {
 	return Supports(ctx, "v0.17.0")
+}
+
+type ExistsType string
+
+var ExistsTypes = dagql.NewEnum[ExistsType]()
+
+var (
+
+	// NOTE calling ExistsTypes.Register("DIRECTORY", ...) will generate:
+	// const (
+	//     ExistsTypeDirectory ExistsType = "DIRECTORY"
+	//     Directory ExistsType = ExistsTypeDirectory
+	// )
+	// which will conflict with "type Directory struct { ... }",
+	// therefore everything will have a _TYPE suffix to avoid naming conflicts
+
+	ExistsTypeRegular = ExistsTypes.Register("REGULAR_TYPE",
+		"Tests path is a regular file")
+	ExistsTypeDirectory = ExistsTypes.Register("DIRECTORY_TYPE",
+		"Tests path is a directory")
+	ExistsTypeSymlink = ExistsTypes.Register("SYMLINK_TYPE",
+		"Tests path is a symlink")
+)
+
+func (et ExistsType) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ExistsType",
+		NonNull:   false,
+	}
+}
+
+func (et ExistsType) TypeDescription() string {
+	return "File type."
+}
+
+func (et ExistsType) Decoder() dagql.InputDecoder {
+	return ExistsTypes
+}
+
+func (et ExistsType) ToLiteral() call.Literal {
+	return ExistsTypes.Literal(et)
+}
+
+func (et ExistsType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(string(et))
+}
+
+func (et *ExistsType) UnmarshalJSON(payload []byte) error {
+	var str string
+	if err := json.Unmarshal(payload, &str); err != nil {
+		return err
+	}
+	*et = ExistsType(str)
+	return nil
 }

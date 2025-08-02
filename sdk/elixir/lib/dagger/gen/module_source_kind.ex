@@ -6,7 +6,7 @@ defmodule Dagger.ModuleSourceKind do
 
   use Dagger.Core.Base, kind: :enum, name: "ModuleSourceKind"
 
-  @type t() :: :LOCAL_SOURCE | :GIT_SOURCE | :DIR_SOURCE
+  @type t() :: :LOCAL_SOURCE | :GIT_SOURCE | :DIR_SOURCE | :LOCAL | :GIT | :DIR
 
   @spec local_source() :: :LOCAL_SOURCE
   def local_source(), do: :LOCAL_SOURCE
@@ -17,6 +17,15 @@ defmodule Dagger.ModuleSourceKind do
   @spec dir_source() :: :DIR_SOURCE
   def dir_source(), do: :DIR_SOURCE
 
+  @spec local() :: :LOCAL
+  def local(), do: :LOCAL
+
+  @spec git() :: :GIT
+  def git(), do: :GIT
+
+  @spec dir() :: :DIR
+  def dir(), do: :DIR
+
   @doc false
   @spec from_string(String.t()) :: t()
   def from_string(string)
@@ -24,4 +33,7 @@ defmodule Dagger.ModuleSourceKind do
   def from_string("LOCAL_SOURCE"), do: :LOCAL_SOURCE
   def from_string("GIT_SOURCE"), do: :GIT_SOURCE
   def from_string("DIR_SOURCE"), do: :DIR_SOURCE
+  def from_string("LOCAL"), do: :LOCAL
+  def from_string("GIT"), do: :GIT
+  def from_string("DIR"), do: :DIR
 end

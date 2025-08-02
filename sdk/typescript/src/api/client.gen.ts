@@ -53,6 +53,40 @@ export enum CacheSharingMode {
    */
   Shared = "SHARED",
 }
+
+/**
+ * Utility function to convert a CacheSharingMode value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function CacheSharingModeValueToName(value: CacheSharingMode): string {
+  switch (value) {
+    case CacheSharingMode.Locked:
+      return "LOCKED"
+    case CacheSharingMode.Private:
+      return "PRIVATE"
+    case CacheSharingMode.Shared:
+      return "SHARED"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a CacheSharingMode name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function CacheSharingModeNameToValue(name: string): CacheSharingMode {
+  switch (name) {
+    case "LOCKED":
+      return CacheSharingMode.Locked
+    case "PRIVATE":
+      return CacheSharingMode.Private
+    case "SHARED":
+      return CacheSharingMode.Shared
+    default:
+      return name as CacheSharingMode
+  }
+}
 /**
  * The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
  */
@@ -162,6 +196,18 @@ export type ContainerDirectoryOpts = {
   expand?: boolean
 }
 
+export type ContainerExistsOpts = {
+  /**
+   * If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+   */
+  expectedType?: ExistsType
+
+  /**
+   * If specified, do not follow symlinks.
+   */
+  doNotFollowSymlinks?: boolean
+}
+
 export type ContainerExportOpts = {
   /**
    * Identifiers for other platform specific containers.
@@ -188,6 +234,29 @@ export type ContainerExportOpts = {
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
+}
+
+export type ContainerExportImageOpts = {
+  /**
+   * Identifiers for other platform specific containers.
+   *
+   * Used for multi-platform image.
+   */
+  platformVariants?: Container[]
+
+  /**
+   * Force each layer of the exported image to use the specified compression algorithm.
+   *
+   * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+   */
+  forcedCompression?: ImageLayerCompression
+
+  /**
+   * Use the specified media types for the exported image's layers.
+   *
+   * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
+   */
+  mediaTypes?: ImageMediaTypes
 }
 
 export type ContainerFileOpts = {
@@ -732,6 +801,18 @@ export type DirectoryEntriesOpts = {
   path?: string
 }
 
+export type DirectoryExistsOpts = {
+  /**
+   * If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+   */
+  expectedType?: ExistsType
+
+  /**
+   * If specified, do not follow symlinks.
+   */
+  doNotFollowSymlinks?: boolean
+}
+
 export type DirectoryExportOpts = {
   /**
    * If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.
@@ -879,6 +960,59 @@ export type ErrorID = string & { __ErrorID: never }
  */
 export type ErrorValueID = string & { __ErrorValueID: never }
 
+/**
+ * File type.
+ */
+export enum ExistsType {
+  /**
+   * Tests path is a directory
+   */
+  DirectoryType = "DIRECTORY_TYPE",
+
+  /**
+   * Tests path is a regular file
+   */
+  RegularType = "REGULAR_TYPE",
+
+  /**
+   * Tests path is a symlink
+   */
+  SymlinkType = "SYMLINK_TYPE",
+}
+
+/**
+ * Utility function to convert a ExistsType value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function ExistsTypeValueToName(value: ExistsType): string {
+  switch (value) {
+    case ExistsType.DirectoryType:
+      return "DIRECTORY_TYPE"
+    case ExistsType.RegularType:
+      return "REGULAR_TYPE"
+    case ExistsType.SymlinkType:
+      return "SYMLINK_TYPE"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a ExistsType name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function ExistsTypeNameToValue(name: string): ExistsType {
+  switch (name) {
+    case "DIRECTORY_TYPE":
+      return ExistsType.DirectoryType
+    case "REGULAR_TYPE":
+      return ExistsType.RegularType
+    case "SYMLINK_TYPE":
+      return ExistsType.SymlinkType
+    default:
+      return name as ExistsType
+  }
+}
 /**
  * The `FieldTypeDefID` scalar type represents an identifier for an object of type FieldTypeDef.
  */
@@ -1053,17 +1187,90 @@ export type HostID = string & { __HostID: never }
  * Compression algorithm to use for image layers.
  */
 export enum ImageLayerCompression {
-  Estargz = "EStarGZ",
+  EstarGz = "EStarGZ",
+  Estargz = ImageLayerCompression.EstarGz,
   Gzip = "Gzip",
   Uncompressed = "Uncompressed",
   Zstd = "Zstd",
+}
+
+/**
+ * Utility function to convert a ImageLayerCompression value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function ImageLayerCompressionValueToName(
+  value: ImageLayerCompression,
+): string {
+  switch (value) {
+    case ImageLayerCompression.EstarGz:
+      return "EStarGZ"
+    case ImageLayerCompression.Gzip:
+      return "Gzip"
+    case ImageLayerCompression.Uncompressed:
+      return "Uncompressed"
+    case ImageLayerCompression.Zstd:
+      return "Zstd"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a ImageLayerCompression name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function ImageLayerCompressionNameToValue(name: string): ImageLayerCompression {
+  switch (name) {
+    case "EStarGZ":
+      return ImageLayerCompression.EstarGz
+    case "Gzip":
+      return ImageLayerCompression.Gzip
+    case "Uncompressed":
+      return ImageLayerCompression.Uncompressed
+    case "Zstd":
+      return ImageLayerCompression.Zstd
+    default:
+      return name as ImageLayerCompression
+  }
 }
 /**
  * Mediatypes to use in published or exported image metadata.
  */
 export enum ImageMediaTypes {
-  Dockermediatypes = "DockerMediaTypes",
-  Ocimediatypes = "OCIMediaTypes",
+  Docker = "DockerMediaTypes",
+  DockerMediaTypes = ImageMediaTypes.Docker,
+  Oci = "OCIMediaTypes",
+  OcimediaTypes = ImageMediaTypes.Oci,
+}
+
+/**
+ * Utility function to convert a ImageMediaTypes value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function ImageMediaTypesValueToName(value: ImageMediaTypes): string {
+  switch (value) {
+    case ImageMediaTypes.Docker:
+      return "DOCKER"
+    case ImageMediaTypes.Oci:
+      return "OCI"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a ImageMediaTypes name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function ImageMediaTypesNameToValue(name: string): ImageMediaTypes {
+  switch (name) {
+    case "DOCKER":
+      return ImageMediaTypes.Docker
+    case "OCI":
+      return ImageMediaTypes.Oci
+    default:
+      return name as ImageMediaTypes
+  }
 }
 /**
  * The `InputTypeDefID` scalar type represents an identifier for an object of type InputTypeDef.
@@ -1126,9 +1333,46 @@ export type ModuleSourceID = string & { __ModuleSourceID: never }
  * The kind of module source.
  */
 export enum ModuleSourceKind {
-  DirSource = "DIR_SOURCE",
-  GitSource = "GIT_SOURCE",
-  LocalSource = "LOCAL_SOURCE",
+  Dir = "DIR_SOURCE",
+  DirSource = ModuleSourceKind.Dir,
+  Git = "GIT_SOURCE",
+  GitSource = ModuleSourceKind.Git,
+  Local = "LOCAL_SOURCE",
+  LocalSource = ModuleSourceKind.Local,
+}
+
+/**
+ * Utility function to convert a ModuleSourceKind value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function ModuleSourceKindValueToName(value: ModuleSourceKind): string {
+  switch (value) {
+    case ModuleSourceKind.Dir:
+      return "DIR"
+    case ModuleSourceKind.Git:
+      return "GIT"
+    case ModuleSourceKind.Local:
+      return "LOCAL"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a ModuleSourceKind name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function ModuleSourceKindNameToValue(name: string): ModuleSourceKind {
+  switch (name) {
+    case "DIR":
+      return ModuleSourceKind.Dir
+    case "GIT":
+      return ModuleSourceKind.Git
+    case "LOCAL":
+      return ModuleSourceKind.Local
+    default:
+      return name as ModuleSourceKind
+  }
 }
 /**
  * Transport layer network protocol associated to a port.
@@ -1136,6 +1380,36 @@ export enum ModuleSourceKind {
 export enum NetworkProtocol {
   Tcp = "TCP",
   Udp = "UDP",
+}
+
+/**
+ * Utility function to convert a NetworkProtocol value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function NetworkProtocolValueToName(value: NetworkProtocol): string {
+  switch (value) {
+    case NetworkProtocol.Tcp:
+      return "TCP"
+    case NetworkProtocol.Udp:
+      return "UDP"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a NetworkProtocol name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function NetworkProtocolNameToValue(name: string): NetworkProtocol {
+  switch (name) {
+    case "TCP":
+      return NetworkProtocol.Tcp
+    case "UDP":
+      return NetworkProtocol.Udp
+    default:
+      return name as NetworkProtocol
+  }
 }
 /**
  * The `ObjectTypeDefID` scalar type represents an identifier for an object of type ObjectTypeDef.
@@ -1332,6 +1606,40 @@ export enum ReturnType {
    */
   Success = "SUCCESS",
 }
+
+/**
+ * Utility function to convert a ReturnType value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function ReturnTypeValueToName(value: ReturnType): string {
+  switch (value) {
+    case ReturnType.Any:
+      return "ANY"
+    case ReturnType.Failure:
+      return "FAILURE"
+    case ReturnType.Success:
+      return "SUCCESS"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a ReturnType name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function ReturnTypeNameToValue(name: string): ReturnType {
+  switch (name) {
+    case "ANY":
+      return ReturnType.Any
+    case "FAILURE":
+      return ReturnType.Failure
+    case "SUCCESS":
+      return ReturnType.Success
+    default:
+      return name as ReturnType
+  }
+}
 /**
  * The `SDKConfigID` scalar type represents an identifier for an object of type SDKConfig.
  */
@@ -1412,6 +1720,23 @@ export type TypeDefWithEnumOpts = {
   sourceMap?: SourceMap
 }
 
+export type TypeDefWithEnumMemberOpts = {
+  /**
+   * The value of the member in the enum
+   */
+  value?: string
+
+  /**
+   * A doc string for the member, if any
+   */
+  description?: string
+
+  /**
+   * The source map for the enum member definition.
+   */
+  sourceMap?: SourceMap
+}
+
 export type TypeDefWithEnumValueOpts = {
   /**
    * A doc string for the value, if any
@@ -1462,67 +1787,198 @@ export enum TypeDefKind {
   /**
    * A boolean value.
    */
-  BooleanKind = "BOOLEAN_KIND",
+  Boolean = "BOOLEAN_KIND",
+
+  /**
+   * A boolean value.
+   */
+  BooleanKind = TypeDefKind.Boolean,
 
   /**
    * A GraphQL enum type and its values
    *
    * Always paired with an EnumTypeDef.
    */
-  EnumKind = "ENUM_KIND",
+  Enum = "ENUM_KIND",
+
+  /**
+   * A GraphQL enum type and its values
+   *
+   * Always paired with an EnumTypeDef.
+   */
+  EnumKind = TypeDefKind.Enum,
 
   /**
    * A float value.
    */
-  FloatKind = "FLOAT_KIND",
+  Float = "FLOAT_KIND",
+
+  /**
+   * A float value.
+   */
+  FloatKind = TypeDefKind.Float,
 
   /**
    * A graphql input type, used only when representing the core API via TypeDefs.
    */
-  InputKind = "INPUT_KIND",
+  Input = "INPUT_KIND",
+
+  /**
+   * A graphql input type, used only when representing the core API via TypeDefs.
+   */
+  InputKind = TypeDefKind.Input,
 
   /**
    * An integer value.
    */
-  IntegerKind = "INTEGER_KIND",
+  Integer = "INTEGER_KIND",
 
   /**
-   * A named type of functions that can be matched+implemented by other objects+interfaces.
-   *
+   * An integer value.
+   */
+  IntegerKind = TypeDefKind.Integer,
+
+  /**
    * Always paired with an InterfaceTypeDef.
+   *
+   * A named type of functions that can be matched+implemented by other objects+interfaces.
    */
-  InterfaceKind = "INTERFACE_KIND",
+  Interface = "INTERFACE_KIND",
 
   /**
-   * A list of values all having the same type.
+   * Always paired with an InterfaceTypeDef.
    *
+   * A named type of functions that can be matched+implemented by other objects+interfaces.
+   */
+  InterfaceKind = TypeDefKind.Interface,
+
+  /**
    * Always paired with a ListTypeDef.
+   *
+   * A list of values all having the same type.
    */
-  ListKind = "LIST_KIND",
+  List = "LIST_KIND",
 
   /**
-   * A named type defined in the GraphQL schema, with fields and functions.
+   * Always paired with a ListTypeDef.
    *
-   * Always paired with an ObjectTypeDef.
+   * A list of values all having the same type.
    */
-  ObjectKind = "OBJECT_KIND",
+  ListKind = TypeDefKind.List,
+
+  /**
+   * Always paired with an ObjectTypeDef.
+   *
+   * A named type defined in the GraphQL schema, with fields and functions.
+   */
+  Object = "OBJECT_KIND",
+
+  /**
+   * Always paired with an ObjectTypeDef.
+   *
+   * A named type defined in the GraphQL schema, with fields and functions.
+   */
+  ObjectKind = TypeDefKind.Object,
 
   /**
    * A scalar value of any basic kind.
    */
-  ScalarKind = "SCALAR_KIND",
+  Scalar = "SCALAR_KIND",
+
+  /**
+   * A scalar value of any basic kind.
+   */
+  ScalarKind = TypeDefKind.Scalar,
 
   /**
    * A string value.
    */
-  StringKind = "STRING_KIND",
+  String = "STRING_KIND",
+
+  /**
+   * A string value.
+   */
+  StringKind = TypeDefKind.String,
 
   /**
    * A special kind used to signify that no value is returned.
    *
    * This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
    */
-  VoidKind = "VOID_KIND",
+  Void = "VOID_KIND",
+
+  /**
+   * A special kind used to signify that no value is returned.
+   *
+   * This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
+   */
+  VoidKind = TypeDefKind.Void,
+}
+
+/**
+ * Utility function to convert a TypeDefKind value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function TypeDefKindValueToName(value: TypeDefKind): string {
+  switch (value) {
+    case TypeDefKind.Boolean:
+      return "BOOLEAN"
+    case TypeDefKind.Enum:
+      return "ENUM"
+    case TypeDefKind.Float:
+      return "FLOAT"
+    case TypeDefKind.Input:
+      return "INPUT"
+    case TypeDefKind.Integer:
+      return "INTEGER"
+    case TypeDefKind.Interface:
+      return "INTERFACE"
+    case TypeDefKind.List:
+      return "LIST"
+    case TypeDefKind.Object:
+      return "OBJECT"
+    case TypeDefKind.Scalar:
+      return "SCALAR"
+    case TypeDefKind.String:
+      return "STRING"
+    case TypeDefKind.Void:
+      return "VOID"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a TypeDefKind name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function TypeDefKindNameToValue(name: string): TypeDefKind {
+  switch (name) {
+    case "BOOLEAN":
+      return TypeDefKind.Boolean
+    case "ENUM":
+      return TypeDefKind.Enum
+    case "FLOAT":
+      return TypeDefKind.Float
+    case "INPUT":
+      return TypeDefKind.Input
+    case "INTEGER":
+      return TypeDefKind.Integer
+    case "INTERFACE":
+      return TypeDefKind.Interface
+    case "LIST":
+      return TypeDefKind.List
+    case "OBJECT":
+      return TypeDefKind.Object
+    case "SCALAR":
+      return TypeDefKind.Scalar
+    case "STRING":
+      return TypeDefKind.String
+    case "VOID":
+      return TypeDefKind.Void
+    default:
+      return name as TypeDefKind
+  }
 }
 /**
  * The absence of a value.
@@ -1865,8 +2321,10 @@ export class Cloud extends BaseClient {
 export class Container extends BaseClient {
   private readonly _id?: ContainerID = undefined
   private readonly _envVariable?: string = undefined
+  private readonly _exists?: boolean = undefined
   private readonly _exitCode?: number = undefined
   private readonly _export?: string = undefined
+  private readonly _exportImage?: Void = undefined
   private readonly _imageRef?: string = undefined
   private readonly _label?: string = undefined
   private readonly _platform?: Platform = undefined
@@ -1885,8 +2343,10 @@ export class Container extends BaseClient {
     ctx?: Context,
     _id?: ContainerID,
     _envVariable?: string,
+    _exists?: boolean,
     _exitCode?: number,
     _export?: string,
+    _exportImage?: Void,
     _imageRef?: string,
     _label?: string,
     _platform?: Platform,
@@ -1902,8 +2362,10 @@ export class Container extends BaseClient {
 
     this._id = _id
     this._envVariable = _envVariable
+    this._exists = _exists
     this._exitCode = _exitCode
     this._export = _export
+    this._exportImage = _exportImage
     this._imageRef = _imageRef
     this._label = _label
     this._platform = _platform
@@ -1965,8 +2427,11 @@ export class Container extends BaseClient {
    */
   asTarball = (opts?: ContainerAsTarballOpts): File => {
     const metadata = {
-      forcedCompression: { is_enum: true },
-      mediaTypes: { is_enum: true },
+      forcedCompression: {
+        is_enum: true,
+        value_to_name: ImageLayerCompressionValueToName,
+      },
+      mediaTypes: { is_enum: true, value_to_name: ImageMediaTypesValueToName },
     }
 
     const ctx = this._ctx.select("asTarball", { ...opts, __metadata: metadata })
@@ -1987,6 +2452,7 @@ export class Container extends BaseClient {
    * @param opts.noInit If set, skip the automatic init process injected into containers created by RUN statements.
    *
    * This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+   * @deprecated Use `Directory.build` instead
    */
   build = (context: Directory, opts?: ContainerBuildOpts): Container => {
     const ctx = this._ctx.select("build", { context, ...opts })
@@ -2061,6 +2527,35 @@ export class Container extends BaseClient {
   }
 
   /**
+   * check if a file or directory exists
+   * @param path Path to check (e.g., "/file.txt").
+   * @param opts.expectedType If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+   * @param opts.doNotFollowSymlinks If specified, do not follow symlinks.
+   */
+  exists = async (
+    path: string,
+    opts?: ContainerExistsOpts,
+  ): Promise<boolean> => {
+    if (this._exists) {
+      return this._exists
+    }
+
+    const metadata = {
+      expectedType: { is_enum: true, value_to_name: ExistsTypeValueToName },
+    }
+
+    const ctx = this._ctx.select("exists", {
+      path,
+      ...opts,
+      __metadata: metadata,
+    })
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * The exit code of the last executed command
    *
    * Returns an error if no command was executed
@@ -2129,8 +2624,11 @@ export class Container extends BaseClient {
     }
 
     const metadata = {
-      forcedCompression: { is_enum: true },
-      mediaTypes: { is_enum: true },
+      forcedCompression: {
+        is_enum: true,
+        value_to_name: ImageLayerCompressionValueToName,
+      },
+      mediaTypes: { is_enum: true, value_to_name: ImageMediaTypesValueToName },
     }
 
     const ctx = this._ctx.select("export", {
@@ -2142,6 +2640,44 @@ export class Container extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Exports the container as an image to the host's container image store.
+   * @param name Name of image to export to in the host's store
+   * @param opts.platformVariants Identifiers for other platform specific containers.
+   *
+   * Used for multi-platform image.
+   * @param opts.forcedCompression Force each layer of the exported image to use the specified compression algorithm.
+   *
+   * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+   * @param opts.mediaTypes Use the specified media types for the exported image's layers.
+   *
+   * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
+   */
+  exportImage = async (
+    name: string,
+    opts?: ContainerExportImageOpts,
+  ): Promise<void> => {
+    if (this._exportImage) {
+      return
+    }
+
+    const metadata = {
+      forcedCompression: {
+        is_enum: true,
+        value_to_name: ImageLayerCompressionValueToName,
+      },
+      mediaTypes: { is_enum: true, value_to_name: ImageMediaTypesValueToName },
+    }
+
+    const ctx = this._ctx.select("exportImage", {
+      name,
+      ...opts,
+      __metadata: metadata,
+    })
+
+    await ctx.execute()
   }
 
   /**
@@ -2290,8 +2826,11 @@ export class Container extends BaseClient {
     }
 
     const metadata = {
-      forcedCompression: { is_enum: true },
-      mediaTypes: { is_enum: true },
+      forcedCompression: {
+        is_enum: true,
+        value_to_name: ImageLayerCompressionValueToName,
+      },
+      mediaTypes: { is_enum: true, value_to_name: ImageMediaTypesValueToName },
     }
 
     const ctx = this._ctx.select("publish", {
@@ -2521,7 +3060,7 @@ export class Container extends BaseClient {
    */
   withExec = (args: string[], opts?: ContainerWithExecOpts): Container => {
     const metadata = {
-      expect: { is_enum: true },
+      expect: { is_enum: true, value_to_name: ReturnTypeValueToName },
     }
 
     const ctx = this._ctx.select("withExec", {
@@ -2550,7 +3089,7 @@ export class Container extends BaseClient {
     opts?: ContainerWithExposedPortOpts,
   ): Container => {
     const metadata = {
-      protocol: { is_enum: true },
+      protocol: { is_enum: true, value_to_name: NetworkProtocolValueToName },
     }
 
     const ctx = this._ctx.select("withExposedPort", {
@@ -2634,7 +3173,7 @@ export class Container extends BaseClient {
     opts?: ContainerWithMountedCacheOpts,
   ): Container => {
     const metadata = {
-      sharing: { is_enum: true },
+      sharing: { is_enum: true, value_to_name: CacheSharingModeValueToName },
     }
 
     const ctx = this._ctx.select("withMountedCache", {
@@ -2914,7 +3453,7 @@ export class Container extends BaseClient {
     opts?: ContainerWithoutExposedPortOpts,
   ): Container => {
     const metadata = {
-      protocol: { is_enum: true },
+      protocol: { is_enum: true, value_to_name: NetworkProtocolValueToName },
     }
 
     const ctx = this._ctx.select("withoutExposedPort", {
@@ -3130,6 +3669,7 @@ export class CurrentModule extends BaseClient {
 export class Directory extends BaseClient {
   private readonly _id?: DirectoryID = undefined
   private readonly _digest?: string = undefined
+  private readonly _exists?: boolean = undefined
   private readonly _export?: string = undefined
   private readonly _name?: string = undefined
   private readonly _sync?: DirectoryID = undefined
@@ -3141,6 +3681,7 @@ export class Directory extends BaseClient {
     ctx?: Context,
     _id?: DirectoryID,
     _digest?: string,
+    _exists?: boolean,
     _export?: string,
     _name?: string,
     _sync?: DirectoryID,
@@ -3149,6 +3690,7 @@ export class Directory extends BaseClient {
 
     this._id = _id
     this._digest = _digest
+    this._exists = _exists
     this._export = _export
     this._name = _name
     this._sync = _sync
@@ -3258,6 +3800,35 @@ export class Directory extends BaseClient {
     const ctx = this._ctx.select("entries", { ...opts })
 
     const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * check if a file or directory exists
+   * @param path Path to check (e.g., "/file.txt").
+   * @param opts.expectedType If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+   * @param opts.doNotFollowSymlinks If specified, do not follow symlinks.
+   */
+  exists = async (
+    path: string,
+    opts?: DirectoryExistsOpts,
+  ): Promise<boolean> => {
+    if (this._exists) {
+      return this._exists
+    }
+
+    const metadata = {
+      expectedType: { is_enum: true, value_to_name: ExistsTypeValueToName },
+    }
+
+    const ctx = this._ctx.select("exists", {
+      path,
+      ...opts,
+      __metadata: metadata,
+    })
+
+    const response: Awaited<boolean> = await ctx.execute()
 
     return response
   }
@@ -3422,6 +3993,16 @@ export class Directory extends BaseClient {
     opts?: DirectoryWithNewFileOpts,
   ): Directory => {
     const ctx = this._ctx.select("withNewFile", { path, contents, ...opts })
+    return new Directory(ctx)
+  }
+
+  /**
+   * Retrieves this directory with the given Git-compatible patch applied.
+   * @param patch Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex 1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-Hello\n+World\n").
+   * @experimental
+   */
+  withPatch = (patch: string): Directory => {
+    const ctx = this._ctx.select("withPatch", { patch })
     return new Directory(ctx)
   }
 
@@ -3941,6 +4522,23 @@ export class EnumTypeDef extends BaseClient {
   }
 
   /**
+   * The members of the enum.
+   */
+  members = async (): Promise<EnumValueTypeDef[]> => {
+    type members = {
+      id: EnumValueTypeDefID
+    }
+
+    const ctx = this._ctx.select("members").select("id")
+
+    const response: Awaited<members[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadEnumValueTypeDefFromID(r.id),
+    )
+  }
+
+  /**
    * The name of the enum.
    */
   name = async (): Promise<string> => {
@@ -3979,7 +4577,7 @@ export class EnumTypeDef extends BaseClient {
   }
 
   /**
-   * The values of the enum.
+   * @deprecated use members instead
    */
   values = async (): Promise<EnumValueTypeDef[]> => {
     type values = {
@@ -4003,6 +4601,7 @@ export class EnumValueTypeDef extends BaseClient {
   private readonly _id?: EnumValueTypeDefID = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
+  private readonly _value?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -4012,12 +4611,14 @@ export class EnumValueTypeDef extends BaseClient {
     _id?: EnumValueTypeDefID,
     _description?: string,
     _name?: string,
+    _value?: string,
   ) {
     super(ctx)
 
     this._id = _id
     this._description = _description
     this._name = _name
+    this._value = _value
   }
 
   /**
@@ -4036,7 +4637,7 @@ export class EnumValueTypeDef extends BaseClient {
   }
 
   /**
-   * A doc string for the enum value, if any.
+   * A doc string for the enum member, if any.
    */
   description = async (): Promise<string> => {
     if (this._description) {
@@ -4051,7 +4652,7 @@ export class EnumValueTypeDef extends BaseClient {
   }
 
   /**
-   * The name of the enum value.
+   * The name of the enum member.
    */
   name = async (): Promise<string> => {
     if (this._name) {
@@ -4066,11 +4667,26 @@ export class EnumValueTypeDef extends BaseClient {
   }
 
   /**
-   * The location of this enum value declaration.
+   * The location of this enum member declaration.
    */
   sourceMap = (): SourceMap => {
     const ctx = this._ctx.select("sourceMap")
     return new SourceMap(ctx)
+  }
+
+  /**
+   * The value of the enum member
+   */
+  value = async (): Promise<string> => {
+    if (this._value) {
+      return this._value
+    }
+
+    const ctx = this._ctx.select("value")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 
@@ -5783,6 +6399,14 @@ export class GitRepository extends BaseClient {
   }
 
   /**
+   * Returns details for the latest semver tag.
+   */
+  latestVersion = (): GitRef => {
+    const ctx = this._ctx.select("latestVersion")
+    return new GitRef(ctx)
+  }
+
+  /**
    * Returns details of a ref.
    * @param name Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).
    */
@@ -7006,6 +7630,14 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * The blueprint referenced by the module source.
+   */
+  blueprint = (): ModuleSource => {
+    const ctx = this._ctx.select("blueprint")
+    return new ModuleSource(ctx)
+  }
+
+  /**
    * The ref to clone the root of the git repo from. Only valid for git sources.
    */
   cloneRef = async (): Promise<string> => {
@@ -7181,7 +7813,7 @@ export class ModuleSource extends BaseClient {
 
     const response: Awaited<ModuleSourceKind> = await ctx.execute()
 
-    return response
+    return ModuleSourceKindNameToValue(response)
   }
 
   /**
@@ -7339,6 +7971,15 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * Set a blueprint for the module source.
+   * @param blueprint The blueprint module to set.
+   */
+  withBlueprint = (blueprint: ModuleSource): ModuleSource => {
+    const ctx = this._ctx.select("withBlueprint", { blueprint })
+    return new ModuleSource(ctx)
+  }
+
+  /**
    * Update the module source with a new client to generate.
    * @param generator The generator to use
    * @param outputDir The output directory for the generated client.
@@ -7403,11 +8044,27 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * Update the blueprint module to the latest version.
+   */
+  withUpdateBlueprint = (): ModuleSource => {
+    const ctx = this._ctx.select("withUpdateBlueprint")
+    return new ModuleSource(ctx)
+  }
+
+  /**
    * Update one or more module dependencies.
    * @param dependencies The dependencies to update.
    */
   withUpdateDependencies = (dependencies: string[]): ModuleSource => {
     const ctx = this._ctx.select("withUpdateDependencies", { dependencies })
+    return new ModuleSource(ctx)
+  }
+
+  /**
+   * Remove the current blueprint from the module source.
+   */
+  withoutBlueprint = (): ModuleSource => {
+    const ctx = this._ctx.select("withoutBlueprint")
     return new ModuleSource(ctx)
   }
 
@@ -7677,7 +8334,7 @@ export class Port extends BaseClient {
 
     const response: Awaited<NetworkProtocol> = await ctx.execute()
 
-    return response
+    return NetworkProtocolNameToValue(response)
   }
 }
 
@@ -8281,7 +8938,10 @@ export class Client extends BaseClient {
     opts?: ClientModuleSourceOpts,
   ): ModuleSource => {
     const metadata = {
-      requireKind: { is_enum: true },
+      requireKind: {
+        is_enum: true,
+        value_to_name: ModuleSourceKindValueToName,
+      },
     }
 
     const ctx = this._ctx.select("moduleSource", {
@@ -9015,7 +9675,7 @@ export class TypeDef extends BaseClient {
 
     const response: Awaited<TypeDefKind> = await ctx.execute()
 
-    return response
+    return TypeDefKindNameToValue(response)
   }
 
   /**
@@ -9058,9 +9718,25 @@ export class TypeDef extends BaseClient {
 
   /**
    * Adds a static value for an Enum TypeDef, failing if the type is not an enum.
+   * @param name The name of the member in the enum
+   * @param opts.value The value of the member in the enum
+   * @param opts.description A doc string for the member, if any
+   * @param opts.sourceMap The source map for the enum member definition.
+   */
+  withEnumMember = (
+    name: string,
+    opts?: TypeDefWithEnumMemberOpts,
+  ): TypeDef => {
+    const ctx = this._ctx.select("withEnumMember", { name, ...opts })
+    return new TypeDef(ctx)
+  }
+
+  /**
+   * Adds a static value for an Enum TypeDef, failing if the type is not an enum.
    * @param value The name of the value in the enum
    * @param opts.description A doc string for the value, if any
    * @param opts.sourceMap The source map for the enum value definition.
+   * @deprecated Use withEnumMember instead
    */
   withEnumValue = (value: string, opts?: TypeDefWithEnumValueOpts): TypeDef => {
     const ctx = this._ctx.select("withEnumValue", { value, ...opts })
@@ -9106,7 +9782,7 @@ export class TypeDef extends BaseClient {
    */
   withKind = (kind: TypeDefKind): TypeDef => {
     const metadata = {
-      kind: { is_enum: true },
+      kind: { is_enum: true, value_to_name: TypeDefKindValueToName },
     }
 
     const ctx = this._ctx.select("withKind", { kind, __metadata: metadata })

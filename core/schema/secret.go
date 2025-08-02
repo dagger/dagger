@@ -15,13 +15,11 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
-type secretSchema struct {
-	srv *dagql.Server
-}
+type secretSchema struct{}
 
 var _ SchemaResolvers = &secretSchema{}
 
-func (s *secretSchema) Install() {
+func (s *secretSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.NodeFuncWithCacheKey("secret", s.secret, dagql.CachePerCall).
 			Doc(`Creates a new secret.`).
@@ -44,7 +42,7 @@ func (s *secretSchema) Install() {
 					Sensitive().
 					Doc(`The plaintext of the secret`),
 			),
-	}.Install(s.srv)
+	}.Install(srv)
 
 	dagql.Fields[*core.Secret]{
 		dagql.NodeFunc("name", s.name).
@@ -57,7 +55,7 @@ func (s *secretSchema) Install() {
 			Sensitive().
 			DoNotCache("Do not include plaintext secret in the cache.").
 			Doc(`The value of this secret.`),
-	}.Install(s.srv)
+	}.Install(srv)
 }
 
 type secretArgs struct {
@@ -67,15 +65,19 @@ type secretArgs struct {
 
 func (s *secretSchema) secret(
 	ctx context.Context,
-	parent dagql.Instance[*core.Query],
+	parent dagql.ObjectResult[*core.Query],
 	args secretArgs,
-) (i dagql.Instance[*core.Secret], err error) {
+) (i dagql.ObjectResult[*core.Secret], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return i, fmt.Errorf("failed to get dagql server: %w", err)
+	}
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return i, fmt.Errorf("failed to get client metadata from context: %w", err)
 	}
 
-	secretStore, err := parent.Self.Secrets(ctx)
+	secretStore, err := parent.Self().Secrets(ctx)
 	if err != nil {
 		return i, fmt.Errorf("failed to get secret store: %w", err)
 	}
@@ -84,13 +86,13 @@ func (s *secretSchema) secret(
 		URI:               args.URI,
 		BuildkitSessionID: clientMetadata.ClientID,
 	}
-	i, err = dagql.NewInstanceForCurrentID(ctx, s.srv, parent, secret)
+	i, err = dagql.NewObjectResultForCurrentID(ctx, srv, secret)
 	if err != nil {
 		return i, fmt.Errorf("failed to create instance: %w", err)
 	}
 
 	if args.CacheKey.Valid {
-		i = i.WithDigest(dagql.HashFrom(string(args.CacheKey.Value)))
+		i = i.WithObjectDigest(dagql.HashFrom(string(args.CacheKey.Value)))
 	} else {
 		plaintext, err := secretStore.GetSecretPlaintextDirect(ctx, secret)
 		if err != nil {
@@ -125,12 +127,12 @@ func (s *secretSchema) secret(
 		)
 		key := argon2.IDKey(
 			plaintext,
-			parent.Self.SecretSalt(),
+			parent.Self().SecretSalt(),
 			time, memory, threads,
 			keySize,
 		)
 		b64Key := base64.RawStdEncoding.EncodeToString(key)
-		i = i.WithDigest(digest.Digest("argon2:" + b64Key))
+		i = i.WithObjectDigest(digest.Digest("argon2:" + b64Key))
 	}
 
 	if err := secretStore.AddSecret(i); err != nil {
@@ -147,10 +149,15 @@ type setSecretArgs struct {
 
 func (s *secretSchema) setSecret(
 	ctx context.Context,
-	parent dagql.Instance[*core.Query],
+	parent dagql.ObjectResult[*core.Query],
 	args setSecretArgs,
-) (i dagql.Instance[*core.Secret], err error) {
-	accessor, err := core.GetClientResourceAccessor(ctx, parent.Self, args.Name)
+) (i dagql.ObjectResult[*core.Secret], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return i, fmt.Errorf("failed to get dagql server: %w", err)
+	}
+
+	accessor, err := core.GetClientResourceAccessor(ctx, parent.Self(), args.Name)
 	if err != nil {
 		return i, fmt.Errorf("failed to get client resource accessor: %w", err)
 	}
@@ -173,7 +180,7 @@ func (s *secretSchema) setSecret(
 		call.NewArgument("plaintext", call.NewLiteralString("***"), false),
 	)
 
-	secretStore, err := parent.Self.Secrets(ctx)
+	secretStore, err := parent.Self().Secrets(ctx)
 	if err != nil {
 		return i, fmt.Errorf("failed to get secret store: %w", err)
 	}
@@ -181,7 +188,7 @@ func (s *secretSchema) setSecret(
 		Name:      args.Name,
 		Plaintext: []byte(args.Plaintext),
 	}
-	secret, err := dagql.NewInstanceForID(s.srv, parent, secretVal, callID)
+	secret, err := dagql.NewObjectResultForID(secretVal, srv, callID)
 	if err != nil {
 		return i, fmt.Errorf("failed to create secret instance: %w", err)
 	}
@@ -192,7 +199,7 @@ func (s *secretSchema) setSecret(
 	return secret, nil
 }
 
-func (s *secretSchema) name(ctx context.Context, secret dagql.Instance[*core.Secret], args struct{}) (dagql.String, error) {
+func (s *secretSchema) name(ctx context.Context, secret dagql.ObjectResult[*core.Secret], args struct{}) (string, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return "", err
@@ -206,10 +213,10 @@ func (s *secretSchema) name(ctx context.Context, secret dagql.Instance[*core.Sec
 		return "", fmt.Errorf("secret not found: %s", secret.ID().Digest())
 	}
 
-	return dagql.NewString(name), nil
+	return name, nil
 }
 
-func (s *secretSchema) uri(ctx context.Context, secret dagql.Instance[*core.Secret], args struct{}) (dagql.String, error) {
+func (s *secretSchema) uri(ctx context.Context, secret dagql.ObjectResult[*core.Secret], args struct{}) (string, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return "", err
@@ -223,10 +230,10 @@ func (s *secretSchema) uri(ctx context.Context, secret dagql.Instance[*core.Secr
 		return "", fmt.Errorf("secret not found: %s", secret.ID().Digest())
 	}
 
-	return dagql.NewString(name), nil
+	return name, nil
 }
 
-func (s *secretSchema) plaintext(ctx context.Context, secret dagql.Instance[*core.Secret], args struct{}) (dagql.String, error) {
+func (s *secretSchema) plaintext(ctx context.Context, secret dagql.ObjectResult[*core.Secret], args struct{}) (string, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return "", err
@@ -240,5 +247,5 @@ func (s *secretSchema) plaintext(ctx context.Context, secret dagql.Instance[*cor
 		return "", err
 	}
 
-	return dagql.NewString(string(plaintext)), nil
+	return string(plaintext), nil
 }

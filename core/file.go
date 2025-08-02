@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path"
 	"path/filepath"
 	"slices"
 	"time"
 
+	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -48,6 +50,13 @@ func (*File) TypeDescription() string {
 	return "A file."
 }
 
+func (file *File) getResult() bkcache.ImmutableRef {
+	return file.Result
+}
+func (file *File) setResult(ref bkcache.ImmutableRef) {
+	file.Result = ref
+}
+
 var _ HasPBDefinitions = (*File)(nil)
 
 func (file *File) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
@@ -56,7 +65,7 @@ func (file *File) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 		defs = append(defs, file.LLB)
 	}
 	for _, bnd := range file.Services {
-		ctr := bnd.Service.Self.Container
+		ctr := bnd.Service.Self().Container
 		if ctr == nil {
 			continue
 		}
@@ -307,24 +316,18 @@ func (file *File) WithName(ctx context.Context, filename string) (*File, error) 
 
 func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 	file = file.Clone()
-
-	st, err := file.State()
-	if err != nil {
-		return nil, err
-	}
-
-	t := time.Unix(int64(unix), 0)
-
-	stamped := llb.Scratch().File(llb.Copy(st, file.File, ".", llb.WithCreatedTime(t)))
-
-	def, err := stamped.Marshal(ctx, llb.Platform(file.Platform.Spec()))
-	if err != nil {
-		return nil, err
-	}
-	file.LLB = def.ToPB()
-	file.File = path.Base(file.File)
-
-	return file, nil
+	return execInMount(ctx, file, func(root string) error {
+		fullPath, err := RootPathWithoutFinalSymlink(root, file.File)
+		if err != nil {
+			return err
+		}
+		t := time.Unix(int64(unix), 0)
+		err = os.Chtimes(fullPath, t, t)
+		if err != nil {
+			return err
+		}
+		return nil
+	}, withSavedSnapshot("withTimestamps %d", unix))
 }
 
 func (file *File) Open(ctx context.Context) (io.ReadCloser, error) {
@@ -388,6 +391,30 @@ func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bo
 	defer detach()
 
 	return bk.LocalFileExport(ctx, def.ToPB(), dest, file.File, allowParentDirPath)
+}
+
+func (file *File) Mount(ctx context.Context, f func(string) error) error {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get services: %w", err)
+	}
+	detach, _, err := svcs.StartBindings(ctx, file.Services)
+	if err != nil {
+		return err
+	}
+	defer detach()
+
+	return mountLLB(ctx, file.LLB, func(root string) error {
+		src, err := containerdfs.RootPath(root, file.File)
+		if err != nil {
+			return err
+		}
+		return f(src)
+	})
 }
 
 // bkRef returns the buildkit reference from the solved def.

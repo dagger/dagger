@@ -264,34 +264,56 @@ class CacheSharingMode(Enum):
     """Shares the cache volume amongst many build pipelines"""
 
 
+class ExistsType(Enum):
+    """File type."""
+
+    DIRECTORY_TYPE = "DIRECTORY_TYPE"
+    """Tests path is a directory"""
+
+    REGULAR_TYPE = "REGULAR_TYPE"
+    """Tests path is a regular file"""
+
+    SYMLINK_TYPE = "SYMLINK_TYPE"
+    """Tests path is a symlink"""
+
+
 class ImageLayerCompression(Enum):
     """Compression algorithm to use for image layers."""
 
     EStarGZ = "EStarGZ"
+    ESTARGZ = "EStarGZ"
 
     Gzip = "Gzip"
+    GZIP = "Gzip"
 
     Uncompressed = "Uncompressed"
+    UNCOMPRESSED = "Uncompressed"
 
     Zstd = "Zstd"
+    ZSTD = "Zstd"
 
 
 class ImageMediaTypes(Enum):
     """Mediatypes to use in published or exported image metadata."""
 
     DockerMediaTypes = "DockerMediaTypes"
+    DOCKER = "DockerMediaTypes"
 
     OCIMediaTypes = "OCIMediaTypes"
+    OCI = "OCIMediaTypes"
 
 
 class ModuleSourceKind(Enum):
     """The kind of module source."""
 
     DIR_SOURCE = "DIR_SOURCE"
+    DIR = "DIR_SOURCE"
 
     GIT_SOURCE = "GIT_SOURCE"
+    GIT = "GIT_SOURCE"
 
     LOCAL_SOURCE = "LOCAL_SOURCE"
+    LOCAL = "LOCAL_SOURCE"
 
 
 class NetworkProtocol(Enum):
@@ -320,8 +342,15 @@ class TypeDefKind(Enum):
 
     BOOLEAN_KIND = "BOOLEAN_KIND"
     """A boolean value."""
+    BOOLEAN = "BOOLEAN_KIND"
+    """A boolean value."""
 
     ENUM_KIND = "ENUM_KIND"
+    """A GraphQL enum type and its values
+
+    Always paired with an EnumTypeDef.
+    """
+    ENUM = "ENUM_KIND"
     """A GraphQL enum type and its values
 
     Always paired with an EnumTypeDef.
@@ -329,38 +358,68 @@ class TypeDefKind(Enum):
 
     FLOAT_KIND = "FLOAT_KIND"
     """A float value."""
+    FLOAT = "FLOAT_KIND"
+    """A float value."""
 
     INPUT_KIND = "INPUT_KIND"
+    """A graphql input type, used only when representing the core API via TypeDefs."""
+    INPUT = "INPUT_KIND"
     """A graphql input type, used only when representing the core API via TypeDefs."""
 
     INTEGER_KIND = "INTEGER_KIND"
     """An integer value."""
+    INTEGER = "INTEGER_KIND"
+    """An integer value."""
 
     INTERFACE_KIND = "INTERFACE_KIND"
-    """A named type of functions that can be matched+implemented by other objects+interfaces.
+    """Always paired with an InterfaceTypeDef.
 
-    Always paired with an InterfaceTypeDef.
+    A named type of functions that can be matched+implemented by other objects+interfaces.
+    """
+    INTERFACE = "INTERFACE_KIND"
+    """Always paired with an InterfaceTypeDef.
+
+    A named type of functions that can be matched+implemented by other objects+interfaces.
     """
 
     LIST_KIND = "LIST_KIND"
-    """A list of values all having the same type.
+    """Always paired with a ListTypeDef.
 
-    Always paired with a ListTypeDef.
+    A list of values all having the same type.
+    """
+    LIST = "LIST_KIND"
+    """Always paired with a ListTypeDef.
+
+    A list of values all having the same type.
     """
 
     OBJECT_KIND = "OBJECT_KIND"
-    """A named type defined in the GraphQL schema, with fields and functions.
+    """Always paired with an ObjectTypeDef.
 
-    Always paired with an ObjectTypeDef.
+    A named type defined in the GraphQL schema, with fields and functions.
+    """
+    OBJECT = "OBJECT_KIND"
+    """Always paired with an ObjectTypeDef.
+
+    A named type defined in the GraphQL schema, with fields and functions.
     """
 
     SCALAR_KIND = "SCALAR_KIND"
     """A scalar value of any basic kind."""
+    SCALAR = "SCALAR_KIND"
+    """A scalar value of any basic kind."""
 
     STRING_KIND = "STRING_KIND"
     """A string value."""
+    STRING = "STRING_KIND"
+    """A string value."""
 
     VOID_KIND = "VOID_KIND"
+    """A special kind used to signify that no value is returned.
+
+    This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
+    """
+    VOID = "VOID_KIND"
     """A special kind used to signify that no value is returned.
 
     This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
@@ -750,7 +809,7 @@ class Container(Type):
             result in unexpected behavior.
         """
         _args = [
-            Arg("args", () if args is None else args, ()),
+            Arg("args", [] if args is None else args, []),
             Arg("useEntrypoint", use_entrypoint, False),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
@@ -794,8 +853,8 @@ class Container(Type):
         _args = [
             Arg(
                 "platformVariants",
-                () if platform_variants is None else platform_variants,
-                (),
+                [] if platform_variants is None else platform_variants,
+                [],
             ),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
@@ -814,6 +873,9 @@ class Container(Type):
         no_init: bool | None = False,
     ) -> Self:
         """Initializes this container from a Dockerfile build.
+
+        .. deprecated::
+            Use `Directory.build` instead
 
         Parameters
         ----------
@@ -841,12 +903,17 @@ class Container(Type):
             processes be the pid 1 process in the container. Otherwise it may
             result in unexpected behavior.
         """
+        warnings.warn(
+            'Method "build" is deprecated: Use `Directory.build` instead',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("context", context),
             Arg("dockerfile", dockerfile, "Dockerfile"),
             Arg("target", target, ""),
-            Arg("buildArgs", () if build_args is None else build_args, ()),
-            Arg("secrets", () if secrets is None else secrets, ()),
+            Arg("buildArgs", [] if build_args is None else build_args, []),
+            Arg("secrets", [] if secrets is None else secrets, []),
             Arg("noInit", no_init, False),
         ]
         _ctx = self._select("build", _args)
@@ -953,6 +1020,45 @@ class Container(Type):
         _args: list[Arg] = []
         _ctx = self._select("envVariables", _args)
         return await _ctx.execute_object_list(EnvVariable)
+
+    async def exists(
+        self,
+        path: str,
+        *,
+        expected_type: ExistsType | None = None,
+        do_not_follow_symlinks: bool | None = False,
+    ) -> bool:
+        """check if a file or directory exists
+
+        Parameters
+        ----------
+        path:
+            Path to check (e.g., "/file.txt").
+        expected_type:
+            If specified, also validate the type of file (e.g. "REGULAR_TYPE",
+            "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+        do_not_follow_symlinks:
+            If specified, do not follow symlinks.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("expectedType", expected_type, None),
+            Arg("doNotFollowSymlinks", do_not_follow_symlinks, False),
+        ]
+        _ctx = self._select("exists", _args)
+        return await _ctx.execute(bool)
 
     async def exit_code(self) -> int:
         """The exit code of the last executed command
@@ -1066,8 +1172,8 @@ class Container(Type):
             Arg("path", path),
             Arg(
                 "platformVariants",
-                () if platform_variants is None else platform_variants,
-                (),
+                [] if platform_variants is None else platform_variants,
+                [],
             ),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
@@ -1075,6 +1181,63 @@ class Container(Type):
         ]
         _ctx = self._select("export", _args)
         return await _ctx.execute(str)
+
+    async def export_image(
+        self,
+        name: str,
+        *,
+        platform_variants: "list[Container] | None" = None,
+        forced_compression: ImageLayerCompression | None = None,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+    ) -> Void:
+        """Exports the container as an image to the host's container image store.
+
+        Parameters
+        ----------
+        name:
+            Name of image to export to in the host's store
+        platform_variants:
+            Identifiers for other platform specific containers.
+            Used for multi-platform image.
+        forced_compression:
+            Force each layer of the exported image to use the specified
+            compression algorithm.
+            If this is unset, then if a layer already has a compressed blob in
+            the engine's cache, that will be used (this can result in a mix of
+            compression algorithms for different layers). If this is unset and
+            a layer has no compressed blob in the engine's cache, then it will
+            be compressed using Gzip.
+        media_types:
+            Use the specified media types for the exported image's layers.
+            Defaults to OCI, which is largely compatible with most recent
+            container runtimes, but Docker may be needed for older runtimes
+            without OCI support.
+
+        Returns
+        -------
+        Void
+            The absence of a value.  A Null Void is used as a placeholder for
+            resolvers that do not return anything.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("name", name),
+            Arg(
+                "platformVariants",
+                [] if platform_variants is None else platform_variants,
+                [],
+            ),
+            Arg("forcedCompression", forced_compression, None),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+        ]
+        _ctx = self._select("exportImage", _args)
+        await _ctx.execute()
 
     async def exposed_ports(self) -> list["Port"]:
         """Retrieves the list of exposed ports.
@@ -1329,8 +1492,8 @@ class Container(Type):
             Arg("address", address),
             Arg(
                 "platformVariants",
-                () if platform_variants is None else platform_variants,
-                (),
+                [] if platform_variants is None else platform_variants,
+                [],
             ),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
@@ -1437,7 +1600,7 @@ class Container(Type):
             absolutely necessary and only with trusted commands.
         """
         _args = [
-            Arg("cmd", () if cmd is None else cmd, ()),
+            Arg("cmd", [] if cmd is None else cmd, []),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
@@ -1510,8 +1673,8 @@ class Container(Type):
         """
         _args = [
             Arg("random", random, False),
-            Arg("ports", () if ports is None else ports, ()),
-            Arg("args", () if args is None else args, ()),
+            Arg("ports", [] if ports is None else ports, []),
+            Arg("args", [] if args is None else args, []),
             Arg("useEntrypoint", use_entrypoint, False),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
@@ -1647,8 +1810,8 @@ class Container(Type):
         _args = [
             Arg("path", path),
             Arg("directory", directory),
-            Arg("exclude", () if exclude is None else exclude, ()),
-            Arg("include", () if include is None else include, ()),
+            Arg("exclude", [] if exclude is None else exclude, []),
+            Arg("include", [] if include is None else include, []),
             Arg("owner", owner, ""),
             Arg("expand", expand, False),
         ]
@@ -2708,8 +2871,8 @@ class CurrentModule(Type):
         """
         _args = [
             Arg("path", path),
-            Arg("exclude", () if exclude is None else exclude, ()),
-            Arg("include", () if include is None else include, ()),
+            Arg("exclude", [] if exclude is None else exclude, []),
+            Arg("include", [] if include is None else include, []),
         ]
         _ctx = self._select("workdir", _args)
         return Directory(_ctx)
@@ -2875,9 +3038,9 @@ class Directory(Type):
         _args = [
             Arg("dockerfile", dockerfile, "Dockerfile"),
             Arg("platform", platform, None),
-            Arg("buildArgs", () if build_args is None else build_args, ()),
+            Arg("buildArgs", [] if build_args is None else build_args, []),
             Arg("target", target, ""),
-            Arg("secrets", () if secrets is None else secrets, ()),
+            Arg("secrets", [] if secrets is None else secrets, []),
             Arg("noInit", no_init, False),
         ]
         _ctx = self._select("dockerBuild", _args)
@@ -2910,6 +3073,45 @@ class Directory(Type):
         ]
         _ctx = self._select("entries", _args)
         return await _ctx.execute(list[str])
+
+    async def exists(
+        self,
+        path: str,
+        *,
+        expected_type: ExistsType | None = None,
+        do_not_follow_symlinks: bool | None = False,
+    ) -> bool:
+        """check if a file or directory exists
+
+        Parameters
+        ----------
+        path:
+            Path to check (e.g., "/file.txt").
+        expected_type:
+            If specified, also validate the type of file (e.g. "REGULAR_TYPE",
+            "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+        do_not_follow_symlinks:
+            If specified, do not follow symlinks.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("expectedType", expected_type, None),
+            Arg("doNotFollowSymlinks", do_not_follow_symlinks, False),
+        ]
+        _ctx = self._select("exists", _args)
+        return await _ctx.execute(bool)
 
     async def export(
         self,
@@ -2985,8 +3187,8 @@ class Directory(Type):
             in the new snapshot. Example: (e.g., ["app/", "package.*"]).
         """
         _args = [
-            Arg("exclude", () if exclude is None else exclude, ()),
-            Arg("include", () if include is None else include, ()),
+            Arg("exclude", [] if exclude is None else exclude, []),
+            Arg("include", [] if include is None else include, []),
         ]
         _ctx = self._select("filter", _args)
         return Directory(_ctx)
@@ -3109,7 +3311,7 @@ class Directory(Type):
         """
         _args = [
             Arg("container", container, None),
-            Arg("cmd", () if cmd is None else cmd, ()),
+            Arg("cmd", [] if cmd is None else cmd, []),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
@@ -3144,8 +3346,8 @@ class Directory(Type):
         _args = [
             Arg("path", path),
             Arg("directory", directory),
-            Arg("exclude", () if exclude is None else exclude, ()),
-            Arg("include", () if include is None else include, ()),
+            Arg("exclude", [] if exclude is None else exclude, []),
+            Arg("include", [] if include is None else include, []),
         ]
         _ctx = self._select("withDirectory", _args)
         return Directory(_ctx)
@@ -3251,6 +3453,26 @@ class Directory(Type):
             Arg("permissions", permissions, 420),
         ]
         _ctx = self._select("withNewFile", _args)
+        return Directory(_ctx)
+
+    def with_patch(self, patch: str) -> Self:
+        """Retrieves this directory with the given Git-compatible patch applied.
+
+        .. caution::
+            Experimental: This API is highly experimental and may be removed
+            or replaced entirely.
+
+        Parameters
+        ----------
+        patch:
+            Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex
+            1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1
+            +1,1 @@\n-Hello\n+World\n").
+        """
+        _args = [
+            Arg("patch", patch),
+        ]
+        _ctx = self._select("withPatch", _args)
         return Directory(_ctx)
 
     def with_symlink(self, target: str, link_name: str) -> Self:
@@ -3815,6 +4037,12 @@ class EnumTypeDef(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(EnumTypeDefID)
 
+    async def members(self) -> list["EnumValueTypeDef"]:
+        """The members of the enum."""
+        _args: list[Arg] = []
+        _ctx = self._select("members", _args)
+        return await _ctx.execute_object_list(EnumValueTypeDef)
+
     async def name(self) -> str:
         """The name of the enum.
 
@@ -3865,7 +4093,14 @@ class EnumTypeDef(Type):
         return await _ctx.execute(str)
 
     async def values(self) -> list["EnumValueTypeDef"]:
-        """The values of the enum."""
+        """.. deprecated::
+        use members instead
+        """
+        warnings.warn(
+            'Method "values" is deprecated: use members instead',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args: list[Arg] = []
         _ctx = self._select("values", _args)
         return await _ctx.execute_object_list(EnumValueTypeDef)
@@ -3876,7 +4111,7 @@ class EnumValueTypeDef(Type):
     """A definition of a value in a custom enum defined in a Module."""
 
     async def description(self) -> str:
-        """A doc string for the enum value, if any.
+        """A doc string for the enum member, if any.
 
         Returns
         -------
@@ -3921,7 +4156,7 @@ class EnumValueTypeDef(Type):
         return await _ctx.execute(EnumValueTypeDefID)
 
     async def name(self) -> str:
-        """The name of the enum value.
+        """The name of the enum member.
 
         Returns
         -------
@@ -3942,10 +4177,31 @@ class EnumValueTypeDef(Type):
         return await _ctx.execute(str)
 
     def source_map(self) -> "SourceMap":
-        """The location of this enum value declaration."""
+        """The location of this enum member declaration."""
         _args: list[Arg] = []
         _ctx = self._select("sourceMap", _args)
         return SourceMap(_ctx)
+
+    async def value(self) -> str:
+        """The value of the enum member
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("value", _args)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -5333,7 +5589,7 @@ class Function(Type):
             Arg("description", description, ""),
             Arg("defaultValue", default_value, None),
             Arg("defaultPath", default_path, ""),
-            Arg("ignore", () if ignore is None else ignore, ()),
+            Arg("ignore", [] if ignore is None else ignore, []),
             Arg("sourceMap", source_map, None),
         ]
         _ctx = self._select("withArg", _args)
@@ -6037,6 +6293,12 @@ class GitRepository(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(GitRepositoryID)
 
+    def latest_version(self) -> GitRef:
+        """Returns details for the latest semver tag."""
+        _args: list[Arg] = []
+        _ctx = self._select("latestVersion", _args)
+        return GitRef(_ctx)
+
     def ref(self, name: str) -> GitRef:
         """Returns details of a ref.
 
@@ -6182,8 +6444,8 @@ class Host(Type):
         """
         _args = [
             Arg("path", path),
-            Arg("exclude", () if exclude is None else exclude, ()),
-            Arg("include", () if include is None else include, ()),
+            Arg("exclude", [] if exclude is None else exclude, []),
+            Arg("include", [] if include is None else include, []),
             Arg("noCache", no_cache, False),
         ]
         _ctx = self._select("directory", _args)
@@ -6321,7 +6583,7 @@ class Host(Type):
         _args = [
             Arg("service", service),
             Arg("native", native, False),
-            Arg("ports", () if ports is None else ports, ()),
+            Arg("ports", [] if ports is None else ports, []),
         ]
         _ctx = self._select("tunnel", _args)
         return Service(_ctx)
@@ -7336,6 +7598,12 @@ class ModuleSource(Type):
         _ctx = self._select("asString", _args)
         return await _ctx.execute(str)
 
+    def blueprint(self) -> Self:
+        """The blueprint referenced by the module source."""
+        _args: list[Arg] = []
+        _ctx = self._select("blueprint", _args)
+        return ModuleSource(_ctx)
+
     async def clone_ref(self) -> str:
         """The ref to clone the root of the git repo from. Only valid for git
         sources.
@@ -7791,6 +8059,20 @@ class ModuleSource(Type):
         _ctx = self._select("version", _args)
         return await _ctx.execute(str)
 
+    def with_blueprint(self, blueprint: Self) -> Self:
+        """Set a blueprint for the module source.
+
+        Parameters
+        ----------
+        blueprint:
+            The blueprint module to set.
+        """
+        _args = [
+            Arg("blueprint", blueprint),
+        ]
+        _ctx = self._select("withBlueprint", _args)
+        return ModuleSource(_ctx)
+
     def with_client(self, generator: str, output_dir: str) -> Self:
         """Update the module source with a new client to generate.
 
@@ -7895,6 +8177,12 @@ class ModuleSource(Type):
         _ctx = self._select("withSourceSubpath", _args)
         return ModuleSource(_ctx)
 
+    def with_update_blueprint(self) -> Self:
+        """Update the blueprint module to the latest version."""
+        _args: list[Arg] = []
+        _ctx = self._select("withUpdateBlueprint", _args)
+        return ModuleSource(_ctx)
+
     def with_update_dependencies(self, dependencies: list[str]) -> Self:
         """Update one or more module dependencies.
 
@@ -7907,6 +8195,12 @@ class ModuleSource(Type):
             Arg("dependencies", dependencies),
         ]
         _ctx = self._select("withUpdateDependencies", _args)
+        return ModuleSource(_ctx)
+
+    def without_blueprint(self) -> Self:
+        """Remove the current blueprint from the module source."""
+        _args: list[Arg] = []
+        _ctx = self._select("withoutBlueprint", _args)
         return ModuleSource(_ctx)
 
     def without_client(self, path: str) -> Self:
@@ -9408,7 +9702,7 @@ class Service(Type):
             If the API returns an error.
         """
         _args = [
-            Arg("ports", () if ports is None else ports, ()),
+            Arg("ports", [] if ports is None else ports, []),
             Arg("random", random, False),
         ]
         _ctx = self._select("up", _args)
@@ -9780,6 +10074,37 @@ class TypeDef(Type):
         _ctx = self._select("withEnum", _args)
         return TypeDef(_ctx)
 
+    def with_enum_member(
+        self,
+        name: str,
+        *,
+        value: str | None = "",
+        description: str | None = "",
+        source_map: SourceMap | None = None,
+    ) -> Self:
+        """Adds a static value for an Enum TypeDef, failing if the type is not an
+        enum.
+
+        Parameters
+        ----------
+        name:
+            The name of the member in the enum
+        value:
+            The value of the member in the enum
+        description:
+            A doc string for the member, if any
+        source_map:
+            The source map for the enum member definition.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value, ""),
+            Arg("description", description, ""),
+            Arg("sourceMap", source_map, None),
+        ]
+        _ctx = self._select("withEnumMember", _args)
+        return TypeDef(_ctx)
+
     def with_enum_value(
         self,
         value: str,
@@ -9790,6 +10115,9 @@ class TypeDef(Type):
         """Adds a static value for an Enum TypeDef, failing if the type is not an
         enum.
 
+        .. deprecated::
+            Use :py:meth:`with_enum_member` instead
+
         Parameters
         ----------
         value:
@@ -9799,6 +10127,11 @@ class TypeDef(Type):
         source_map:
             The source map for the enum value definition.
         """
+        warnings.warn(
+            'Method "with_enum_value" is deprecated: Use "with_enum_member" instead',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("value", value),
             Arg("description", description, ""),
@@ -9975,6 +10308,7 @@ __all__ = [
     "ErrorID",
     "ErrorValue",
     "ErrorValueID",
+    "ExistsType",
     "FieldTypeDef",
     "FieldTypeDefID",
     "File",

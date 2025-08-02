@@ -238,6 +238,16 @@ func (r TypeRef) IsList() bool {
 	return false
 }
 
+func (r TypeRef) IsEnum() bool {
+	ref := r
+
+	if r.Kind == TypeKindNonNull {
+		ref = *ref.OfType
+	}
+
+	return ref.Kind == TypeKindEnum
+}
+
 func (r TypeRef) IsVoid() bool {
 	ref := r
 	if r.Kind == TypeKindNonNull {
@@ -343,6 +353,14 @@ func (t *Directives) SourceMap() *SourceMap {
 		Line:     fromJSON[int](*d.Arg("line").Value),
 		Column:   fromJSON[int](*d.Arg("column").Value),
 	}
+}
+
+func (t *Directives) EnumValue() string {
+	d := t.Directive("enumValue")
+	if d == nil {
+		return ""
+	}
+	return fromJSON[string](*d.Arg("value").Value)
 }
 
 type Directive struct {

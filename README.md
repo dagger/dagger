@@ -14,7 +14,7 @@ Dagger is an open-source runtime for composable workflows. It's perfect for syst
 
 - **Built-in Observability:** Full visibility into operations with tracing, logs, and metrics. Debug complex workflows and know exactly what's happening.
 
-<p align="center"><img src="docs/static/img/current_docs/cloud-trace.gif" width="60%"></a>
+<p align="center"><img src="docs/static/img/current_docs/index/cloud-trace.gif" width="60%"></a>
 
 - **Open Platform:** Works with any compute platform and tech stack — today and tomorrow. Ship faster, experiment freely, and don’t get locked into someone else's choices.
 

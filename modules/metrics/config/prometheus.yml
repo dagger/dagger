@@ -1,0 +1,10 @@
+# https://prometheus.io/docs/prometheus/latest/configuration/configuration
+global:
+  scrape_interval: 15s
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+  - job_name: "dagger"
+    static_configs:
+      - targets: ["dagger:9090"]

@@ -1891,10 +1891,34 @@ pub struct ContainerDirectoryOpts {
     pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerExistsOpts {
+    /// If specified, do not follow symlinks.
+    #[builder(setter(into, strip_option), default)]
+    pub do_not_follow_symlinks: Option<bool>,
+    /// If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+    #[builder(setter(into, strip_option), default)]
+    pub expected_type: Option<ExistsType>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerExportOpts {
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
+    /// Force each layer of the exported image to use the specified compression algorithm.
+    /// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
+    #[builder(setter(into, strip_option), default)]
+    pub forced_compression: Option<ImageLayerCompression>,
+    /// Use the specified media types for the exported image's layers.
+    /// Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
+    #[builder(setter(into, strip_option), default)]
+    pub media_types: Option<ImageMediaTypes>,
+    /// Identifiers for other platform specific containers.
+    /// Used for multi-platform image.
+    #[builder(setter(into, strip_option), default)]
+    pub platform_variants: Option<Vec<ContainerId>>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerExportImageOpts {
     /// Force each layer of the exported image to use the specified compression algorithm.
     /// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
     #[builder(setter(into, strip_option), default)]
@@ -2444,6 +2468,38 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }]
     }
+    /// check if a file or directory exists
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to check (e.g., "/file.txt").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn exists(&self, path: impl Into<String>) -> Result<bool, DaggerError> {
+        let mut query = self.selection.select("exists");
+        query = query.arg("path", path.into());
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// check if a file or directory exists
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to check (e.g., "/file.txt").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn exists_opts(
+        &self,
+        path: impl Into<String>,
+        opts: ContainerExistsOpts,
+    ) -> Result<bool, DaggerError> {
+        let mut query = self.selection.select("exists");
+        query = query.arg("path", path.into());
+        if let Some(expected_type) = opts.expected_type {
+            query = query.arg("expectedType", expected_type);
+        }
+        if let Some(do_not_follow_symlinks) = opts.do_not_follow_symlinks {
+            query = query.arg("doNotFollowSymlinks", do_not_follow_symlinks);
+        }
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The exit code of the last executed command
     /// Returns an error if no command was executed
     pub async fn exit_code(&self) -> Result<isize, DaggerError> {
@@ -2524,6 +2580,41 @@ impl Container {
         }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
+        }
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Exports the container as an image to the host's container image store.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of image to export to in the host's store
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn export_image(&self, name: impl Into<String>) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("exportImage");
+        query = query.arg("name", name.into());
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Exports the container as an image to the host's container image store.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of image to export to in the host's store
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn export_image_opts(
+        &self,
+        name: impl Into<String>,
+        opts: ContainerExportImageOpts,
+    ) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("exportImage");
+        query = query.arg("name", name.into());
+        if let Some(platform_variants) = opts.platform_variants {
+            query = query.arg("platformVariants", platform_variants);
+        }
+        if let Some(forced_compression) = opts.forced_compression {
+            query = query.arg("forcedCompression", forced_compression);
+        }
+        if let Some(media_types) = opts.media_types {
+            query = query.arg("mediaTypes", media_types);
         }
         query.execute(self.graphql_client.clone()).await
     }
@@ -4428,6 +4519,15 @@ pub struct DirectoryEntriesOpts<'a> {
     pub path: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryExistsOpts {
+    /// If specified, do not follow symlinks.
+    #[builder(setter(into, strip_option), default)]
+    pub do_not_follow_symlinks: Option<bool>,
+    /// If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+    #[builder(setter(into, strip_option), default)]
+    pub expected_type: Option<ExistsType>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryExportOpts {
     /// If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.
     #[builder(setter(into, strip_option), default)]
@@ -4662,6 +4762,38 @@ impl Directory {
         let mut query = self.selection.select("entries");
         if let Some(path) = opts.path {
             query = query.arg("path", path);
+        }
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// check if a file or directory exists
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to check (e.g., "/file.txt").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn exists(&self, path: impl Into<String>) -> Result<bool, DaggerError> {
+        let mut query = self.selection.select("exists");
+        query = query.arg("path", path.into());
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// check if a file or directory exists
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to check (e.g., "/file.txt").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn exists_opts(
+        &self,
+        path: impl Into<String>,
+        opts: DirectoryExistsOpts,
+    ) -> Result<bool, DaggerError> {
+        let mut query = self.selection.select("exists");
+        query = query.arg("path", path.into());
+        if let Some(expected_type) = opts.expected_type {
+            query = query.arg("expectedType", expected_type);
+        }
+        if let Some(do_not_follow_symlinks) = opts.do_not_follow_symlinks {
+            query = query.arg("doNotFollowSymlinks", do_not_follow_symlinks);
         }
         query.execute(self.graphql_client.clone()).await
     }
@@ -5042,6 +5174,20 @@ impl Directory {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Retrieves this directory with the given Git-compatible patch applied.
+    ///
+    /// # Arguments
+    ///
+    /// * `patch` - Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex 1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-Hello\n+World\n").
+    pub fn with_patch(&self, patch: impl Into<String>) -> Directory {
+        let mut query = self.selection.select("withPatch");
+        query = query.arg("patch", patch.into());
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return a snapshot with a symlink
     ///
     /// # Arguments
@@ -5332,6 +5478,15 @@ impl EnumTypeDef {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The members of the enum.
+    pub fn members(&self) -> Vec<EnumValueTypeDef> {
+        let query = self.selection.select("members");
+        vec![EnumValueTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }]
+    }
     /// The name of the enum.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
@@ -5351,7 +5506,6 @@ impl EnumTypeDef {
         let query = self.selection.select("sourceModuleName");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The values of the enum.
     pub fn values(&self) -> Vec<EnumValueTypeDef> {
         let query = self.selection.select("values");
         vec![EnumValueTypeDef {
@@ -5368,7 +5522,7 @@ pub struct EnumValueTypeDef {
     pub graphql_client: DynGraphQLClient,
 }
 impl EnumValueTypeDef {
-    /// A doc string for the enum value, if any.
+    /// A doc string for the enum member, if any.
     pub async fn description(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("description");
         query.execute(self.graphql_client.clone()).await
@@ -5378,12 +5532,12 @@ impl EnumValueTypeDef {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The name of the enum value.
+    /// The name of the enum member.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The location of this enum value declaration.
+    /// The location of this enum member declaration.
     pub fn source_map(&self) -> SourceMap {
         let query = self.selection.select("sourceMap");
         SourceMap {
@@ -5391,6 +5545,11 @@ impl EnumValueTypeDef {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+    /// The value of the enum member
+    pub async fn value(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("value");
+        query.execute(self.graphql_client.clone()).await
     }
 }
 #[derive(Clone)]
@@ -6982,6 +7141,15 @@ impl GitRepository {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Returns details for the latest semver tag.
+    pub fn latest_version(&self) -> GitRef {
+        let query = self.selection.select("latestVersion");
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Returns details of a ref.
     ///
     /// # Arguments
@@ -7889,6 +8057,15 @@ impl ModuleSource {
         let query = self.selection.select("asString");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The blueprint referenced by the module source.
+    pub fn blueprint(&self) -> ModuleSource {
+        let query = self.selection.select("blueprint");
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The ref to clone the root of the git repo from. Only valid for git sources.
     pub async fn clone_ref(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("cloneRef");
@@ -8043,6 +8220,26 @@ impl ModuleSource {
         let query = self.selection.select("version");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Set a blueprint for the module source.
+    ///
+    /// # Arguments
+    ///
+    /// * `blueprint` - The blueprint module to set.
+    pub fn with_blueprint(&self, blueprint: impl IntoID<ModuleSourceId>) -> ModuleSource {
+        let mut query = self.selection.select("withBlueprint");
+        query = query.arg_lazy(
+            "blueprint",
+            Box::new(move || {
+                let blueprint = blueprint.clone();
+                Box::pin(async move { blueprint.into_id().await.unwrap().quote() })
+            }),
+        );
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Update the module source with a new client to generate.
     ///
     /// # Arguments
@@ -8153,6 +8350,15 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Update the blueprint module to the latest version.
+    pub fn with_update_blueprint(&self) -> ModuleSource {
+        let query = self.selection.select("withUpdateBlueprint");
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Update one or more module dependencies.
     ///
     /// # Arguments
@@ -8167,6 +8373,15 @@ impl ModuleSource {
                 .map(|i| i.into())
                 .collect::<Vec<String>>(),
         );
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Remove the current blueprint from the module source.
+    pub fn without_blueprint(&self) -> ModuleSource {
+        let query = self.selection.select("withoutBlueprint");
         ModuleSource {
             proc: self.proc.clone(),
             selection: query,
@@ -9960,6 +10175,18 @@ pub struct TypeDefWithEnumOpts<'a> {
     pub source_map: Option<SourceMapId>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct TypeDefWithEnumMemberOpts<'a> {
+    /// A doc string for the member, if any
+    #[builder(setter(into, strip_option), default)]
+    pub description: Option<&'a str>,
+    /// The source map for the enum member definition.
+    #[builder(setter(into, strip_option), default)]
+    pub source_map: Option<SourceMapId>,
+    /// The value of the member in the enum
+    #[builder(setter(into, strip_option), default)]
+    pub value: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct TypeDefWithEnumValueOpts<'a> {
     /// A doc string for the value, if any
     #[builder(setter(into, strip_option), default)]
@@ -10112,6 +10339,49 @@ impl TypeDef {
     ) -> TypeDef {
         let mut query = self.selection.select("withEnum");
         query = query.arg("name", name.into());
+        if let Some(description) = opts.description {
+            query = query.arg("description", description);
+        }
+        if let Some(source_map) = opts.source_map {
+            query = query.arg("sourceMap", source_map);
+        }
+        TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Adds a static value for an Enum TypeDef, failing if the type is not an enum.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the member in the enum
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_enum_member(&self, name: impl Into<String>) -> TypeDef {
+        let mut query = self.selection.select("withEnumMember");
+        query = query.arg("name", name.into());
+        TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Adds a static value for an Enum TypeDef, failing if the type is not an enum.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the member in the enum
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_enum_member_opts<'a>(
+        &self,
+        name: impl Into<String>,
+        opts: TypeDefWithEnumMemberOpts<'a>,
+    ) -> TypeDef {
+        let mut query = self.selection.select("withEnumMember");
+        query = query.arg("name", name.into());
+        if let Some(value) = opts.value {
+            query = query.arg("value", value);
+        }
         if let Some(description) = opts.description {
             query = query.arg("description", description);
         }
@@ -10397,9 +10667,20 @@ pub enum CacheSharingMode {
     Shared,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum ExistsType {
+    #[serde(rename = "DIRECTORY_TYPE")]
+    DirectoryType,
+    #[serde(rename = "REGULAR_TYPE")]
+    RegularType,
+    #[serde(rename = "SYMLINK_TYPE")]
+    SymlinkType,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ImageLayerCompression {
     #[serde(rename = "EStarGZ")]
     EStarGz,
+    #[serde(rename = "ESTARGZ")]
+    Estargz,
     #[serde(rename = "Gzip")]
     Gzip,
     #[serde(rename = "Uncompressed")]
@@ -10409,17 +10690,27 @@ pub enum ImageLayerCompression {
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ImageMediaTypes {
+    #[serde(rename = "DOCKER")]
+    Docker,
     #[serde(rename = "DockerMediaTypes")]
     DockerMediaTypes,
+    #[serde(rename = "OCI")]
+    Oci,
     #[serde(rename = "OCIMediaTypes")]
     OciMediaTypes,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ModuleSourceKind {
+    #[serde(rename = "DIR")]
+    Dir,
     #[serde(rename = "DIR_SOURCE")]
     DirSource,
+    #[serde(rename = "GIT")]
+    Git,
     #[serde(rename = "GIT_SOURCE")]
     GitSource,
+    #[serde(rename = "LOCAL")]
+    Local,
     #[serde(rename = "LOCAL_SOURCE")]
     LocalSource,
 }
@@ -10441,26 +10732,48 @@ pub enum ReturnType {
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum TypeDefKind {
+    #[serde(rename = "BOOLEAN")]
+    Boolean,
     #[serde(rename = "BOOLEAN_KIND")]
     BooleanKind,
+    #[serde(rename = "ENUM")]
+    Enum,
     #[serde(rename = "ENUM_KIND")]
     EnumKind,
+    #[serde(rename = "FLOAT")]
+    Float,
     #[serde(rename = "FLOAT_KIND")]
     FloatKind,
+    #[serde(rename = "INPUT")]
+    Input,
     #[serde(rename = "INPUT_KIND")]
     InputKind,
+    #[serde(rename = "INTEGER")]
+    Integer,
     #[serde(rename = "INTEGER_KIND")]
     IntegerKind,
+    #[serde(rename = "INTERFACE")]
+    Interface,
     #[serde(rename = "INTERFACE_KIND")]
     InterfaceKind,
+    #[serde(rename = "LIST")]
+    List,
     #[serde(rename = "LIST_KIND")]
     ListKind,
+    #[serde(rename = "OBJECT")]
+    Object,
     #[serde(rename = "OBJECT_KIND")]
     ObjectKind,
+    #[serde(rename = "SCALAR")]
+    Scalar,
     #[serde(rename = "SCALAR_KIND")]
     ScalarKind,
+    #[serde(rename = "STRING")]
+    String,
     #[serde(rename = "STRING_KIND")]
     StringKind,
+    #[serde(rename = "VOID")]
+    Void,
     #[serde(rename = "VOID_KIND")]
     VoidKind,
 }

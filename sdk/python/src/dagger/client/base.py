@@ -16,7 +16,7 @@ class Scalar(str):
     __slots__ = ()
 
 
-class Enum(str, enum.Enum):
+class Enum(enum.Enum):
     """Custom enumeration."""
 
     __slots__ = ()
@@ -56,6 +56,9 @@ class Type(Object):
             and self._graphql_name() == other._graphql_name()
             and self._ctx == other._ctx
         )
+
+    def __hash__(self) -> int:
+        return hash((type(self), self._graphql_name(), self._ctx))
 
     def _select(self, *args, **kwargs):
         return self._ctx.select(self._graphql_name(), *args, **kwargs)

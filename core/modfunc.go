@@ -14,9 +14,7 @@ import (
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
 	bksolver "github.com/moby/buildkit/solver"
-	solvererror "github.com/moby/buildkit/solver/errdefs"
 	llberror "github.com/moby/buildkit/solver/llbsolver/errdefs"
-	bksolverpb "github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
@@ -35,12 +33,14 @@ import (
 type ModuleFunction struct {
 	mod     *Module
 	objDef  *ObjectTypeDef // may be nil for special functions like the module definition function call
-	runtime *Container
+	runtime dagql.ObjectResult[*Container]
 
 	metadata   *Function
 	returnType ModType
 	args       map[string]*UserModFunctionArg
 }
+
+var _ Callable = &ModuleFunction{}
 
 type UserModFunctionArg struct {
 	metadata *FunctionArg
@@ -51,7 +51,7 @@ func NewModFunction(
 	ctx context.Context,
 	mod *Module,
 	objDef *ObjectTypeDef,
-	runtime *Container,
+	runtime dagql.ObjectResult[*Container],
 	metadata *Function,
 ) (*ModuleFunction, error) {
 	returnType, ok, err := mod.ModTypeFor(ctx, metadata.ReturnType, true)
@@ -69,7 +69,7 @@ func NewModFunction(
 			return nil, fmt.Errorf("failed to get mod type for function %q arg %q type: %w", metadata.Name, argMetadata.Name, err)
 		}
 		if !ok {
-			return nil, fmt.Errorf("failed to find mod type for function %q arg %q type", metadata.Name, argMetadata.Name)
+			return nil, fmt.Errorf("failed to find mod type for function %q arg %q type: %q", metadata.Name, argMetadata.Name, argMetadata.TypeDef.ToType())
 		}
 		argTypes[argMetadata.Name] = &UserModFunctionArg{
 			metadata: argMetadata,
@@ -89,7 +89,7 @@ func NewModFunction(
 
 type CallOpts struct {
 	Inputs         []CallInput
-	ParentTyped    dagql.Typed
+	ParentTyped    dagql.AnyResult
 	ParentFields   map[string]any
 	Cache          bool
 	SkipSelfSchema bool
@@ -198,7 +198,7 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 
 func (fn *ModuleFunction) CacheConfigForCall(
 	ctx context.Context,
-	parent dagql.Object,
+	parent dagql.AnyResult,
 	args map[string]dagql.Input,
 	view dagql.View,
 	inputCfg dagql.CacheConfig,
@@ -263,7 +263,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	return cacheCfg, nil
 }
 
-func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typed, rerr error) { //nolint: gocyclo
+func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.AnyResult, rerr error) { //nolint: gocyclo
 	mod := fn.mod
 
 	lg := bklog.G(ctx).WithField("module", mod.Name()).WithField("function", fn.metadata.Name)
@@ -285,12 +285,25 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		ClientID:          identity.NewID(),
 		CallID:            dagql.CurrentID(ctx),
 		ExecID:            identity.NewID(),
-		CachePerSession:   !opts.Cache,
 		Internal:          true,
-		CacheByCall:       !opts.SkipCallDigestCacheKey,
 		ParentIDs:         map[digest.Digest]*resource.ID{},
 		AllowedLLMModules: clientMetadata.AllowedLLMModules,
 	}
+
+	var cacheMixins []string
+	if !opts.Cache {
+		// Scope the exec cache key to the current session ID. It will be
+		// cached in the context of the session but invalidated across
+		// different sessions.
+		cacheMixins = append(cacheMixins, clientMetadata.SessionID)
+	}
+	if !opts.SkipCallDigestCacheKey {
+		// If true, scope the exec cache key to the current dagql call digest. This is needed currently
+		// for module function calls specifically so that their cache key is based on their arguments and
+		// receiver object.
+		cacheMixins = append(cacheMixins, dagql.CurrentID(ctx).Digest().String())
+	}
+	execMD.CacheMixin = dagql.HashFrom(cacheMixins...)
 
 	callInputs, err := fn.setCallInputs(ctx, opts)
 	if err != nil {
@@ -328,8 +341,8 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		}
 	}
 
-	if mod.InstanceID != nil {
-		execMD.EncodedModuleID, err = mod.InstanceID.Encode()
+	if mod.ResultID != nil {
+		execMD.EncodedModuleID, err = mod.ResultID.Encode()
 		if err != nil {
 			return nil, fmt.Errorf("failed to encode module ID: %w", err)
 		}
@@ -348,37 +361,59 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to marshal function call: %w", err)
 	}
 
-	ctr := fn.runtime
+	srv := dagql.CurrentDagqlServer(ctx)
 
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current query: %w", err)
-	}
-	metaDir, err := NewScratchDirectory(ctx, query.Platform())
+	var metaDir dagql.ObjectResult[*Directory]
+	err = srv.Select(ctx, srv.Root(), &metaDir,
+		dagql.Selector{
+			Field: "directory",
+		},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create mod metadata directory: %w", err)
 	}
-	ctr, err = ctr.WithMountedDirectory(ctx, modMetaDirPath, metaDir, "", false)
-	if err != nil {
-		return nil, fmt.Errorf("failed to mount mod metadata directory: %w", err)
-	}
 
-	// Setup the Exec for the Function call and evaluate it
-	ctr, err = ctr.WithExec(ctx, ContainerExecOpts{
-		ExperimentalPrivilegedNesting: true,
-		NestedExecMetadata:            &execMD,
-		UseEntrypoint:                 true,
-	})
+	var ctr dagql.ObjectResult[*Container]
+	err = srv.Select(ctx, fn.runtime, &ctr,
+		dagql.Selector{
+			Field: "withMountedDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(modMetaDirPath)},
+				{Name: "source", Value: dagql.NewID[*Directory](metaDir.ID())},
+			},
+		},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to exec function: %w", err)
 	}
 
+	execCtx := ctx
+	execCtx = dagql.WithSkip(execCtx) // this span shouldn't be shown (it's entirely useless)
+	err = srv.Select(execCtx, ctr, &ctr,
+		dagql.Selector{
+			Field: "withExec",
+			Args: []dagql.NamedInput{
+				{Name: "args", Value: dagql.ArrayInput[dagql.String]{}},
+				{Name: "useEntrypoint", Value: dagql.NewBoolean(true)},
+				{Name: "experimentalPrivilegedNesting", Value: dagql.NewBoolean(true)},
+				{Name: "execMD", Value: dagql.NewSerializedString(&execMD)},
+			},
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to exec function: %w", err)
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	_, err = ctr.Evaluate(ctx)
+	_, err = ctr.Self().Evaluate(ctx)
 	if err != nil {
 		id, ok, extractErr := extractError(ctx, bk, err)
 		if extractErr != nil {
@@ -391,7 +426,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 			if err != nil {
 				return nil, fmt.Errorf("failed to load error instance: %w", err)
 			}
-			dagErr := errInst.Self
+			dagErr := errInst.Self().Clone()
 			originCtx := trace.SpanContextFromContext(
 				telemetry.Propagator.Extract(
 					context.Background(),
@@ -424,7 +459,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		}
 	}
 
-	ctrOutputDir, err := ctr.Directory(ctx, modMetaDirPath)
+	ctrOutputDir, err := ctr.Self().Directory(ctx, modMetaDirPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get function output directory: %w", err)
 	}
@@ -445,14 +480,14 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to read function output file: %w", err)
 	}
 
-	var returnValue any
+	var returnValueAny any
 	dec := json.NewDecoder(strings.NewReader(string(outputBytes)))
 	dec.UseNumber()
-	if err := dec.Decode(&returnValue); err != nil {
+	if err := dec.Decode(&returnValueAny); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal result: %w", err)
 	}
 
-	returnValueTyped, err := fn.returnType.ConvertFromSDKResult(ctx, returnValue)
+	returnValue, err := fn.returnType.ConvertFromSDKResult(ctx, returnValueAny)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert return value: %w", err)
 	}
@@ -460,7 +495,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	// Get the client ID actually used during the function call - this might not
 	// be the same as execMD.ClientID if the function call was cached at the
 	// buildkit level
-	clientID, err := ctr.usedClientID(ctx)
+	clientID, err := ctr.Self().usedClientID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not get used client id")
 	}
@@ -468,7 +503,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	// If the function returned anything that's isolated per-client, this caller client should
 	// have access to it now since it was returned to them (i.e. secrets/sockets/etc).
 	returnedIDs := map[digest.Digest]*resource.ID{}
-	if err := fn.returnType.CollectCoreIDs(ctx, returnValueTyped, returnedIDs); err != nil {
+	if err := fn.returnType.CollectCoreIDs(ctx, returnValue, returnedIDs); err != nil {
 		return nil, fmt.Errorf("failed to collect IDs: %w", err)
 	}
 
@@ -487,7 +522,9 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	if err != nil {
 		return nil, fmt.Errorf("failed to create secret transfer post call: %w", err)
 	}
-	return dagql.NewPostCallTyped(returnValueTyped, secretTransferPostCall), nil
+
+	returnValue = returnValue.WithPostCall(secretTransferPostCall)
+	return returnValue, nil
 }
 
 func extractError(ctx context.Context, client *buildkit.Client, baseErr error) (dagql.ID[*Error], bool, error) {
@@ -501,26 +538,15 @@ func extractError(ctx context.Context, client *buildkit.Client, baseErr error) (
 		}()
 	}
 
-	var opErr *solvererror.OpError
-	if !errors.As(baseErr, &opErr) {
+	var ierr buildkit.RichError
+	if !errors.As(baseErr, &ierr) {
 		return id, false, nil
 	}
-	op := opErr.Op
-	if op == nil || op.Op == nil {
-		return id, false, nil
-	}
-	execOp, ok := op.Op.(*bksolverpb.Op_Exec)
-	if !ok {
-		return id, false, nil
-	}
-
-	// This was an exec error, we will retrieve the exec's output and include
-	// it in the error message
 
 	// get the mnt containing module response data (in this case, the error ID)
 	var metaMountResult bksolver.Result
 	var foundMounts []string
-	for i, mnt := range execOp.Exec.Mounts {
+	for i, mnt := range ierr.Mounts {
 		foundMounts = append(foundMounts, mnt.Dest)
 		if mnt.Dest == modMetaDirPath {
 			metaMountResult = execErr.Mounts[i]
@@ -541,7 +567,7 @@ func extractError(ctx context.Context, client *buildkit.Client, baseErr error) (
 		return id, false, errors.Join(err, baseErr)
 	}
 
-	idBytes, err := buildkit.ReadSnapshotPath(ctx, client, mntable, modMetaErrorPath)
+	idBytes, err := buildkit.ReadSnapshotPath(ctx, client, mntable, modMetaErrorPath, -1)
 	if err != nil {
 		return id, false, errors.Join(err, baseErr)
 	}
@@ -568,7 +594,7 @@ func (fn *ModuleFunction) ArgType(argName string) (ModType, error) {
 func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {
 	props[prefix+"module_name"] = mod.Name()
 
-	source := mod.Source.Self
+	source := mod.ContextSource.Self()
 	switch source.Kind {
 	case ModuleSourceKindLocal:
 		props[prefix+"source_kind"] = "local"
@@ -609,7 +635,7 @@ func (fn *ModuleFunction) loadContextualArg(
 	case "Directory":
 		slog.Debug("moduleFunction.loadContextualArg: loading contextual directory", "fn", arg.Name, "dir", arg.DefaultPath)
 
-		dir, err := fn.mod.Source.Self.LoadContext(ctx, dag, arg.DefaultPath, arg.Ignore)
+		dir, err := fn.mod.ContextSource.Self().LoadContext(ctx, dag, arg.DefaultPath, arg.Ignore)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", arg.DefaultPath, err)
 		}
@@ -623,7 +649,7 @@ func (fn *ModuleFunction) loadContextualArg(
 		filePath := filepath.Base(arg.DefaultPath)
 
 		// Load the directory containing the file.
-		dir, err := fn.mod.Source.Self.LoadContext(ctx, dag, dirPath, nil)
+		dir, err := fn.mod.ContextSource.Self().LoadContext(ctx, dag, dirPath, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", dirPath, err)
 		}
@@ -664,7 +690,7 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 	}
 
 	applyIgnore := func(dir dagql.IDable) (JSON, error) {
-		var ignoredDir dagql.Instance[*Directory]
+		var ignoredDir dagql.Result[*Directory]
 
 		err := dag.Select(ctx, dag.Root(), &ignoredDir,
 			dagql.Selector{

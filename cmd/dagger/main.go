@@ -33,6 +33,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
+	"mvdan.cc/sh/v3/interp"
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -58,6 +59,7 @@ var (
 	silent                   bool
 	verbose                  int
 	quiet, _                 = strconv.Atoi(os.Getenv("DAGGER_QUIET"))
+	reveal                   = os.Getenv("DAGGER_REVEAL") != ""
 	debug                    bool
 	progress                 string
 	interactive              bool
@@ -78,6 +80,14 @@ var (
 
 	Frontend idtui.Frontend
 )
+
+func init() {
+	// allow user explicitly setting progress via env, but default it to "auto"
+	// otherwise
+	if progress == "" {
+		progress = "auto"
+	}
+}
 
 var (
 	stdin          io.Reader
@@ -322,7 +332,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
 	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
 	flags.BoolVarP(&debug, "debug", "d", debug, "Show debug logs and full verbosity")
-	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty)")
+	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty, dots)")
 	flags.BoolVarP(&interactive, "interactive", "i", false, "Spawn a terminal on container exec failure")
 	flags.StringVar(&interactiveCommand, "interactive-command", "/bin/sh", "Change the default command for interactive mode")
 	flags.BoolVarP(&web, "web", "w", false, "Open trace URL in a web browser")
@@ -399,6 +409,10 @@ func Resource(ctx context.Context) *resource.Resource {
 // exit gracefully and flush output.
 type ExitError struct {
 	Code int
+
+	// An optional originating error, for any code paths that go looking for it,
+	// e.g. telemetry.End which looks for error origins.
+	Original error
 }
 
 var Fail = ExitError{Code: 1}
@@ -406,6 +420,10 @@ var Fail = ExitError{Code: 1}
 func (e ExitError) Error() string {
 	// Not actually printed anywhere.
 	return fmt.Sprintf("exit code %d", e.Code)
+}
+
+func (e ExitError) Unwrap() error {
+	return e.Original
 }
 
 const InstrumentationLibrary = "dagger.io/cli"
@@ -419,13 +437,18 @@ func main() {
 	opts.Verbosity -= quiet                        // lower verbosity with -q
 	opts.Silent = silent                           // show no progress
 	opts.Debug = debug                             // show everything
+	opts.RevealNoisySpans = reveal                 // disable 'reveal: true' mechanic (for tests)
 	opts.OpenWeb = web
 	opts.NoExit = noExit
 	opts.DotOutputFilePath = dotOutputFilePath
 	opts.DotFocusField = dotFocusField
 	opts.DotShowInternal = dotShowInternal
 	if progress == "auto" {
-		if hasTTY {
+		if env := os.Getenv("DAGGER_PROGRESS"); env != "" {
+			progress = env
+		} else if os.Getenv("CLAUDECODE") == "1" {
+			progress = "report"
+		} else if hasTTY {
 			progress = "tty"
 		} else {
 			progress = "plain"
@@ -444,6 +467,8 @@ func main() {
 			os.Exit(1)
 		}
 		Frontend = idtui.NewPretty(stderr)
+	case "dots":
+		Frontend = idtui.NewDots(stderr)
 	case "report":
 		Frontend = idtui.NewReporter(stderr)
 	default:
@@ -469,14 +494,19 @@ func main() {
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		stop()
 		var exit ExitError
-		if errors.As(err, &exit) {
+		switch {
+		case errors.As(err, &exit):
 			os.Exit(exit.Code)
-		} else if errors.Is(err, idtui.ErrShellExited) {
+		case errors.Is(err, idtui.ErrShellExited):
 			os.Exit(0)
-		} else if errors.Is(err, context.Canceled) || errors.Is(err, idtui.ErrInterrupted) {
+		case errors.Is(err, context.Canceled) || errors.Is(err, idtui.ErrInterrupted):
 			os.Exit(2)
-		} else {
+		default:
 			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+			var es interp.ExitStatus
+			if errors.As(err, &es) {
+				os.Exit(int(es))
+			}
 			os.Exit(1)
 		}
 	}

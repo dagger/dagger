@@ -62,7 +62,6 @@ func customProxyTests(
 	httpServer := nginxWithCerts(c, nginxWithCertsOpts{
 		serverCert: httpServerCert,
 		serverKey:  httpServerKey,
-		dhParam:    certGen.dhParam,
 		dnsName:    httpServerAlias,
 		msg:        "whatup",
 	})
@@ -79,7 +78,6 @@ func customProxyTests(
 	noproxyHTTPServer := nginxWithCerts(c, nginxWithCertsOpts{
 		serverCert: noproxyHTTPServerCert,
 		serverKey:  noproxyHTTPServerKey,
-		dhParam:    certGen.dhParam,
 		dnsName:    noproxyHTTPServerAlias,
 		msg:        "whatup",
 	})
@@ -122,7 +120,7 @@ refresh_pattern .               0       20%     4320
 
 http_port 3128
 ssl_bump bump all
-https_port 3129 generate-host-certificates=on tls-cert=/etc/squid/server.pem tls-key=/etc/squid/serverkey.pem tls-dh=/etc/squid/dhparam.pem
+https_port 3129 generate-host-certificates=on tls-cert=/etc/squid/server.pem tls-key=/etc/squid/serverkey.pem
 
 http_access deny !Safe_ports
 http_access deny CONNECT !SSL_ports
@@ -153,7 +151,6 @@ redirect ^(https?://)(.*).example(/.*)$		$1$2$3
 		WithExec([]string{"update-ca-certificates"}).
 		WithMountedFile("/etc/squid/server.pem", squidCert).
 		WithMountedFile("/etc/squid/serverkey.pem", squidKey).
-		WithMountedFile("/etc/squid/dhparam.pem", certGen.dhParam).
 		WithExec([]string{"chmod", "u+s", "/usr/lib/squid/basic_getpwnam_auth"}).
 		WithMountedCache("/var/log/squidaccess", squidLogsVolume).
 		WithExposedPort(3128).
@@ -230,6 +227,12 @@ redirect ^(https?://)(.*).example(/.*)$		$1$2$3
 			With(goCache(c)).
 			WithMountedDirectory("/src", thisRepo).
 			WithWorkdir("/src").
+			WithExec([]string{
+				"go", "test",
+				"-c",
+				"-o", "./test",
+				"./core/integration",
+			}).
 			WithMountedFile("/ca.pem", certGen.caRootCert).
 			WithServiceBinding("engine", devEngineContainerAsService(devEngine)).
 			WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
@@ -237,12 +240,11 @@ redirect ^(https?://)(.*).example(/.*)$		$1$2$3
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://engine:1234").
 			WithEnvVariable(executeTestEnvName, "ya").
 			WithExec([]string{
-				"go", "test",
-				"-v",
-				"-timeout", "20m",
-				"-count", "1",
-				"-run", exactName,
-				"./core/integration",
+				"./test",
+				"-test.v",
+				"-test.timeout", "20m",
+				"-test.count", "1",
+				"-test.run", exactName,
 			}).Sync(ctx)
 		require.NoError(t, err)
 
@@ -469,6 +471,114 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 }
 
 func (ContainerSuite) TestSystemGoProxy(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Just a subset of modules we expect to be downloaded since trying to go one to one would
+	// be too fragile whenever the SDK changes.
+	// NOTE: this is also impacted by engine pre-caching of SDK deps, so what shows up here are
+	// deps in testGitModuleRef that aren't pre-cached.
+	// If updating this test becomes a nuisance, we might want to use a custom test git module ref
+	// that specifically has some extra deps not in the Go SDK.
+	expectedGoModDownloads := []string{
+		"github.com/andreyvit/diff",
+		"github.com/davecgh/go-spew",
+		"github.com/go-logr/logr",
+	}
+
+	executeTestEnvName := fmt.Sprintf("DAGGER_TEST_%s", strings.ToUpper(t.Name()))
+	if os.Getenv(executeTestEnvName) == "" {
+		const goProxyAlias = "goproxy"
+		const goProxyPort = 8080
+		goProxySetting := fmt.Sprintf("http://%s:%d", goProxyAlias, goProxyPort)
+
+		fetcher := &goProxyFetcher{dlPaths: make(map[string]struct{})}
+		proxy := &goproxy.Goproxy{Fetcher: fetcher}
+
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			l.Close()
+		})
+		port := l.Addr().(*net.TCPAddr).Port
+
+		goProxyCtx, cancelGoProxy := context.WithCancel(ctx)
+		t.Cleanup(cancelGoProxy)
+		srv := http.Server{
+			Handler:           proxy,
+			ReadHeaderTimeout: 30 * time.Second,
+			BaseContext: func(net.Listener) context.Context {
+				return goProxyCtx
+			},
+		}
+		t.Cleanup(func() {
+			srv.Shutdown(context.Background())
+		})
+
+		goProxyDone := make(chan error, 1)
+		go func() {
+			goProxyDone <- srv.Serve(l)
+		}()
+
+		goProxySvc := c.Host().Service([]dagger.PortForward{{
+			Backend:  port,
+			Frontend: goProxyPort,
+		}})
+
+		devEngine := devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithServiceBinding(goProxyAlias, goProxySvc).
+				WithEnvVariable("_DAGGER_ENGINE_SYSTEMENV_GOPROXY", goProxySetting)
+		})
+
+		thisRepoPath, err := filepath.Abs("../..")
+		require.NoError(t, err)
+		thisRepo := c.Host().Directory(thisRepoPath)
+
+		_, err = c.Container().From(golangImage).
+			With(goCache(c)).
+			WithMountedDirectory("/src", thisRepo).
+			WithWorkdir("/src").
+			WithExec([]string{
+				"go", "test",
+				"-c",
+				"-o", "./test",
+				"./core/integration",
+			}).
+			WithServiceBinding("engine", devEngineContainerAsService(devEngine)).
+			WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://engine:1234").
+			WithEnvVariable(executeTestEnvName, "ya").
+			WithExec([]string{
+				"./test",
+				"-test.v",
+				"-test.timeout", "20m",
+				"-test.count", "1",
+				"-test.run", fmt.Sprintf("^%s$", t.Name()),
+			}).
+			Sync(ctx)
+		require.NoError(t, err)
+
+		select {
+		case err := <-goProxyDone:
+			require.NoError(t, err)
+		default:
+		}
+
+		fetcher.mu.Lock()
+		defer fetcher.mu.Unlock()
+		require.NotEmpty(t, fetcher.dlPaths)
+		for _, expectedPath := range expectedGoModDownloads {
+			require.Contains(t, fetcher.dlPaths, expectedPath)
+		}
+
+		return
+	}
+
+	// we're in the container depending on the custom engine, run the actual tests
+	ctr := goGitBase(t, c).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 		if tc.skipProxyTest {
 			t.Skip("test explicitly not supported")
@@ -478,108 +588,6 @@ func (ContainerSuite) TestSystemGoProxy(ctx context.Context, t *testctx.T) {
 			t.Skip("testing goproxy with creds is not supported")
 			return
 		}
-
-		c := connect(ctx, t)
-
-		// Just a subset of modules we expect to be downloaded since trying to go one to one would
-		// be too fragile whenever the SDK changes.
-		// NOTE: this is also impacted by engine pre-caching of SDK deps, so what shows up here are
-		// deps in testGitModuleRef that aren't pre-cached.
-		// If updating this test becomes a nuisance, we might want to use a custom test git module ref
-		// that specifically has some extra deps not in the Go SDK.
-		expectedGoModDownloads := []string{
-			"github.com/andreyvit/diff",
-			"github.com/davecgh/go-spew",
-			"github.com/go-logr/logr",
-		}
-
-		executeTestEnvName := fmt.Sprintf("DAGGER_TEST_%s", strings.ToUpper(t.Name()))
-		if os.Getenv(executeTestEnvName) == "" {
-			const goProxyAlias = "goproxy"
-			const goProxyPort = 8080
-			goProxySetting := fmt.Sprintf("http://%s:%d", goProxyAlias, goProxyPort)
-
-			fetcher := &goProxyFetcher{dlPaths: make(map[string]struct{})}
-			proxy := &goproxy.Goproxy{Fetcher: fetcher}
-
-			l, err := net.Listen("tcp", "127.0.0.1:0")
-			require.NoError(t, err)
-			t.Cleanup(func() {
-				l.Close()
-			})
-			port := l.Addr().(*net.TCPAddr).Port
-
-			goProxyCtx, cancelGoProxy := context.WithCancel(ctx)
-			t.Cleanup(cancelGoProxy)
-			srv := http.Server{
-				Handler:           proxy,
-				ReadHeaderTimeout: 30 * time.Second,
-				BaseContext: func(net.Listener) context.Context {
-					return goProxyCtx
-				},
-			}
-			t.Cleanup(func() {
-				srv.Shutdown(context.Background())
-			})
-
-			goProxyDone := make(chan error, 1)
-			go func() {
-				goProxyDone <- srv.Serve(l)
-			}()
-
-			goProxySvc := c.Host().Service([]dagger.PortForward{{
-				Backend:  port,
-				Frontend: goProxyPort,
-			}})
-
-			devEngine := devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
-				return ctr.
-					WithServiceBinding(goProxyAlias, goProxySvc).
-					WithEnvVariable("_DAGGER_ENGINE_SYSTEMENV_GOPROXY", goProxySetting)
-			})
-
-			thisRepoPath, err := filepath.Abs("../..")
-			require.NoError(t, err)
-			thisRepo := c.Host().Directory(thisRepoPath)
-
-			_, err = c.Container().From(golangImage).
-				With(goCache(c)).
-				WithMountedDirectory("/src", thisRepo).
-				WithWorkdir("/src").
-				WithServiceBinding("engine", devEngineContainerAsService(devEngine)).
-				WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
-				WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
-				WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://engine:1234").
-				WithEnvVariable(executeTestEnvName, "ya").
-				WithExec([]string{
-					"go", "test",
-					"-v",
-					"-timeout", "20m",
-					"-count", "1",
-					"-run", fmt.Sprintf("^%s$", t.Name()),
-					"./core/integration",
-				}).Sync(ctx)
-			require.NoError(t, err)
-
-			select {
-			case err := <-goProxyDone:
-				require.NoError(t, err)
-			default:
-			}
-
-			fetcher.mu.Lock()
-			defer fetcher.mu.Unlock()
-			require.NotEmpty(t, fetcher.dlPaths)
-			for _, expectedPath := range expectedGoModDownloads {
-				require.Contains(t, fetcher.dlPaths, expectedPath)
-			}
-
-			return
-		}
-
-		// we're in the container depending on the custom engine, run the actual tests
-		ctr := goGitBase(t, c).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
 
 		out, err := ctr.
 			With(daggerCallAt(testGitModuleRef(tc, "top-level"), "fn")).

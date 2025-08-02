@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -26,6 +27,7 @@ import (
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	"github.com/moby/buildkit/frontend/dockerui"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/opencontainers/go-digest"
@@ -122,6 +124,9 @@ func (*Container) TypeDescription() string {
 var _ HasPBDefinitions = (*Container)(nil)
 
 func (container *Container) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
+	if container == nil {
+		return nil, nil
+	}
 	var defs []*pb.Definition
 	if container.FS != nil {
 		defs = append(defs, container.FS)
@@ -132,7 +137,7 @@ func (container *Container) PBDefinitions(ctx context.Context) ([]*pb.Definition
 		}
 	}
 	for _, bnd := range container.Services {
-		ctr := bnd.Service.Self.Container
+		ctr := bnd.Service.Self().Container
 		if ctr == nil {
 			continue
 		}
@@ -154,6 +159,9 @@ func NewContainer(platform Platform) (*Container, error) {
 // Clone returns a deep copy of the container suitable for modifying in a
 // WithXXX method.
 func (container *Container) Clone() *Container {
+	if container == nil {
+		return nil
+	}
 	cp := *container
 	cp.Config.ExposedPorts = maps.Clone(cp.Config.ExposedPorts)
 	cp.Config.Env = slices.Clone(cp.Config.Env)
@@ -168,6 +176,24 @@ func (container *Container) Clone() *Container {
 	cp.Services = slices.Clone(cp.Services)
 	cp.SystemEnvNames = slices.Clone(cp.SystemEnvNames)
 	return &cp
+}
+
+func (container *Container) WithoutInputs() *Container {
+	container = container.Clone()
+
+	container.FS = nil
+	container.FSResult = nil
+
+	container.Meta = nil
+	container.MetaResult = nil
+
+	for i, mount := range container.Mounts {
+		mount.Source = nil
+		mount.Result = nil
+		container.Mounts[i] = mount
+	}
+
+	return container
 }
 
 var _ dagql.OnReleaser = (*Container)(nil)
@@ -211,7 +237,7 @@ func (owner Ownership) Opt() llb.ChownOption {
 // ContainerSecret configures a secret to expose, either as an environment
 // variable or mounted to a file path.
 type ContainerSecret struct {
-	Secret    dagql.Instance[*Secret]
+	Secret    dagql.ObjectResult[*Secret]
 	EnvName   string
 	MountPath string
 	Owner     *Ownership
@@ -440,7 +466,7 @@ func (container *Container) Build(
 	dockerfile string,
 	buildArgs []BuildArg,
 	target string,
-	secrets []dagql.Instance[*Secret],
+	secrets []dagql.ObjectResult[*Secret],
 	secretStore *SecretStore,
 	noInit bool,
 ) (*Container, error) {
@@ -510,11 +536,14 @@ func (container *Container) Build(
 		dockerui.DefaultLocalNameDockerfile: dockerfileDir.LLB,
 	}
 
-	// FIXME: ew, this is a terrible way to pass this around
-	//nolint:staticcheck
-	solveCtx := context.WithValue(ctx, "secret-translator", func(name string) (string, error) {
+	// FIXME: this is a terrible way to pass this around
+	solveCtx := buildkit.WithSecretTranslator(ctx, func(name string, optional bool) (string, error) {
 		llbID, ok := secretNameToLLBID[name]
 		if !ok {
+			if optional {
+				// set to a purposely invalid name, so we don't get something else
+				return "notfound:" + identity.NewID(), nil
+			}
 			return "", fmt.Errorf("secret not found: %s", name)
 		}
 		return llbID, nil
@@ -659,7 +688,7 @@ func (container *Container) WithDirectory(ctx context.Context, subdir string, sr
 	})
 }
 
-func (container *Container) WithFile(ctx context.Context, destPath string, src *File, permissions *int, owner string) (*Container, error) {
+func (container *Container) WithFile(ctx context.Context, srv *dagql.Server, destPath string, src *File, permissions *int, owner string) (*Container, error) {
 	container = container.Clone()
 
 	dir, file := filepath.Split(filepath.Clean(destPath))
@@ -669,17 +698,17 @@ func (container *Container) WithFile(ctx context.Context, destPath string, src *
 			return nil, err
 		}
 
-		return dir.WithFile(ctx, file, src, permissions, ownership)
+		return dir.WithFile(ctx, srv, file, src, permissions, ownership)
 	})
 }
 
-func (container *Container) WithoutPaths(ctx context.Context, destPaths ...string) (*Container, error) {
+func (container *Container) WithoutPaths(ctx context.Context, srv *dagql.Server, destPaths ...string) (*Container, error) {
 	container = container.Clone()
 
 	for _, destPath := range destPaths {
 		var err error
 		container, err = container.writeToPath(ctx, path.Dir(destPath), func(dir *Directory) (*Directory, error) {
-			return dir.Without(ctx, path.Base(destPath))
+			return dir.Without(ctx, srv, path.Base(destPath))
 		})
 		if err != nil {
 			return nil, err
@@ -688,7 +717,7 @@ func (container *Container) WithoutPaths(ctx context.Context, destPaths ...strin
 	return container, nil
 }
 
-func (container *Container) WithFiles(ctx context.Context, destDir string, src []*File, permissions *int, owner string) (*Container, error) {
+func (container *Container) WithFiles(ctx context.Context, srv *dagql.Server, destDir string, src []*File, permissions *int, owner string) (*Container, error) {
 	container = container.Clone()
 
 	dir, file := filepath.Split(filepath.Clean(destDir))
@@ -698,7 +727,7 @@ func (container *Container) WithFiles(ctx context.Context, destDir string, src [
 			return nil, err
 		}
 
-		return dir.WithFiles(ctx, file, src, permissions, ownership)
+		return dir.WithFiles(ctx, srv, file, src, permissions, ownership)
 	})
 }
 
@@ -712,7 +741,7 @@ func (container *Container) WithNewFile(ctx context.Context, dest string, conten
 			return nil, err
 		}
 
-		return dir.WithNewFile(ctx, file, content, permissions, ownership)
+		return dir.WithNewFileDagOp(ctx, file, content, permissions, ownership)
 	})
 }
 
@@ -801,7 +830,7 @@ func (container *Container) WithMountedTemp(ctx context.Context, target string, 
 func (container *Container) WithMountedSecret(
 	ctx context.Context,
 	target string,
-	source dagql.Instance[*Secret],
+	source dagql.ObjectResult[*Secret],
 	owner string,
 	mode fs.FileMode,
 ) (*Container, error) {
@@ -917,7 +946,7 @@ func (container *Container) WithoutUnixSocket(ctx context.Context, target string
 func (container *Container) WithSecretVariable(
 	ctx context.Context,
 	name string,
-	secret dagql.Instance[*Secret],
+	secret dagql.ObjectResult[*Secret],
 ) (*Container, error) {
 	container = container.Clone()
 
@@ -1215,6 +1244,12 @@ func (container *Container) writeToPath(ctx context.Context, subdir string, fn f
 		return nil, err
 	}
 
+	if mount == nil {
+		dir.Result = container.FSResult
+	} else {
+		dir.Result = mount.Result
+	}
+
 	dir, err = fn(dir)
 	if err != nil {
 		return nil, err
@@ -1231,6 +1266,14 @@ func (container *Container) writeToPath(ctx context.Context, subdir string, fn f
 	}
 
 	return container.replaceMount(ctx, mount.Target, dir.LLB, dir.Result, mount.SourcePath, nil, "", false)
+}
+
+func (container *Container) runUnderPath(subdir string, fn func(dir *Directory) error) error {
+	dir, _, err := locatePath(container, subdir, NewDirectory)
+	if err != nil {
+		return err
+	}
+	return fn(dir)
 }
 
 func (container *Container) ImageConfig(ctx context.Context) (specs.ImageConfig, error) {
@@ -1253,7 +1296,10 @@ func (container *Container) WithGPU(ctx context.Context, gpuOpts ContainerGPUOpt
 	return container, nil
 }
 
-func (container Container) Evaluate(ctx context.Context) (*buildkit.Result, error) {
+func (container *Container) Evaluate(ctx context.Context) (*buildkit.Result, error) {
+	if container == nil {
+		return nil, nil
+	}
 	if container.FS == nil {
 		return nil, nil
 	}
@@ -1290,6 +1336,17 @@ func (container Container) Evaluate(ctx context.Context) (*buildkit.Result, erro
 		Evaluate:   true,
 		Definition: def.ToPB(),
 	})
+}
+
+func (container *Container) Exists(ctx context.Context, srv *dagql.Server, targetPath string, targetType ExistsType, doNotFollowSymlinks bool) (bool, error) {
+	dir, targetPath := filepath.Split(filepath.Clean(targetPath))
+	exists := false
+	err := container.runUnderPath(dir, func(dir *Directory) error {
+		var err error
+		exists, err = dir.Exists(ctx, srv, targetPath, targetType, doNotFollowSymlinks)
+		return err
+	})
+	return exists, err
 }
 
 func (container *Container) WithAnnotation(ctx context.Context, key, value string) (*Container, error) {
@@ -1442,26 +1499,33 @@ func (container *Container) Publish(
 	return ref, nil
 }
 
+type ExportOpts struct {
+	Dest              string
+	PlatformVariants  []*Container
+	ForcedCompression ImageLayerCompression
+	MediaTypes        ImageMediaTypes
+	Tar               bool
+	LeaseID           string
+}
+
 func (container *Container) Export(
 	ctx context.Context,
-	dest string,
-	platformVariants []*Container,
-	forcedCompression ImageLayerCompression,
-	mediaTypes ImageMediaTypes,
-) error {
+	opts ExportOpts,
+) (*specs.Descriptor, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	svcs, err := query.Services(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get services: %w", err)
+		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get buildkit client: %w", err)
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
+	mediaTypes := opts.MediaTypes
 	if mediaTypes == "" {
 		// Modern registry implementations support oci types and docker daemons
 		// have been capable of pulling them since 2018:
@@ -1470,37 +1534,43 @@ func (container *Container) Export(
 		mediaTypes = OCIMediaTypes
 	}
 
-	opts := map[string]string{
-		"tar":                           strconv.FormatBool(true),
+	bkopts := map[string]string{
+		"tar":                           strconv.FormatBool(opts.Tar),
 		string(exptypes.OptKeyOCITypes): strconv.FormatBool(mediaTypes == OCIMediaTypes),
 	}
-	if forcedCompression != "" {
-		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(string(forcedCompression))
-		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
+
+	if !opts.Tar {
+		bkopts["store"] = "export"
+		bkopts["lease"] = opts.LeaseID
+	}
+
+	if opts.ForcedCompression != "" {
+		bkopts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(string(opts.ForcedCompression))
+		bkopts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
 	}
 
 	inputByPlatform := map[string]buildkit.ContainerExport{}
 	services := ServiceBindings{}
 
-	variants := append([]*Container{container}, platformVariants...)
+	variants := append([]*Container{container}, opts.PlatformVariants...)
 	for _, variant := range variants {
 		if variant.FS == nil {
 			continue
 		}
 		st, err := variant.FSState()
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		platformSpec := variant.Platform.Spec()
 		def, err := st.Marshal(ctx, llb.Platform(platformSpec))
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		platformString := variant.Platform.Format()
 		if _, ok := inputByPlatform[platformString]; ok {
-			return fmt.Errorf("duplicate platform %q", platformString)
+			return nil, fmt.Errorf("duplicate platform %q", platformString)
 		}
 		inputByPlatform[platformString] = buildkit.ContainerExport{
 			Definition: def.ToPB(),
@@ -1510,14 +1580,14 @@ func (container *Container) Export(
 		if len(variants) == 1 {
 			// single platform case
 			for _, annotation := range variant.Annotations {
-				opts[exptypes.AnnotationManifestKey(nil, annotation.Key)] = annotation.Value
-				opts[exptypes.AnnotationManifestDescriptorKey(nil, annotation.Key)] = annotation.Value
+				bkopts[exptypes.AnnotationManifestKey(nil, annotation.Key)] = annotation.Value
+				bkopts[exptypes.AnnotationManifestDescriptorKey(nil, annotation.Key)] = annotation.Value
 			}
 		} else {
 			// multi platform case
 			for _, annotation := range variant.Annotations {
-				opts[exptypes.AnnotationManifestKey(&platformSpec, annotation.Key)] = annotation.Value
-				opts[exptypes.AnnotationManifestDescriptorKey(&platformSpec, annotation.Key)] = annotation.Value
+				bkopts[exptypes.AnnotationManifestKey(&platformSpec, annotation.Key)] = annotation.Value
+				bkopts[exptypes.AnnotationManifestDescriptorKey(&platformSpec, annotation.Key)] = annotation.Value
 			}
 		}
 
@@ -1525,17 +1595,34 @@ func (container *Container) Export(
 	}
 	if len(inputByPlatform) == 0 {
 		// Could also just ignore and do nothing, airing on side of error until proven otherwise.
-		return errors.New("no containers to export")
+		return nil, errors.New("no containers to export")
 	}
 
 	detach, _, err := svcs.StartBindings(ctx, services)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer detach()
 
-	_, err = bk.ExportContainerImage(ctx, inputByPlatform, dest, opts)
-	return err
+	resp, err := bk.ExportContainerImage(ctx, inputByPlatform, opts.Dest, bkopts)
+	if err != nil {
+		return nil, err
+	}
+	encodedDesc, ok := resp[exptypes.ExporterImageDescriptorKey]
+	if !ok {
+		return nil, fmt.Errorf("exporter response missing %s", exptypes.ExporterImageDescriptorKey)
+	}
+	rawDesc, err := base64.StdEncoding.DecodeString(encodedDesc)
+	if err != nil {
+		return nil, fmt.Errorf("failed decoding descriptor: %w", err)
+	}
+
+	var desc specs.Descriptor
+	err = json.Unmarshal(rawDesc, &desc)
+	if err != nil {
+		return nil, fmt.Errorf("failed decoding descriptor: %w", err)
+	}
+	return &desc, nil
 }
 
 func (container *Container) Import(
@@ -1693,10 +1780,10 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 	return container, nil
 }
 
-func (container *Container) WithServiceBinding(ctx context.Context, svc dagql.Instance[*Service], alias string) (*Container, error) {
+func (container *Container) WithServiceBinding(ctx context.Context, svc dagql.ObjectResult[*Service], alias string) (*Container, error) {
 	container = container.Clone()
 
-	host, err := svc.Self.Hostname(ctx, svc.ID())
+	host, err := svc.Self().Hostname(ctx, svc.ID())
 	if err != nil {
 		return nil, err
 	}
@@ -1747,22 +1834,6 @@ type ContainerAsServiceArgs struct {
 	NoInit bool `default:"false"`
 }
 
-func (container *Container) AsServiceLegacy(ctx context.Context) (*Service, error) {
-	if container.Meta == nil {
-		var err error
-		container, err = container.WithExec(ctx, ContainerExecOpts{
-			UseEntrypoint: true,
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-	return &Service{
-		Creator:   trace.SpanContextFromContext(ctx),
-		Container: container,
-	}, nil
-}
-
 func (container *Container) AsService(ctx context.Context, args ContainerAsServiceArgs) (*Service, error) {
 	if len(args.Args) == 0 &&
 		len(container.Config.Cmd) == 0 &&
@@ -1783,21 +1854,17 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 		}
 	}
 
-	container, err := container.WithExec(ctx, ContainerExecOpts{
-		Args:                          cmdargs,
-		UseEntrypoint:                 useEntrypoint,
-		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
-		InsecureRootCapabilities:      args.InsecureRootCapabilities,
-		Expand:                        args.Expand,
-		NoInit:                        args.NoInit,
-	})
-	if err != nil {
-		return nil, err
+	if len(container.Config.Entrypoint) > 0 && useEntrypoint {
+		cmdargs = append(container.Config.Entrypoint, cmdargs...)
 	}
 
 	return &Service{
-		Creator:   trace.SpanContextFromContext(ctx),
-		Container: container,
+		Creator:                       trace.SpanContextFromContext(ctx),
+		Container:                     container,
+		Args:                          cmdargs,
+		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
+		InsecureRootCapabilities:      args.InsecureRootCapabilities,
+		NoInit:                        args.NoInit,
 	}, nil
 }
 
@@ -1918,11 +1985,14 @@ type ImageLayerCompression string
 var ImageLayerCompressions = dagql.NewEnum[ImageLayerCompression]()
 
 var (
-	// FIXME: should be canonicalized as GZIP, ZSTD, ESTARGZ, UNCOMPRESSED
 	CompressionGzip         = ImageLayerCompressions.Register("Gzip")
+	_                       = ImageLayerCompressions.AliasView("GZIP", "Gzip", enumView)
 	CompressionZstd         = ImageLayerCompressions.Register("Zstd")
+	_                       = ImageLayerCompressions.AliasView("ZSTD", "Zstd", enumView)
 	CompressionEStarGZ      = ImageLayerCompressions.Register("EStarGZ")
+	_                       = ImageLayerCompressions.AliasView("ESTARGZ", "EStarGZ", enumView)
 	CompressionUncompressed = ImageLayerCompressions.Register("Uncompressed")
+	_                       = ImageLayerCompressions.AliasView("UNCOMPRESSED", "Uncompressed", enumView)
 )
 
 func (proto ImageLayerCompression) Type() *ast.Type {
@@ -1949,9 +2019,10 @@ type ImageMediaTypes string
 var ImageMediaTypesEnum = dagql.NewEnum[ImageMediaTypes]()
 
 var (
-	// FIXME: should be canonicalized as OCI_MEDIA_TYPES, DOCKER_MEDIA_TYPES
 	OCIMediaTypes    = ImageMediaTypesEnum.Register("OCIMediaTypes")
+	_                = ImageMediaTypesEnum.AliasView("OCI", "OCIMediaTypes", enumView)
 	DockerMediaTypes = ImageMediaTypesEnum.Register("DockerMediaTypes")
+	_                = ImageMediaTypesEnum.AliasView("DOCKER", "DockerMediaTypes", enumView)
 )
 
 func (proto ImageMediaTypes) Type() *ast.Type {

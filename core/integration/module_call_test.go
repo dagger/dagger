@@ -769,6 +769,65 @@ func (m *Test) ToPlatforms(platforms []string) []dagger.Platform {
 		})
 	})
 
+	t.Run("build args", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("Dockerfile", `
+FROM scratch
+
+ARG OS=linux
+ARG ARCH=amd64
+
+ENV PLATFORM=${OS}/${ARCH}
+`,
+			)
+
+		t.Run("invalid value", func(ctx context.Context, t *testctx.T) {
+			_, err := modGen.With(daggerExec(
+				"core", "host",
+				"directory", "--path", ".",
+				"docker-build", "--build-args", "darwin",
+				"env-variable", "--name", "PLATFORM",
+			)).Sync(ctx)
+			requireErrOut(t, err, "must be formatted as name=value")
+		})
+
+		t.Run("missing name", func(ctx context.Context, t *testctx.T) {
+			_, err := modGen.With(daggerExec(
+				"core", "host",
+				"directory", "--path", ".",
+				"docker-build", "--build-args", "=darwin",
+				"env-variable", "--name", "PLATFORM",
+			)).Sync(ctx)
+			requireErrOut(t, err, "cannot have an empty name")
+		})
+
+		t.Run("single value", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerExec(
+				"core", "host",
+				"directory", "--path", ".",
+				"docker-build", "--build-args", "OS=darwin",
+				"env-variable", "--name", "PLATFORM",
+			)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "darwin/amd64", out)
+		})
+
+		t.Run("multiple values", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerExec(
+				"core", "host",
+				"directory", "--path", ".",
+				"docker-build", "--build-args", "OS=darwin,ARCH=arm64",
+				"env-variable", "--name", "PLATFORM",
+			)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "darwin/arm64", out)
+		})
+	})
+
 	t.Run("enum args", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -822,7 +881,7 @@ func (m *Test) ToProto(proto string) dagger.NetworkProtocol {
 
 		t.Run("invalid output", func(ctx context.Context, t *testctx.T) {
 			_, err := modGen.With(daggerCall("to-proto", "--proto", "INVALID")).Stdout(ctx)
-			requireErrOut(t, err, "invalid enum value")
+			requireErrOut(t, err, "invalid enum")
 		})
 
 		t.Run("choices in help", func(ctx context.Context, t *testctx.T) {
@@ -891,7 +950,7 @@ func (m *Test) ToStatus(status string) Status {
 
 		t.Run("invalid output", func(ctx context.Context, t *testctx.T) {
 			_, err := modGen.With(daggerCall("to-status", "--status", "INVALID")).Stdout(ctx)
-			requireErrOut(t, err, "invalid enum value")
+			requireErrOut(t, err, "invalid enum")
 		})
 
 		t.Run("choices in help", func(ctx context.Context, t *testctx.T) {
@@ -2392,7 +2451,7 @@ func (m *Chain) Echo(msg string) string {
 	})
 }
 
-func (CallSuite) TestInvalidEnum(ctx context.Context, t *testctx.T) {
+func (CallSuite) TestWeirdEnum(ctx context.Context, t *testctx.T) {
 	t.Run("duplicated enum value", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -2418,10 +2477,10 @@ func (m *Test) ToStatus(status string) Status {
 	`)
 
 		_, err := modGen.With(daggerCall("--help")).Stdout(ctx)
-		requireErrOut(t, err, `enum value "ACTIVE" is already defined`)
+		requireErrOut(t, err, `enum "ACTIVE" is already defined with value "ACTIVE"`)
 	})
 
-	t.Run("invalid value", func(ctx context.Context, t *testctx.T) {
+	t.Run("weird value", func(ctx context.Context, t *testctx.T) {
 		type testCase struct {
 			enumValue string
 		}
@@ -2468,7 +2527,7 @@ func (m *Test) FromStatus(status Status) string {
 `, tc.enumValue))
 
 				_, err := modGen.With(daggerCall("--help")).Stdout(ctx)
-				requireErrOut(t, err, fmt.Sprintf("enum value %q is not valid", tc.enumValue))
+				require.NoError(t, err)
 			})
 		}
 	})
@@ -2492,7 +2551,11 @@ func (m *Test) FromStatus(status Status) string {
 `)
 
 		_, err := modGen.With(daggerCall("--help")).Stdout(ctx)
-		requireErrOut(t, err, "enum value must not be empty")
+		require.NoError(t, err)
+
+		out, err := modGen.With(daggerCall("from-status", "--status=value")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "", strings.TrimSpace(out))
 	})
 }
 
@@ -2516,7 +2579,7 @@ type Language string
 const (
 	Go Language = "GO"
 	Python Language = "PYTHON"
-	TypeScript Language = "TYPESCRIPT"
+	Typescript Language = "TYPESCRIPT"
 	PHP Language = "PHP"
 	Elixir Language = "ELIXIR"
 )
@@ -2531,20 +2594,21 @@ func (m *Test) Faves(
 }
 
 func (m *Test) Official() []Language {
-	return []Language{Go, Python, TypeScript}
+	return []Language{Go, Python, Typescript}
 }
 `,
 		},
 		{
 			sdk: "python",
 			source: `from typing import Final
+import enum
 
 import dagger
 from dagger import dag
 
 
 @dagger.enum_type
-class Language(dagger.Enum):
+class Language(enum.Enum):
     GO = "GO" 
     PYTHON = "PYTHON"
     TYPESCRIPT = "TYPESCRIPT"
@@ -2552,14 +2616,14 @@ class Language(dagger.Enum):
     ELIXIR = "ELIXIR"
 
 
-FAVES: Final = [Language.GO, Language.PYTHON]
+FAVES: Final[Language] = [Language.GO, Language.PYTHON]
 
 
 @dagger.object_type
 class Test:
     @dagger.function
     def faves(self, langs: list[Language] = FAVES) -> str:
-        return " ".join(langs)
+        return " ".join(lang.value for lang in langs)
 
     @dagger.function
     def official(self) -> list[Language]:
@@ -2574,7 +2638,7 @@ class Test:
 export class Language {
   static readonly Go: string = "GO"
   static readonly Python: string = "PYTHON"
-  static readonly TypeScript: string = "TYPESCRIPT"
+  static readonly Typescript: string = "TYPESCRIPT"
   static readonly PHP: string = "PHP"
   static readonly Elixir: string = "ELIXIR"
 }
@@ -2588,7 +2652,7 @@ export class Test {
 
   @func()
   official(): Language[] {
-    return [Language.Go, Language.Python, Language.TypeScript]
+    return [Language.Go, Language.Python, Language.Typescript]
   }
 }
 `,

@@ -1,7 +1,9 @@
 package core
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -18,7 +20,10 @@ import (
 
 type Module struct {
 	// The source of the module
-	Source dagql.Instance[*ModuleSource] `field:"true" name:"source" doc:"The source for the module."`
+	Source dagql.ObjectResult[*ModuleSource] `field:"true" name:"source" doc:"The source for the module."`
+
+	// The source to load contextual dirs/files from, which may be different than Source for blueprints
+	ContextSource dagql.ObjectResult[*ModuleSource]
 
 	// The name of the module
 	NameField string `field:"true" name:"name" doc:"The name of the module"`
@@ -34,7 +39,7 @@ type Module struct {
 	Deps *ModDeps
 
 	// Runtime is the container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
-	Runtime *Container `field:"true" name:"runtime" doc:"The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile."`
+	Runtime dagql.ObjectResult[*Container] `field:"true" name:"runtime" doc:"The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile."`
 
 	// The following are populated while initializing the module
 
@@ -50,8 +55,8 @@ type Module struct {
 	// The module's enumerations
 	EnumDefs []*TypeDef `field:"true" name:"enums" doc:"Enumerations served by this module."`
 
-	// InstanceID is the ID of the initialized module.
-	InstanceID *call.ID
+	// ResultID is the ID of the initialized module.
+	ResultID *call.ID
 }
 
 func (*Module) Type() *ast.Type {
@@ -72,39 +77,39 @@ func (mod *Module) Name() string {
 }
 
 func (mod *Module) GetSource() *ModuleSource {
-	return mod.Source.Self
+	return mod.Source.Self()
 }
 
 func (mod *Module) IDModule() *call.Module {
 	var ref, pin string
-	switch mod.Source.Self.Kind {
+	switch mod.Source.Self().Kind {
 	case ModuleSourceKindLocal:
-		ref = filepath.Join(mod.Source.Self.Local.ContextDirectoryPath, mod.Source.Self.SourceRootSubpath)
+		ref = filepath.Join(mod.Source.Self().Local.ContextDirectoryPath, mod.Source.Self().SourceRootSubpath)
 
 	case ModuleSourceKindGit:
-		ref = mod.Source.Self.Git.CloneRef
-		if mod.Source.Self.SourceRootSubpath != "" {
-			ref += "/" + strings.TrimPrefix(mod.Source.Self.SourceRootSubpath, "/")
+		ref = mod.Source.Self().Git.CloneRef
+		if mod.Source.Self().SourceRootSubpath != "" {
+			ref += "/" + strings.TrimPrefix(mod.Source.Self().SourceRootSubpath, "/")
 		}
-		if mod.Source.Self.Git.Version != "" {
-			ref += "@" + mod.Source.Self.Git.Version
+		if mod.Source.Self().Git.Version != "" {
+			ref += "@" + mod.Source.Self().Git.Version
 		}
-		pin = mod.Source.Self.Git.Commit
+		pin = mod.Source.Self().Git.Commit
 
 	case ModuleSourceKindDir:
 		// FIXME: this is better than nothing, but no other code handles refs that
 		// are an encoded ID right now
 		var err error
-		ref, err = mod.Source.Self.ContextDirectory.ID().Encode()
+		ref, err = mod.Source.Self().ContextDirectory.ID().Encode()
 		if err != nil {
 			panic(fmt.Sprintf("failed to encode context directory ID: %v", err))
 		}
 
 	default:
-		panic(fmt.Sprintf("unexpected module source kind %q", mod.Source.Self.Kind))
+		panic(fmt.Sprintf("unexpected module source kind %q", mod.Source.Self().Kind))
 	}
 
-	return call.NewModule(mod.InstanceID, mod.Name(), ref, pin)
+	return call.NewModule(mod.ResultID, mod.Name(), ref, pin)
 }
 
 func (mod *Module) Evaluate(context.Context) (*buildkit.Result, error) {
@@ -163,7 +168,7 @@ func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
 	for _, def := range mod.EnumDefs {
 		enumDef := def.AsEnum.Value
 
-		slog.ExtraDebug("installing enum", "name", mod.Name(), "enum", enumDef.Name, "values", len(enumDef.Values))
+		slog.ExtraDebug("installing enum", "name", mod.Name(), "enum", enumDef.Name, "members", len(enumDef.Members))
 
 		enum := &ModuleEnum{
 			TypeDef: enumDef,
@@ -212,7 +217,7 @@ func (mod *Module) View() (dagql.View, bool) {
 
 func (mod *Module) CacheConfigForCall(
 	ctx context.Context,
-	_ dagql.Object,
+	_ dagql.AnyResult,
 	_ map[string]dagql.Input,
 	_ dagql.View,
 	cacheCfg dagql.CacheConfig,
@@ -232,18 +237,14 @@ func (mod *Module) CacheConfigForCall(
 	)
 	cacheCfg.Digest = dagql.HashFrom(
 		curIDNoMod.Digest().String(),
-		mod.Source.Self.Digest,
+		mod.Source.Self().Digest,
 		mod.NameField, // the module source content digest only includes the original name
 	)
 
 	return &cacheCfg, nil
 }
 
-func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
-	var modType ModType
-	var ok bool
-	var err error
-
+func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (modType ModType, ok bool, err error) {
 	switch typeDef.Kind {
 	case TypeDefKindString, TypeDefKindInteger, TypeDefKindFloat, TypeDefKindBoolean, TypeDefKindVoid:
 		modType, ok = mod.modTypeForPrimitive(typeDef)
@@ -277,18 +278,16 @@ func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirect
 	default:
 		return nil, false, fmt.Errorf("unexpected type def kind %s", typeDef.Kind)
 	}
-
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to get mod type: %w", err)
 	}
-
 	if !ok {
 		return nil, false, nil
 	}
 
 	if typeDef.Optional {
 		modType = &NullableType{
-			InnerDef: typeDef.WithOptional(false),
+			InnerDef: modType.TypeDef().WithOptional(false),
 			Inner:    modType,
 		}
 	}
@@ -423,7 +422,7 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 		}
 	}
 
-	for _, fn := range obj.Functions {
+	for fn := range obj.functions() {
 		if gqlFieldName(fn.Name) == "id" {
 			return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
 		}
@@ -529,22 +528,7 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 			field.SourceMap = mod.namespaceSourceMap(modPath, field.SourceMap)
 		}
 
-		for _, fn := range obj.Functions {
-			if err := mod.namespaceTypeDef(ctx, modPath, fn.ReturnType); err != nil {
-				return err
-			}
-			fn.SourceMap = mod.namespaceSourceMap(modPath, fn.SourceMap)
-
-			for _, arg := range fn.Args {
-				if err := mod.namespaceTypeDef(ctx, modPath, arg.TypeDef); err != nil {
-					return err
-				}
-				arg.SourceMap = mod.namespaceSourceMap(modPath, arg.SourceMap)
-			}
-		}
-
-		if obj.Constructor.Valid {
-			fn := obj.Constructor.Value
+		for fn := range obj.functions() {
 			if err := mod.namespaceTypeDef(ctx, modPath, fn.ReturnType); err != nil {
 				return err
 			}
@@ -593,14 +577,14 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
 		}
 		if ok {
-			enum.Values = mtype.TypeDef().AsEnum.Value.Values
+			enum.Members = mtype.TypeDef().AsEnum.Value.Members
 		}
 		if !ok {
 			enum.Name = namespaceObject(enum.OriginalName, mod.Name(), mod.OriginalName)
 			enum.SourceMap = mod.namespaceSourceMap(modPath, enum.SourceMap)
 		}
 
-		for _, value := range enum.Values {
+		for _, value := range enum.Members {
 			value.SourceMap = mod.namespaceSourceMap(modPath, value.SourceMap)
 		}
 	}
@@ -612,7 +596,7 @@ func (mod *Module) namespaceSourceMap(modPath string, sourceMap *SourceMap) *Sou
 		return nil
 	}
 
-	if mod.Source.Self.Kind != ModuleSourceKindLocal {
+	if mod.Source.Self().Kind != ModuleSourceKindLocal {
 		// TODO: handle remote git files
 		return nil
 	}
@@ -625,7 +609,66 @@ func (mod *Module) namespaceSourceMap(modPath string, sourceMap *SourceMap) *Sou
 // modulePath gets the prefix for the file sourcemaps, so that the sourcemap is
 // relative to the context directory
 func (mod *Module) modulePath() string {
-	return mod.Source.Self.SourceSubpath
+	return mod.Source.Self().SourceSubpath
+}
+
+// Patch is called after all types have been loaded - here we can update any
+// definitions as required, and attempt to resolve references.
+func (mod *Module) Patch() error {
+	// patch a function's default arguments so that the default value
+	// correctly matches the Name, not the OriginalName (simplifies a lot of
+	// code downstream, and makes type introspection make sense)
+	patchFunctionEnumDefaults := func(fn *Function) error {
+		for _, arg := range fn.Args {
+			if arg.DefaultValue == nil {
+				continue
+			}
+			if arg.TypeDef.Kind != TypeDefKindEnum {
+				continue
+			}
+			enum, ok := mod.modTypeForEnum(arg.TypeDef)
+			if !ok {
+				continue
+			}
+
+			var val string
+			dec := json.NewDecoder(bytes.NewReader(arg.DefaultValue.Bytes()))
+			dec.UseNumber()
+			if err := dec.Decode(&val); err != nil {
+				return fmt.Errorf("failed to decode default value for arg %q: %w", arg.Name, err)
+			}
+
+			found := false
+			for _, member := range enum.TypeDef().AsEnum.Value.Members {
+				if val == member.OriginalName {
+					val = member.Name
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("enum name %q not found", val)
+			}
+
+			res, err := json.Marshal(val)
+			if err != nil {
+				return err
+			}
+			arg.DefaultValue = JSON(res)
+		}
+		return nil
+	}
+	for _, obj := range mod.ObjectDefs {
+		for fn := range obj.AsObject.Value.functions() {
+			patchFunctionEnumDefaults(fn)
+		}
+	}
+	for _, obj := range mod.InterfaceDefs {
+		for _, fn := range obj.AsInterface.Value.Functions {
+			patchFunctionEnumDefaults(fn)
+		}
+	}
+	return nil
 }
 
 /*
@@ -663,15 +706,22 @@ var _ HasPBDefinitions = (*Module)(nil)
 
 func (mod *Module) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	var defs []*pb.Definition
-	if mod.Source.Self != nil {
-		dirDefs, err := mod.Source.Self.PBDefinitions(ctx)
+	if mod.Source.Self() != nil {
+		dirDefs, err := mod.Source.Self().PBDefinitions(ctx)
 		if err != nil {
 			return nil, err
 		}
 		defs = append(defs, dirDefs...)
 	}
-	if mod.Runtime != nil {
-		dirDefs, err := mod.Runtime.PBDefinitions(ctx)
+	if mod.ContextSource.Self() != nil {
+		dirDefs, err := mod.ContextSource.Self().PBDefinitions(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defs = append(defs, dirDefs...)
+	}
+	if mod.Runtime.Self() != nil {
+		dirDefs, err := mod.Runtime.Self().PBDefinitions(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -683,20 +733,12 @@ func (mod *Module) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) 
 func (mod Module) Clone() *Module {
 	cp := mod
 
-	if mod.Source.Self != nil {
-		cp.Source.Self = mod.Source.Self.Clone()
-	}
-
 	if mod.SDKConfig != nil {
 		cp.SDKConfig = mod.SDKConfig.Clone()
 	}
 
 	if mod.Deps != nil {
 		cp.Deps = mod.Deps.Clone()
-	}
-
-	if mod.Runtime != nil {
-		cp.Runtime = mod.Runtime.Clone()
 	}
 
 	cp.ObjectDefs = make([]*TypeDef, len(mod.ObjectDefs))

@@ -25,7 +25,7 @@ dagger [options] [subcommand | file...]
       --model string                 LLM model to use (e.g., 'claude-sonnet-4-0', 'gpt-4.1')
   -E, --no-exit                      Leave the TUI running after completion
   -M, --no-mod                       Don't automatically load a module (mutually exclusive with --mod)
-      --progress string              Progress output format (auto, plain, tty) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -46,7 +46,7 @@ dagger [options] [subcommand | file...]
 * [dagger query](#dagger-query)	 - Send API queries to a dagger engine
 * [dagger run](#dagger-run)	 - Run a command in a Dagger session
 * [dagger uninstall](#dagger-uninstall)	 - Uninstall a dependency
-* [dagger update](#dagger-update)	 - Update a dependency
+* [dagger update](#dagger-update)	 - Update a module's dependencies
 * [dagger version](#dagger-version)	 - Print dagger version
 
 ## dagger call
@@ -74,7 +74,7 @@ dagger call [options]
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
   -E, --no-exit                      Leave the TUI running after completion
-      --progress string              Progress output format (auto, plain, tty) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -119,7 +119,7 @@ dagger config -m github.com/dagger/hello-dagger
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
   -E, --no-exit                      Leave the TUI running after completion
-      --progress string              Progress output format (auto, plain, tty) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -152,7 +152,7 @@ dagger core [options]
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
   -E, --no-exit                      Leave the TUI running after completion
-      --progress string              Progress output format (auto, plain, tty) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -210,7 +210,7 @@ dagger develop [options]
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
   -E, --no-exit                      Leave the TUI running after completion
-      --progress string              Progress output format (auto, plain, tty) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -251,7 +251,7 @@ dagger functions [options] [function]...
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
   -E, --no-exit                      Leave the TUI running after completion
-      --progress string              Progress output format (auto, plain, tty) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -273,6 +273,7 @@ Initialize a new module at the given path.
 This creates a dagger.json file at the specified directory, making it the root of the new module.
 
 If --sdk is specified, the given SDK is installed in the module. You can do this later with "dagger develop".
+If --blueprint is specified, the given blueprint is installed in the module.
 
 
 ```
@@ -282,17 +283,27 @@ dagger init [options] [path]
 ### Examples
 
 ```
-dagger init --sdk=python
+
+# Reference a remote module as blueprint
+dagger init --blueprint=github.com/example/blueprint
+
+# Reference a local module as blueprint
+dagger init --blueprint=../my/blueprints/simple-webapp
+
+# Implement a standalone module in Go
+dagger init --sdk=go
+
 ```
 
 ### Options
 
 ```
-      --include strings   Paths to include when loading the module. Only needed when extra paths are required to build the module. They are expected to be relative to the directory containing the module's dagger.json file (the module source root).
-      --license string    License identifier to generate. See https://spdx.org/licenses/ (default "Apache-2.0")
-      --name string       Name of the new module (defaults to parent directory name)
-      --sdk string        Optionally install a Dagger SDK
-      --source string     Source directory used by the installed SDK. Defaults to module root
+      --blueprint string   Reference another module as blueprint
+      --include strings    Paths to include when loading the module. Only needed when extra paths are required to build the module. They are expected to be relative to the directory containing the module's dagger.json file (the module source root).
+      --license string     License identifier to generate. See https://spdx.org/licenses/ (default "Apache-2.0")
+      --name string        Name of the new module (defaults to parent directory name)
+      --sdk string         Optionally install a Dagger SDK
+      --source string      Source directory used by the installed SDK. Defaults to module root
 ```
 
 ### Options inherited from parent commands
@@ -302,7 +313,7 @@ dagger init --sdk=python
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
   -E, --no-exit                      Leave the TUI running after completion
-      --progress string              Progress output format (auto, plain, tty) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -347,7 +358,7 @@ dagger install github.com/shykes/daggerverse/hello@v0.3.0
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
   -E, --no-exit                      Leave the TUI running after completion
-      --progress string              Progress output format (auto, plain, tty) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -373,7 +384,7 @@ dagger login [options] [org]
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
   -E, --no-exit                      Leave the TUI running after completion
-      --progress string              Progress output format (auto, plain, tty) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -399,7 +410,7 @@ dagger logout
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
   -E, --no-exit                      Leave the TUI running after completion
-      --progress string              Progress output format (auto, plain, tty) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -463,7 +474,7 @@ EOF
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
   -E, --no-exit                      Leave the TUI running after completion
-      --progress string              Progress output format (auto, plain, tty) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -522,7 +533,7 @@ dagger run python main.py
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
   -E, --no-exit                      Leave the TUI running after completion
-      --progress string              Progress output format (auto, plain, tty) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -566,7 +577,7 @@ dagger uninstall hello
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
   -E, --no-exit                      Leave the TUI running after completion
-      --progress string              Progress output format (auto, plain, tty) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -579,20 +590,25 @@ dagger uninstall hello
 
 ## dagger update
 
-Update a dependency
+Update a module's dependencies
 
 ### Synopsis
 
-Update a dependency to the latest version (or the version specified). The target module must be local.
+Update the dependencies of a local module.
+
+To update only specific dependencies, specify their short names or a complete address.
+
+If no dependency is specified, all dependencies are updated, as well as the module's blueprint, if it exists.
+
 
 ```
-dagger update [options] <module>
+dagger update [options] [<DEPENDENCY>...]
 ```
 
 ### Examples
 
 ```
-"dagger update github.com/shykes/daggerverse/hello@v0.3.0" or "dagger update hello"
+"dagger update" or "dagger update hello" "dagger update github.com/shykes/daggerverse/hello@v0.3.0"
 ```
 
 ### Options
@@ -610,7 +626,7 @@ dagger update [options] <module>
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
   -E, --no-exit                      Leave the TUI running after completion
-      --progress string              Progress output format (auto, plain, tty) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
@@ -642,7 +658,7 @@ dagger version
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
   -E, --no-exit                      Leave the TUI running after completion
-      --progress string              Progress output format (auto, plain, tty) (default "auto")
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)

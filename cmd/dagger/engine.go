@@ -9,6 +9,7 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/client/imageload"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -19,8 +20,9 @@ import (
 )
 
 const (
-	GPUSupportEnv = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
-	RunnerHostEnv = "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
+	GPUSupportEnv        = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
+	RunnerHostEnv        = "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
+	RunnerImageLoaderEnv = "_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE"
 )
 
 var (
@@ -28,6 +30,9 @@ var (
 	//
 	// Note: this is filled at link-time.
 	RunnerHost string
+
+	// RunnerImageLoader holds the image store for the client.
+	RunnerImageLoader string
 )
 
 func init() {
@@ -37,6 +42,8 @@ func init() {
 	if RunnerHost == "" {
 		RunnerHost = defaultRunnerHost()
 	}
+
+	RunnerImageLoader = os.Getenv(RunnerImageLoaderEnv)
 }
 
 func defaultRunnerHost() string {
@@ -44,12 +51,12 @@ func defaultRunnerHost() string {
 	if tag == "" {
 		// can happen during naive dev builds (so just fallback to something
 		// semi-reasonable)
-		return "docker-container://" + distconsts.EngineContainerName
+		return "container://" + distconsts.EngineContainerName
 	}
 	if os.Getenv(GPUSupportEnv) != "" {
 		tag += "-gpu"
 	}
-	return fmt.Sprintf("docker-image://%s:%s", engine.EngineImageRepo, tag)
+	return fmt.Sprintf("image://%s:%s", engine.EngineImageRepo, tag)
 }
 
 type runClientCallback func(context.Context, *client.Client) error
@@ -83,10 +90,17 @@ func withEngine(
 			params.RunnerHost = RunnerHost
 		}
 
+		if RunnerImageLoader != "" {
+			backend, err := imageload.GetBackend(RunnerImageLoader)
+			if err != nil {
+				return err
+			}
+			params.ImageLoaderBackend = backend
+		}
+
 		params.DisableHostRW = disableHostRW
 		params.AllowedLLMModules = allowedLLMModules
 
-		params.EngineCallback = Frontend.ConnectedToEngine
 		params.CloudURLCallback = Frontend.SetCloudURL
 
 		params.EngineTrace = telemetry.SpanForwarder{

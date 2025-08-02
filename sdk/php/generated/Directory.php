@@ -121,6 +121,22 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * check if a file or directory exists
+     */
+    public function exists(string $path, ?ExistsType $expectedType = null, ?bool $doNotFollowSymlinks = false): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exists');
+        $leafQueryBuilder->setArgument('path', $path);
+        if (null !== $expectedType) {
+        $leafQueryBuilder->setArgument('expectedType', $expectedType);
+        }
+        if (null !== $doNotFollowSymlinks) {
+        $leafQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
+        }
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'exists');
+    }
+
+    /**
      * Writes the contents of the directory to a path on the host.
      */
     public function export(string $path, ?bool $wipe = false): string
@@ -293,6 +309,16 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         if (null !== $permissions) {
         $innerQueryBuilder->setArgument('permissions', $permissions);
         }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this directory with the given Git-compatible patch applied.
+     */
+    public function withPatch(string $patch): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPatch');
+        $innerQueryBuilder->setArgument('patch', $patch);
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

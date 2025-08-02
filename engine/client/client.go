@@ -49,9 +49,15 @@ import (
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/drivers"
+	"github.com/dagger/dagger/engine/client/imageload"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/client/secretprovider"
-	"github.com/dagger/dagger/engine/session"
+	"github.com/dagger/dagger/engine/session/git"
+	"github.com/dagger/dagger/engine/session/h2c"
+	"github.com/dagger/dagger/engine/session/pipe"
+	"github.com/dagger/dagger/engine/session/prompt"
+	"github.com/dagger/dagger/engine/session/store"
+	"github.com/dagger/dagger/engine/session/terminal"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/internal/cloud/auth"
@@ -75,7 +81,6 @@ type Params struct {
 
 	DisableHostRW bool
 
-	EngineCallback   func(context.Context, string, string, string)
 	CloudURLCallback func(context.Context, string, string, bool)
 
 	EngineTrace   sdktrace.SpanExporter
@@ -88,14 +93,16 @@ type Params struct {
 	Interactive        bool
 	InteractiveCommand []string
 
-	WithTerminal session.WithTerminalFunc
+	WithTerminal terminal.WithTerminalFunc
 
 	AllowedLLMModules []string
 
-	PromptHandler session.PromptHandler
+	PromptHandler prompt.PromptHandler
 
 	Stdin  io.Reader
 	Stdout io.Writer
+
+	ImageLoaderBackend imageload.Backend
 }
 
 type Client struct {
@@ -103,7 +110,8 @@ type Client struct {
 
 	eg *errgroup.Group
 
-	connector drivers.Connector
+	connector   drivers.Connector
+	imageLoader *imageload.Loader
 
 	internalCtx    context.Context
 	internalCancel context.CancelCauseFunc
@@ -117,6 +125,7 @@ type Client struct {
 	httpClient *httpClient
 	bkClient   *bkclient.Client
 	bkVersion  string
+	bkName     string
 	sessionSrv *BuildkitSessionServer
 
 	// A client for the dagger API that is directly hooked up to this engine client.
@@ -258,7 +267,7 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 		return fmt.Errorf("parse runner host: %w", err)
 	}
 
-	driver, err := drivers.GetDriver(remote.Scheme)
+	driver, err := drivers.GetDriver(ctx, remote.Scheme)
 	if err != nil {
 		return err
 	}
@@ -268,6 +277,14 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 		cloudToken = v
 	} else if _, ok := os.LookupEnv(envDaggerCloudCachetoken); ok {
 		cloudToken = v
+	}
+
+	if c.CloudURLCallback != nil {
+		if url, msg, ok := enginetel.URLForTrace(ctx); ok {
+			c.CloudURLCallback(ctx, url, msg, ok)
+		} else {
+			c.CloudURLCallback(ctx, "https://dagger.cloud/traces/setup", "", ok)
+		}
 	}
 
 	provisionCtx, provisionSpan := Tracer(ctx).Start(ctx, "starting engine")
@@ -282,28 +299,37 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 		return err
 	}
 
-	ctx, span := Tracer(ctx).Start(ctx, "connecting to engine")
+	ctx, span := Tracer(ctx).Start(ctx, "connecting to engine", telemetry.Encapsulate())
 	defer telemetry.End(span, func() error { return rerr })
 
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+	slog.Debug("connecting", "runner", c.RunnerHost)
 
-	slog.Debug("connecting", "runner", c.RunnerHost, "client", c.ID)
-
-	bkClient, bkInfo, err := newBuildkitClient(ctx, remote, c.connector)
+	bkCtx, span := Tracer(ctx).Start(ctx, "creating client")
+	bkClient, bkInfo, err := newBuildkitClient(bkCtx, remote, c.connector)
+	telemetry.End(span, func() error { return err })
 	if err != nil {
 		return fmt.Errorf("new client: %w", err)
 	}
 	c.bkClient = bkClient
 	c.bkVersion = bkInfo.BuildkitVersion.Version
+	c.bkName = bkInfo.BuildkitVersion.Revision
 
-	if c.EngineCallback != nil {
-		c.EngineCallback(ctx, bkInfo.BuildkitVersion.Revision, bkInfo.BuildkitVersion.Version, c.ID)
+	slog.Info("connected", "name", c.bkName, "client-version", engine.Version, "server-version", c.bkVersion)
+
+	imageBackend := c.ImageLoaderBackend
+	if imageBackend == nil {
+		imageBackend = driver.ImageLoader(ctx)
 	}
-	if c.CloudURLCallback != nil {
-		if url, msg, ok := enginetel.URLForTrace(ctx); ok {
-			c.CloudURLCallback(ctx, url, msg, ok)
-		} else {
-			c.CloudURLCallback(ctx, "https://dagger.cloud/traces/setup", "", ok)
+	if imageBackend != nil {
+		imgloadCtx, span := Tracer(ctx).Start(ctx, "configuring image store")
+		c.imageLoader, err = imageBackend.Loader(imgloadCtx)
+		if err != nil {
+			err = fmt.Errorf("failed to get image loader: %w", err)
+		}
+		telemetry.End(span, func() error { return err })
+		if err != nil {
+			return err
 		}
 	}
 
@@ -355,16 +381,16 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		// registry auth
 		authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr), nil),
 		// host=>container networking
-		session.NewTunnelListenerAttachable(ctx),
+		h2c.NewTunnelListenerAttachable(ctx),
 		// terminal
-		session.NewTerminalAttachable(ctx, c.Params.WithTerminal),
+		terminal.NewTerminalAttachable(ctx, c.Params.WithTerminal),
 		// Git attachable
-		session.NewGitAttachable(ctx),
-		// pipe
+		git.NewGitAttachable(ctx),
 	}
 
 	if c.Params.Stdin != nil && c.Params.Stdout != nil {
-		attachables = append(attachables, session.NewPipeAttachable(ctx, c.Params.Stdin, c.Params.Stdout))
+		// pipe
+		attachables = append(attachables, pipe.NewPipeAttachable(ctx, c.Params.Stdin, c.Params.Stdout))
 	}
 
 	// filesync
@@ -376,7 +402,15 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		attachables = append(attachables, filesyncer.AsSource(), filesyncer.AsTarget())
 	}
 	if c.Params.PromptHandler != nil {
-		attachables = append(attachables, session.NewPromptAttachable(c.Params.PromptHandler))
+		attachables = append(attachables, prompt.NewPromptAttachable(c.Params.PromptHandler))
+	}
+
+	if c.imageLoader != nil {
+		attachable, err := store.NewImageLoaderAttachable(c.imageLoader)
+		if err != nil {
+			return err
+		}
+		attachables = append(attachables, attachable)
 	}
 
 	sessionConn, err := c.DialContext(ctx, "", "")
@@ -486,16 +520,18 @@ func NewBuildkitSessionServer(ctx context.Context, conn net.Conn, attachables ..
 	}
 
 	return &BuildkitSessionServer{
-		Server:     srv,
-		MethodURLs: methodURLs,
-		Conn:       conn,
+		Server:      srv,
+		Attachables: attachables,
+		MethodURLs:  methodURLs,
+		Conn:        conn,
 	}
 }
 
 type BuildkitSessionServer struct {
 	*grpc.Server
-	MethodURLs []string
-	Conn       net.Conn
+	MethodURLs  []string
+	Conn        net.Conn
+	Attachables []bksession.Attachable
 }
 
 func (srv *BuildkitSessionServer) Run(ctx context.Context) {
@@ -561,6 +597,15 @@ func (c *Client) Close() (rerr error) {
 			c.sessionSrv.Stop()
 			return nil
 		})
+		for _, attachable := range c.sessionSrv.Attachables {
+			closeable, ok := attachable.(io.Closer)
+			if !ok {
+				continue
+			}
+			c.eg.Go(func() error {
+				return closeable.Close()
+			})
+		}
 	}
 	if c.bkClient != nil {
 		c.eg.Go(c.bkClient.Close)

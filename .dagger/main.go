@@ -31,7 +31,18 @@ func New(
 	ctx context.Context,
 	// +optional
 	// +defaultPath="/"
-	// +ignore=["bin", ".git", "**/node_modules", "**/.venv", "**/__pycache__"]
+	// +ignore=[
+	// "bin",
+	// ".git",
+	// "**/node_modules",
+	// "**/.venv",
+	// "**/__pycache__",
+	// "docs/node_modules",
+	// "sdk/typescript/node_modules",
+	// "sdk/typescript/dist",
+	// "sdk/rust/examples/backend/target",
+	// "sdk/rust/target"
+	// ]
 	source *dagger.Directory,
 
 	// +optional
@@ -190,32 +201,44 @@ func (dev *DaggerDev) Test() *Test {
 	return &Test{Dagger: dev}
 }
 
-// // TODO: these depend on unreleased APIs
-// func (dev *DaggerDev) Evals(
-// 	ctx context.Context,
-// 	// +defaultPath=./core/llm_docs.md
-// 	docs *dagger.File,
-// 	// +defaultPath=./core/llm_dagger_prompt.md
-// 	systemPrompt *dagger.File,
-// ) error {
-// 	return dag.Evaluator(dagger.EvaluatorOpts{
-// 		Docs:          docs,
-// 		InitialPrompt: systemPrompt,
-// 	}).EvalsAcrossModels().Check(ctx)
-// }
+// Run the Dagger evals across the major model providers.
+func (dev *DaggerDev) Evals(
+	ctx context.Context,
+	// Run particular evals, or all evals if unspecified.
+	// +optional
+	evals []string,
+	// Run particular models, or all models if unspecified.
+	// +optional
+	models []string,
+) error {
+	return dev.evaluator().
+		EvalsAcrossModels(dagger.EvaluatorEvalsAcrossModelsOpts{
+			Evals:  evals,
+			Models: models,
+		}).
+		Check(ctx)
+}
 
-// func (dev *DaggerDev) GenerateSystemPrompt(
-// 	ctx context.Context,
-// 	// +defaultPath=./core/llm_docs.md
-// 	docs *dagger.File,
-// 	// +defaultPath=./core/llm_dagger_prompt.md
-// 	systemPrompt *dagger.File,
-// ) (string, error) {
-// 	return dag.Evaluator(dagger.EvaluatorOpts{
-// 		Docs:          docs,
-// 		InitialPrompt: systemPrompt,
-// 	}).GenerateSystemPrompt(ctx)
-// }
+func (dev *DaggerDev) evaluator() *dagger.Evaluator {
+	return dag.Evaluator().
+		WithDocsFile(dev.Source.File("core/llm_docs.md")).
+		WithoutDefaultSystemPrompt().
+		WithSystemPromptFile(dev.Source.File("core/llm_dagger_prompt.md")).
+		WithEvals([]*dagger.EvaluatorEval{
+			// FIXME: ideally this list would live closer to where the evals are
+			// defined, but it's not possible for a module to return an interface type
+			// https://github.com/dagger/dagger/issues/7582
+			dag.Evals().Basic().AsEvaluatorEval(),
+			dag.Evals().BuildMulti().AsEvaluatorEval(),
+			dag.Evals().BuildMultiNoVar().AsEvaluatorEval(),
+			dag.Evals().WorkspacePattern().AsEvaluatorEval(),
+			dag.Evals().ReadImplicitVars().AsEvaluatorEval(),
+			dag.Evals().UndoChanges().AsEvaluatorEval(),
+			dag.Evals().CoreAPI().AsEvaluatorEval(),
+			dag.Evals().ModuleDependencies().AsEvaluatorEval(),
+			dag.Evals().Responses().AsEvaluatorEval(),
+		})
+}
 
 // Find benchmark suites to run
 func (dev *DaggerDev) Bench() *Bench {
@@ -334,7 +357,7 @@ func (dev *DaggerDev) Scan(ctx context.Context) error {
 	}
 
 	ctr := dag.Container().
-		From("aquasec/trivy:0.63.0@sha256:6fb0646988fcd2fdf7bf123f7174945ebc2c9c72d1fa1567c8d7daeeb70f8037").
+		From("aquasec/trivy:0.64.1@sha256:a8ca29078522f30393bdb34225e4c0994d38f37083be81a42da3a2a7e1488e9e").
 		WithMountedDirectory("/mnt/ignores", ignoreFiles).
 		WithMountedCache("/root/.cache/", dag.CacheVolume("trivy-cache")).
 		With(dev.withDockerCfg)

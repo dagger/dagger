@@ -138,6 +138,7 @@
               <li><a href="#definition-ErrorID">ErrorID</a></li>
               <li><a href="#definition-ErrorValue">ErrorValue</a></li>
               <li><a href="#definition-ErrorValueID">ErrorValueID</a></li>
+              <li><a href="#definition-ExistsType">ExistsType</a></li>
               <li><a href="#definition-FieldTypeDef">FieldTypeDef</a></li>
               <li><a href="#definition-FieldTypeDefID">FieldTypeDefID</a></li>
               <li><a href="#definition-File">File</a></li>
@@ -4366,8 +4367,9 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Container-build" href="#Container-build"><code>build</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Initializes this container from a Dockerfile build. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="Container-build" href="#Container-build"><code>build</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td> Initializes this container from a Dockerfile build. <span class="deprecation-reason">Use <code>Directory.build</code> instead</span>
+                        </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -4458,6 +4460,31 @@
                         <td data-property-name=""><a class="property-name" id="Container-envVariables" href="#Container-envVariables"><code>envVariables</code></a> - <span class="property-type"><a href="#definition-EnvVariable"><code>[EnvVariable!]!</code></a></span> </td>
                         <td> Retrieves the list of environment variables passed to commands. </td>
                       </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Container-exists" href="#Container-exists"><code>exists</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> check if a file or directory exists </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Path to check (e.g., &quot;/file.txt&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expectedType</code></span> - <span class="property-type"><a href="#definition-ExistsType"><code>ExistsType</code></a></span></h6>
+                                <p>If specified, also validate the type of file (e.g. &quot;REGULAR_TYPE&quot;, &quot;DIRECTORY_TYPE&quot;, or &quot;SYMLINK_TYPE&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>doNotFollowSymlinks</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>If specified, do not follow symlinks.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Container-exitCode" href="#Container-exitCode"><code>exitCode</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
                         <td>
@@ -4529,6 +4556,38 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>Replace &quot;${VAR}&quot; or &quot;$VAR&quot; in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo&quot;).</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Container-exportImage" href="#Container-exportImage"><code>exportImage</code></a> - <span class="property-type"><a href="#definition-Void"><code>Void!</code></a></span> </td>
+                        <td> Exports the container as an image to the host's container image store. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Name of image to export to in the host&#39;s store</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>platformVariants</code></span> - <span class="property-type"><a href="#definition-ContainerID"><code>[ContainerID!]</code></a></span></h6>
+                                <p>Identifiers for other platform specific containers.</p>
+                                <p>Used for multi-platform image.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>forcedCompression</code></span> - <span class="property-type"><a href="#definition-ImageLayerCompression"><code>ImageLayerCompression</code></a></span></h6>
+                                <p>Force each layer of the exported image to use the specified compression algorithm.</p>
+                                <p>If this is unset, then if a layer already has a compressed blob in the engine&#39;s cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine&#39;s cache, then it will be compressed using Gzip.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>mediaTypes</code></span> - <span class="property-type"><a href="#definition-ImageMediaTypes"><code>ImageMediaTypes</code></a></span></h6>
+                                <p>Use the specified media types for the exported image&#39;s layers.</p>
+                                <p>Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.</p>
                               </div>
                             </div>
                           </div>
@@ -6020,6 +6079,31 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Directory-exists" href="#Directory-exists"><code>exists</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> check if a file or directory exists </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Path to check (e.g., &quot;/file.txt&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expectedType</code></span> - <span class="property-type"><a href="#definition-ExistsType"><code>ExistsType</code></a></span></h6>
+                                <p>If specified, also validate the type of file (e.g. &quot;REGULAR_TYPE&quot;, &quot;DIRECTORY_TYPE&quot;, or &quot;SYMLINK_TYPE&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>doNotFollowSymlinks</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>If specified, do not follow symlinks.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Directory-export" href="#Directory-export"><code>export</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> Writes the contents of the directory to a path on the host. </td>
                       </tr>
@@ -6256,6 +6340,23 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>permissions</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
                                 <p>Permissions of the new file. Example: 0600</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Directory-withPatch" href="#Directory-withPatch"><code>withPatch</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
+                        <td> Retrieves this directory with the given Git-compatible patch applied. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>patch</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Patch to apply (e.g., &quot;diff --git a/file.txt b/file.txt\nindex 1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-Hello\n+World\n&quot;).</p>
                               </div>
                             </div>
                           </div>
@@ -6671,6 +6772,10 @@
                         <td> A unique identifier for this EnumTypeDef. </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="EnumTypeDef-members" href="#EnumTypeDef-members"><code>members</code></a> - <span class="property-type"><a href="#definition-EnumValueTypeDef"><code>[EnumValueTypeDef!]!</code></a></span> </td>
+                        <td> The members of the enum. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="EnumTypeDef-name" href="#EnumTypeDef-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The name of the enum. </td>
                       </tr>
@@ -6683,8 +6788,10 @@
                         <td> If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="EnumTypeDef-values" href="#EnumTypeDef-values"><code>values</code></a> - <span class="property-type"><a href="#definition-EnumValueTypeDef"><code>[EnumValueTypeDef!]!</code></a></span> </td>
-                        <td> The values of the enum. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="EnumTypeDef-values" href="#EnumTypeDef-values"><code>values</code></a> - <span class="property-type"><a href="#definition-EnumValueTypeDef"><code>[EnumValueTypeDef!]!</code></a></span> </td>
+                        <td>
+                          <span class="deprecation-reason">use members instead</span>
+                        </td>
                       </tr>
                     </tbody>
                   </table>
@@ -6729,7 +6836,7 @@
                     <tbody>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-description" href="#EnumValueTypeDef-description"><code>description</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> A doc string for the enum value, if any. </td>
+                        <td> A doc string for the enum member, if any. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-id" href="#EnumValueTypeDef-id"><code>id</code></a> - <span class="property-type"><a href="#definition-EnumValueTypeDefID"><code>EnumValueTypeDefID!</code></a></span> </td>
@@ -6737,11 +6844,15 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-name" href="#EnumValueTypeDef-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The name of the enum value. </td>
+                        <td> The name of the enum member. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-sourceMap" href="#EnumValueTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
-                        <td> The location of this enum value declaration. </td>
+                        <td> The location of this enum member declaration. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-value" href="#EnumValueTypeDef-value"><code>value</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The value of the enum member </td>
                       </tr>
                     </tbody>
                   </table>
@@ -7752,6 +7863,58 @@
               </div>
             </div>
           </section>
+          <section id="definition-ExistsType" class="definition definition-enum" data-traverse-target="definition-ExistsType">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ExistsType</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>File type.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Values</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Enum Value</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <p><code>REGULAR_TYPE</code></p>
+                        </td>
+                        <td> Tests path is a regular file </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>DIRECTORY_TYPE</code></p>
+                        </td>
+                        <td> Tests path is a directory </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>SYMLINK_TYPE</code></p>
+                        </td>
+                        <td> Tests path is a symlink </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="doc-examples">
+                <div class="example-section example-section-is-code">
+                  <h5>Example</h5>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"REGULAR_TYPE"</span>
+</code></pre>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="definition-FieldTypeDef" class="definition definition-object" data-traverse-target="definition-FieldTypeDef">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -8554,6 +8717,10 @@
                         <td data-property-name=""><a class="property-name" id="GitRepository-id" href="#GitRepository-id"><code>id</code></a> - <span class="property-type"><a href="#definition-GitRepositoryID"><code>GitRepositoryID!</code></a></span> </td>
                         <td> A unique identifier for this GitRepository. </td>
                       </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GitRepository-latestVersion" href="#GitRepository-latestVersion"><code>latestVersion</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef!</code></a></span> </td>
+                        <td> Returns details for the latest semver tag. </td>
+                      </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="GitRepository-ref" href="#GitRepository-ref"><code>ref</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef!</code></a></span> </td>
                         <td> Returns details of a ref. </td>
@@ -8899,6 +9066,34 @@
                         <td>
                         </td>
                       </tr>
+                      <tr>
+                        <td>
+                          <p><code>GZIP</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>ZSTD</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>ESTARGZ</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>UNCOMPRESSED</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -8943,6 +9138,20 @@
                       <tr>
                         <td>
                           <p><code>DockerMediaTypes</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>OCI</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>DOCKER</code></p>
                         </td>
                         <td>
                         </td>
@@ -9732,6 +9941,10 @@
                         <td> A human readable ref string representation of this module source. </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-blueprint" href="#ModuleSource-blueprint"><code>blueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> The blueprint referenced by the module source. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-cloneRef" href="#ModuleSource-cloneRef"><code>cloneRef</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The ref to clone the root of the git repo from. Only valid for git sources. </td>
                       </tr>
@@ -9843,6 +10056,23 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-version" href="#ModuleSource-version"><code>version</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The specified version of the git repo this source points to. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-withBlueprint" href="#ModuleSource-withBlueprint"><code>withBlueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Set a blueprint for the module source. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>blueprint</code></span> - <span class="property-type"><a href="#definition-ModuleSourceID"><code>ModuleSourceID!</code></a></span></h6>
+                                <p>The blueprint module to set.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="ModuleSource-withClient" href="#ModuleSource-withClient"><code>withClient</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
@@ -9967,6 +10197,10 @@
                           </div>
                         </td>
                       </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-withUpdateBlueprint" href="#ModuleSource-withUpdateBlueprint"><code>withUpdateBlueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Update the blueprint module to the latest version. </td>
+                      </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="ModuleSource-withUpdateDependencies" href="#ModuleSource-withUpdateDependencies"><code>withUpdateDependencies</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
                         <td> Update one or more module dependencies. </td>
@@ -9983,6 +10217,10 @@
                             </div>
                           </div>
                         </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-withoutBlueprint" href="#ModuleSource-withoutBlueprint"><code>withoutBlueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Remove the current blueprint from the module source. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="ModuleSource-withoutClient" href="#ModuleSource-withoutClient"><code>withoutClient</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
@@ -10076,6 +10314,27 @@
                       <tr>
                         <td>
                           <p><code>DIR_SOURCE</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>LOCAL</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>GIT</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>DIR</code></p>
                         </td>
                         <td>
                         </td>
@@ -11021,8 +11280,38 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="TypeDef-withEnumValue" href="#TypeDef-withEnumValue"><code>withEnumValue</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="TypeDef-withEnumMember" href="#TypeDef-withEnumMember"><code>withEnumMember</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
                         <td> Adds a static value for an Enum TypeDef, failing if the type is not an enum. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the member in the enum</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>The value of the member in the enum</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>A doc string for the member, if any</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>sourceMap</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID</code></a></span></h6>
+                                <p>The source map for the enum member definition.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="TypeDef-withEnumValue" href="#TypeDef-withEnumValue"><code>withEnumValue</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
+                        <td> Adds a static value for an Enum TypeDef, failing if the type is not an enum. <span class="deprecation-reason">Use <code>withEnumMember</code> instead</span>
+                        </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -11253,15 +11542,15 @@
                       </tr>
                       <tr>
                         <td>
-                          <p><code>FLOAT_KIND</code></p>
-                        </td>
-                        <td> A float value. </td>
-                      </tr>
-                      <tr>
-                        <td>
                           <p><code>INTEGER_KIND</code></p>
                         </td>
                         <td> An integer value. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>FLOAT_KIND</code></p>
+                        </td>
+                        <td> A float value. </td>
                       </tr>
                       <tr>
                         <td>
@@ -11280,8 +11569,8 @@
                           <p><code>LIST_KIND</code></p>
                         </td>
                         <td>
-                          <p>A list of values all having the same type.</p>
                           <p>Always paired with a ListTypeDef.</p>
+                          <p>A list of values all having the same type.</p>
                         </td>
                       </tr>
                       <tr>
@@ -11289,8 +11578,8 @@
                           <p><code>OBJECT_KIND</code></p>
                         </td>
                         <td>
-                          <p>A named type defined in the GraphQL schema, with fields and functions.</p>
                           <p>Always paired with an ObjectTypeDef.</p>
+                          <p>A named type defined in the GraphQL schema, with fields and functions.</p>
                         </td>
                       </tr>
                       <tr>
@@ -11298,8 +11587,8 @@
                           <p><code>INTERFACE_KIND</code></p>
                         </td>
                         <td>
-                          <p>A named type of functions that can be matched+implemented by other objects+interfaces.</p>
                           <p>Always paired with an InterfaceTypeDef.</p>
+                          <p>A named type of functions that can be matched+implemented by other objects+interfaces.</p>
                         </td>
                       </tr>
                       <tr>
@@ -11320,6 +11609,87 @@
                       <tr>
                         <td>
                           <p><code>ENUM_KIND</code></p>
+                        </td>
+                        <td>
+                          <p>A GraphQL enum type and its values</p>
+                          <p>Always paired with an EnumTypeDef.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>STRING</code></p>
+                        </td>
+                        <td> A string value. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>INTEGER</code></p>
+                        </td>
+                        <td> An integer value. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>FLOAT</code></p>
+                        </td>
+                        <td> A float value. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>BOOLEAN</code></p>
+                        </td>
+                        <td> A boolean value. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>SCALAR</code></p>
+                        </td>
+                        <td> A scalar value of any basic kind. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>LIST</code></p>
+                        </td>
+                        <td>
+                          <p>Always paired with a ListTypeDef.</p>
+                          <p>A list of values all having the same type.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>OBJECT</code></p>
+                        </td>
+                        <td>
+                          <p>Always paired with an ObjectTypeDef.</p>
+                          <p>A named type defined in the GraphQL schema, with fields and functions.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>INTERFACE</code></p>
+                        </td>
+                        <td>
+                          <p>Always paired with an InterfaceTypeDef.</p>
+                          <p>A named type of functions that can be matched+implemented by other objects+interfaces.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>INPUT</code></p>
+                        </td>
+                        <td> A graphql input type, used only when representing the core API via TypeDefs. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>VOID</code></p>
+                        </td>
+                        <td>
+                          <p>A special kind used to signify that no value is returned.</p>
+                          <p>This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>ENUM</code></p>
                         </td>
                         <td>
                           <p>A GraphQL enum type and its values</p>

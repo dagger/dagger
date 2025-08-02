@@ -21,12 +21,10 @@ var (
 	errUnknownBuiltinSDK = errors.New("unknown builtin sdk")
 )
 
-type Loader struct {
-	dag *dagql.Server
-}
+type Loader struct{}
 
-func NewLoader(dag *dagql.Server) *Loader {
-	return &Loader{dag: dag}
+func NewLoader() *Loader {
+	return &Loader{}
 }
 
 // SDKForModule loads an SDK module based on the given SDK configuration.
@@ -71,25 +69,29 @@ func (l *Loader) externalSDKForModule(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit for sdk %s: %w", sdk.Source, err)
 	}
+	dag, err := query.Server.Server(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag for sdk %s: %w", sdk.Source, err)
+	}
 
-	sdkModSrc, err := core.ResolveDepToSource(ctx, bk, l.dag, parentSrc, sdk.Source, "", "")
+	sdkModSrc, err := core.ResolveDepToSource(ctx, bk, dag, parentSrc, sdk.Source, "", "")
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", err.Error(), getInvalidBuiltinSDKError(sdk.Source))
 	}
 
-	if !sdkModSrc.Self.ConfigExists {
+	if !sdkModSrc.Self().ConfigExists {
 		return nil, fmt.Errorf("sdk module source has no dagger.json: %w", getInvalidBuiltinSDKError(sdk.Source))
 	}
 
-	var sdkMod dagql.Instance[*core.Module]
-	err = l.dag.Select(ctx, sdkModSrc, &sdkMod,
+	var sdkMod dagql.ObjectResult[*core.Module]
+	err = dag.Select(ctx, sdkModSrc, &sdkMod,
 		dagql.Selector{Field: "asModule"},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load sdk module %q: %w", sdk.Source, err)
 	}
 
-	return newModuleSDK(ctx, query, sdkMod, dagql.Instance[*core.Directory]{}, sdk.Config)
+	return newModuleSDK(ctx, query, sdkMod, dagql.ObjectResult[*core.Directory]{}, sdk.Config)
 }
 
 func (l *Loader) namedSDK(
@@ -104,7 +106,7 @@ func (l *Loader) namedSDK(
 
 	switch sdkNamedParsed {
 	case sdkGo:
-		return &goSDK{root: root, dag: l.dag, rawConfig: sdk.Config}, nil
+		return &goSDK{root: root, rawConfig: sdk.Config}, nil
 	case sdkPython:
 		return l.loadBuiltinSDK(ctx, root, sdk, digest.Digest(os.Getenv(distconsts.PythonSDKManifestDigestEnvName)))
 	case sdkTypescript:
@@ -129,11 +131,16 @@ func (l *Loader) loadBuiltinSDK(
 	sdk *core.SDKConfig,
 	manifestDigest digest.Digest,
 ) (*module, error) {
+	dag, err := root.Server.Server(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag for sdk %s: %w", sdk.Source, err)
+	}
+
 	// TODO: currently hardcoding assumption that builtin sdks put *module* source code at
 	// "runtime" subdir right under the *full* sdk source dir. Can be generalized once we support
 	// default-args/scripts in dagger.json
-	var fullSDKDir dagql.Instance[*core.Directory]
-	if err := l.dag.Select(ctx, l.dag.Root(), &fullSDKDir,
+	var fullSDKDir dagql.ObjectResult[*core.Directory]
+	if err := dag.Select(ctx, dag.Root(), &fullSDKDir,
 		dagql.Selector{
 			Field: "_builtinContainer",
 			Args: []dagql.NamedInput{
@@ -150,8 +157,8 @@ func (l *Loader) loadBuiltinSDK(
 		return nil, fmt.Errorf("failed to import full sdk source for sdk %s from engine container filesystem: %w", sdk.Source, err)
 	}
 
-	var sdkMod dagql.Instance[*core.Module]
-	err := l.dag.Select(ctx, fullSDKDir, &sdkMod,
+	var sdkMod dagql.ObjectResult[*core.Module]
+	err = dag.Select(ctx, fullSDKDir, &sdkMod,
 		dagql.Selector{
 			Field: "directory",
 			Args: []dagql.NamedInput{

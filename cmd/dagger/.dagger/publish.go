@@ -15,7 +15,7 @@ import (
 
 const (
 	// https://github.com/goreleaser/goreleaser/releases
-	goReleaserVersion = "v2.7.0"
+	goReleaserVersion = "v2.11.0"
 	goReleaserImage   = "ghcr.io/goreleaser/goreleaser-pro:" + goReleaserVersion
 )
 
@@ -143,6 +143,7 @@ func (cli *DaggerCli) PublishMetadata(
 ) error {
 	ctr := dag.
 		Alpine(dagger.AlpineOpts{
+			Branch:   "3.22",
 			Packages: []string{"aws-cli"},
 		}).
 		Container().
@@ -242,7 +243,7 @@ func publishEnv(ctx context.Context) (*dagger.Container, error) {
 
 	// install nix
 	ctr = ctr.
-		WithExec([]string{"apk", "add", "xz"}).
+		WithExec([]string{"apk", "add", "coreutils", "xz"}).
 		WithDirectory("/nix", dag.Directory()).
 		WithNewFile("/etc/nix/nix.conf", `build-users-group =`).
 		WithExec([]string{"sh", "-c", "curl -fsSL https://nixos.org/nix/install | sh -s -- --no-daemon"})

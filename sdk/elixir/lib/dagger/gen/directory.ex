@@ -148,6 +148,24 @@ defmodule Dagger.Directory do
   end
 
   @doc """
+  check if a file or directory exists
+  """
+  @spec exists(t(), String.t(), [
+          {:expected_type, Dagger.ExistsType.t() | nil},
+          {:do_not_follow_symlinks, boolean() | nil}
+        ]) :: {:ok, boolean()} | {:error, term()}
+  def exists(%__MODULE__{} = directory, path, optional_args \\ []) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("exists")
+      |> QB.put_arg("path", path)
+      |> QB.maybe_put_arg("expectedType", optional_args[:expected_type])
+      |> QB.maybe_put_arg("doNotFollowSymlinks", optional_args[:do_not_follow_symlinks])
+
+    Client.execute(directory.client, query_builder)
+  end
+
+  @doc """
   Writes the contents of the directory to a path on the host.
   """
   @spec export(t(), String.t(), [{:wipe, boolean() | nil}]) ::
@@ -363,6 +381,24 @@ defmodule Dagger.Directory do
       |> QB.put_arg("path", path)
       |> QB.put_arg("contents", contents)
       |> QB.maybe_put_arg("permissions", optional_args[:permissions])
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc """
+  Retrieves this directory with the given Git-compatible patch applied.
+
+  > #### Experimental {: .warning}
+  >
+  > "This API is highly experimental and may be removed or replaced entirely."
+  """
+  @spec with_patch(t(), String.t()) :: Dagger.Directory.t()
+  def with_patch(%__MODULE__{} = directory, patch) do
+    query_builder =
+      directory.query_builder |> QB.select("withPatch") |> QB.put_arg("patch", patch)
 
     %Dagger.Directory{
       query_builder: query_builder,

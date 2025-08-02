@@ -1,8 +1,10 @@
 package templates
 
 import (
+	"cmp"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"text/template"
@@ -53,11 +55,15 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"ArgsHaveDescription":       funcs.argsHaveDescription,
 		"SortInputFields":           funcs.sortInputFields,
 		"SortEnumFields":            funcs.sortEnumFields,
+		"ExtractEnumValue":          funcs.extractEnumValue,
+		"GroupEnumByValue":          funcs.groupEnumByValue,
+		"GetInputEnumValueType":     funcs.getInputEnumValueType,
 		"Solve":                     funcs.solve,
 		"Subtract":                  funcs.subtract,
 		"ConvertID":                 commonFunc.ConvertID,
 		"IsSelfChainable":           commonFunc.IsSelfChainable,
 		"IsListOfObject":            commonFunc.IsListOfObject,
+		"IsListOfEnum":              commonFunc.IsListOfEnum,
 		"GetArrayField":             commonFunc.GetArrayField,
 		"ToLowerCase":               commonFunc.ToLowerCase,
 		"ToUpperCase":               commonFunc.ToUpperCase,
@@ -237,7 +243,6 @@ var jsKeywords = map[string]struct{}{
 
 // formatEnum formats a GraphQL enum into a TS equivalent
 func (funcs typescriptTemplateFuncs) formatEnum(s string) string {
-	s = strings.ToLower(s)
 	return strcase.ToCamel(s)
 }
 
@@ -280,6 +285,14 @@ func (funcs typescriptTemplateFuncs) getEnumValues(values introspection.InputVal
 	return enums
 }
 
+func (funcs typescriptTemplateFuncs) getInputEnumValueType(enum introspection.InputValue) string {
+	if enum.TypeRef.OfType != nil && enum.TypeRef.OfType.Kind == introspection.TypeKindEnum {
+		return enum.TypeRef.OfType.Name
+	}
+
+	return enum.TypeRef.Name
+}
+
 func (funcs typescriptTemplateFuncs) getRequiredArgs(values introspection.InputValues) introspection.InputValues {
 	required, _ := funcs.splitRequiredOptionalArgs(values)
 	return required
@@ -298,10 +311,48 @@ func (funcs typescriptTemplateFuncs) sortInputFields(s []introspection.InputValu
 }
 
 func (funcs typescriptTemplateFuncs) sortEnumFields(s []introspection.EnumValue) []introspection.EnumValue {
-	sort.SliceStable(s, func(i, j int) bool {
-		return s[i].Name < s[j].Name
+	copy := slices.Clone(s)
+
+	slices.SortStableFunc(copy, func(x, y introspection.EnumValue) int {
+		return cmp.Compare(strcase.ToCamel(x.Name), strcase.ToCamel(y.Name))
 	})
-	return s
+
+	copy = slices.CompactFunc(copy, func(x, y introspection.EnumValue) bool {
+		return strcase.ToCamel(x.Name) == strcase.ToCamel(y.Name)
+	})
+
+	return copy
+}
+
+func (funcs typescriptTemplateFuncs) extractEnumValue(enum introspection.EnumValue) string {
+	return enum.Directives.EnumValue()
+}
+
+// groupEnumByValue returns a list of lists of enums, grouped by similar enum value.
+//
+// Additionally, enum names within a single value are removed (which would
+// result in duplicate codegen).
+func (funcs typescriptTemplateFuncs) groupEnumByValue(s []introspection.EnumValue) [][]introspection.EnumValue {
+	m := map[string][]introspection.EnumValue{}
+	for _, v := range s {
+		value := cmp.Or(v.Directives.EnumValue(), v.Name)
+		if !slices.ContainsFunc(m[value], func(other introspection.EnumValue) bool {
+			return strcase.ToCamel(v.Name) == strcase.ToCamel(other.Name)
+		}) {
+			m[value] = append(m[value], v)
+		}
+	}
+
+	var result [][]introspection.EnumValue
+	for _, v := range s {
+		value := cmp.Or(v.Directives.EnumValue(), v.Name)
+		if res, ok := m[value]; ok {
+			result = append(result, res)
+			delete(m, value)
+		}
+	}
+
+	return result
 }
 
 func (funcs typescriptTemplateFuncs) argsHaveDescription(values introspection.InputValues) bool {
@@ -319,11 +370,16 @@ func (funcs typescriptTemplateFuncs) toSingleType(value string) string {
 }
 
 func (funcs typescriptTemplateFuncs) moduleRelPath(path string) string {
+	moduleParentPath := ""
+	if funcs.cfg.ModuleConfig != nil {
+		moduleParentPath = funcs.cfg.ModuleConfig.ModuleParentPath
+	}
+
 	return filepath.Join(
 		// Path to the root of this module (since we're at the codegen root sdk/src/api/).
 		"../../../",
 		// Path to the module's context directory.
-		funcs.cfg.ModuleParentPath,
+		moduleParentPath,
 		// Path from the context directory to the target path.
 		path,
 	)
@@ -334,15 +390,15 @@ func (funcs typescriptTemplateFuncs) formatProtected(s string) string {
 }
 
 func (funcs typescriptTemplateFuncs) isClientOnly() bool {
-	return funcs.cfg.ClientOnly
+	return funcs.cfg.ClientConfig != nil
 }
 
-func (funcs typescriptTemplateFuncs) Dependencies() []generator.ModuleSourceDependencies {
-	return funcs.cfg.ModuleDependencies
+func (funcs typescriptTemplateFuncs) Dependencies() []generator.ModuleSourceDependency {
+	return funcs.cfg.ClientConfig.ModuleDependencies
 }
 
 func (funcs typescriptTemplateFuncs) HasLocalDependencies() bool {
-	for _, dep := range funcs.cfg.ModuleDependencies {
+	for _, dep := range funcs.cfg.ClientConfig.ModuleDependencies {
 		if dep.Kind == "LOCAL_SOURCE" {
 			return true
 		}

@@ -2,21 +2,29 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"maps"
+	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 
+	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/moby/buildkit/cache"
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/sys/user"
+	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/core/reffs"
 	"github.com/dagger/dagger/dagql"
@@ -25,7 +33,17 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
+var (
+	errEmptyResultRef = fmt.Errorf("empty result reference")
+)
+
+type Evaluatable interface {
+	dagql.Typed
+	Evaluate(context.Context) (*buildkit.Result, error)
+}
+
 type HasPBDefinitions interface {
+	// PBDefinitions returns all the buildkit definitions that are part of a core type
 	PBDefinitions(context.Context) ([]*pb.Definition, error)
 }
 
@@ -54,7 +72,7 @@ func collectPBDefinitions(ctx context.Context, value dagql.Typed) ([]*pb.Definit
 		} else {
 			return nil, nil
 		}
-	case dagql.Wrapper: // dagql.Instance
+	case dagql.Wrapper: // dagql.Result
 		return collectPBDefinitions(ctx, x.Unwrap())
 	case HasPBDefinitions:
 		return x.PBDefinitions(ctx)
@@ -65,6 +83,23 @@ func collectPBDefinitions(ctx context.Context, value dagql.Typed) ([]*pb.Definit
 		slog.Warn("collectPBDefinitions: unhandled type", "type", fmt.Sprintf("%T", value))
 		return nil, nil
 	}
+}
+
+type Digestable interface {
+	// Digest returns a content-digest of an object.
+	Digest() (digest.Digest, error)
+}
+
+func DigestOf(v any) (digest.Digest, error) {
+	if v, ok := v.(Digestable); ok {
+		return v.Digest()
+	}
+
+	vs, err := json.Marshal(v)
+	if err != nil {
+		return "", err
+	}
+	return digest.FromBytes(vs), nil
 }
 
 func absPath(workDir string, containerPath string) string {
@@ -295,7 +330,186 @@ func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(st
 	return f(dir)
 }
 
+// mountLLB is a utility for easily mounting an llb definition
+func mountLLB(ctx context.Context, llb *pb.Definition, f func(string) error) error {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	res, err := bk.Solve(ctx, bkgw.SolveRequest{
+		Definition: llb,
+	})
+	if err != nil {
+		return err
+	}
+
+	ref, err := res.SingleRef()
+	if err != nil {
+		return err
+	}
+	// empty directory, i.e. llb.Scratch()
+	if ref == nil {
+		tmp, err := os.MkdirTemp("", "mount")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(tmp)
+		return f(tmp)
+	}
+	return ref.Mount(ctx, f)
+}
+
 func Supports(ctx context.Context, minVersion string) (bool, error) {
 	id := dagql.CurrentID(ctx)
 	return engine.CheckVersionCompatibility(id.View(), minVersion), nil
+}
+
+// AllVersion is a view that contains all versions.
+var AllVersion = dagql.AllView{}
+
+// AfterVersion is a view that checks if a target version is greater than *or*
+// equal to the filtered version.
+type AfterVersion string
+
+var _ dagql.ViewFilter = AfterVersion("")
+
+func (minVersion AfterVersion) Contains(version dagql.View) bool {
+	if version == "" {
+		return true
+	}
+	return semver.Compare(string(version), string(minVersion)) >= 0
+}
+
+// BeforeVersion is a view that checks if a target version is less than the
+// filtered version.
+type BeforeVersion string
+
+var _ dagql.ViewFilter = BeforeVersion("")
+
+func (maxVersion BeforeVersion) Contains(version dagql.View) bool {
+	if version == "" {
+		return false
+	}
+	return semver.Compare(string(version), string(maxVersion)) < 0
+}
+
+var (
+	enumView = AfterVersion("v0.18.11")
+)
+
+// RootPathWithoutFinalSymlink joins a path with a root, evaluating and bounding all
+// symlinks except the final component of the path (i.e. the basename component).
+// This is useful for the case where one needs to reference a symlink rather than
+// following it (e.g. deleting a symlink)
+// This function will return an error if any of the symlinks encountered before the final
+// path separator reference a location outside of the root path.
+func RootPathWithoutFinalSymlink(root, containerPath string) (string, error) {
+	linkDir, linkBasename := filepath.Split(containerPath)
+	resolvedLinkDir, err := containerdfs.RootPath(root, linkDir)
+	if err != nil {
+		return "", err
+	}
+	return path.Join(resolvedLinkDir, linkBasename), nil
+}
+
+type execInMountOpt struct {
+	commitSnapshot bool
+	cacheDesc      string
+}
+
+type execInMountOptFn func(opt *execInMountOpt)
+
+func withSavedSnapshot(format string, a ...any) execInMountOptFn {
+	return func(opt *execInMountOpt) {
+		opt.cacheDesc = fmt.Sprintf(format, a...)
+		opt.commitSnapshot = true
+	}
+}
+
+type fileOrDirectory interface {
+	*File | *Directory
+	getResult() bkcache.ImmutableRef
+	setResult(bkcache.ImmutableRef)
+	Evaluatable
+}
+
+// execInMount is a helper used by Directory.execInMount and File.execInMount
+func execInMount[T fileOrDirectory](ctx context.Context, obj T, f func(string) error, optFns ...execInMountOptFn) (T, error) {
+	var saveOpt execInMountOpt
+	for _, optFn := range optFns {
+		optFn(&saveOpt)
+	}
+
+	parentRef, err := getRefOrEvaluate(ctx, obj)
+	if err != nil {
+		return nil, err
+	}
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var mountRef bkcache.Ref
+	var newRef bkcache.MutableRef
+	if saveOpt.commitSnapshot {
+		if saveOpt.cacheDesc == "" {
+			return nil, fmt.Errorf("execInMount saveSnapshotOpt missing cache description")
+		}
+		newRef, err = query.BuildkitCache().New(ctx, parentRef, bkSessionGroup,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular), bkcache.WithDescription(saveOpt.cacheDesc))
+		if err != nil {
+			return nil, err
+		}
+		mountRef = newRef
+	} else {
+		if parentRef == nil {
+			return nil, errEmptyResultRef
+		}
+		mountRef = parentRef
+	}
+	err = MountRef(ctx, mountRef, bkSessionGroup, f)
+	if err != nil {
+		return nil, err
+	}
+	if saveOpt.commitSnapshot {
+		snap, err := newRef.Commit(ctx)
+		if err != nil {
+			return nil, err
+		}
+		obj.setResult(snap)
+		return obj, nil
+	}
+	return obj, nil
+}
+
+func getRefOrEvaluate[T fileOrDirectory](ctx context.Context, t T) (bkcache.ImmutableRef, error) {
+	ref := t.getResult()
+	if ref != nil {
+		return ref, nil
+	}
+	res, err := t.Evaluate(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if res == nil {
+		return nil, nil
+	}
+	cacheRef, err := res.SingleRef()
+	if err != nil {
+		return nil, err
+	}
+	if cacheRef == nil {
+		return nil, nil
+	}
+	return cacheRef.CacheRef(ctx)
 }

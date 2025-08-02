@@ -158,10 +158,6 @@ func (fe *frontendPretty) Shell(ctx context.Context, handler ShellHandler) {
 	<-ctx.Done()
 }
 
-func (fe *frontendPretty) ConnectedToEngine(ctx context.Context, name string, version string, clientID string) {
-	// noisy, so suppress this for now
-}
-
 func (fe *frontendPretty) SetCloudURL(ctx context.Context, url string, msg string, logged bool) {
 	if fe.OpenWeb {
 		if err := browser.OpenURL(url); err != nil {
@@ -383,9 +379,6 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 
 	// Render the full trace.
 	fe.ZoomedSpan = fe.db.PrimarySpan
-	if fe.reportOnly && fe.Verbosity < dagui.ExpandCompletedVerbosity {
-		fe.Verbosity = dagui.ExpandCompletedVerbosity
-	}
 	fe.recalculateViewLocked()
 
 	// Unfocus for the final render.
@@ -1791,8 +1784,23 @@ func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui
 	return false
 }
 
+func spanIsVisible(span *dagui.Span, row *dagui.TraceRow) bool {
+	for row := row.PreviousVisual; row != nil; row = row.PreviousVisual {
+		if row.Span.ID == span.ID {
+			return true
+		}
+	}
+	for row := row.NextVisual; row != nil; row = row.NextVisual {
+		if row.Span.ID == span.ID {
+			return true
+		}
+	}
+	return false
+}
+
 func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
-	if row.Span.ErrorOrigin != nil {
+	if row.Span.ErrorOrigin != nil &&
+		spanIsVisible(row.Span.ErrorOrigin, row) {
 		// span's error originated elsewhere; don't repeat the message, the ERROR status
 		// links to its origin instead
 		return

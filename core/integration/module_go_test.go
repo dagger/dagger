@@ -1182,6 +1182,35 @@ func (m *Minimal) HelloFinal(
 	require.Equal(t, "", prop.Get("description").String())
 }
 
+func (GoSuite) TestPragmaParsing(ctx context.Context, t *testctx.T) {
+	// corner cases of pragma parsing
+
+	c := connect(ctx, t)
+
+	// corner cases where a +default pragma has a value that itself has a + in it
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", `package main
+
+type Test struct {}
+
+func (t *Test) Hello(
+	// +optional
+	// +default="blah+dagger-ci@dagger.io"
+	argWhereDefaultHasAPlusSign string,
+) string {
+	return argWhereDefaultHasAPlusSign
+}
+`,
+		)
+
+	out, err := modGen.With(daggerCall("hello")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, `blah+dagger-ci@dagger.io`, out)
+}
+
 func (GoSuite) TestWeirdFields(ctx context.Context, t *testctx.T) {
 	// these are all cases that used to panic due to the disparity in the type spec and the ast
 
@@ -1311,6 +1340,60 @@ func (m *Minimal) IsEmpty() bool {
 	out, err := modGen.With(daggerQuery(`{minimal{isEmpty}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"minimal": {"isEmpty": true}}`, out)
+}
+
+func (GoSuite) TestPrivateEnumField(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := goGitBase(t, c).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--sdk=go", "dep")).
+		WithNewFile("dep/main.go", `package main
+
+import (
+	"context"
+	"dagger/dep/internal/dagger"
+)
+
+type Dep struct {
+	Opts []dagger.ContainerPublishOpts // +private
+}
+
+func New() *Dep {
+	return &Dep{
+		Opts: []dagger.ContainerPublishOpts{
+			{PlatformVariants: []*dagger.Container{dag.Container().From("alpine")}},
+		},
+	}
+}
+
+func (m *Dep) Publish(ctx context.Context) (string, error) {
+	// dry run a publish
+	return "registry/repo:latest", nil
+}
+`,
+		).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		With(daggerExec("install", "./dep")).
+		WithNewFile("main.go", `package main
+
+import (
+	"context"
+)
+
+type Test struct {}
+
+func (m Test) Publish(ctx context.Context) (string, error) {
+	return dag.Dep().Publish(ctx)
+}
+`,
+		)
+
+	out, err := ctr.With(daggerQuery(`{test{publish}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"test": {"publish": "registry/repo:latest"}}`, out)
 }
 
 func (GoSuite) TestJSONField(ctx context.Context, t *testctx.T) {

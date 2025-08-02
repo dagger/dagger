@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"regexp"
 	"strings"
@@ -946,11 +947,6 @@ func (ShellSuite) TestStateInterpolation(ctx context.Context, t *testctx.T) {
 			prompt:   `.ls ./$($FOO | name)/$($BAR | name)`,
 			expected: "foobar.txt\n",
 		},
-		{
-			name:     "builtin argument",
-			prompt:   `_echo ./$($FOO | name)/$($BAR | name)/`,
-			expected: "./foo/bar/\n",
-		},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			script := []string{
@@ -965,24 +961,110 @@ func (ShellSuite) TestStateInterpolation(ctx context.Context, t *testctx.T) {
 			require.Equal(t, tc.expected, out)
 		})
 	}
+
+	// Don't use `_echo` because it'll just spit out whatever we give it
+	// to stdout, which will be picked up by the state resolution at
+	// the end of the run.
+	for _, prefix := range []string{"_", "."} {
+		t.Run("builtin argument with "+prefix, func(ctx context.Context, t *testctx.T) {
+			script := prefix + "exit $(directory | with-new-file exit_code 5 | file exit_code | contents)"
+			_, err := modGen.With(daggerShellNoMod(script)).Sync(ctx)
+			var execErr *dagger.ExecError
+			require.ErrorAs(t, err, &execErr)
+			require.Equal(t, 5, execErr.ExitCode)
+		})
+	}
 }
 
 func (ShellSuite) TestCommandStateArgs(ctx context.Context, t *testctx.T) {
+	cmd := rand.Text()
+	script := fmt.Sprintf("FOO=$(container | from %s | with-exec -- echo -n %s | stdout); .help $FOO", alpineImage, cmd)
+
 	c := connect(ctx, t)
-	script := fmt.Sprintf("FOO=$(container | from %s | with-exec -- echo -n foo | stdout); .help $FOO", alpineImage)
-	_, err := daggerCliBase(t, c).
-		With(daggerShell(script)).
-		Sync(ctx)
-	requireErrOut(t, err, `"foo" does not exist`)
+	_, err := daggerCliBase(t, c).With(daggerShell(script)).Sync(ctx)
+
+	requireErrOut(t, err, fmt.Sprintf("%q does not exist", cmd))
 }
 
 func (ShellSuite) TestExecStderr(ctx context.Context, t *testctx.T) {
+	cmd := rand.Text()
+	script := fmt.Sprintf("container | from %s | with-exec ls %s | stdout", alpineImage, cmd)
+
 	c := connect(ctx, t)
-	script := fmt.Sprintf("container | from %s | with-exec ls wat-shell | stdout", alpineImage)
-	_, err := daggerCliBase(t, c).
-		With(daggerShell(script)).
-		Sync(ctx)
-	requireErrOut(t, err, "ls: wat-shell: No such file or directory")
+	_, err := daggerCliBase(t, c).With(daggerShell(script)).Sync(ctx)
+
+	requireErrOut(t, err, fmt.Sprintf("ls: %s: No such file or directory", cmd))
+}
+
+func (ShellSuite) TestExitCommand(ctx context.Context, t *testctx.T) {
+	t.Run("specific code", func(ctx context.Context, t *testctx.T) {
+		script := `directory | with-new-file foo foo | entries; .exit 5; .echo ok`
+
+		c := connect(ctx, t)
+		_, err := daggerCliBase(t, c).With(daggerShell(script)).Sync(ctx)
+
+		var execErr *dagger.ExecError
+		require.ErrorAs(t, err, &execErr)
+		require.Equal(t, 5, execErr.ExitCode)
+		require.Contains(t, execErr.Stdout, "foo")
+		require.NotContains(t, execErr.Stdout, "ok")
+	})
+
+	t.Run("no args", func(ctx context.Context, t *testctx.T) {
+		// without `set +e` it won't reach `.exit`
+		script := `_set +e; directory | with-new-file | entries; .exit; .echo ok`
+
+		c := connect(ctx, t)
+		_, err := daggerCliBase(t, c).With(daggerShell(script)).Sync(ctx)
+
+		var execErr *dagger.ExecError
+		require.ErrorAs(t, err, &execErr)
+		require.Equal(t, 1, execErr.ExitCode)
+		require.NotContains(t, execErr.Stdout, "ok")
+	})
+
+	t.Run("no error", func(ctx context.Context, t *testctx.T) {
+		// no error because `.echo ok` returns status code 0
+		script := `_set +e; directory | with-new-file | entries; .echo ok; .exit; .echo exited`
+
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).With(daggerShell(script)).Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, out, "ok")
+		require.NotContains(t, out, "exited")
+	})
+}
+
+func (ShellSuite) TestExecExit(ctx context.Context, t *testctx.T) {
+	msg := rand.Text()
+	script := fmt.Sprintf(`container | from %s | with-exec -- sh -c ">&2 echo %q; exit 5" | stdout`, alpineImage, msg)
+
+	c := connect(ctx, t)
+	_, err := daggerCliBase(t, c).With(daggerShell(script)).Sync(ctx)
+
+	var execErr *dagger.ExecError
+	require.ErrorAs(t, err, &execErr)
+	require.Equal(t, 5, execErr.ExitCode)
+	require.Contains(t, execErr.Stderr, msg)
+}
+
+func (ShellSuite) TestNonExecChainBreak(ctx context.Context, t *testctx.T) {
+	for i, tc := range []string{
+		"directory | with-file",
+		"directory | with-file | entries",
+		"directory | with-file | with-directory | entries",
+		"DIR=$(directory | with-file); $DIR",
+		"DIR=$(directory | with-file); $DIR | entries",
+		"directory | with-directory foo $(directory | with-file) | entries",
+	} {
+		t.Run(fmt.Sprintf("case %d", i), func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			_, err := daggerCliBase(t, c).With(daggerShell(tc)).Sync(ctx)
+
+			requireErrRegexp(t, err, `requires 2 positional argument.*\nusage: with-file <path> <source>`)
+		})
+	}
 }
 
 func (ShellSuite) TestInstall(ctx context.Context, t *testctx.T) {
@@ -1014,7 +1096,8 @@ directory | with-new-file test bar | file test | contents
 	t.Run("async", func(ctx context.Context, t *testctx.T) {
 		script := `
 directory | with-new-file test foo | file test | contents &
-directory | with-new-file test bar | file test | contents & .wait
+directory | with-new-file test bar | file test | contents & 
+.wait
 `
 		c := connect(ctx, t)
 		out, err := daggerCliBase(t, c).
@@ -1025,6 +1108,44 @@ directory | with-new-file test bar | file test | contents & .wait
 		if out != "foobar" && out != "barfoo" {
 			t.Errorf("unexpected output: %q", out)
 		}
+	})
+
+	t.Run("async error", func(ctx context.Context, t *testctx.T) {
+		script := fmt.Sprintf(`
+container | from %[1]s | with-exec -- sh -c 'exit 5' | stdout &
+job1=$!
+container | from %[1]s | with-exec false | stdout &
+job2=$!
+container | from %[1]s | with-exec echo ok | stdout &
+job3=$!
+.wait $job1 $job2 $job3
+`, alpineImage,
+		)
+
+		c := connect(ctx, t)
+		_, err := daggerCliBase(t, c).With(daggerShell(script)).Sync(ctx)
+
+		// should exit with the same exit code as the first failed command
+		var ex *dagger.ExecError
+		require.ErrorAs(t, err, &ex)
+		require.Equal(t, 5, ex.ExitCode)
+	})
+
+	t.Run("async error no pids", func(ctx context.Context, t *testctx.T) {
+		script := fmt.Sprintf(`
+container | from %[1]s | with-exec false | stdout &
+container | from %[1]s | with-exec -- sh -c 'exit 5' | stdout &
+container | from %[1]s | with-exec echo ok | stdout &
+.wait
+`, alpineImage,
+		)
+
+		c := connect(ctx, t)
+		_, err := daggerCliBase(t, c).With(daggerShell(script)).Sync(ctx)
+
+		// Without arguments, .wait always returns zero (successfully waited
+		// for all jobs to finish)
+		require.NoError(t, err)
 	})
 }
 

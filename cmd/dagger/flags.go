@@ -58,6 +58,8 @@ func GetCustomFlagValue(name string) DaggerValue {
 		return &moduleValue{}
 	case Platform:
 		return &platformValue{}
+	case BuildArg:
+		return &buildArgValue{}
 	case Socket:
 		return &socketValue{}
 	case GitRepository:
@@ -101,6 +103,9 @@ func GetCustomFlagValueSlice(name string, defVal []string) (DaggerValue, error) 
 	case Platform:
 		v := &sliceValue[*platformValue]{}
 		return v.SetDefault(defVal)
+	case BuildArg:
+		v := &sliceValue[*buildArgValue]{}
+		return v.SetDefault(defVal)
 	case Socket:
 		v := &sliceValue[*socketValue]{}
 		return v.SetDefault(defVal)
@@ -132,7 +137,7 @@ func (v *sliceValue[T]) Type() string {
 	if v.Init != nil {
 		t = v.Init()
 	}
-	return t.Type()
+	return "[]" + t.Type()
 }
 
 func (v *sliceValue[T]) String() string {
@@ -233,8 +238,8 @@ type enumValue struct {
 var _ DaggerValue = &enumValue{}
 
 func (v *enumValue) Type() string {
-	vs := make([]string, 0, len(v.typedef.Values))
-	for _, v := range v.typedef.Values {
+	vs := make([]string, 0, len(v.typedef.Members))
+	for _, v := range v.typedef.Members {
 		vs = append(vs, v.Name)
 	}
 	return strings.Join(vs, ",")
@@ -249,7 +254,7 @@ func (v *enumValue) Get(ctx context.Context, dag *dagger.Client, modSrc *dagger.
 }
 
 func (v *enumValue) Set(s string) error {
-	for _, allow := range v.typedef.Values {
+	for _, allow := range v.typedef.Members {
 		if strings.EqualFold(s, allow.Name) {
 			v.value = allow.Name
 			return nil
@@ -739,6 +744,43 @@ func (v *platformValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.M
 		return nil, fmt.Errorf("platform cannot be empty")
 	}
 	return v.platform, nil
+}
+
+type buildArgValue struct {
+	name  string
+	value string
+}
+
+func (v *buildArgValue) Type() string {
+	return BuildArg
+}
+
+func (v *buildArgValue) Set(s string) error {
+	if !strings.Contains(s, "=") {
+		return fmt.Errorf("%s must be formatted as name=value", s)
+	}
+	pair := strings.Trim(s, `"`)
+	name, value, found := strings.Cut(pair, "=")
+	if !found {
+		return fmt.Errorf("%s must be formatted as name=value", pair)
+	}
+	if name == "" {
+		return fmt.Errorf("%s cannot have an empty name", pair)
+	}
+	v.name = name
+	v.value = value
+	return nil
+}
+
+func (v *buildArgValue) String() string {
+	return fmt.Sprintf("%s=%s", v.name, v.value)
+}
+
+func (v *buildArgValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
+	if v.name == "" {
+		return nil, fmt.Errorf("build arg cannot be empty")
+	}
+	return dagger.BuildArg{Name: v.name, Value: v.value}, nil
 }
 
 type gitRepositoryValue struct {

@@ -41,7 +41,7 @@ type ObjectType interface {
 	// IDType returns the scalar type for the object's IDs.
 	IDType() (IDType, bool)
 	// New creates a new instance of the type.
-	New(id *call.ID, val Typed) (Object, error)
+	New(val AnyResult) (AnyObjectResult, error)
 	// ParseField parses the given field and returns a Selector and an expected
 	// return type.
 	ParseField(ctx context.Context, view View, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error)
@@ -63,19 +63,39 @@ type IDType interface {
 
 // FieldFunc is a function that implements a field on an object while limited
 // to the object's external interface.
-type FieldFunc func(context.Context, Object, map[string]Input) (Typed, error)
+type FieldFunc func(context.Context, AnyResult, map[string]Input) (AnyResult, error)
 
 type IDable interface {
 	// ID returns the ID of the value.
 	ID() *call.ID
 }
 
-// Object represents an Object in the graph which has an ID and can have
-// sub-selections.
-type Object interface {
+// AnyResult is a Typed value wrapped with an ID constructor. The wrapped value may
+// be any graphql type, including scalars, objects, arrays, etc.
+// It's a Result but as an interface and without any type params, allowing it
+// to be passed around without knowing the concrete type at compile-time.
+type AnyResult interface {
 	Typed
+	Wrapper
 	IDable
 	PostCallable
+	Setter
+
+	// DerefValue returns an AnyResult when the wrapped value is Derefable and
+	// has a value set. If the value is not derefable, it returns itself.
+	DerefValue() (AnyResult, bool)
+
+	// NthValue returns the Nth value of the wrapped value when the wrapped value
+	// is an Enumerable. If the wrapped value is not Enumerable, it returns an error.
+	NthValue(int) (AnyResult, error)
+
+	// WithPostCall returns a new AnyResult with the given post-call function attached to it.
+	WithPostCall(fn cache.PostCallFunc) AnyResult
+}
+
+// AnyObjectResult is an AnyResult that wraps a selectable value (i.e. a graph object)
+type AnyObjectResult interface {
+	AnyResult
 
 	// ObjectType returns the type of the object.
 	ObjectType() ObjectType
@@ -86,7 +106,7 @@ type Object interface {
 	// be instantiated with a class for further selection.
 	//
 	// Any Nullable values are automatically unwrapped.
-	Call(context.Context, *Server, *call.ID) (Typed, *call.ID, error)
+	Call(context.Context, *Server, *call.ID) (AnyResult, error)
 
 	// Select evaluates the field selected by the given selector and returns the result.
 	//
@@ -94,24 +114,20 @@ type Object interface {
 	// be instantiated with a class for further selection.
 	//
 	// Any Nullable values are automatically unwrapped.
-	Select(context.Context, *Server, Selector) (Typed, *call.ID, error)
-
-	// ReturnType gets the return type of the field selected by the given
-	// selector.
-	//
-	// The returned value is the raw Typed value returned from the field; it must
-	// be instantiated with a class for further selection.
-	//
-	// Any Nullable values are automatically unwrapped.
-	ReturnType(context.Context, *Server, Selector) (Typed, *call.ID, error)
+	Select(context.Context, *Server, Selector) (AnyResult, error)
 }
 
-// A type that has a callback attached that needs to always run before returned to a caller
+// InterfaceValue is a value that wraps some underlying object with a interface to that object's API. This type exists to support unwrapping it and getting the underlying object.
+type InterfaceValue interface {
+	// UnderlyingObject returns the underlying object of the InterfaceValue
+	UnderlyingObject() (Typed, error)
+}
+
+// PostCallable is a type that has a callback attached that needs to always run before returned to a caller
 // whether or not the type is being returned from cache or not
 type PostCallable interface {
-	// Return the postcall func (or nil if not set) and the Typed value in case it was wrapped
-	// with a type used for attaching the postcall func
-	GetPostCall() (cache.PostCallFunc, Typed)
+	// Return the postcall func (or nil if not set)
+	GetPostCall() cache.PostCallFunc
 }
 
 // A type that has a callback attached that needs to always run when the result is removed
@@ -285,7 +301,7 @@ func (i Int) SetField(v reflect.Value) error {
 // Float is a GraphQL Float scalar.
 type Float float64
 
-func NewFloat(val float64) Float {
+func NewFloat[T constraints.Float](val T) Float {
 	return Float(val)
 }
 
@@ -538,6 +554,84 @@ func (s String) SetField(v reflect.Value) error {
 	}
 }
 
+type SerializedString[T any] struct {
+	Self T
+}
+
+func NewSerializedString[T any](val T) SerializedString[T] {
+	return SerializedString[T]{
+		Self: val,
+	}
+}
+
+var _ Typed = SerializedString[any]{}
+
+func (SerializedString[T]) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "String",
+		NonNull:   true,
+	}
+}
+
+var _ InputDecoder = SerializedString[any]{}
+
+func (SerializedString[T]) DecodeInput(val any) (Input, error) {
+	switch x := val.(type) {
+	case string:
+		var v T
+		err := json.Unmarshal([]byte(x), &v)
+		if err != nil {
+			return nil, err
+		}
+		return NewSerializedString(v), nil
+	default:
+		return nil, fmt.Errorf("cannot create SerializedString from %T", x)
+	}
+}
+
+var _ Input = SerializedString[any]{}
+
+func (s SerializedString[T]) Decoder() InputDecoder {
+	return s
+}
+
+func (s SerializedString[T]) ToLiteral() call.Literal {
+	return call.NewLiteralString(s.String())
+}
+
+func (s SerializedString[T]) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.Self)
+}
+
+func (s *SerializedString[T]) UnmarshalJSON(p []byte) error {
+	var v T
+	if err := json.Unmarshal(p, &v); err != nil {
+		return err
+	}
+	*s = SerializedString[T]{v}
+	return nil
+}
+
+func (s SerializedString[T]) String() string {
+	res, err := s.MarshalJSON()
+	if err != nil {
+		panic(err)
+	}
+	return string(res)
+}
+
+var _ Setter = SerializedString[any]{}
+
+func (s SerializedString[T]) SetField(v reflect.Value) error {
+	switch v.Interface().(type) {
+	case SerializedString[T]:
+		v.Set(reflect.ValueOf(s))
+		return nil
+	default:
+		return fmt.Errorf("cannot set field of type %T with %T", v.Interface(), s)
+	}
+}
+
 type ScalarValue interface {
 	ScalarType
 	Input
@@ -770,14 +864,14 @@ func (i *ID[T]) UnmarshalJSON(p []byte) error {
 }
 
 // Load loads the instance with the given ID from the server.
-func (i ID[T]) Load(ctx context.Context, server *Server) (Instance[T], error) {
+func (i ID[T]) Load(ctx context.Context, server *Server) (res ObjectResult[T], _ error) {
 	val, err := server.Load(ctx, i.id)
 	if err != nil {
-		return Instance[T]{}, fmt.Errorf("load %s: %w", i.id.Display(), err)
+		return res, fmt.Errorf("load %s: %w", i.id.Display(), err)
 	}
-	obj, ok := val.(Instance[T])
+	obj, ok := val.(ObjectResult[T])
 	if !ok {
-		return Instance[T]{}, fmt.Errorf("load %s: expected %T, got %T", i.id.Display(), obj, val)
+		return res, fmt.Errorf("load %s: expected %T, got %T", i.id.Display(), obj, val)
 	}
 	return obj, nil
 }
@@ -791,6 +885,8 @@ type Enumerable interface {
 	// Nth returns the Nth element of the Enumerable, with 1 representing the
 	// first entry.
 	Nth(int) (Typed, error)
+
+	NthValue(i int, enumID *call.ID) (AnyResult, error)
 }
 
 // Array is an array of GraphQL values.
@@ -902,12 +998,16 @@ func NewBoolArray(elems ...bool) Array[Boolean] {
 	return ToArray(NewBoolean, elems...)
 }
 
-func NewIntArray(elems ...int) Array[Int] {
+func NewIntArray[T constraints.Integer](elems ...T) Array[Int] {
 	return ToArray(NewInt, elems...)
 }
 
-func NewFloatArray(elems ...float64) Array[Float] {
+func NewFloatArray[T constraints.Float](elems ...T) Array[Float] {
 	return ToArray(NewFloat, elems...)
+}
+
+func NewBooleanArray(elems ...bool) Array[Boolean] {
+	return ToArray(NewBoolean, elems...)
 }
 
 var _ Typed = Array[Typed]{}
@@ -931,30 +1031,146 @@ func (arr Array[T]) Len() int {
 	return len(arr)
 }
 
-func (arr Array[T]) Nth(i int) (Typed, error) {
+func (arr Array[T]) nth(i int) (T, error) {
 	if i < 1 || i > len(arr) {
-		return nil, fmt.Errorf("index %d out of bounds", i)
+		var zero T
+		return zero, fmt.Errorf("index %d out of bounds", i)
 	}
 	return arr[i-1], nil
 }
 
-type EnumValue interface {
+func (arr Array[T]) Nth(i int) (Typed, error) {
+	return arr.nth(i)
+}
+
+func (arr Array[T]) NthValue(i int, enumID *call.ID) (AnyResult, error) {
+	t, err := arr.nth(i)
+	if err != nil {
+		return nil, err
+	}
+
+	return Result[T]{
+		constructor: enumID.SelectNth(i),
+		self:        t,
+	}, nil
+}
+
+type ResultArray[T Typed] []Result[T]
+
+var _ Typed = ResultArray[Typed]{}
+var _ Enumerable = ResultArray[Typed]{}
+
+func (i ResultArray[T]) Type() *ast.Type {
+	var t T
+	return &ast.Type{
+		Elem:    t.Type(),
+		NonNull: true,
+	}
+}
+
+func (arr ResultArray[T]) Element() Typed {
+	var t T
+	return t
+}
+
+func (arr ResultArray[T]) Len() int {
+	return len(arr)
+}
+
+func (arr ResultArray[T]) nth(i int) (res Result[T], _ error) {
+	if i < 1 || i > len(arr) {
+		return res, fmt.Errorf("index %d out of bounds", i)
+	}
+	return arr[i-1], nil
+}
+
+func (arr ResultArray[T]) Nth(i int) (Typed, error) {
+	inst, err := arr.nth(i)
+	if err != nil {
+		return nil, err
+	}
+	return inst.Self(), nil
+}
+
+func (arr ResultArray[T]) NthValue(i int, enumID *call.ID) (AnyResult, error) {
+	inst, err := arr.nth(i)
+	if err != nil {
+		return nil, err
+	}
+
+	return inst, nil
+}
+
+type ObjectResultArray[T Typed] []ObjectResult[T]
+
+var _ Typed = ObjectResultArray[Typed]{}
+var _ Enumerable = ObjectResultArray[Typed]{}
+
+func (i ObjectResultArray[T]) Type() *ast.Type {
+	var t T
+	return &ast.Type{
+		Elem:    t.Type(),
+		NonNull: true,
+	}
+}
+
+func (arr ObjectResultArray[T]) Element() Typed {
+	var t T
+	return t
+}
+
+func (arr ObjectResultArray[T]) Len() int {
+	return len(arr)
+}
+
+func (arr ObjectResultArray[T]) nth(i int) (res ObjectResult[T], _ error) {
+	if i < 1 || i > len(arr) {
+		return res, fmt.Errorf("index %d out of bounds", i)
+	}
+	return arr[i-1], nil
+}
+
+func (arr ObjectResultArray[T]) Nth(i int) (Typed, error) {
+	inst, err := arr.nth(i)
+	if err != nil {
+		return nil, err
+	}
+	return inst.Self(), nil
+}
+
+func (arr ObjectResultArray[T]) NthValue(i int, enumID *call.ID) (AnyResult, error) {
+	inst, err := arr.nth(i)
+	if err != nil {
+		return nil, err
+	}
+
+	return inst, nil
+}
+
+type enumValue interface {
 	Input
 	~string
 }
 
-// EnumValues is a list of possible values for an Enum.
-type EnumValues[T EnumValue] struct {
-	values       []T
-	descriptions []string
+type EnumValue[T enumValue] struct {
+	Value       T
+	Underlying  T
+	Description string
+	View        ViewFilter
 }
 
+// EnumValues is a list of possible values for an Enum.
+type EnumValues[T enumValue] []EnumValue[T]
+
 // NewEnum creates a new EnumType with the given possible values.
-func NewEnum[T EnumValue](vals ...T) *EnumValues[T] {
-	return &EnumValues[T]{
-		values:       vals,
-		descriptions: make([]string, len(vals)),
+func NewEnum[T enumValue](vals ...T) *EnumValues[T] {
+	enum := make(EnumValues[T], 0, len(vals))
+	for _, val := range vals {
+		enum = append(enum, EnumValue[T]{
+			Value: val,
+		})
 	}
+	return &enum
 }
 
 func (e *EnumValues[T]) Type() *ast.Type {
@@ -970,7 +1186,7 @@ func (e *EnumValues[T]) TypeDefinition(view View) *ast.Definition {
 	def := &ast.Definition{
 		Kind:       ast.Enum,
 		Name:       e.TypeName(),
-		EnumValues: e.PossibleValues(),
+		EnumValues: e.PossibleValues(view),
 	}
 	var val T
 	if isType, ok := any(val).(Descriptive); ok {
@@ -980,23 +1196,56 @@ func (e *EnumValues[T]) TypeDefinition(view View) *ast.Definition {
 }
 
 func (e *EnumValues[T]) DecodeInput(val any) (Input, error) {
+	if enum, ok := val.(T); ok {
+		val = string(enum)
+	}
+
 	v, err := (&EnumValueName{Enum: e.TypeName()}).DecodeInput(val)
 	if err != nil {
 		return nil, err
 	}
-	return e.Lookup(v.(*EnumValueName).Value)
+	return e.Lookup(v.(*EnumValueName).Name)
 }
 
-func (e *EnumValues[T]) PossibleValues() ast.EnumValueList {
+func (e *EnumValues[T]) PossibleValues(view View) ast.EnumValueList {
 	var values ast.EnumValueList
-	for i, val := range e.values {
-		values = append(values, &ast.EnumValueDefinition{
-			Name:        string(val),
-			Description: e.descriptions[i],
-		})
+	for _, val := range *e {
+		if val.View != nil && !val.View.Contains(view) {
+			continue
+		}
+		def := &ast.EnumValueDefinition{
+			Name:        string(val.Value),
+			Description: val.Description,
+		}
+		if val.Value != val.Underlying {
+			def.Directives = append(def.Directives, enumValueDirectives(val.Underlying)...)
+		}
+		values = append(values, def)
 	}
 
 	return values
+}
+
+func enumValueDirectives[T enumValue](value T) []*ast.Directive {
+	var zero T
+	if value == zero {
+		return nil
+	}
+
+	return []*ast.Directive{
+		{
+			Name: "enumValue",
+			Arguments: ast.ArgumentList{
+				{
+					Name: "value",
+					Value: &ast.Value{
+						Kind: ast.StringValue,
+						Raw:  string(value),
+					},
+				},
+			},
+		},
+	}
 }
 
 func (e *EnumValues[T]) Literal(val T) call.Literal {
@@ -1004,19 +1253,48 @@ func (e *EnumValues[T]) Literal(val T) call.Literal {
 }
 
 func (e *EnumValues[T]) Lookup(val string) (T, error) {
-	var enum T
-	for _, possible := range e.values {
-		if val == string(possible) {
-			return possible, nil
+	var zero T
+	for _, possible := range *e {
+		if val == string(possible.Value) {
+			if possible.Underlying != zero {
+				return possible.Underlying, nil
+			}
+			return possible.Value, nil
 		}
 	}
-	return enum, fmt.Errorf("invalid enum value %q", val)
+	return zero, fmt.Errorf("invalid enum member %q for %T", val, zero)
 }
 
 func (e *EnumValues[T]) Register(val T, desc ...string) T {
-	e.values = append(e.values, val)
-	e.descriptions = append(e.descriptions, FormatDescription(desc...))
+	return e.RegisterView(val, nil, desc...)
+}
+
+func (e *EnumValues[T]) RegisterView(val T, view ViewFilter, desc ...string) T {
+	*e = append(*e, EnumValue[T]{
+		Value:       val,
+		Description: FormatDescription(desc...),
+		View:        view,
+	})
 	return val
+}
+
+func (e *EnumValues[T]) Alias(val T, target T) T {
+	return e.AliasView(val, target, nil)
+}
+
+func (e *EnumValues[T]) AliasView(val T, target T, view ViewFilter) T {
+	for _, v := range *e {
+		if v.Value == target {
+			*e = append(*e, EnumValue[T]{
+				Value:       val,
+				Underlying:  v.Value,
+				Description: v.Description,
+				View:        view,
+			})
+			return val
+		}
+	}
+	panic(fmt.Sprintf("cannot find enum %q", target))
 }
 
 func (e *EnumValues[T]) Install(srv *Server) {
@@ -1025,8 +1303,8 @@ func (e *EnumValues[T]) Install(srv *Server) {
 }
 
 type EnumValueName struct {
-	Enum  string
-	Value string
+	Enum string
+	Name string
 }
 
 var _ Input = &EnumValueName{}
@@ -1050,7 +1328,7 @@ func (e *EnumValueName) TypeDefinition(view View) *ast.Definition {
 }
 
 func (e *EnumValueName) ToLiteral() call.Literal {
-	return call.NewLiteralEnum(e.Value)
+	return call.NewLiteralEnum(e.Name)
 }
 
 func (e *EnumValueName) Decoder() InputDecoder {
@@ -1060,20 +1338,20 @@ func (e *EnumValueName) Decoder() InputDecoder {
 func (e *EnumValueName) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
 	case *EnumValueName:
-		return &EnumValueName{Enum: e.Enum, Value: x.Value}, nil
+		return &EnumValueName{Enum: e.Enum, Name: x.Name}, nil
 	case string:
-		return &EnumValueName{Enum: e.Enum, Value: x}, nil
+		return &EnumValueName{Enum: e.Enum, Name: x}, nil
 	case bool:
-		return nil, fmt.Errorf("invalid enum value %t", x)
+		return nil, fmt.Errorf("invalid enum name %t", x)
 	case nil:
-		return nil, fmt.Errorf("invalid enum value null")
+		return nil, fmt.Errorf("invalid enum name null")
 	default:
 		return nil, fmt.Errorf("cannot create enum name from %T", x)
 	}
 }
 
 func (e *EnumValueName) MarshalJSON() ([]byte, error) {
-	return json.Marshal(e.Value)
+	return json.Marshal(e.Name)
 }
 
 func MustInputSpec(val Type) InputObjectSpec {

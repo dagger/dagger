@@ -1,5 +1,6 @@
 import collections
 import dataclasses
+import enum
 import functools
 import logging
 import typing
@@ -96,7 +97,7 @@ class Context:
         args: typing.Sequence[Arg],
     ) -> "Context":
         args_ = self.converter.unstructure(
-            {arg.name: arg.value for arg in args if arg.value is not arg.default}
+            {arg.name: arg.value for arg in args if arg.value != arg.default}
         )
         field_ = Field(type_name, field_name, args_)
         selections = self.selections.copy()
@@ -293,4 +294,19 @@ def make_converter(ctx: Context):
         _struct,
     )
 
+    configure_converter_enum(conv)
+
     return conv
+
+
+def configure_converter_enum(conv: cattrs.Converter, cl: typing.Any = enum.Enum):
+    """Register hooks for structuring and destructuring enums using member names."""
+
+    def to_enum_name(val: enum.Enum) -> str:
+        return val.name
+
+    def from_enum_name(name: str, cls: type[enum.Enum]) -> enum.Enum:
+        return cls[name]
+
+    conv.register_unstructure_hook(cl, to_enum_name)
+    conv.register_structure_hook(cl, from_enum_name)

@@ -146,7 +146,7 @@ func (t TypescriptSDK) Generate(ctx context.Context) (*dagger.Directory, error) 
 	generated := t.nodeJsBase().
 		With(installer).
 		WithFile("/usr/local/bin/codegen", t.Dagger.codegenBinary()).
-		WithExec([]string{"codegen", "--lang", "typescript", "-o", path.Dir(typescriptGeneratedAPIPath)}).
+		WithExec([]string{"codegen", "generate-library", "--lang", "typescript", "-o", path.Dir(typescriptGeneratedAPIPath)}).
 		WithExec([]string{"yarn", "fmt", typescriptGeneratedAPIPath}).
 		File(typescriptGeneratedAPIPath)
 	return dag.Directory().WithFile(typescriptGeneratedAPIPath, generated), nil
@@ -240,6 +240,7 @@ func (t TypescriptSDK) nodeJsBaseFromVersion(nodeVersion string) *dagger.Contain
 		WithMountedCache("/usr/local/share/.cache/yarn", dag.CacheVolume(fmt.Sprintf("yarn_cache:%s", nodeVersion))).
 		WithFile(fmt.Sprintf("%s/package.json", mountPath), src.File("package.json")).
 		WithFile(fmt.Sprintf("%s/yarn.lock", mountPath), src.File("yarn.lock")).
+		WithFile(fmt.Sprintf("%s/eslint.config.js", mountPath), src.File("eslint.config.js")).
 		WithExec([]string{"yarn", "install"}).
 		WithDirectory(mountPath, src)
 }

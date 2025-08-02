@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
+	"github.com/mitchellh/mapstructure"
 )
 
 const errorTypeName = "error"
@@ -136,12 +137,26 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 		if argSpec.sourceMap != nil {
 			argOptsCode = append(argOptsCode, Id("SourceMap").Op(":").Add(argSpec.sourceMap.TypeDefCode()))
 		}
-		if argSpec.defaultValue != "" {
-			var v any
-			if err := json.Unmarshal([]byte(argSpec.defaultValue), &v); err != nil {
-				return nil, fmt.Errorf("default value %q must be valid JSON: %w", argSpec.defaultValue, err)
+		if argSpec.hasDefaultValue {
+			var defaultValue string
+			if enumType, ok := argSpec.typeSpec.(*parsedEnumTypeReference); ok {
+				v, ok := argSpec.defaultValue.(string)
+				if !ok {
+					return nil, fmt.Errorf("unknown enum value %q", v)
+				}
+				res := enumType.lookup(v)
+				if res == nil {
+					return nil, fmt.Errorf("unknown enum value %q", defaultValue)
+				}
+				defaultValue = strconv.Quote(res.name)
+			} else {
+				v, err := json.Marshal(argSpec.defaultValue)
+				if err != nil {
+					return nil, fmt.Errorf("could not encode default value %q: %w", argSpec.defaultValue, err)
+				}
+				defaultValue = string(v)
 			}
-			argOptsCode = append(argOptsCode, Id("DefaultValue").Op(":").Id("dagger").Dot("JSON").Call(Lit(argSpec.defaultValue)))
+			argOptsCode = append(argOptsCode, Id("DefaultValue").Op(":").Id("dagger").Dot("JSON").Call(Lit(defaultValue)))
 		}
 
 		if argSpec.defaultPath != "" {
@@ -283,26 +298,28 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 		comment = strings.TrimSpace(lineComment)
 	}
 
-	pragmas := make(map[string]string)
+	pragmas := make(map[string]any)
 	maps.Copy(pragmas, docPragmas)
 	maps.Copy(pragmas, linePragmas)
-	defaultValue := ""
-	if v, ok := pragmas["default"]; ok {
-		defaultValue = v
-	}
+
+	defaultValue, hasDefaultValue := pragmas["default"]
+
 	optional := false
 	if v, ok := pragmas["optional"]; ok {
-		if v == "" {
+		if v == nil {
 			optional = true
 		} else {
-			optional, _ = strconv.ParseBool(v)
+			optional, _ = v.(bool)
 		}
 	}
 	defaultPath := ""
 	if v, ok := pragmas["defaultPath"]; ok {
-		defaultPath = v
-		if strings.HasPrefix(v, `"`) && strings.HasSuffix(v, `"`) {
-			defaultPath = v[1 : len(v)-1]
+		defaultPath, ok = v.(string)
+		if !ok {
+			return paramSpec{}, fmt.Errorf("defaultPath pragma %q, must be a valid string", v)
+		}
+		if strings.HasPrefix(defaultPath, `"`) && strings.HasSuffix(defaultPath, `"`) {
+			defaultPath = defaultPath[1 : len(defaultPath)-1]
 		}
 
 		optional = true // If defaultPath is set, the argument becomes optional
@@ -310,8 +327,9 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 
 	ignore := []string{}
 	if v, ok := pragmas["ignore"]; ok {
-		if err := json.Unmarshal([]byte(v), &ignore); err != nil {
-			return paramSpec{}, fmt.Errorf("ignore pragma '%s', must be a valid JSON array: %w", v, err)
+		err := mapstructure.Decode(v, &ignore)
+		if err != nil {
+			return paramSpec{}, fmt.Errorf("ignore pragma %q, must be a valid JSON array: %w", v, err)
 		}
 	}
 
@@ -338,16 +356,17 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 	}
 
 	return paramSpec{
-		name:         name,
-		paramType:    paramType,
-		sourceMap:    sourceMap,
-		typeSpec:     typeSpec,
-		optional:     optional,
-		isContext:    isContext,
-		defaultValue: defaultValue,
-		description:  comment,
-		defaultPath:  defaultPath,
-		ignore:       ignore,
+		name:            name,
+		paramType:       paramType,
+		sourceMap:       sourceMap,
+		typeSpec:        typeSpec,
+		optional:        optional,
+		isContext:       isContext,
+		defaultValue:    defaultValue,
+		hasDefaultValue: hasDefaultValue,
+		description:     comment,
+		defaultPath:     defaultPath,
+		ignore:          ignore,
 	}, nil
 }
 
@@ -362,7 +381,8 @@ type paramSpec struct {
 	isContext bool
 
 	// Set a default value for the argument. Value must be a json-encoded literal value
-	defaultValue string
+	defaultValue    any
+	hasDefaultValue bool
 
 	// paramType is the full type declared in the function signature, which may
 	// include pointer types, etc

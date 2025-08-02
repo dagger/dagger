@@ -9,6 +9,7 @@ import (
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/executor/oci"
+	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/moby/locker"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -109,6 +110,9 @@ type Server interface {
 	// Gets the buildkit cache manager
 	BuildkitCache() bkcache.Manager
 
+	// Gets the buildkit session manager
+	BuildkitSession() *bksession.Manager
+
 	// A global lock for the engine, can be used to synchronize access to
 	// shared resources between multiple potentially concurrent calls.
 	Locker() *locker.Locker
@@ -129,6 +133,30 @@ func CurrentQuery(ctx context.Context) (*Query, error) {
 		return nil, fmt.Errorf("no query in context")
 	}
 	return q, nil
+}
+
+func CurrentDagqlServer(ctx context.Context) (*dagql.Server, error) {
+	q, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current query: %w", err)
+	}
+	srv, err := q.Server.Server(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query server: %w", err)
+	}
+	return srv, nil
+}
+
+func CurrentDagqlCache(ctx context.Context) (*dagql.SessionCache, error) {
+	q, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current query: %w", err)
+	}
+	cache, err := q.Cache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query cache: %w", err)
+	}
+	return cache, nil
 }
 
 func NewRoot(srv Server) *Query {
@@ -188,7 +216,7 @@ func (q *Query) IDDeps(ctx context.Context, id *call.ID) (*ModDeps, error) {
 		if err != nil {
 			return nil, fmt.Errorf("load source mod: %w", err)
 		}
-		deps = deps.Append(mod.Self)
+		deps = deps.Append(mod.Self())
 	}
 	return deps, nil
 }

@@ -11,13 +11,11 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
-type moduleSchema struct {
-	dag *dagql.Server
-}
+type moduleSchema struct{}
 
 var _ SchemaResolvers = &moduleSchema{}
 
-func (s *moduleSchema) Install() {
+func (s *moduleSchema) Install(dag *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("module", s.module).
 			Doc(`Create a new module.`),
@@ -53,7 +51,7 @@ func (s *moduleSchema) Install() {
 			Doc(`The FunctionCall context that the SDK caller is currently executing in.`,
 				`If the caller is not currently executing in a function, this will
 				return an error.`),
-	}.Install(s.dag)
+	}.Install(dag)
 
 	dagql.Fields[*core.FunctionCall]{
 		dagql.FuncWithCacheKey("returnValue", s.functionCallReturnValue, dagql.CachePerClient).
@@ -66,7 +64,7 @@ func (s *moduleSchema) Install() {
 			Args(
 				dagql.Arg("error").Doc(`The error to return.`),
 			),
-	}.Install(s.dag)
+	}.Install(dag)
 
 	dagql.Fields[*core.Module]{
 		// sync is used by external dependencies like daggerverse
@@ -94,23 +92,23 @@ func (s *moduleSchema) Install() {
 		dagql.Func("withEnum", s.moduleWithEnum).
 			Doc(`This module plus the given Enum type and associated values`),
 
-		dagql.NodeFunc("serve", s.moduleServe).
+		dagql.Func("serve", s.moduleServe).
 			DoNotCache(`Mutates the calling session's global schema.`).
 			Doc(`Serve a module's API in the current session.`,
 				`Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.`).
 			Args(
 				dagql.Arg("includeDependencies").Doc("Expose the dependencies of this module to the client"),
 			),
-	}.Install(s.dag)
+	}.Install(dag)
 
 	dagql.Fields[*core.CurrentModule]{
 		dagql.Func("name", s.currentModuleName).
 			Doc(`The name of the module being executed in`),
 
-		dagql.Func("source", s.currentModuleSource).
+		dagql.NodeFunc("source", s.currentModuleSource).
 			Doc(`The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).`),
 
-		dagql.FuncWithCacheKey("workdir", s.currentModuleWorkdir, dagql.CachePerClient).
+		dagql.NodeFuncWithCacheKey("workdir", s.currentModuleWorkdir, dagql.CachePerClient).
 			Doc(`Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to access (e.g., ".").`),
@@ -118,12 +116,12 @@ func (s *moduleSchema) Install() {
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 			),
 
-		dagql.FuncWithCacheKey("workdirFile", s.currentModuleWorkdirFile, dagql.CachePerClient).
+		dagql.NodeFuncWithCacheKey("workdirFile", s.currentModuleWorkdirFile, dagql.CachePerClient).
 			Doc(`Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
 			),
-	}.Install(s.dag)
+	}.Install(dag)
 
 	dagql.Fields[*core.Function]{
 		dagql.Func("withDescription", s.functionWithDescription).
@@ -149,13 +147,13 @@ func (s *moduleSchema) Install() {
 				dagql.Arg("ignore").Doc(`Patterns to ignore when loading the contextual argument value.`),
 				dagql.Arg("sourceMap").Doc(`The source map for the argument definition.`),
 			),
-	}.Install(s.dag)
+	}.Install(dag)
 
-	dagql.Fields[*core.FunctionArg]{}.Install(s.dag)
+	dagql.Fields[*core.FunctionArg]{}.Install(dag)
 
-	dagql.Fields[*core.FunctionCallArgValue]{}.Install(s.dag)
+	dagql.Fields[*core.FunctionCallArgValue]{}.Install(dag)
 
-	dagql.Fields[*core.SourceMap]{}.Install(s.dag)
+	dagql.Fields[*core.SourceMap]{}.Install(dag)
 
 	dagql.Fields[*core.TypeDef]{
 		dagql.Func("withOptional", s.typeDefWithOptional).
@@ -206,21 +204,36 @@ func (s *moduleSchema) Install() {
 
 		dagql.Func("withEnumValue", s.typeDefWithEnumValue).
 			Doc(`Adds a static value for an Enum TypeDef, failing if the type is not an enum.`).
+			Deprecated("Use `withEnumMember` instead").
 			Args(
 				dagql.Arg("value").Doc(`The name of the value in the enum`),
 				dagql.Arg("description").Doc(`A doc string for the value, if any`),
 				dagql.Arg("sourceMap").Doc(`The source map for the enum value definition.`),
 			),
-	}.Install(s.dag)
 
-	dagql.Fields[*core.ObjectTypeDef]{}.Install(s.dag)
-	dagql.Fields[*core.InterfaceTypeDef]{}.Install(s.dag)
-	dagql.Fields[*core.InputTypeDef]{}.Install(s.dag)
-	dagql.Fields[*core.FieldTypeDef]{}.Install(s.dag)
-	dagql.Fields[*core.ListTypeDef]{}.Install(s.dag)
-	dagql.Fields[*core.ScalarTypeDef]{}.Install(s.dag)
-	dagql.Fields[*core.EnumTypeDef]{}.Install(s.dag)
-	dagql.Fields[*core.EnumValueTypeDef]{}.Install(s.dag)
+		dagql.Func("withEnumMember", s.typeDefWithEnumMember).
+			View(AllVersion).
+			Doc(`Adds a static value for an Enum TypeDef, failing if the type is not an enum.`).
+			Args(
+				dagql.Arg("name").Doc(`The name of the member in the enum`),
+				dagql.Arg("value").Doc(`The value of the member in the enum`),
+				dagql.Arg("description").Doc(`A doc string for the member, if any`),
+				dagql.Arg("sourceMap").Doc(`The source map for the enum member definition.`),
+			),
+	}.Install(dag)
+
+	dagql.Fields[*core.ObjectTypeDef]{}.Install(dag)
+	dagql.Fields[*core.InterfaceTypeDef]{}.Install(dag)
+	dagql.Fields[*core.InputTypeDef]{}.Install(dag)
+	dagql.Fields[*core.FieldTypeDef]{}.Install(dag)
+	dagql.Fields[*core.ListTypeDef]{}.Install(dag)
+	dagql.Fields[*core.ScalarTypeDef]{}.Install(dag)
+	dagql.Fields[*core.EnumTypeDef]{
+		dagql.Func("values", func(ctx context.Context, self *core.EnumTypeDef, _ struct{}) (dagql.Array[*core.EnumMemberTypeDef], error) {
+			return self.Members, nil
+		}).Deprecated("use members instead"),
+	}.Install(dag)
+	dagql.Fields[*core.EnumMemberTypeDef]{}.Install(dag)
 }
 
 func (s *moduleSchema) typeDef(ctx context.Context, _ *core.Query, args struct{}) (*core.TypeDef, error) {
@@ -252,11 +265,16 @@ func (s *moduleSchema) typeDefWithScalar(ctx context.Context, def *core.TypeDef,
 func (s *moduleSchema) typeDefWithListOf(ctx context.Context, def *core.TypeDef, args struct {
 	ElementType core.TypeDefID
 }) (*core.TypeDef, error) {
-	elemType, err := args.ElementType.Load(ctx, s.dag)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	elemType, err := args.ElementType.Load(ctx, dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
-	return def.WithListOf(elemType.Self), nil
+	return def.WithListOf(elemType.Self()), nil
 }
 
 func (s *moduleSchema) typeDefWithObject(ctx context.Context, def *core.TypeDef, args struct {
@@ -295,7 +313,12 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 	Description string `default:""`
 	SourceMap   dagql.Optional[core.SourceMapID]
 }) (*core.TypeDef, error) {
-	fieldType, err := args.TypeDef.Load(ctx, s.dag)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	fieldType, err := args.TypeDef.Load(ctx, dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
@@ -303,27 +326,37 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 	if err != nil {
 		return nil, err
 	}
-	return def.WithObjectField(args.Name, fieldType.Self, args.Description, sourceMap)
+	return def.WithObjectField(args.Name, fieldType.Self(), args.Description, sourceMap)
 }
 
 func (s *moduleSchema) typeDefWithFunction(ctx context.Context, def *core.TypeDef, args struct {
 	Function core.FunctionID
 }) (*core.TypeDef, error) {
-	fn, err := args.Function.Load(ctx, s.dag)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	fn, err := args.Function.Load(ctx, dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
-	return def.WithFunction(fn.Self)
+	return def.WithFunction(fn.Self())
 }
 
 func (s *moduleSchema) typeDefWithObjectConstructor(ctx context.Context, def *core.TypeDef, args struct {
 	Function core.FunctionID
 }) (*core.TypeDef, error) {
-	inst, err := args.Function.Load(ctx, s.dag)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	inst, err := args.Function.Load(ctx, dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
-	fn := inst.Self.Clone()
+	fn := inst.Self().Clone()
 	// Constructors are invoked by setting the ObjectName to the name of the object its constructing and the
 	// FunctionName to "", so ignore the name of the function.
 	fn.Name = ""
@@ -351,20 +384,47 @@ func (s *moduleSchema) typeDefWithEnumValue(ctx context.Context, def *core.TypeD
 	Description string `default:""`
 	SourceMap   dagql.Optional[core.SourceMapID]
 }) (*core.TypeDef, error) {
-	if args.Value == "" {
-		return nil, fmt.Errorf("enum value must not be empty")
-	}
 	sourceMap, err := s.loadSourceMap(ctx, args.SourceMap)
 	if err != nil {
 		return nil, err
 	}
-	return def.WithEnumValue(args.Value, args.Description, sourceMap)
+	return def.WithEnumValue(args.Value, args.Value, args.Description, sourceMap)
+}
+
+func (s *moduleSchema) typeDefWithEnumMember(ctx context.Context, def *core.TypeDef, args struct {
+	Name        string
+	Value       string `default:""`
+	Description string `default:""`
+	SourceMap   dagql.Optional[core.SourceMapID]
+}) (*core.TypeDef, error) {
+	sourceMap, err := s.loadSourceMap(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
+	}
+
+	supports, err := supportEnumMembers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !supports {
+		return def.WithEnumValue(args.Name, args.Value, args.Description, sourceMap)
+	}
+	return def.WithEnumMember(args.Name, args.Value, args.Description, sourceMap)
+}
+
+func supportEnumMembers(ctx context.Context) (bool, error) {
+	return core.Supports(ctx, "v0.18.11")
 }
 
 func (s *moduleSchema) generatedCode(ctx context.Context, _ *core.Query, args struct {
 	Code core.DirectoryID
 }) (*core.GeneratedCode, error) {
-	dir, err := args.Code.Load(ctx, s.dag)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	dir, err := args.Code.Load(ctx, dag)
 	if err != nil {
 		return nil, err
 	}
@@ -379,11 +439,16 @@ func (s *moduleSchema) function(ctx context.Context, _ *core.Query, args struct 
 	Name       string
 	ReturnType core.TypeDefID
 }) (*core.Function, error) {
-	returnType, err := args.ReturnType.Load(ctx, s.dag)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	returnType, err := args.ReturnType.Load(ctx, dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode return type: %w", err)
 	}
-	return core.NewFunction(args.Name, returnType.Self), nil
+	return core.NewFunction(args.Name, returnType.Self()), nil
 }
 
 func (s *moduleSchema) sourceMap(ctx context.Context, _ *core.Query, args struct {
@@ -413,7 +478,12 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 	Ignore       []string  `default:"[]"`
 	SourceMap    dagql.Optional[core.SourceMapID]
 }) (*core.Function, error) {
-	argType, err := args.TypeDef.Load(ctx, s.dag)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	argType, err := args.TypeDef.Load(ctx, dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode arg type: %w", err)
 	}
@@ -429,20 +499,20 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 	}
 
 	// Check if default path from context is set for non-directory or non-file type
-	if argType.Self.Kind == core.TypeDefKindObject && args.DefaultPath != "" &&
-		(argType.Self.AsObject.Value.Name != "Directory" && argType.Self.AsObject.Value.Name != "File") {
-		return nil, fmt.Errorf("can only set default path for Directory or File type, not %s", argType.Self.AsObject.Value.Name)
+	if argType.Self().Kind == core.TypeDefKindObject && args.DefaultPath != "" &&
+		(argType.Self().AsObject.Value.Name != "Directory" && argType.Self().AsObject.Value.Name != "File") {
+		return nil, fmt.Errorf("can only set default path for Directory or File type, not %s", argType.Self().AsObject.Value.Name)
 	}
 
 	// Check if ignore is set for non-directory type
-	if argType.Self.Kind == core.TypeDefKindObject &&
-		len(args.Ignore) > 0 && argType.Self.AsObject.Value.Name != "Directory" {
-		return nil, fmt.Errorf("can only set ignore for Directory type, not %s", argType.Self.AsObject.Value.Name)
+	if argType.Self().Kind == core.TypeDefKindObject &&
+		len(args.Ignore) > 0 && argType.Self().AsObject.Value.Name != "Directory" {
+		return nil, fmt.Errorf("can only set ignore for Directory type, not %s", argType.Self().AsObject.Value.Name)
 	}
 
 	// When using a default path SDKs can't set a default value and the argument
 	// may be non-nullable, so we need to enforce it as optional.
-	td := argType.Self
+	td := argType.Self()
 	if args.DefaultPath != "" {
 		td = td.WithOptional(true)
 	}
@@ -453,11 +523,16 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 func (s *moduleSchema) functionWithSourceMap(ctx context.Context, fn *core.Function, args struct {
 	SourceMap core.SourceMapID
 }) (*core.Function, error) {
-	sourceMap, err := args.SourceMap.Load(ctx, s.dag)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	sourceMap, err := args.SourceMap.Load(ctx, dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode source map: %w", err)
 	}
-	return fn.WithSourceMap(sourceMap.Self), nil
+	return fn.WithSourceMap(sourceMap.Self()), nil
 }
 
 func (s *moduleSchema) currentModule(
@@ -476,7 +551,7 @@ func (s *moduleSchema) currentFunctionCall(ctx context.Context, self *core.Query
 	return self.CurrentFunctionCall(ctx)
 }
 
-func (s *moduleSchema) moduleServe(ctx context.Context, modMeta dagql.Instance[*core.Module], args struct {
+func (s *moduleSchema) moduleServe(ctx context.Context, modMeta *core.Module, args struct {
 	IncludeDependencies dagql.Optional[dagql.Boolean]
 }) (dagql.Nullable[core.Void], error) {
 	void := dagql.Null[core.Void]()
@@ -487,10 +562,10 @@ func (s *moduleSchema) moduleServe(ctx context.Context, modMeta dagql.Instance[*
 	}
 
 	includeDependencies := args.IncludeDependencies.Valid && args.IncludeDependencies.Value.Bool()
-	return void, query.ServeModule(ctx, modMeta.Self, includeDependencies)
+	return void, query.ServeModule(ctx, modMeta, includeDependencies)
 }
 
-func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ struct{}) ([]*core.TypeDef, error) {
+func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ struct{}) (dagql.Array[*core.TypeDef], error) {
 	deps, err := self.CurrentServedDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current module: %w", err)
@@ -520,10 +595,15 @@ func (s *moduleSchema) functionCallReturnError(ctx context.Context, fnCall *core
 
 func (s *moduleSchema) moduleGeneratedContextDirectory(
 	ctx context.Context,
-	mod dagql.Instance[*core.Module],
+	mod dagql.ObjectResult[*core.Module],
 	args struct{},
-) (inst dagql.Instance[*core.Directory], err error) {
-	err = s.dag.Select(ctx, mod.Self.Source, &inst,
+) (inst dagql.Result[*core.Directory], err error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	err = dag.Select(ctx, mod.Self().Source, &inst,
 		dagql.Selector{
 			Field: "generatedContextDirectory",
 		},
@@ -535,7 +615,7 @@ func (s *moduleSchema) moduleDependencies(
 	ctx context.Context,
 	mod *core.Module,
 	args struct{},
-) ([]*core.Module, error) {
+) (dagql.Array[*core.Module], error) {
 	depMods := make([]*core.Module, 0, len(mod.Deps.Mods))
 	for _, dep := range mod.Deps.Mods {
 		switch dep := dep.(type) {
@@ -559,32 +639,47 @@ func (s *moduleSchema) moduleWithDescription(ctx context.Context, mod *core.Modu
 func (s *moduleSchema) moduleWithObject(ctx context.Context, mod *core.Module, args struct {
 	Object core.TypeDefID
 }) (_ *core.Module, rerr error) {
-	def, err := args.Object.Load(ctx, s.dag)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	def, err := args.Object.Load(ctx, dag)
 	if err != nil {
 		return nil, err
 	}
-	return core.EnvHook{Server: s.dag}.ModuleWithObject(ctx, mod, def.Self)
+	return core.EnvHook{Server: dag}.ModuleWithObject(ctx, mod, def.Self())
 }
 
 func (s *moduleSchema) moduleWithInterface(ctx context.Context, mod *core.Module, args struct {
 	Iface core.TypeDefID
 }) (_ *core.Module, rerr error) {
-	def, err := args.Iface.Load(ctx, s.dag)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	def, err := args.Iface.Load(ctx, dag)
 	if err != nil {
 		return nil, err
 	}
-	return mod.WithInterface(ctx, def.Self)
+	return mod.WithInterface(ctx, def.Self())
 }
 
 func (s *moduleSchema) moduleWithEnum(ctx context.Context, mod *core.Module, args struct {
 	Enum core.TypeDefID
 }) (_ *core.Module, rerr error) {
-	def, err := args.Enum.Load(ctx, s.dag)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	def, err := args.Enum.Load(ctx, dag)
 	if err != nil {
 		return nil, err
 	}
 
-	return mod.WithEnum(ctx, def.Self)
+	return mod.WithEnum(ctx, def.Self())
 }
 
 func (s *moduleSchema) currentModuleName(
@@ -597,28 +692,33 @@ func (s *moduleSchema) currentModuleName(
 
 func (s *moduleSchema) currentModuleSource(
 	ctx context.Context,
-	curMod *core.CurrentModule,
+	curMod dagql.ObjectResult[*core.CurrentModule],
 	args struct{},
-) (inst dagql.Instance[*core.Directory], err error) {
-	curSrc := curMod.Module.Source
-	if curSrc.Self == nil {
+) (inst dagql.Result[*core.Directory], err error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	curSrc := curMod.Self().Module.Source
+	if curSrc.Self() == nil {
 		return inst, errors.New("invalid unset current module source")
 	}
 
-	srcSubpath := curSrc.Self.SourceSubpath
+	srcSubpath := curSrc.Self().SourceSubpath
 	if srcSubpath == "" {
-		srcSubpath = curSrc.Self.SourceRootSubpath
+		srcSubpath = curSrc.Self().SourceRootSubpath
 	}
 
-	var generatedDiff dagql.Instance[*core.Directory]
-	err = s.dag.Select(ctx, curSrc, &generatedDiff,
+	var generatedDiff dagql.Result[*core.Directory]
+	err = dag.Select(ctx, curSrc, &generatedDiff,
 		dagql.Selector{Field: "generatedContextDirectory"},
 	)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get generated context directory: %w", err)
 	}
 
-	err = s.dag.Select(ctx, curSrc.Self.ContextDirectory, &inst,
+	err = dag.Select(ctx, curSrc.Self().ContextDirectory, &inst,
 		dagql.Selector{
 			Field: "withDirectory",
 			Args: []dagql.NamedInput{
@@ -642,18 +742,23 @@ func (s *moduleSchema) currentModuleSource(
 
 func (s *moduleSchema) currentModuleWorkdir(
 	ctx context.Context,
-	curMod *core.CurrentModule,
+	curMod dagql.ObjectResult[*core.CurrentModule],
 	args struct {
 		Path string
 		core.CopyFilter
 	},
-) (inst dagql.Instance[*core.Directory], err error) {
+) (inst dagql.Result[*core.Directory], err error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
 	if !filepath.IsLocal(args.Path) {
 		return inst, fmt.Errorf("workdir path %q escapes workdir", args.Path)
 	}
 	args.Path = filepath.Join(sdk.RuntimeWorkdirPath, args.Path)
 
-	err = s.dag.Select(ctx, s.dag.Root(), &inst,
+	err = dag.Select(ctx, dag.Root(), &inst,
 		dagql.Selector{
 			Field: "host",
 		},
@@ -671,17 +776,22 @@ func (s *moduleSchema) currentModuleWorkdir(
 
 func (s *moduleSchema) currentModuleWorkdirFile(
 	ctx context.Context,
-	curMod *core.CurrentModule,
+	curMod dagql.ObjectResult[*core.CurrentModule],
 	args struct {
 		Path string
 	},
-) (inst dagql.Instance[*core.File], err error) {
+) (inst dagql.Result[*core.File], err error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
 	if !filepath.IsLocal(args.Path) {
 		return inst, fmt.Errorf("workdir path %q escapes workdir", args.Path)
 	}
 	args.Path = filepath.Join(sdk.RuntimeWorkdirPath, args.Path)
 
-	err = s.dag.Select(ctx, s.dag.Root(), &inst,
+	err = dag.Select(ctx, dag.Root(), &inst,
 		dagql.Selector{
 			Field: "host",
 		},
@@ -696,12 +806,17 @@ func (s *moduleSchema) currentModuleWorkdirFile(
 }
 
 func (s *moduleSchema) loadSourceMap(ctx context.Context, sourceMap dagql.Optional[core.SourceMapID]) (*core.SourceMap, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
 	if !sourceMap.Valid {
 		return nil, nil
 	}
-	sourceMapI, err := sourceMap.Value.Load(ctx, s.dag)
+	sourceMapI, err := sourceMap.Value.Load(ctx, dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode source map: %w", err)
 	}
-	return sourceMapI.Self, nil
+	return sourceMapI.Self(), nil
 }

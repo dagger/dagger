@@ -8,7 +8,8 @@ Expected stderr:
 
 ▼ connect X.Xs
 ├─● starting engine X.Xs
-├─● connecting to engine X.Xs
+├─▼ connecting to engine X.Xs
+│ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
 ╰─● starting session X.Xs
  
 ▼ load module: ./viztest X.Xs
@@ -23,8 +24,7 @@ Expected stderr:
 ▼ .nestedCalls: [String!]! X.Xs
 ├─$ file(name: "file", contents: "hey"): File! X.Xs CACHED
 │
-├─● directory: Directory! X.Xs
-├─$ .withFile(
+├─$ Directory.withFile(
 │   ┆ path: "file"
 │   ┆ source: file(name: "file", contents: "hey"): File!
 │   ┆ permissions: 420

@@ -121,6 +121,7 @@ func (e *DaggerEngine) Container(
 	ctr = ctr.
 		WithFile(cliPath, cli).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", distconsts.DefaultEngineSockAddr)
+	// ctr = ctr.WithEnvVariable("BUILDKIT_SCHEDULER_DEBUG", "1")
 
 	return ctr, nil
 }
@@ -135,6 +136,8 @@ func (e *DaggerEngine) Service(
 	gpuSupport bool,
 	// +optional
 	sharedCache bool,
+	// +optional
+	metrics bool,
 ) (*dagger.Service, error) {
 	cacheVolumeName := "dagger-dev-engine-state"
 	if !sharedCache {
@@ -156,6 +159,7 @@ func (e *DaggerEngine) Service(
 	if err != nil {
 		return nil, err
 	}
+
 	devEngine = devEngine.
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume(cacheVolumeName), dagger.ContainerWithMountedCacheOpts{
@@ -164,6 +168,12 @@ func (e *DaggerEngine) Service(
 			// one, which gets us best-effort cache re-use for these nested engine services
 			Sharing: dagger.CacheSharingModePrivate,
 		})
+
+	if metrics {
+		devEngine = devEngine.
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_ADDR", "0.0.0.0:9090").
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_METRICS_CACHE_UPDATE_INTERVAL", "10s")
+	}
 
 	return devEngine.AsService(dagger.ContainerAsServiceOpts{
 		Args: []string{

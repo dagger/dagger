@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -14,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/introspection"
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
 	"github.com/iancoleman/strcase"
 	"golang.org/x/tools/go/packages"
@@ -28,19 +30,19 @@ const (
 )
 
 func (funcs goTemplateFuncs) isModuleCode() bool {
-	return funcs.cfg.ModuleName != ""
+	return funcs.cfg.ModuleConfig != nil && funcs.cfg.ModuleConfig.ModuleName != ""
 }
 
 func (funcs goTemplateFuncs) isStandaloneClient() bool {
-	return funcs.cfg.ClientOnly
+	return funcs.cfg.ClientConfig != nil
 }
 
-func (funcs goTemplateFuncs) Dependencies() []generator.ModuleSourceDependencies {
-	return funcs.cfg.ModuleDependencies
+func (funcs goTemplateFuncs) Dependencies() []generator.ModuleSourceDependency {
+	return funcs.cfg.ClientConfig.ModuleDependencies
 }
 
 func (funcs goTemplateFuncs) HasLocalDependencies() bool {
-	for _, dep := range funcs.cfg.ModuleDependencies {
+	for _, dep := range funcs.cfg.ClientConfig.ModuleDependencies {
 		if dep.Kind == "LOCAL_SOURCE" {
 			return true
 		}
@@ -50,11 +52,16 @@ func (funcs goTemplateFuncs) HasLocalDependencies() bool {
 }
 
 func (funcs goTemplateFuncs) moduleRelPath(path string) string {
+	moduleParentPath := ""
+	if funcs.cfg.ModuleConfig != nil {
+		moduleParentPath = funcs.cfg.ModuleConfig.ModuleParentPath
+	}
+
 	return filepath.Join(
 		// path to the root of this module (since we're probably in internal/dagger/)
 		"../..",
 		// path from the module root to the context directory
-		funcs.cfg.ModuleParentPath,
+		moduleParentPath,
 		// path from the context directory to the desired path
 		path,
 	)
@@ -97,7 +104,8 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 	ps := &parseState{
 		pkg:        funcs.modulePkg,
 		fset:       funcs.moduleFset,
-		moduleName: funcs.cfg.ModuleName,
+		schema:     funcs.schema,
+		moduleName: funcs.cfg.ModuleConfig.ModuleName,
 
 		methods: make(map[string][]method),
 	}
@@ -251,6 +259,9 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 				nextTps = append(nextTps, ifaceTypeSpec.GoSubTypes()...)
 
 			case *types.Basic:
+				if ps.isDaggerGenerated(obj) {
+					continue
+				}
 				enum := underlyingObj
 				enumTypeSpec, err := ps.parseGoEnum(enum, named)
 				if err != nil {
@@ -795,6 +806,8 @@ func (ps *parseState) fillObjectFunctionCase(
 }
 
 type parseState struct {
+	schema *introspection.Schema
+
 	pkg        *packages.Package
 	fset       *token.FileSet
 	moduleName string
@@ -852,6 +865,7 @@ func (ps *parseState) astSpecForObj(obj types.Object) (ast.Spec, error) {
 	if tokenFile == nil {
 		return nil, fmt.Errorf("no file for %s", obj.Name())
 	}
+
 	for _, f := range ps.pkg.Syntax {
 		if ps.fset.File(f.Pos()) != tokenFile {
 			continue
@@ -1162,24 +1176,59 @@ func (ps *parseState) functionCallArgCode(t types.Type, access *Statement) (type
 	}
 }
 
-var pragmaCommentRegexp = regexp.MustCompile(`[ \t]*\+[ \t]*(\S+?)(?:=(.+?))?(?:\r?\n|$)`)
+var pragmaCommentRegexp = regexp.MustCompile(`[ \t]*\+[ \t]*(\S+?)(?:(=[ \t]*)|(?:\r?\n|$))`)
 
 // parsePragmaComment parses a dagger "pragma", that is used to define additional metadata about a parameter.
-func parsePragmaComment(comment string) (data map[string]string, rest string) {
-	data = map[string]string{}
+func parsePragmaComment(comment string) (data map[string]any, rest string) {
+	data = map[string]any{}
 	lastEnd := 0
 	for _, v := range pragmaCommentRegexp.FindAllStringSubmatchIndex(comment, -1) {
-		var key, value string
+		// Skip matches that start before we've finished processing
+		if v[0] < lastEnd {
+			continue
+		}
+
+		var key string
 		if v[2] != -1 {
 			key = comment[v[2]:v[3]]
 		}
-		if v[4] != -1 {
-			value = comment[v[4]:v[5]]
-		}
-		data[key] = value
 
+		var value any
+		end := v[1]
+		if v[4] != -1 {
+			dec := json.NewDecoder(strings.NewReader(comment[v[5]:]))
+			if err := dec.Decode(&value); err == nil {
+				// attempt to parse as json (this can span multiple-lines)
+				end = v[5] + int(dec.InputOffset())
+				idx := strings.IndexAny(comment[end:], "\n")
+				if idx == -1 {
+					end = len(comment)
+				} else {
+					end += idx + 1
+				}
+			} else {
+				// otherwise, just read till the end of the line
+				idx := strings.IndexAny(comment[v[5]:], "\n")
+				var valueStr string
+				if idx == -1 {
+					valueStr = comment[v[5]:]
+					end = len(comment)
+				} else {
+					idx += v[5]
+					valueStr = strings.TrimSuffix(comment[v[5]:idx], "\r")
+					end = idx + 1
+				}
+				if len(valueStr) == 0 {
+					value = nil
+				} else {
+					value = valueStr
+				}
+			}
+		}
+
+		data[key] = value
 		rest += comment[lastEnd:v[0]]
-		lastEnd = v[1]
+		lastEnd = end
 	}
 	rest += comment[lastEnd:]
 

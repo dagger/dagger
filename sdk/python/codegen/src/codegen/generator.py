@@ -5,6 +5,7 @@ import logging
 import re
 import textwrap
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from collections.abc import Callable, Container, Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
@@ -455,8 +456,6 @@ class _InputField:
 
         default_value = graphql.default_value
         self.default_is_mutable = isinstance(default_value, list)
-        if self.default_is_mutable:
-            default_value = ()
 
         if not is_required_type(graphql.type) and not self.has_default:
             default_value = None
@@ -465,8 +464,7 @@ class _InputField:
         if default_value and is_enum_type(self.named_type):
             self.default_value = f"{self.named_type.name}.{default_value}"
         else:
-            # repr uses single quotes for strings, contrary to black
-            self.default_value = repr(default_value).replace("'", '"')
+            self.default_value = repr(default_value)
 
     @joiner
     def __str__(self) -> Iterator[str]:
@@ -735,15 +733,25 @@ class Enum(Handler[GraphQLEnumType]):
         if body := super().render_body(t):
             yield body
 
-        for name, value in sorted(t.values.items()):
+        by_value = defaultdict(list)
+        for name, value in t.values.items():
+            by_value[self._get_value(value)].append(name)
+
+        for val, names in sorted(by_value.items()):
             yield ""
 
-            # repr uses single quotes for strings, contrary to black
-            val = repr(value.value).replace("'", '"')
-            yield f"{name} = {val}"
+            for name in names:
+                yield f"{name} = {val!r}"
 
-            if value.description:
-                yield doc(value.description)
+                if desc := t.values[name].description:
+                    yield doc(desc)
+
+    def _get_value(self, value) -> str:
+        if value.ast_node and (directive := self.ctx.schema.get_directive("enumValue")):
+            args = graphql.get_directive_values(directive, value.ast_node)
+            if args:
+                return args["value"]
+        return value.value
 
 
 class Field(Protocol):

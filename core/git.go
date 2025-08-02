@@ -13,11 +13,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/containerd/continuity/fs"
+	"github.com/dagger/dagger/util/cleanups"
 	"github.com/dagger/dagger/util/gitutil"
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
@@ -46,8 +48,8 @@ type GitRepositoryBackend interface {
 	HasPBDefinitions
 
 	Ref(ctx context.Context, ref string) (GitRefBackend, error)
-	Tags(ctx context.Context, patterns []string) (tags []string, err error)
-	Branches(ctx context.Context, patterns []string) (branches []string, err error)
+	Tags(ctx context.Context, patterns []string, sort string) (tags []string, err error)
+	Branches(ctx context.Context, patterns []string, sort string) (branches []string, err error)
 }
 
 func (*GitRepository) Type() *ast.Type {
@@ -73,12 +75,12 @@ func (repo *GitRepository) Ref(ctx context.Context, name string) (*GitRef, error
 	return &GitRef{repo, ref}, nil
 }
 
-func (repo *GitRepository) Tags(ctx context.Context, patterns []string) ([]string, error) {
-	return repo.Backend.Tags(ctx, patterns)
+func (repo *GitRepository) Tags(ctx context.Context, patterns []string, sort string) ([]string, error) {
+	return repo.Backend.Tags(ctx, patterns, sort)
 }
 
-func (repo *GitRepository) Branches(ctx context.Context, patterns []string) ([]string, error) {
-	return repo.Backend.Branches(ctx, patterns)
+func (repo *GitRepository) Branches(ctx context.Context, patterns []string, sort string) ([]string, error) {
+	return repo.Backend.Branches(ctx, patterns, sort)
 }
 
 type GitRef struct {
@@ -120,14 +122,14 @@ type RemoteGitRepository struct {
 	URL *gitutil.GitURL
 
 	SSHKnownHosts string
-	SSHAuthSocket *Socket
+	SSHAuthSocket dagql.ObjectResult[*Socket]
 
 	Services ServiceBindings
 	Platform Platform
 
 	AuthUsername string
-	AuthToken    dagql.Instance[*Secret]
-	AuthHeader   dagql.Instance[*Secret]
+	AuthToken    dagql.ObjectResult[*Secret]
+	AuthHeader   dagql.ObjectResult[*Secret]
 }
 
 var _ GitRepositoryBackend = (*RemoteGitRepository)(nil)
@@ -151,8 +153,8 @@ func (repo *RemoteGitRepository) Ref(ctx context.Context, refstr string) (GitRef
 	return ref, nil
 }
 
-func (repo *RemoteGitRepository) Tags(ctx context.Context, patterns []string) ([]string, error) {
-	tags, err := repo.lsRemote(ctx, []string{"--tags"}, patterns)
+func (repo *RemoteGitRepository) Tags(ctx context.Context, patterns []string, sort string) ([]string, error) {
+	tags, err := repo.lsRemote(ctx, []string{"--tags"}, patterns, sort)
 	if err != nil {
 		return nil, err
 	}
@@ -162,8 +164,8 @@ func (repo *RemoteGitRepository) Tags(ctx context.Context, patterns []string) ([
 	return tags, nil
 }
 
-func (repo *RemoteGitRepository) Branches(ctx context.Context, patterns []string) ([]string, error) {
-	branches, err := repo.lsRemote(ctx, []string{"--heads"}, patterns)
+func (repo *RemoteGitRepository) Branches(ctx context.Context, patterns []string, sort string) ([]string, error) {
+	branches, err := repo.lsRemote(ctx, []string{"--heads"}, patterns, sort)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +175,7 @@ func (repo *RemoteGitRepository) Branches(ctx context.Context, patterns []string
 	return branches, nil
 }
 
-func (repo *RemoteGitRepository) lsRemote(ctx context.Context, args []string, patterns []string) ([]string, error) {
+func (repo *RemoteGitRepository) lsRemote(ctx context.Context, args []string, patterns []string, sort string) ([]string, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -188,42 +190,13 @@ func (repo *RemoteGitRepository) lsRemote(ctx context.Context, args []string, pa
 	}
 	defer detach()
 
-	queryArgs := []string{
-		"ls-remote",
-		"--refs", // we don't want to include ^{} entries for annotated tags
-	}
-	queryArgs = append(queryArgs, args...)
-	queryArgs = append(queryArgs, repo.URL.Remote())
-	if len(patterns) > 0 {
-		queryArgs = append(queryArgs, "--")
-		queryArgs = append(queryArgs, patterns...)
-	}
 	git, cleanup, err := repo.setup(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
-	out, err := git.Run(ctx, queryArgs...)
-	if err != nil {
-		return nil, err
-	}
 
-	results := []string{}
-	scanner := bufio.NewScanner(bytes.NewReader(out))
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		if len(fields) < 2 {
-			continue
-		}
-
-		results = append(results, fields[1])
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error scanning git output: %w", err)
-	}
-
-	return results, nil
+	return runLsRemote(ctx, git, repo.URL.Remote(), args, patterns, sort)
 }
 
 func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, _ func() error, rerr error) {
@@ -233,14 +206,14 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 	}
 	var opts []gitutil.Option
 
-	cleanups := buildkit.Cleanups{}
+	cleanups := cleanups.Cleanups{}
 	defer func() {
 		if rerr != nil {
 			cleanups.Run()
 		}
 	}()
 
-	if repo.AuthToken.Self != nil {
+	if repo.AuthToken.Self() != nil {
 		// caller-supplied username takes priority; otherwise pick a host-specific default
 		username := repo.AuthUsername
 		switch {
@@ -267,7 +240,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		opts = append(opts, gitutil.WithArgs(
 			"-c", "http."+repo.URL.Remote()+".extraheader=Authorization: "+authHeader,
 		))
-	} else if repo.AuthHeader.Self != nil {
+	} else if repo.AuthHeader.Self() != nil {
 		secretStore, err := query.Secrets(ctx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
@@ -281,10 +254,10 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		))
 	}
 
-	if repo.SSHAuthSocket != nil {
+	if repo.SSHAuthSocket.Self() != nil {
 		socketStore, err := query.Sockets(ctx)
 		if err == nil {
-			sockpath, cleanup, err := socketStore.MountSocket(ctx, repo.SSHAuthSocket.IDDigest)
+			sockpath, cleanup, err := socketStore.MountSocket(ctx, repo.SSHAuthSocket.Self().IDDigest)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to mount SSH socket: %w", err)
 			}
@@ -561,6 +534,26 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			return fmt.Errorf("failed to rev-parse: %w", err)
 		} else if strings.TrimSpace(string(res)) == ref.Commit {
 			doFetch = false
+
+			if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
+				// if shallow, check we have enough depth
+				if depth <= 0 {
+					doFetch = true
+				} else {
+					res, err := git.New().Run(ctx, "rev-list", "--count", ref.Commit)
+					if err != nil {
+						return fmt.Errorf("failed to rev-list: %w", err)
+					}
+					res = bytes.TrimSpace(res)
+					count, err := strconv.Atoi(string(res))
+					if err != nil {
+						return fmt.Errorf("failed to parse rev-list output: %w", err)
+					}
+					if count < depth {
+						doFetch = true
+					}
+				}
+			}
 		}
 
 		if doFetch {
@@ -656,12 +649,12 @@ func (ref *RemoteGitRef) fetchRemote(ctx context.Context, git *gitutil.GitCLI, d
 		"--update-head-ok",
 		"--force",
 	}
-	if depth == 0 {
-		args = append(args, "--depth="+fmt.Sprint(depth))
-	} else {
+	if depth <= 0 {
 		if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
 			args = append(args, "--unshallow")
 		}
+	} else {
+		args = append(args, "--depth="+fmt.Sprint(depth))
 	}
 	args = append(args, "origin", refSpec)
 
@@ -711,7 +704,7 @@ func doGitCheckout(
 	}
 
 	args := []string{"fetch", "-u"}
-	if depth != 0 {
+	if depth > 0 {
 		args = append(args, fmt.Sprintf("--depth=%d", depth))
 	}
 	args = append(args, "origin", pullref)
@@ -823,8 +816,8 @@ func (repo *LocalGitRepository) Ref(ctx context.Context, ref string) (GitRefBack
 	}, nil
 }
 
-func (repo *LocalGitRepository) Tags(ctx context.Context, patterns []string) ([]string, error) {
-	tags, err := repo.lsRemote(ctx, []string{"--tags"}, patterns)
+func (repo *LocalGitRepository) Tags(ctx context.Context, patterns []string, sort string) ([]string, error) {
+	tags, err := repo.lsRemote(ctx, []string{"--tags"}, patterns, sort)
 	if err != nil {
 		return nil, err
 	}
@@ -834,8 +827,8 @@ func (repo *LocalGitRepository) Tags(ctx context.Context, patterns []string) ([]
 	return tags, nil
 }
 
-func (repo *LocalGitRepository) Branches(ctx context.Context, patterns []string) ([]string, error) {
-	branches, err := repo.lsRemote(ctx, []string{"--heads"}, patterns)
+func (repo *LocalGitRepository) Branches(ctx context.Context, patterns []string, sort string) ([]string, error) {
+	branches, err := repo.lsRemote(ctx, []string{"--heads"}, patterns, sort)
 	if err != nil {
 		return nil, err
 	}
@@ -845,38 +838,12 @@ func (repo *LocalGitRepository) Branches(ctx context.Context, patterns []string)
 	return branches, nil
 }
 
-func (repo *LocalGitRepository) lsRemote(ctx context.Context, args []string, patterns []string) ([]string, error) {
+func (repo *LocalGitRepository) lsRemote(ctx context.Context, args []string, patterns []string, sort string) ([]string, error) {
 	results := []string{}
 	err := repo.mount(ctx, func(src string) error {
-		queryArgs := []string{
-			"ls-remote",
-			"--refs", // we don't want to include ^{} entries for annotated tags
-		}
-		queryArgs = append(queryArgs, args...)
-		queryArgs = append(queryArgs, "file://"+src)
-		if len(patterns) > 0 {
-			queryArgs = append(queryArgs, "--")
-			queryArgs = append(queryArgs, patterns...)
-		}
-		git := gitutil.NewGitCLI()
-		out, err := git.Run(ctx, queryArgs...)
-		if err != nil {
-			return err
-		}
-
-		scanner := bufio.NewScanner(bytes.NewReader(out))
-		for scanner.Scan() {
-			fields := strings.Fields(scanner.Text())
-			if len(fields) < 2 {
-				continue
-			}
-
-			results = append(results, fields[1])
-		}
-		if err := scanner.Err(); err != nil {
-			return fmt.Errorf("error scanning git output: %w", err)
-		}
-		return nil
+		var err error
+		results, err = runLsRemote(ctx, gitutil.NewGitCLI(), "file://"+src, args, patterns, sort)
+		return err
 	})
 	if err != nil {
 		return nil, err
@@ -899,7 +866,7 @@ func (repo *LocalGitRepository) mount(ctx context.Context, f func(string) error)
 	}
 	defer detach()
 
-	return repo.Directory.mount(ctx, func(root string) error {
+	return mountLLB(ctx, repo.Directory.LLB, func(root string) error {
 		src, err := fs.RootPath(root, repo.Directory.Dir)
 		if err != nil {
 			return err
@@ -1141,6 +1108,45 @@ func runProcessGroup(ctx context.Context, cmd *exec.Cmd) error {
 	err := cmd.Wait()
 	close(waitDone)
 	return err
+}
+
+// run git-ls-remote on a git repo with a target remote
+func runLsRemote(ctx context.Context, git *gitutil.GitCLI, remote string, args []string, patterns []string, sort string) ([]string, error) {
+	queryArgs := []string{
+		"ls-remote",
+		"--refs", // we don't want to include ^{} entries for annotated tags
+	}
+	if sort != "" {
+		queryArgs = append(queryArgs, "--sort="+sort)
+	}
+	queryArgs = append(queryArgs, args...)
+	queryArgs = append(queryArgs, remote)
+	if len(patterns) > 0 {
+		queryArgs = append(queryArgs, "--")
+		queryArgs = append(queryArgs, patterns...)
+	}
+
+	out, err := git.Run(ctx, queryArgs...)
+	if err != nil {
+		return nil, err
+	}
+
+	results := []string{}
+	scanner := bufio.NewScanner(bytes.NewReader(out))
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 2 {
+			continue
+		}
+
+		results = append(results, fields[1])
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error scanning git output: %w", err)
+	}
+
+	return results, nil
 }
 
 // parses output from git-show-ref and git-ls-remote to find the correctly

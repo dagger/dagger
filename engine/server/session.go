@@ -53,6 +53,7 @@ import (
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/util/cleanups"
 )
 
 type daggerSession struct {
@@ -236,7 +237,7 @@ func (sess *daggerSession) FlushTelemetry(ctx context.Context) error {
 func (srv *Server) initializeDaggerSession(
 	clientMetadata *engine.ClientMetadata,
 	sess *daggerSession,
-	failureCleanups *buildkit.Cleanups,
+	failureCleanups *cleanups.Cleanups,
 ) error {
 	slog.ExtraDebug("initializing new session", "session", clientMetadata.SessionID)
 	defer slog.ExtraDebug("initialized new session", "session", clientMetadata.SessionID)
@@ -327,11 +328,6 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
 	defer cancel()
 
-	if err := sess.dagqlCache.ReleaseAll(ctx); err != nil {
-		slog.Error("error releasing dagql cache", "error", err)
-		errs = errors.Join(errs, fmt.Errorf("release dagql cache: %w", err))
-	}
-
 	if err := sess.services.StopSessionServices(ctx, sess.sessionID); err != nil {
 		slog.Warn("error stopping services", "error", err)
 		errs = errors.Join(errs, fmt.Errorf("stop client services: %w", err))
@@ -396,6 +392,11 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// cleanup analytics and telemetry
 	errs = errors.Join(errs, sess.analytics.Close())
 
+	if err := sess.dagqlCache.ReleaseAndClose(ctx); err != nil {
+		slog.Error("error releasing dagql cache", "error", err)
+		errs = errors.Join(errs, fmt.Errorf("release dagql cache: %w", err))
+	}
+
 	// ensure this chan is closed even if the client never explicitly called the /shutdown endpoint
 	sess.closeShutdownOnce.Do(func() {
 		close(sess.shutdownCh)
@@ -433,7 +434,7 @@ type ClientInitOpts struct {
 func (srv *Server) initializeDaggerClient(
 	ctx context.Context,
 	client *daggerClient,
-	failureCleanups *buildkit.Cleanups,
+	failureCleanups *cleanups.Cleanups,
 	opts *ClientInitOpts,
 ) error {
 	// initialize all the buildkit+session attachable state for the client
@@ -499,7 +500,7 @@ func (srv *Server) initializeDaggerClient(
 		return fmt.Errorf("failed to create buildkit job: %w", err)
 	}
 	failureCleanups.Add("discard solver job", client.job.Discard)
-	failureCleanups.Add("stop solver progress", buildkit.Infallible(client.job.CloseProgress))
+	failureCleanups.Add("stop solver progress", cleanups.Infallible(client.job.CloseProgress))
 
 	client.job.SessionID = client.buildkitSession.ID()
 	client.job.SetValue(buildkit.EntitlementsJobKey, srv.entitlements)
@@ -596,11 +597,11 @@ func (srv *Server) initializeDaggerClient(
 		if err != nil {
 			return fmt.Errorf("failed to load module: %w", err)
 		}
-		client.mod = modInst.Self
+		client.mod = modInst.Self()
 
 		// this is needed to set the view of the core api as compatible
 		// with the module we're currently calling from
-		engineVersion := client.mod.Source.Self.EngineVersion
+		engineVersion := client.mod.Source.Self().EngineVersion
 		coreMod.Dag.View = dagql.View(engine.BaseVersion(engine.NormalizeVersion(engineVersion)))
 
 		// NOTE: *technically* we should reload the module here, so that we can
@@ -685,29 +686,35 @@ func (srv *Server) clientFromContext(ctx context.Context) (*daggerClient, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client metadata for session call: %w", err)
 	}
-	client, ok := srv.clientFromIDs(clientMetadata.SessionID, clientMetadata.ClientID)
-	if !ok {
-		return nil, fmt.Errorf("client %q not found", clientMetadata.ClientID)
+	client, err := srv.clientFromIDs(clientMetadata.SessionID, clientMetadata.ClientID)
+	if err != nil {
+		return nil, err
 	}
 	return client, nil
 }
 
-func (srv *Server) clientFromIDs(sessID, clientID string) (*daggerClient, bool) {
+func (srv *Server) clientFromIDs(sessID, clientID string) (*daggerClient, error) {
+	if sessID == "" {
+		return nil, fmt.Errorf("missing session ID")
+	}
+	if clientID == "" {
+		return nil, fmt.Errorf("missing client ID")
+	}
 	srv.daggerSessionsMu.RLock()
 	defer srv.daggerSessionsMu.RUnlock()
 	sess, ok := srv.daggerSessions[sessID]
 	if !ok {
-		return nil, false
+		return nil, fmt.Errorf("session %q not found", sessID)
 	}
 
 	sess.clientMu.RLock()
 	defer sess.clientMu.RUnlock()
 	client, ok := sess.clients[clientID]
 	if !ok {
-		return nil, false
+		return nil, fmt.Errorf("client %q not found", clientID)
 	}
 
-	return client, true
+	return client, nil
 }
 
 // initialize session+client if needed, return:
@@ -731,7 +738,7 @@ func (srv *Server) getOrInitClient(
 	}
 
 	// cleanup to do if this method fails
-	failureCleanups := &buildkit.Cleanups{}
+	failureCleanups := &cleanups.Cleanups{}
 	defer func() {
 		if rerr != nil {
 			rerr = errors.Join(rerr, failureCleanups.Run())
@@ -855,28 +862,6 @@ func (srv *Server) getOrInitClient(
 	}, nil
 }
 
-func (srv *Server) getClient(sessionID, clientID string) (*daggerClient, error) {
-	if sessionID == "" {
-		return nil, fmt.Errorf("missing session ID")
-	}
-	if clientID == "" {
-		return nil, fmt.Errorf("missing client ID")
-	}
-	srv.daggerSessionsMu.RLock()
-	sess, ok := srv.daggerSessions[sessionID]
-	srv.daggerSessionsMu.RUnlock()
-	if !ok {
-		return nil, fmt.Errorf("session %q not found", sessionID)
-	}
-	sess.clientMu.RLock()
-	client, ok := sess.clients[clientID]
-	sess.clientMu.RUnlock()
-	if !ok {
-		return nil, fmt.Errorf("client %q not found", clientID)
-	}
-	return client, nil
-}
-
 // ServeHTTP serves clients directly hitting the engine API (i.e. main client callers, not nested execs like module functions)
 func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	clientMetadata, err := engine.ClientMetadataFromHTTPHeaders(r.Header)
@@ -932,18 +917,6 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 
 const InstrumentationLibrary = "dagger.io/engine.server"
 
-func (srv *Server) DagqlServer(ctx context.Context) (*dagql.Server, error) {
-	client, err := srv.clientFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	schema, err := client.deps.Schema(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return schema, nil
-}
-
 func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opts *ClientInitOpts) (rerr error) {
 	ctx := r.Context()
 	ctx, cancel := context.WithCancelCause(ctx)
@@ -975,7 +948,7 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 	switch r.URL.Path {
 	case "/v1/traces", "/v1/logs", "/v1/metrics":
 		// Just get the client if it exists, don't init it.
-		client, err := srv.getClient(clientMetadata.SessionID, clientMetadata.ClientID)
+		client, err := srv.clientFromIDs(clientMetadata.SessionID, clientMetadata.ClientID)
 		if err != nil {
 			return fmt.Errorf("get client: %w", err)
 		}
@@ -1353,9 +1326,9 @@ func (srv *Server) MainClientCallerMetadata(ctx context.Context) (*engine.Client
 	if err != nil {
 		return nil, err
 	}
-	mainClient, ok := srv.clientFromIDs(client.daggerSession.sessionID, client.daggerSession.mainClientCallerID)
-	if !ok {
-		return nil, fmt.Errorf("failed to retrieve session main client")
+	mainClient, err := srv.clientFromIDs(client.daggerSession.sessionID, client.daggerSession.mainClientCallerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve session main client: %w", err)
 	}
 	return mainClient.clientMetadata, nil
 }

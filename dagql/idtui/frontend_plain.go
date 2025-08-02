@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"dagger.io/dagger/telemetry"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -16,6 +17,7 @@ import (
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
 	"github.com/vito/go-interact/interact"
+	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -123,13 +125,6 @@ func (fe *frontendPlain) Shell(ctx context.Context, handler ShellHandler) {
 	fmt.Fprintln(fe.output.Writer(), "Shell not supported in plain mode")
 }
 
-func (fe *frontendPlain) ConnectedToEngine(ctx context.Context, name string, version string, clientID string) {
-	if fe.Silent {
-		return
-	}
-	fe.addVirtualLog(trace.SpanFromContext(ctx), "engine", "name", name, "version", version, "client", clientID)
-}
-
 func (fe *frontendPlain) SetCloudURL(ctx context.Context, url string, msg string, logged bool) {
 	if fe.OpenWeb {
 		if err := browser.OpenURL(url); err != nil {
@@ -230,7 +225,9 @@ func (fe *frontendPlain) SetVerbosity(n int) {
 
 func (fe *frontendPlain) SetPrimary(spanID dagui.SpanID) {
 	fe.mu.Lock()
-	fe.db.PrimarySpan = spanID
+	fe.db.SetPrimarySpan(spanID)
+	fe.ZoomedSpan = spanID
+	fe.FocusedSpan = spanID
 	fe.mu.Unlock()
 }
 
@@ -310,15 +307,30 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 	if err != nil {
 		return err
 	}
-	for _, log := range logs {
-		spanID := dagui.SpanID{SpanID: log.SpanID()}
+	for _, record := range logs {
+		// Check if this log is marked as verbose
+		isVerbose := false
+		record.WalkAttributes(func(kv log.KeyValue) bool {
+			if kv.Key == telemetry.LogsVerboseAttr && kv.Value.AsBool() {
+				isVerbose = true
+				return false // stop walking
+			}
+			return true // continue walking
+		})
+
+		// Skip verbose logs in the plain frontend
+		if isVerbose {
+			continue
+		}
+
+		spanID := dagui.SpanID{SpanID: record.SpanID()}
 		spanDt, ok := fe.data[spanID]
 		if !ok {
 			spanDt = &spanData{}
 			fe.data[spanID] = spanDt
 		}
 
-		body := log.Body().AsString()
+		body := record.Body().AsString()
 		if body == "" {
 			// NOTE: likely just indicates EOF (stdio.eof=true attr); either way we
 			// want to avoid giving it its own line.
@@ -338,11 +350,11 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 
 			if spanDt.logsPending && len(spanDt.logs) > 0 {
 				spanDt.logs[len(spanDt.logs)-1].line.Write([]byte(line))
-				spanDt.logs[len(spanDt.logs)-1].time = log.Timestamp()
+				spanDt.logs[len(spanDt.logs)-1].time = record.Timestamp()
 			} else {
 				spanDt.logs = append(spanDt.logs, logLine{
 					line: newCursorBuffer([]byte(line)),
-					time: log.Timestamp(),
+					time: record.Timestamp(),
 				})
 			}
 

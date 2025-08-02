@@ -2,7 +2,8 @@ Expected stderr:
 
 ▼ connect X.Xs
 ├─● starting engine X.Xs
-├─● connecting to engine X.Xs
+├─▼ connecting to engine X.Xs
+│ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
 ╰─● starting session X.Xs
  
 ▼ load module: ./viztest X.Xs
@@ -18,7 +19,7 @@ Expected stderr:
   ┆ file: Host.file(path: "/app/dagql/idtui/golden_test.go"): File!
   ┆ dir: Host.directory(path: "/app/dagql/idtui"): Directory!
   ┆ contextFile: Directory.file(path: "main.go"): File!
-  ┆ contextDir: Host.directory(path: "/app/dagql/idtui/viztest", include: ["./dagger.json", "./**/*"]): Directory!
+  ┆ contextDir: Host.directory(path: "/app/dagql/idtui/viztest", exclude: [], noCache: true): Directory!
   ): Void X.Xs
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

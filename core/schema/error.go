@@ -11,27 +11,25 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
-type errorSchema struct {
-	dag *dagql.Server
-}
+type errorSchema struct{}
 
 var _ SchemaResolvers = &errorSchema{}
 
-func (s *errorSchema) Install() {
+func (s *errorSchema) Install(dag *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("error", s.error).
 			Doc(`Create a new error.`).
 			Args(
 				dagql.Arg("message").Doc(`A brief description of the error.`),
 			),
-	}.Install(s.dag)
+	}.Install(dag)
 
 	dagql.Fields[*core.Error]{
 		dagql.Func("withValue", s.withValue).
 			Doc(`Add a value to the error.`),
-	}.Install(s.dag)
+	}.Install(dag)
 
-	dagql.Fields[*core.ErrorValue]{}.Install(s.dag)
+	dagql.Fields[*core.ErrorValue]{}.Install(dag)
 }
 
 func (s *errorSchema) error(ctx context.Context, _ *core.Query, args struct {
@@ -48,9 +46,5 @@ func (s *errorSchema) withValue(ctx context.Context, self *core.Error, args stru
 	Name  string    `doc:"The name of the value."`
 	Value core.JSON `doc:"The value to store on the error."`
 }) (*core.Error, error) {
-	self.Values = append(self.Values, &core.ErrorValue{
-		Name:  args.Name,
-		Value: args.Value,
-	})
-	return self, nil
+	return self.WithValue(args.Name, args.Value), nil
 }

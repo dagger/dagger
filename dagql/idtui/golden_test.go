@@ -3,6 +3,7 @@ package idtui_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -64,6 +65,14 @@ func TestTelemetry(t *testing.T) {
 }
 
 func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
+	// setup a git repo so function call tests can pick up the right metadata
+	cmd := exec.Command("sh", "-c", "git init && git remote add origin git@github.com:dagger/dagger")
+	if co, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to initialize viztest git repo: %v: (%s)", err, co)
+	}
+	t.Cleanup(func() {
+		exec.Command("rm", "-rf", ".git").Run()
+	})
 	for _, ex := range []Example{
 		// implementations of these functions can be found in viztest/main.go
 		{Function: "hello-world"},
@@ -71,7 +80,8 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Function: "fail-effect", Fail: true},
 		{Function: "fail-log-native", Fail: true},
 		{Function: "encapsulate"},
-		{Function: "pending", Fail: true},
+		{Function: "fail-encapsulated", Fail: true},
+		{Function: "pending", Fail: true, RevealNoisySpans: true},
 		{Function: "list", Args: []string{"--dir", "."}},
 		{Function: "object-lists"},
 		{Function: "nested-calls"},
@@ -149,15 +159,92 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Function: "use-cached-exec-service", Flaky: "nested Dagger causes cache misses"},
 
 		// Python SDK tests
-		{Module: "./viztest/python", Function: "pending", Fail: true},
+		{Module: "./viztest/python", Function: "pending", Fail: true, RevealNoisySpans: true},
 		{Module: "./viztest/python", Function: "custom-span"},
 
 		// TypeScript SDK tests
-		{Module: "./viztest/typescript", Function: "pending", Fail: true},
+		{Module: "./viztest/typescript", Function: "pending", Fail: true, RevealNoisySpans: true},
 		{Module: "./viztest/typescript", Function: "custom-span"},
 		{Module: "./viztest/typescript", Function: "fail-log", Fail: true},
 		{Module: "./viztest/typescript", Function: "fail-effect", Fail: true},
 		{Module: "./viztest/typescript", Function: "fail-log-native", Fail: true},
+		// local module calls local module fn
+		{
+			Function: "trace-function-calls",
+			DBTest: func(t *testctx.T, db *dagui.DB) {
+				require.NotEmpty(t, db.Spans.Order)
+				var depCalled, rootCalled bool
+				for _, s := range db.Spans.Order {
+					if s.Name == "Dep.getFiles" {
+						require.Equal(t, "Viztest.TraceFunctionCalls", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger/viztest", strings.Split(strAttr(t, s, telemetry.ModuleCallerRefAttr), "@")[0])
+						require.Equal(t, "Dep.getFiles", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger/viztest/dep", strings.Split(strAttr(t, s, telemetry.ModuleRefAttr), "@")[0])
+						depCalled = true
+					} else if s.Name == "Viztest.traceFunctionCalls" {
+						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
+						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerRefAttr))
+						require.Equal(t, "Viztest.traceFunctionCalls", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger/viztest",
+							strings.Split(strAttr(t, s, telemetry.ModuleRefAttr), "@")[0])
+						rootCalled = true
+					}
+				}
+				require.True(t, rootCalled)
+				require.True(t, depCalled)
+			},
+		},
+		// local module calls remote module fn
+		{
+			Function: "trace-remote-function-calls",
+			DBTest: func(t *testctx.T, db *dagui.DB) {
+				require.NotEmpty(t, db.Spans.Order)
+				var depCalled, rootCalled bool
+				for _, s := range db.Spans.Order {
+					if s.Name == "Versioned.hello" {
+						require.Equal(t, "Viztest.TraceRemoteFunctionCalls", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger/viztest", strings.Split(strAttr(t, s, telemetry.ModuleCallerRefAttr), "@")[0])
+						require.Equal(t, "Versioned.hello", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger-test-modules/versioned@73670b0338c02cdd190f56b34c6e25066c7c8875", strAttr(t, s, telemetry.ModuleRefAttr))
+						depCalled = true
+					} else if s.Name == "Viztest.traceRemoteFunctionCalls" {
+						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
+						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerRefAttr))
+						require.Equal(t, "Viztest.traceRemoteFunctionCalls", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger/viztest", strings.Split(strAttr(t, s, telemetry.ModuleRefAttr), "@")[0])
+						rootCalled = true
+					}
+				}
+				require.True(t, rootCalled)
+				require.True(t, depCalled)
+			},
+		},
+		// remote module calls local module fn
+		{
+			Module:   "github.com/dagger/dagger-test-modules@73670b0338c02cdd190f56b34c6e25066c7c8875",
+			Function: "fn",
+			DBTest: func(t *testctx.T, db *dagui.DB) {
+				require.NotEmpty(t, db.Spans.Order)
+				var depCalled, rootCalled bool
+				for _, s := range db.Spans.Order {
+					if s.Name == "DepAlias.fn" {
+						require.Equal(t, "RootMod.Fn", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger-test-modules@73670b0338c02cdd190f56b34c6e25066c7c8875", strAttr(t, s, telemetry.ModuleCallerRefAttr))
+						require.Equal(t, "DepAlias.fn", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger-test-modules/dep@73670b0338c02cdd190f56b34c6e25066c7c8875", strAttr(t, s, telemetry.ModuleRefAttr))
+						depCalled = true
+					} else if s.Name == "RootMod.fn" {
+						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
+						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerRefAttr))
+						require.Equal(t, "RootMod.fn", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger-test-modules@73670b0338c02cdd190f56b34c6e25066c7c8875", strAttr(t, s, telemetry.ModuleRefAttr))
+						rootCalled = true
+					}
+				}
+				require.True(t, rootCalled)
+				require.True(t, depCalled)
+			},
+		},
 	} {
 		testName := ex.Function
 		if ex.Module != "" {
@@ -184,6 +271,18 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func strAttr(t testing.TB, s *dagui.Span, name string) string {
+	return unmarshalAs[string](t, s.ExtraAttributes[name])
+}
+
+func unmarshalAs[T any](t testing.TB, data json.RawMessage) T {
+	var result T
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("failed to unmarshal JSON: %v", err)
+	}
+	return result
+}
+
 type Example struct {
 	Module   string
 	Function string
@@ -191,6 +290,8 @@ type Example struct {
 	// verbosities 3 and higher do not work well with golden, they're not very deterministic atm
 	Verbosity int
 	Fail      bool
+	// used for tests that need to see through errors (e.g. 'pending')
+	RevealNoisySpans bool
 	// if a reason is given for Flaky, ignore failures, but log the failure and the provided explanation.
 	// ineffectual if FuzzyTest is in use.
 	Flaky  string
@@ -212,11 +313,15 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 		daggerBin = bin
 	}
 
-	daggerArgs := []string{"--progress=report", "call", "-m", ex.Module, ex.Function}
+	daggerArgs := []string{"--progress=report", "-v", "call", "-m", ex.Module, ex.Function}
 	daggerArgs = append(daggerArgs, ex.Args...)
 
 	if ex.Verbosity > 0 {
 		daggerArgs = append(daggerArgs, "-"+strings.Repeat("v", ex.Verbosity))
+	}
+
+	if ex.RevealNoisySpans {
+		ex.Env = append(ex.Env, "DAGGER_REVEAL=1")
 	}
 
 	// NOTE: we care about CACHED states for these tests, so we need some way for
@@ -365,6 +470,18 @@ var scrubs = []scrubber{
 		"12:34:56",
 		"XX:XX:XX",
 	},
+	// *.dagger.local
+	{
+		regexp.MustCompile(`[a-z0-9]+\.[a-z0-9]+\.dagger\.local`),
+		"iujpijlqnc7me.tun3vdbg35c6q.dagger.local",
+		"xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local",
+	},
+	// version=
+	{
+		regexp.MustCompile(`version=v[a-fv0-9.-]+`), // "v" is in "dev" :)
+		"version=v0.18.13-250710134709-7edd4496ecc1",
+		"version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx",
+	},
 	// Trailing whitespace
 	{
 		regexp.MustCompile(`\s*` + regexp.QuoteMeta(midterm.Reset.Render())),
@@ -446,7 +563,7 @@ var scrubs = []scrubber{
 	{
 		regexp.MustCompile(`\$ container: Container! X\.Xs CACHED`),
 		"$ container: Container! X.Xs CACHED",
-		"✔ container: Container! X.Xs",
+		"● container: Container! X.Xs",
 	},
 }
 

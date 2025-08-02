@@ -17,4 +17,8 @@ enum ImageLayerCompression: string
     case Zstd = 'Zstd';
     case EStarGZ = 'EStarGZ';
     case Uncompressed = 'Uncompressed';
+    case GZIP = 'GZIP';
+    case ZSTD = 'ZSTD';
+    case ESTARGZ = 'ESTARGZ';
+    case UNCOMPRESSED = 'UNCOMPRESSED';
 }

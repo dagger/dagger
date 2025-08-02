@@ -106,11 +106,78 @@ func (d DynamicArrayOutput) Nth(i int) (Typed, error) {
 	return d.Values[i-1], nil
 }
 
+func (d DynamicArrayOutput) NthValue(i int, enumID *call.ID) (AnyResult, error) {
+	t, err := d.Nth(i)
+	if err != nil {
+		return nil, err
+	}
+	return Result[Typed]{
+		constructor: enumID.SelectNth(i),
+		self:        t,
+	}, nil
+}
+
 func (d DynamicArrayOutput) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.Values)
 }
 
 func (d DynamicArrayOutput) SetField(val reflect.Value) error {
+	if val.Kind() != reflect.Slice {
+		return fmt.Errorf("expected slice, got %v", val.Kind())
+	}
+	val.Set(reflect.MakeSlice(val.Type(), len(d.Values), len(d.Values)))
+	for i, elem := range d.Values {
+		if err := assign(val.Index(i), elem); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type DynamicResultArrayOutput struct {
+	Elem   Typed
+	Values []AnyResult
+}
+
+var _ Typed = DynamicResultArrayOutput{}
+
+func (d DynamicResultArrayOutput) Type() *ast.Type {
+	return &ast.Type{
+		Elem:    d.Elem.Type(),
+		NonNull: true,
+	}
+}
+
+var _ Enumerable = DynamicResultArrayOutput{}
+
+func (d DynamicResultArrayOutput) Element() Typed {
+	return d.Elem
+}
+
+func (d DynamicResultArrayOutput) Len() int {
+	return len(d.Values)
+}
+
+func (d DynamicResultArrayOutput) Nth(i int) (Typed, error) {
+	val, err := d.NthValue(i, nil)
+	if err != nil {
+		return nil, err
+	}
+	return val.Unwrap(), nil
+}
+
+func (d DynamicResultArrayOutput) NthValue(i int, _ *call.ID) (AnyResult, error) {
+	if i < 1 || i > len(d.Values) {
+		return nil, fmt.Errorf("index %d out of bounds", i)
+	}
+	return d.Values[i-1], nil
+}
+
+func (d DynamicResultArrayOutput) MarshalJSON() ([]byte, error) {
+	return json.Marshal(d.Values)
+}
+
+func (d DynamicResultArrayOutput) SetField(val reflect.Value) error {
 	if val.Kind() != reflect.Slice {
 		return fmt.Errorf("expected slice, got %v", val.Kind())
 	}
@@ -274,4 +341,15 @@ func (d DynamicArrayInput) Nth(i int) (Typed, error) {
 		return nil, fmt.Errorf("index %d out of bounds", i)
 	}
 	return d.Values[i-1], nil
+}
+
+func (d DynamicArrayInput) NthValue(i int, enumID *call.ID) (AnyResult, error) {
+	t, err := d.Nth(i)
+	if err != nil {
+		return nil, err
+	}
+	return Result[Typed]{
+		constructor: enumID.SelectNth(i),
+		self:        t,
+	}, nil
 }

@@ -137,6 +137,12 @@ func (m *Basics) Publish(ctx context.Context) (string, error) {
 		Publish(ctx, "ttl.sh/hello")
 }
 ```
+
+To use this function, initialize a new Dagger module using the command below, and then update the auto-generated `.dagger/main.go` file to include the function code above:
+
+```shell
+dagger init --sdk=go --name=basics
+```
 </TabItem>
 <TabItem value="python" label="Python">
 ```python
@@ -150,6 +156,12 @@ async def publish(self) -> str:
         .publish("ttl.sh/hello")
     )
 ```
+
+To use this function, initialize a new Dagger module using the command below, and then update the auto-generated `.dagger/src/basics/main.py` file to include the function code above:
+
+```shell
+dagger init --sdk=python --name=basics
+```
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 ```typescript
@@ -162,6 +174,11 @@ async publish(): Promise<string> {
     .withEntrypoint(["cat", "/hi.txt"])
     .publish("ttl.sh/hello")
 }
+```
+To use this function, initialize a new Dagger module using the command below, and then update the auto-generated `.dagger/src/index.ts` file to include the function code above:
+
+```shell
+dagger init --sdk=typescript --name=basics
 ```
 </TabItem>
 <TabItem value="php" label="PHP">
@@ -177,6 +194,12 @@ public function publish(): string
         ->publish('ttl.sh/hello');
 }
 ```
+
+To use this function, initialize a new Dagger module using the command below, and then update the auto-generated `.dagger/src/Basics.php` file to include the function code above:
+
+```shell
+dagger init --sdk=php --name=basics
+```
 </TabItem>
 <TabItem value="java" label="Java">
 ```java
@@ -191,10 +214,17 @@ public String publish()
       .publish("ttl.sh/hello");
 }
 ```
+To use this function, initialize a new Dagger module using the command below, and then update the auto-generated `.dagger/src/main/java/io/dagger/modules/basics/Basics.java` file to include the function code above:
+
+```shell
+dagger init --sdk=java --name=basics
+```
 </TabItem>
 </Tabs>
 
-When you create a custom Dagger Function and tell Dagger about it (by installing the corresponding module), the Dagger API is [dynamically extended](../../api/internals.mdx#dynamic-api-extension) to include that new function. You then call this function from Dagger Shell, or from the command-line using `dagger call`, in exactly the same way as you would call functions from the original Dagger API.
+When you create a custom Dagger Function, the Dagger API is [dynamically extended](../../api/internals.mdx#dynamic-api-extension) to include that new function. You then call this function from Dagger Shell, or from the command-line using `dagger call`, in exactly the same way as you would call functions from the original Dagger API.
+
+Here is an example of calling the custom Dagger Function using `dagger call`.
 
 <VideoPlayer src="/img/current_docs/quickstart/basics/publish-code.webm" alt="Publishing demonstration" />
 

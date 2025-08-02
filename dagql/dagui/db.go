@@ -649,6 +649,9 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			}
 			linked := db.initSpan(linkedCtx.SpanID)
 			span.ErrorOrigin = linked
+			if linked.HasParent(span) {
+				span.RevealedSpans.Add(linked)
+			}
 		}
 	}
 
@@ -938,21 +941,26 @@ func WalkTree(tree []*TraceTree, f func(*TraceTree, int) WalkDecision) {
 func (db *DB) CollectErrors(rows *RowsView) []*TraceTree {
 	reveal := make(map[*TraceTree]struct{})
 
-	var collect func(row *TraceTree)
-	collect = func(tree *TraceTree) {
+	var collect func(row *TraceTree, ancestorFailed bool)
+	collect = func(tree *TraceTree, ancestorFailed bool) {
 		failed := tree.Span.IsFailedOrCausedFailure()
+		unset := tree.Span.IsUnset()
 		if failed {
 			reveal[tree] = struct{}{}
 		}
-		if failed || tree.Span.IsUnset() {
+		if failed ||
+			// continue through UNSET spans beneath failed parents; these correspond
+			// to basic span.End() calls which intend to just add measurement without
+			// bubbling up or masking failure
+			(unset && ancestorFailed) {
 			for _, child := range tree.Children {
-				collect(child)
+				collect(child, true)
 			}
 		}
 	}
 
 	for _, row := range rows.Body {
-		collect(row)
+		collect(row, false)
 	}
 
 	return collectParents(rows.Body, reveal)

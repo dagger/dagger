@@ -3,11 +3,12 @@ import type { JSON } from "../../api/client.gen.js"
 import { ExecError } from "../../common/errors/ExecError.js"
 import { GraphQLRequestError } from "../../common/errors/GraphQLRequestError.js"
 import { connection } from "../../connect.js"
+import * as telemetry from "../../telemetry/telemetry.js"
 import { Executor, Args } from "../executor.js"
 import { scan } from "../introspector/index.js"
 import { invoke } from "./invoke.js"
 import { load } from "./load.js"
-import { register } from "./register.js"
+import { Register } from "./register.js"
 
 export async function entrypoint(files: string[]) {
   // Start a Dagger session to get the call context
@@ -24,7 +25,7 @@ export async function entrypoint(files: string[]) {
       let result: any
 
       if (parentName === "") {
-        result = await register(files, scanResult)
+        result = await new Register(scanResult).run()
       } else {
         // Invocation
         const fnName = await fnCall.name()
@@ -50,6 +51,12 @@ export async function entrypoint(files: string[]) {
           })
         } catch (e: unknown) {
           await fnCall.returnError(formatError(e))
+
+          // Closing telemetry here since the process is shutdown after
+          // so any parent's finally will not be executed.
+          // That way, we guarantee that the spans are flushed.
+          await telemetry.close()
+
           process.exit(1)
         }
       }

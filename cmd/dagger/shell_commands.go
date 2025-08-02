@@ -154,7 +154,7 @@ func (c *ShellCommand) Execute(ctx context.Context, h *shellCallHandler, args []
 	if err != nil {
 		return err
 	}
-	if h.debug {
+	if h.Debug() {
 		shellDebug(ctx, "Command: "+c.Name(), a, st)
 	}
 	return c.Run(ctx, c, a, st)
@@ -240,7 +240,7 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if h.llmSession == nil {
 					return fmt.Errorf("LLM not initialized")
 				}
-				h.llmSession = h.llmSession.Clear()
+				h.llmSession = h.llmSession.Clear(ctx)
 				return nil
 			},
 		},
@@ -311,7 +311,10 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 			State:  NoState,
 			Run: func(_ context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
 				// Toggles debug mode, which can be useful when in interactive mode
+				// while developing or troubleshooting what happens in each step
+				h.mu.Lock()
 				h.debug = !h.debug
+				h.mu.Unlock()
 				return nil
 			},
 		},
@@ -436,7 +439,9 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 			Use: ".echo [-n] [string ...]",
 			Description: `Write arguments to the standard output
 
-Writes any specified operands, separated by single blank (' ') characters and followed by a newline ('\n') character, to the standard output. If the -n option is specified, the trailing newline is suppressed.
+Writes any specified operands, separated by single blank (' ') characters and
+followed by a newline ('\n') character, to the standard output. If the -n option
+is specified, the trailing newline is suppressed.
 `,
 		},
 		&ShellCommand{
@@ -471,11 +476,43 @@ If no name is provided, all environment variables are printed. If a name is prov
 			},
 		},
 		&ShellCommand{
-			Use: ".wait",
+			Use: ".wait [id...]",
 			Description: `Wait for background processes to complete
 
-The return status is 0 if all specified processes exit successfully.
-If any process exits with a nonzero status, wait returns that status.
+'id' is the process or job ID. If no ID is specified, .wait always returns 0 (zero).
+Otherwise, it returns the exit status of the first command that failed. When multiple
+processes are given, the command waits for all processes to complete.
+
+Example:
+
+  container | from alpine | with-exec false | stdout &
+  job1=$!
+  .echo "job id: $job1"
+  .wait $job1
+`,
+			State: NoState,
+			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
+				hc := interp.HandlerCtx(ctx)
+
+				if len(args) == 0 {
+					return hc.Builtin(ctx, []string{"wait"})
+				}
+
+				for _, job := range args {
+					err := hc.Builtin(ctx, []string{"wait", job})
+					if err != nil {
+						return err
+					}
+				}
+
+				return nil
+			},
+		},
+		&ShellCommand{
+			Use: ".exit [code]",
+			Description: `Exit the shell with an optional status code
+
+Without arguments, uses the exit status of the last command that executed.
 `,
 		},
 		&ShellCommand{
@@ -511,7 +548,7 @@ Without arguments, the current working directory is replaced by the initial cont
 			Args:        NoArgs,
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
-				if h.debug {
+				if h.Debug() {
 					shellDebug(ctx, "Workdir", h.Workdir())
 				}
 				return h.Print(ctx, h.Pwd())
@@ -684,11 +721,6 @@ Without arguments, the current working directory is replaced by the initial cont
 					if err != nil {
 						return err
 					}
-
-					if h.debug {
-						shellDebug(ctx, "Stdout (stdlib)", fn.CmdName(), args, st)
-					}
-
 					return h.Save(ctx, *st)
 				},
 				Complete: func(ctx *CompletionContext, args []string) *CompletionContext {

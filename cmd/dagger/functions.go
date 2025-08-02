@@ -46,6 +46,7 @@ const (
 	ModuleSource  string = "ModuleSource"
 	Module        string = "Module"
 	Platform      string = "Platform"
+	BuildArg      string = "BuildArg"
 	Socket        string = "Socket"
 	GitRepository string = "GitRepository"
 	GitRef        string = "GitRef"
@@ -188,16 +189,16 @@ func (fc *FuncCommand) Command() *cobra.Command {
 							// Only the pretty frontend prints the stderr of
 							// the exec error in the final render
 							if !tty && ex.Stdout != "" {
-								c.Println("Stdout:")
-								c.Println(ex.Stdout)
+								c.PrintErrln("Stdout:")
+								c.PrintErrln(ex.Stdout)
 							}
 							if !tty && ex.Stderr != "" {
 								c.PrintErrln("Stderr:")
 								c.PrintErrln(ex.Stderr)
 							}
-							return ExitError{Code: ex.ExitCode}
+							return ExitError{Code: ex.ExitCode, Original: err}
 						}
-						return Fail
+						return ExitError{Code: 1, Original: err}
 					}
 
 					return nil
@@ -632,6 +633,7 @@ func handleObjectLeaf(q *querybuilder.Selection, typeDef *modTypeDef) *querybuil
 func makeRequest(ctx context.Context, q *querybuilder.Selection, response any) error {
 	query, _ := q.Build(ctx)
 
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 	slog.Debug("executing query", "query", query)
 
 	q = q.Bind(&response)

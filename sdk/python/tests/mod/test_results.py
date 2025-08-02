@@ -1,3 +1,4 @@
+import enum
 import typing
 from dataclasses import InitVar
 from typing import Annotated
@@ -395,3 +396,73 @@ def test_exposed_field_not_in_constructor():
 
     with pytest.raises(TypeError, match="unexpected keyword argument 'bar'"):
         Foo(bat="man", bar="stool")
+
+
+async def test_enum_conversion():
+    mod = Module()
+
+    @mod.enum_type
+    class Custom(enum.Enum):
+        ONE = "1"
+        TWO = "2"
+
+    @mod.enum_type
+    class Primitive(str, enum.Enum):
+        THREE = "3"
+        FOUR = "4"
+
+    @mod.enum_type
+    class Compat(dagger.Enum):
+        FIVE = "5"
+        SIX = "6"
+
+    @mod.object_type
+    class Test:
+        custom: Custom = mod.field(default=Custom.ONE)
+
+        @mod.function
+        def unstruct_custom(self) -> Custom:
+            return Custom.ONE
+
+        @mod.function
+        def struct_custom(self, val: Custom) -> str:
+            return str(val)
+
+        @mod.function
+        def unstruct_primitive(self) -> Primitive:
+            return Primitive.THREE
+
+        @mod.function
+        def struct_primitive(self, val: Primitive) -> str:
+            return str(val)
+
+        @mod.function
+        def unstruct_compat(self) -> Compat:
+            return Compat.FIVE
+
+        @mod.function
+        def struct_compat(self, val: Compat) -> str:
+            return repr(val)
+
+    obj, _ = await mod.get_structured_result("Test", {}, "", {})
+    assert obj.custom == Custom.ONE
+
+    obj, _ = await mod.get_structured_result("Test", {}, "", {"custom": "TWO"})
+    assert obj.custom == Custom.TWO
+
+    assert await mod.get_result("Test", {}, "unstruct_custom", {}) == "ONE"
+    assert (
+        await mod.get_result("Test", {}, "struct_custom", {"val": "TWO"})
+        == "Custom.TWO"
+    )
+
+    assert await mod.get_result("Test", {}, "unstruct_primitive", {}) == "THREE"
+    assert (
+        await mod.get_result("Test", {}, "struct_primitive", {"val": "FOUR"})
+        == "Primitive.FOUR"
+    )
+
+    assert await mod.get_result("Test", {}, "unstruct_compat", {}) == "FIVE"
+    assert await mod.get_result("Test", {}, "struct_compat", {"val": "SIX"}) == repr(
+        Compat.SIX
+    )

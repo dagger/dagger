@@ -45,6 +45,3 @@ class MyModule:
             # DaggerError is the base class for all errors raised by Dagger
             msg = "Unexpected Dagger error"
             raise RuntimeError(msg) from e
-
-
-# ruff: noqa: RET505

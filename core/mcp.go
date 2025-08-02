@@ -48,7 +48,7 @@ type MCP struct {
 	// Only show these functions, if non-empty
 	selectedMethods map[string]bool
 	// The last value returned by a function.
-	lastResult dagql.Typed
+	lastResult dagql.AnyResult
 	// Indicates that the model has returned
 	returned bool
 }
@@ -80,7 +80,7 @@ func (m *MCP) Returned() bool {
 }
 
 // Get an object saved at a given key
-func (m *MCP) GetObject(key, expectedType string) (dagql.Object, error) {
+func (m *MCP) GetObject(key, expectedType string) (dagql.AnyObjectResult, error) {
 	if expectedType != "" {
 		// for maximal LLM compatibility, assume type for numeric ID args
 		if onlyNum, err := strconv.Atoi(key); err == nil {
@@ -100,16 +100,16 @@ func (m *MCP) GetObject(key, expectedType string) (dagql.Object, error) {
 	return nil, fmt.Errorf("unknown object %q", key)
 }
 
-func (m *MCP) LastResult() dagql.Typed {
+func (m *MCP) LastResult() dagql.AnyResult {
 	return m.lastResult
 }
 
-func (m *MCP) Tools(srv *dagql.Server) ([]LLMTool, error) {
+func (m *MCP) Tools() ([]LLMTool, error) {
 	allTools := map[string]LLMTool{}
-	if err := m.allTypeTools(srv, allTools); err != nil {
+	if err := m.allTypeTools(m.env.srv, allTools); err != nil {
 		return nil, err
 	}
-	return m.Builtins(srv, allTools)
+	return m.Builtins(m.env.srv, allTools)
 }
 
 // ToolFunc reuses our regular GraphQL args handling sugar for tools.
@@ -394,7 +394,7 @@ func (m *MCP) call(ctx context.Context,
 		return "", fmt.Errorf("expected arguments to be a map - got %#v", args)
 	}
 	toolProps := toolSchema["properties"].(map[string]any)
-	var target dagql.Object
+	var target dagql.AnyObjectResult
 	if m.env.IsPrivileged() && selfType == schema.Query.Name {
 		target = srv.Root()
 	} else {
@@ -432,7 +432,7 @@ func (m *MCP) call(ctx context.Context,
 func (m *MCP) selectionToToolResult(
 	ctx context.Context,
 	srv *dagql.Server,
-	target dagql.Object,
+	target dagql.AnyObjectResult,
 	fieldDef *ast.FieldDefinition,
 	fieldSel dagql.Selector,
 ) (string, error) {
@@ -451,7 +451,7 @@ func (m *MCP) selectionToToolResult(
 		if _, isObj := srv.ObjectType(fieldDef.Type.Elem.NamedType); isObj {
 			// Handle arrays of objects by ingesting each object ID.
 			//
-			var objs []dagql.Object
+			var objs []dagql.AnyResult
 			if err := srv.Select(ctx, target, &objs, fieldSel); err != nil {
 				return "", fmt.Errorf("failed to sync: %w", err)
 			}
@@ -466,8 +466,14 @@ func (m *MCP) selectionToToolResult(
 	}
 
 	// Make the DagQL call.
-	var val dagql.Typed
-	if err := srv.Select(ctx, target, &val, sels...); err != nil {
+	var val dagql.AnyResult
+	if err := srv.Select(
+		// reveal cache hits, even if we've already seen them within the session
+		dagql.WithRepeatedTelemetry(ctx),
+		target,
+		&val,
+		sels...,
+	); err != nil {
 		return "", fmt.Errorf("failed to sync: %w", err)
 	}
 
@@ -484,7 +490,7 @@ func (m *MCP) selectionToToolResult(
 
 	m.lastResult = val
 
-	if obj, ok := dagql.UnwrapAs[dagql.Object](val); ok {
+	if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](val); ok {
 		// Handle object returns
 		return m.newState(obj)
 	}
@@ -503,16 +509,23 @@ func (m *MCP) selectionToToolResult(
 		return str.String(), nil
 	}
 
+	// Handle null response.
+	if val == nil {
+		return toolStructuredResponse(map[string]any{
+			"result": nil,
+		})
+	}
+
 	// Handle scalars or arrays of scalars.
 	//
 	return toolStructuredResponse(map[string]any{
-		"result": val,
+		"result": val.Unwrap(),
 	})
 }
 
 func (m *MCP) toolCallToSelection(
 	srv *dagql.Server,
-	target dagql.Object,
+	target dagql.AnyObjectResult,
 	// The definition of the dagql field to call. Example: Container.withExec
 	fieldDef *ast.FieldDefinition,
 	argsMap map[string]any,
@@ -552,7 +565,7 @@ func (m *MCP) toolCallToSelection(
 			if err != nil {
 				return sel, fmt.Errorf("arg %q: %w", arg.Name, err)
 			}
-			obj, ok := dagql.UnwrapAs[dagql.Object](envVal)
+			obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](envVal)
 			if !ok {
 				return sel, fmt.Errorf("arg %q: expected object, got %T", arg.Name, envVal)
 			}
@@ -1081,7 +1094,7 @@ NOTE: you must select methods before chaining them`,
 					}
 					args := maps.Clone(call.Args)
 					if i > 0 {
-						if obj, ok := dagql.UnwrapAs[dagql.Object](m.LastResult()); ok {
+						if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](m.LastResult()); ok {
 							// override, since the whole point is to chain from the previous
 							// value; any value here is surely mistaken or hallucinated
 							args["self"] = m.env.Ingest(obj, "")
@@ -1469,7 +1482,7 @@ func (m *MCP) typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any,
 
 const jsonSchemaIDAttr = "x-id-type"
 
-func (m *MCP) newState(target dagql.Object) (string, error) {
+func (m *MCP) newState(target dagql.AnyObjectResult) (string, error) {
 	typeName := target.Type().Name()
 	_, known := m.env.typeCounts[typeName]
 	res := map[string]any{

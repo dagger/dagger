@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -14,13 +15,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	gwpb "github.com/moby/buildkit/frontend/gateway/pb"
-	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
+	utilsystem "github.com/moby/buildkit/util/system"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger/telemetry"
@@ -44,10 +45,14 @@ type Service struct {
 	CustomHostname string
 
 	// Container is the container to run as a service.
-	Container *Container
+	Container                     *Container
+	Args                          []string
+	ExperimentalPrivilegedNesting bool
+	InsecureRootCapabilities      bool
+	NoInit                        bool
 
 	// TunnelUpstream is the service that this service is tunnelling to.
-	TunnelUpstream *dagql.Instance[*Service]
+	TunnelUpstream dagql.ObjectResult[*Service]
 	// TunnelPorts configures the port forwarding rules for the tunnel.
 	TunnelPorts []PortForward
 
@@ -70,11 +75,9 @@ func (*Service) TypeDescription() string {
 // WithXXX method.
 func (svc *Service) Clone() *Service {
 	cp := *svc
+	cp.Args = slices.Clone(cp.Args)
 	if cp.Container != nil {
 		cp.Container = cp.Container.Clone()
-	}
-	if cp.TunnelUpstream != nil {
-		cp.TunnelUpstream.Self = cp.TunnelUpstream.Self.Clone()
 	}
 	cp.TunnelPorts = slices.Clone(cp.TunnelPorts)
 	cp.HostSockets = slices.Clone(cp.HostSockets)
@@ -98,7 +101,7 @@ func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 	}
 
 	switch {
-	case svc.TunnelUpstream != nil: // host=>container (127.0.0.1)
+	case svc.TunnelUpstream.Self() != nil: // host=>container (127.0.0.1)
 		svcs, err := query.Services(ctx)
 		if err != nil {
 			return "", err
@@ -124,12 +127,12 @@ func (svc *Service) Ports(ctx context.Context, id *call.ID) ([]Port, error) {
 	}
 
 	switch {
-	case svc.TunnelUpstream != nil, len(svc.HostSockets) > 0:
+	case svc.TunnelUpstream.Self() != nil, len(svc.HostSockets) > 0:
 		svcs, err := query.Services(ctx)
 		if err != nil {
 			return nil, err
 		}
-		running, err := svcs.Get(ctx, id, svc.TunnelUpstream != nil)
+		running, err := svcs.Get(ctx, id, svc.TunnelUpstream.Self() != nil)
 		if err != nil {
 			return nil, err
 		}
@@ -164,7 +167,7 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 
 			port = svc.Container.Ports[0].Port
 		}
-	case svc.TunnelUpstream != nil:
+	case svc.TunnelUpstream.Self() != nil:
 		svcs, err := query.Services(ctx)
 		if err != nil {
 			return "", err
@@ -221,7 +224,7 @@ func (svc *Service) StartAndTrack(ctx context.Context, id *call.ID) error {
 	if err != nil {
 		return err
 	}
-	_, err = svcs.Start(ctx, id, svc, svc.TunnelUpstream != nil)
+	_, err = svcs.Start(ctx, id, svc, svc.TunnelUpstream.Self() != nil)
 	return err
 }
 
@@ -234,7 +237,7 @@ func (svc *Service) Stop(ctx context.Context, id *call.ID, kill bool) error {
 	if err != nil {
 		return err
 	}
-	return svcs.Stop(ctx, id, kill, svc.TunnelUpstream != nil)
+	return svcs.Stop(ctx, id, kill, svc.TunnelUpstream.Self() != nil)
 }
 
 func (svc *Service) Start(
@@ -248,7 +251,7 @@ func (svc *Service) Start(
 	switch {
 	case svc.Container != nil:
 		return svc.startContainer(ctx, id, interactive, forwardStdin, forwardStdout, forwardStderr)
-	case svc.TunnelUpstream != nil:
+	case svc.TunnelUpstream.Self() != nil:
 		return svc.startTunnel(ctx)
 	case len(svc.HostSockets) > 0:
 		return svc.startReverseTunnel(ctx, id)
@@ -282,34 +285,12 @@ func (svc *Service) startContainer(
 
 	ctr := svc.Container
 
-	dag, err := buildkit.DefToDAG(ctr.FS)
+	execMD, err := ctr.execMeta(ctx, ContainerExecOpts{
+		ExperimentalPrivilegedNesting: svc.ExperimentalPrivilegedNesting,
+		NoInit:                        svc.NoInit,
+	}, nil)
 	if err != nil {
 		return nil, err
-	}
-
-	if dag.GetOp() == nil && len(dag.Inputs) == 1 {
-		dag = dag.Inputs[0]
-	} else {
-		// i mean, theoretically this should never happen, but it's better to
-		// notice it
-		return nil, fmt.Errorf("what in tarnation? that's too many inputs! (%d) %v", len(dag.Inputs), dag.GetInputs())
-	}
-
-	execOp, ok := dag.AsExec()
-	if !ok {
-		return nil, fmt.Errorf("service container must be result of withExec (expected exec op, got %T)", dag.GetOp())
-	}
-
-	execMD, ok, err := buildkit.ExecutionMetadataFromDescription(execOp.Metadata.Description)
-	if err != nil {
-		return nil, fmt.Errorf("parse execution metadata: %w", err)
-	}
-	if !ok {
-		execMD = &buildkit.ExecutionMetadata{
-			ExecID:            identity.NewID(),
-			SessionID:         clientMetadata.SessionID,
-			AllowedLLMModules: clientMetadata.AllowedLLMModules,
-		}
 	}
 
 	query, err := CurrentQuery(ctx)
@@ -333,7 +314,7 @@ func (svc *Service) startContainer(
 
 	var domain string
 	if mod, err := query.CurrentModule(ctx); err == nil && svc.CustomHostname != "" {
-		domain = network.ModuleDomain(mod.InstanceID, clientMetadata.SessionID)
+		domain = network.ModuleDomain(mod.ResultID, clientMetadata.SessionID)
 		if !slices.Contains(execMD.ExtraSearchDomains, domain) {
 			// ensure a service can reach other services in the module that started
 			// it, to support services returned by modules and re-configured with
@@ -354,45 +335,56 @@ func (svc *Service) startContainer(
 
 	pbPlatform := pb.PlatformFromSpec(ctr.Platform.Spec())
 
+	pbmounts, states, _, err := getAllContainerMounts(ctr)
+	if err != nil {
+		return nil, fmt.Errorf("could not get mounts: %w", err)
+	}
+
 	mountsG := pool.New().WithErrors()
-	mounts := make([]buildkit.ContainerMount, len(execOp.Mounts))
-	for i, m := range execOp.Mounts {
+	mounts := make([]buildkit.ContainerMount, 0)
+	for _, pbmount := range pbmounts {
 		mount := bkgw.Mount{
-			Selector:  m.Selector,
-			Dest:      m.Dest,
-			ResultID:  m.ResultID,
-			Readonly:  m.Readonly,
-			MountType: m.MountType,
-			CacheOpt:  m.CacheOpt,
-			SecretOpt: m.SecretOpt,
-			SSHOpt:    m.SSHOpt,
+			Selector:  pbmount.Selector,
+			Dest:      pbmount.Dest,
+			ResultID:  pbmount.ResultID,
+			Readonly:  pbmount.Readonly,
+			MountType: pbmount.MountType,
+			CacheOpt:  pbmount.CacheOpt,
+			SecretOpt: pbmount.SecretOpt,
+			SSHOpt:    pbmount.SSHOpt,
 			// TODO(vito): why is there no TmpfsOpt? PR upstream?
 			// TmpfsOpt  *TmpfsOpt   `protobuf:"bytes,19,opt,name=TmpfsOpt,proto3" json:"TmpfsOpt,omitempty"`
 		}
 
-		if m.Input > -1 {
-			input := execOp.Input(m.Input)
-			def, err := input.Marshal()
+		var st *llb.State
+		if pbmount.Input != pb.Empty {
+			st = &states[pbmount.Input]
+		}
+
+		if st != nil {
+			def, err := st.Marshal(ctx)
 			if err != nil {
-				return nil, fmt.Errorf("marshal mount %s: %w", m.Dest, err)
+				return nil, fmt.Errorf("marshal mount %s: %w", pbmount.Dest, err)
 			}
 
-			mountsG.Go(func() error {
-				res, err := bk.Solve(ctx, bkgw.SolveRequest{
-					Definition: def,
-					Evaluate:   true,
+			if def != nil {
+				mountsG.Go(func() error {
+					res, err := bk.Solve(ctx, bkgw.SolveRequest{
+						Definition: def.ToPB(),
+						Evaluate:   true,
+					})
+					if err != nil {
+						return fmt.Errorf("solve mount %s: %w", pbmount.Dest, err)
+					}
+					mount.Ref = res.Ref
+					return nil
 				})
-				if err != nil {
-					return fmt.Errorf("solve mount %s: %w", m.Dest, err)
-				}
-				mount.Ref = res.Ref
-				return nil
-			})
+			}
 		}
 
-		mounts[i] = buildkit.ContainerMount{
+		mounts = append(mounts, buildkit.ContainerMount{
 			Mount: &mount,
-		}
+		})
 	}
 	if err := mountsG.Wait(); err != nil {
 		return nil, err
@@ -403,15 +395,11 @@ func (svc *Service) startContainer(
 		// The parent is the call site that triggered it to start.
 		ctx,
 		// Match naming scheme of normal exec span.
-		fmt.Sprintf("exec %s", strings.Join(execOp.Meta.Args, " ")),
+		fmt.Sprintf("exec %s", strings.Join(svc.Args, " ")),
 		// This span continues the original withExec, by linking to it.
 		telemetry.Resume(execCtx),
 		// Hide this span so the user can just focus on the withExec.
 		telemetry.Internal(),
-		// The withExec span expects to see this effect, otherwise it'll still be
-		// pending.
-		trace.WithAttributes(attribute.String(telemetry.DagDigestAttr, execOp.OpDigest.String())),
-		trace.WithAttributes(attribute.String(telemetry.EffectIDAttr, execOp.OpDigest.String())),
 	)
 	defer func() {
 		if rerr != nil {
@@ -442,8 +430,9 @@ func (svc *Service) startContainer(
 		checked <- newHealth(bk, gc, fullHost, ctr.Ports).Check(ctx)
 	}()
 
-	env := slices.Clone(execOp.Meta.Env)
+	env := slices.Clone(ctr.Config.Env)
 	env = append(env, telemetry.PropagationEnv(ctx)...)
+	addDefaultEnvvar(env, "PATH", utilsystem.DefaultPathEnv(svc.Container.Platform.OS))
 
 	var stdinCtr, stdoutClient, stderrClient io.ReadCloser
 	var stdinClient, stdoutCtr, stderrCtr io.WriteCloser
@@ -471,24 +460,26 @@ func (svc *Service) startContainer(
 		stdoutClient, stdoutCtr = io.Pipe()
 		stdoutWriters = append(stdoutWriters, stdoutCtr)
 	}
-
 	if forwardStderr != nil {
 		stderrClient, stderrCtr = io.Pipe()
 		stderrWriters = append(stderrWriters, stderrCtr)
 	}
 
-	svcProc, err := gc.Start(execCtx, bkgw.StartRequest{
-		Args:         execOp.Meta.Args,
-		Env:          env,
-		Cwd:          execOp.Meta.Cwd,
-		User:         execOp.Meta.User,
-		SecretEnv:    execOp.Secretenv,
-		Tty:          interactive,
-		Stdin:        stdinCtr,
-		Stdout:       stdoutWriters,
-		Stderr:       stderrWriters,
-		SecurityMode: execOp.Security,
-	})
+	req := bkgw.StartRequest{
+		Args:      svc.Args,
+		Env:       env,
+		Cwd:       cmp.Or(ctr.Config.WorkingDir, "/"),
+		User:      ctr.Config.User,
+		SecretEnv: ctr.secretEnvs(),
+		Tty:       interactive,
+		Stdin:     stdinCtr,
+		Stdout:    stdoutWriters,
+		Stderr:    stderrWriters,
+	}
+	if svc.InsecureRootCapabilities {
+		req.SecurityMode = pb.SecurityMode_INSECURE
+	}
+	svcProc, err := gc.Start(execCtx, req)
 	if err != nil {
 		return nil, fmt.Errorf("start container: %w", err)
 	}
@@ -594,7 +585,7 @@ func (svc *Service) startContainer(
 				return nil, &buildkit.ExecError{
 					Err:      gwErr,
 					Origin:   svc.Creator,
-					Cmd:      execOp.Meta.Args,
+					Cmd:      req.Args,
 					ExitCode: int(gwErr.ExitCode),
 					Stdout:   stdoutBuf.String(),
 					Stderr:   stderrBuf.String(),
@@ -681,7 +672,7 @@ func (svc *Service) startTunnel(ctx context.Context) (running *RunningService, r
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	upstream, err := svcs.Start(svcCtx, svc.TunnelUpstream.ID(), svc.TunnelUpstream.Self, true)
+	upstream, err := svcs.Start(svcCtx, svc.TunnelUpstream.ID(), svc.TunnelUpstream.Self(), true)
 	if err != nil {
 		return nil, fmt.Errorf("start upstream: %w", err)
 	}
@@ -869,7 +860,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 type ServiceBindings []ServiceBinding
 
 type ServiceBinding struct {
-	Service  dagql.Instance[*Service]
+	Service  dagql.ObjectResult[*Service]
 	Hostname string
 	Aliases  AliasSet
 }

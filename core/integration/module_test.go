@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"encoding/base64"
@@ -3415,6 +3416,43 @@ func diffSecret(ctx context.Context, first, second *dagger.Secret) error {
 			require.NoError(t, err)
 		})
 	})
+
+	t.Run("optional secret field on module object", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := daggerCliBase(t, c).
+			With(pythonSource(`
+import base64
+import dagger
+from dagger import dag, field, function, object_type
+
+
+@object_type
+class Test:
+    @function
+    def getobj(self, *, top_secret: dagger.Secret | None = None) -> "Obj":
+        return Obj(top_secret=top_secret)
+
+
+@object_type
+class Obj:
+    top_secret: dagger.Secret | None = field(default=None)
+
+    @function
+    async def getSecret(self) -> str:
+        plaintext = await self.top_secret.plaintext()
+        return base64.b64encode(plaintext.encode()).decode()
+`)).
+			With(daggerInitPython()).
+			WithEnvVariable("TOP_SECRET", "omg").
+			With(daggerCall("getobj", "--top-secret", "env://TOP_SECRET", "get-secret")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		decodeOut, err := base64.StdEncoding.DecodeString(strings.TrimSpace(out))
+		require.NoError(t, err)
+		require.Equal(t, "omg", string(decodeOut))
+	})
 }
 
 func (ModuleSuite) TestUnicodePath(ctx context.Context, t *testctx.T) {
@@ -3841,7 +3879,10 @@ import (
 type Test struct {}
 
 func (t *Test) Call(
-  //+ignore=["foo.txt", "bar"]
+  // +ignore=[
+  //   "foo.txt",
+  //   "bar"
+  // ]
   dir *dagger.Directory,
 ) *dagger.Directory {
  return dir
@@ -5428,7 +5469,7 @@ func (m *Dep) Collect(MyEnum, MyInterface) error {
 					// enum
 					`\ntype DepMyEnum string // dep \(../../dep/main.go:16:6\)\n`,
 					// enum value
-					`\n\s*DepMyEnumMyEnumA DepMyEnum = "MyEnumA" // dep \(../../dep/main.go:18:5\)\n`,
+					`\n\s*DepMyEnumA DepMyEnum = "MyEnumA" // dep \(../../dep/main.go:18:5\)\n`,
 
 					// interface
 					`\ntype DepMyInterface struct { // dep \(../../dep/main.go:22:6\)\n`,
@@ -5448,7 +5489,7 @@ func (m *Dep) Collect(MyEnum, MyInterface) error {
 					// enum
 					`export enum DepMyEnum { // dep \(../../../dep/main.go:16:6\)`,
 					// enum value
-					`\s*Myenuma = "MyEnumA", // dep \(../../../dep/main.go:18:5\)`,
+					`\s*A = "MyEnumA", // dep \(../../../dep/main.go:18:5\)`,
 				},
 			},
 		},
@@ -5457,8 +5498,8 @@ func (m *Dep) Collect(MyEnum, MyInterface) error {
 			src: `import { object, func } from "@dagger.io/dagger"
 
 export enum MyEnum {
-  MyEnumA = "MyEnumA",
-	MyEnumB = "MyEnumB",
+  A = "MyEnumA",
+	B = "MyEnumB",
 }
 
 @object()
@@ -5488,7 +5529,7 @@ export class Dep {
 					// enum
 					`\ntype DepMyEnum string // dep \(../../dep/src/index.ts:3:13\)\n`,
 					// enum value
-					`\n\s*DepMyEnumMyEnumA DepMyEnum = "MyEnumA" // dep \(../../dep/src/index.ts:4:3\)\n`,
+					`\n\s*DepMyEnumA DepMyEnum = "MyEnumA" // dep \(../../dep/src/index.ts:4:3\)\n`,
 				},
 				typescript: []string{
 					// struct
@@ -5503,7 +5544,7 @@ export class Dep {
 					// enum
 					`export enum DepMyEnum { // dep \(../../../dep/src/index.ts:3:13\)`,
 					// enum value
-					`\s*Myenuma = "MyEnumA", // dep \(../../../dep/src/index.ts:4:3\)`,
+					`\s*A = "MyEnumA", // dep \(../../../dep/src/index.ts:4:3\)`,
 				},
 			},
 		},
@@ -5764,6 +5805,60 @@ func (m *Test) ReadFile(
 	})
 }
 
+func (ModuleSuite) TestLargeErrors(ctx context.Context, t *testctx.T) {
+	modDir := t.TempDir()
+
+	_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+	require.NoError(t, err)
+
+	moduleSrc := `package main
+
+import (
+  "context"
+)
+
+type Test struct{}
+
+func (m *Test) RunNoisy(ctx context.Context) error {
+	_, err := dag.Container().
+		From("` + alpineImage + `").
+		WithExec([]string{"sh", "-c", ` + "`" + `
+			for i in $(seq 100); do
+				for j in $(seq 1024); do
+					echo -n x
+					echo -n y >/dev/stderr
+				done
+				echo
+			done
+			exit 42
+		` + "`" + `}).
+		Sync(ctx)
+	return err
+}
+`
+	err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(moduleSrc), 0o644)
+	require.NoError(t, err)
+
+	c := connect(ctx, t)
+
+	err = c.ModuleSource(modDir).AsModule().Serve(ctx)
+	require.NoError(t, err)
+
+	_, err = testutil.QueryWithClient[struct {
+		Test struct {
+			RunNoisy any
+		}
+	}](c, t, `{test{runNoisy}}`, nil)
+	var execError *dagger.ExecError
+	require.ErrorAs(t, err, &execError)
+
+	// if we get `2` here, that means we're getting the less helpful error:
+	// process "/runtime" did not complete successfully: exit code: 2
+	require.Equal(t, 42, execError.ExitCode)
+	require.Contains(t, execError.Stdout, "xxxxx")
+	require.Contains(t, execError.Stderr, "yyyyy")
+}
+
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
@@ -5852,15 +5947,21 @@ func privateRepoSetup(c *dagger.Client, t *testctx.T, tc vcsTestCase) (dagger.Wi
 		}
 		if token := tc.token(); token != "" {
 			ctr = ctr.
-				WithExec([]string{
-					"git", "config", "--global",
-					"credential.https://" + tc.expectedHost + ".helper",
-					`!f() { test "$1" = get && echo -e "password=` + token + `\nusername=git"; }; f`,
-				})
+				WithNewFile("/tmp/git-config", makeGitCredentials("https://"+tc.expectedHost, "git", token)).
+				WithEnvVariable("GIT_CONFIG_GLOBAL", "/tmp/git-config")
 		}
 
 		return ctr
 	}, cleanup
+}
+
+func makeGitCredentials(url string, username string, token string) string {
+	helper := fmt.Sprintf(`!f() { test "$1" = get && echo -e "password=%s\nusername=%s"; }; f`, token, username)
+
+	contents := bytes.NewBuffer(nil)
+	fmt.Fprintf(contents, "[credential %q]\n", url)
+	fmt.Fprintf(contents, "\thelper = %q\n", helper)
+	return contents.String()
 }
 
 func daggerFunctions(args ...string) dagger.WithContainerFunc {
@@ -6076,8 +6177,9 @@ query { host { directory(path: ".") { asModule {
         asEnum {
             name
             description
-            values {
+            members {
                 name
+				value
 				description
 			}
         }

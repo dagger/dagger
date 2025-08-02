@@ -18,6 +18,7 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/dagger/dagger/engine"
+	ociexporter "github.com/dagger/dagger/engine/buildkit/exporter/oci"
 )
 
 type ContainerExport struct {
@@ -42,17 +43,18 @@ func (c *Client) PublishContainerImage(
 		return nil, err
 	}
 
+	// TODO: lift this to dagger
 	exporter, err := c.Worker.Exporter(bkclient.ExporterImage, c.SessionManager)
 	if err != nil {
 		return nil, err
 	}
 
-	expInstance, err := exporter.Resolve(ctx, 0, opts)
+	expResult, err := exporter.Resolve(ctx, 0, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve exporter: %w", err)
 	}
 
-	resp, descRef, err := expInstance.Export(ctx, combinedResult, nil, c.ID())
+	resp, descRef, err := expResult.Export(ctx, combinedResult, nil, c.ID())
 	if err != nil {
 		return nil, fmt.Errorf("failed to export: %w", err)
 	}
@@ -85,17 +87,22 @@ func (c *Client) ExportContainerImage(
 		return nil, err
 	}
 
-	exporterName := bkclient.ExporterDocker
+	variant := ociexporter.VariantDocker
 	if len(combinedResult.Refs) > 1 {
-		exporterName = bkclient.ExporterOCI
+		variant = ociexporter.VariantOCI
 	}
 
-	exporter, err := c.Worker.Exporter(exporterName, c.SessionManager)
+	exporter, err := ociexporter.New(ociexporter.Opt{
+		SessionManager: c.SessionManager,
+		ImageWriter:    c.Worker.ImageWriter,
+		Variant:        variant,
+		LeaseManager:   c.Worker.LeaseManager(),
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	expInstance, err := exporter.Resolve(ctx, 0, opts)
+	expResult, err := exporter.Resolve(ctx, 0, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve exporter: %w", err)
 	}
@@ -110,7 +117,7 @@ func (c *Client) ExportContainerImage(
 		IsFileStream: true,
 	}.AppendToOutgoingContext(ctx)
 
-	resp, descRef, err := expInstance.Export(ctx, combinedResult, nil, clientMetadata.ClientID)
+	resp, descRef, err := expResult.Export(ctx, combinedResult, nil, clientMetadata.ClientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to export: %w", err)
 	}
@@ -139,17 +146,22 @@ func (c *Client) ContainerImageToTarball(
 		return err
 	}
 
-	exporterName := bkclient.ExporterDocker
+	variant := ociexporter.VariantDocker
 	if len(combinedResult.Refs) > 1 {
-		exporterName = bkclient.ExporterOCI
+		variant = ociexporter.VariantOCI
 	}
 
-	exporter, err := c.Worker.Exporter(exporterName, c.SessionManager)
+	exporter, err := ociexporter.New(ociexporter.Opt{
+		SessionManager: c.SessionManager,
+		ImageWriter:    c.Worker.ImageWriter,
+		Variant:        variant,
+		LeaseManager:   c.Worker.LeaseManager(),
+	})
 	if err != nil {
 		return err
 	}
 
-	expInstance, err := exporter.Resolve(ctx, 0, opts)
+	expResult, err := exporter.Resolve(ctx, 0, opts)
 	if err != nil {
 		return fmt.Errorf("failed to resolve exporter: %w", err)
 	}
@@ -159,7 +171,7 @@ func (c *Client) ContainerImageToTarball(
 		IsFileStream: true,
 	}.AppendToOutgoingContext(ctx)
 
-	_, descRef, err := expInstance.Export(ctx, combinedResult, nil, c.ID())
+	_, descRef, err := expResult.Export(ctx, combinedResult, nil, c.ID())
 	if err != nil {
 		return fmt.Errorf("failed to export: %w", err)
 	}

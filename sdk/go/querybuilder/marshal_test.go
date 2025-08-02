@@ -11,7 +11,11 @@ import (
 
 type enumType string
 
-func (c enumType) IsEnum() {}
+func (c enumType) IsEnum()       {}
+func (c enumType) Name() string  { return string(c) }
+func (c enumType) Value() string { return string(c) }
+
+var _ enum = enumType("")
 
 func TestMarshalGQL(t *testing.T) {
 	var (

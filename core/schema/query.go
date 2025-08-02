@@ -20,51 +20,41 @@ type querySchema struct {
 
 var _ SchemaResolvers = &querySchema{}
 
-func (s *querySchema) Install() {
-	introspection.Install[*core.Query](s.srv)
+func (s *querySchema) Install(srv *dagql.Server) {
+	introspection.Install[*core.Query](srv)
 	dagql.Fields[*core.Query]{
 		// Augment introspection with an API that returns the current schema serialized to
 		// JSON and written to a core.File. This is currently used internally for calling
 		// module SDKs and is thus hidden the same way the rest of introspection is hidden
 		// (via the magic __ prefix).
-		dagql.NodeFuncWithCacheKey("__schemaJSONFile", s.schemaJSONFile, func(
-			ctx context.Context,
-			base dagql.Instance[*core.Query],
-			args schemaJSONArgs,
-			cfg dagql.CacheConfig,
-		) (*dagql.CacheConfig, error) {
-			cfg.Digest = dagql.HashFrom(
-				cfg.Digest.String(),
-				s.srv.SchemaDigest().String(),
-			)
-			return &cfg, nil
-		}).
+		dagql.NodeFuncWithCacheKey("__schemaJSONFile", s.schemaJSONFile,
+			dagql.CachePerSchema[*core.Query, schemaJSONArgs](srv)).
 			Doc("Get the current schema as a JSON file.").
 			Args(
 				dagql.Arg("hiddenTypes").Doc("Types to hide from the schema JSON file."),
 			),
-	}.Install(s.srv)
+	}.Install(srv)
 
-	s.srv.InstallScalar(core.JSON{})
-	s.srv.InstallScalar(core.Void{})
+	srv.InstallScalar(core.JSON{})
+	srv.InstallScalar(core.Void{})
 
-	core.NetworkProtocols.Install(s.srv)
-	core.ImageLayerCompressions.Install(s.srv)
-	core.ImageMediaTypesEnum.Install(s.srv)
-	core.CacheSharingModes.Install(s.srv)
-	core.TypeDefKinds.Install(s.srv)
-	core.ModuleSourceKindEnum.Install(s.srv)
-	core.ReturnTypesEnum.Install(s.srv)
+	core.NetworkProtocols.Install(srv)
+	core.ImageLayerCompressions.Install(srv)
+	core.ImageMediaTypesEnum.Install(srv)
+	core.CacheSharingModes.Install(srv)
+	core.TypeDefKinds.Install(srv)
+	core.ModuleSourceKindEnum.Install(srv)
+	core.ReturnTypesEnum.Install(srv)
 
-	dagql.MustInputSpec(PipelineLabel{}).Install(s.srv)
-	dagql.MustInputSpec(core.PortForward{}).Install(s.srv)
-	dagql.MustInputSpec(core.BuildArg{}).Install(s.srv)
+	dagql.MustInputSpec(PipelineLabel{}).Install(srv)
+	dagql.MustInputSpec(core.PortForward{}).Install(srv)
+	dagql.MustInputSpec(core.BuildArg{}).Install(srv)
 
-	dagql.Fields[EnvVariable]{}.Install(s.srv)
+	dagql.Fields[EnvVariable]{}.Install(srv)
 
-	dagql.Fields[core.Port]{}.Install(s.srv)
+	dagql.Fields[core.Port]{}.Install(srv)
 
-	dagql.Fields[Label]{}.Install(s.srv)
+	dagql.Fields[Label]{}.Install(srv)
 
 	dagql.Fields[*core.Query]{
 		dagql.Func("pipeline", s.pipeline).
@@ -79,7 +69,7 @@ func (s *querySchema) Install() {
 
 		dagql.Func("version", s.version).
 			Doc(`Get the current Dagger Engine version.`),
-	}.Install(s.srv)
+	}.Install(srv)
 }
 
 type pipelineArgs struct {
@@ -102,9 +92,9 @@ type schemaJSONArgs struct {
 
 func (s *querySchema) schemaJSONFile(
 	ctx context.Context,
-	parent dagql.Instance[*core.Query],
+	parent dagql.ObjectResult[*core.Query],
 	args schemaJSONArgs,
-) (inst dagql.Instance[*core.File], rerr error) {
+) (inst dagql.Result[*core.File], rerr error) {
 	data, err := s.srv.Query(ctx, codegenintrospection.Query, nil)
 	if err != nil {
 		return inst, fmt.Errorf("introspection query failed: %w", err)
@@ -136,11 +126,11 @@ func (s *querySchema) schemaJSONFile(
 	const schemaJSONFilename = "schema.json"
 	const perm fs.FileMode = 0644
 
-	f, err := core.NewFileWithContents(ctx, schemaJSONFilename, moduleSchemaJSON, perm, nil, parent.Self.Platform())
+	f, err := core.NewFileWithContents(ctx, schemaJSONFilename, moduleSchemaJSON, perm, nil, parent.Self().Platform())
 	if err != nil {
 		return inst, err
 	}
-	bk, err := parent.Self.Buildkit(ctx)
+	bk, err := parent.Self().Buildkit(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
@@ -156,7 +146,7 @@ func (s *querySchema) schemaJSONFile(
 		return inst, err
 	}
 
-	fileInst, err := dagql.NewInstanceForCurrentID(ctx, s.srv, parent, f)
+	fileInst, err := dagql.NewResultForCurrentID(ctx, f)
 	if err != nil {
 		return inst, err
 	}

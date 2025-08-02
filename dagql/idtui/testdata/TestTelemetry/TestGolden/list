@@ -1,11 +1,14 @@
 Expected stdout:
 
+.git/
 debug.go
 demos/
 frontend.go
+frontend_dots.go
 frontend_plain.go
 frontend_pretty.go
 golden_test.go
+multiprefixw/
 output.go
 symbols.go
 sys_unix.go
@@ -20,7 +23,8 @@ Expected stderr:
 
 ▼ connect X.Xs
 ├─● starting engine X.Xs
-├─● connecting to engine X.Xs
+├─▼ connecting to engine X.Xs
+│ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
 ╰─● starting session X.Xs
  
 ▼ load module: ./viztest X.Xs
@@ -35,12 +39,15 @@ Expected stderr:
 ▼ .list(
 │ ┆ dir: Host.directory(path: "/app/dagql/idtui"): Directory!
 │ ): String! X.Xs
+┃ .git/
 ┃ debug.go
 ┃ demos/
 ┃ frontend.go
+┃ frontend_dots.go
 ┃ frontend_plain.go
 ┃ frontend_pretty.go
 ┃ golden_test.go
+┃ multiprefixw/
 ┃ output.go
 ┃ symbols.go
 ┃ sys_unix.go

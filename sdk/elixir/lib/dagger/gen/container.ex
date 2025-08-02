@@ -76,6 +76,9 @@ defmodule Dagger.Container do
     }
   end
 
+  @deprecated """
+  Use `Directory.build` instead
+  """
   @doc """
   Initializes this container from a Dockerfile build.
   """
@@ -184,6 +187,24 @@ defmodule Dagger.Container do
   end
 
   @doc """
+  check if a file or directory exists
+  """
+  @spec exists(t(), String.t(), [
+          {:expected_type, Dagger.ExistsType.t() | nil},
+          {:do_not_follow_symlinks, boolean() | nil}
+        ]) :: {:ok, boolean()} | {:error, term()}
+  def exists(%__MODULE__{} = container, path, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("exists")
+      |> QB.put_arg("path", path)
+      |> QB.maybe_put_arg("expectedType", optional_args[:expected_type])
+      |> QB.maybe_put_arg("doNotFollowSymlinks", optional_args[:do_not_follow_symlinks])
+
+    Client.execute(container.client, query_builder)
+  end
+
+  @doc """
   The exit code of the last executed command
 
   Returns an error if no command was executed
@@ -262,6 +283,35 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg("expand", optional_args[:expand])
 
     Client.execute(container.client, query_builder)
+  end
+
+  @doc """
+  Exports the container as an image to the host's container image store.
+  """
+  @spec export_image(t(), String.t(), [
+          {:platform_variants, [Dagger.ContainerID.t()]},
+          {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
+          {:media_types, Dagger.ImageMediaTypes.t() | nil}
+        ]) :: :ok | {:error, term()}
+  def export_image(%__MODULE__{} = container, name, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("exportImage")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg(
+        "platformVariants",
+        if(optional_args[:platform_variants],
+          do: Enum.map(optional_args[:platform_variants], &Dagger.ID.id!/1),
+          else: nil
+        )
+      )
+      |> QB.maybe_put_arg("forcedCompression", optional_args[:forced_compression])
+      |> QB.maybe_put_arg("mediaTypes", optional_args[:media_types])
+
+    case Client.execute(container.client, query_builder) do
+      {:ok, _} -> :ok
+      error -> error
+    end
   end
 
   @doc """

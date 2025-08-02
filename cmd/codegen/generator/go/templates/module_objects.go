@@ -7,7 +7,6 @@ import (
 	"maps"
 	"reflect"
 	"sort"
-	"strconv"
 	"strings"
 
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
@@ -125,14 +124,14 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 		if comment == "" {
 			comment = strings.TrimSpace(lineComment)
 		}
-		pragmas := make(map[string]string)
+		pragmas := make(map[string]any)
 		maps.Copy(pragmas, docPragmas)
 		maps.Copy(pragmas, linePragmas)
 		if v, ok := pragmas["private"]; ok {
-			if v == "" {
+			if v == nil {
 				fieldSpec.isPrivate = true
 			} else {
-				fieldSpec.isPrivate, _ = strconv.ParseBool(v)
+				fieldSpec.isPrivate, _ = v.(bool)
 			}
 		}
 
@@ -448,6 +447,16 @@ func (spec *parsedObjectType) concreteFieldTypeCode(typeSpec ParsedType) (*State
 			s.Id(typeSpec.GoType().String())
 		}
 
+	case *parsedEnumTypeReference:
+		if typeSpec.isPtr {
+			s.Op("*")
+		}
+		if typeSpec.moduleName == "" {
+			s.Id("dagger." + typeSpec.name)
+		} else {
+			s.Id(typeSpec.name)
+		}
+
 	case *parsedSliceType:
 		fieldTypeCode, err := spec.concreteFieldTypeCode(typeSpec.underlying)
 		if err != nil {
@@ -480,7 +489,7 @@ The code for setting the fields of the real object from the concrete struct unma
 func (spec *parsedObjectType) setFieldsFromUnmarshalStructCode(field *fieldSpec) (*Statement, error) {
 	s := Empty()
 	switch typeSpec := field.typeSpec.(type) {
-	case *parsedPrimitiveType, *parsedObjectTypeReference:
+	case *parsedPrimitiveType, *parsedEnumTypeReference, *parsedObjectTypeReference:
 		s.Id("r").Dot(field.goName).Op("=").Id("concrete").Dot(field.goName)
 
 	case *parsedSliceType:

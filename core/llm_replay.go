@@ -9,10 +9,10 @@ import (
 )
 
 type LLMReplayer struct {
-	messages []ModelMessage
+	messages []*ModelMessage
 }
 
-func newHistoryReplay(messages []ModelMessage) *LLMReplayer {
+func newHistoryReplay(messages []*ModelMessage) *LLMReplayer {
 	return &LLMReplayer{messages: messages}
 }
 
@@ -20,7 +20,7 @@ func (*LLMReplayer) IsRetryable(err error) bool {
 	return false
 }
 
-func (c *LLMReplayer) SendQuery(ctx context.Context, history []ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
+func (c *LLMReplayer) SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
 	if len(history) > 0 && history[0].Role == "system" && history[0].Content == defaultSystemPrompt {
 		// HACK: drop the default system prompt, since we don't return it in
 		// HistoryJSON
@@ -48,8 +48,11 @@ func (c *LLMReplayer) SendQuery(ctx context.Context, history []ModelMessage, too
 	}, nil
 }
 
-var xxh3Regexp = regexp.MustCompile("@xxh3:[a-f0-9]{16}")
+var xxh3Regexp = regexp.MustCompile(`@xxh3:[a-f0-9]{16}`)
+var traceIDRegexp = regexp.MustCompile(`[a-f0-9]{2}-[a-f0-9]{32}-[a-f0-9]{16}-[a-f0-9]{2}`)
 
 func stabilizeContent(content string) string {
-	return xxh3Regexp.ReplaceAllString(content, "@xxh3:0000000000000000")
+	content = xxh3Regexp.ReplaceAllString(content, "@xxh3:0000000000000000")
+	content = traceIDRegexp.ReplaceAllString(content, "00-00000000000000000000000000000000-0000000000000000-00")
+	return content
 }

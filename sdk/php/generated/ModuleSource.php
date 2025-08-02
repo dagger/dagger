@@ -32,6 +32,15 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The blueprint referenced by the module source.
+     */
+    public function blueprint(): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('blueprint');
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The ref to clone the root of the git repo from. Only valid for git sources.
      */
     public function cloneRef(): string
@@ -258,6 +267,16 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Set a blueprint for the module source.
+     */
+    public function withBlueprint(ModuleSourceId|ModuleSource $blueprint): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withBlueprint');
+        $innerQueryBuilder->setArgument('blueprint', $blueprint);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Update the module source with a new client to generate.
      */
     public function withClient(string $generator, string $outputDir): ModuleSource
@@ -329,12 +348,30 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Update the blueprint module to the latest version.
+     */
+    public function withUpdateBlueprint(): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpdateBlueprint');
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Update one or more module dependencies.
      */
     public function withUpdateDependencies(array $dependencies): ModuleSource
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpdateDependencies');
         $innerQueryBuilder->setArgument('dependencies', $dependencies);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Remove the current blueprint from the module source.
+     */
+    public function withoutBlueprint(): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutBlueprint');
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

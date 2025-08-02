@@ -15,17 +15,17 @@ import (
 	"github.com/moby/patternmatcher/ignorefile"
 )
 
-type directorySchema struct {
-	srv *dagql.Server
-}
+type directorySchema struct{}
 
 var _ SchemaResolvers = &directorySchema{}
 
-func (s *directorySchema) Install() {
+func (s *directorySchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("directory", s.directory).
 			Doc(`Creates an empty directory.`),
-	}.Install(s.srv)
+	}.Install(srv)
+
+	core.ExistsTypes.Install(srv)
 
 	dagql.Fields[*core.Directory]{
 		Syncer[*core.Directory]().
@@ -42,7 +42,7 @@ func (s *directorySchema) Install() {
 		dagql.Func("name", s.name).
 			View(AllVersion). // name returns different results in different versions
 			Doc(`Returns the name of the directory.`),
-		dagql.Func("entries", s.entries).
+		dagql.NodeFunc("entries", DagOpWrapper(srv, s.entries)).
 			View(AllVersion). // entries returns different results in different versions
 			Doc(`Returns a list of files and directories at the given path.`).
 			Args(
@@ -65,36 +65,43 @@ func (s *directorySchema) Install() {
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
 			),
-		dagql.Func("withFile", s.withFile).
+		dagql.NodeFunc("withFile", DagOpDirectoryWrapper(srv, s.withFile, WithPathFn(keepParentDir[WithFileArgs]))).
 			Doc(`Retrieves this directory plus the contents of the given file copied to the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the copied file (e.g., "/file.txt").`),
 				dagql.Arg("source").Doc(`Identifier of the file to copy.`),
 				dagql.Arg("permissions").Doc(`Permission given to the copied file (e.g., 0600).`),
 			),
-		dagql.Func("withFiles", s.withFiles).
+		dagql.NodeFunc("withFiles", DagOpDirectoryWrapper(srv, s.withFiles, WithPathFn(keepParentDir[WithFilesArgs]))).
 			Doc(`Retrieves this directory plus the contents of the given files copied to the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location where copied files should be placed (e.g., "/src").`),
 				dagql.Arg("sources").Doc(`Identifiers of the files to copy.`),
 				dagql.Arg("permissions").Doc(`Permission given to the copied files (e.g., 0600).`),
 			),
-		dagql.Func("withNewFile", s.withNewFile).
+		dagql.NodeFunc("withNewFile", DagOpDirectoryWrapper(srv, s.withNewFile, WithPathFn(keepParentDir[WithNewFileArgs]))).
 			Doc(`Return a snapshot with a new file added`).
 			Args(
 				dagql.Arg("path").Doc(`Path of the new file. Example: "foo/bar.txt"`),
 				dagql.Arg("contents").Doc(`Contents of the new file. Example: "Hello world!"`),
 				dagql.Arg("permissions").Doc(`Permissions of the new file. Example: 0600`),
 			),
-		dagql.Func("withoutFile", s.withoutFile).
+		dagql.NodeFunc("withoutFile", DagOpDirectoryWrapper(srv, s.withoutFile, WithPathFn(keepParentDir[withoutFileArgs]))).
 			Doc(`Return a snapshot with a file removed`).
 			Args(
 				dagql.Arg("path").Doc(`Path of the file to remove (e.g., "/file.txt").`),
 			),
-		dagql.Func("withoutFiles", s.withoutFiles).
+		dagql.NodeFunc("withoutFiles", DagOpDirectoryWrapper(srv, s.withoutFiles, WithPathFn(keepParentDir[withoutFilesArgs]))).
 			Doc(`Return a snapshot with files removed`).
 			Args(
 				dagql.Arg("paths").Doc(`Paths of the files to remove (e.g., ["/file.txt"]).`),
+			),
+		dagql.Func("exists", s.exists).
+			Doc(`check if a file or directory exists`).
+			Args(
+				dagql.Arg("path").Doc(`Path to check (e.g., "/file.txt").`),
+				dagql.Arg("expectedType").Doc(`If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").`),
+				dagql.Arg("doNotFollowSymlinks").Doc(`If specified, do not follow symlinks.`),
 			),
 		dagql.Func("directory", s.subdirectory).
 			Doc(`Retrieves a directory at the given path.`).
@@ -115,13 +122,13 @@ func (s *directorySchema) Install() {
 				dagql.Arg("exclude").Doc(`If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: ["node_modules/", ".git*", ".env"]`),
 				dagql.Arg("include").Doc(`If set, only paths matching one of these glob patterns is included in the new snapshot. Example: (e.g., ["app/", "package.*"]).`),
 			),
-		dagql.Func("withNewDirectory", s.withNewDirectory).
+		dagql.NodeFunc("withNewDirectory", DagOpDirectoryWrapper(srv, s.withNewDirectory, WithPathFn(keepParentDir[withNewDirectoryArgs]))).
 			Doc(`Retrieves this directory plus a new directory created at the given path.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory created (e.g., "/logs").`),
 				dagql.Arg("permissions").Doc(`Permission granted to the created directory (e.g., 0777).`),
 			),
-		dagql.Func("withoutDirectory", s.withoutDirectory).
+		dagql.NodeFunc("withoutDirectory", DagOpDirectoryWrapper(srv, s.withoutDirectory, WithPathFn(keepParentDir[withoutDirectoryArgs]))).
 			Doc(`Return a snapshot with a subdirectory removed`).
 			Args(
 				dagql.Arg("path").Doc(`Path of the subdirectory to remove. Example: ".github/workflows"`),
@@ -157,11 +164,19 @@ func (s *directorySchema) Install() {
 				pid 1 process in the container. Otherwise it may result in unexpected behavior.`,
 				),
 			),
-		dagql.Func("withTimestamps", s.withTimestamps).
+		dagql.NodeFunc("withTimestamps", DagOpDirectoryWrapper(srv, s.withTimestamps, WithPathFn(keepParentDir[dirWithTimestampsArgs]))).
 			Doc(`Retrieves this directory with all file/dir timestamps set to the given time.`).
 			Args(
 				dagql.Arg("timestamp").Doc(`Timestamp to set dir/files in.`,
 					`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
+			),
+		dagql.NodeFunc("withPatch",
+			DagOpDirectoryWrapper(srv, s.withPatch,
+				WithPathFn(keepParentDir[withPatchArgs]))).
+			Experimental("This API is highly experimental and may be removed or replaced entirely.").
+			Doc(`Retrieves this directory with the given Git-compatible patch applied.`).
+			Args(
+				dagql.Arg("patch").Doc(`Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex 1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-Hello\n+World\n").`),
 			),
 		dagql.Func("asGit", s.asGit).
 			Doc(`Converts this directory to a local git repository`),
@@ -181,13 +196,13 @@ func (s *directorySchema) Install() {
 			guarantees when using this option. It should only be used when
 			absolutely necessary and only with trusted commands.`),
 			),
-		dagql.NodeFunc("withSymlink", DagOpDirectoryWrapper(s.srv, s.withSymlink, s.withSymlinkPath)).
+		dagql.NodeFunc("withSymlink", DagOpDirectoryWrapper(srv, s.withSymlink, WithPathFn(keepParentDir[directoryWithSymlinkArgs]))).
 			Doc(`Return a snapshot with a symlink`).
 			Args(
 				dagql.Arg("target").Doc(`Location of the file or directory to link to (e.g., "/existing/file").`),
 				dagql.Arg("linkName").Doc(`Location where the symbolic link will be created (e.g., "/new-file-link").`),
 			),
-	}.Install(s.srv)
+	}.Install(srv)
 }
 
 type directoryPipelineArgs struct {
@@ -217,10 +232,21 @@ func (s *directorySchema) subdirectory(ctx context.Context, parent *core.Directo
 type withNewDirectoryArgs struct {
 	Path        string
 	Permissions int `default:"0644"`
+
+	FSDagOpInternalArgs
 }
 
-func (s *directorySchema) withNewDirectory(ctx context.Context, parent *core.Directory, args withNewDirectoryArgs) (*core.Directory, error) {
-	return parent.WithNewDirectory(ctx, args.Path, fs.FileMode(args.Permissions))
+func (s *directorySchema) withNewDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withNewDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	dir, err := parent.Self().WithNewDirectory(ctx, args.Path, fs.FileMode(args.Permissions))
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 type WithDirectoryArgs struct {
@@ -231,11 +257,16 @@ type WithDirectoryArgs struct {
 }
 
 func (s *directorySchema) withDirectory(ctx context.Context, parent *core.Directory, args WithDirectoryArgs) (*core.Directory, error) {
-	dir, err := args.Directory.Load(ctx, s.srv)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithDirectory(ctx, args.Path, dir.Self, args.CopyFilter, nil)
+
+	dir, err := args.Directory.Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+	return parent.WithDirectory(ctx, args.Path, dir.Self(), args.CopyFilter, nil)
 }
 
 type FilterArgs struct {
@@ -257,10 +288,20 @@ func (s *directorySchema) filter(ctx context.Context, parent *core.Directory, ar
 
 type dirWithTimestampsArgs struct {
 	Timestamp int
+
+	FSDagOpInternalArgs
 }
 
-func (s *directorySchema) withTimestamps(ctx context.Context, parent *core.Directory, args dirWithTimestampsArgs) (*core.Directory, error) {
-	return parent.WithTimestamps(ctx, args.Timestamp)
+func (s *directorySchema) withTimestamps(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirWithTimestampsArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	dir, err := parent.Self().WithTimestamps(ctx, args.Timestamp)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 func (s *directorySchema) name(ctx context.Context, parent *core.Directory, args struct{}) (dagql.String, error) {
@@ -277,10 +318,12 @@ func (s *directorySchema) name(ctx context.Context, parent *core.Directory, args
 
 type entriesArgs struct {
 	Path dagql.Optional[dagql.String]
+
+	RawDagOpInternalArgs
 }
 
-func (s *directorySchema) entries(ctx context.Context, parent *core.Directory, args entriesArgs) (dagql.Array[dagql.String], error) {
-	ents, err := parent.Entries(ctx, args.Path.Value.String())
+func (s *directorySchema) entries(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args entriesArgs) (dagql.Array[dagql.String], error) {
+	ents, err := parent.Self().Entries(ctx, args.Path.Value.String())
 	if err != nil {
 		return nil, err
 	}
@@ -293,6 +336,26 @@ type globArgs struct {
 
 func (s *directorySchema) glob(ctx context.Context, parent *core.Directory, args globArgs) ([]string, error) {
 	return parent.Glob(ctx, args.Pattern)
+}
+
+type withPatchArgs struct {
+	Patch string
+
+	FSDagOpInternalArgs
+}
+
+func (s *directorySchema) withPatch(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withPatchArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	dir, err := parent.Self().WithPatch(ctx, args.Patch)
+	if err != nil {
+		return inst, err
+	}
+
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 func (s *directorySchema) digest(ctx context.Context, parent *core.Directory, args struct{}) (dagql.String, error) {
@@ -312,70 +375,158 @@ func (s *directorySchema) file(ctx context.Context, parent *core.Directory, args
 	return parent.File(ctx, args.Path)
 }
 
-func (s *directorySchema) withNewFile(ctx context.Context, parent *core.Directory, args struct {
+type WithNewFileArgs struct {
 	Path        string
 	Contents    string
 	Permissions int `default:"0644"`
-}) (*core.Directory, error) {
-	return parent.WithNewFile(ctx, args.Path, []byte(args.Contents), fs.FileMode(args.Permissions), nil)
+
+	FSDagOpInternalArgs
+}
+
+func (s *directorySchema) withNewFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithNewFileArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	dir, err := parent.Self().WithNewFileDagOp(ctx, args.Path, []byte(args.Contents), fs.FileMode(args.Permissions), nil)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 type WithFileArgs struct {
 	Path        string
 	Source      core.FileID
 	Permissions *int
+
+	FSDagOpInternalArgs
 }
 
-func (s *directorySchema) withFile(ctx context.Context, parent *core.Directory, args WithFileArgs) (*core.Directory, error) {
-	file, err := args.Source.Load(ctx, s.srv)
+func (s *directorySchema) withFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithFileArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
-	return parent.WithFile(ctx, args.Path, file.Self, args.Permissions, nil)
+	file, err := args.Source.Load(ctx, srv)
+	if err != nil {
+		return inst, err
+	}
+
+	dir, err := parent.Self().WithFile(ctx, srv, args.Path, file.Self(), args.Permissions, nil)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+}
+
+func keepParentDir[A any](_ context.Context, val *core.Directory, _ A) (string, error) {
+	return val.Dir, nil
 }
 
 type WithFilesArgs struct {
 	Path        string
 	Sources     []core.FileID
 	Permissions *int
+
+	FSDagOpInternalArgs
 }
 
-func (s *directorySchema) withFiles(ctx context.Context, parent *core.Directory, args WithFilesArgs) (*core.Directory, error) {
-	files := []*core.File{}
-	for _, id := range args.Sources {
-		file, err := id.Load(ctx, s.srv)
-		if err != nil {
-			return nil, err
-		}
-		files = append(files, file.Self)
+func (s *directorySchema) withFiles(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithFilesArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
 	}
 
-	return parent.WithFiles(ctx, args.Path, files, args.Permissions, nil)
+	files := []*core.File{}
+	for _, id := range args.Sources {
+		file, err := id.Load(ctx, srv)
+		if err != nil {
+			return inst, err
+		}
+		files = append(files, file.Self())
+	}
+
+	dir, err := parent.Self().WithFiles(ctx, srv, args.Path, files, args.Permissions, nil)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 type withoutDirectoryArgs struct {
 	Path string
+
+	FSDagOpInternalArgs
 }
 
-func (s *directorySchema) withoutDirectory(ctx context.Context, parent *core.Directory, args withoutDirectoryArgs) (*core.Directory, error) {
-	return parent.Without(ctx, args.Path)
+func (s *directorySchema) withoutDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withoutDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	dir, err := parent.Self().Without(ctx, srv, args.Path)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 type withoutFileArgs struct {
 	Path string
+
+	FSDagOpInternalArgs
 }
 
-func (s *directorySchema) withoutFile(ctx context.Context, parent *core.Directory, args withoutFileArgs) (*core.Directory, error) {
-	return parent.Without(ctx, args.Path)
+func (s *directorySchema) withoutFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withoutFileArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	dir, err := parent.Self().Without(ctx, srv, args.Path)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 type withoutFilesArgs struct {
 	Paths []string
+
+	FSDagOpInternalArgs
 }
 
-func (s *directorySchema) withoutFiles(ctx context.Context, parent *core.Directory, args withoutFilesArgs) (*core.Directory, error) {
-	return parent.Without(ctx, args.Paths...)
+func (s *directorySchema) withoutFiles(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withoutFilesArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	dir, err := parent.Self().Without(ctx, srv, args.Paths...)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+}
+
+type existsArgs struct {
+	Path                string
+	ExpectedType        dagql.Optional[core.ExistsType]
+	DoNotFollowSymlinks bool `default:"false"`
+}
+
+func (s *directorySchema) exists(ctx context.Context, parent *core.Directory, args existsArgs) (dagql.Boolean, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	exists, err := parent.Exists(ctx, srv, args.Path, args.ExpectedType.Value, args.DoNotFollowSymlinks)
+	return dagql.NewBoolean(exists), err
 }
 
 type diffArgs struct {
@@ -383,11 +534,16 @@ type diffArgs struct {
 }
 
 func (s *directorySchema) diff(ctx context.Context, parent *core.Directory, args diffArgs) (*core.Directory, error) {
-	dir, err := args.Other.Load(ctx, s.srv)
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return parent.Diff(ctx, dir.Self)
+
+	dir, err := args.Other.Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+	return parent.Diff(ctx, dir.Self())
 }
 
 type dirExportArgs struct {
@@ -432,8 +588,8 @@ type dirDockerBuildArgs struct {
 	NoInit     bool                               `default:"false"`
 }
 
-func getDockerIgnoreFileContent(ctx context.Context, parent dagql.Instance[*core.Directory], filename string) ([]byte, error) {
-	file, err := parent.Self.File(ctx, filename)
+func getDockerIgnoreFileContent(ctx context.Context, parent dagql.ObjectResult[*core.Directory], filename string) ([]byte, error) {
+	file, err := parent.Self().File(ctx, filename)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
@@ -450,8 +606,8 @@ func getDockerIgnoreFileContent(ctx context.Context, parent dagql.Instance[*core
 	return content, nil
 }
 
-func applyDockerIgnore(ctx context.Context, srv *dagql.Server, parent dagql.Instance[*core.Directory], dockerfile string) (dagql.Instance[*core.Directory], error) {
-	var buildctxDir dagql.Instance[*core.Directory]
+func applyDockerIgnore(ctx context.Context, srv *dagql.Server, parent dagql.ObjectResult[*core.Directory], dockerfile string) (dagql.ObjectResult[*core.Directory], error) {
+	var buildctxDir dagql.ObjectResult[*core.Directory]
 
 	// use dockerfile specific .dockerfile if that exists
 	// https://docs.docker.com/build/concepts/context/#filename-and-location
@@ -495,17 +651,22 @@ func applyDockerIgnore(ctx context.Context, srv *dagql.Server, parent dagql.Inst
 	return buildctxDir, nil
 }
 
-func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.Instance[*core.Directory], args dirDockerBuildArgs) (*core.Container, error) {
+func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirDockerBuildArgs) (*core.Container, error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	platform := query.Platform()
 	if args.Platform.Valid {
 		platform = args.Platform.Value
 	}
 
-	buildctxDir, err := applyDockerIgnore(ctx, s.srv, parent, args.Dockerfile)
+	buildctxDir, err := applyDockerIgnore(ctx, srv, parent, args.Dockerfile)
 	if err != nil {
 		return nil, err
 	}
@@ -515,7 +676,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.Instance
 		return nil, err
 	}
 
-	secrets, err := dagql.LoadIDInstances(ctx, s.srv, args.Secrets)
+	secrets, err := dagql.LoadIDResults(ctx, srv, args.Secrets)
 	if err != nil {
 		return nil, err
 	}
@@ -523,10 +684,11 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.Instance
 	if err != nil {
 		return nil, fmt.Errorf("failed to get secret store: %w", err)
 	}
+
 	return ctr.Build(
 		ctx,
-		parent.Self,
-		buildctxDir.Self,
+		parent.Self(),
+		buildctxDir.Self(),
 		args.Dockerfile,
 		collectInputsSlice(args.BuildArgs),
 		args.Target,
@@ -543,9 +705,14 @@ type directoryTerminalArgs struct {
 
 func (s *directorySchema) terminal(
 	ctx context.Context,
-	dir dagql.Instance[*core.Directory],
+	dir dagql.ObjectResult[*core.Directory],
 	args directoryTerminalArgs,
-) (dagql.Instance[*core.Directory], error) {
+) (res dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+
 	if len(args.Cmd) == 0 {
 		args.Cmd = []string{"sh"}
 	}
@@ -553,16 +720,16 @@ func (s *directorySchema) terminal(
 	var ctr *core.Container
 
 	if args.Container.Valid {
-		inst, err := args.Container.Value.Load(ctx, s.srv)
+		inst, err := args.Container.Value.Load(ctx, srv)
 		if err != nil {
-			return dir, err
+			return res, err
 		}
-		ctr = inst.Self
+		ctr = inst.Self()
 	}
 
-	err := dir.Self.Terminal(ctx, dir.ID(), ctr, &args.TerminalArgs)
+	err = dir.Self().Terminal(ctx, dir.ID(), ctr, &args.TerminalArgs)
 	if err != nil {
-		return dir, err
+		return res, err
 	}
 
 	return dir, nil
@@ -587,14 +754,15 @@ type directoryWithSymlinkArgs struct {
 	FSDagOpInternalArgs
 }
 
-func (s *directorySchema) withSymlink(ctx context.Context, parent dagql.Instance[*core.Directory], args directoryWithSymlinkArgs) (inst dagql.Instance[*core.Directory], _ error) {
-	dir, err := parent.Self.WithSymlink(ctx, s.srv, args.Target, args.LinkName)
+func (s *directorySchema) withSymlink(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args directoryWithSymlinkArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, dir)
-}
 
-func (s *directorySchema) withSymlinkPath(ctx context.Context, val dagql.Instance[*core.Directory], _ directoryWithSymlinkArgs) (string, error) {
-	return val.Self.Dir, nil
+	dir, err := parent.Self().WithSymlink(ctx, srv, args.Target, args.LinkName)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }

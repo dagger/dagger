@@ -42,7 +42,7 @@ func clientGenBaseContainer(cfg *moduleConfig, sdkSourceDir *dagger.Directory) *
 			WithExec([]string{"ln", "-s", "/usr/local/lib/node_modules/tsx/dist/cli.mjs", "/usr/local/bin/tsx"}).
 			// Add dagger codegen binary.
 			WithMountedFile(codegenBinPath, sdkSourceDir.File("/codegen")).
-			WithWorkdir(ModSourceDirPath),
+			WithWorkdir(cfg.moduleRootPath()),
 	}
 
 	return clientGenCtr
@@ -160,10 +160,10 @@ func (c *clientGenContainer) withUpdatedEnvironment(outputDir string) *clientGen
 func (c *clientGenContainer) withGeneratedClient(introspectionJSON *dagger.File, moduleSourceID dagger.ModuleSourceID, outputDir string) *clientGenContainer {
 	codegenArgs := []string{
 		codegenBinPath,
+		"generate-client",
 		"--lang", "typescript",
 		"--output", outputDir,
 		"--introspection-json-path", schemaPath,
-		"--client-only",
 		"--module-source-id", string(moduleSourceID),
 	}
 

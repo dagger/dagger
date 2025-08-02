@@ -1,6 +1,6 @@
 {
   "name": "dagger-dev",
-  "engineVersion": "v0.18.10",
+  "engineVersion": "v0.18.14",
   "sdk": {
     "source": "go"
   },
@@ -36,6 +36,14 @@
     {
       "name": "elixir-sdk-dev",
       "source": "sdk/elixir/dev"
+    },
+    {
+      "name": "evals",
+      "source": "modules/evals"
+    },
+    {
+      "name": "evaluator",
+      "source": "modules/evaluator"
     },
     {
       "name": "go",

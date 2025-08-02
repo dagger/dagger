@@ -123,6 +123,10 @@ const (
 	// Indicates whether the log should be shown globally.
 	LogsGlobalAttr = "dagger.io/logs.global"
 
+	// Indicates that the log contains verbose/detailed content that should be
+	// filtered out in minimal frontends.
+	LogsVerboseAttr = "dagger.io/logs.verbose"
+
 	// OTel metric attribute so we can correlate metrics with spans
 	MetricsSpanIDAttr = "dagger.io/metrics.span"
 
@@ -143,4 +147,16 @@ const (
 
 	// The HTML URL of the module, e.g. "https://github.com/dagger/dagger"
 	ModuleHTMLRepoURLAttr = "dagger.io/module.htmlRepoURL"
+
+	// The normalized module ref, e.g. "githuv.com/dagger/dagger@abc123"
+	ModuleRefAttr = "dagger.io/module.ref"
+
+	// The normalized caller module ref, e.g. "githuv.com/dagger/dagger@abc123"
+	ModuleCallerRefAttr = "dagger.io/module.caller.ref"
+
+	// The function name of the current module in the format if "type.functionName"
+	ModuleFunctionCallNameAttr = "dagger.io/module.function.name"
+
+	// The function name of the current module in the format of "type.functionName"
+	ModuleCallerFunctionCallNameAttr = "dagger.io/module.caller.function.name"
 )

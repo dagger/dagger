@@ -1915,6 +1915,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Container::exists",
+			"p": "Dagger/Container.html#method_exists",
+			"d": "<p>check if a file or directory exists</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Container::exitCode",
 			"p": "Dagger/Container.html#method_exitCode",
 			"d": "<p>The exit code of the last executed command</p>"
@@ -1936,6 +1942,12 @@
 			"n": "Dagger\\Container::export",
 			"p": "Dagger/Container.html#method_export",
 			"d": "<p>Writes the container as an OCI tarball to the destination file path on the host.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Container::exportImage",
+			"p": "Dagger/Container.html#method_exportImage",
+			"d": "<p>Exports the container as an image to the host's container image store.</p>"
 		},
 		{
 			"t": "M",
@@ -2383,6 +2395,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Directory::exists",
+			"p": "Dagger/Directory.html#method_exists",
+			"d": "<p>check if a file or directory exists</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Directory::export",
 			"p": "Dagger/Directory.html#method_export",
 			"d": "<p>Writes the contents of the directory to a path on the host.</p>"
@@ -2458,6 +2476,12 @@
 			"n": "Dagger\\Directory::withNewFile",
 			"p": "Dagger/Directory.html#method_withNewFile",
 			"d": "<p>Return a snapshot with a new file added</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Directory::withPatch",
+			"p": "Dagger/Directory.html#method_withPatch",
+			"d": "<p>Retrieves this directory with the given Git-compatible patch applied.</p>"
 		},
 		{
 			"t": "M",
@@ -2623,6 +2647,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\EnumTypeDef::members",
+			"p": "Dagger/EnumTypeDef.html#method_members",
+			"d": "<p>The members of the enum.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\EnumTypeDef::name",
 			"p": "Dagger/EnumTypeDef.html#method_name",
 			"d": "<p>The name of the enum.</p>"
@@ -2643,13 +2673,13 @@
 			"t": "M",
 			"n": "Dagger\\EnumTypeDef::values",
 			"p": "Dagger/EnumTypeDef.html#method_values",
-			"d": "<p>The values of the enum.</p>"
+			"d": null
 		},
 		{
 			"t": "M",
 			"n": "Dagger\\EnumValueTypeDef::description",
 			"p": "Dagger/EnumValueTypeDef.html#method_description",
-			"d": "<p>A doc string for the enum value, if any.</p>"
+			"d": "<p>A doc string for the enum member, if any.</p>"
 		},
 		{
 			"t": "M",
@@ -2661,13 +2691,19 @@
 			"t": "M",
 			"n": "Dagger\\EnumValueTypeDef::name",
 			"p": "Dagger/EnumValueTypeDef.html#method_name",
-			"d": "<p>The name of the enum value.</p>"
+			"d": "<p>The name of the enum member.</p>"
 		},
 		{
 			"t": "M",
 			"n": "Dagger\\EnumValueTypeDef::sourceMap",
 			"p": "Dagger/EnumValueTypeDef.html#method_sourceMap",
-			"d": "<p>The location of this enum value declaration.</p>"
+			"d": "<p>The location of this enum member declaration.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\EnumValueTypeDef::value",
+			"p": "Dagger/EnumValueTypeDef.html#method_value",
+			"d": "<p>The value of the enum member</p>"
 		},
 		{
 			"t": "M",
@@ -3289,6 +3325,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\GitRepository::latestVersion",
+			"p": "Dagger/GitRepository.html#method_latestVersion",
+			"d": "<p>Returns details for the latest semver tag.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\GitRepository::ref",
 			"p": "Dagger/GitRepository.html#method_ref",
 			"d": "<p>Returns details of a ref.</p>"
@@ -3727,6 +3769,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::blueprint",
+			"p": "Dagger/ModuleSource.html#method_blueprint",
+			"d": "<p>The blueprint referenced by the module source.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::cloneRef",
 			"p": "Dagger/ModuleSource.html#method_cloneRef",
 			"d": "<p>The ref to clone the root of the git repo from. Only valid for git sources.</p>"
@@ -3877,6 +3925,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::withBlueprint",
+			"p": "Dagger/ModuleSource.html#method_withBlueprint",
+			"d": "<p>Set a blueprint for the module source.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::withClient",
 			"p": "Dagger/ModuleSource.html#method_withClient",
 			"d": "<p>Update the module source with a new client to generate.</p>"
@@ -3919,9 +3973,21 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::withUpdateBlueprint",
+			"p": "Dagger/ModuleSource.html#method_withUpdateBlueprint",
+			"d": "<p>Update the blueprint module to the latest version.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::withUpdateDependencies",
 			"p": "Dagger/ModuleSource.html#method_withUpdateDependencies",
 			"d": "<p>Update one or more module dependencies.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleSource::withoutBlueprint",
+			"p": "Dagger/ModuleSource.html#method_withoutBlueprint",
+			"d": "<p>Remove the current blueprint from the module source.</p>"
 		},
 		{
 			"t": "M",
@@ -4246,6 +4312,12 @@
 			"n": "Dagger\\TypeDef::withEnum",
 			"p": "Dagger/TypeDef.html#method_withEnum",
 			"d": "<p>Returns a TypeDef of kind Enum with the provided name.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TypeDef::withEnumMember",
+			"p": "Dagger/TypeDef.html#method_withEnumMember",
+			"d": "<p>Adds a static value for an Enum TypeDef, failing if the type is not an enum.</p>"
 		},
 		{
 			"t": "M",

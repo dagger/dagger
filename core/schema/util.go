@@ -5,30 +5,23 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"golang.org/x/mod/semver"
-
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/introspection"
-	"github.com/dagger/dagger/engine/buildkit"
 )
 
 type SchemaResolvers interface {
-	Install()
+	Install(*dagql.Server)
 }
 
-type Evaluatable interface {
-	dagql.Typed
-	Evaluate(context.Context) (*buildkit.Result, error)
-}
-
-func Syncer[T Evaluatable]() dagql.Field[T] {
-	return dagql.NodeFunc("sync", func(ctx context.Context, self dagql.Instance[T], _ struct{}) (dagql.ID[T], error) {
-		_, err := self.Self.Evaluate(ctx)
+func Syncer[T core.Evaluatable]() dagql.Field[T] {
+	return dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[T], _ struct{}) (res dagql.Result[dagql.ID[T]], _ error) {
+		_, err := self.Self().Evaluate(ctx)
 		if err != nil {
-			var zero dagql.ID[T]
-			return zero, err
+			return res, err
 		}
-		return dagql.NewID[T](self.ID()), nil
+		id := dagql.NewID[T](self.ID())
+		return dagql.NewResultForCurrentID(ctx, id)
 	})
 }
 
@@ -40,8 +33,8 @@ func collectInputsSlice[T dagql.Type](inputs []dagql.InputObject[T]) []T {
 	return ts
 }
 
-func collectIDInstances[T dagql.Typed](ctx context.Context, srv *dagql.Server, ids []dagql.ID[T]) ([]dagql.Instance[T], error) {
-	ts := make([]dagql.Instance[T], len(ids))
+func collectIDObjectResults[T dagql.Typed](ctx context.Context, srv *dagql.Server, ids []dagql.ID[T]) ([]dagql.ObjectResult[T], error) {
+	ts := make([]dagql.ObjectResult[T], len(ids))
 	for i, id := range ids {
 		inst, err := id.Load(ctx, srv)
 		if err != nil {
@@ -72,35 +65,11 @@ func SchemaIntrospectionJSON(ctx context.Context, dag *dagql.Server) (json.RawMe
 	return json.RawMessage(jsonBytes), nil
 }
 
-// AllVersion is a view that contains all versions.
-var AllVersion = dagql.AllView{}
-
-// AfterVersion is a view that checks if a target version is greater than *or*
-// equal to the filtered version.
-type AfterVersion string
-
-var _ dagql.ViewFilter = AfterVersion("")
-
-func (minVersion AfterVersion) Contains(version dagql.View) bool {
-	if version == "" {
-		return true
-	}
-	return semver.Compare(string(version), string(minVersion)) >= 0
-}
-
-// BeforeVersion is a view that checks if a target version is less than the
-// filtered version.
-type BeforeVersion string
-
-var _ dagql.ViewFilter = BeforeVersion("")
-
-func (maxVersion BeforeVersion) Contains(version dagql.View) bool {
-	if version == "" {
-		return false
-	}
-	return semver.Compare(string(version), string(maxVersion)) < 0
-}
-
 func ptr[T any](v T) *T {
 	return &v
 }
+
+var AllVersion = core.AllVersion
+
+type BeforeVersion = core.BeforeVersion
+type AfterVersion = core.AfterVersion

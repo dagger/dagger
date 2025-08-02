@@ -97,8 +97,7 @@ func (HTTPSuite) TestHTTPService(ctx context.Context, t *testctx.T) {
 func (HTTPSuite) TestHTTPAuth(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	svc, svcURL := httpServiceAuth(ctx, t, c, "Hello, secret world!", c.SetSecret("SECRET", "personalsecret"))
-
+	svc, svcURL := httpServiceAuth(ctx, t, c, "Hello, secret world!", "", c.SetSecret("SECRET", "personalsecret"))
 	_, err := c.HTTP(svcURL, dagger.HTTPOpts{
 		ExperimentalServiceHost: svc,
 	}).Contents(ctx)

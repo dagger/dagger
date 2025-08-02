@@ -48,8 +48,8 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 	}
 	socketIDs = filteredSocketIDs
 
-	srcClient, ok := srv.clientFromIDs(destClient.daggerSession.sessionID, sourceClientID)
-	if !ok {
+	srcClient, err := srv.clientFromIDs(destClient.daggerSession.sessionID, sourceClientID)
+	if err != nil {
 		if id.Optional {
 			return nil // no errors for this case
 		}
@@ -69,12 +69,12 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 	}
 
 	if len(secretIDs) > 0 {
-		secrets, err := dagql.LoadIDInstances(ctx, srcDag, secretIDs)
+		secrets, err := dagql.LoadIDResults(ctx, srcDag, secretIDs)
 		if err != nil && !id.Optional {
 			return fmt.Errorf("failed to load secrets: %w", err)
 		}
 		for _, secret := range secrets {
-			if secret.Self == nil {
+			if secret.Self() == nil {
 				continue
 			}
 			if id.Optional && !srcClient.secretStore.HasSecret(secret.ID().Digest()) {

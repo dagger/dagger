@@ -18,7 +18,7 @@ import (
 func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	customCACertTests(ctx, t, c,
+	customCACertTests(ctx, t, c, "",
 		caCertsTest{"alpine basic", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(alpineImage).
 				WithExec([]string{"apk", "add", "ca-certificates", "curl"})
@@ -532,6 +532,14 @@ export class Test {
 			require.NoError(t, err)
 		}},
 	)
+	customCACertTests(ctx, t, c, "orbstack-root.crt",
+		caCertsTest{"orbstack ignored", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+			_, err := c.Container().From(alpineImage).
+				WithExec([]string{"stat", "/usr/local/share/ca-certificates/orbstack-root.crt"}).
+				Sync(ctx)
+			requireErrOut(t, err, "No such file or directory")
+		}},
+	)
 }
 
 type caCertsTest struct {
@@ -548,6 +556,7 @@ func customCACertTests(
 	ctx context.Context,
 	t *testctx.T,
 	c *dagger.Client,
+	caCertFileName string, // if empty, a default is used
 	tests ...caCertsTest,
 ) {
 	t.Helper()
@@ -558,15 +567,17 @@ func customCACertTests(
 	serverCtr := nginxWithCerts(c, nginxWithCertsOpts{
 		serverCert:          serverCert,
 		serverKey:           serverKey,
-		dhParam:             certGen.dhParam,
 		dnsName:             "server",
 		msg:                 "hello",
 		redirectHTTPToHTTPS: true,
 	})
 
+	if caCertFileName == "" {
+		caCertFileName = "dagger-test-custom-ca.crt"
+	}
 	devEngine := devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
-			WithMountedFile("/usr/local/share/ca-certificates/dagger-test-custom-ca.crt", certGen.caRootCert).
+			WithMountedFile("/usr/local/share/ca-certificates/"+caCertFileName, certGen.caRootCert).
 			WithServiceBinding("server", serverCtr.AsService())
 	})
 	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
@@ -598,7 +609,6 @@ type generatedCerts struct {
 
 	caRootCert *dagger.File
 	caRootKey  *dagger.File
-	dhParam    *dagger.File
 
 	password string
 	// executable shell script that just prints password, needed for
@@ -610,13 +620,6 @@ func newGeneratedCerts(c *dagger.Client, caHostname string) *generatedCerts {
 	const password = "hunter4"
 	ctr := c.Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "openssl"}).
-		WithExec([]string{"sh", "-c", strings.Join([]string{
-			"openssl", "dhparam",
-			"-out", "/dhparam.pem",
-			"2048",
-			// suppress extremely noisy+useless output
-			"&> /dev/null",
-		}, " ")}).
 		WithExec([]string{
 			"openssl", "genrsa",
 			"-des3",
@@ -659,7 +662,6 @@ DNS.1 = %s
 		ctr:        ctr,
 		caRootCert: ctr.File("/ca.pem"),
 		caRootKey:  ctr.File("/ca.key"),
-		dhParam:    ctr.File("/dhparam.pem"),
 		password:   password,
 		printPasswordScript: c.Directory().WithNewFile("printpass", fmt.Sprintf(`#!/bin/sh
 echo -n %s
@@ -712,7 +714,6 @@ DNS.1 = %s
 type nginxWithCertsOpts struct {
 	serverCert          *dagger.File
 	serverKey           *dagger.File
-	dhParam             *dagger.File
 	dnsName             string
 	msg                 string
 	redirectHTTPToHTTPS bool
@@ -722,7 +723,6 @@ func nginxWithCerts(c *dagger.Client, opts nginxWithCertsOpts) *dagger.Container
 	// TODO: pin image
 	ctr := c.Container().From("nginx:latest").
 		WithMountedFile("/etc/ssl/certs/server.crt", opts.serverCert).
-		WithMountedFile("/etc/ssl/certs/dhparam.pem", opts.dhParam).
 		WithMountedFile("/etc/ssl/private/server.key", opts.serverKey).
 		WithNewFile("/etc/nginx/snippets/self-signed.conf", `ssl_certificate /etc/ssl/certs/server.crt;
 ssl_certificate_key /etc/ssl/private/server.key;
@@ -738,7 +738,6 @@ ssl_stapling_verify on;
 add_header Strict-Transport-Security "max-age=63072000; includeSubdomains; preload";
 add_header X-Frame-Options DENY;
 add_header X-Content-Type-Options nosniff;
-ssl_dhparam /etc/ssl/certs/dhparam.pem;
 `,
 		)
 

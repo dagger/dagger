@@ -12,13 +12,13 @@ import (
 // module is an SDK implemented as module; i.e. every module besides the special case go sdk.
 type module struct {
 	// The module implementing the SDK.
-	mod dagql.Instance[*core.Module]
-
-	// A server that the SDK module has been installed to.
-	dag *dagql.Server
+	mod dagql.ObjectResult[*core.Module]
 
 	// The SDK object retrieved from the server, for calling functions against.
-	sdk dagql.Object
+	sdk dagql.AnyObjectResult
+
+	// A server that the SDK module has been installed to.
+	serverSchema *dagql.ServerSchema
 
 	funcs map[string]*core.Function
 }
@@ -26,34 +26,34 @@ type module struct {
 func newModuleSDK(
 	ctx context.Context,
 	root *core.Query,
-	sdkModMeta dagql.Instance[*core.Module],
-	optionalFullSDKSourceDir dagql.Instance[*core.Directory],
+	sdkModMeta dagql.ObjectResult[*core.Module],
+	optionalFullSDKSourceDir dagql.ObjectResult[*core.Directory],
 	rawConfig map[string]any,
 ) (*module, error) {
 	dagqlCache, err := root.Cache(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get cache for sdk module %s: %w", sdkModMeta.Self.Name(), err)
+		return nil, fmt.Errorf("failed to get cache for sdk module %s: %w", sdkModMeta.Self().Name(), err)
 	}
 	dag := dagql.NewServer(root, dagqlCache)
 	dag.Around(core.AroundFunc)
 
-	if err := sdkModMeta.Self.Install(ctx, dag); err != nil {
-		return nil, fmt.Errorf("failed to install sdk module %s: %w", sdkModMeta.Self.Name(), err)
+	if err := sdkModMeta.Self().Install(ctx, dag); err != nil {
+		return nil, fmt.Errorf("failed to install sdk module %s: %w", sdkModMeta.Self().Name(), err)
 	}
 
 	defaultDeps, err := root.DefaultDeps(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get default deps for sdk module %s: %w", sdkModMeta.Self.Name(), err)
+		return nil, fmt.Errorf("failed to get default deps for sdk module %s: %w", sdkModMeta.Self().Name(), err)
 	}
 	for _, defaultDep := range defaultDeps.Mods {
 		if err := defaultDep.Install(ctx, dag); err != nil {
-			return nil, fmt.Errorf("failed to install default dep %s for sdk module %s: %w", defaultDep.Name(), sdkModMeta.Self.Name(), err)
+			return nil, fmt.Errorf("failed to install default dep %s for sdk module %s: %w", defaultDep.Name(), sdkModMeta.Self().Name(), err)
 		}
 	}
 
-	var sdk dagql.Object
+	var sdk dagql.AnyObjectResult
 	var constructorArgs []dagql.NamedInput
-	if optionalFullSDKSourceDir.Self != nil {
+	if optionalFullSDKSourceDir.Self() != nil {
 		constructorArgs = []dagql.NamedInput{
 			{Name: "sdkSourceDir", Value: dagql.Opt(dagql.NewID[*core.Directory](optionalFullSDKSourceDir.ID()))},
 		}
@@ -61,19 +61,31 @@ func newModuleSDK(
 
 	if err := dag.Select(ctx, dag.Root(), &sdk,
 		dagql.Selector{
-			Field: gqlFieldName(sdkModMeta.Self.Name()),
+			Field: gqlFieldName(sdkModMeta.Self().Name()),
 			Args:  constructorArgs,
 		},
 	); err != nil {
-		return nil, fmt.Errorf("failed to get sdk object for sdk module %s: %w", sdkModMeta.Self.Name(), err)
+		return nil, fmt.Errorf("failed to get sdk object for sdk module %s: %w", sdkModMeta.Self().Name(), err)
 	}
 
 	return (&module{
-		mod:   sdkModMeta,
-		dag:   dag,
-		sdk:   sdk,
-		funcs: listImplementedFunctions(sdkModMeta.Self),
+		mod:          sdkModMeta,
+		serverSchema: dag.AsSchema(),
+		sdk:          sdk,
+		funcs:        listImplementedFunctions(sdkModMeta.Self()),
 	}).withConfig(ctx, rawConfig)
+}
+
+func (sdk *module) dag(ctx context.Context) (*dagql.Server, error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dagqlCache, err := query.Cache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return sdk.serverSchema.WithCache(dagqlCache), nil
 }
 
 // withConfig function checks if the moduleSDK exposes a function with name `WithConfig`.
@@ -96,12 +108,12 @@ func (sdk *module) withConfig(
 		return sdk, nil
 	}
 
-	fieldspec, err := withConfigFn.FieldSpec()
+	fieldspec, err := withConfigFn.FieldSpec(ctx, sdk.mod.Self())
 	if err != nil {
 		return nil, err
 	}
 
-	inputs := fieldspec.Args.Inputs(sdk.dag.View)
+	inputs := fieldspec.Args.Inputs(sdk.serverSchema.View())
 
 	// check if there are any unknown config keys provided
 	var unusedKeys = []string{}
@@ -141,8 +153,13 @@ func (sdk *module) withConfig(
 		})
 	}
 
-	var sdkwithconfig dagql.Object
-	err = sdk.dag.Select(ctx, sdk.sdk, &sdkwithconfig, []dagql.Selector{
+	dag, err := sdk.dag(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.Self().Name(), err)
+	}
+
+	var sdkwithconfig dagql.AnyObjectResult
+	err = dag.Select(ctx, sdk.sdk, &sdkwithconfig, []dagql.Selector{
 		{
 			Field: "withConfig",
 			Args:  args,

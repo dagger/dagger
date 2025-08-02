@@ -170,7 +170,7 @@ type Server struct {
 	//
 	// dagql cache
 	//
-	baseDagqlCache cache.Cache[digest.Digest, dagql.Typed]
+	baseDagqlCache cache.Cache[digest.Digest, dagql.AnyResult]
 
 	//
 	// session+client state
@@ -214,7 +214,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			SearchDomains: bkcfg.DNS.SearchDomains,
 		},
 
-		baseDagqlCache: cache.NewCache[digest.Digest, dagql.Typed](),
+		baseDagqlCache: cache.NewCache[digest.Digest, dagql.AnyResult](),
 		daggerSessions: make(map[string]*daggerSession),
 		locker:         locker.New(),
 	}
@@ -591,6 +591,10 @@ func (srv *Server) BuildkitCache() bkcache.Manager {
 	return srv.workerCache
 }
 
+func (srv *Server) BuildkitSession() *bksession.Manager {
+	return srv.bkSessionManager
+}
+
 func (srv *Server) Info(context.Context, *controlapi.InfoRequest) (*controlapi.InfoResponse, error) {
 	return &controlapi.InfoResponse{
 		BuildkitVersion: &apitypes.BuildkitVersion{
@@ -622,6 +626,13 @@ func (srv *Server) LogMetrics(l *logrus.Entry) *logrus.Entry {
 
 func (srv *Server) Register(server *grpc.Server) {
 	controlapi.RegisterControlServer(server, srv)
+}
+
+// ConnectedClients returns the number of currently connected clients
+func (srv *Server) ConnectedClients() int {
+	srv.daggerSessionsMu.RLock()
+	defer srv.daggerSessionsMu.RUnlock()
+	return len(srv.daggerSessions)
 }
 
 func (srv *Server) Locker() *locker.Locker {
