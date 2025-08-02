@@ -182,11 +182,28 @@ func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
 	if err != nil {
 		return nil, err
 	}
-	schema := srv.Schema()
-	objectMethods := map[string]LLMTool{}
-	if err := m.reachableObjectMethods(srv, objectMethods); err != nil {
+	moduleTools, err := m.autoConstructingModuleTools(srv)
+	if err != nil {
 		return nil, err
 	}
+	objectTools, err := m.reachableObjectTools(srv)
+	if err != nil {
+		return nil, err
+	}
+	builtins, err := m.Builtins(srv, objectTools)
+	if err != nil {
+		return nil, err
+	}
+	allTools := directlyExposeTools(moduleTools)
+	if !m.staticTools {
+		allTools = append(allTools, directlyExposeTools(objectTools)...)
+	}
+	allTools = append(allTools, builtins...)
+	return allTools, nil
+}
+
+func (m *MCP) autoConstructingModuleTools(srv *dagql.Server) (map[string]LLMTool, error) {
+	schema := srv.Schema()
 	moduleTools := map[string]LLMTool{}
 	for _, mod := range m.env.Self().installedModules {
 		modTypeName := strcase.ToCamel(mod.Name())
@@ -215,13 +232,7 @@ func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
 			}
 		}
 	}
-	builtins, err := m.Builtins(srv, objectMethods)
-	if err != nil {
-		return nil, err
-	}
-	modTools := directlyExposeTools(moduleTools)
-	allTools := append(modTools, builtins...)
-	return allTools, nil
+	return moduleTools, nil
 }
 
 // ToolFunc reuses our regular GraphQL args handling sugar for tools.
@@ -258,7 +269,8 @@ func ToolFunc[T any](srv *dagql.Server, fn func(context.Context, T) (any, error)
 	}
 }
 
-func (m *MCP) reachableObjectMethods(srv *dagql.Server, allTools map[string]LLMTool) error {
+func (m *MCP) reachableObjectTools(srv *dagql.Server) (map[string]LLMTool, error) {
+	allTools := map[string]LLMTool{}
 	schema := srv.Schema()
 	typeNames := m.Types()
 	if m.env.Self().IsPrivileged() {
@@ -267,13 +279,13 @@ func (m *MCP) reachableObjectMethods(srv *dagql.Server, allTools map[string]LLMT
 	for _, typeName := range typeNames {
 		typeDef, ok := schema.Types[typeName]
 		if !ok {
-			return fmt.Errorf("type %q not found", typeName)
+			return nil, fmt.Errorf("type %q not found", typeName)
 		}
 		if err := m.typeTools(allTools, srv, schema, typeDef, nil); err != nil {
-			return fmt.Errorf("load %q tools: %w", typeName, err)
+			return nil, fmt.Errorf("load %q tools: %w", typeName, err)
 		}
 	}
-	return nil
+	return allTools, nil
 }
 
 func (m *MCP) typeTools(allTools map[string]LLMTool, srv *dagql.Server, schema *ast.Schema, typeDef *ast.Definition, autoConstruct *ObjectTypeDef) error {
@@ -463,7 +475,7 @@ func (m *MCP) call(ctx context.Context,
 	doSelect := func(ctx context.Context, env dagql.ObjectResult[*Env]) (dagql.AnyResult, bool, error) {
 		sels, usedContext, err := m.toolCallToSelections(ctx, env, srv, schema, target.ObjectType(), fieldDef, args, autoConstruct)
 		if err != nil {
-			return nil, false, fmt.Errorf("failed to convert call inputs: %w (%+v)", err, autoConstruct)
+			return nil, false, fmt.Errorf("failed to convert call inputs: %w", err)
 		}
 		validated = true
 		var val dagql.AnyResult
@@ -1173,8 +1185,6 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 
 	if m.staticTools {
 		builtins = append(builtins, m.staticMethodCallingTools(srv, schema, allMethods)...)
-	} else {
-		builtins = append(builtins, directlyExposeTools(allMethods)...)
 	}
 
 	builtins = append(builtins, LLMTool{
