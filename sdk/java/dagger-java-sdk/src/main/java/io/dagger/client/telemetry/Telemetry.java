@@ -9,11 +9,12 @@ import io.opentelemetry.api.trace.TraceFlags;
 import io.opentelemetry.api.trace.TraceState;
 import io.opentelemetry.context.Context;
 
-public class Telemetry {
+public class Telemetry implements AutoCloseable {
 
     private static final String TRACER_NAME = "dagger.io/sdk.java";
 
-    public void close() {
+    @Override
+    public void close() throws Exception {
         TelemetryInitializer.close();
     }
 

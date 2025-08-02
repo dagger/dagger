@@ -41,15 +41,15 @@ public class Entrypoint {
   Entrypoint() {}
 
   public static void main(String[] args) throws Exception {
-    try {
-      new Entrypoint().dispatch();
+    try (Telemetry telemetry = new Telemetry()) {
+      FunctionCall fnCall = dag().currentFunctionCall();
+      telemetry.trace(fnName, null, () -> new Entrypoint().dispatch(fnCall));
     } finally {
       dag().close();
     }
   }
 
-  private void dispatch() throws Exception {
-    FunctionCall fnCall = dag().currentFunctionCall();
+  private void dispatch(FunctionCall fnCall) throws Exception {
     try {
       String parentName = fnCall.parentName();
       String fnName = fnCall.name();
@@ -60,15 +60,14 @@ public class Entrypoint {
         inputArgs.put(fnArg.name(), fnArg.value());
       }
 
-      Telemetry telemetry = new Telemetry();
-      JSON result = telemetry.trace(fnName, null, () -> {
-        if (parentName.isEmpty()) {
-          ModuleID modID = register();
-          return JsonConverter.toJSON(modID);
-        }
+      JSON result;
+      if (parentName.isEmpty()) {
+        ModuleID modID = register();
+        result = JsonConverter.toJSON(modID);
+      } else {
+        result = invoke(parentJson, parentName, fnName, inputArgs);
+      }
 
-        return invoke(parentJson, parentName, fnName, inputArgs);
-      });
       fnCall.returnValue(result);
     } catch (InvocationTargetException e) {
       fnCall.returnError(dag().error(e.getTargetException().getMessage()));

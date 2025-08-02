@@ -20,6 +20,7 @@ import io.dagger.client.ModuleID;
 import io.dagger.client.TypeDef;
 import io.dagger.client.exception.DaggerExecException;
 import io.dagger.client.exception.DaggerQueryException;
+import io.dagger.client.telemetry.Telemetry;
 import io.dagger.module.annotation.Default;
 import io.dagger.module.annotation.DefaultPath;
 import io.dagger.module.annotation.Enum;
@@ -505,8 +506,12 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                               .addException(Exception.class)
                               .returns(void.class)
                               .addParameter(String[].class, "args")
-                              .beginControlFlow("try")
-                              .addStatement("new Entrypoint().dispatch()")
+                              .beginControlFlow("try ($T telemetry = new $T())", Telemetry.class)
+                              .addStatement(
+                                  "$T fnCall = $T.dag().currentFunctionCall()",
+                                  FunctionCall.class,
+                                  Dagger.class)
+                              .addStatement("telemetry.trace(fnName, null, () -> new Entrypoint().dispatch(fnCall))")
                               .nextControlFlow("finally")
                               .addStatement("$T.dag().close()", Dagger.class)
                               .endControlFlow()
@@ -516,10 +521,6 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                               .addModifiers(Modifier.PRIVATE)
                               .returns(void.class)
                               .addException(Exception.class)
-                              .addStatement(
-                                  "$T fnCall = $T.dag().currentFunctionCall()",
-                                  FunctionCall.class,
-                                  Dagger.class)
                               .beginControlFlow("try")
                               .addStatement("$T parentName = fnCall.parentName()", String.class)
                               .addStatement("$T fnName = fnCall.name()", String.class)
