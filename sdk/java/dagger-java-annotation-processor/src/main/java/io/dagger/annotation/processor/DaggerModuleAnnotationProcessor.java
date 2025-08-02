@@ -506,12 +506,14 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                               .addException(Exception.class)
                               .returns(void.class)
                               .addParameter(String[].class, "args")
-                              .beginControlFlow("try ($T telemetry = new $T())", Telemetry.class)
+                              .beginControlFlow(
+                                  "try ($T telemetry = new $T())", Telemetry.class, Telemetry.class)
                               .addStatement(
                                   "$T fnCall = $T.dag().currentFunctionCall()",
                                   FunctionCall.class,
                                   Dagger.class)
-                              .addStatement("telemetry.trace(fnName, null, () -> new Entrypoint().dispatch(fnCall))")
+                              .addStatement(
+                                  "telemetry.trace(fnCall.name(), null, () -> new Entrypoint().dispatch(fnCall))")
                               .nextControlFlow("finally")
                               .addStatement("$T.dag().close()", Dagger.class)
                               .endControlFlow()
@@ -519,7 +521,8 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                       .addMethod(
                           MethodSpec.methodBuilder("dispatch")
                               .addModifiers(Modifier.PRIVATE)
-                              .returns(void.class)
+                              .returns(Void.class)
+                              .addParameter(FunctionCall.class, "fnCall")
                               .addException(Exception.class)
                               .beginControlFlow("try")
                               .addStatement("$T parentName = fnCall.parentName()", String.class)
@@ -548,6 +551,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                                   "result = invoke(parentJson, parentName, fnName, inputArgs)")
                               .endControlFlow()
                               .addStatement("fnCall.returnValue(result)")
+                              .addStatement("return null")
                               .nextControlFlow("catch ($T e)", InvocationTargetException.class)
                               .addStatement(
                                   "fnCall.returnError($T.dag().error(e.getTargetException().getMessage()))",
