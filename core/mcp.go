@@ -450,7 +450,7 @@ func (m *MCP) call(ctx context.Context,
 	//
 	var target dagql.AnyObjectResult
 	var err error
-	if self, ok := args["self"]; ok {
+	if self, ok := args["self"]; ok && self != nil {
 		recv, ok := self.(string)
 		if !ok {
 			return "", fmt.Errorf("expected 'self' to be a string - got %#v", self)
