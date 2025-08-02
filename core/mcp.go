@@ -1674,43 +1674,10 @@ func (m *MCP) validateAndNormalizeChain(ctx context.Context, self string, calls 
 }
 
 func (m *MCP) userProvidedValues() []LLMTool {
-	inputs := m.env.Self().Inputs()
-	if len(inputs) == 0 {
-		return nil
-	}
-	desc := "The following values have been provided by the user:"
-	type valueDesc struct {
-		Description string `json:"description"`
-		Value       any    `json:"value"`
-	}
-	var values []valueDesc
-	for _, input := range inputs {
-		description := input.Description
-		if description == "" {
-			description = input.Key
-		}
-		if obj, isObj := input.AsObject(); isObj {
-			values = append(values, valueDesc{
-				Value:       m.Ingest(obj, input.Description),
-				Description: description,
-			})
-		} else {
-			values = append(values, valueDesc{
-				Value:       input.Value,
-				Description: description,
-			})
-		}
-	}
-	formatted, err := toolStructuredResponse(values)
-	if err != nil {
-		return nil
-	}
-	desc += "\n\n" + formatted
-	desc += "\n\nNOTE: This tool does nothing but provide this description. You don't need to call it."
 	return []LLMTool{
 		{
 			Name:        "user_provided_values",
-			Description: desc,
+			Description: "Read the inputs supplied by the user.",
 			Schema: map[string]any{
 				"type":                 "object",
 				"properties":           map[string]any{},
@@ -1719,7 +1686,33 @@ func (m *MCP) userProvidedValues() []LLMTool {
 			},
 			Strict: true,
 			Call: func(ctx context.Context, args any) (any, error) {
-				return desc, nil
+				inputs := m.env.Self().Inputs()
+				if len(inputs) == 0 {
+					return "No user-provided values.", nil
+				}
+				type valueDesc struct {
+					Description string `json:"description"`
+					Value       any    `json:"value"`
+				}
+				var values []valueDesc
+				for _, input := range inputs {
+					description := input.Description
+					if description == "" {
+						description = input.Key
+					}
+					if obj, isObj := input.AsObject(); isObj {
+						values = append(values, valueDesc{
+							Value:       m.Ingest(obj, input.Description),
+							Description: description,
+						})
+					} else {
+						values = append(values, valueDesc{
+							Value:       input.Value,
+							Description: description,
+						})
+					}
+				}
+				return toolStructuredResponse(values)
 			},
 		},
 	}
