@@ -134,15 +134,9 @@ func (d *imageDriver) Provision(ctx context.Context, target *url.URL, opts *Driv
 		cleanup, _ = strconv.ParseBool(val)
 	}
 
-	port, _ := strconv.Atoi(target.Query().Get("port"))
 	target, err := d.create(ctx, containerCreateOpts{
-		imageRef:      target.Host + target.Path,
-		containerName: target.Query().Get("container"),
-		volumeName:    target.Query().Get("volume"),
-		cleanup:       cleanup,
-		port:          port,
-		cpus:          target.Query().Get("cpus"),
-		memory:        target.Query().Get("memory"),
+		imageRef: target.Host + target.Path,
+		cleanup:  cleanup,
 	}, opts)
 	if err != nil {
 		return nil, err
@@ -190,7 +184,11 @@ func (d containerConnector) Connect(ctx context.Context) (net.Conn, error) {
 	if context := d.values.Get("context"); context != "" {
 		args = append(args, "--context="+context)
 	}
-	args = append(args, "buildctl", "dial-stdio")
+	if cmd, ok := os.LookupEnv("DAGGER_ENGINE_IMAGE_COMMAND"); ok {
+		args = append(args, "sh", "-c", cmd)
+	} else {
+		args = append(args, "buildctl", "dial-stdio")
+	}
 
 	// using uncancelled context because context remains active for the
 	// duration of the process, after dial has completed

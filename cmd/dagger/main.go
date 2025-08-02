@@ -9,6 +9,7 @@ import (
 	"io"
 	"iter"
 	"maps"
+	"net/url"
 	"os"
 	"os/signal"
 	"runtime/pprof"
@@ -68,6 +69,14 @@ var (
 	web                      bool
 	noExit                   bool
 	_, useCloudEngine        = os.LookupEnv("DAGGER_CLOUD_ENGINE")
+	engineHost               = os.Getenv("DAGGER_HOST")
+	engineImage              = os.Getenv("DAGGER_IMAGE")
+	engineImageCommand       = os.Getenv("DAGGER_IMAGE_COMMAND")
+	engineImageRunner        = os.Getenv("DAGGER_IMAGE_RUNNER")
+	engineImageVersion       = os.Getenv("DAGGER_IMAGE_VERSION")
+	_, gpuSupport            = os.LookupEnv("_EXPERIMENTAL_DAGGER_GPU_SUPPORT")
+	imageLoader              = os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE")
+	deprecatedRunnerHost     = os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST")
 
 	dotOutputFilePath string
 	dotFocusField     string
@@ -80,6 +89,48 @@ var (
 
 	Frontend idtui.Frontend
 )
+
+// Backwards compatibility with _EXPERIMENTAL_DAGGER_RUNNER_HOST
+func init() {
+	if deprecatedRunnerHost == "" {
+		return
+	}
+	slog.Warn("_EXPERIMENTAL_DAGGER_RUNNER_HOST is deprecated. Use DAGGER_HOST or DAGGER_IMAGE")
+	u, err := url.Parse(deprecatedRunnerHost)
+	if err != nil {
+		return
+	}
+	switch u.Scheme {
+	case "tcp", "unix", "ssh", "kube-pod", "container":
+		if engineHost == "" {
+			slog.Warn(fmt.Sprintf(
+				"Auto-migrating _EXPERIMENTAL_DAGGER_RUNNER_HOST=%q to DAGGER_HOST=%q",
+				deprecatedRunnerHost,
+				u.String(),
+			))
+			engineHost = u.String()
+		}
+	case "docker-container", "podman-container":
+		u.Scheme = "container"
+		slog.Warn(fmt.Sprintf(
+			"Auto-migrating _EXPERIMENTAL_DAGGER_RUNNER_HOST=%q to DAGGER_HOST=%q",
+			deprecatedRunnerHost,
+			u.String(),
+		))
+		engineHost = u.String()
+	case "docker-image":
+		withoutScheme := u.Host + u.RequestURI()
+		slog.Warn(fmt.Sprintf(
+			"Auto-migrating _EXPERIMENTAL_DAGGER_RUNNER_HOST=%q to DAGGER_IMAGE=%q",
+			deprecatedRunnerHost,
+			withoutScheme,
+		))
+		engineImage = withoutScheme
+	default:
+		slog.Error("Can't auto-migrate _EXPERIMENTAL_DAGGER_RUNNER_HOST: incorrect format")
+		os.Exit(1)
+	}
+}
 
 func init() {
 	// allow user explicitly setting progress via env, but default it to "auto"
