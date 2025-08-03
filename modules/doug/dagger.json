@@ -2,7 +2,7 @@
   "name": "doug",
   "engineVersion": "v0.18.15-010101000000-dev-83c43f87ad32",
   "sdk": {
-    "source": "python"
+    "source": "go"
   },
   "dependencies": [
     {
