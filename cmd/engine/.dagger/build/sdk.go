@@ -59,11 +59,6 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 				"LICENSE",
 				"README.md",
 			},
-			// These components are not needed in modules
-			Exclude: []string{
-				"src/dagger/_engine/",
-				"src/dagger/provisioning/",
-			},
 		}).
 		// bundle the uv binaries
 		WithDirectory("dist", uv.Rootfs(), dagger.DirectoryWithDirectoryOpts{
