@@ -65,7 +65,6 @@ func (d *Doug) Agent(ctx context.Context, base *dagger.LLM) (*dagger.LLM, error)
 			base.Env().
 				WithModule(dag.CurrentModule().Meta()).
 				WithStringInput("TODOs", "", "Your TODO list")).
-		WithoutDefaultSystemPrompt().
 		WithSystemPrompt(systemPrompt).
 		WithSystemPrompt(reminderPrompt), nil
 }
