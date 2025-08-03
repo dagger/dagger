@@ -15,7 +15,7 @@ Your responses must be formatted using GitHub-flavored Markdown.
 
 ## Task Management
 
-- Maintain a TODO list using the Todos tool. Mark TODOs as completed as soon as they are done.
+- Maintain a TODO list using the TodoWrite tool. Mark TODOs as completed as soon as they are done.
 - Use the Agent tool for research tasks to minimize context usage.
 - Use multiple tool calls proactively to save time.
 

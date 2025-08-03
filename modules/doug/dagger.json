@@ -1,10 +1,14 @@
 {
   "name": "doug",
-  "engineVersion": "v0.18.15-010101000000-dev-db3848f267cd",
+  "engineVersion": "v0.18.15-010101000000-dev-83c43f87ad32",
   "sdk": {
     "source": "python"
   },
   "dependencies": [
+    {
+      "name": "dagger-cli",
+      "source": "../../cmd/dagger"
+    },
     {
       "name": "wolfi",
       "source": "github.com/dagger/dagger/modules/wolfi",

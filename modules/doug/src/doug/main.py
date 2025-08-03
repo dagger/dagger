@@ -12,9 +12,9 @@ class Doug:
     source: Annotated[dagger.Directory, DefaultPath(".")]
 
     @function
-    async def agent(self, init: dagger.Env) -> dagger.LLM:
+    async def agent(self, base: dagger.LLM) -> dagger.LLM:
         "Creates a Doug coding agent."
-        provider = await dag.llm().provider()
+        provider = await base.provider()
         provider_prompts = (
             await dag.current_module().source().directory("prompts/system/").entries()
         )
@@ -33,36 +33,35 @@ class Doug:
                 .contents()
             )
         return (
-            dag.llm()
-            .with_env(
-                init.with_module(dag.current_module().meta()).with_string_input(
-                    "TODOs", "", "Your TODO list"
-                )
+            base.with_env(
+                base.env()
+                .with_module(dag.current_module().meta())
+                .with_string_input("TODOs", "", "Your TODO list")
             )
             .without_default_system_prompt()
             .with_system_prompt(system_prompt)
-            .with_system_prompt(await self.reminder_prompt(init.hostfs()))
+            .with_system_prompt(await self.reminder_prompt(base.env().hostfs()))
         )
 
     @function
-    async def basic_shell(self, command: str) -> dagger.Env:
+    async def bash(self, command: str) -> dagger.Env:
         """
-        Execute basic shell utilities for filesystem operations and text processing.
+        Execute a bash command in a sandboxed environment with `git` and `dagger` installed.
 
-        This tool is ONLY for standard Unix utilities like ls, rm, find, grep, sed,
-        awk, cat, head, tail, wc, sort, uniq, cut, etc. DO NOT use this tool for
-        project-specific commands like running tests, building, starting servers,
-        or executing application code. Use specialized tools for those operations.
-
-        Command output will be truncated. Use the ReadLogs tool when necessary
-        to read more.
+        USAGE NOTES:
+        - The environment will have `bash`, `git`, `dagger` installed.
+        - The sandboxed environment will have Git, Bash, and the Dagger CLI
+        installed.
+        - Command output may be truncated, showing only the most recent logs.
+        Use the ReadLogs tool when necessary to read more.
         """
         modified = (
-            dag.wolfi()
+            dag.wolfi(packages=["bash", "git"])
             .container()
+            .with_file("/bin/dagger", dag.dagger_cli().binary())
             .with_mounted_directory("/workdir", self.source)
             .with_workdir("/workdir")
-            .with_exec(["sh", "-c", command])
+            .with_exec(["bash", "-c", command], experimental_privileged_nesting=True)
             .directory("/workdir")
         )
         return dag.current_env().with_hostfs(modified)
@@ -386,7 +385,7 @@ class Doug:
         )
 
     @function
-    async def todos(  # noqa: PLR0912,C901
+    async def todo_write(  # noqa: PLR0912,C901
         self,
         pending: Annotated[
             list[str] | None, Doc("List of tasks to set in pending state")
@@ -436,9 +435,9 @@ class Doug:
             await dag.current_env().input("TODOs").as_string() or ""
         ).split("\n")
 
-        completed_list = []
-        in_progress_list = []
-        pending_list = []
+        existing_completed = []
+        existing_in_progress = []
+        existing_pending = []
         for todo in current_todos:
             if not todo:
                 continue
@@ -460,16 +459,16 @@ class Doug:
 
             # Apply ANSI coloring and effects based on state
             if state.lower() == "completed":
-                completed.append(description)
+                existing_completed.append(description)
             elif state.lower() == "in_progress":
-                in_progress.append(description)
+                existing_in_progress.append(description)
             elif state.lower() == "pending":
-                pending.append(description)
+                existing_pending.append(description)
 
-        # Append the updates
-        completed_list += completed
-        in_progress_list += in_progress
-        pending_list += pending
+        # Combine existing items first, then new items
+        completed_list = existing_completed + completed
+        in_progress_list = existing_in_progress + in_progress
+        pending_list = existing_pending + pending
 
         formatted_todos = []  # formatted for user/LLM
         encoded_todos = []  # formatted for storing in env
