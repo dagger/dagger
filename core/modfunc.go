@@ -357,6 +357,26 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 	if env, ok := EnvFromContext(ctx); ok {
 		fnCall.EnvID = env.ID()
+	} else {
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, err
+		}
+		var env dagql.ObjectResult[*Env]
+		if err := srv.Select(ctx, srv.Root(), &env, dagql.Selector{
+			Field: "env",
+		}, dagql.Selector{
+			Field: "withHostfs",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "hostfs",
+					Value: dagql.NewID[*Directory](mod.GetSource().ContextDirectory.ID()),
+				},
+			},
+		}); err != nil {
+			return nil, fmt.Errorf("failed to create env: %w", err)
+		}
+		fnCall.EnvID = env.ID()
 	}
 	if fn.objDef != nil {
 		fnCall.ParentName = fn.objDef.OriginalName
