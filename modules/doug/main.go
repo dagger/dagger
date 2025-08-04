@@ -94,21 +94,40 @@ func (d *Doug) Agent(ctx context.Context, base *dagger.LLM) (*dagger.LLM, error)
 		WithSystemPrompt(reminderPrompt), nil
 }
 
-// Bash executes a bash command in a sandboxed environment with git and dagger installed
+/*
+Execute a bash command in a sandboxed environment
+
+USAGE NOTES:
+  - The environment will have `bash` and `git` installed, and NOTHING ELSE.
+    Rely on the project's tools for running tests, builds, lints, etc.
+  - Command output may be truncated, showing only the most recent logs.
+    Use the ReadLogs tool when necessary to read more.
+*/
 func (d *Doug) Bash(ctx context.Context, command string) (*dagger.Env, error) {
-	modified := dag.Wolfi().
+	cmd := dag.Wolfi().
 		Container(dagger.WolfiContainerOpts{
 			Packages: []string{"bash", "git"},
 		}).
-		WithFile("/bin/dagger", dag.DaggerCli().Binary()).
 		WithMountedDirectory("/workdir", d.Source).
 		WithWorkdir("/workdir").
 		WithExec([]string{"bash", "-c", command}, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
-		}).
-		Directory("/workdir")
+			Expect:                        dagger.ReturnTypeAny,
+		})
 
-	return dag.CurrentEnv().WithHostfs(modified), nil
+	exitCode, err := cmd.ExitCode(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if exitCode != 0 {
+		fmt.Println("Command failed with exit code", exitCode)
+		// NOTE: we don't exit! we propagate the directory changes regardless.
+	} else {
+		fmt.Println("Command completed successfully.")
+	}
+
+	return dag.CurrentEnv().WithHostfs(cmd.Directory("/workdir")), nil
 }
 
 // ReadFile reads a file from the project directory
