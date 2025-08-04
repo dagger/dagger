@@ -462,6 +462,7 @@ export type ContainerWithExecOpts = {
    * Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.
    */
   noInit?: boolean
+  redirectStdin?: string
 }
 
 export type ContainerWithExposedPortOpts = {
