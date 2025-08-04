@@ -3,11 +3,17 @@ package main
 import (
 	"context"
 	"fmt"
-	"os/exec"
+	"os"
 	"strings"
 
 	"dagger/doug/internal/dagger"
 	"slices"
+
+	"github.com/alecthomas/chroma/v2"
+	"github.com/alecthomas/chroma/v2/formatters"
+	"github.com/alecthomas/chroma/v2/lexers"
+	"github.com/alecthomas/chroma/v2/styles"
+	godiffpatch "github.com/sourcegraph/go-diff-patch"
 )
 
 const MaxResponseLength = 30000
@@ -138,18 +144,74 @@ func (d *Doug) EditFile(ctx context.Context, filePath, oldString, newString stri
 		All: *replaceAll,
 	})
 
-	if _, err := before.Export(ctx, "a/"+filePath); err != nil {
-		return nil, err
-	}
-	if _, err := after.Export(ctx, "b/"+filePath); err != nil {
+	beforeContents, err := before.Contents(ctx)
+	if err != nil {
 		return nil, err
 	}
 
-	cmd := exec.Command("diff", "--unified", "--color=always", "a/"+filePath, "b/"+filePath)
-	_ = cmd.Run()
+	afterContents, err := after.Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	diff := godiffpatch.GeneratePatch(filePath, beforeContents, afterContents)
+	tokens, err := lexers.Get("diff").Tokenise(nil, diff)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := formatters.TTY16.Format(os.Stdout, TTYStyle, tokens); err != nil {
+		return nil, err
+	}
 
 	return dag.CurrentEnv().WithHostfs(d.Source.WithFile(filePath, after)), nil
 }
+
+// taken from chroma's TTY formatter
+var ttyMap = map[string]string{
+	"30m": "#000000", "31m": "#7f0000", "32m": "#007f00", "33m": "#7f7fe0",
+	"34m": "#00007f", "35m": "#7f007f", "36m": "#007f7f", "37m": "#e5e5e5",
+	"90m": "#555555", "91m": "#ff0000", "92m": "#00ff00", "93m": "#ffff00",
+	"94m": "#0000ff", "95m": "#ff00ff", "96m": "#00ffff", "97m": "#ffffff",
+}
+
+// TTY style matches to hex codes used by the TTY formatter to map them to
+// specific ANSI escape codes.
+var TTYStyle = styles.Register(chroma.MustNewStyle("tty", chroma.StyleEntries{
+	chroma.Comment:             ttyMap["95m"] + " italic",
+	chroma.CommentPreproc:      ttyMap["90m"],
+	chroma.KeywordConstant:     ttyMap["33m"],
+	chroma.Keyword:             ttyMap["31m"],
+	chroma.KeywordDeclaration:  ttyMap["35m"],
+	chroma.NameBuiltin:         ttyMap["31m"],
+	chroma.NameBuiltinPseudo:   ttyMap["36m"],
+	chroma.NameFunction:        ttyMap["34m"],
+	chroma.NameNamespace:       ttyMap["34m"],
+	chroma.LiteralNumber:       ttyMap["31m"],
+	chroma.LiteralString:       ttyMap["32m"],
+	chroma.LiteralStringSymbol: ttyMap["33m"],
+	chroma.Operator:            ttyMap["31m"],
+	chroma.Punctuation:         ttyMap["90m"],
+	chroma.Error:               ttyMap["91m"], // bright red for errors
+	chroma.GenericDeleted:      ttyMap["91m"], // bright red for deleted content
+	chroma.GenericEmph:         "italic",
+	chroma.GenericInserted:     ttyMap["92m"], // bright green for inserted content
+	chroma.GenericStrong:       "bold",
+	chroma.GenericSubheading:   ttyMap["90m"], // dark gray for subheadings
+	chroma.KeywordNamespace:    ttyMap["95m"], // bright magenta for namespace keywords
+	chroma.Literal:             ttyMap["94m"], // bright blue for literals
+	chroma.LiteralDate:         ttyMap["93m"], // bright yellow for dates
+	chroma.LiteralStringEscape: ttyMap["96m"], // bright cyan for string escapes
+	chroma.Name:                ttyMap["97m"], // bright white for names
+	chroma.NameAttribute:       ttyMap["92m"], // bright green for attributes
+	chroma.NameClass:           ttyMap["92m"], // bright green for classes
+	chroma.NameConstant:        ttyMap["94m"], // bright blue for constants
+	chroma.NameDecorator:       ttyMap["92m"], // bright green for decorators
+	chroma.NameException:       ttyMap["91m"], // bright red for exceptions
+	chroma.NameOther:           ttyMap["92m"], // bright green for other names
+	chroma.NameTag:             ttyMap["95m"], // bright magenta for tags
+	chroma.Text:                ttyMap["97m"], // bright white for text
+}))
 
 // Write creates or updates files in the filesystem
 func (d *Doug) Write(ctx context.Context, path, contents string) (*dagger.Env, error) {
