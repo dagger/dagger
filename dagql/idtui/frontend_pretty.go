@@ -1517,6 +1517,13 @@ func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case "tab", "i":
 		return fe.enterInsertMode(false)
+	default:
+		if fe.shell != nil {
+			cmd := fe.shell.ReactToInput(fe.runCtx, msg)
+			if cmd != nil {
+				return cmd
+			}
+		}
 	}
 
 	switch lastKey { //nolint:gocritic
