@@ -8,6 +8,7 @@ use Dagger\Attribute;
 use ReflectionMethod;
 use RuntimeException;
 
+/** @internal Value Object used for methods to expose to Dagger. */
 final readonly class DaggerFunction
 {
     /** @param Argument[] $arguments */
