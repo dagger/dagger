@@ -402,9 +402,9 @@ func (r *renderer) renderSpan(
 
 	switch contentType {
 	case "text/x-shellscript":
-		quick.Highlight(out, name, "bash", "terminal16", highlightStyle())
+		quick.Highlight(out, name, "bash", "terminal16", "ansi16")
 	case "text/markdown":
-		quick.Highlight(out, name, "markdown", "terminal16", highlightStyle())
+		quick.Highlight(out, name, "markdown", "terminal16", "ansi16")
 	default:
 		label := out.String(name)
 		var isEffect bool
@@ -421,13 +421,6 @@ func (r *renderer) renderSpan(
 	}
 
 	return nil
-}
-
-func highlightStyle() string {
-	if HasDarkBackground() {
-		return "monokai"
-	}
-	return "monokailight"
 }
 
 func (r *renderer) renderLiteral(out TermOutput, lit *callpbv1.Literal) {
