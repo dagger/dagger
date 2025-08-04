@@ -67,8 +67,14 @@ type ModuleSourceDependency struct {
 
 // Specific configuration for client generation.
 type ClientGeneratorConfig struct {
+	// The name of the module to generate for.
+	ModuleName string
+
 	// The list of all dependencies used by the module.
 	// This is used by the client generator to automatically serves the
 	// dependencies when connecting to the client.
 	ModuleDependencies []ModuleSourceDependency
+
+	// The directory where the client will be generated.
+	ClientDir string
 }
