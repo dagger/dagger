@@ -31,19 +31,26 @@ func New(
 	return &Doug{Source: source}
 }
 
-// Dev is a simpler entrypoint for starting a coding agent developing in a
-// workdir.
-func (d *Doug) Dev(ctx context.Context, source *dagger.Directory) (*dagger.LLM, error) {
+// A CLI friendly entrypoint for starting a coding agent developing in a workdir.
+func (d *Doug) Dev(
+	ctx context.Context,
+	source *dagger.Directory,
+	// +optional
+	module *dagger.Module,
+) (*dagger.LLM, error) {
+	if module == nil {
+		module = source.AsModule()
+	}
 	return d.Agent(ctx,
 		dag.LLM().WithEnv(
 			dag.Env().
 				WithHostfs(source).
-				WithModule(source.AsModule()),
+				WithModule(module),
 		),
 	)
 }
 
-// Agent creates a Doug coding agent
+// Returns a Doug coding agent
 func (d *Doug) Agent(ctx context.Context, base *dagger.LLM) (*dagger.LLM, error) {
 	provider, err := base.Provider(ctx)
 	if err != nil {
