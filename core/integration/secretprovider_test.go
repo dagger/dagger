@@ -61,6 +61,16 @@ func (SecretProvider) TestEnv(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, secretValue, out)
 
+	secretValue = "secret" + identity.NewID()
+	out, err = fetchSecret(
+		ctx,
+		ctr.WithEnvVariable("TOPSECRET", secretValue+"  \n   \t   "),
+		"env+strip://TOPSECRET",
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
+	)
+	require.NoError(t, err)
+	require.Equal(t, secretValue, out)
+
 	_, err = fetchSecret(
 		ctx,
 		ctr,
@@ -81,6 +91,16 @@ func (SecretProvider) TestFile(ctx context.Context, t *testctx.T) {
 		ctx,
 		ctr.WithNewFile("/tmp/topsecret", secretValue),
 		"file:///tmp/topsecret",
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
+	)
+	require.NoError(t, err)
+	require.Equal(t, secretValue, out)
+
+	secretValue = "secret" + identity.NewID()
+	out, err = fetchSecret(
+		ctx,
+		ctr.WithNewFile("/tmp/topsecret", secretValue+"  \n   \t   "),
+		"file+strip:///tmp/topsecret",
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
@@ -107,6 +127,17 @@ func (SecretProvider) TestCmd(ctx context.Context, t *testctx.T) {
 		ctx,
 		ctr,
 		`cmd://echo `+secretValueEncoded+` | base64 -d`,
+		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
+	)
+	require.NoError(t, err)
+	require.Equal(t, secretValue, out)
+
+	secretValue = "secret" + identity.NewID()
+	secretValueEncoded = base64.StdEncoding.EncodeToString([]byte(secretValue + "  \n   \t   "))
+	out, err = fetchSecret(
+		ctx,
+		ctr,
+		`cmd+strip://echo `+secretValueEncoded+` | base64 -d`,
 		dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
 	)
 	require.NoError(t, err)
