@@ -1,6 +1,20 @@
 kind: Changed
-body: Default Python version in Dagger modules changed to 3.13 and build backend to uv_build
+body: |
+  Default Python version in Dagger modules changed to 3.13 and build backend to uv_build
+
+  The new Python version will only be used in new modules or older modules without
+  a pinned Python version.
+
+  To upgrade an existing module, update the minimum required Python version in
+  `pyproject.toml`:
+  ```toml
+  requires-python = ">=3.13"
+  ```
+  Or make sure it's set to `">=3.12"` to remain on Python 3.12. 
+
+  See the [Runtime container](https://docs.dagger.io/api/module-structure#runtime-container) 
+  documentation for more information.
 time: 2025-07-31T17:52:18.815647Z
 custom:
-    Author: helderco
-    PR: "10825"
+  Author: helderco
+  PR: "10825"
