@@ -11,8 +11,7 @@
     },
     {
       "name": "evaluator",
-      "source": "github.com/dagger/dagger/modules/evaluator",
-      "pin": "f3c88ce642ecda2b7106601acf2d620498af8f26"
+      "source": "../../evaluator"
     }
   ]
 }
