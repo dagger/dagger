@@ -533,6 +533,20 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, msg tea.KeyMsg) tea
 		return func() tea.Msg {
 			return idtui.UpdatePromptMsg{}
 		}
+	case "ctrl+s":
+		if h.llmSession != nil {
+			return func() tea.Msg {
+				if err := h.llmSession.SyncToLocal(ctx); err != nil {
+					slog.Error("failed to sync changes to local filesystem", "error", err.Error())
+					// Show error in sidebar
+					Frontend.SetSidebarContent(idtui.SidebarSection{
+						Title:   "Changes",
+						Content: termenv.String("SYNC ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
+					})
+				}
+				return idtui.UpdatePromptMsg{}
+			}
+		}
 	}
 	return nil
 }

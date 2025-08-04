@@ -102,6 +102,8 @@ type SidebarSection struct {
 	Title string
 	// The content to display.
 	Content string
+	// Keymap associated with this section
+	KeyMap []key.Binding
 }
 
 // ShellHandler defines the interface for handling shell interactions

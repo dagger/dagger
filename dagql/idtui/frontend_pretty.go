@@ -174,39 +174,58 @@ func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
 	fe.renderSidebar()
 }
 
+func (fe *frontendPretty) viewSidebar() string {
+	fe.renderSidebar()
+	return fe.sidebarBuf.String()
+}
+
 func (fe *frontendPretty) renderSidebar() {
 	fe.setWindowSizeLocked(fe.window)
 	if fe.sidebarWidth == 0 {
 		// sidebar not displayed; don't bother
 		return
 	}
+
 	fe.sidebarBuf.Reset()
+
 	for i, section := range fe.sidebar {
+		if section.Content == "" {
+			// Section became empty (e.g. changes synced); don't show it
+			continue
+		}
+
 		if i > 0 {
 			fe.sidebarBuf.WriteString("\n")
 			fe.sidebarBuf.WriteString("\n")
 		}
+
+		keymap := new(strings.Builder)
+		var keymapWidth int
+		if len(section.KeyMap) > 0 {
+			keymapWidth = fe.renderKeymap(keymap, KeymapStyle.Background(ANSIBlack), section.KeyMap)
+		}
+
 		if section.Title != "" {
 			fe.sidebarBuf.WriteString(fe.viewOut.String(section.Title).
 				Foreground(termenv.ANSIBrightBlack).String())
-			filler := fe.sidebarWidth - len(section.Title) - 4
-			if filler > 0 {
-				horizBar := fe.viewOut.String(strings.Repeat(HorizBar, filler)).String()
-				fe.sidebarBuf.WriteString(
-					lipgloss.NewStyle().
-						Foreground(ANSIBrightBlack).
-						Background(ANSIBlack).
-						Render(" " + horizBar + " "),
-				)
-			}
-			fe.sidebarBuf.WriteString("\n")
-			fe.sidebarBuf.WriteString("\n")
 		}
 
-		content := strings.TrimRight(section.Content, "\n")
-		fe.sidebarBuf.WriteString(content)
+		filler := fe.sidebarWidth - len(section.Title) - keymapWidth - 4
+		if filler > 0 {
+			horizBar := fe.viewOut.String(strings.Repeat(HorizBar, filler)).String()
+			fe.sidebarBuf.WriteString(
+				lipgloss.NewStyle().
+					Foreground(ANSIBrightBlack).
+					Background(ANSIBlack).
+					Render(" " + horizBar + " "),
+			)
+		}
+
+		fe.sidebarBuf.WriteString(keymap.String())
+		fe.sidebarBuf.WriteString("\n\n")
+
+		fe.sidebarBuf.WriteString(strings.TrimRight(section.Content, "\n"))
 	}
-	fe.program.Send(fe.window)
 }
 
 type startShellMsg struct {
@@ -594,11 +613,11 @@ var KeymapStyle = lipgloss.NewStyle().
 
 const keypressDuration = 500 * time.Millisecond
 
-func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style) int {
+func (fe *frontendPretty) renderKeymap(out io.Writer, style lipgloss.Style, keys []key.Binding) int {
 	w := new(strings.Builder)
 	var showedKey bool
 	// Blank line prior to keymap
-	for _, key := range fe.keys(out) {
+	for _, key := range keys {
 		mainKey := key.Keys()[0]
 		var pressed bool
 		if time.Since(fe.pressedKeyAt) < keypressDuration {
@@ -807,7 +826,7 @@ func (fe *frontendPretty) viewKeymap() string {
 	out := NewOutput(outBuf, termenv.WithProfile(fe.profile))
 	fmt.Fprint(out, KeymapStyle.Render(strings.Repeat(HorizBar, 1)))
 	fmt.Fprint(out, KeymapStyle.Render(" "))
-	fe.renderKeymap(out, KeymapStyle)
+	fe.renderKeymap(out, KeymapStyle, fe.keys(out))
 	fmt.Fprint(out, KeymapStyle.Render(" "))
 	if rest := fe.contentWidth - lipgloss.Width(outBuf.String()); rest > 0 {
 		fmt.Fprint(out, KeymapStyle.Render(strings.Repeat(HorizBar, rest)))
@@ -1012,10 +1031,7 @@ func (fe *frontendPretty) View() string {
 	}
 
 	// Get sidebar content
-	sidebarContent := ""
-	if fe.sidebarBuf != nil && fe.sidebarBuf.Len() > 0 {
-		sidebarContent = fe.sidebarBuf.String()
-	}
+	sidebarContent := fe.viewSidebar()
 
 	if fe.editline != nil {
 		prog := ""
@@ -1370,6 +1386,8 @@ func (fe *frontendPretty) handleEditlineKey(msg tea.KeyMsg) (cmd tea.Cmd) {
 		// can change it
 		cmd = tea.Sequence(cmd, fe.updatePrompt())
 	}()
+	fe.pressedKey = msg.String()
+	fe.pressedKeyAt = time.Now()
 	switch msg.String() {
 	case "ctrl+d":
 		if fe.editline.Value() == "" {

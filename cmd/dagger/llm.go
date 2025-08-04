@@ -6,17 +6,19 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"log/slog"
 	"maps"
 	"os"
+	"slices"
 	"strings"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/dagger/dagger/core/openrouter"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"mvdan.cc/sh/v3/syntax"
@@ -63,7 +65,8 @@ type LLMSession struct {
 	skipEnv    map[string]bool
 	syncedVars map[string]digest.Digest
 	shell      *shellCallHandler
-	initialFS  *dagger.Directory
+	beforeFS   *dagger.Directory
+	afterFS    *dagger.Directory
 }
 
 func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, shellHandler *shellCallHandler) (*LLMSession, error) {
@@ -147,23 +150,30 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 		// safest option is to respect the return value anyway in case it changes
 		s.updateLLMAndAgentVar(ctx, prompted)
 
-		after := prompted.Env().Hostfs()
-		changed, err := s.initialFS.Diff(after).Glob(ctx, "**/*")
+		s.afterFS = prompted.Env().Hostfs()
+
+		dirDiff, err := dirDiff(ctx, s.beforeFS, s.afterFS)
 		if err != nil {
 			return s, err
 		}
 
-		if len(changed) > 0 {
+		if dirDiff.HasChanges() {
 			diff := ""
-			for _, fp := range changed {
-				if strings.HasSuffix(fp, "/") {
-					continue
-				}
-				diff += fmt.Sprintf("- %s\n", termenv.String(fp).Bold())
+			for _, fp := range dirDiff.Added {
+				diff += fmt.Sprintf("%s\n", termenv.String("+ "+fp).Bold().Foreground(termenv.ANSIGreen))
+			}
+			for _, fp := range dirDiff.Changed {
+				diff += fmt.Sprintf("%s\n", termenv.String("• "+fp).Bold().Foreground(termenv.ANSIYellow))
+			}
+			for _, fp := range dirDiff.Removed {
+				diff += fmt.Sprintf("%s\n", termenv.String("− "+fp).Bold().Foreground(termenv.ANSIRed))
 			}
 			Frontend.SetSidebarContent(idtui.SidebarSection{
 				Title:   "Changes",
 				Content: diff,
+				KeyMap: []key.Binding{
+					key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "sync")),
+				},
 			})
 		}
 
@@ -181,6 +191,83 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 	}
 
 	return s, nil
+}
+
+func dirDiff(ctx context.Context, before, after *dagger.Directory) (*DirDiff, error) {
+	beforeFiles, err := before.Glob(ctx, "**/*")
+	if err != nil {
+		return nil, err
+	}
+	afterFiles, err := after.Glob(ctx, "**/*")
+	if err != nil {
+		return nil, err
+	}
+	changedFiles, err := before.Diff(after).Glob(ctx, "**/*")
+	if err != nil {
+		return nil, err
+	}
+	removed := map[string]bool{}
+	added := map[string]bool{}
+	for _, fp := range afterFiles {
+		added[fp] = true
+	}
+	for _, fp := range beforeFiles {
+		if added[fp] {
+			delete(added, fp)
+		} else {
+			removed[fp] = true
+		}
+	}
+	changedFiles = slices.DeleteFunc(changedFiles, func(s string) bool {
+		return added[s] || strings.HasSuffix(s, "/")
+	})
+	return &DirDiff{
+		Before:  before,
+		After:   after,
+		Added:   slices.Sorted(maps.Keys(added)),
+		Changed: changedFiles,
+		Removed: slices.Sorted(maps.Keys(removed)),
+	}, nil
+}
+
+type DirDiff struct {
+	Before, After *dagger.Directory
+
+	Added, Changed, Removed []string
+}
+
+func (diff *DirDiff) HasChanges() bool {
+	return len(diff.Added) > 0 || len(diff.Changed) > 0 || len(diff.Removed) > 0
+}
+
+func (diff *DirDiff) Apply(ctx context.Context, dest string) (rerr error) {
+	ctx, span := Tracer().Start(ctx, "syncing changes", telemetry.Internal())
+	defer telemetry.End(span, func() error { return rerr })
+
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+
+	slog.Debug("exporting", "dest", dest)
+	_, err := diff.Before.Diff(diff.After).Export(ctx, dest)
+	if err != nil {
+		slog.Debug("exporting failed", "error", err)
+		return err
+	}
+
+	for _, p := range diff.Removed {
+		if strings.HasSuffix(p, "/") {
+			// Be a little paranoid about directory paths for now, and just leave the
+			// directories there.
+			// This might be stupid.
+			continue
+		}
+		slog.Debug("removing", "path", p)
+		if err := os.Remove(p); err != nil {
+			slog.Error("failed to remove", "path", p, "error", err)
+			return err
+		}
+	}
+
+	return nil
 }
 
 var dbg *log.Logger
@@ -308,13 +395,11 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 			// NB: don't need to use updateLLMAndAgentVar here, since this is coming
 			// from the agent var
 			s.llm = s.llm.WithGraphQLQuery(st.QueryBuilder(s.dag))
-
-			// sync the initial FS from the agent
-			s.initialFS, err = s.llm.Env().Hostfs().Sync(ctx)
-			if err != nil {
-				return err
-			}
 		}
+	}
+
+	if s.beforeFS == nil {
+		s.beforeFS = s.llm.Env().Hostfs()
 	}
 
 	syncedEnvQ := s.dag.QueryBuilder().
@@ -591,4 +676,35 @@ func (s *LLMSession) Model(ctx context.Context, model string) (*LLMSession, erro
 	}
 	s.model = model
 	return s, nil
+}
+
+func (s *LLMSession) SyncToLocal(ctx context.Context) error {
+	if s.llm == nil {
+		return fmt.Errorf("no LLM session active")
+	}
+
+	if s.afterFS == nil {
+		return fmt.Errorf("nothing to sync")
+	}
+
+	// Get the current filesystem state from the LLM environment
+	diff, err := dirDiff(ctx, s.beforeFS, s.afterFS)
+	if err != nil {
+		return err
+	}
+
+	// Export the entire directory to the local filesystem (current working directory)
+	if err := diff.Apply(ctx, "."); err != nil {
+		return fmt.Errorf("failed to sync changes to local filesystem: %w", err)
+	}
+
+	s.beforeFS = s.afterFS
+
+	// Update sidebar to show sync success
+	Frontend.SetSidebarContent(idtui.SidebarSection{
+		Title:   "Changes",
+		Content: "", // empty content will hide it
+	})
+
+	return nil
 }
