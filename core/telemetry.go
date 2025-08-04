@@ -148,8 +148,10 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, callID *call.ID) (*mod
 	var ms *ModuleSource
 	if m.Self() != nil {
 		ms = m.Self().GetSource()
-	} else if m, ok := sd.LookupDep(calleeModule.Name); ok {
-		ms = m.GetSource()
+	} else if sd != nil {
+		if m, ok := sd.LookupDep(calleeModule.Name); ok {
+			ms = m.GetSource()
+		}
 	}
 
 	if ms == nil {
