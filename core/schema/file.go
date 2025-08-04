@@ -28,7 +28,7 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.File]{
 		Syncer[*core.File]().
 			Doc(`Force evaluation in the engine.`),
-		dagql.Func("contents", s.contents).
+		dagql.NodeFunc("contents", DagOpWrapper(srv, s.contents)).
 			Doc(`Retrieves the contents of the file.`),
 		dagql.Func("size", s.size).
 			Doc(`Retrieves the size of the file, in bytes.`),
@@ -78,8 +78,12 @@ func (s *fileSchema) file(ctx context.Context, parent *core.Query, args struct {
 	return core.NewFileWithContents(ctx, args.Name, []byte(args.Contents), fs.FileMode(args.Permissions), nil, parent.Platform())
 }
 
-func (s *fileSchema) contents(ctx context.Context, file *core.File, args struct{}) (dagql.String, error) {
-	content, err := file.Contents(ctx)
+type noArgs struct {
+	DagOpInternalArgs
+}
+
+func (s *fileSchema) contents(ctx context.Context, parent dagql.ObjectResult[*core.File], _ noArgs) (dagql.String, error) {
+	content, err := parent.Self().ContentsDagOp(ctx)
 	if err != nil {
 		return "", err
 	}

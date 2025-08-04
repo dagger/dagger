@@ -495,10 +495,13 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	// Get the client ID actually used during the function call - this might not
 	// be the same as execMD.ClientID if the function call was cached at the
 	// buildkit level
-	clientID, err := ctr.Self().usedClientID(ctx)
-	if err != nil {
+	var clientIDRes dagql.String
+	if err := srv.Select(ctx, ctr, &clientIDRes, dagql.Selector{
+		Field: "__usedClientID",
+	}); err != nil {
 		return nil, fmt.Errorf("could not get used client id")
 	}
+	clientID := clientIDRes.String()
 
 	// If the function returned anything that's isolated per-client, this caller client should
 	// have access to it now since it was returned to them (i.e. secrets/sockets/etc).
