@@ -1,0 +1,10 @@
+kind: Added
+body: |-
+    New `file+strip`, `env+strip` and `cmd+strip` secret providers
+
+    These new secret providers are like the base providers, but additionally strip
+    any whitespace from the output.
+time: 2025-08-04T14:11:50.660055633+01:00
+custom:
+    Author: jedevc
+    PR: "10836"
