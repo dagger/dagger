@@ -301,7 +301,7 @@ func withAnthropicDebug() option.RequestOption {
 	return option.WithMiddleware(func(req *http.Request, nxt option.MiddlewareNext) (_ *http.Response, rerr error) {
 		ctx := req.Context()
 
-		ctx, span := Tracer(ctx).Start(ctx, "llm.client.anthropic")
+		ctx, span := Tracer(ctx).Start(ctx, "llm.client.anthropic", telemetry.Internal())
 		defer telemetry.End(span, func() error { return rerr })
 
 		stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
