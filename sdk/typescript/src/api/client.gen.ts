@@ -425,12 +425,17 @@ export type ContainerWithExecOpts = {
   stdin?: string
 
   /**
+   * Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
+   */
+  redirectStdin?: string
+
+  /**
    * Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
    */
   redirectStdout?: string
 
   /**
-   * Like redirectStdout, but for standard error
+   * Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
    */
   redirectStderr?: string
 
@@ -462,7 +467,6 @@ export type ContainerWithExecOpts = {
    * Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.
    */
   noInit?: boolean
-  redirectStdin?: string
 }
 
 export type ContainerWithExposedPortOpts = {
@@ -3047,8 +3051,9 @@ export class Container extends BaseClient {
    * Defaults to the container's default arguments (see "defaultArgs" and "withDefaultArgs").
    * @param opts.useEntrypoint Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.
    * @param opts.stdin Content to write to the command's standard input. Example: "Hello world")
+   * @param opts.redirectStdin Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
    * @param opts.redirectStdout Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
-   * @param opts.redirectStderr Like redirectStdout, but for standard error
+   * @param opts.redirectStderr Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
    * @param opts.expect Exit codes this command is allowed to exit with without error
    * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. Like --privileged in Docker

@@ -5012,12 +5012,16 @@
                                 <p>Content to write to the command&#39;s standard input. Example: &quot;Hello world&quot;)</p>
                               </div>
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>redirectStdin</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Redirect the command&#39;s standard input from a file in the container. Example: &quot;./stdin.txt&quot;</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>redirectStdout</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>Redirect the command&#39;s standard output to a file in the container. Example: &quot;./stdout.txt&quot;</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>redirectStderr</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>Like redirectStdout, but for standard error</p>
+                                <p>Redirect the command&#39;s standard error to a file in the container. Example: &quot;./stderr.txt&quot;</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>expect</code></span> - <span class="property-type"><a href="#definition-ReturnType"><code>ReturnType</code></a></span></h6>
@@ -5040,9 +5044,6 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>noInit</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>Skip the automatic init process injected into containers by default.</p>
                                 <p>Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you&#39;re not sure, you don&#39;t need this.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>redirectStdin</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                               </div>
                             </div>
                           </div>

@@ -526,7 +526,7 @@
                     <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withExec">withExec</a>(array $args, bool|null $useEntrypoint = false, string|null $stdin = &#039;&#039;, string|null $redirectStdout = &#039;&#039;, string|null $redirectStderr = &#039;&#039;, <abbr title="Dagger\Dagger\ReturnType">ReturnType</abbr>|null $expect = null, bool|null $experimentalPrivilegedNesting = false, bool|null $insecureRootCapabilities = false, bool|null $expand = false, bool|null $noInit = false, string|null $redirectStdin = &#039;&#039;)
+                    <a href="#method_withExec">withExec</a>(array $args, bool|null $useEntrypoint = false, string|null $stdin = &#039;&#039;, string|null $redirectStdin = &#039;&#039;, string|null $redirectStdout = &#039;&#039;, string|null $redirectStderr = &#039;&#039;, <abbr title="Dagger\Dagger\ReturnType">ReturnType</abbr>|null $expect = null, bool|null $experimentalPrivilegedNesting = false, bool|null $insecureRootCapabilities = false, bool|null $expand = false, bool|null $noInit = false)
         
                                             <p><p>Execute a command in the container, and return a new snapshot of the container state after execution.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -2643,7 +2643,7 @@
                     <h3 id="method_withExec">
         <div class="location">at line 604</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
-    <strong>withExec</strong>(array $args, bool|null $useEntrypoint = false, string|null $stdin = &#039;&#039;, string|null $redirectStdout = &#039;&#039;, string|null $redirectStderr = &#039;&#039;, <abbr title="Dagger\Dagger\ReturnType">ReturnType</abbr>|null $expect = null, bool|null $experimentalPrivilegedNesting = false, bool|null $insecureRootCapabilities = false, bool|null $expand = false, bool|null $noInit = false, string|null $redirectStdin = &#039;&#039;)
+    <strong>withExec</strong>(array $args, bool|null $useEntrypoint = false, string|null $stdin = &#039;&#039;, string|null $redirectStdin = &#039;&#039;, string|null $redirectStdout = &#039;&#039;, string|null $redirectStderr = &#039;&#039;, <abbr title="Dagger\Dagger\ReturnType">ReturnType</abbr>|null $expect = null, bool|null $experimentalPrivilegedNesting = false, bool|null $insecureRootCapabilities = false, bool|null $expand = false, bool|null $noInit = false)
         </code>
     </h3>
     <div class="details">    
@@ -2670,6 +2670,11 @@
                     <tr>
                 <td>string|null</td>
                 <td>$stdin</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$redirectStdin</td>
                 <td></td>
             </tr>
                     <tr>
@@ -2705,11 +2710,6 @@
                     <tr>
                 <td>bool|null</td>
                 <td>$noInit</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>string|null</td>
-                <td>$redirectStdin</td>
                 <td></td>
             </tr>
             </table>

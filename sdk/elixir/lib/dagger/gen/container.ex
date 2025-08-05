@@ -752,14 +752,14 @@ defmodule Dagger.Container do
   @spec with_exec(t(), [String.t()], [
           {:use_entrypoint, boolean() | nil},
           {:stdin, String.t() | nil},
+          {:redirect_stdin, String.t() | nil},
           {:redirect_stdout, String.t() | nil},
           {:redirect_stderr, String.t() | nil},
           {:expect, Dagger.ReturnType.t() | nil},
           {:experimental_privileged_nesting, boolean() | nil},
           {:insecure_root_capabilities, boolean() | nil},
           {:expand, boolean() | nil},
-          {:no_init, boolean() | nil},
-          {:redirect_stdin, String.t() | nil}
+          {:no_init, boolean() | nil}
         ]) :: Dagger.Container.t()
   def with_exec(%__MODULE__{} = container, args, optional_args \\ []) do
     query_builder =
@@ -768,6 +768,7 @@ defmodule Dagger.Container do
       |> QB.put_arg("args", args)
       |> QB.maybe_put_arg("useEntrypoint", optional_args[:use_entrypoint])
       |> QB.maybe_put_arg("stdin", optional_args[:stdin])
+      |> QB.maybe_put_arg("redirectStdin", optional_args[:redirect_stdin])
       |> QB.maybe_put_arg("redirectStdout", optional_args[:redirect_stdout])
       |> QB.maybe_put_arg("redirectStderr", optional_args[:redirect_stderr])
       |> QB.maybe_put_arg("expect", optional_args[:expect])
@@ -778,7 +779,6 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
       |> QB.maybe_put_arg("noInit", optional_args[:no_init])
-      |> QB.maybe_put_arg("redirectStdin", optional_args[:redirect_stdin])
 
     %Dagger.Container{
       query_builder: query_builder,

@@ -1877,6 +1877,7 @@ class Container(Type):
         *,
         use_entrypoint: bool | None = False,
         stdin: str | None = "",
+        redirect_stdin: str | None = "",
         redirect_stdout: str | None = "",
         redirect_stderr: str | None = "",
         expect: ReturnType | None = ReturnType.SUCCESS,
@@ -1884,7 +1885,6 @@ class Container(Type):
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
         no_init: bool | None = False,
-        redirect_stdin: str | None = "",
     ) -> Self:
         """Execute a command in the container, and return a new snapshot of the
         container state after execution.
@@ -1904,11 +1904,15 @@ class Container(Type):
         stdin:
             Content to write to the command's standard input. Example: "Hello
             world")
+        redirect_stdin:
+            Redirect the command's standard input from a file in the
+            container. Example: "./stdin.txt"
         redirect_stdout:
             Redirect the command's standard output to a file in the container.
             Example: "./stdout.txt"
         redirect_stderr:
-            Like redirectStdout, but for standard error
+            Redirect the command's standard error to a file in the container.
+            Example: "./stderr.txt"
         expect:
             Exit codes this command is allowed to exit with without error
         experimental_privileged_nesting:
@@ -1928,12 +1932,12 @@ class Container(Type):
             Only use this if you specifically need the command to be pid 1 in
             the container. Otherwise it may result in unexpected behavior. If
             you're not sure, you don't need this.
-        redirect_stdin:
         """
         _args = [
             Arg("args", args),
             Arg("useEntrypoint", use_entrypoint, False),
             Arg("stdin", stdin, ""),
+            Arg("redirectStdin", redirect_stdin, ""),
             Arg("redirectStdout", redirect_stdout, ""),
             Arg("redirectStderr", redirect_stderr, ""),
             Arg("expect", expect, ReturnType.SUCCESS),
@@ -1943,7 +1947,6 @@ class Container(Type):
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
             Arg("expand", expand, False),
             Arg("noInit", no_init, False),
-            Arg("redirectStdin", redirect_stdin, ""),
         ]
         _ctx = self._select("withExec", _args)
         return Container(_ctx)
