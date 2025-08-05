@@ -79,6 +79,7 @@ module.exports = {
       label: "Extending Dagger",
       items: [
         "extending/index",
+        "extending/modules",
         "extending/functions",
         "extending/arguments",
         "extending/return-types",
