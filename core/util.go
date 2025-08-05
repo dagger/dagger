@@ -661,9 +661,11 @@ func LoadGitIgnoreInDirectory(ctx context.Context, dir dagql.ObjectResult[*Direc
 				return fmt.Errorf("failed to get file %s: %w", entryValue, err)
 			}
 
+			patterns := extractGitIgnorePatterns(string(content), filepath.Dir(string(entryValue)))
+
 			resultMu.Lock()
 			defer resultMu.Unlock()
-			result = append(result, extractGitIgnorePatterns(string(content), filepath.Dir(string(entryValue)))...)
+			result = append(result, patterns...)
 
 			return nil
 		})
