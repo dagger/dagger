@@ -35,7 +35,7 @@ func (g *TypeScriptGenerator) GenerateLibrary(ctx context.Context, schema *intro
 	return generate(g.Config, ClientGenFile, schema, schemaVersion)
 }
 
-func (g *TypeScriptGenerator) GenerateTypeDefs(_ context.Context) (*generator.GeneratedState, error) {
+func (g *TypeScriptGenerator) GenerateTypeDefs(_ context.Context, _ *introspection.Schema, _ string) (*generator.GeneratedState, error) {
 	return nil, fmt.Errorf("not implemented for %s SDK", generator.SDKLangTypeScript)
 }
 
