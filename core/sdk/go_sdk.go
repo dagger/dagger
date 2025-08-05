@@ -233,11 +233,6 @@ func (sdk *goSDK) TypeDefs(
 		return inst, fmt.Errorf("failed to get dag for go module sdk codegen: %w", err)
 	}
 
-	if !src.Self().ConfigExists {
-		// module has not yet been initialized, no type exposed
-		return
-	}
-
 	var ctr dagql.ObjectResult[*core.Container]
 
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
@@ -272,8 +267,8 @@ func (sdk *goSDK) TypeDefs(
 		return inst, fmt.Errorf("failed to remove dagger.gen.go from source directory: %w", err)
 	}
 
-	var typeDefsJson string
-	err = dag.Select(ctx, ctr, &typeDefsJson,
+	var typeDefsJSON string
+	err = dag.Select(ctx, ctr, &typeDefsJSON,
 		dagql.Selector{
 			Field: "withMountedFile",
 			Args: []dagql.NamedInput{
@@ -319,6 +314,7 @@ func (sdk *goSDK) TypeDefs(
 						"generate-typedefs",
 						"--module-source-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
 						"--module-name", dagql.String(modName),
+						"--introspection-json-path", goSDKIntrospectionJSONPath,
 					},
 				},
 			},
@@ -348,7 +344,7 @@ func (sdk *goSDK) TypeDefs(
 			Args: []dagql.NamedInput{
 				{
 					Name:  "json",
-					Value: dagql.NewString(typeDefsJson),
+					Value: dagql.NewString(typeDefsJSON),
 				},
 			},
 		})
@@ -356,7 +352,7 @@ func (sdk *goSDK) TypeDefs(
 		return inst, fmt.Errorf("failed to load module from type defs json: %w", err)
 	}
 
-	return
+	return inst, nil
 }
 
 func (sdk *goSDK) Runtime(
