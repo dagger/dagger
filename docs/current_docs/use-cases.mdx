@@ -38,7 +38,7 @@ Dagger can be used as a runtime and programming environment for AI agents, makin
 - Dagger supports a wide range of popular language models, including those from OpenAI, Anthropic and Google. Dagger can access these models either through their respective cloud-based APIs or using local providers like Docker Model Runner or Ollama.
 - Dagger provides [end-to-end tracing](features/observability.mdx) of prompts, tool calls, and even low-level system operations. All agent state changes are observable in real time.
 
-## Monorepo Workflow Optimization
+## Monorepo CI
 
 A monorepo typically contains multiple independent projects, each of which has different test, build and deployment requirements. Managing these requirements in a single CI workflow or YAML file can be incredibly complex and time-consuming.
 
@@ -50,3 +50,7 @@ Dagger Modules provide a framework that you can use to break up this complexity 
 - Dependencies between different projects in the monorepo can be accurately modeled, even across languages. For example, Dagger's own docs builder module is written in TypeScript, while the CLI builder is in Go. But the docs builder includes a generated CLI reference, and this is accurately modeled as a dependency between the CLI and docs modules
 - Dagger Modules can leverage a programming language's native concurrency features to run faster, resulting in quicker feedback loops.
 - Dagger Modules provide a way to separate, and therefore easily debug, the business logic for different workflows in a monorepo.
+
+:::tip
+Learn about [best practices for monorepo CI](./reference/best-practices/monorepos.mdx).
+:::
