@@ -18,10 +18,14 @@ defmodule Dagger.File do
   @doc """
   Retrieves the contents of the file.
   """
-  @spec contents(t()) :: {:ok, String.t()} | {:error, term()}
-  def contents(%__MODULE__{} = file) do
+  @spec contents(t(), [{:offset, integer() | nil}, {:limit, integer() | nil}]) ::
+          {:ok, String.t()} | {:error, term()}
+  def contents(%__MODULE__{} = file, optional_args \\ []) do
     query_builder =
-      file.query_builder |> QB.select("contents")
+      file.query_builder
+      |> QB.select("contents")
+      |> QB.maybe_put_arg("offset", optional_args[:offset])
+      |> QB.maybe_put_arg("limit", optional_args[:limit])
 
     Client.execute(file.client, query_builder)
   end
@@ -75,6 +79,50 @@ defmodule Dagger.File do
       file.query_builder |> QB.select("name")
 
     Client.execute(file.client, query_builder)
+  end
+
+  @doc """
+  Searches for content matching the given regular expression or literal string.
+
+  Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+  """
+  @spec search(t(), String.t(), [
+          {:literal, boolean() | nil},
+          {:multiline, boolean() | nil},
+          {:dotall, boolean() | nil},
+          {:ignore_case, boolean() | nil},
+          {:files_only, boolean() | nil},
+          {:limit, integer() | nil},
+          {:paths, [String.t()]},
+          {:globs, [String.t()]}
+        ]) :: {:ok, [Dagger.SearchResult.t()]} | {:error, term()}
+  def search(%__MODULE__{} = file, pattern, optional_args \\ []) do
+    query_builder =
+      file.query_builder
+      |> QB.select("search")
+      |> QB.put_arg("pattern", pattern)
+      |> QB.maybe_put_arg("literal", optional_args[:literal])
+      |> QB.maybe_put_arg("multiline", optional_args[:multiline])
+      |> QB.maybe_put_arg("dotall", optional_args[:dotall])
+      |> QB.maybe_put_arg("ignoreCase", optional_args[:ignore_case])
+      |> QB.maybe_put_arg("filesOnly", optional_args[:files_only])
+      |> QB.maybe_put_arg("limit", optional_args[:limit])
+      |> QB.maybe_put_arg("paths", optional_args[:paths])
+      |> QB.maybe_put_arg("globs", optional_args[:globs])
+      |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(file.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.SearchResult{
+           query_builder:
+             QB.query()
+             |> QB.select("loadSearchResultFromID")
+             |> QB.put_arg("id", id),
+           client: file.client
+         }
+       end}
+    end
   end
 
   @doc """
