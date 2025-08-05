@@ -5,6 +5,13 @@ module.exports = {
       label: "What is Dagger?",
       items: [
         "index",
+        "use-cases",
+      ]
+    },
+    {
+      type: "category",
+      label: "Features",
+      items: [
         "features/programmability",
         "features/reusability",
         "features/caching",
@@ -13,15 +20,6 @@ module.exports = {
         "features/secrets",
         "features/llm",
         "features/shell",
-      ],
-    },
-    {
-      type: "category",
-      label: "Use Cases",
-      items: [
-        "use-cases/portable-ci",
-        "use-cases/agentic-ci",
-        "use-cases/monorepos",
       ],
     },
     {
@@ -165,7 +163,16 @@ module.exports = {
     },
     {
       type: "category",
-      label: "API and SDKs",
+      label: "Best Practices",
+      items: [
+        "reference/best-practices/adopting",
+        "reference/best-practices/monorepos",
+        "reference/best-practices/contributing",
+      ],
+    },
+    {
+      type: "category",
+      label: "API and SDKs Documentation",
       items: [
         {
           type: "link",
@@ -208,13 +215,6 @@ module.exports = {
           href: "https://docs.dagger.io/reference/engine.schema.json",
         },
       ],
-    },
-  ],
-  ci: [
-    {
-      type: "category",
-      label: "CI",
-      items: ["ci/adopting"],
     },
   ],
   cookbook: [
