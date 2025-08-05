@@ -241,11 +241,6 @@ func (diff *DirDiff) HasChanges() bool {
 }
 
 func (diff *DirDiff) Apply(ctx context.Context, dest string) (rerr error) {
-	ctx, span := Tracer().Start(ctx, "syncing changes", telemetry.Internal())
-	defer telemetry.End(span, func() error { return rerr })
-
-	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
-
 	slog.Debug("exporting", "dest", dest)
 	_, err := diff.Before.Diff(diff.After).Export(ctx, dest)
 	if err != nil {
