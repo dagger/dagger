@@ -32,7 +32,7 @@ type Generator interface {
 
 	// GenerateTypeDefs extract type definitions from a module and returns a map
 	// of default filename to content for that file.
-	GenerateTypeDefs(ctx context.Context) (*GeneratedState, error)
+	GenerateTypeDefs(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*GeneratedState, error)
 }
 
 type GeneratedState struct {
