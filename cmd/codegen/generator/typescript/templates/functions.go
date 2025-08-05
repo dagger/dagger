@@ -76,6 +76,7 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"Dependencies":              funcs.Dependencies,
 		"HasLocalDependencies":      funcs.HasLocalDependencies,
 		"IsBundle":                  funcs.isBundle,
+		"IsRemote":                  funcs.isRemote,
 	}
 }
 
@@ -409,4 +410,8 @@ func (funcs typescriptTemplateFuncs) HasLocalDependencies() bool {
 
 func (funcs typescriptTemplateFuncs) isBundle() bool {
 	return funcs.cfg.Bundle
+}
+
+func (funcs typescriptTemplateFuncs) isRemote() bool {
+	return funcs.cfg.Remote
 }

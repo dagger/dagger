@@ -108,18 +108,17 @@ const tsConfigPath = `./tsconfig.json`
 // Import paths used by user.
 const daggerPathAlias = "@dagger.io/dagger"
 const daggerTelemetryPathAlias = "@dagger.io/dagger/telemetry"
-const daggerClientPathAlias = "@dagger.io/client"
 
 // Filename of imported path aliases.
 const daggerRootFilename = {
   bundle: "./sdk/index.ts",
   local: "./sdk/src",
-  // no value for remote, since it's handled by the package manager.
+  remote: "./sdk/index.ts",
 }
 const daggerTelemetryFilename = {
   bundle: "./sdk/telemetry.ts",
   local: "./sdk/src/telemetry",
-  // no value for remote, since it's handled by the package manager.
+  remote: "./sdk/telemetry.ts",
 }
 
 /*******************************************************************************
@@ -147,17 +146,21 @@ if (!fs.existsSync(tsConfigPath)) {
     },
   }
 
-  if (sdkLibOrigin.value !== "remote") {
-    defaultTsConfig.compilerOptions.paths = {
-      [daggerPathAlias]: [`${daggerRootFilename[sdkLibOrigin.value!]}`],
-      [daggerTelemetryPathAlias]: [
-        `${daggerTelemetryFilename[sdkLibOrigin.value!]}`,
-      ],
-    }
+  defaultTsConfig.compilerOptions.paths = {
+    [daggerPathAlias]: [`${daggerRootFilename[sdkLibOrigin.value!]}`],
+    [daggerTelemetryPathAlias]: [
+      `${daggerTelemetryFilename[sdkLibOrigin.value!]}`,
+    ],
+  }
+
+  if (sdkLibOrigin.value === "remote") {
+    defaultTsConfig.compilerOptions.paths["@dagger.io/core"] = [
+      "./node_modules/@dagger.io/dagger/dist/src/index",
+    ]
   }
 
   if (standaloneClient.value === true) {
-    defaultTsConfig.compilerOptions.paths[daggerClientPathAlias] = [
+    defaultTsConfig.compilerOptions.paths[daggerPathAlias] = [
       `./${clientDir.value}/client.gen.ts`,
     ]
   }
@@ -201,17 +204,21 @@ if (!tsconfig.compilerOptions.paths) {
   tsconfig.compilerOptions.paths = {}
 }
 
-if (sdkLibOrigin.value !== "remote") {
-  tsconfig.compilerOptions.paths[daggerPathAlias] = [
-    `${daggerRootFilename[sdkLibOrigin.value!]}`,
-  ]
-  tsconfig.compilerOptions.paths[daggerTelemetryPathAlias] = [
-    `${daggerTelemetryFilename[sdkLibOrigin.value!]}`,
+tsconfig.compilerOptions.paths[daggerPathAlias] = [
+  `${daggerRootFilename[sdkLibOrigin.value!]}`,
+]
+tsconfig.compilerOptions.paths[daggerTelemetryPathAlias] = [
+  `${daggerTelemetryFilename[sdkLibOrigin.value!]}`,
+]
+
+if (sdkLibOrigin.value === "remote") {
+  tsconfig.compilerOptions.paths["@dagger.io/core"] = [
+    "./node_modules/@dagger.io/dagger/dist/src/index",
   ]
 }
 
 if (standaloneClient.value === true) {
-  tsconfig.compilerOptions.paths[daggerClientPathAlias] = [
+  tsconfig.compilerOptions.paths[daggerPathAlias] = [
     `./${clientDir.value}/client.gen.ts`,
   ]
 }

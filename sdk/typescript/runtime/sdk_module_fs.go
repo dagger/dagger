@@ -26,6 +26,10 @@ func bundledStaticDirectoryForModule() *dagger.Directory {
 	return dag.CurrentModule().Source().Directory("bundled_static_export/module")
 }
 
+func remoteStaticDirectoryForModule() *dagger.Directory {
+	return dag.CurrentModule().Source().Directory("remote_static_export")
+}
+
 func bundledStaticDirectoryForClientOnly() *dagger.Directory {
 	return dag.CurrentModule().Source().Directory("bundled_static_export/client")
 }
