@@ -1,6 +1,6 @@
 kind: Added
 body: |-
-  Automatically apply .gitignore patterns on directory loading fo module call 
+  Automatically apply .gitignore patterns on directory loading for module call 
   
   - Apply .gitignore patterns when loading contextual directory argument.
   - Apply .gitignore pattenrs when a directory is sent as an argument to a module function.
