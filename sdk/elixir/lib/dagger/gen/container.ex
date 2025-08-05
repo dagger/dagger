@@ -1422,6 +1422,13 @@ defimpl Jason.Encoder, for: Dagger.Container do
   end
 end
 
+defimpl JSON.Encoder, for: Dagger.Container do
+  def encode(container, _encoder) do
+    {:ok, id} = Dagger.Container.id(container)
+    id
+  end
+end
+
 defimpl Nestru.Decoder, for: Dagger.Container do
   def decode_fields_hint(_struct, _context, id) do
     {:ok, Dagger.Client.load_container_from_id(Dagger.Global.dag(), id)}

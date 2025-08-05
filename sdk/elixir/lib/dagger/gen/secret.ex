@@ -67,6 +67,13 @@ defimpl Jason.Encoder, for: Dagger.Secret do
   end
 end
 
+defimpl JSON.Encoder, for: Dagger.Secret do
+  def encode(secret, _encoder) do
+    {:ok, id} = Dagger.Secret.id(secret)
+    id
+  end
+end
+
 defimpl Nestru.Decoder, for: Dagger.Secret do
   def decode_fields_hint(_struct, _context, id) do
     {:ok, Dagger.Client.load_secret_from_id(Dagger.Global.dag(), id)}
