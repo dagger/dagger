@@ -1021,10 +1021,6 @@ func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (
 	if err != nil {
 		return err
 	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get services: %w", err)
-	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get buildkit client: %w", err)
@@ -1051,12 +1047,6 @@ func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (
 
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("export directory %s to host %s", dir.Dir, destPath))
 	defer telemetry.End(span, func() error { return rerr })
-
-	detach, _, err := svcs.StartBindings(ctx, dir.Services)
-	if err != nil {
-		return err
-	}
-	defer detach()
 
 	return bk.LocalDirExport(ctx, defPB, destPath, merge)
 }

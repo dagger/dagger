@@ -2532,23 +2532,11 @@ func (s *containerSchema) exposedPorts(ctx context.Context, parent *core.Contain
 	for ociPort := range parent.Config.ExposedPorts {
 		p, exists := ports[ociPort]
 		if !exists {
-			// ignore errors when parsing from OCI
-			port, protoStr, ok := strings.Cut(ociPort, "/")
-			if !ok {
-				continue
-			}
-			portNr, err := strconv.Atoi(port)
+			var err error
+			p, err = core.NewPortFromOCI(ociPort)
 			if err != nil {
+				// ignore errors when parsing from OCI
 				continue
-			}
-			proto, err := core.NetworkProtocols.Lookup(strings.ToUpper(protoStr))
-			if err != nil {
-				// FIXME(vito): should this and above return nil, err instead?
-				continue
-			}
-			p = core.Port{
-				Port:     portNr,
-				Protocol: proto,
 			}
 		}
 		exposedPorts = append(exposedPorts, p)

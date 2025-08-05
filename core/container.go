@@ -1286,15 +1286,6 @@ func (container *Container) Evaluate(ctx context.Context) (*buildkit.Result, err
 	if err != nil {
 		return nil, err
 	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
-	detach, _, err := svcs.StartBindings(ctx, container.Services)
-	if err != nil {
-		return nil, err
-	}
-	defer detach()
 
 	st, err := container.FSState()
 	if err != nil {
@@ -1434,20 +1425,10 @@ func (container *Container) Publish(
 	if err != nil {
 		return "", err
 	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get services: %w", err)
-	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-
-	detach, _, err := svcs.StartBindings(ctx, services)
-	if err != nil {
-		return "", err
-	}
-	defer detach()
 
 	resp, err := bk.PublishContainerImage(ctx, inputByPlatform, opts)
 	if err != nil {
@@ -1493,10 +1474,6 @@ func (container *Container) Export(
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
-	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
@@ -1575,12 +1552,6 @@ func (container *Container) Export(
 		// Could also just ignore and do nothing, airing on side of error until proven otherwise.
 		return nil, errors.New("no containers to export")
 	}
-
-	detach, _, err := svcs.StartBindings(ctx, services)
-	if err != nil {
-		return nil, err
-	}
-	defer detach()
 
 	resp, err := bk.ExportContainerImage(ctx, inputByPlatform, opts.Dest, bkopts)
 	if err != nil {
@@ -1707,6 +1678,14 @@ func (container *Container) Import(
 	}
 
 	container.Config = imgSpec.Config
+	container.Ports = nil
+	for portOCISpec := range container.Config.ExposedPorts {
+		p, err := NewPortFromOCI(portOCISpec)
+		if err != nil {
+			return nil, err
+		}
+		container.Ports = append(container.Ports, p)
+	}
 
 	return container, nil
 }
