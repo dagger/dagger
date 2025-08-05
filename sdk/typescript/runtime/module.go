@@ -290,8 +290,8 @@ func (m *moduleRuntimeContainer) withGeneratedSDK(introspectionJSON *dagger.File
 			WithoutDirectory("src/provisioning").
 			WithFile("src/api/client.gen.ts", m.generateClient(introspectionJSON))
 	case Remote:
-		// TODO: Add support for remote SDK in module
-		panic("remote sdk not supported yet in module")
+		sdkDir = remoteStaticDirectoryForModule().
+			WithFile("client.gen.ts", m.generateClient(introspectionJSON))
 	}
 
 	m.ctr = m.ctr.
@@ -314,6 +314,10 @@ func (m *moduleRuntimeContainer) generateClient(introspectionJSON *dagger.File) 
 
 	if m.cfg.sdkLibOrigin == Bundle {
 		codegenArgs = append(codegenArgs, "--bundle")
+	}
+
+	if m.cfg.sdkLibOrigin == Remote {
+		codegenArgs = append(codegenArgs, "--remote")
 	}
 
 	return m.ctr.

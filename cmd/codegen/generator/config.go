@@ -23,6 +23,9 @@ type Config struct {
 	// Generate the client in bundle mode.
 	Bundle bool
 
+	// Generate the client using the remote sdk.
+	Remote bool
+
 	// ModuleConfig is the specific config to generate module.
 	ModuleConfig *ModuleGeneratorConfig
 

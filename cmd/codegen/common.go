@@ -15,6 +15,7 @@ var (
 	lang                  string
 	introspectionJSONPath string
 	bundle                bool
+	remote bool
 )
 
 func relativeTo(basepath string, tarpath string) (string, error) {
@@ -34,6 +35,7 @@ func getGlobalConfig(ctx context.Context) (generator.Config, error) {
 		Lang:      generator.SDKLang(lang),
 		OutputDir: outputDir,
 		Bundle:    bundle,
+		Remote:    remote,
 	}
 
 	// If a module source ID is provided or no introspection JSON is provided, we will query

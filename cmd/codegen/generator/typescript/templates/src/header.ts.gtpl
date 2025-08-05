@@ -9,10 +9,14 @@ inherited by futures objects and common types.
  */
  {{- if IsBundle }}
 import { Context } from "./core.js"
-{{- else if (not IsClientOnly)}}
-import { Context } from "../common/context.js"
-{{- else }}
+{{- else if and IsClientOnly IsRemote }}
+import { Context, connect as _connect, connection as _connection, ConnectOpts, CallbackFct } from "@dagger.io/core"
+{{- else if IsClientOnly }}
 import { Context, connect as _connect, connection as _connection, ConnectOpts, CallbackFct } from "@dagger.io/dagger"
+{{- else if IsRemote }}
+import { Context } from "@dagger.io/core"
+{{- else }}
+import { Context } from "../common/context.js"
 {{- end }}
 
 {{ if IsClientOnly }}
