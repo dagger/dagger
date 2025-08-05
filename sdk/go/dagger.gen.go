@@ -1717,9 +1717,11 @@ type ContainerWithExecOpts struct {
 	UseEntrypoint bool
 	// Content to write to the command's standard input. Example: "Hello world")
 	Stdin string
+	// Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
+	RedirectStdin string
 	// Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
 	RedirectStdout string
-	// Like redirectStdout, but for standard error
+	// Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
 	RedirectStderr string
 	// Exit codes this command is allowed to exit with without error
 	//
@@ -1737,8 +1739,6 @@ type ContainerWithExecOpts struct {
 	//
 	// Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.
 	NoInit bool
-
-	RedirectStdin string
 }
 
 // Execute a command in the container, and return a new snapshot of the container state after execution.
@@ -1752,6 +1752,10 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 		// `stdin` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Stdin) {
 			q = q.Arg("stdin", opts[i].Stdin)
+		}
+		// `redirectStdin` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RedirectStdin) {
+			q = q.Arg("redirectStdin", opts[i].RedirectStdin)
 		}
 		// `redirectStdout` optional argument
 		if !querybuilder.IsZeroValue(opts[i].RedirectStdout) {
@@ -1780,10 +1784,6 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 		// `noInit` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoInit) {
 			q = q.Arg("noInit", opts[i].NoInit)
-		}
-		// `redirectStdin` optional argument
-		if !querybuilder.IsZeroValue(opts[i].RedirectStdin) {
-			q = q.Arg("redirectStdin", opts[i].RedirectStdin)
 		}
 	}
 	q = q.Arg("args", args)

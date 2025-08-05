@@ -454,10 +454,12 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					Doc("For true this can be removed. For false, use `useEntrypoint` instead."),
 				dagql.Arg("stdin").Doc(
 					`Content to write to the command's standard input. Example: "Hello world")`),
+				dagql.Arg("redirectStdin").Doc(
+					`Redirect the command's standard input from a file in the container. Example: "./stdin.txt"`),
 				dagql.Arg("redirectStdout").Doc(
 					`Redirect the command's standard output to a file in the container. Example: "./stdout.txt"`),
 				dagql.Arg("redirectStderr").Doc(
-					`Like redirectStdout, but for standard error`),
+					`Redirect the command's standard error to a file in the container. Example: "./stderr.txt"`),
 				dagql.Arg("expect").Doc(`Exit codes this command is allowed to exit with without error`),
 				dagql.Arg("experimentalPrivilegedNesting").Doc(
 					`Provides Dagger access to the executed command.`),

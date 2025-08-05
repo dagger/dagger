@@ -2058,9 +2058,10 @@ pub struct ContainerWithExecOpts<'a> {
     /// Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.
     #[builder(setter(into, strip_option), default)]
     pub no_init: Option<bool>,
-    /// Like redirectStdout, but for standard error
+    /// Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
     #[builder(setter(into, strip_option), default)]
     pub redirect_stderr: Option<&'a str>,
+    /// Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
     #[builder(setter(into, strip_option), default)]
     pub redirect_stdin: Option<&'a str>,
     /// Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
@@ -3211,6 +3212,9 @@ impl Container {
         if let Some(stdin) = opts.stdin {
             query = query.arg("stdin", stdin);
         }
+        if let Some(redirect_stdin) = opts.redirect_stdin {
+            query = query.arg("redirectStdin", redirect_stdin);
+        }
         if let Some(redirect_stdout) = opts.redirect_stdout {
             query = query.arg("redirectStdout", redirect_stdout);
         }
@@ -3234,9 +3238,6 @@ impl Container {
         }
         if let Some(no_init) = opts.no_init {
             query = query.arg("noInit", no_init);
-        }
-        if let Some(redirect_stdin) = opts.redirect_stdin {
-            query = query.arg("redirectStdin", redirect_stdin);
         }
         Container {
             proc: self.proc.clone(),

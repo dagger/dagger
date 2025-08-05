@@ -738,11 +738,18 @@ type Container {
     stdin: String = ""
 
     """
+    Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
+    """
+    redirectStdin: String = ""
+
+    """
     Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
     """
     redirectStdout: String = ""
 
-    """Like redirectStdout, but for standard error"""
+    """
+    Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
+    """
     redirectStderr: String = ""
 
     """Exit codes this command is allowed to exit with without error"""
@@ -774,8 +781,6 @@ type Container {
     sure, you don't need this.
     """
     noInit: Boolean = false
-
-    redirectStdin: String = ""
   ): Container!
 
   """
