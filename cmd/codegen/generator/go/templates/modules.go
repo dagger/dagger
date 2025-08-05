@@ -206,7 +206,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 			return nil
 		})
 	if err != nil {
-		if errors.Is(err, emptyCodeError) {
+		if errors.Is(err, errEmptyCode) {
 			return `func main() { panic("no code yet") }`, nil
 		}
 		return "", err
