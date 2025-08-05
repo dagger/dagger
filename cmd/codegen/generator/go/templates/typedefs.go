@@ -48,7 +48,7 @@ type (
 )
 
 var (
-	emptyCodeError = fmt.Errorf("no code yet")
+	errEmptyCode = fmt.Errorf("no code yet")
 )
 
 func (funcs goTemplateFuncs) visitTypes(
@@ -70,7 +70,7 @@ func (funcs goTemplateFuncs) visitTypes(
 	}()
 
 	if funcs.modulePkg == nil {
-		return emptyCodeError
+		return errEmptyCode
 	}
 
 	ps := &parseState{
@@ -232,7 +232,7 @@ func (funcs goTemplateFuncs) TypeDefs() (string, error) {
 			return err
 		})
 	if err != nil {
-		if errors.Is(err, emptyCodeError) {
+		if errors.Is(err, errEmptyCode) {
 			return "", fmt.Errorf("no code yet")
 		}
 		return "", err
