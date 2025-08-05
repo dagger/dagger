@@ -24,6 +24,7 @@ import (
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/iancoleman/strcase"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
@@ -73,6 +74,28 @@ type MCP struct {
 	typeCounts map[string]int
 	// The LLM-friendly ID ("Container#123") for each object
 	idByHash map[digest.Digest]string
+	// Configured MCP servers.
+	mcpServers map[string]*MCPServerConfig
+	// Persistent MCP sessions.
+	mcpSessions map[string]*mcp.ClientSession
+}
+
+// MCPServerConfig represents configuration for an external MCP server
+type MCPServerConfig struct {
+	// Name of the MCP server
+	Name string
+
+	// Command to run the MCP server
+	Service dagql.ObjectResult[*Service]
+}
+
+func (srv *MCPServerConfig) Dial(ctx context.Context) (*mcp.ClientSession, error) {
+	return mcp.NewClient(&mcp.Implementation{
+		Title:   "Dagger",
+		Version: engine.Version,
+	}, nil).Connect(ctx, &ServiceTransport{
+		Service: srv.Service,
+	})
 }
 
 type contextualBinding func(context.Context, dagql.ObjectResult[*Env]) (*Binding, error)
@@ -89,6 +112,8 @@ func newMCP(env dagql.ObjectResult[*Env]) *MCP {
 		objsByID:        map[string]contextualBinding{},
 		typeCounts:      map[string]int{},
 		idByHash:        map[digest.Digest]string{},
+		mcpServers:      make(map[string]*MCPServerConfig),
+		mcpSessions:     map[string]*mcp.ClientSession{},
 	}
 }
 
@@ -122,6 +147,8 @@ func (m *MCP) Clone() *MCP {
 	cp.objsByID = maps.Clone(cp.objsByID)
 	cp.typeCounts = maps.Clone(cp.typeCounts)
 	cp.idByHash = maps.Clone(cp.idByHash)
+	cp.mcpServers = maps.Clone(cp.mcpServers)
+	cp.mcpSessions = maps.Clone(cp.mcpSessions)
 	cp.returned = false
 	return &cp
 }
@@ -177,29 +204,133 @@ func (m *MCP) Server(ctx context.Context) (*dagql.Server, error) {
 	return m.env.Self().deps.Schema(ctx)
 }
 
+func (m *MCP) WithMCPServer(srv *MCPServerConfig) *MCP {
+	m = m.Clone()
+	m.mcpServers[srv.Name] = srv
+	return m
+}
+
 func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
 	srv, err := m.Server(ctx)
 	if err != nil {
 		return nil, err
 	}
+
+	var allTools []LLMTool
+
+	// Append MCP server provided tools
+	if err := m.syncMCPSessions(ctx); err != nil {
+		return nil, err
+	}
+	mcpTools, err := m.mcpTools(ctx)
+	if err != nil {
+		return nil, err
+	}
+	allTools = append(allTools, mcpTools...)
+
+	// Append module tools
 	moduleTools, err := m.autoConstructingModuleTools(srv)
 	if err != nil {
 		return nil, err
 	}
+	allTools = append(allTools, directlyExposeTools(moduleTools)...)
+
 	objectTools, err := m.reachableObjectTools(srv)
 	if err != nil {
 		return nil, err
 	}
+	if !m.staticTools {
+		// Append dynamically discovered object tools
+		allTools = append(allTools, directlyExposeTools(objectTools)...)
+	}
+	// Append built-in Dagger tools
 	builtins, err := m.Builtins(srv, objectTools)
 	if err != nil {
 		return nil, err
 	}
-	allTools := directlyExposeTools(moduleTools)
-	if !m.staticTools {
-		allTools = append(allTools, directlyExposeTools(objectTools)...)
-	}
 	allTools = append(allTools, builtins...)
+
 	return allTools, nil
+}
+
+func (m *MCP) syncMCPSessions(ctx context.Context) error {
+	stop := maps.Clone(m.mcpSessions)
+	for _, mcpSrv := range m.mcpServers {
+		delete(stop, mcpSrv.Name)
+		if _, ok := m.mcpSessions[mcpSrv.Name]; ok {
+			continue
+		}
+		sess, err := mcpSrv.Dial(ctx)
+		if err != nil {
+			return fmt.Errorf("dial mcp %q: %w", mcpSrv.Name, err)
+		}
+		m.mcpSessions[mcpSrv.Name] = sess
+	}
+	for name, srv := range stop {
+		if err := srv.Close(); err != nil {
+			return err
+		}
+		delete(m.mcpSessions, name)
+	}
+	return nil
+}
+
+func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
+	var tools []LLMTool
+	for _, sess := range m.mcpSessions {
+		for tool, err := range sess.Tools(ctx, nil) {
+			if err != nil {
+				return nil, err
+			}
+			anied, err := toAny(tool.InputSchema)
+			if err != nil {
+				return nil, err
+			}
+			tools = append(tools, LLMTool{
+				Name:        tool.Name,
+				Description: tool.Description,
+				Schema:      anied,
+				Call: func(ctx context.Context, args any) (any, error) {
+					res, err := sess.CallTool(ctx, &mcp.CallToolParams{
+						Name:      tool.Name,
+						Arguments: args,
+					})
+					if err != nil {
+						return nil, err
+					}
+					var out string
+					for _, content := range res.Content {
+						switch x := content.(type) {
+						case *mcp.TextContent:
+							out += x.Text
+						default:
+							out += fmt.Sprintf("WARNING: unsupported content type %T", x)
+						}
+					}
+					if res.StructuredContent != nil {
+						str, err := toolStructuredResponse(res.StructuredContent)
+						if err != nil {
+							return nil, err
+						}
+						out += str
+					}
+					if res.IsError {
+						return "", errors.New(out)
+					}
+					return out, nil
+				},
+			})
+		}
+	}
+	return m.withTelemetry(tools), nil
+}
+
+func toAny(v any) (res map[string]any, rerr error) {
+	pl, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	return res, json.Unmarshal(pl, &res)
 }
 
 func (m *MCP) autoConstructingModuleTools(srv *dagql.Server) (map[string]LLMTool, error) {
@@ -1265,8 +1396,12 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 	builtins = append(builtins, m.userProvidedValues()...)
 
 	// Attach builtin telemetry
-	for i, builtin := range builtins {
-		builtins[i].Call = func(ctx context.Context, args any) (_ any, rerr error) {
+	return m.withTelemetry(builtins), nil
+}
+
+func (m *MCP) withTelemetry(tools []LLMTool) []LLMTool {
+	for i, builtin := range tools {
+		tools[i].Call = func(ctx context.Context, args any) (_ any, rerr error) {
 			argsMap, ok := args.(map[string]any)
 			if !ok {
 				return nil, fmt.Errorf("invalid arguments type")
@@ -1331,8 +1466,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 			return res, nil
 		}
 	}
-
-	return builtins, nil
+	return tools
 }
 
 func (m *MCP) staticMethodCallingTools(srv *dagql.Server, schema *ast.Schema, allMethods map[string]LLMTool) []LLMTool {

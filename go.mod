@@ -83,6 +83,7 @@ require (
 	github.com/moby/sys/signal v0.7.1
 	github.com/moby/sys/user v0.4.0
 	github.com/moby/sys/userns v0.1.0
+	github.com/modelcontextprotocol/go-sdk v0.2.1-0.20250804184649-cb17593a5dc0
 	github.com/muesli/reflow v0.3.0
 	github.com/muesli/termenv v0.16.0
 	github.com/openai/openai-go v1.10.1

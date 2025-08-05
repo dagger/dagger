@@ -82,6 +82,12 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("typeName").Doc("The type name whose field will be disabled"),
 				dagql.Arg("fieldName").Doc("The field name to disable"),
 			),
+		dagql.Func("withMCPServer", s.withMCPServer).
+			Doc("Add an external MCP server to the LLM").
+			Args(
+				dagql.Arg("name").Doc("The name of the MCP server"),
+				dagql.Arg("service").Doc("The MCP service to run. If the service exposes a port, HTTP+SSE will be used to communicate."),
+			),
 		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[*core.LLM], _ struct{}) (res dagql.Result[dagql.ID[*core.LLM]], _ error) {
 			var inst dagql.Result[*core.LLM]
 			if err := srv.Select(ctx, self, &inst, dagql.Selector{
@@ -191,6 +197,17 @@ func (s *llmSchema) withBlockedFunction(ctx context.Context, llm *core.LLM, args
 	FieldName string
 }) (*core.LLM, error) {
 	return llm.WithBlockedFunction(ctx, args.TypeName, args.FieldName)
+}
+
+func (s *llmSchema) withMCPServer(ctx context.Context, llm *core.LLM, args struct {
+	Name    string
+	Service core.ServiceID
+}) (*core.LLM, error) {
+	svc, err := args.Service.Load(ctx, s.srv)
+	if err != nil {
+		return nil, err
+	}
+	return llm.WithMCPServer(args.Name, svc), nil
 }
 
 func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args struct {

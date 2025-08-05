@@ -661,6 +661,16 @@ func (llm *LLM) WithBlockedFunction(ctx context.Context, typeName, funcName stri
 	return llm, nil
 }
 
+// Add an external MCP server to the LLM
+func (llm *LLM) WithMCPServer(name string, svc dagql.ObjectResult[*Service]) *LLM {
+	llm = llm.Clone()
+	llm.mcp = llm.mcp.WithMCPServer(&MCPServerConfig{
+		Name:    name,
+		Service: svc,
+	})
+	return llm
+}
+
 // Return the last message sent by the agent
 func (llm *LLM) LastReply(ctx context.Context) (string, error) {
 	if err := llm.Sync(ctx); err != nil {
