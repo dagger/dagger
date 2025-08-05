@@ -232,6 +232,13 @@ func (c *moduleConfig) detectSDKLibOrigin() (SDKLibOrigin, error) {
 			return Local, nil
 		}
 
+		// @dagger.io/core is an alias to @dagger.io/dagger in case the user configure 
+		// the remote SDK 
+		_, exist := c.denoJSONConfig.Imports["@dagger.io/core"]
+		if exist {
+			return Remote, nil
+		}
+
 		daggerDep, exist := c.denoJSONConfig.Imports["@dagger.io/dagger"]
 		if !exist {
 			return Bundle, nil
