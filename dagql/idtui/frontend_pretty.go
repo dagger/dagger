@@ -210,7 +210,7 @@ func (fe *frontendPretty) renderSidebar() {
 				Foreground(termenv.ANSIBrightBlack).String())
 		}
 
-		filler := fe.sidebarWidth - len(section.Title) - keymapWidth - 4
+		filler := fe.sidebarWidth - len(section.Title) - keymapWidth - 5
 		if filler > 0 {
 			horizBar := fe.viewOut.String(strings.Repeat(HorizBar, filler)).String()
 			fe.sidebarBuf.WriteString(
