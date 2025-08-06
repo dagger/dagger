@@ -16,12 +16,77 @@ Expected stderr:
 
 ● python: Python! X.Xs
 ▼ .pending: Void X.Xs ERROR
-! process "false" did not complete successfully: exit code: 1
+┃ ERROR [dagger.mod]: API error while executing function
+┃ Traceback (most recent call last):
+┃   File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/sdk/src/dagger/client/_core.py", line 179, in execute
+┃     result = await self.conn.session.execute(query)
+┃              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+┃   File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/sdk/src/dagger/client/_session.py", line 139, in execute
+┃     return await (await self.get_session()).execute(query)
+┃            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+┃   File "/opt/venv/lib/python3.12/site-packages/gql/client.py", line 1639, in execute
+┃     raise TransportQueryError(
+┃ gql.transport.exceptions.TransportQueryError: {'message': 'process "false" did not complete successfully: exit code: 1', 'path': ['container', 'from', 'withEnvVariable', 'withExec', 'withExec', 'withExec', 'sync'], 'extensions': {'_type': 'EXEC_ERROR', 'cmd': ['false'], 'exitCode': 1, 'stderr': '', 'stdout': '', 'traceparent': '00-27ecb459265d6255592b71e789a54cd0-d24a48b8e6f655ea-01'}}
+┃
+┃ The above exception was the direct cause of the following exception:
+┃
+┃ Traceback (most recent call last):
+┃   File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/sdk/src/dagger/mod/_module.py", line 384, in call
+┃     result = await cast(typing.Awaitable[R], result)
+┃              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+┃   File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/src/main/__init__.py", line 28, in pending
+┃     return await (
+┃            ^^^^^^^
+┃   File "<@beartype(dagger.client.gen.Container.sync) at 0x7f80cbe716c0>", line 12, in sync
+┃   File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/sdk/src/dagger/client/gen.py", line 1384, in sync
+┃     return await self._ctx.execute_sync(self, "sync", _args)
+┃            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+┃   File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/sdk/src/dagger/client/_core.py", line 229, in execute_sync
+┃     id_ = await ctx.execute(Scalar)
+┃           ^^^^^^^^^^^^^^^^^^^^^^^^^
+┃   File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/sdk/src/dagger/client/_core.py", line 204, in execute
+┃     raise error from e
+┃ dagger.ExecError: process "false" did not complete successfully: exit code: 1
+! FunctionError: Error from API: process "false" did not complete successfully: exit code: 1
 ├─$ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
 ├─● .withEnvVariable(name: "NOW", value: "20XX-XX-XX XX:XX:XX.XXXX"): Container! X.Xs
 ├─● .withExec(args: ["sleep", "1"]): Container! X.Xs
 ├─✘ .withExec(args: ["false"]): Container! X.Xs ERROR
 │ ! process "false" did not complete successfully: exit code: 1
 ╰─○ .withExec(args: ["sleep", "1"]): Container! X.Xs
+
+Error logs:
+
+▼ .pending: Void X.Xs ERROR
+ERROR [dagger.mod]: API error while executing function
+Traceback (most recent call last):
+  File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/sdk/src/dagger/client/_core.py", line 179, in execute
+    result = await self.conn.session.execute(query)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/sdk/src/dagger/client/_session.py", line 139, in execute
+    return await (await self.get_session()).execute(query)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/venv/lib/python3.12/site-packages/gql/client.py", line 1639, in execute
+    raise TransportQueryError(
+gql.transport.exceptions.TransportQueryError: {'message': 'process "false" did not complete successfully: exit code: 1', 'path': ['container', 'from', 'withEnvVariable', 'withExec', 'withExec', 'withExec', 'sync'], 'extensions': {'_type': 'EXEC_ERROR', 'cmd': ['false'], 'exitCode': 1, 'stderr': '', 'stdout': '', 'traceparent': '00-27ecb459265d6255592b71e789a54cd0-d24a48b8e6f655ea-01'}}
+The above exception was the direct cause of the following exception:
+Traceback (most recent call last):
+  File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/sdk/src/dagger/mod/_module.py", line 384, in call
+    result = await cast(typing.Awaitable[R], result)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/src/main/__init__.py", line 28, in pending
+    return await (
+           ^^^^^^^
+  File "<@beartype(dagger.client.gen.Container.sync) at 0x7f80cbe716c0>", line 12, in sync
+  File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/sdk/src/dagger/client/gen.py", line 1384, in sync
+    return await self._ctx.execute_sync(self, "sync", _args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/sdk/src/dagger/client/_core.py", line 229, in execute_sync
+    id_ = await ctx.execute(Scalar)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/sdk/src/dagger/client/_core.py", line 204, in execute
+    raise error from e
+dagger.ExecError: process "false" did not complete successfully: exit code: 1
+! FunctionError: Error from API: process "false" did not complete successfully: exit code: 1
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
