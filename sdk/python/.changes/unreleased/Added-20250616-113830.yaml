@@ -1,0 +1,9 @@
+kind: Added
+body: |-
+  Improved error handling and reporting in Python modules with clearer error messages and better debugging support
+
+  The root logger is now setup with a handler that will ultimately show as stderr output in visualization (TUI/Cloud) for the "warning" log level and above.
+time: 2025-06-16T11:38:30.074492Z
+custom:
+  Author: helderco
+  PR: "10532"
