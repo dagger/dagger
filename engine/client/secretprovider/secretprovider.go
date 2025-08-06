@@ -1,6 +1,7 @@
 package secretprovider
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -15,9 +16,13 @@ import (
 type SecretResolver func(context.Context, string) ([]byte, error)
 
 var resolvers = map[string]SecretResolver{
-	"env":       envProvider,
-	"file":      fileProvider,
-	"cmd":       cmdProvider,
+	"env":        envProvider,
+	"env+strip":  strippedSecret(envProvider),
+	"file":       fileProvider,
+	"file+strip": strippedSecret(fileProvider),
+	"cmd":        cmdProvider,
+	"cmd+strip":  strippedSecret(cmdProvider),
+
 	"op":        opProvider,
 	"vault":     vaultProvider,
 	"libsecret": libsecretProvider,
@@ -64,4 +69,12 @@ func (sp SecretProvider) GetSecret(ctx context.Context, req *secrets.GetSecretRe
 	return &secrets.GetSecretResponse{
 		Data: plaintext,
 	}, nil
+}
+
+func strippedSecret(f SecretResolver) SecretResolver {
+	return func(ctx context.Context, name string) ([]byte, error) {
+		data, err := f(ctx, name)
+		data = bytes.TrimSpace(data)
+		return data, err
+	}
 }
