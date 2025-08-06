@@ -6,12 +6,12 @@ namespace Dagger\Tests\Unit\ValueObject;
 
 use Dagger\Attribute\DaggerObject;
 use Dagger\Container;
-use Dagger\Exception\MissingAttribute;
+use Dagger\Exception\RegistrationError\MissingAttribute;
 use Dagger\File;
 use Dagger\Json;
 use Dagger\Tests\Unit\Fixture\DaggerObjectWithDaggerFunctions;
-use Dagger\ValueObject\DaggerFunction;
 use Dagger\ValueObject\Argument;
+use Dagger\ValueObject\DaggerFunction;
 use Dagger\ValueObject\Type;
 use Generator;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -30,12 +30,12 @@ class DaggerFunctionTest extends TestCase
     #[Test]
     #[DataProvider('provideInvalidDaggerFunctions')]
     public function itCannotTakeInvalidDaggerFunctions(
-	ReflectionMethod $reflection,
-	\RuntimeException $expected,
+        ReflectionMethod $reflection,
+        \RuntimeException $expected,
     ): void {
-	self::expectExceptionObject($expected);
+        self::expectExceptionObject($expected);
 
-	DaggerFunction::fromReflection($reflection);
+        DaggerFunction::fromReflection($reflection);
     }
 
     #[Test]

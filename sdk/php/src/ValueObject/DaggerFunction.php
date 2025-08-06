@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Dagger\ValueObject;
 
 use Dagger\Attribute;
-use Dagger\Exception\MissingAttribute;
+use Dagger\Exception\RegistrationError\MissingAttribute;
 use Dagger\Exception\UnsupportedType;
 use ReflectionMethod;
 use ReflectionNamedType;
