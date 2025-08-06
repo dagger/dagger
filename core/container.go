@@ -1374,7 +1374,6 @@ func (container *Container) Publish(
 	}
 
 	inputByPlatform := map[string]buildkit.ContainerExport{}
-	services := ServiceBindings{}
 
 	variants := append([]*Container{container}, platformVariants...)
 	for _, variant := range variants {
@@ -1413,8 +1412,6 @@ func (container *Container) Publish(
 				opts[exptypes.AnnotationManifestDescriptorKey(&platformSpec, annotation.Key)] = annotation.Value
 			}
 		}
-
-		services.Merge(variant.Services)
 	}
 	if len(inputByPlatform) == 0 {
 		// Could also just ignore and do nothing, airing on side of error until proven otherwise.
@@ -1505,7 +1502,6 @@ func (container *Container) Export(
 	}
 
 	inputByPlatform := map[string]buildkit.ContainerExport{}
-	services := ServiceBindings{}
 
 	variants := append([]*Container{container}, opts.PlatformVariants...)
 	for _, variant := range variants {
@@ -1545,8 +1541,6 @@ func (container *Container) Export(
 				bkopts[exptypes.AnnotationManifestDescriptorKey(&platformSpec, annotation.Key)] = annotation.Value
 			}
 		}
-
-		services.Merge(variant.Services)
 	}
 	if len(inputByPlatform) == 0 {
 		// Could also just ignore and do nothing, airing on side of error until proven otherwise.
