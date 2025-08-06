@@ -37,7 +37,7 @@ type goSDK struct {
 }
 
 func (sdk *goSDK) HasModuleTypeDefs() bool {
-	return true
+	return core.SelfInvocationEnabled
 }
 
 type goSDKConfig struct {

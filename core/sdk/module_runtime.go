@@ -15,6 +15,9 @@ type runtimeModule struct {
 }
 
 func (sdk *runtimeModule) HasModuleTypeDefs() bool {
+	if !core.SelfInvocationEnabled {
+		return false
+	}
 	_, ok := sdk.mod.funcs["moduleTypeDefs"]
 	return ok
 }

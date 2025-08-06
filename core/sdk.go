@@ -2,9 +2,25 @@ package core
 
 import (
 	"context"
+	"os"
+	"strconv"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 )
+
+var (
+	// SelfInvocationEnabled indicates if "self invocation" feature is enabled.
+	//
+	// If "self invocation" feature is enabled, the TypeDefs function of SDKs will be used
+	// (if available) to get the types of the modules first. If disabled, only the Runtime
+	// container will be used.
+	SelfInvocationEnabled = false
+)
+
+func init() {
+	SelfInvocationEnabled, _ = strconv.ParseBool(os.Getenv(engine.DaggerSelfInvocationEnv))
+}
 
 /*
 ClientGenerator is an interface that a module can implements to give

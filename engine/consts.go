@@ -12,6 +12,8 @@ const (
 
 	DaggerVersionEnv        = "_EXPERIMENTAL_DAGGER_VERSION"
 	DaggerMinimumVersionEnv = "_EXPERIMENTAL_DAGGER_MIN_VERSION"
+
+	DaggerSelfInvocationEnv = "_EXPERIMENTAL_DAGGER_SELF_INVOCATION"
 )
 
 const (
