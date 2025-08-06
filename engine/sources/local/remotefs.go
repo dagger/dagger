@@ -17,10 +17,11 @@ import (
 )
 
 type remoteFS struct {
-	caller     session.Caller
-	clientPath string
-	includes   []string
-	excludes   []string
+	caller       session.Caller
+	clientPath   string
+	includes     []string
+	excludes     []string
+	useGitIgnore bool
 
 	startOnce   sync.Once
 	client      filesync.FileSync_DiffCopyClient
@@ -33,12 +34,14 @@ func newRemoteFS(
 	caller session.Caller,
 	clientPath string,
 	includes, excludes []string,
+	useGitIgnore bool,
 ) *remoteFS {
 	return &remoteFS{
-		caller:     caller,
-		clientPath: clientPath,
-		includes:   includes,
-		excludes:   excludes,
+		caller:       caller,
+		clientPath:   clientPath,
+		useGitIgnore: useGitIgnore,
+		includes:     includes,
+		excludes:     excludes,
 	}
 }
 
@@ -62,6 +65,7 @@ func (fs *remoteFS) Walk(ctx context.Context, path string, walkFn fs.WalkDirFunc
 	var err error
 	fs.client, err = filesync.NewFileSyncClient(fs.caller.Conn()).DiffCopy(engine.LocalImportOpts{
 		Path:            fs.clientPath,
+		UseGitIgnore:    fs.useGitIgnore,
 		IncludePatterns: fs.includes,
 		ExcludePatterns: fs.excludes,
 	}.AppendToOutgoingContext(ctx))

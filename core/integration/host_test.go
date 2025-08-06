@@ -299,6 +299,133 @@ func (HostSuite) TestDirectoryExcludeInclude(ctx context.Context, t *testctx.T) 
 	})
 }
 
+func (HostSuite) TestDirectoryGitIgnore(ctx context.Context, t *testctx.T) {
+	dir := t.TempDir()
+	gitignore := strings.Join([]string{
+		"**.txt",
+		".git/",
+		"!subdir/e.txt",
+		"*.md",
+		"internal/foo/",
+	}, "\n")
+
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".git"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(gitignore), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.md"), []byte("2"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "c.txt.rar"), []byte("3"), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "subdir"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "subdir", "b.md"), []byte("1"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "subdir", "e.txt"), []byte("2"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "subdir", "g.txt"), []byte("6"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "subdir", "h.yaml"), []byte("6"), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "subdir2"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "subdir2", ".gitignore"), []byte(`*.yaml
+.gitignore
+`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "subdir2", "foo.go"), []byte("1"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "subdir2", "bar.txt"), []byte("1"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "subdir2", "baz.md"), []byte("1"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "subdir2", "bool.yaml"), []byte("1"), 0o600))
+
+	c := connect(ctx, t)
+
+	t.Run("apply auto git ignore by default", func(ctx context.Context, t *testctx.T) {
+		hostDir := c.Host().Directory(dir)
+
+		rootHostDir, err := hostDir.Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{".gitignore", "c.txt.rar", "subdir/", "subdir2/"}, rootHostDir)
+
+		subDirEntries, err := hostDir.Directory("subdir").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"e.txt", "h.yaml"}, subDirEntries)
+
+		subDir2Entries, err := hostDir.Directory("subdir2").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"foo.go"}, subDir2Entries)
+	})
+
+	t.Run("correctly apply parent .gitignore when children path is given", func(ctx context.Context, t *testctx.T) {
+		subDirEntries, err := c.Host().Directory(filepath.Join(dir, "subdir")).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"e.txt", "h.yaml"}, subDirEntries)
+	})
+
+	t.Run("don't apply .gitignore if no .git found", func(ctx context.Context, t *testctx.T) {
+		dir := t.TempDir()
+
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(`**/**`), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "bar.txt"), []byte("1"), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "foo.go"), []byte("1"), 0o600))
+
+		entries, err := c.Host().Directory(dir).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{".gitignore", "bar.txt", "foo.go"}, entries)
+	})
+
+	t.Run("don't load files ignored by .gitignore", func(ctx context.Context, t *testctx.T) {
+		dir := t.TempDir()
+
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, ".git"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("bar/\nbaz.txt\n"), 0o600)) // ignore everything
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, "foo/"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "foo/foo.txt"), []byte("1"), 0o600))
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, "bar/"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "bar/bar.txt"), []byte("1"), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "baz.txt"), []byte("1"), 0o600))
+
+		// sanity check!
+		entries, err := c.Host().Directory(filepath.Join(dir, "foo/")).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"foo.txt"}, entries)
+
+		_, err = c.Host().Directory(filepath.Join(dir, "bar/")).Entries(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "no such file or directory")
+
+		_, err = c.Host().File(filepath.Join(dir, "baz.txt")).Contents(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "no such file or directory")
+	})
+
+	t.Run("disable git auto ignore", func(ctx context.Context, t *testctx.T) {
+		entries, err := c.Host().Directory(dir, dagger.HostDirectoryOpts{NoGitAutoIgnore: true}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{".git/", ".gitignore", "b.md", "c.txt.rar", "subdir/", "subdir2/"}, entries)
+
+		subDirEntries, err := c.Host().Directory(filepath.Join(dir, "subdir"),
+			dagger.HostDirectoryOpts{NoGitAutoIgnore: true},
+		).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"b.md", "e.txt", "g.txt", "h.yaml"}, subDirEntries)
+
+		subDir2Entries, err := c.Host().Directory(filepath.Join(dir, "subdir2"),
+			dagger.HostDirectoryOpts{NoGitAutoIgnore: true},
+		).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{".gitignore", "bar.txt", "baz.md", "bool.yaml", "foo.go"}, subDir2Entries)
+	})
+
+	t.Run("use gitignores after no git ignores", func(ctx context.Context, t *testctx.T) {
+		// tests a weird edge case, where we populate the local dir, but then
+		// copy doesn't actually respect gitignores
+
+		dir := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, ".git"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("a.txt\n"), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("1"), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "b.txt"), []byte("2"), 0o600))
+
+		entries, err := c.Host().Directory(dir, dagger.HostDirectoryOpts{NoGitAutoIgnore: true}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{".git/", ".gitignore", "a.txt", "b.txt"}, entries)
+
+		entries, err = c.Host().Directory(dir).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{".git/", ".gitignore", "b.txt"}, entries)
+	})
+}
+
 func (HostSuite) TestDirectoryCacheBehavior(ctx context.Context, t *testctx.T) {
 	baseDir := t.TempDir()
 	c := connect(ctx, t)

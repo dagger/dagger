@@ -5029,12 +5029,16 @@ func (t *Test) IgnoreEveryGoFileExceptMainGo(
 }
 
 func (t *Test) IgnoreDirButKeepFileInSubdir(
-  // +ignore=["internal/telemetry", "!internal/telemetry/proxy.go"]
+  // +ignore=["internal/foo", "!internal/foo/bar.go"]
   // +defaultPath="./dagger"
   dir *dagger.Directory,
 ) *dagger.Directory {
   return dir
 }`)).
+		WithDirectory("./internal/foo", c.Directory().
+			WithNewFile("bar.go", "package foo").
+			WithNewFile("baz.go", "package foo"),
+		).
 		WithWorkdir("/work")
 
 	t.Run("ignore with context directory", func(ctx context.Context, t *testctx.T) {
@@ -5047,25 +5051,25 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 		t.Run("ignore all then reverse ignore all", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-then-reverse-ignore", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
+			require.Equal(t, ".gitattributes\n.gitignore\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
 		})
 
 		t.Run("ignore all then reverse ignore then exclude files", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-then-reverse-ignore-then-exclude-git-files", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "dagger.gen.go\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
+			require.Equal(t, "go.mod\ngo.sum\ninternal/\nmain.go\n", out)
 		})
 
 		t.Run("ignore all then exclude files then reverse ignore", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-then-exclude-files-then-reverse-ignore", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
+			require.Equal(t, ".gitattributes\n.gitignore\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
 		})
 
 		t.Run("ignore dir", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-dir", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\nmain.go\n", out)
+			require.Equal(t, ".gitattributes\n.gitignore\ngo.mod\ngo.sum\nmain.go\n", out)
 		})
 
 		t.Run("ignore everything but main.go", func(ctx context.Context, t *testctx.T) {
@@ -5077,7 +5081,7 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 		t.Run("no ignore", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("no-ignore", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
+			require.Equal(t, ".gitattributes\n.gitignore\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
 		})
 
 		t.Run("ignore every go files except main.go", func(ctx context.Context, t *testctx.T) {
@@ -5085,20 +5089,16 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 			require.NoError(t, err)
 			require.Equal(t, ".gitattributes\n.gitignore\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
 
-			// Verify the directories exist but files are correctlyignored
+			// Verify the directories exist but files are correctly ignored (including the .gitiginore exclusion)
 			out, err = modGen.With(daggerCall("ignore-every-go-file-except-main-go", "directory", "--path", "internal", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "dagger/\nquerybuilder/\ntelemetry/\n", out)
-
-			out, err = modGen.With(daggerCall("ignore-every-go-file-except-main-go", "directory", "--path", "internal/telemetry", "entries")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "", out)
+			require.Equal(t, "foo/\n", out)
 		})
 
 		t.Run("ignore dir but keep file in subdir", func(ctx context.Context, t *testctx.T) {
-			out, err := modGen.With(daggerCall("ignore-dir-but-keep-file-in-subdir", "directory", "--path", "internal/telemetry", "entries")).Stdout(ctx)
+			out, err := modGen.With(daggerCall("ignore-dir-but-keep-file-in-subdir", "directory", "--path", "internal/foo", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "proxy.go\n", out)
+			require.Equal(t, "bar.go\n", out)
 		})
 	})
 
@@ -5116,6 +5116,234 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 			require.NoError(t, err)
 			require.Equal(t, ".git/\nLICENSE\nbackend/\ndagger/\ndagger.json\nfrontend/\n", out)
 		})
+	})
+}
+
+func (ModuleSuite) TestDefaultGitIgnore(ctx context.Context, t *testctx.T) {
+	type gitIgnoreFile struct {
+		path    string
+		content string
+	}
+
+	type expectedDir struct {
+		path string
+		want string
+	}
+
+	t.Run("correctly use .gitignore files", func(ctx context.Context, t *testctx.T) {
+		sourceFile := `
+package main
+
+import (
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {
+	Repo      *dagger.Directory
+	ModuleDir *dagger.Directory
+}
+
+func New(
+	//+defaultPath="/"
+	repo *dagger.Directory,
+
+	//+defaultPath="."
+	moduleDir *dagger.Directory,
+) *Test {
+	return &Test{
+		Repo:      repo,
+		ModuleDir: moduleDir,
+	}
+}`
+
+		gitIgnore := []gitIgnoreFile{
+			{
+				path: "/work",
+				content: `**.txt
+bar/*.go
+!c.txt
+*.py
+/.git
+**.gitignore
+**.gitattributes
+`,
+			},
+			{
+				path:    "/work/yamlFiles",
+				content: `foo.yaml`,
+			},
+			{
+				path: "/work/mod",
+				content: `/internal
+/dagger.gen.go
+/dagger.json
+/go.mod
+/go.sum
+**.go
+!main.go
+`,
+			},
+		}
+
+		expected := []expectedDir{
+			{
+				path: ".",
+				want: "a.json\nbar/\nc.txt\nfoo.xml\nmod/\nyamlFiles/\n",
+			},
+			{
+				path: "bar",
+				want: "",
+			},
+			{
+				path: "yamlFiles",
+				want: "a.md\nbar.yaml\n",
+			},
+		}
+
+		expectedModuleDir := "LICENSE\nmain.go\n"
+		c := connect(ctx, t)
+
+		repo := c.Directory().
+			WithNewFile("a.json", "{}").
+			WithNewFile("b.txt", "b").
+			WithNewFile("c.txt", "c").
+			WithNewFile("foo.xml", "<>").
+			WithNewFile("script.py", "print('hello')").
+			WithDirectory("bar", c.Directory().WithNewFile("baz.txt", "baz").WithNewFile("d.go", "package main").WithNewFile("sub.py", "")).
+			WithDirectory("yamlFiles", c.Directory().WithNewFile("foo.yaml", "foo").WithNewFile("bar.yaml", "bar").WithNewFile("a.md", "a"))
+
+		modGen := c.Container().From(golangImage).
+			WithExec([]string{"apk", "add", "git"}).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithDirectory("/work", repo).
+			WithWorkdir("/work").
+			// Setup context directory
+			WithExec([]string{"git", "init"}).
+			WithWorkdir("/work/mod").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			WithNewFile("main.go", sourceFile)
+
+		for _, ignore := range gitIgnore {
+			modGen = modGen.WithNewFile(filepath.Join(ignore.path, ".gitignore"), ignore.content)
+		}
+
+		for _, expected := range expected {
+			expectedResult := expected.want
+
+			dir, err := modGen.With(daggerCall("repo", "directory", "--path", expected.path, "entries")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, expectedResult, dir)
+		}
+
+		moduleDir, err := modGen.With(daggerCall("module-dir", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, expectedModuleDir, moduleDir)
+	})
+
+	t.Run("correctly rebase path based on defaultPath", func(ctx context.Context, t *testctx.T) {
+		sourceFile := `
+package main
+
+import (
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {
+	Repo      *dagger.Directory
+	ModuleDir *dagger.Directory
+}
+
+func New(
+	//+defaultPath="/bar"
+	repo *dagger.Directory,
+
+	//+defaultPath="./dagger"
+	moduleDir *dagger.Directory,
+) *Test {
+	return &Test{
+		Repo:      repo,
+		ModuleDir: moduleDir,
+	}
+}`
+
+		gitIgnore := []gitIgnoreFile{
+			{
+				path: "/work",
+				content: `**.txt
+bar/*.go
+!c.txt
+*.py
+/.git
+**.gitignore
+**.gitattributes
+`,
+			},
+			{
+				path:    "/work/bar",
+				content: `yamlFiles/foo.yaml`,
+			},
+			{
+				path: "/work/mod",
+				content: `/dagger/internal
+dagger.gen.go
+dagger.json
+/go.mod
+/go.sum
+**.go
+!main.go
+`,
+			},
+		}
+
+		expected := []expectedDir{
+			{
+				path: ".",
+				want: "yamlFiles/\n",
+			},
+			{
+				path: "yamlFiles",
+				want: "bar.yaml\n",
+			},
+		}
+
+		expectedModuleDir := "go.mod\ngo.sum\nmain.go\n"
+		c := connect(ctx, t)
+
+		repo := c.Directory().
+			WithNewFile("a.json", "{}").
+			WithNewFile("b.txt", "b").
+			WithNewFile("c.txt", "c").
+			WithNewFile("foo.xml", "<>").
+			WithNewFile("script.py", "print('hello')").
+			WithDirectory("bar", c.Directory().WithNewFile("baz.txt", "baz").WithNewFile("d.go", "package main").WithNewFile("sub.py", "").
+				WithDirectory("yamlFiles", c.Directory().WithNewFile("foo.yaml", "foo").WithNewFile("bar.yaml", "bar")))
+
+		modGen := c.Container().From(golangImage).
+			WithExec([]string{"apk", "add", "git"}).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithDirectory("/work", repo).
+			WithWorkdir("/work").
+			// Setup context directory
+			WithExec([]string{"git", "init"}).
+			WithWorkdir("/work/mod").
+			With(daggerExec("init", "--source=dagger", "--name=test", "--sdk=go")).
+			WithNewFile("dagger/main.go", sourceFile)
+
+		for _, ignore := range gitIgnore {
+			modGen = modGen.WithNewFile(filepath.Join(ignore.path, ".gitignore"), ignore.content)
+		}
+
+		for _, expected := range expected {
+			expectedResult := expected.want
+
+			dir, err := modGen.With(daggerCall("repo", "directory", "--path", expected.path, "entries")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, expectedResult, dir)
+		}
+
+		moduleDir, err := modGen.With(daggerCall("module-dir", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, expectedModuleDir, moduleDir)
 	})
 }
 
@@ -6130,7 +6358,7 @@ func currentSchema(ctx context.Context, t *testctx.T, ctr *dagger.Container) *in
 }
 
 var moduleIntrospection = daggerQuery(`
-query { host { directory(path: ".") { asModule {
+query { host { directory(path: ".", noGitAutoIgnore: true) { asModule {
     description
     objects {
         asObject {

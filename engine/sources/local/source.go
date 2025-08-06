@@ -110,9 +110,27 @@ func (ls *localSource) Resolve(ctx context.Context, id source.Identifier, sm *se
 	if !ok {
 		return nil, fmt.Errorf("invalid local identifier %v", id)
 	}
+	clone := *localIdentifier
+	localIdentifier = &clone
 
+	gitIgnore := false
+	cachebuster := ""
+
+	excludes := make([]string, 0, len(localIdentifier.ExcludePatterns))
+	for _, pattern := range localIdentifier.ExcludePatterns {
+		if pattern == "[dagger.gitignore]" {
+			gitIgnore = true
+		} else if strings.HasPrefix(pattern, "[dagger.cachebuster=") && strings.HasSuffix(pattern, "]") {
+			cachebuster = strings.TrimSuffix(strings.TrimPrefix(pattern, "[dagger.cachebuster="), "]")
+		} else {
+			excludes = append(excludes, pattern)
+		}
+	}
+	localIdentifier.ExcludePatterns = excludes
 	return &localSourceHandler{
 		src:         *localIdentifier,
+		gitIgnore:   gitIgnore,
+		cachebuster: cachebuster,
 		sm:          sm,
 		localSource: ls,
 	}, nil
@@ -122,6 +140,8 @@ type localSourceHandler struct {
 	src upstreamlocal.LocalIdentifier
 	sm  *session.Manager
 	*localSource
+	gitIgnore   bool
+	cachebuster string
 }
 
 func (ls *localSourceHandler) CacheKey(ctx context.Context, g session.Group, index int) (string, string, solver.CacheOpts, bool, error) {
@@ -138,12 +158,16 @@ func (ls *localSourceHandler) CacheKey(ctx context.Context, g session.Group, ind
 		SessionID       string
 		IncludePatterns []string
 		ExcludePatterns []string
+		Gitignore       bool
 		FollowPaths     []string
+		Cachebuster     string
 	}{
 		SessionID:       sessionID,
 		IncludePatterns: ls.src.IncludePatterns,
 		ExcludePatterns: ls.src.ExcludePatterns,
+		Gitignore:       ls.gitIgnore,
 		FollowPaths:     ls.src.FollowPaths,
+		Cachebuster:     ls.cachebuster,
 	})
 	if err != nil {
 		return "", "", nil, false, err
@@ -265,8 +289,8 @@ func (ls *localSourceHandler) sync(
 	}()
 
 	// now sync in the clientPath dir
-	remote := newRemoteFS(caller, drive+clientPath, ls.src.IncludePatterns, ls.src.ExcludePatterns)
-	local, err := newLocalFS(ref.sharedState, clientPath, ls.src.IncludePatterns, ls.src.ExcludePatterns)
+	remote := newRemoteFS(caller, drive+clientPath, ls.src.IncludePatterns, ls.src.ExcludePatterns, ls.gitIgnore)
+	local, err := newLocalFS(ref.sharedState, clientPath, ls.src.IncludePatterns, ls.src.ExcludePatterns, ls.gitIgnore)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create local fs: %w", err)
 	}
@@ -301,9 +325,9 @@ func (ls *localSourceHandler) syncParentDirs(
 	if drive != "" {
 		root = drive + "/"
 	}
-	remote := newRemoteFS(caller, root, includes, excludes)
+	remote := newRemoteFS(caller, root, includes, excludes, false)
 
-	local, err := newLocalFS(ref.sharedState, "/", includes, excludes)
+	local, err := newLocalFS(ref.sharedState, "/", includes, excludes, false)
 	if err != nil {
 		return fmt.Errorf("failed to create local fs: %w", err)
 	}

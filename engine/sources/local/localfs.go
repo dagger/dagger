@@ -13,6 +13,7 @@ import (
 
 	"github.com/containerd/continuity/sysx"
 	fscopy "github.com/dagger/dagger/engine/sources/local/copy"
+	"github.com/dagger/dagger/util/fsxutil"
 	bkcache "github.com/moby/buildkit/cache"
 	bkcontenthash "github.com/moby/buildkit/cache/contenthash"
 	"github.com/moby/buildkit/session"
@@ -62,16 +63,25 @@ type localFS struct {
 
 	// filterFS is the fs that applies the include/exclude patterns to our view of the current
 	// cache filesystem at <rootPath>/<subdir>
-	filterFS fsutil.FS
-	includes []string // the include patterns we're using for this sync
-	excludes []string // the exclude patterns we're using for this sync
+	filterFS     fsutil.FS
+	includes     []string // the include patterns we're using for this sync
+	excludes     []string // the exclude patterns we're using for this sync
+	useGitignore bool     // whether we're using gitignore rules or not
 }
 
-func newLocalFS(sharedState *localFSSharedState, subdir string, includes, excludes []string) (*localFS, error) {
+func newLocalFS(sharedState *localFSSharedState, subdir string, includes, excludes []string, useGitIgnore bool) (*localFS, error) {
 	baseFS, err := fsutil.NewFS(filepath.Join(sharedState.rootPath, subdir))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create base fs: %w", err)
 	}
+
+	if useGitIgnore {
+		baseFS, err = fsxutil.NewGitIgnoreFS(baseFS)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create gitignore fs: %w", err)
+		}
+	}
+
 	filterFS, err := fsutil.NewFilterFS(baseFS, &fsutil.FilterOpt{
 		IncludePatterns: includes,
 		ExcludePatterns: excludes,
@@ -86,6 +96,7 @@ func newLocalFS(sharedState *localFSSharedState, subdir string, includes, exclud
 		filterFS:           filterFS,
 		includes:           includes,
 		excludes:           excludes,
+		useGitignore:       useGitIgnore,
 	}, nil
 }
 
@@ -346,6 +357,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 		func(ci *fscopy.CopyInfo) {
 			ci.IncludePatterns = local.includes
 			ci.ExcludePatterns = local.excludes
+			ci.UseGitignore = local.useGitignore
 			ci.CopyDirContents = true
 		},
 		fscopy.WithXAttrErrorHandler(func(dst, src, key string, err error) error {

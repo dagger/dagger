@@ -7862,6 +7862,9 @@ pub struct HostDirectoryOpts<'a> {
     /// If true, the directory will always be reloaded from the host.
     #[builder(setter(into, strip_option), default)]
     pub no_cache: Option<bool>,
+    /// Don't apply .gitignore filter rules inside the directory
+    #[builder(setter(into, strip_option), default)]
+    pub no_git_auto_ignore: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct HostFileOpts {
@@ -7939,6 +7942,9 @@ impl Host {
         }
         if let Some(no_cache) = opts.no_cache {
             query = query.arg("noCache", no_cache);
+        }
+        if let Some(no_git_auto_ignore) = opts.no_git_auto_ignore {
+            query = query.arg("noGitAutoIgnore", no_git_auto_ignore);
         }
         Directory {
             proc: self.proc.clone(),
