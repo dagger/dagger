@@ -2563,6 +2563,14 @@ type GitRef {
   """A unique identifier for this GitRef."""
   id: GitRefID!
 
+  """
+  Find the merge-base (best common ancestor) between this ref and another ref.
+  """
+  mergeBase(
+    """The other ref to compare against."""
+    other: GitRefID!
+  ): GitRef!
+
   """The resolved ref name at this ref."""
   ref: String!
 

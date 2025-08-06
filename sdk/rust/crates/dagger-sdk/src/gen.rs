@@ -7024,6 +7024,26 @@ impl GitRef {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Find the merge-base (best common ancestor) between this ref and another ref.
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - The other ref to compare against.
+    pub fn merge_base(&self, other: impl IntoID<GitRefId>) -> GitRef {
+        let mut query = self.selection.select("mergeBase");
+        query = query.arg_lazy(
+            "other",
+            Box::new(move || {
+                let other = other.clone();
+                Box::pin(async move { other.into_id().await.unwrap().quote() })
+            }),
+        );
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The resolved ref name at this ref.
     pub async fn r#ref(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("ref");
