@@ -7019,6 +7019,26 @@ impl GitRef {
         let query = self.selection.select("commit");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Find the best common ancestor between this ref and another ref.
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - The other ref to compare against.
+    pub fn common_ancestor(&self, other: impl IntoID<GitRefId>) -> GitRef {
+        let mut query = self.selection.select("commonAncestor");
+        query = query.arg_lazy(
+            "other",
+            Box::new(move || {
+                let other = other.clone();
+                Box::pin(async move { other.into_id().await.unwrap().quote() })
+            }),
+        );
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// A unique identifier for this GitRef.
     pub async fn id(&self) -> Result<GitRefId, DaggerError> {
         let query = self.selection.select("id");

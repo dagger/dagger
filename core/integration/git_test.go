@@ -227,7 +227,7 @@ func (GitSuite) TestGit(ctx context.Context, t *testctx.T) {
 		_, err := git.Head().Commit(ctx)
 		require.ErrorContains(t, err, "not a git repository")
 		_, err = git.Tags(ctx)
-		require.ErrorContains(t, err, "does not appear to be a git repository")
+		require.ErrorContains(t, err, "not a git repository")
 	})
 }
 

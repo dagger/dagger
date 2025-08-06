@@ -178,7 +178,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("patch").Doc(`Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex 1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-Hello\n+World\n").`),
 			),
-		dagql.Func("asGit", s.asGit).
+		dagql.NodeFunc("asGit", s.asGit).
 			Doc(`Converts this directory to a local git repository`),
 		dagql.NodeFunc("terminal", s.terminal).
 			View(AfterVersion("v0.12.0")).
@@ -743,7 +743,7 @@ func (s *directorySchema) terminal(
 
 func (s *directorySchema) asGit(
 	ctx context.Context,
-	dir *core.Directory,
+	dir dagql.ObjectResult[*core.Directory],
 	_ struct{},
 ) (*core.GitRepository, error) {
 	return &core.GitRepository{
