@@ -28,7 +28,7 @@ func (s *cacheSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.CacheVolume]{
 		dagql.FuncWithCacheKey("snapshot", s.snapshot, dagql.CachePerCall).
 			Experimental("This API is highly experimental and may be removed or replaced entirely.").
-			Doc(`Retrieves this directory with the given Git-compatible patch applied.`),
+			Doc(`Creates an immutable snapshot from the cache volume's current contents.`),
 	}.Install(srv)
 }
 
