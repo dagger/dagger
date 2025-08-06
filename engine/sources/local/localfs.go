@@ -13,6 +13,7 @@ import (
 
 	"github.com/containerd/continuity/sysx"
 	fscopy "github.com/dagger/dagger/engine/sources/local/copy"
+	"github.com/dagger/dagger/util/fsxutil"
 	bkcache "github.com/moby/buildkit/cache"
 	bkcontenthash "github.com/moby/buildkit/cache/contenthash"
 	"github.com/moby/buildkit/session"
@@ -67,11 +68,19 @@ type localFS struct {
 	excludes []string // the exclude patterns we're using for this sync
 }
 
-func newLocalFS(sharedState *localFSSharedState, subdir string, includes, excludes []string) (*localFS, error) {
+func newLocalFS(sharedState *localFSSharedState, subdir string, includes, excludes []string, useGitIgnore bool) (*localFS, error) {
 	baseFS, err := fsutil.NewFS(filepath.Join(sharedState.rootPath, subdir))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create base fs: %w", err)
 	}
+
+	if useGitIgnore {
+		baseFS, err = fsxutil.NewGitIgnoreFS(baseFS)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create gitignore fs: %w", err)
+		}
+	}
+
 	filterFS, err := fsutil.NewFilterFS(baseFS, &fsutil.FilterOpt{
 		IncludePatterns: includes,
 		ExcludePatterns: excludes,
