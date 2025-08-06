@@ -9,8 +9,10 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/moby/buildkit/cache"
@@ -25,6 +27,8 @@ import (
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/mod/semver"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/dagger/dagger/core/reffs"
 	"github.com/dagger/dagger/dagql"
@@ -512,4 +516,164 @@ func getRefOrEvaluate[T fileOrDirectory](ctx context.Context, t T) (bkcache.Immu
 		return nil, nil
 	}
 	return cacheRef.CacheRef(ctx)
+}
+
+// Extract the gitignore patterns from its file content and return them as relative paths
+// based on the given parent directory.
+// The parent directory is required to match the gitignore patterns relative to
+// the context directory since the given content may be a .gitignore file from a subdirectory
+// of that context.
+//
+// Example:
+//   - contextDir = "/my-project/foo"
+//   - .gitignoreDir = "/my-project/foo/bar/.gitignore"
+//   - parentDir = "/my-project/foo/bar" -> so **/node_modules becomes my-project/foo/bar/**/node_modules
+//
+// Pattern additional formatting is based on https://git-scm.com/docs/gitignore so it can
+// be correctly applied with further dagger include/exclude filter patterns.
+//
+// Here are the rules of that filter/formatting:
+//
+//   - We ignore empty lines and comments (starting with `#`) (`\#` isn't ignored).
+//
+//   - If there is a separator at the beginning or middle (or both) of the pattern, then the pattern is relative.
+//     Otherwise, the pattern is recursive.
+//     If pattern is already starting with **, not change needed.
+//     If the pattern starts with *, it's not recursive but only matches the directory itself.
+//     Example: foo/bar stays foo/bar but foo becomes **/foo
+//
+//   - If a pattern is negative exclusion (starts with `!`) or targets directory only
+//     (ends with `/`), we treat is as a regular path then read the exclusion to make
+//     sure the recusive pattern is applied if needed.
+//     Example: !foo becomes foo then **/foo then !**/foo
+func parseGitIgnore(gitIgnoreContent string, parentDir string) []string {
+	ignorePatterns := []string{}
+
+	// Split gitignore files by line
+	ignorePatternsLines := strings.Split(gitIgnoreContent, "\n")
+
+	for _, linePattern := range ignorePatternsLines {
+		// ignore comments, negatives and empty lines
+		if strings.HasPrefix(linePattern, "#") || linePattern == "" {
+			continue
+		}
+
+		// Save if the pattern is a directory only or negate so we can work with the path
+		// only and reconstruct it later
+		isDirOnly := strings.HasSuffix(linePattern, "/")
+		isNegate := strings.HasPrefix(linePattern, "!")
+		pattern := strings.TrimPrefix(strings.TrimSuffix(linePattern, "/"), "!")
+
+		// Based on https://git-scm.com/docs/gitignore
+		// If there is a separator at the beginning or middle (or both) of the pattern, then the pattern is relative.
+		// Otherwise, the pattern is recursive.
+		// If pattern is already starting with **, not change needed
+		// If the pattern starts with *, it's not recursive but only matches the directory itself.
+		if !strings.Contains(pattern, "/") &&
+			!strings.HasPrefix(pattern, "**") &&
+			!strings.HasPrefix(pattern, "*") {
+			pattern = "**/" + pattern
+		}
+
+		// Rebase the pattern based on the relative path from the context.
+		relativePattern := filepath.Join(parentDir, pattern)
+
+		// Reconstruct the pattern with negative or directory only pattern
+		if isNegate {
+			relativePattern = "!" + relativePattern
+		}
+		if isDirOnly {
+			relativePattern += "/"
+		}
+
+		ignorePatterns = append(ignorePatterns, relativePattern)
+	}
+
+	return ignorePatterns
+}
+
+// Load git ignore patterns in the current directory and all its children
+// It assumes that the given `dir` only contains `.gitignore` files and directories that may
+// contain `.gitignore` files.
+func LoadGitIgnoreInDirectory(ctx context.Context, dir dagql.ObjectResult[*Directory]) ([]string, error) {
+	name := dir.Self().Dir
+
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	var entries dagql.Array[dagql.String]
+	err = dag.Select(ctx, dir, &entries,
+		dagql.Selector{
+			Field: "glob",
+			Args: []dagql.NamedInput{
+				{Name: "pattern", Value: dagql.String("**/.gitignore")},
+			},
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list files in directory %s: %w", name, err)
+	}
+
+	result := []string{}
+	eg, ctx := errgroup.WithContext(ctx)
+
+	// Mutex to protect the result slice from concurrent writes.
+	var resultMu sync.Mutex
+
+	// Limit concurrency to avoid overwhelming the engine
+	sem := semaphore.NewWeighted(int64(runtime.NumCPU()))
+
+	for i := 1; i <= entries.Len(); i++ {
+		i := i
+
+		if err := sem.Acquire(ctx, 1); err != nil {
+			return nil, err
+		}
+
+		eg.Go(func() error {
+			defer sem.Release(1)
+
+			entry, err := entries.Nth(i)
+			if err != nil {
+				return fmt.Errorf("failed to get entry %d in directory %s: %w", i, name, err)
+			}
+
+			entryValue, ok := dagql.UnwrapAs[dagql.String](entry)
+			if !ok {
+				return fmt.Errorf("expected string, got %T", entry)
+			}
+
+			var content dagql.String
+			err = dag.Select(ctx, dir, &content,
+				dagql.Selector{
+					Field: "file",
+					Args: []dagql.NamedInput{
+						{Name: "path", Value: entryValue},
+					},
+				},
+				dagql.Selector{
+					Field: "contents",
+				},
+			)
+			if err != nil {
+				return fmt.Errorf("failed to get file %s: %w", entryValue, err)
+			}
+
+			patterns := parseGitIgnore(string(content), filepath.Dir(string(entryValue)))
+
+			resultMu.Lock()
+			defer resultMu.Unlock()
+			result = append(result, patterns...)
+
+			return nil
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return nil, fmt.Errorf("failed to load .gitignore files: %w", err)
+	}
+
+	return result, nil
 }

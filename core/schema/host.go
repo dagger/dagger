@@ -150,6 +150,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 				dagql.Arg("noCache").Doc(`If true, the directory will always be reloaded from the host.`),
+				dagql.Arg("noGitAutoIgnore").Doc(`Don't apply .gitignore filter rules inside the directory`),
 			),
 
 		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CacheAsRequested).
@@ -241,6 +242,9 @@ type hostDirectoryArgs struct {
 
 	core.CopyFilter
 	HostDirCacheConfig
+
+	GitIgnoreRoot   string `internal:"true" default:""`
+	NoGitAutoIgnore bool   `default:"false"`
 }
 
 func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostDirectoryArgs) (i dagql.ObjectResult[*core.Directory], err error) {
@@ -283,10 +287,62 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		localName += fmt.Sprintf(" (include: %s)", strings.Join(args.Include, ", "))
 		localOpts = append(localOpts, llb.IncludePatterns(args.Include))
 	}
-	if len(args.Exclude) > 0 {
-		localName += fmt.Sprintf(" (exclude: %s)", strings.Join(args.Exclude, ", "))
-		localOpts = append(localOpts, llb.ExcludePatterns(args.Exclude))
+
+	excludesPatterns := []string{}
+
+	// If NoGitAutoIgnore is not set, we load all the .gitgnore patterns inside the context directory
+	// (if ContextDirectoryPath is set) or the git repo if .git is found.
+	var dotGitIgnoreParentPath string
+	if !args.NoGitAutoIgnore {
+		if args.GitIgnoreRoot != "" {
+			dotGitIgnoreParentPath = args.GitIgnoreRoot
+		} else {
+			query, err := core.CurrentQuery(ctx)
+			if err != nil {
+				return i, fmt.Errorf("failed to get current query: %w", err)
+			}
+
+			bk, err := query.Buildkit(ctx)
+			if err != nil {
+				return i, fmt.Errorf("failed to get buildkit client: %w", err)
+			}
+
+			dotGitPath, found, err := findUp(ctx, core.NewCallerStatFS(bk), args.Path, ".git")
+			if err != nil {
+				return i, fmt.Errorf("failed to find up .git: %w", err)
+			}
+
+			if found {
+				dotGitIgnoreParentPath = dotGitPath
+			}
+		}
 	}
+
+	if dotGitIgnoreParentPath != "" {
+		ignorePatterns, err := loadDirectoryGitIgnorePatterns(ctx, dotGitIgnoreParentPath, args.Path)
+		if err != nil {
+			return i, fmt.Errorf("failed to load .gitignore patterns: %w", err)
+		}
+
+		rebasedIgnorePatterns, err := rebaseGitIgnorePatterns(dotGitIgnoreParentPath, args.Path, ignorePatterns)
+		if err != nil {
+			return i, fmt.Errorf("failed to rebase .gitignore patterns: %w", err)
+		}
+
+		excludesPatterns = append(excludesPatterns, rebasedIgnorePatterns...)
+	}
+
+	// Add the exclude args from directive after the .gitignore so they can
+	// be overridden.
+	if len(args.Exclude) > 0 {
+		excludesPatterns = append(excludesPatterns, args.Exclude...)
+	}
+
+	if len(excludesPatterns) > 0 {
+		localName += fmt.Sprintf(" (exclude: %s)", strings.Join(excludesPatterns, ", "))
+		localOpts = append(localOpts, llb.ExcludePatterns(excludesPatterns))
+	}
+
 	localOpts = append(localOpts, llb.WithCustomName(localName))
 
 	localLLB := llb.Local(args.Path, localOpts...)
@@ -314,6 +370,101 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		return i, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 	return core.MakeDirectoryContentHashed(ctx, bk, dir)
+}
+
+func loadDirectoryGitIgnorePatterns(ctx context.Context, parentPath string, hostPath string) (patterns []string, rerr error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current query: %w", err)
+	}
+
+	if !filepath.IsAbs(hostPath) {
+		bk, err := query.Buildkit(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+		}
+
+		hostPath, err = bk.AbsPath(ctx, hostPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get absolute path from host path %s: %w", hostPath, err)
+		}
+	}
+
+	gitIgnoreIncludePath, err := getGitIgnoreIncludePaths(parentPath, hostPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get git ignore include paths: %w", err)
+	}
+
+	var directory dagql.ObjectResult[*core.Directory]
+	err = srv.Select(ctx, srv.Root(), &directory,
+		dagql.Selector{Field: "host"},
+		dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(parentPath)},
+				{Name: "include", Value: dagql.ArrayInput[dagql.String](
+					dagql.NewStringArray(gitIgnoreIncludePath...),
+				)},
+				{Name: "noGitAutoIgnore", Value: dagql.Boolean(true)},
+			},
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load directory ignore patterns: %w", err)
+	}
+
+	gitIgnorePatterns, err := core.LoadGitIgnoreInDirectory(ctx, directory)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load .gitignore in context directory %q: %w", parentPath, err)
+	}
+
+	return gitIgnorePatterns, nil
+}
+
+func rebaseGitIgnorePatterns(parentPath string, hostPath string, patterns []string) ([]string, error) {
+	relativePathToParent, err := filepath.Rel(parentPath, hostPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get relative path from %q: %w", parentPath, err)
+	}
+
+	result := []string{}
+	// Rebased the ignore patterns to be relative to the mounted path from the context directory.
+	// - If the contextual path is /foo/bar, all /foo/bar/.gitignore patterns must become the root or they'll not be applied correctly
+	// - Recursive patterns are not affected
+	// - Patterns that are outside the contextual path are ignored.
+	// - If relativePathToCtx is "." (meaning the contextual path is the same as the mounted path), then all ignore
+	// patterns are applied.
+	//
+	// Example for context dir /foo/bar:
+	//   - !foo/bar/baz -> baz -> !baz
+	//   - foo/bar/baz -> baz -> baz
+	//   - foo/bar/baz/qux -> baz/qux
+	for _, pattern := range patterns {
+		if !strings.HasPrefix(pattern, "**") &&
+			!strings.HasPrefix(pattern, relativePathToParent+"/") &&
+			!strings.HasPrefix(pattern, "!"+relativePathToParent+"/") &&
+			relativePathToParent != "." {
+			continue
+		}
+
+		// If the pattern is negative, we need to trim the leading "!" before removing the relative path
+		// and add it again after.
+		// !foo/bar/baz -> baz -> !baz
+		if strings.HasPrefix(pattern, "!") {
+			pattern = strings.TrimPrefix(pattern, "!")
+			result = append(result, "!"+strings.TrimPrefix(pattern, relativePathToParent+"/"))
+			continue
+		}
+
+		result = append(result, strings.TrimPrefix(pattern, relativePathToParent+"/"))
+	}
+
+	return result, nil
 }
 
 type hostSocketArgs struct {
