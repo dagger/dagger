@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/moby/buildkit/identity"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
@@ -329,4 +330,85 @@ func (CacheSuite) TestCacheNotImpactedByChangeInModuleSource(ctx context.Context
 	require.NoError(t, err)
 
 	require.Equal(t, fooID, fooID2)
+}
+
+func (CacheSuite) TestCacheVolumeSnapshot(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Create a unique cache volume for this test
+	cacheVol := c.CacheVolume(identity.NewID())
+
+	// Run a container that writes to the cache volume
+	_, err := c.Container().From(alpineImage).
+		WithMountedCache("/cache", cacheVol).
+		WithExec([]string{"sh", "-c", "echo 'initial content' > /cache/initial.txt && echo 'more content' > /cache/another.txt"}).
+		Sync(ctx)
+	require.NoError(t, err)
+
+	// Take a snapshot of the cache volume
+	snapshot, err := cacheVol.Snapshot().Sync(ctx)
+	require.NoError(t, err)
+
+	id, err := snapshot.ID(ctx)
+	t.Log("ID: " + id)
+	// // Get initial entries from the snapshot
+	// initialEntries, err := snapshot.Entries(ctx)
+	// require.NoError(t, err)
+	// require.ElementsMatch(t, []string{"initial.txt", "another.txt"}, initialEntries)
+
+	// // Verify the snapshot contents
+	// initialContent, err := snapshot.File("initial.txt").Contents(ctx)
+	// require.NoError(t, err)
+	// require.Equal(t, "initial content\n", initialContent)
+
+	// anotherContent, err := snapshot.File("another.txt").Contents(ctx)
+	// require.NoError(t, err)
+	// require.Equal(t, "more content\n", anotherContent)
+
+	// Run another container that mutates the cache by creating a new file
+	_, err = c.Container().From(alpineImage).
+		WithMountedCache("/cache", cacheVol).
+		WithExec([]string{"sh", "-c", "echo 'new content' > /cache/new.txt"}).
+		Sync(ctx)
+	require.NoError(t, err)
+
+	// Get entries from the snapshot again - they should be unchanged
+	finalEntries, err := snapshot.Entries(ctx)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"initial.txt", "another.txt"}, finalEntries, "Snapshot entries should remain unchanged")
+
+	// Verify the snapshot contents are still the same
+	initialContent, err := snapshot.File("initial.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "initial content\n", initialContent)
+
+	anotherContent, err := snapshot.File("another.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "more content\n", anotherContent)
+
+	// The new file should not exist in the snapshot
+	newContent, err := snapshot.File("new.txt").Contents(ctx)
+	assert.Empty(t, newContent)
+	require.Error(t, err, "new.txt should not exist in the immutable snapshot")
+
+	// Take a new snapshot of the cache volume
+	newSnapshot, err := cacheVol.Snapshot().Sync(ctx)
+	require.NoError(t, err)
+
+	newEntries, err := newSnapshot.Entries(ctx)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"initial.txt", "another.txt", "new.txt"}, newEntries)
+
+	// Verify the snapshot contents
+	initialContent, err = newSnapshot.File("initial.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "initial content\n", initialContent)
+
+	anotherContent, err = newSnapshot.File("another.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "more content\n", anotherContent)
+
+	newContent, err = newSnapshot.File("new.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "new content\n", newContent)
 }

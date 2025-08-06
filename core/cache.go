@@ -18,7 +18,6 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/buildkit"
 )
 
 // CacheVolume is a persistent volume with a globally scoped identifier.
@@ -111,12 +110,7 @@ func (cache *CacheVolume) Snapshot(ctx context.Context) (*Directory, error) {
 	session := query.BuildkitSession()
 	mm := bkmounts.NewMountManager(fmt.Sprintf("cache %s", cache.Sum()), bkCache, session)
 
-	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	if !ok {
-		return nil, fmt.Errorf("no buildkit session group in context")
-	}
-
-	p, err := bkcontainer.PrepareMounts(ctx, mm, bkCache, bkSessionGroup, "/", []*pb.Mount{
+	p, err := bkcontainer.PrepareMounts(ctx, mm, bkCache, nil, "/", []*pb.Mount{
 		{
 			Input:     pb.Empty,
 			Output:    pb.SkipOutput,
@@ -128,7 +122,7 @@ func (cache *CacheVolume) Snapshot(ctx context.Context) (*Directory, error) {
 		},
 	}, nil, func(m *pb.Mount, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
 		desc := fmt.Sprintf("mount %s from cache %s", m.Dest, cache.Sum())
-		return bkCache.New(ctx, ref, bkSessionGroup, bkcache.WithDescription(desc))
+		return bkCache.New(ctx, ref, nil, bkcache.WithDescription(desc))
 	}, runtime.GOOS)
 	if err != nil {
 		return nil, fmt.Errorf("prepare mounts: %w", err)
