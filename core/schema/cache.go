@@ -25,7 +25,12 @@ func (s *cacheSchema) Install(srv *dagql.Server) {
 			),
 	}.Install(srv)
 
-	dagql.Fields[*core.CacheVolume]{}.Install(srv)
+	dagql.Fields[*core.CacheVolume]{
+		dagql.NodeFunc("snapshot",
+			DagOpDirectoryWrapper(srv, s.snapshot)).
+			Experimental("This API is highly experimental and may be removed or replaced entirely.").
+			Doc(`Retrieves this directory with the given Git-compatible patch applied.`),
+	}.Install(srv)
 }
 
 func (s *cacheSchema) Dependencies() []SchemaResolvers {
@@ -49,6 +54,24 @@ func (s *cacheSchema) cacheVolumeCacheKey(ctx context.Context, parent dagql.Obje
 	namespaceKey := namespaceFromModule(m)
 	cacheCfg.Digest = dagql.HashFrom(cacheCfg.Digest.String(), namespaceKey)
 	return &cacheCfg, nil
+}
+
+type snapshotArgs struct {
+	FSDagOpInternalArgs
+}
+
+func (s *cacheSchema) snapshot(ctx context.Context, parent dagql.ObjectResult[*core.CacheVolume], args snapshotArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	dir, err := parent.Self().Snapshot(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 func (s *cacheSchema) cacheVolume(ctx context.Context, parent dagql.ObjectResult[*core.Query], args cacheArgs) (dagql.Result[*core.CacheVolume], error) {
