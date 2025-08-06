@@ -55,11 +55,7 @@ func (s *cacheSchema) cacheVolumeCacheKey(ctx context.Context, parent dagql.Obje
 	return &cacheCfg, nil
 }
 
-type snapshotArgs struct {
-	FSDagOpInternalArgs
-}
-
-func (s *cacheSchema) snapshot(ctx context.Context, parent *core.CacheVolume, args snapshotArgs) (inst *core.Directory, _ error) {
+func (s *cacheSchema) snapshot(ctx context.Context, parent *core.CacheVolume, args struct{}) (inst *core.Directory, _ error) {
 	return parent.Snapshot(ctx)
 }
 
