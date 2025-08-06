@@ -388,7 +388,16 @@ class Module:
             # Escape hatch to fully control logging from user code.
             raise
         except dagger.QueryError as e:
-            logger.exception("API error while executing function")
+            tb = e.__traceback__
+            # Exclude the line in "try" above
+            if tb:
+                tb = tb.tb_next
+            # Exclude the underlying TransportQueryError to reduce noise
+            e.__cause__ = None
+            logger.exception(
+                "API error while executing function",
+                exc_info=(type(e), e, tb),
+            )
             msg = f"Error from API: {e}"
             # Make sure GraphQL error extensions are included as dagger.Error() values.
             raise FunctionError(msg, extra=e.error.extensions) from None
