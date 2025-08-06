@@ -103,7 +103,7 @@ def log_exception_only(
     msg: str,
     *args,
     # Extra note to add to the end of the error message when shown on
-    # the log, but not included in the dag.Error() message.
+    # the log, but not included in the dagger.Error message.
     note: str = "",
 ):
     """Log just this exception, without full traceback.

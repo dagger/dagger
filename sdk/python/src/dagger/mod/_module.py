@@ -240,6 +240,7 @@ class Module:
             try:
                 parent_state = json.loads(parent_json) or {}
             except ValueError as e:
+                logger.exception("Failed to decode JSON parent value")
                 msg = "Unable to decode the parent object's state"
                 extra = {
                     "parent_json": parent_json,
@@ -257,7 +258,8 @@ class Module:
                 # for more granular control over the error.
                 inputs[arg_name] = json.loads(arg_value)
             except ValueError as e:
-                msg = f"Unable to decode input argument: {arg_name}"
+                logger.exception("Failed to decode JSON input value")
+                msg = f"Unable to decode input argument '{arg_name}'"
                 extra = {
                     "json_value": arg_value,
                 }
@@ -388,7 +390,7 @@ class Module:
         except dagger.QueryError as e:
             logger.exception("API error while executing function")
             msg = f"Error from API: {e}"
-            # Make sure GraphQL error extensions are included as dag.Error() values.
+            # Make sure GraphQL error extensions are included as dagger.Error() values.
             raise FunctionError(msg, extra=e.error.extensions) from None
         except Exception as e:
             # Escape hatch if too noisy.
