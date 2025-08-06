@@ -968,11 +968,12 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		}
 
 		for _, pattern := range rebasedIgnorePatterns {
-			if strings.HasPrefix(pattern, "!") {
-				fullIncludePaths = append(fullIncludePaths, strings.TrimPrefix(pattern, "!"))
-			} else {
-				fullIncludePaths = append(fullIncludePaths, "!"+pattern)
+			pattern, found := strings.CutPrefix(pattern, "!")
+			if !found {
+				pattern += "!"
 			}
+
+			fullIncludePaths = append(fullIncludePaths, pattern)
 		}
 
 		fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)

@@ -16,7 +16,7 @@ bar
 
 **/foo`
 
-		patterns := extractGitIgnorePatterns(
+		patterns := parseGitIgnore(
 			gitIgnoreContent, ".",
 		)
 
@@ -35,7 +35,7 @@ foo/bar
 *.go
 `
 
-		patterns := extractGitIgnorePatterns(
+		patterns := parseGitIgnore(
 			gitIgnoreContent, ".",
 		)
 
@@ -46,7 +46,7 @@ foo/bar
 		gitIgnoreContent := `!bar
 !baz/foo/x`
 
-		patterns := extractGitIgnorePatterns(
+		patterns := parseGitIgnore(
 			gitIgnoreContent, ".",
 		)
 
@@ -63,7 +63,7 @@ hello/world/**/baz
 /foo
 `
 
-		patterns := extractGitIgnorePatterns(
+		patterns := parseGitIgnore(
 			gitIgnoreContent, "/parent/subdir",
 		)
 

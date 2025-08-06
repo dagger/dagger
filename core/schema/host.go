@@ -243,8 +243,8 @@ type hostDirectoryArgs struct {
 	core.CopyFilter
 	HostDirCacheConfig
 
-	ContextDirectoryPath string `internal:"true" default:""`
-	NoGitAutoIgnore      bool   `default:"false"`
+	GitIgnoreRoot   string `internal:"true" default:""`
+	NoGitAutoIgnore bool   `default:"false"`
 }
 
 func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostDirectoryArgs) (i dagql.ObjectResult[*core.Directory], err error) {
@@ -294,8 +294,8 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	// (if ContextDirectoryPath is set) or the git repo if .git is found.
 	var dotGitIgnoreParentPath string
 	if !args.NoGitAutoIgnore {
-		if args.ContextDirectoryPath != "" {
-			dotGitIgnoreParentPath = args.ContextDirectoryPath
+		if args.GitIgnoreRoot != "" {
+			dotGitIgnoreParentPath = args.GitIgnoreRoot
 		} else {
 			query, err := core.CurrentQuery(ctx)
 			if err != nil {
@@ -414,7 +414,6 @@ func loadDirectoryGitIgnorePatterns(ctx context.Context, parentPath string, host
 			},
 		},
 	)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to load directory ignore patterns: %w", err)
 	}

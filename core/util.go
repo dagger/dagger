@@ -546,7 +546,7 @@ func getRefOrEvaluate[T fileOrDirectory](ctx context.Context, t T) (bkcache.Immu
 //     (ends with `/`), we treat is as a regular path then read the exclusion to make
 //     sure the recusive pattern is applied if needed.
 //     Example: !foo becomes foo then **/foo then !**/foo
-func extractGitIgnorePatterns(gitIgnoreContent string, parentDir string) []string {
+func parseGitIgnore(gitIgnoreContent string, parentDir string) []string {
 	ignorePatterns := []string{}
 
 	// Split gitignore files by line
@@ -661,7 +661,7 @@ func LoadGitIgnoreInDirectory(ctx context.Context, dir dagql.ObjectResult[*Direc
 				return fmt.Errorf("failed to get file %s: %w", entryValue, err)
 			}
 
-			patterns := extractGitIgnorePatterns(string(content), filepath.Dir(string(entryValue)))
+			patterns := parseGitIgnore(string(content), filepath.Dir(string(entryValue)))
 
 			resultMu.Lock()
 			defer resultMu.Unlock()
