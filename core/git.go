@@ -540,7 +540,9 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 				if depth <= 0 {
 					doFetch = true
 				} else {
-					res, err := git.New().Run(ctx, "rev-list", "--count", ref.Commit)
+					// HACK: this is a pretty terrible way to guess the depth,
+					// since it only traces *one* path.
+					res, err := git.New().Run(ctx, "rev-list", "--first-parent", "--count", ref.Commit)
 					if err != nil {
 						return fmt.Errorf("failed to rev-list: %w", err)
 					}
