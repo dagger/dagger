@@ -8500,6 +8500,7 @@ export class Module_ extends BaseClient {
   private readonly _name?: string = undefined
   private readonly _serve?: Void = undefined
   private readonly _sync?: ModuleID = undefined
+  private readonly _toJSON?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -8511,6 +8512,7 @@ export class Module_ extends BaseClient {
     _name?: string,
     _serve?: Void,
     _sync?: ModuleID,
+    _toJSON?: string,
   ) {
     super(ctx)
 
@@ -8519,6 +8521,7 @@ export class Module_ extends BaseClient {
     this._name = _name
     this._serve = _serve
     this._sync = _sync
+    this._toJSON = _toJSON
   }
 
   /**
@@ -8579,6 +8582,15 @@ export class Module_ extends BaseClient {
     const response: Awaited<enums[]> = await ctx.execute()
 
     return response.map((r) => new Client(ctx.copy()).loadTypeDefFromID(r.id))
+  }
+
+  /**
+   * Load a module from a JSON string
+   * @param json The JSON string to load
+   */
+  fromJSON = (json: string): Module_ => {
+    const ctx = this._ctx.select("fromJSON", { json })
+    return new Module_(ctx)
   }
 
   /**
@@ -8695,6 +8707,21 @@ export class Module_ extends BaseClient {
     const response: Awaited<ModuleID> = await ctx.execute()
 
     return new Client(ctx.copy()).loadModuleFromID(response)
+  }
+
+  /**
+   * Return a JSON string representation of the module
+   */
+  toJSON = async (): Promise<string> => {
+    if (this._toJSON) {
+      return this._toJSON
+    }
+
+    const ctx = this._ctx.select("toJSON")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**

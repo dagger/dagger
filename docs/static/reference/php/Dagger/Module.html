@@ -173,6 +173,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_fromJSON">fromJSON</a>(string $json)
+
+                                            <p><p>Load a module from a JSON string</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -279,6 +289,16 @@
                     <a href="#method_sync">sync</a>()
         
                                             <p><p>Forces evaluation of the module, including any loading into the engine and associated validation.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_toJSON">toJSON</a>()
+
+                                            <p><p>Return a JSON string representation of the module</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -523,8 +543,50 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_generatedContextDirectory">
+                    <h3 id="method_fromJSON">
         <div class="location">at line 46</div>
+        <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
+    <strong>fromJSON</strong>(string $json)
+        </code>
+    </h3>
+    <div class="details">
+
+
+
+        <div class="method-description">
+                            <p><p>Load a module from a JSON string</p></p>
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$json</td>
+                <td></td>
+            </tr>
+            </table>
+
+
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+
+
+
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_generatedContextDirectory">
+        <div class="location">at line 56</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>generatedContextDirectory</strong>()
         </code>
@@ -556,7 +618,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 55</div>
+        <div class="location">at line 65</div>
         <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
     <strong>id</strong>()
         </code>
@@ -588,7 +650,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_interfaces">
-        <div class="location">at line 64</div>
+        <div class="location">at line 74</div>
         <code>                    array
     <strong>interfaces</strong>()
         </code>
@@ -620,7 +682,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_introspectionSchemaJSON">
-        <div class="location">at line 77</div>
+        <div class="location">at line 87</div>
         <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
     <strong>introspectionSchemaJSON</strong>()
         </code>
@@ -653,7 +715,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_name">
-        <div class="location">at line 86</div>
+        <div class="location">at line 96</div>
         <code>                    string
     <strong>name</strong>()
         </code>
@@ -685,7 +747,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_objects">
-        <div class="location">at line 95</div>
+        <div class="location">at line 105</div>
         <code>                    array
     <strong>objects</strong>()
         </code>
@@ -717,7 +779,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_runtime">
-        <div class="location">at line 104</div>
+        <div class="location">at line 114</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>runtime</strong>()
         </code>
@@ -749,7 +811,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sdk">
-        <div class="location">at line 113</div>
+        <div class="location">at line 123</div>
         <code>                    <a href="../Dagger/SDKConfig.html"><abbr title="Dagger\SDKConfig">SDKConfig</abbr></a>
     <strong>sdk</strong>()
         </code>
@@ -781,7 +843,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_serve">
-        <div class="location">at line 124</div>
+        <div class="location">at line 134</div>
         <code>                    void
     <strong>serve</strong>(bool|null $includeDependencies = null)
         </code>
@@ -823,7 +885,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_source">
-        <div class="location">at line 136</div>
+        <div class="location">at line 146</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>source</strong>()
         </code>
@@ -855,7 +917,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sync">
-        <div class="location">at line 145</div>
+        <div class="location">at line 155</div>
         <code>                    <a href="../Dagger/ModuleId.html"><abbr title="Dagger\ModuleId">ModuleId</abbr></a>
     <strong>sync</strong>()
         </code>
@@ -886,8 +948,40 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_toJSON">
+        <div class="location">at line 164</div>
+        <code>                    string
+    <strong>toJSON</strong>()
+        </code>
+    </h3>
+    <div class="details">
+
+
+
+        <div class="method-description">
+                            <p><p>Return a JSON string representation of the module</p></p>
+        </div>
+        <div class="tags">
+
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+
+
+
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_userDefaults">
-        <div class="location">at line 154</div>
+        <div class="location">at line 173</div>
         <code>                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
     <strong>userDefaults</strong>()
         </code>
@@ -919,7 +1013,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withDescription">
-        <div class="location">at line 163</div>
+        <div class="location">at line 182</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>withDescription</strong>(string $description)
         </code>
@@ -961,7 +1055,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withEnum">
-        <div class="location">at line 173</div>
+        <div class="location">at line 192</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>withEnum</strong>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $enum)
         </code>
@@ -1003,7 +1097,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withInterface">
-        <div class="location">at line 183</div>
+        <div class="location">at line 202</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>withInterface</strong>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $iface)
         </code>
@@ -1045,7 +1139,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withObject">
-        <div class="location">at line 193</div>
+        <div class="location">at line 212</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>withObject</strong>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $object)
         </code>

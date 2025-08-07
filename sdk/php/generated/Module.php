@@ -41,6 +41,16 @@ class Module extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Load a module from a JSON string
+     */
+    public function fromJSON(string $json): Module
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('fromJSON');
+        $innerQueryBuilder->setArgument('json', $json);
+        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The generated files and directories made on top of the module source's context directory.
      */
     public function generatedContextDirectory(): Directory
@@ -146,6 +156,15 @@ class Module extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
         return new \Dagger\ModuleId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+    }
+
+    /**
+     * Return a JSON string representation of the module
+     */
+    public function toJSON(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('toJSON');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'toJSON');
     }
 
     /**
