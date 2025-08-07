@@ -1542,3 +1542,23 @@ func (DirectorySuite) TestExists(ctx context.Context, t *testctx.T) {
 		})
 	}
 }
+
+func (DirectorySuite) TestDirCaching(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	d1 := c.Directory().
+		WithoutFile("non-existent").
+		WithNewFile("file", "data")
+
+	d2 := c.Directory().
+		WithoutFile("also-non-existent").
+		WithNewFile("file", "data")
+
+	out, err := c.Container().
+		From(alpineImage).
+		WithMountedDirectory("/d1", d1).
+		WithMountedDirectory("/d2", d2).
+		WithExec([]string{"sh", "-c", "diff <(stat /d1/file | grep Modify) <(stat /d2/file | grep Modify)"}). // they should be the exact same file (i.e. same creation time)
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, out, "")
+}

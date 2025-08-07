@@ -355,6 +355,16 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	}
 	meta.Env = append(meta.Env, secretEnv...)
 
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
+	detach, _, err := svcs.StartBindings(ctx, container.Services)
+	if err != nil {
+		return nil, err
+	}
+	defer detach()
+
 	worker := opt.Worker.(*buildkit.Worker)
 	worker = worker.ExecWorker(opt.CauseCtx, *execMD)
 	exec := worker.Executor()

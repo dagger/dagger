@@ -31,6 +31,46 @@ func init() {
 	buildkit.RegisterCustomOp(ContainerDagOp{})
 }
 
+func NewDirectoryDagOpACB(
+	ctx context.Context,
+	srv *dagql.Server,
+	dagop *FSDagOp,
+	inputs []llb.State,
+	argDigest digest.Digest,
+	dir *Directory,
+) (*Directory, error) {
+
+	dirDigest, err := DigestOf(dir.WithoutInputs())
+	if err != nil {
+		return nil, err
+	}
+
+	dagop.CacheKey = digest.FromString(
+		strings.Join([]string{
+			dirDigest.String(),
+			argDigest.String(),
+		}, "\x00"))
+
+	// TODO need to get the dir.LLB "*pb.definition"
+
+	mnt := dir.LLB
+	stToIncludeInCacheMap, err := defToState(mnt)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Printf("ACB what to do with %+v ? anything?\n", stToIncludeInCacheMap)
+
+	st, err := newFSDagOp[*Directory](ctx, dagop, inputs)
+	if err != nil {
+		return nil, err
+	}
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current query: %w", err)
+	}
+	return NewDirectorySt(ctx, st, dagop.Path, query.Platform(), nil)
+}
+
 // NewDirectoryDagOp takes a target ID for a Directory, and returns a Directory
 // for it, computing the actual dagql query inside a buildkit operation, which
 // allows for efficiently caching the result.
@@ -96,6 +136,9 @@ type FSDagOp struct {
 	// (except for contributing to the cache key). However, it can be used by
 	// dagql running inside a dagop to determine where it should write data.
 	Path string
+
+	Hack     string
+	CacheKey digest.Digest
 }
 
 func (op FSDagOp) Name() string {
@@ -120,6 +163,27 @@ func (op FSDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.Ca
 		op.ID.Digest().String(),
 		op.Path,
 	}, "\x00"))
+	if op.Hack != "" {
+		fmt.Printf("ACB CacheMap hack %s\n", op.Hack)
+		//cm.Digest = digest.FromString(op.Hack)
+
+		inputs := []string{
+			engine.BaseVersion(engine.Version),
+			op.CacheKey.String(),
+		}
+
+		//// mount data
+		//mountsData, err := json.Marshal(op.Mounts)
+		//if err != nil {
+		//	return nil, err
+		//}
+		//inputs = append(inputs, string(mountsData))
+		//inputs = append(inputs, fmt.Sprint(op.OutputCount))
+
+		cm.Digest = digest.FromString(strings.Join(inputs, "\x00"))
+
+	}
+	fmt.Printf("ACB fsDagOp.CacheMap using ID=%s; path=%s\n", op.ID.Digest().String(), op.Path)
 	return cm, nil
 }
 
@@ -232,6 +296,7 @@ func (op RawDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.C
 		op.ID.Digest().String(),
 		op.Filename,
 	}, "\x00"))
+	fmt.Printf("ACB raw CacheMap using ID=%s; path=%s\n", op.ID.Digest().String(), op.Filename)
 	return cm, nil
 }
 
@@ -326,6 +391,7 @@ func NewContainerDagOp(
 		return nil, err
 	}
 
+	// ACB cache logic here is different
 	dagop := &ContainerDagOp{
 		ID: id,
 		CacheKey: digest.FromString(
@@ -525,6 +591,7 @@ func (op ContainerDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*so
 		}
 	}
 
+	fmt.Printf("ACB ContainerDagOp.CacheMap returning digest %s\n", cm.Digest)
 	return cm, nil
 }
 

@@ -4795,6 +4795,18 @@ func (ContainerSuite) TestSymlinkCaching(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, out1, out3) // make sure the call to read from /dev/random was re-run
 	require.Len(t, out3, 132)
+
+	// test a new connection also hits the cache
+	err = c.Close()
+	require.NoError(t, err)
+	c2 := connect(ctx, t)
+	out4, err := c2.Container().
+		From(alpineImage).
+		WithSymlink("bar", "foo").
+		WithExec([]string{"sh", "-c", "head -c 99 /dev/random | base64 -w0"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, out1, out4)
 }
 
 func (ContainerSuite) TestLoadDocker(ctx context.Context, t *testctx.T) {

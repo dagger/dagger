@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	gogoproto "github.com/gogo/protobuf/proto"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/zeebo/xxh3"
@@ -344,6 +345,15 @@ func (id *ID) Encode() (string, error) {
 	}
 
 	return base64.StdEncoding.EncodeToString(proto), nil
+}
+
+func (id *ID) DebugString() string {
+	p, err := id.ToProto()
+	if err != nil {
+		return fmt.Sprintf("proto failed: %s", err)
+	}
+
+	return gogoproto.MarshalTextString(p)
 }
 
 func (id ID) MarshalJSON() ([]byte, error) {

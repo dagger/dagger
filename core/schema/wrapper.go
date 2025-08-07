@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -38,6 +39,8 @@ func DagOp[T dagql.Typed, A any, R dagql.Typed](
 		return inst, err
 	}
 	filename := "output.json"
+
+	fmt.Printf("creating dagop for ID %s\n", currentIDForRawDagOp(ctx, filename).Digest().String())
 
 	return core.NewRawDagOp[R](ctx, srv, &core.RawDagOp{
 		ID:       currentIDForRawDagOp(ctx, filename),
@@ -103,6 +106,23 @@ func DagOpFile[T dagql.Typed, A any](
 	}, deps)
 }
 
+func DagOpDirectoryWrapperACB[A DagOpInternalArgsIface](
+	srv *dagql.Server,
+	fn dagql.NodeFuncHandler[*core.Directory, A, dagql.ObjectResult[*core.Directory]],
+	opts ...DagOpOptsFn[*core.Directory, A],
+) dagql.NodeFuncHandler[*core.Directory, A, dagql.ObjectResult[*core.Directory]] {
+	return func(ctx context.Context, self dagql.ObjectResult[*core.Directory], args A) (inst dagql.ObjectResult[*core.Directory], err error) {
+		if args.InDagOp() {
+			return fn(ctx, self, args)
+		}
+		dir, err := DagOpDirectoryACB(ctx, srv, self.Self(), args, "", fn, opts...)
+		if err != nil {
+			return inst, err
+		}
+		return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+	}
+}
+
 // DagOpDirectoryWrapper caches a directory field as a buildkit operation,
 // similar to DagOpFileWrapper.
 func DagOpDirectoryWrapper[T dagql.Typed, A DagOpInternalArgsIface](
@@ -150,6 +170,47 @@ func getOpts[T dagql.Typed, A any](opts ...DagOpOptsFn[T, A]) *DagOpOpts[T, A] {
 	return &o
 }
 
+func DagOpDirectoryACB[A any](
+	ctx context.Context,
+	srv *dagql.Server,
+	dir *core.Directory,
+	args A,
+	data string,
+	fn dagql.NodeFuncHandler[*core.Directory, A, dagql.ObjectResult[*core.Directory]],
+	opts ...DagOpOptsFn[*core.Directory, A],
+) (*core.Directory, error) {
+	o := getOpts(opts...)
+
+	argDigest, err := core.DigestOf(args)
+	if err != nil {
+		return nil, err
+	}
+	_ = argDigest
+
+	deps, err := extractLLBDependencies(ctx, dir)
+	if err != nil {
+		return nil, err
+	}
+
+	filename := "/"
+	if o.pfn != nil {
+		filename, err = o.pfn(ctx, dir, args)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	fmt.Printf("ACB ID: %v\n", currentIDForFSDagOp(ctx, filename))
+
+	return core.NewDirectoryDagOpACB(ctx, srv, &core.FSDagOp{
+		// FIXME: using this in the cache key means we effectively disable
+		// buildkit content caching
+		ID:   currentIDForFSDagOp(ctx, filename),
+		Path: filename,
+		Hack: "yes-hack-this",
+	}, deps, argDigest, dir)
+}
+
 // NOTE: prefer DagOpDirectoryWrapper where possible, this is for low-level
 // plumbing, where more control over *which* operations should be cached is
 // needed.
@@ -177,6 +238,16 @@ func DagOpDirectory[T dagql.Typed, A any](
 		}
 	}
 
+	fmt.Printf("ACB ID: %v\n", currentIDForFSDagOp(ctx, filename))
+
+	// TODO how to get FS? and any other mounts?
+	//mnt := dir.LLB
+	//st, err := defToState(mnt.Source)
+	//if err != nil {
+	//	return err
+	//}
+	//fmt.Printf("ACB what to do with %+v\n", mnt)
+
 	return core.NewDirectoryDagOp(ctx, srv, &core.FSDagOp{
 		// FIXME: using this in the cache key means we effectively disable
 		// buildkit content caching
@@ -193,7 +264,7 @@ func DagOpContainerWrapper[A DagOpInternalArgsIface](
 		if args.InDagOp() {
 			return fn(ctx, self, args)
 		}
-		ctr, err := DagOpContainer(ctx, srv, self.Self(), args, fn)
+		ctr, err := DagOpContainer(ctx, srv, self.Self(), args, fn) // this
 		if err != nil {
 			return inst, err
 		}
@@ -217,6 +288,7 @@ func DagOpContainer[A any](
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("ACB calling NewContainerDagOp\n")
 	return core.NewContainerDagOp(ctx, currentIDForContainerDagOp(ctx), argDigest, ctr, deps)
 }
 
@@ -252,6 +324,7 @@ func currentIDForRawDagOp(
 	filename string,
 ) *call.ID {
 	currentID := dagql.CurrentID(ctx)
+	//fmt.Printf("ACB CurrentID is %+v; encoded: %s\n", currentID, currentID.DebugString())
 
 	return currentID.
 		WithArgument(call.NewArgument(
