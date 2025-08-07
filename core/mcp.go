@@ -276,9 +276,21 @@ func (m *MCP) syncMCPSessions(ctx context.Context) error {
 	return nil
 }
 
+func (m *MCP) updateEnv(env dagql.ObjectResult[*Env]) {
+	m.env = env
+	for _, sess := range m.mcpSessions {
+		go func() {
+			if err := sess.Close(); err != nil {
+				slog.Error("failed to close MCP session", "error", err)
+			}
+		}()
+	}
+	clear(m.mcpSessions)
+}
+
 func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
 	var tools []LLMTool
-	for _, sess := range m.mcpSessions {
+	for name, sess := range m.mcpSessions {
 		for tool, err := range sess.Tools(ctx, nil) {
 			if err != nil {
 				return nil, err
@@ -633,7 +645,7 @@ func (m *MCP) call(ctx context.Context,
 	// updates the MCP environment.
 	if newEnv, ok := dagql.UnwrapAs[dagql.ObjectResult[*Env]](val); ok {
 		// Swap out the Env for the updated one
-		m.env = newEnv
+		m.updateEnv(newEnv)
 		// No particular message needed here. At one point we diffed the Env.hostfs
 		// and printed which files were modified, but it's not really necessary to
 		// show things like that unilaterally vs. just allowing each Env-returning

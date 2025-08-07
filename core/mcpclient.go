@@ -1,6 +1,3 @@
-// Use of this source code is governed by an MIT-style
-// license that can be found in the LICENSE file.
-
 package core
 
 import (
@@ -9,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -114,9 +112,10 @@ func (t *svcMCPConn) Write(_ context.Context, msg jsonrpc.Message) error {
 	return errors.Join(err1, err2)
 }
 
-// Close implements [mcp.Connection.Close]. Since this is a simplified example, it is a no-op.
 func (t *svcMCPConn) Close() error {
-	return t.svc.Stop(context.TODO(), true)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	return t.svc.Stop(ctx, true)
 }
 
 // SessionID implements [mcp.Connection.SessionID]. Since this is a simplified example,
