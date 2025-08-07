@@ -1,4 +1,4 @@
-import { dag, Container, object, func, Directory } from "@dagger.io/dagger"
+import { argument, dag, Container, object, func, Directory } from "@dagger.io/dagger"
 
 @object()
 export class TypescriptSdkDev {
@@ -10,7 +10,9 @@ export class TypescriptSdkDev {
   @func()
   project: Container
 
-  constructor(source: Directory) {
+  constructor(
+    @argument({ defaultPath: "/sdk/typescript" }) source: Directory,
+  ) {
     // Extract package.json and yarn.lock to a temporary directory
     const dependencyFiles = dag
       .directory()
@@ -67,6 +69,14 @@ export class TypescriptSdkDev {
   @func()
   lint(): Container {
     return dag.node({ ctr: this.project }).commands().lint()
+  }
+
+  /**
+   * Format the TypeScript SDK.
+   */
+  @func()
+  format(): Directory {
+    return dag.node({ ctr: this.project }).commands().format().directory(".")
   }
 
   /**
