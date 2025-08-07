@@ -229,6 +229,7 @@ module.exports = {
         "cookbook/secrets",
         "cookbook/services",
         "cookbook/container-images",
+        "cookbook/agent",
       ],
     },
   ],

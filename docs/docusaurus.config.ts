@@ -103,6 +103,10 @@ const config: Config = {
                   __dirname,
                   "current_docs/partials/cookbook/service"
                 ),
+                "@cookbookAgent": path.resolve(
+                  __dirname,
+                  "current_docs/partials/cookbook/agent"
+                ),
                 "@partials": path.resolve(__dirname, "current_docs/partials"),
                 "@daggerTypes": path.resolve(
                   __dirname,
