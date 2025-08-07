@@ -36,8 +36,6 @@ func (g *GoGenerator) GenerateTypeDefs(ctx context.Context, schema *introspectio
 	mfs := memfs.New()
 	var overlay fs.FS = layerfs.New(
 		mfs,
-		&MountedFS{FS: dagger.QueryBuilder, Name: filepath.Join(outDir, "internal")},
-		&MountedFS{FS: dagger.Telemetry, Name: filepath.Join(outDir, "internal")},
 	)
 
 	res := &generator.GeneratedState{
@@ -69,10 +67,10 @@ func (g *GoGenerator) GenerateTypeDefs(ctx context.Context, schema *introspectio
 		// assume package main, default for modules
 		pkgInfo.PackageName = "main"
 
-		// generate an initial dagger.gen.go from the base Dagger API
-		if err := generateCode(ctx, g.Config, schema, schemaVersion, mfs, pkgInfo, nil, nil, 0); err != nil {
-			return nil, fmt.Errorf("generate code: %w", err)
-		}
+		overlay = layerfs.New(
+			mfs,
+			&MountedFS{FS: dagger.GoDagGen, Name: filepath.Join(outDir, "internal/dagger")},
+		)
 	}
 
 	if len(initialGoFiles) == 0 {
