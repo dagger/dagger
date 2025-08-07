@@ -10,10 +10,6 @@ if [[ ! -d "$prefix_dir" ]] || [[ ! -w "$prefix_dir" ]]; then
 fi
 printf '%s/bin' "$prefix_dir" >>$GITHUB_PATH
 
-if [ -f "$DAGGER_VERSION_FILE" ]; then
-  DAGGER_VERSION=$(cat "$DAGGER_VERSION_FILE" | jq -r .engineVersion)
-fi
-
 # If the dagger version is 'latest', set the version back to an empty
 # string. This allows the install script to detect and install the latest
 # version itself
