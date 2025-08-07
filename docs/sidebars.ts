@@ -200,7 +200,6 @@ module.exports = {
           label: "TypeScript SDK Reference",
           id: "reference/typescript/modules",
         },
-        "reference/api/module-registry",
       ],
     },
     {
