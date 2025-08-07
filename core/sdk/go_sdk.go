@@ -249,24 +249,6 @@ func (sdk *goSDK) TypeDefs(
 		return inst, err
 	}
 
-	// rm dagger.gen.go if it exists, which is going to be overwritten
-	// anyways. If it doesn't exist, we ignore not found in the implementation of
-	// `withoutFile` so it will be a no-op.
-	var updatedContextDir dagql.ObjectResult[*core.Directory]
-	if err := dag.Select(ctx, contextDir, &updatedContextDir,
-		dagql.Selector{
-			Field: "withoutFile",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "path",
-					Value: dagql.String(filepath.Join(srcSubpath, "dagger.gen.go")),
-				},
-			},
-		},
-	); err != nil {
-		return inst, fmt.Errorf("failed to remove dagger.gen.go from source directory: %w", err)
-	}
-
 	var typeDefsJSON string
 	err = dag.Select(ctx, ctr, &typeDefsJSON,
 		dagql.Selector{
@@ -291,7 +273,7 @@ func (sdk *goSDK) TypeDefs(
 				},
 				{
 					Name:  "source",
-					Value: dagql.NewID[*core.Directory](updatedContextDir.ID()),
+					Value: dagql.NewID[*core.Directory](contextDir.ID()),
 				},
 			},
 		},

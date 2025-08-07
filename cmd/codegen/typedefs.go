@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
@@ -48,21 +50,32 @@ func TypeDefs(ctx context.Context, cfg generator.Config, typedefFunc TypeDefFunc
 			return fmt.Errorf("failed to overlay generated code: %w", err)
 		}
 
-		// Ignoring generated.PostCommands:
-		// PostCommands are used to perform Go tasks like go mod tidy.
-		// This is not needed for typedefs and can also fail as the types we want to make available might not yet
-		// been generated (because they require... the types definition this function is creating)
-		// In case of an init (an empty module) the typedefFunc in argument will create a default module
-		// without worrying about code generation. Just the basic main.go and go.mod files. Those files will not
-		// be exposed to the user, the codegen phase will then initialize a full module, but at this time
-		// with a schema containing all the types, including the module itself.
-
-		if !generated.NeedRegenerate {
-			slog.Info("done!")
-			break
+		if generated.NeedRegenerate {
+			// Ignoring generated.PostCommands on the last phase:
+			// PostCommands are used to perform Go tasks like go mod tidy.
+			// Some commands are needed to ensure types are correctly read, but the final ones are not
+			// as we don't care about the runnable code, only about types and function signatures.
+			for _, cmd := range generated.PostCommands {
+				cmd.Dir = cfg.OutputDir
+				if cfg.ModuleConfig != nil && cfg.ModuleConfig.ModuleName != "" {
+					cmd.Dir = filepath.Join(cfg.OutputDir, cfg.ModuleConfig.ModuleSourcePath)
+				}
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				slog.Info("running post-command:", "args", strings.Join(cmd.Args, " "))
+				err := cmd.Run()
+				if err != nil {
+					slog.Error("post-command failed", "error", err)
+					return err
+				}
+			}
+			slog.Info("needs another pass...")
+			continue
 		}
 
-		slog.Info("needs another pass...")
+		slog.Info("done!")
+		break
+
 	}
 
 	return ctx.Err()
