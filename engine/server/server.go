@@ -572,6 +572,11 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 func (srv *Server) Close() error {
 	err := srv.baseWorker.Close()
 
+	// Shutdown the global namespace worker pool
+	if shutdownErr := buildkit.ShutdownGlobalNamespaceWorkerPool(); shutdownErr != nil {
+		err = errors.Join(err, fmt.Errorf("failed to shutdown global namespace worker pool: %w", shutdownErr))
+	}
+
 	// note this *could* cause a panic in Session if it was still running, so
 	// the server should be shutdown first
 	srv.daggerSessionsMu.Lock()

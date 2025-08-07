@@ -272,16 +272,15 @@ func (w *Worker) newNetNS(ctx context.Context, hostname string) (_ *networkNames
 	state := &execState{
 		done:             make(chan struct{}),
 		networkNamespace: netNS,
-		netNSJobs:        make(chan func()),
-		cleanups:         cleanup,
+		// netNSJobs removed - using global worker pool now
+		cleanups: cleanup,
 	}
 	cleanup.Add("mark run state done", cleanups.Infallible(func() {
 		close(state.done)
 	}))
 
-	if err := w.runNetNSWorkers(ctx, state); err != nil {
-		return nil, fmt.Errorf("failed to handle namespace jobs: %w", err)
-	}
+	// Global namespace workers are used now - no need for per-container workers
+	// The global worker pool is automatically started when needed
 
 	id := randid.NewID()
 	w.mu.Lock()

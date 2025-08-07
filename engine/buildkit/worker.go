@@ -96,7 +96,7 @@ type NewWorkerOpts struct {
 }
 
 func NewWorker(opts *NewWorkerOpts) *Worker {
-	return &Worker{sharedWorkerState: &sharedWorkerState{
+	worker := &Worker{sharedWorkerState: &sharedWorkerState{
 		Worker:           opts.BaseWorker,
 		root:             opts.WorkerRoot,
 		executorRoot:     opts.ExecutorRoot,
@@ -119,6 +119,15 @@ func NewWorker(opts *NewWorkerOpts) *Worker {
 
 		running: make(map[string]*execState),
 	}}
+
+	// Initialize and start the global namespace worker pool
+	gwp := GetGlobalNamespaceWorkerPool()
+	if err := gwp.Start(); err != nil {
+		// Log error but don't fail worker creation
+		// The pool will be started lazily when needed
+	}
+
+	return worker
 }
 
 func (w *Worker) Executor() executor.Executor {
