@@ -1649,7 +1649,6 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
                 `)).
 				With(daggerFunctions()).
 				Sync(ctx)
-			require.Error(t, err)
 			requireErrOut(t, err, fmt.Sprintf(
 				"object %q function %q cannot return external type from dependency module %q",
 				"Test", "fn", "dep",
@@ -1669,7 +1668,6 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
                 `)).
 				With(daggerFunctions()).
 				Sync(ctx)
-			require.Error(t, err)
 			requireErrOut(t, err, fmt.Sprintf(
 				"object %q function %q cannot return external type from dependency module %q",
 				"Test", "fn", "dep",
@@ -1690,7 +1688,6 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
                 `)).
 				With(daggerFunctions()).
 				Sync(ctx)
-			require.Error(t, err)
 			requireErrOut(t, err, fmt.Sprintf(
 				"object %q function %q arg %q cannot reference external type from dependency module %q",
 				"Test", "fn", "obj", "dep",
@@ -1709,7 +1706,6 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
                 `)).
 				With(daggerFunctions()).
 				Sync(ctx)
-			require.Error(t, err)
 			requireErrOut(t, err, fmt.Sprintf(
 				"object %q function %q arg %q cannot reference external type from dependency module %q",
 				"Test", "fn", "obj", "dep",
@@ -1735,7 +1731,6 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
                 `)).
 				With(daggerFunctions()).
 				Sync(ctx)
-			require.Error(t, err)
 			requireErrOut(t, err, fmt.Sprintf(
 				"object %q field %q cannot reference external type from dependency module %q",
 				"Obj", "foo", "dep",
@@ -1759,7 +1754,6 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
                 `)).
 				With(daggerFunctions()).
 				Sync(ctx)
-			require.Error(t, err)
 			requireErrOut(t, err, fmt.Sprintf(
 				"object %q field %q cannot reference external type from dependency module %q",
 				"Obj", "foo", "dep",
@@ -1788,6 +1782,87 @@ func (PythonSuite) TestIgnoreConstructorArg(ctx context.Context, t *testctx.T) {
 
 	require.NoError(t, err)
 	require.Contains(t, gjson.Parse(out).Value(), "dagger.json")
+}
+
+func (PythonSuite) TestErrors(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := goGitBase(t, c).
+		WithWorkdir("/work/dep").
+		With(daggerInitPython("--name=dep")).
+		With(fileContents("src/dep/__init__.py", fmt.Sprintf(`
+            import dagger
+            from dagger import dag
+
+            @dagger.object_type
+            class Dep:
+                @dagger.function
+                async def exec_(self) -> str:
+                    return await (
+                        dag.container()
+                        .from_("%s")
+                        .with_exec(["sh", "-c", ">&2 echo 'oh noes'; exit 5"])
+                        .stdout()
+                    )
+        `, alpineImage))).
+		WithWorkdir("/work/test").
+		With(daggerInitPython()).
+		With(daggerExec("install", "../dep")).
+		With(pythonSource(`
+			import dagger
+			from dagger import dag
+
+			@dagger.object_type
+			class Test:
+				@dagger.function
+				async def error_extensions(self) -> str:
+					try:
+						return await dag.dep().exec()
+					except dagger.ExecError as e:
+						# If the SDK didn't properly propagate the error
+						# extensions this would be a dagger.QueryError instead, 
+						# so not caught.
+						assert e.exit_code == 5
+						return f"error: {e.stderr}"
+	
+				@dagger.function
+				def coro(self) -> str:
+					# Should fail because dag.version() returns a coroutine
+					# and this isn't an async function
+					return dag.version()
+
+				@dagger.function
+				async def nowait(self) -> str:
+					# Should fail because of missing await 
+					return dag.version()
+
+				@dagger.function
+				def unhandled(self) -> str:
+					raise ValueError("a foo bubbles up to bar")
+		`))
+
+	t.Run("error extensions", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.With(daggerCall("error-extensions")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "error: oh noes", out)
+	})
+
+	t.Run("sync calls async", func(ctx context.Context, t *testctx.T) {
+		_, err := ctr.With(daggerCall("coro")).Sync(ctx)
+		requireErrOut(t, err, "Did you forget to add 'async'")
+	})
+
+	t.Run("async without await", func(ctx context.Context, t *testctx.T) {
+		_, err := ctr.With(daggerCall("nowait")).Sync(ctx)
+		requireErrOut(t, err, "Did you forget to add an 'await'")
+	})
+
+	t.Run("unhandled", func(ctx context.Context, t *testctx.T) {
+		_, err := ctr.With(daggerCall("unhandled")).Sync(ctx)
+		var exerr *dagger.ExecError
+		require.ErrorAs(t, err, &exerr)
+		require.Contains(t, exerr.Stderr, "Unhandled exception while executing function")
+		require.Contains(t, exerr.Stderr, "ValueError: a foo bubbles up to bar")
+	})
 }
 
 func pythonSource(contents string) dagger.WithContainerFunc {

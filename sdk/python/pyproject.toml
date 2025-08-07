@@ -35,6 +35,8 @@ dependencies = [
     "rich>=10.11.0",
     "opentelemetry-sdk>=1.23.0",
     "opentelemetry-exporter-otlp-proto-http>=1.23.0",
+    "opentelemetry-instrumentation-logging>=0.54b1",
+    "exceptiongroup>=1.3.0",
 ]
 
 [project.urls]

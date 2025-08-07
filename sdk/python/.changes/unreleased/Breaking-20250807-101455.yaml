@@ -1,0 +1,11 @@
+kind: Breaking
+body: |-
+  Improved error handling and reporting in Python modules with clearer error messages and better debugging support
+
+  The root logger is now setup with a handler that will ultimately show as stderr output in visualization (TUI/Cloud) for the "warning" log level and above.
+
+  There’s a possible breaking change if a non async function returns a coroutine. Marked as breaking out of caution as it should have low impact. This would work previously but it’s now validated to avoid confusion as it’s expected to be a mistake and not intentional. An `async` needs to be added to the function’s signature, and an `await` on the call that returns the coroutine (value returned by an async function).
+time: 2025-08-07T10:14:55.075954Z
+custom:
+  Author: helderco
+  PR: "10532"

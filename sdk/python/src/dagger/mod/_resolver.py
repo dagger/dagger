@@ -18,7 +18,11 @@ from cattrs.preconf.json import JsonConverter, make_converter
 from typing_extensions import Self, TypeVar, override
 
 from dagger.mod._arguments import Parameter
-from dagger.mod._exceptions import FatalError, UserError
+from dagger.mod._exceptions import (
+    BadUsageError,
+    InvalidInputError,
+    RegistrationError,
+)
 from dagger.mod._types import APIName, FieldDefinition, FunctionDefinition, PythonName
 from dagger.mod._utils import (
     get_alt_constructor,
@@ -32,7 +36,7 @@ from dagger.mod._utils import (
     normalize_name,
 )
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__package__)
 
 T = TypeVar("T")
 R = TypeVar("R", infer_variance=True)
@@ -64,6 +68,11 @@ class Function(Generic[P, R]):
         self.original_name = self.wrapped.__name__
 
     def __str__(self):
+        if self.origin is not None:
+            return f"{self.origin.__name__}.{self.original_name}"
+        return self.original_name
+
+    def __repr__(self):
         return repr(self.wrapped)
 
     @cached_property
@@ -103,7 +112,7 @@ class Function(Generic[P, R]):
 
             if param.kind is inspect.Parameter.POSITIONAL_ONLY:
                 msg = "Positional-only parameters are not supported"
-                raise TypeError(msg)
+                raise BadUsageError(msg)
 
             mapping[param.name] = self._make_parameter(param)
 
@@ -116,10 +125,7 @@ class Function(Generic[P, R]):
             # resolved forward references and stripped Annotated.
             annotation = self.type_hints[param.name]
         except KeyError:
-            logger.warning(
-                "Missing type annotation for parameter '%s'",
-                param.name,
-            )
+            logger.warning("Missing type annotation for parameter '%s'", param.name)
             annotation = Any
 
         if isinstance(annotation, dataclasses.InitVar):
@@ -167,8 +173,8 @@ class Function(Generic[P, R]):
             bound = self.signature.bind(*args, **kwargs)
             bound.apply_defaults()
         except TypeError as e:
-            msg = f"Unable to bind arguments: {e}"
-            raise UserError(msg) from e
+            logger.exception("Unexpected type while binding input values to arguments")
+            raise InvalidInputError(str(e)) from e
         return bound
 
 
@@ -239,8 +245,12 @@ class ObjectType(Generic[T]):
         assert self.cls is parent.__class__
         try:
             fn = self.functions[name]
-        except KeyError as e:
-            msg = f"No function '{name}' in object '{self.cls.__name__}'"
-            raise FatalError(msg) from e
+        except KeyError:
+            msg = f"No function '{name}' in {self}"
+            raise RegistrationError(msg) from None
 
         return fn.bind_parent(parent)
+
+    def __str__(self):
+        s = "interface" if self.interface else "object"
+        return f"{s} '{self.cls.__module__}.{self.cls.__name__}'"

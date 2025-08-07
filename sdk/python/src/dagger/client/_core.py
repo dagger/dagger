@@ -13,6 +13,7 @@ from typing import (
 
 import anyio
 import cattrs
+import exceptiongroup
 import graphql
 import httpx
 from beartype.door import TypeHint
@@ -27,6 +28,7 @@ from gql.transport.exceptions import (
 from typing_extensions import TypeForm
 
 from dagger import (
+    DaggerError,
     ExecuteTimeoutError,
     InvalidQueryError,
     TransportError,
@@ -146,7 +148,17 @@ class Context:
         root = functools.reduce(_collapse, reversed(self.selections))
 
         # `to_dsl` will cascade to all children, until the end.
-        return root.to_dsl(DSLSchema(await self.conn.session.get_schema()))
+        try:
+            return root.to_dsl(DSLSchema(await self.conn.session.get_schema()))
+        except (graphql.GraphQLError, AttributeError, TypeError) as e:
+            logger.exception("GraphQL query builder failed to build query")
+            msg = (
+                "Failed to build GraphQL query, probably due to a schema validation "
+                "issue. Please file a bug report because anything that could "
+                "fail to validate at this point should really happen sooner. "
+                "See Python logs for more details."
+            )
+            raise InvalidQueryError(msg) from e
 
     async def query(self) -> graphql.DocumentNode:
         return dsl_gql(DSLQuery(await self.build()))
@@ -241,6 +253,12 @@ class Context:
 
         return self.converter.structure(value, return_type)
 
+    def handle_group_err(self, grp: exceptiongroup.BaseExceptionGroup):
+        """Handle exception group errors."""
+        # just re-raise the first one
+        for exc in grp.exceptions:
+            raise exc from None
+
     async def resolve_ids(self) -> None:
         """Replace Type object instances with their ID implicitly."""
 
@@ -254,18 +272,21 @@ class Context:
             sel.args[k][idx] = await v.id()
 
         # resolve all ids concurrently
-        async with anyio.create_task_group() as tg:
-            for i, sel in enumerate(self.selections):
-                for k, v in sel.args.items():
-                    # check if it's a sequence of Type objects
-                    if is_id_type_sequence(v):
-                        # make sure it's a list, to mutate by index
-                        sel.args[k] = list(v)
-                        for seq_i, seq_v in enumerate(sel.args[k]):
-                            if is_id_type(seq_v):
-                                tg.start_soon(_resolve_seq_id, i, seq_i, k, seq_v)
-                    elif is_id_type(v):
-                        tg.start_soon(_resolve_id, i, k, v)
+        with exceptiongroup.catch(
+            {(graphql.GraphQLError, DaggerError): self.handle_group_err}
+        ):
+            async with anyio.create_task_group() as tg:
+                for i, sel in enumerate(self.selections):
+                    for k, v in sel.args.items():
+                        # check if it's a sequence of Type objects
+                        if is_id_type_sequence(v):
+                            # make sure it's a list, to mutate by index
+                            sel.args[k] = list(v)
+                            for seq_i, seq_v in enumerate(sel.args[k]):
+                                if is_id_type(seq_v):
+                                    tg.start_soon(_resolve_seq_id, i, seq_i, k, seq_v)
+                        elif is_id_type(v):
+                            tg.start_soon(_resolve_id, i, k, v)
 
 
 def make_converter(ctx: Context):
