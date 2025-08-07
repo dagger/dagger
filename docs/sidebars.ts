@@ -169,6 +169,7 @@ module.exports = {
       items: [
         "reference/best-practices/adopting",
         "reference/best-practices/monorepos",
+        "reference/best-practices/modules",
         "reference/best-practices/contributing",
       ],
     },
