@@ -986,6 +986,24 @@ func (ShellSuite) TestCommandStateArgs(ctx context.Context, t *testctx.T) {
 	requireErrOut(t, err, fmt.Sprintf("%q does not exist", cmd))
 }
 
+func (ShellSuite) TestStdlibStateArgs(ctx context.Context, t *testctx.T) {
+	// Test an object argument on a stdlib command
+	contents := rand.Text()
+	script := fmt.Sprintf(`
+svc=$(container | from %s | with-mounted-directory /srv . | with-workdir /srv | with-exposed-port 8000 | as-service --args="python,-m,http.server")
+http http://$($svc | endpoint)/index.html --experimental-service-host $svc | contents
+`, pythonImage)
+
+	c := connect(ctx, t)
+	out, err := daggerCliBase(t, c).
+		WithNewFile("index.html", contents).
+		With(daggerShell(script)).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, contents, out)
+}
+
 func (ShellSuite) TestExecStderr(ctx context.Context, t *testctx.T) {
 	cmd := rand.Text()
 	script := fmt.Sprintf("container | from %s | with-exec ls %s | stdout", alpineImage, cmd)
