@@ -135,6 +135,7 @@ module.exports = {
         "reference/glossary",
         "reference/cli/index",
         "reference/ide-setup",
+        "reference/troubleshooting",
       ],
     },
     {
@@ -208,7 +209,6 @@ module.exports = {
       items: [
         "reference/engine-runtime/index",
         "reference/engine-runtime/performance-caching",
-        "reference/engine-runtime/troubleshooting",
         {
           type: "link",
           label: "Engine Configuration Schema",
