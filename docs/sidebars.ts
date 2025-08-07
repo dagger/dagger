@@ -2,7 +2,7 @@ module.exports = {
   current: [
     {
       type: "category",
-      label: "What is Dagger?",
+      label: "Introduction",
       items: [
         "index",
         "use-cases",
