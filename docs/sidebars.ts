@@ -176,6 +176,7 @@ module.exports = {
       type: "category",
       label: "API and SDKs Documentation",
       items: [
+        "reference/api/index",
         "reference/api/internals",
         {
           type: "link",
