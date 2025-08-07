@@ -300,7 +300,7 @@ func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
 				return nil, err
 			}
 			tools = append(tools, LLMTool{
-				Name:        tool.Name,
+				Name:        name + "_" + tool.Name,
 				Description: tool.Description,
 				Schema:      anied,
 				Call: func(ctx context.Context, args any) (any, error) {
