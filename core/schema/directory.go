@@ -8,16 +8,11 @@ import (
 	"io/fs"
 	"os"
 	"path"
-	"path/filepath"
-	"runtime"
 	"strings"
-	"sync"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/moby/patternmatcher/ignorefile"
-	"golang.org/x/sync/errgroup"
-	"golang.org/x/sync/semaphore"
 )
 
 type directorySchema struct{}
@@ -785,84 +780,10 @@ type gitIgnoreForArgs struct {
 }
 
 func (s *directorySchema) gitIgnoreFor(ctx context.Context, parent dagql.ObjectResult[*core.Directory], _ gitIgnoreForArgs) (dagql.Array[dagql.String], error) {
-	name := parent.Self().Dir
-
-	dag, err := core.CurrentDagqlServer(ctx)
+	patterns, err := parent.Self().GitIgnoreFor(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get dag server: %w", err)
+		return nil, err
 	}
 
-	var entries dagql.Array[dagql.String]
-	err = dag.Select(ctx, parent, &entries,
-		dagql.Selector{
-			Field: "glob",
-			Args: []dagql.NamedInput{
-				{Name: "pattern", Value: dagql.String("**/.gitignore")},
-			},
-		},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list files in directory %s: %w", name, err)
-	}
-
-	var result dagql.Array[dagql.String]
-	eg, ctx := errgroup.WithContext(ctx)
-
-	// Mutex to protect the result slice from concurrent writes.
-	var resultMu sync.Mutex
-
-	// Limit concurrency to avoid overwhelming the engine
-	sem := semaphore.NewWeighted(int64(runtime.NumCPU()))
-
-	for i := 1; i <= entries.Len(); i++ {
-		i := i
-
-		if err := sem.Acquire(ctx, 1); err != nil {
-			return nil, err
-		}
-
-		eg.Go(func() error {
-			defer sem.Release(1)
-
-			entry, err := entries.Nth(i)
-			if err != nil {
-				return fmt.Errorf("failed to get entry %d in directory %s: %w", i, name, err)
-			}
-
-			entryValue, ok := dagql.UnwrapAs[dagql.String](entry)
-			if !ok {
-				return fmt.Errorf("expected string, got %T", entry)
-			}
-
-			var content dagql.String
-			err = dag.Select(ctx, parent, &content,
-				dagql.Selector{
-					Field: "file",
-					Args: []dagql.NamedInput{
-						{Name: "path", Value: entryValue},
-					},
-				},
-				dagql.Selector{
-					Field: "contents",
-				},
-			)
-			if err != nil {
-				return fmt.Errorf("failed to get file %s: %w", entryValue, err)
-			}
-
-			patterns := core.ParseGitIgnore(string(content), filepath.Dir(string(entryValue)))
-
-			resultMu.Lock()
-			defer resultMu.Unlock()
-			result = append(result, dagql.NewStringArray(patterns...)...)
-
-			return nil
-		})
-	}
-
-	if err := eg.Wait(); err != nil {
-		return nil, fmt.Errorf("failed to load .gitignore files: %w", err)
-	}
-
-	return result, nil
+	return dagql.NewStringArray(patterns...), nil
 }
