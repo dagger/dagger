@@ -135,6 +135,11 @@ async def record_exception(exc: Exception):
         # but prepending like this avoids a future mistake.
         attrs = {**extra, **attrs}
 
+    # Preserve original API error so it's properly propagated.
+    if isinstance(exc, dagger.QueryError):
+        msg = str(exc)
+        attrs.update(exc.error.extensions)
+
     dag_err = dag.error(msg)
     for key, value in attrs.items():
         dag_err = dag_err.with_value(key, dagger.JSON(_safe_json_dumps(value)))

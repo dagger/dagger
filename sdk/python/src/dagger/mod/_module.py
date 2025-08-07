@@ -398,9 +398,8 @@ class Module:
                 "API error while executing function",
                 exc_info=(type(e), e, tb),
             )
-            msg = f"Error from API: {e}"
-            # Make sure GraphQL error extensions are included as dagger.Error() values.
-            raise FunctionError(msg, extra=e.error.extensions) from None
+            # Preserve API error so it's properly propagated.
+            raise e from None
         except Exception as e:
             # Escape hatch if too noisy.
             if self.log_exceptions:

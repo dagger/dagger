@@ -40,11 +40,9 @@ async def main(mod: Module | None = None) -> int | None:
             if mod is None:
                 mod = load_module()
             return await mod.serve()
-        except ModuleError as e:
+        except (ModuleError, dagger.QueryError) as e:
             await record_exception(e)
             return 2
-        except AssertionError:
-            raise
         except Exception as e:
             logger.exception("Unhandled exception")
             await record_exception(e)
