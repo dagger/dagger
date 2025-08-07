@@ -74,7 +74,7 @@ func (j *Job) callDaggerStep() api.JobStep {
 		env["DEBUG"] = "1"
 	}
 	// Inject dagger command
-	env["COMMAND"] = "dagger call -q " + j.Command
+	env["COMMAND"] = "dagger call " + j.Command
 	// Inject user-defined secrets
 	for _, secretName := range j.Secrets {
 		env[secretName] = fmt.Sprintf("${{ secrets.%s }}", secretName)
