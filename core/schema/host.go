@@ -400,8 +400,8 @@ func loadDirectoryGitIgnorePatterns(ctx context.Context, parentPath string, host
 		return nil, fmt.Errorf("failed to get git ignore include paths: %w", err)
 	}
 
-	var directory dagql.ObjectResult[*core.Directory]
-	err = srv.Select(ctx, srv.Root(), &directory,
+	var result dagql.ResultArray[dagql.String]
+	err = srv.Select(ctx, srv.Root(), &result,
 		dagql.Selector{Field: "host"},
 		dagql.Selector{
 			Field: "directory",
@@ -413,17 +413,29 @@ func loadDirectoryGitIgnorePatterns(ctx context.Context, parentPath string, host
 				{Name: "noGitAutoIgnore", Value: dagql.Boolean(true)},
 			},
 		},
+		dagql.Selector{
+			Field: "__gitIgnoreFor",
+		},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load directory ignore patterns: %w", err)
 	}
 
-	gitIgnorePatterns, err := core.LoadGitIgnoreInDirectory(ctx, directory)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load .gitignore in context directory %q: %w", parentPath, err)
+	for i := 1; i <= result.Len(); i++ {
+		entry, err := result.Nth(i)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get entry %d in directory ignore patterns: %w", i, err)
+		}
+
+		entryValue, ok := dagql.UnwrapAs[dagql.String](entry)
+		if !ok {
+			return nil, fmt.Errorf("expected string, got %T", entry)
+		}
+
+		patterns = append(patterns, string(entryValue))
 	}
 
-	return gitIgnorePatterns, nil
+	return patterns, nil
 }
 
 func rebaseGitIgnorePatterns(parentPath string, hostPath string, patterns []string) ([]string, error) {
