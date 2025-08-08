@@ -85,27 +85,31 @@ const config: Config = {
               alias: {
                 "@cookbookBuild": path.resolve(
                   __dirname,
-                  "current_docs/partials/cookbook/build"
+                  "current_docs/partials/cookbook/builds"
                 ),
                 "@cookbookFilesystem": path.resolve(
                   __dirname,
-                  "current_docs/partials/cookbook/filesystem"
+                  "current_docs/partials/cookbook/filesystems"
                 ),
                 "@cookbookContainer": path.resolve(
                   __dirname,
-                  "current_docs/partials/cookbook/container"
+                  "current_docs/partials/cookbook/containers"
                 ),
                 "@cookbookSecret": path.resolve(
                   __dirname,
-                  "current_docs/partials/cookbook/secret"
+                  "current_docs/partials/cookbook/secrets"
                 ),
                 "@cookbookService": path.resolve(
                   __dirname,
-                  "current_docs/partials/cookbook/service"
+                  "current_docs/partials/cookbook/services"
                 ),
                 "@cookbookAgent": path.resolve(
                   __dirname,
-                  "current_docs/partials/cookbook/agent"
+                  "current_docs/partials/cookbook/agents"
+                ),
+                "@cookbookError": path.resolve(
+                  __dirname,
+                  "current_docs/partials/cookbook/errors"
                 ),
                 "@partials": path.resolve(__dirname, "current_docs/partials"),
                 "@daggerTypes": path.resolve(
