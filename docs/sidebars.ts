@@ -35,17 +35,48 @@ module.exports = {
       items: [
         "getting-started/index",
         "getting-started/installation",
+        "getting-started/api",
+      ],
+    },
+    {
+      type: "category",
+      label: "Hands-on with Dagger",
+      items: [
+        "getting-started/basics",
+        "getting-started/ci",
+        "getting-started/agent/index",
+        "getting-started/agent/inproject",
+      ],
+    },
+    {
+      type: "category",
+      label: "Calling the Dagger API",
+      items: [
         {
           type: "category",
-          label: "Quickstarts",
+          label: "Clients",
           items: [
-            "getting-started/core-concepts",
-            "getting-started/ci",
-            "getting-started/agent/index",
-            "getting-started/agent/inproject",
+            "extending/clients-sdk",
+            "extending/clients-cli",
+            "extending/clients-http",
           ],
         },
-      ],
+        {
+          type: "category",
+          label: "Types",
+          items: [
+            "types/index",
+            "types/objects/container",
+            "types/objects/directory",
+            "types/objects/file",
+            "types/objects/llm",
+            "types/objects/secret",
+            "types/objects/service",
+            "types/objects/cache-volume",
+            "types/objects/env",
+          ],
+        },
+      ]
     },
     {
       type: "category",
@@ -54,21 +85,6 @@ module.exports = {
         "integrations/index",
         "integrations/ci",
         "integrations/container-runtimes",
-      ],
-    },
-    {
-      type: "category",
-      label: "Types",
-      items: [
-        "types/index",
-        "types/objects/container",
-        "types/objects/directory",
-        "types/objects/file",
-        "types/objects/llm",
-        "types/objects/secret",
-        "types/objects/service",
-        "types/objects/cache-volume",
-        "types/objects/env",
       ],
     },
   ],
@@ -115,15 +131,6 @@ module.exports = {
         "extending/custom-applications/python",
         "extending/custom-applications/typescript",
         "extending/custom-applications/php",
-      ],
-    },
-    {
-      type: "category",
-      label: "Clients",
-      items: [
-        "extending/clients-sdk",
-        "extending/clients-cli",
-        "extending/clients-http",
       ],
     },
   ],
