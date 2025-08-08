@@ -17,14 +17,12 @@ import (
 	"time"
 
 	containerdfs "github.com/containerd/continuity/fs"
-	"github.com/dagger/dagger/engine/slog"
 	fscopy "github.com/dagger/dagger/engine/sources/local/copy"
 	"github.com/dustin/go-humanize"
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/patternmatcher"
 	fstypes "github.com/tonistiigi/fsutil/types"
@@ -947,8 +945,6 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permiss
 }
 
 func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, error) {
-	dir = dir.Clone()
-
 	thisDirPath := dir.Dir
 	if thisDirPath == "" {
 		thisDirPath = "/"
@@ -961,23 +957,28 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 		// TODO(vito): work around with llb.Copy shenanigans?
 		return nil, fmt.Errorf("cannot diff with different relative paths: %q != %q", dir.Dir, other.Dir)
 	}
-
-	lowerSt, err := dir.State()
+	dirRef, err := getRefOrEvaluate(ctx, dir)
 	if err != nil {
 		return nil, err
 	}
-
-	upperSt, err := other.State()
+	otherRef, err := getRefOrEvaluate(ctx, other)
 	if err != nil {
 		return nil, err
 	}
-
-	err = dir.SetState(ctx, llb.Diff(lowerSt, upperSt))
+	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	return dir, nil
+	diffRef, err := query.BuildkitCache().Diff(ctx, dirRef, otherRef, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to diff directories: %w", err)
+	}
+	diffDir, err := NewScratchDirectory(ctx, query.Platform())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create scratch directory for diff: %w", err)
+	}
+	diffDir.Result = diffRef
+	return diffDir, nil
 }
 
 func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...string) (*Directory, error) {
