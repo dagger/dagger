@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
@@ -17,51 +16,28 @@ import (
 )
 
 type ServiceTransport struct {
-	Container dagql.ObjectResult[*Container]
-	Env       dagql.ObjectResult[*Env]
+	Service dagql.ObjectResult[*Service]
+	nth     int
 }
 
 var _ mcp.Transport = (*ServiceTransport)(nil)
 
 func (t *ServiceTransport) Connect(ctx context.Context) (mcp.Connection, error) {
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
-	}
-
-	var svc dagql.ObjectResult[*Service]
-	if err := srv.Select(ctx, t.Container, &svc, dagql.Selector{
-		Field: "withMountedDirectory",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "path",
-				Value: dagql.NewString("."),
-			},
-			{
-				Name:  "source",
-				Value: dagql.NewID[*Directory](t.Env.Self().Hostfs.ID()),
-			},
-		},
-	}, dagql.Selector{
-		Field: "asService",
-	}); err != nil {
-		return nil, fmt.Errorf("failed to select service: %w", err)
-	}
-
-	id := svc.ID().Append(
-		svc.Type(),
-		svc.ID().Field(),
+	// Give each connection a distinct service ID.
+	t.nth++
+	id := t.Service.ID().Append(
+		t.Service.Type(),
+		t.Service.ID().Field(),
 		"",
-		svc.ID().Module(),
-		0,
+		t.Service.ID().Module(),
+		t.nth,
 		"",
-		// kind hacky, but we just want to pair the service ID with the
-		call.NewArgument("env", call.NewLiteralID(t.Env.ID()), false),
 	)
 
 	conn := &svcMCPConn{}
 
-	conn.svc, err = svc.Self().Start(
+	var err error
+	conn.svc, err = t.Service.Self().Start(
 		ctx,
 		id,
 		false, // MUST be false, otherwise

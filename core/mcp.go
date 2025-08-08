@@ -86,16 +86,15 @@ type MCPServerConfig struct {
 	Name string
 
 	// Command to run the MCP server
-	Container dagql.ObjectResult[*Container]
+	Service dagql.ObjectResult[*Service]
 }
 
-func (srv *MCPServerConfig) Dial(ctx context.Context, env dagql.ObjectResult[*Env]) (*mcp.ClientSession, error) {
+func (srv *MCPServerConfig) Dial(ctx context.Context) (*mcp.ClientSession, error) {
 	return mcp.NewClient(&mcp.Implementation{
 		Title:   "Dagger",
 		Version: engine.Version,
 	}, nil).Connect(ctx, &ServiceTransport{
-		Container: srv.Container,
-		Env:       env,
+		Service: srv.Service,
 	})
 }
 
@@ -261,7 +260,7 @@ func (m *MCP) syncMCPSessions(ctx context.Context) error {
 		if _, ok := m.mcpSessions[mcpSrv.Name]; ok {
 			continue
 		}
-		sess, err := mcpSrv.Dial(ctx, m.env)
+		sess, err := mcpSrv.Dial(ctx)
 		if err != nil {
 			return fmt.Errorf("dial mcp %q: %w", mcpSrv.Name, err)
 		}

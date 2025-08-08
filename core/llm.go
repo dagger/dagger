@@ -662,11 +662,11 @@ func (llm *LLM) WithBlockedFunction(ctx context.Context, typeName, funcName stri
 }
 
 // Add an external MCP server to the LLM
-func (llm *LLM) WithMCPServer(name string, ctr dagql.ObjectResult[*Container]) *LLM {
+func (llm *LLM) WithMCPServer(name string, svc dagql.ObjectResult[*Service]) *LLM {
 	llm = llm.Clone()
 	llm.mcp = llm.mcp.WithMCPServer(&MCPServerConfig{
-		Name:      name,
-		Container: ctr,
+		Name:    name,
+		Service: svc,
 	})
 	return llm
 }
