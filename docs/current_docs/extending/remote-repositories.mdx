@@ -58,7 +58,7 @@ One approach is to pre-resolve a private Git repository into a `Directory` objec
 dagger call clone --dir git@github.com:private/secret-repo@main
 ```
 
-In this approach, the module simply receives a `Directory` object and never directly accesses your SSH agent. [Refer to the cookbook for an example](../cookbook/filesystem.mdx#mount-or-copy-a-directory-or-remote-repository-to-a-container).
+In this approach, the module simply receives a `Directory` object and never directly accesses your SSH agent. [Refer to the cookbook for an example](../cookbook/filesystems.mdx#mount-or-copy-a-directory-or-remote-repository-to-a-container).
 
 ### Pass the host SSH agent socket as argument
 
@@ -69,7 +69,7 @@ dagger call clone-with-ssh --repository git@github.com:private/secret-repo.git \
   --ref main --sock "$SSH_AUTH_SOCK"
 ```
 
-In this approach, the caller explicitly provides the SSH agent socket. This prevents hidden or unapproved use of SSH credentials because the module cannot complete the cloning operation without the user's approval. [Refer to the cookbook for an example](../cookbook/filesystem.mdx#clone-a-remote-git-repository-into-a-container).
+In this approach, the caller explicitly provides the SSH agent socket. This prevents hidden or unapproved use of SSH credentials because the module cannot complete the cloning operation without the user's approval. [Refer to the cookbook for an example](../cookbook/filesystems.mdx#clone-a-remote-git-repository-into-a-container).
 
 ## Authentication methods
 

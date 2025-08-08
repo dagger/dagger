@@ -1,0 +1,87 @@
+### Inspect directories and files
+
+The following Dagger Function clones Dagger's GitHub repository and opens an interactive terminal session to inspect it. Under the hood, this creates a new container (defaults to `alpine`) and starts a shell, mounting the repository directory inside.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../extending/snippets/debugging/go/terminal-directory-1/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+```python file=../../../extending/snippets/debugging/python/terminal-directory-1/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../extending/snippets/debugging/typescript/terminal-directory-1/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+The container created to mount the directory can be customized using additional options. The following Dagger Function revised the previous example to demonstrate this, using an `ubuntu` container image and `bash` shell instead of the defaults.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../extending/snippets/debugging/go/terminal-directory-2/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+```python file=../../../extending/snippets/debugging/python/terminal-directory-2/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../extending/snippets/debugging/typescript/terminal-directory-2/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+- Execute a Dagger Function to clone Dagger's GitHub repository and open a terminal session in the repository directory:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c simple-directory
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    simple-directory
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call simple-directory
+    ```
+    </TabItem>
+    </Tabs>
+
+- Execute another Dagger Function that does the same as the previous one, except using an `ubuntu` container image as base and initializing the terminal with the `bash` shell:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c advanced-directory
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    advanced-directory
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call advanced-directory
+    ```
+    </TabItem>
+    </Tabs>
