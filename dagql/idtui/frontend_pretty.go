@@ -200,17 +200,18 @@ func (fe *frontendPretty) renderSidebar() {
 		}
 
 		keymap := new(strings.Builder)
-		var keymapWidth int
-		if len(section.KeyMap) > 0 {
-			keymapWidth = fe.renderKeymap(keymap, KeymapStyle.Background(ANSIBlack), section.KeyMap)
-		}
-
 		if section.Title != "" {
 			fe.sidebarBuf.WriteString(fe.viewOut.String(section.Title).
 				Foreground(termenv.ANSIBrightBlack).String())
 		}
 
-		filler := fe.sidebarWidth - len(section.Title) - keymapWidth - 5
+		filler := fe.sidebarWidth - len(section.Title)
+		filler -= 4 // border, space on each side, and between title and bar
+		if len(section.KeyMap) > 0 {
+			filler -= fe.renderKeymap(keymap, KeymapStyle.Background(ANSIBlack), section.KeyMap)
+			filler -= 1 // space between bar and keymap
+		}
+
 		if filler > 0 {
 			horizBar := fe.viewOut.String(strings.Repeat(HorizBar, filler)).String()
 			fe.sidebarBuf.WriteString(
