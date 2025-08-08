@@ -28,7 +28,7 @@ module.exports = {
       items: ["examples/index", "examples/demos"],
     },
   ],
-  getting_started: [
+  gettingStarted: [
     {
       type: "category",
       label: "Getting Started",
