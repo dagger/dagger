@@ -31,42 +31,42 @@ The caveat with this approach is that forcing a zero exit code on a failure cach
 
 Continue executing a Dagger Function even after a command within it fails. The Dagger Function returns a custom `TestResult` object containing a test report and the exit code of the failed command.
 
-- Obtain the exit code:
+Obtain the exit code:
 
-    <Tabs groupId="shell">
-    <TabItem value="System shell">
-    ```shell
-    dagger -c 'test | exit-code'
-    ```
-    </TabItem>
-    <TabItem value="Dagger Shell">
-    ```shell title="First type 'dagger' for interactive mode."
-    test | exit-code
-    ```
-    </TabItem>
-    <TabItem value="Dagger CLI">
-    ```shell
-    dagger call test exit-code
-    ```
-    </TabItem>
-    </Tabs>
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'test | exit-code'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+test | exit-code
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call test exit-code
+```
+</TabItem>
+</Tabs>
 
-- Obtain the report:
+Obtain the report:
 
-    <Tabs groupId="shell">
-    <TabItem value="System shell">
-    ```shell
-    dagger -c 'test | report | contents'
-    ```
-    </TabItem>
-    <TabItem value="Dagger Shell">
-    ```shell title="First type 'dagger' for interactive mode."
-    test | report | contents
-    ```
-    </TabItem>
-    <TabItem value="Dagger CLI">
-    ```shell
-    dagger call test report contents
-    ```
-    </TabItem>
-    </Tabs>
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'test | report | contents'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+test | report | contents
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call test report contents
+```
+</TabItem>
+</Tabs>
