@@ -92,8 +92,6 @@ module.exports = {
         "extending/module-dependencies",
         "extending/packages",
         "extending/constructors",
-        "extending/default-paths",
-        "extending/fs-filters",
         "extending/error-handling",
         "extending/enumerations",
         "extending/custom-types",

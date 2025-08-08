@@ -18,7 +18,7 @@ import ExportDirectoryOrFileToHost from "@cookbookFilesystem/export-directory-or
 
 ## Default paths
 
-It is possible to assign a default path for a `Directory` or `File` argument in a Dagger Function. Dagger will automatically use this default path when no value is specified for the argument. 
+It is possible to assign a default path for a `Directory` or `File` argument in a Dagger Function. Dagger will automatically use this default path when no value is specified for the argument.
 
 The `Directory` or `File` loaded in this manner is not merely a string, but the actual filesystem state of the directory or file.
 
@@ -31,8 +31,36 @@ passed for the argument, it always overrides the default path.
 
 Here's an example:
 
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
 
-## Context directory
+The default path is set by adding a `defaultPath` pragma on the corresponding Dagger Function `source` argument.
+
+```go file=./snippets/default-paths/go/main.go
+```
+</TabItem>
+<TabItem value="python" label="Python">
+
+The default path is set by adding a `DefaultPath` annotation on the corresponding Dagger Function `source` argument.
+
+```python file=./snippets/default-paths/python/main.py
+```
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+The default path is set by adding an `@argument` decorator with a `defaultPath` parameter on the corresponding Dagger Function `source` argument.
+
+```typescript file=./snippets/default-paths/typescript/index.ts
+```
+</TabItem>
+<TabItem value="php" label="PHP">
+
+The default path is set by adding a `#[DefaultPath]` Attribute on the corresponding Dagger Function `source` argument.
+
+```php file=./snippets/default-paths/php/src/MyModule.php
+```
+</TabItem>
+</Tabs>
 
 When determining how to resolve a default path, Dagger first identifies a "context directory", and then resolves the path starting from the context directory.
 
@@ -90,27 +118,7 @@ directory].
 
 When you pass a directory to a Dagger Function as argument, Dagger uploads everything in that directory tree to the Dagger Engine. For large monorepos or directories containing large-sized files, this can significantly slow down your Dagger Function while filesystem contents are transferred. To mitigate this problem, Dagger lets you apply filters to control which files and directories are uploaded.
 
-### Directory arguments
-
-Dagger Functions do not have access to the filesystem of the host you invoke the Dagger Function from (i.e. the host you execute a CLI command like `dagger` from). Instead, host files and directories need to be explicitly passed as command-line arguments to Dagger Functions.
-
-There are two important reasons for this.
-
-- Reproducibility: By providing a call-time mechanism to define and control the files available to a Dagger Function, Dagger guards against creating hidden dependencies on ambient properties of the host filesystem that could change at any moment.
-- Security: By forcing you to explicitly specify which host files and directories a Dagger Function "sees" on every call, Dagger ensures that you're always 100% in control. This reduces the risk of third-party Dagger Functions gaining access to your data.
-
-To tell a Dagger Function which directory to use, specify its path as an argument when using `dagger call`. Here's a simple example, which passes a directory from the host (`./example/hello`) to a Dagger Function:
-
-```shell
-git clone https://github.com/golang/example
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --source=./example/hello --args=. directory --p
-```
-
-The important thing to know here is that, by default, Dagger will copy and upload everything in the specified directory and its sub-directories to the Dagger Engine. For complex directory trees, directories containing a large number of files, or directories containing large-sized files, this can add minutes to your Dagger Function execution time while the contents are transferred.
-
 Dagger offers pre- and post-call filtering to mitigate this problem and optimize how your directories are handled.
-
-### Why filter?
 
 Filtering improves the performance of your Dagger Functions in three ways:
 
@@ -129,9 +137,9 @@ Pre-call filtering means that a directory is filtered before it's uploaded to th
 - Large files, such as audio/video files and other binary content. These files take time to upload. If they're not directly relevant, you'll usually want your Dagger Function to ignore them.
 
 :::tip
-  The `.git` directory is a good example of both these cases. It contains a lot
-  of data, including large binary objects, and for projects with a long version
-  history, it can sometimes be larger than your actual source code.
+The `.git` directory is a good example of both these cases. It contains a lot
+of data, including large binary objects, and for projects with a long version
+history, it can sometimes be larger than your actual source code.
 :::
 
 - Dependencies. If you're developing locally, you'll typically have your project dependencies installed locally: `node_modules` (Node.js), `.venv` (Python), `vendor` (PHP) and so on. When you call your Dagger Function locally, Dagger will upload all these installed dependencies as well. This is both bad practice and inefficient. Typically, you'll want your Dagger Function to ignore locally-installed dependencies and only operate on the project source code.
@@ -157,7 +165,7 @@ To implement a pre-call filter in your Dagger Function, add an `ignore` paramete
 
 Here's an example of a Dagger Function that excludes everything in a given directory except Go source code files:
 
-```go file=../../snippets/fs-filters/pre-call/go/main.go
+```go file=./snippets/fs-filters/pre-call/go/main.go
 
 ```
 
@@ -166,7 +174,7 @@ Here's an example of a Dagger Function that excludes everything in a given direc
 
 Here's an example of a Dagger Function that excludes everything in a given directory except Python source code files:
 
-```python file=../../snippets/fs-filters/pre-call/python/main.py
+```python file=./snippets/fs-filters/pre-call/python/main.py
 
 ```
 
@@ -175,7 +183,7 @@ Here's an example of a Dagger Function that excludes everything in a given direc
 
 Here's an example of a Dagger Function that excludes everything in a given directory except TypeScript source code files:
 
-```typescript file=../../snippets/fs-filters/pre-call/typescript/index.ts
+```typescript file=./snippets/fs-filters/pre-call/typescript/index.ts
 
 ```
 
@@ -184,7 +192,7 @@ Here's an example of a Dagger Function that excludes everything in a given direc
 
 Here's an example of a Dagger Function that excludes everything in a given directory except PHP source code files:
 
-```php file=../../snippets/fs-filters/pre-call/php/src/MyModule.php
+```php file=./snippets/fs-filters/pre-call/php/src/MyModule.php
 
 ```
 
@@ -193,7 +201,7 @@ Here's an example of a Dagger Function that excludes everything in a given direc
 
 Here's an example of a Dagger Function that excludes everything in a given directory except Java source code files:
 
-```java file=../../snippets/fs-filters/pre-call/java/MyModule.java
+```java file=./snippets/fs-filters/pre-call/java/MyModule.java
 
 ```
 
@@ -318,7 +326,7 @@ A good example of this is a multi-stage build. Imagine a Dagger Function that re
 
 To implement a post-call filter in your Dagger Function, use the `DirectoryWithDirectoryOpts` or `ContainerWithDirectoryOpts` structs, which support `Include` and `Exclude` patterns for `Directory` objects. Here's an example:
 
-```go file=../../snippets/fs-filters/post-call/go/main.go
+```go file=./snippets/fs-filters/post-call/go/main.go
 
 ```
 
@@ -327,7 +335,7 @@ To implement a post-call filter in your Dagger Function, use the `DirectoryWithD
 
 To implement a post-call filter in your Dagger Function, use the `include` and `exclude` parameters when working with `Directory` objects. Here's an example:
 
-```python file=../../snippets/fs-filters/post-call/python/main.py
+```python file=./snippets/fs-filters/post-call/python/main.py
 
 ```
 
@@ -336,7 +344,7 @@ To implement a post-call filter in your Dagger Function, use the `include` and `
 
 To implement a post-call filter in your Dagger Function, use the `include` and `exclude` parameters when working with `Directory` objects. Here's an example:
 
-```typescript file=../../snippets/fs-filters/post-call/typescript/index.ts
+```typescript file=./snippets/fs-filters/post-call/typescript/index.ts
 
 ```
 
@@ -345,7 +353,7 @@ To implement a post-call filter in your Dagger Function, use the `include` and `
 
 To implement a post-call filter in your Dagger Function, use the `include` and `exclude` parameters when working with `Directory` objects. Here's an example:
 
-```php file=../../snippets/fs-filters/post-call/php/src/MyModule.php
+```php file=./snippets/fs-filters/post-call/php/src/MyModule.php
 
 ```
 
@@ -354,7 +362,7 @@ To implement a post-call filter in your Dagger Function, use the `include` and `
 
 To implement a post-call filter in your Dagger Function, use the `Container.WithDirectoryArguments` class which support `withInclude` and `withExclude` functions when working with `Directory` objects. Here's an example:
 
-```java file=../../snippets/fs-filters/post-call/java/MyModule.java
+```java file=./snippets/fs-filters/post-call/java/MyModule.java
 
 ```
 
