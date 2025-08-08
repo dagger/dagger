@@ -165,7 +165,19 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 			for _, fp := range dirDiff.Changed {
 				diff += fmt.Sprintf("%s\n", termenv.String("• "+fp).Bold().Foreground(termenv.ANSIYellow))
 			}
+			dirs := map[string]bool{}
+		removed:
 			for _, fp := range dirDiff.Removed {
+				for dir := range dirs {
+					if strings.HasPrefix(fp, dir) {
+						// don't show removed files in directories that were already removed
+						continue removed
+					}
+				}
+				// if the path ends with a slash, it's a directory
+				if strings.HasSuffix(fp, "/") {
+					dirs[fp] = true
+				}
 				diff += fmt.Sprintf("%s\n", termenv.String("− "+fp).Bold().Foreground(termenv.ANSIRed))
 			}
 			Frontend.SetSidebarContent(idtui.SidebarSection{
