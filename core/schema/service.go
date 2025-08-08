@@ -131,6 +131,14 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("random").Doc(`Bind each tunnel port to a random port on the host.`),
 			),
 
+		dagql.NodeFunc("remount", s.remount).
+			DoNotCache("Imperatively mutates runtime state.").
+			Doc(`Mounts a directory over a path in the service's environment.`).
+			Args(
+				dagql.Arg("path").Doc(`The path in the service's environment to mount the directory over.`),
+				dagql.Arg("source").Doc(`The source directory to mount.`),
+			),
+
 		dagql.NodeFunc("stop", s.stop).
 			DoNotCache("Imperatively mutates runtime state.").
 			Doc(`Stop the service.`).
@@ -358,6 +366,24 @@ func (s *serviceSchema) stop(ctx context.Context, parent dagql.ObjectResult[*cor
 	}
 	id := dagql.NewID[*core.Service](parent.ID())
 	return dagql.NewResultForCurrentID(ctx, id)
+}
+
+func (s *serviceSchema) remount(ctx context.Context, parent dagql.ObjectResult[*core.Service], args struct {
+	Path   string
+	Source core.DirectoryID
+}) (res dagql.Nullable[core.Void], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, fmt.Errorf("failed to get Dagger server: %w", err)
+	}
+	source, err := args.Source.Load(ctx, srv)
+	if err != nil {
+		return res, fmt.Errorf("failed to load source directory: %w", err)
+	}
+	if err := parent.Self().Remount(ctx, parent.ID(), args.Path, source.Self()); err != nil {
+		return res, err
+	}
+	return dagql.Null[core.Void](), nil
 }
 
 type UpArgs struct {

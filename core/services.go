@@ -15,6 +15,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"
 )
@@ -67,6 +68,9 @@ type RunningService struct {
 
 	// Block until the service has exited or the provided context is canceled.
 	Wait func(ctx context.Context) error
+
+	// The active container, if any, running the service.
+	Container *buildkit.Container
 }
 
 // ServiceKey is a unique identifier for a service.
