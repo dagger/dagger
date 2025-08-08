@@ -85,7 +85,16 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // Step 4: Attach the detached mount to the target path in the container
+    // Step 4: Unmount any existing mount at the target path
+    printf("Unmounting any existing mount at %s...\n", target_path);
+    if (umount2(target_path, MNT_DETACH) < 0) {
+        if (errno != EINVAL && errno != ENOENT) {
+            perror("umount2 failed");
+            // Continue anyway, might not be mounted
+        }
+    }
+
+    // Step 5: Attach the detached mount to the target path in the container
     printf("Attaching mount to %s in container...\n", target_path);
     if (move_mount(fd_mnt, "", AT_FDCWD, target_path, MOVE_MOUNT_F_EMPTY_PATH) < 0) {
         perror("move_mount failed");

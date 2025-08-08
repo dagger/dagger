@@ -64,7 +64,8 @@ type Service struct {
 	// The sockets on the host to reverse tunnel
 	HostSockets []*Socket
 
-	RemountedRefs []cache.MutableRef
+	// Paths that were remounted at runtime.
+	RemountedRefs map[string]cache.MutableRef
 }
 
 func (*Service) Type() *ast.Type {
@@ -689,7 +690,20 @@ func (svc *Service) Remount(ctx context.Context, id *call.ID, target string, sou
 	if err != nil {
 		return fmt.Errorf("failed to create new ref for source directory: %w", err)
 	}
-	svc.RemountedRefs = append(svc.RemountedRefs, newRef)
+
+	if svc.RemountedRefs == nil {
+		svc.RemountedRefs = make(map[string]cache.MutableRef)
+	}
+
+	if prevRef, hadPrevRef := svc.RemountedRefs[target]; hadPrevRef && prevRef.ID() != newRef.ID() {
+		defer func() {
+			if retErr == nil {
+				// release the previous ref, if there was one, but only after it's
+				// replaced
+				prevRef.Release(ctx)
+			}
+		}()
+	}
 
 	mount, err := newRef.Mount(ctx, false, nil)
 	if err != nil {
@@ -706,11 +720,20 @@ func (svc *Service) Remount(ctx context.Context, id *call.ID, target string, sou
 			retErr = err
 		}
 	}()
+
+	// mount the read-write copy into the container
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	containerMount := exec.Command("container-mount", strconv.Itoa(state.Pid), dir, target)
 	containerMount.Stdout = stdio.Stdout
 	containerMount.Stderr = stdio.Stderr
-	return containerMount.Run()
+	if err := containerMount.Run(); err != nil {
+		return fmt.Errorf("failed to mount %s into container %s: %w", target, containerID, err)
+	}
+
+	// keep track of the ref
+	svc.RemountedRefs[target] = newRef
+
+	return nil
 }
 
 var _ dagql.OnReleaser = (*Container)(nil)
