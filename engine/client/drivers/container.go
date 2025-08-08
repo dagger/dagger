@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 
 	"dagger.io/dagger/telemetry"
@@ -126,23 +125,14 @@ func (d *imageDriver) Available(ctx context.Context) (bool, error) {
 }
 
 func (d *imageDriver) Provision(ctx context.Context, target *url.URL, opts *DriverOpts) (Connector, error) {
-	cleanup := true
-	if val, ok := os.LookupEnv("DAGGER_LEAVE_OLD_ENGINE"); ok {
-		b, _ := strconv.ParseBool(val)
-		cleanup = !b
-	} else if val := target.Query().Get("cleanup"); val != "" {
-		cleanup, _ = strconv.ParseBool(val)
-	}
-
-	port, _ := strconv.Atoi(target.Query().Get("port"))
 	target, err := d.create(ctx, containerCreateOpts{
+		containerName: opts.ContainerName,
+		volumeName:    opts.VolumeName,
+		cleanup:       opts.Cleanup,
+		port:          opts.Port,
+		cpus:          opts.CPUs,
+		memory:        opts.Memory,
 		imageRef:      target.Host + target.Path,
-		containerName: target.Query().Get("container"),
-		volumeName:    target.Query().Get("volume"),
-		cleanup:       cleanup,
-		port:          port,
-		cpus:          target.Query().Get("cpus"),
-		memory:        target.Query().Get("memory"),
 	}, opts)
 	if err != nil {
 		return nil, err
@@ -150,7 +140,6 @@ func (d *imageDriver) Provision(ctx context.Context, target *url.URL, opts *Driv
 	return containerConnector{
 		backend: d.backend,
 		host:    target.Host,
-		values:  target.Query(),
 	}, nil
 }
 
@@ -160,7 +149,6 @@ func (d *imageDriver) ImageLoader(ctx context.Context) imageload.Backend {
 
 type containerConnector struct {
 	host    string
-	values  url.Values
 	backend containerBackend
 }
 
@@ -177,7 +165,6 @@ func (d *containerDriver) Provision(ctx context.Context, target *url.URL, opts *
 	return containerConnector{
 		backend: d.backend,
 		host:    target.Host,
-		values:  target.Query(),
 	}, nil
 }
 
@@ -187,10 +174,12 @@ func (d *containerDriver) ImageLoader(ctx context.Context) imageload.Backend {
 
 func (d containerConnector) Connect(ctx context.Context) (net.Conn, error) {
 	args := []string{}
-	if context := d.values.Get("context"); context != "" {
-		args = append(args, "--context="+context)
+	// FIXME: what did '?context=..' do, and do we need it back?
+	if cmd, ok := os.LookupEnv("DAGGER_IMAGE_COMMAND"); ok {
+		args = append(args, "sh", "-c", cmd)
+	} else {
+		args = append(args, "buildctl", "dial-stdio")
 	}
-	args = append(args, "buildctl", "dial-stdio")
 
 	// using uncancelled context because context remains active for the
 	// duration of the process, after dial has completed
@@ -292,11 +281,11 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 	}
 
 	if dopts.DaggerCloudToken != "" {
-		runOptions.env = append(runOptions.env, fmt.Sprintf("%s=%s", EnvDaggerCloudToken, dopts.DaggerCloudToken))
+		runOptions.env = append(runOptions.env, "DAGGER_CLOUD_TOKEN="+dopts.DaggerCloudToken)
 	}
-	if dopts.GPUSupport != "" {
+	if dopts.GPUSupport {
 		runOptions.gpus = true
-		runOptions.env = append(runOptions.env, fmt.Sprintf("%s=%s", EnvGPUSupport, dopts.GPUSupport))
+		runOptions.env = append(runOptions.env, "_EXPERIMENTAL_DAGGER_GPU_SUPPORT=1")
 	}
 	if opts.port != 0 {
 		runOptions.ports = append(runOptions.ports, fmt.Sprintf("%d:%d", opts.port, opts.port))

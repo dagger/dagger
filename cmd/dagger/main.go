@@ -39,6 +39,7 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -67,7 +68,11 @@ var (
 	interactiveCommandParsed []string
 	web                      bool
 	noExit                   bool
-	_, useCloudEngine        = os.LookupEnv("DAGGER_CLOUD_ENGINE")
+	engineConfig             = client.DefaultParams()
+
+	_, gpuSupport        = os.LookupEnv("_EXPERIMENTAL_DAGGER_GPU_SUPPORT")
+	imageLoader          = os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE")
+	deprecatedRunnerHost = os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST")
 
 	dotOutputFilePath string
 	dotFocusField     string
@@ -174,7 +179,7 @@ func init() {
 
 	// this flag changes the behaviour of a few commands, e.g. call, functions, core, shell, etc.
 	// all those functions will run in a remote cloud engine which gets created at execution time
-	rootCmd.PersistentFlags().BoolVar(&useCloudEngine, "cloud", useCloudEngine, "Run in a Dagger Cloud Engine")
+	rootCmd.PersistentFlags().BoolVar(&engineConfig.CloudEngine, "cloud", engineConfig.CloudEngine, "Run in a Dagger Cloud Engine")
 	rootCmd.PersistentFlags().Lookup("cloud").Hidden = true
 
 	disableFlagsInUseLine(rootCmd)
