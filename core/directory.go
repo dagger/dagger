@@ -17,12 +17,14 @@ import (
 	"time"
 
 	containerdfs "github.com/containerd/continuity/fs"
+	"github.com/dagger/dagger/engine/slog"
 	fscopy "github.com/dagger/dagger/engine/sources/local/copy"
 	"github.com/dustin/go-humanize"
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/patternmatcher"
 	fstypes "github.com/tonistiigi/fsutil/types"
@@ -301,10 +303,6 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
 
 	detach, _, err := svcs.StartBindings(ctx, dir.Services)
 	if err != nil {
@@ -312,20 +310,14 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 	}
 	defer detach()
 
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: dir.LLB,
-	})
+	ref, err := getRefOrEvaluate(ctx, dir)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get ref: %w", err)
 	}
 
-	ref, err := res.SingleRef()
+	mountable, err := ref.Mount(ctx, true, nil)
 	if err != nil {
-		return nil, err
-	}
-	// empty directory, i.e. llb.Scratch()
-	if ref == nil {
-		return []string{}, nil
+		return nil, fmt.Errorf("failed to mount ref: %w", err)
 	}
 
 	// We use the same pattern matching function as Buildkit, since just doing
@@ -341,7 +333,7 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 	}
 
 	var paths []string
-	err = ref.WalkDir(ctx, buildkit.WalkDirRequest{
+	err = buildkit.WalkDir(ctx, mountable, buildkit.WalkDirRequest{
 		IncludePattern: pattern,
 		Path:           dir.Dir,
 		Callback: func(path string, info os.FileInfo) error {
