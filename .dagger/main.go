@@ -77,7 +77,7 @@ func New(
 		if strings.HasPrefix(module, "core/integration/") {
 			continue
 		}
-		if strings.HasPrefix(module, "dagql/idtui/viztest/broken") {
+		if strings.HasPrefix(module, "dagql/idtui/viztest/") {
 			continue
 		}
 		if strings.HasPrefix(module, "modules/evaluator/") {
@@ -131,7 +131,7 @@ func (dev *DaggerDev) Lint(
 				if strings.HasPrefix(pkg, "core/integration/") {
 					continue
 				}
-				if strings.HasPrefix(pkg, "dagql/idtui/viztest/broken") {
+				if strings.HasPrefix(pkg, "dagql/idtui/viztest/") {
 					continue
 				}
 				if strings.HasPrefix(pkg, "modules/evaluator/") {

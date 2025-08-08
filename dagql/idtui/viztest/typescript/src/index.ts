@@ -15,13 +15,6 @@ export class Typescript {
   }
 
   @func()
-  async customSpan(): Promise<string> {
-    return getTracer().startActiveSpan("custom span", async () => {
-      return this.echo(`hello from TypeScript! it is currently ${now}`)
-    })
-  }
-
-  @func()
   async pending(): Promise<void> {
     await dag
       .container()
@@ -60,5 +53,42 @@ export class Typescript {
       .container()
       .from("alpine")
       .withExec(["sh", "-c", "echo this is a failing effect; exit 1"])
+  }
+
+  @func()
+  async customStatus(): Promise<string> {
+    return dag.status("custom status").run(async () => {
+      return this.echo(`hello from TypeScript! it is currently ${now}`)
+    })
+  }
+
+  @func()
+  async nestedStatuses(fail = false): Promise<string> {
+    return dag.status("custom status").run(async () => {
+      await this.echo(`outer: ${now}`)
+
+      // First sub-status
+      await dag.status("sub status").run(async () => {
+        await this.echo(`sub 1: ${now}`)
+      })
+
+      // Second sub-status
+      await dag.status("sub status").run(async () => {
+        await this.echo(`sub 2: ${now}`)
+      })
+
+      // Nested sub-status
+      await dag.status("another sub status").run(async () => {
+        await dag.status("sub status").run(async () => {
+          if (fail) {
+            throw new Error("oh no")
+          } else {
+            await this.echo(`im even deeper: ${now}`)
+          }
+        })
+      })
+
+      return "done"
+    })
   }
 }
