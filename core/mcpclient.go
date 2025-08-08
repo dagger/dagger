@@ -15,31 +15,19 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-type ServiceTransport struct {
+type ServiceMCPTransport struct {
 	Service dagql.ObjectResult[*Service]
-	nth     int
 }
 
-var _ mcp.Transport = (*ServiceTransport)(nil)
+var _ mcp.Transport = (*ServiceMCPTransport)(nil)
 
-func (t *ServiceTransport) Connect(ctx context.Context) (mcp.Connection, error) {
-	// Give each connection a distinct service ID.
-	t.nth++
-	id := t.Service.ID().Append(
-		t.Service.Type(),
-		t.Service.ID().Field(),
-		"",
-		t.Service.ID().Module(),
-		t.nth,
-		"",
-	)
-
-	conn := &svcMCPConn{}
+func (t *ServiceMCPTransport) Connect(ctx context.Context) (mcp.Connection, error) {
+	conn := &ServiceMCPConnection{}
 
 	var err error
 	conn.svc, err = t.Service.Self().Start(
 		ctx,
-		id,
+		t.Service.ID(),
 		false, // MUST be false, otherwise
 		func(stdin io.Writer, svcProc bkgw.ContainerProcess) {
 			conn.w = stdin
@@ -58,16 +46,16 @@ func (t *ServiceTransport) Connect(ctx context.Context) (mcp.Connection, error) 
 	return conn, nil
 }
 
-type svcMCPConn struct {
+type ServiceMCPConnection struct {
 	svc *RunningService
 	r   *bufio.Reader
 	w   io.Writer
 }
 
-var _ mcp.Connection = (*svcMCPConn)(nil)
+var _ mcp.Connection = (*ServiceMCPConnection)(nil)
 
 // Read implements [mcp.Connection.Read], assuming messages are newline-delimited JSON.
-func (t *svcMCPConn) Read(context.Context) (jsonrpc.Message, error) {
+func (t *ServiceMCPConnection) Read(context.Context) (jsonrpc.Message, error) {
 	data, err := t.r.ReadBytes('\n')
 	if err != nil {
 		return nil, err
@@ -77,7 +65,7 @@ func (t *svcMCPConn) Read(context.Context) (jsonrpc.Message, error) {
 }
 
 // Write implements [mcp.Connection.Write], appending a newline delimiter after the message.
-func (t *svcMCPConn) Write(_ context.Context, msg jsonrpc.Message) error {
+func (t *ServiceMCPConnection) Write(_ context.Context, msg jsonrpc.Message) error {
 	data, err := jsonrpc.EncodeMessage(msg)
 	if err != nil {
 		return err
@@ -88,14 +76,12 @@ func (t *svcMCPConn) Write(_ context.Context, msg jsonrpc.Message) error {
 	return errors.Join(err1, err2)
 }
 
-func (t *svcMCPConn) Close() error {
+func (t *ServiceMCPConnection) Close() error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	return t.svc.Stop(ctx, true)
 }
 
-// SessionID implements [mcp.Connection.SessionID]. Since this is a simplified example,
-// it returns an empty session ID.
-func (t *svcMCPConn) SessionID() string {
-	return t.svc.Host
+func (t *ServiceMCPConnection) SessionID() string {
+	return t.svc.Container.NamespaceID()
 }

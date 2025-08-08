@@ -8,8 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"os/exec"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -17,14 +15,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	gwpb "github.com/moby/buildkit/frontend/gateway/pb"
-	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver/pb"
 	utilsystem "github.com/moby/buildkit/util/system"
-	"github.com/opencontainers/runc/libcontainer"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
@@ -63,9 +58,6 @@ type Service struct {
 
 	// The sockets on the host to reverse tunnel
 	HostSockets []*Socket
-
-	// Paths that were remounted at runtime.
-	RemountedRefs map[string]cache.MutableRef
 }
 
 func (*Service) Type() *ast.Type {
@@ -652,99 +644,6 @@ func (mwc multiWriteCloser) Close() error {
 		errs = errors.Join(errs, wc.Close())
 	}
 	return errs
-}
-
-func (svc *Service) Remount(ctx context.Context, id *call.ID, target string, source *Directory) (retErr error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return err
-	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get services: %w", err)
-	}
-	running, err := svcs.Get(ctx, id, false)
-	if err != nil {
-		return fmt.Errorf("failed to get service: %w", err)
-	}
-	if running.Container == nil {
-		return fmt.Errorf("service %s is not running in a container", id.DisplaySelf())
-	}
-	if !filepath.IsAbs(target) {
-		target = filepath.Join(svc.Container.Config.WorkingDir, target)
-	}
-	containerID := running.Container.NamespaceID()
-	container, err := libcontainer.Load("/run/runc", containerID)
-	if err != nil {
-		return fmt.Errorf("failed to create libcontainer factory: %w", err)
-	}
-	state, err := container.OCIState()
-	if err != nil {
-		return fmt.Errorf("failed to get OCI state for container %s: %w", containerID, err)
-	}
-	ref, err := getRefOrEvaluate(ctx, source)
-	if err != nil {
-		return fmt.Errorf("failed to get ref for source directory: %w", err)
-	}
-	newRef, err := query.BuildkitCache().New(ctx, ref, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create new ref for source directory: %w", err)
-	}
-
-	if svc.RemountedRefs == nil {
-		svc.RemountedRefs = make(map[string]cache.MutableRef)
-	}
-
-	if prevRef, hadPrevRef := svc.RemountedRefs[target]; hadPrevRef && prevRef.ID() != newRef.ID() {
-		defer func() {
-			if retErr == nil {
-				// release the previous ref, if there was one, but only after it's
-				// replaced
-				prevRef.Release(ctx)
-			}
-		}()
-	}
-
-	mount, err := newRef.Mount(ctx, false, nil)
-	if err != nil {
-		return fmt.Errorf("failed to mount source directory cow: %w", err)
-	}
-	lm := snapshot.LocalMounter(mount)
-	dir, err := lm.Mount()
-	if err != nil {
-		return err
-	}
-	defer func() {
-		err := lm.Unmount()
-		if retErr == nil {
-			retErr = err
-		}
-	}()
-
-	// mount the read-write copy into the container
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	containerMount := exec.Command("container-mount", strconv.Itoa(state.Pid), dir, target)
-	containerMount.Stdout = stdio.Stdout
-	containerMount.Stderr = stdio.Stderr
-	if err := containerMount.Run(); err != nil {
-		return fmt.Errorf("failed to mount %s into container %s: %w", target, containerID, err)
-	}
-
-	// keep track of the ref
-	svc.RemountedRefs[target] = newRef
-
-	return nil
-}
-
-var _ dagql.OnReleaser = (*Container)(nil)
-
-func (svc *Service) OnRelease(ctx context.Context) error {
-	for _, ref := range svc.RemountedRefs {
-		if err := ref.Release(ctx); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (svc *Service) startTunnel(ctx context.Context) (running *RunningService, rerr error) {

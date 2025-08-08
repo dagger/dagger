@@ -149,7 +149,7 @@ func (r *ref) WalkDir(ctx context.Context, req WalkDirRequest) error {
 		return err
 	}
 	// cacheutil.WalkDir isn't a thing (so we'll just call our own)
-	return walkDir(ctx, mnt, req)
+	return WalkDir(ctx, mnt, req)
 }
 
 func (r *ref) Mount(ctx context.Context, f func(path string) error) error {
@@ -373,7 +373,7 @@ type WalkDirRequest struct {
 
 // walkDir is inspired by cacheutil.ReadDir, but instead executes a callback on
 // every item in the fs
-func walkDir(ctx context.Context, mount snapshot.Mountable, req WalkDirRequest) error {
+func WalkDir(ctx context.Context, mount snapshot.Mountable, req WalkDirRequest) error {
 	if req.Callback == nil {
 		return nil
 	}

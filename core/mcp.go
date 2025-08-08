@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os/exec"
 	"path"
 	"regexp"
 	"slices"
@@ -17,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"dagger.io/dagger/telemetry"
+	containerdfs "github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/core/prompts"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -24,8 +26,12 @@ import (
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/iancoleman/strcase"
+	"github.com/moby/buildkit/cache"
+	bkcache "github.com/moby/buildkit/cache"
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/opencontainers/go-digest"
+	"github.com/opencontainers/runc/libcontainer"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
@@ -93,7 +99,7 @@ func (srv *MCPServerConfig) Dial(ctx context.Context) (*mcp.ClientSession, error
 	return mcp.NewClient(&mcp.Implementation{
 		Title:   "Dagger",
 		Version: engine.Version,
-	}, nil).Connect(ctx, &ServiceTransport{
+	}, nil).Connect(ctx, &ServiceMCPTransport{
 		Service: srv.Service,
 	})
 }
@@ -275,18 +281,6 @@ func (m *MCP) syncMCPSessions(ctx context.Context) error {
 	return nil
 }
 
-func (m *MCP) updateEnv(env dagql.ObjectResult[*Env]) {
-	m.env = env
-	for _, sess := range m.mcpSessions {
-		go func() {
-			if err := sess.Close(); err != nil {
-				slog.Error("failed to close MCP session", "error", err)
-			}
-		}()
-	}
-	clear(m.mcpSessions)
-}
-
 func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
 	var tools []LLMTool
 	for name, sess := range m.mcpSessions {
@@ -303,13 +297,90 @@ func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
 				Description: tool.Description,
 				Schema:      anied,
 				Call: func(ctx context.Context, args any) (any, error) {
-					res, err := sess.CallTool(ctx, &mcp.CallToolParams{
-						Name:      tool.Name,
-						Arguments: args,
-					})
-					if err != nil {
-						return nil, err
+					mcpSrv, ok := m.mcpServers[name]
+					if !ok {
+						return nil, fmt.Errorf("mcp server %q not found", name)
 					}
+
+					// TODO: skip fs stuff for non-Container services
+					ctr := mcpSrv.Service.Self().Container
+
+					var res *mcp.CallToolResult
+					immutableRef, err := remount(
+						ctx,
+						sess.ID(), // container id
+						ctr.Config.WorkingDir,
+						m.env.Self().Hostfs.Self(),
+						func() error {
+							var err error
+							res, err = sess.CallTool(ctx, &mcp.CallToolParams{
+								Name:      tool.Name,
+								Arguments: args,
+							})
+							return err
+						})
+					if err != nil {
+						return nil, fmt.Errorf("remount hostfs for mcp %q: %w", name, err)
+					}
+
+					// var hasChanges bool
+					// for i, snap := range immutableRef.LayerChain() {
+					// 	mount, err := snap.Mount(ctx, true, nil)
+					// 	if err != nil {
+					// 		return nil, fmt.Errorf("failed to mount remounted ref: %w", err)
+					// 	}
+					// 	lm := snapshot.LocalMounter(mount)
+					// 	root, err := lm.Mount()
+					// 	if err != nil {
+					// 		return nil, fmt.Errorf("failed to mount remounted ref: %w", err)
+					// 	}
+					// 	ents, err := os.ReadDir(root)
+					// 	lm.Unmount()
+					// 	slog.Warn("!!! REMOUNTED LAYER READDIR", "layer", i, "ents", ents, "err", err)
+					// 	if len(ents) > 0 {
+					// 		hasChanges = true
+					// 	}
+					// }
+
+					// TODO: would be nice to avoid ever growing depth if tool didn't
+					// actually do any writes, but don't see an easy way to detect that
+					// (while also handling removed files etc)
+					hasChanges := true
+					if hasChanges {
+						srv, err := CurrentDagqlServer(ctx)
+						if err != nil {
+							return nil, fmt.Errorf("get dagql server: %w", err)
+						}
+
+						var snapshot dagql.ObjectResult[*Directory]
+						if err := srv.Select(ctx, srv.Root(), &snapshot, dagql.Selector{
+							// TODO: probably a different way to do this?
+							Field: "__immutableRef",
+							Args: []dagql.NamedInput{
+								{
+									Name:  "ref",
+									Value: dagql.String(immutableRef.ID()),
+								},
+							},
+						}); err != nil {
+							return nil, fmt.Errorf("get snapshot for mcp %q: %w", name, err)
+						}
+
+						var newEnv dagql.ObjectResult[*Env]
+						if err := srv.Select(ctx, m.env, &newEnv, dagql.Selector{
+							Field: "withHostfs",
+							Args: []dagql.NamedInput{
+								{
+									Name:  "hostfs",
+									Value: dagql.NewID[*Directory](snapshot.ID()),
+								},
+							},
+						}); err != nil {
+							return nil, fmt.Errorf("remount hostfs for mcp %q: %w", name, err)
+						}
+						m.env = newEnv
+					}
+
 					var out string
 					for _, content := range res.Content {
 						switch x := content.(type) {
@@ -644,7 +715,7 @@ func (m *MCP) call(ctx context.Context,
 	// updates the MCP environment.
 	if newEnv, ok := dagql.UnwrapAs[dagql.ObjectResult[*Env]](val); ok {
 		// Swap out the Env for the updated one
-		m.updateEnv(newEnv)
+		m.env = newEnv
 		// No particular message needed here. At one point we diffed the Env.hostfs
 		// and printed which files were modified, but it's not really necessary to
 		// show things like that unilaterally vs. just allowing each Env-returning
@@ -2377,4 +2448,72 @@ var defaultBlockedMethods = map[string][]string{
 		"withName",
 		"withTimestamps",
 	},
+}
+
+func remount(
+	ctx context.Context,
+	containerID string,
+	target string,
+	source *Directory,
+	f func() error,
+) (immutableRef cache.ImmutableRef, rerr error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	ref, err := getRefOrEvaluate(ctx, source)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ref for source directory: %w", err)
+	}
+
+	mutableRef, err := query.BuildkitCache().New(ctx, ref, nil,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("mcp remount"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create new ref for source directory: %w", err)
+	}
+
+	defer func() {
+		if rerr != nil {
+			mutableRef.Release(ctx)
+			if immutableRef != nil {
+				immutableRef.Release(ctx)
+			}
+		}
+	}()
+
+	err = MountRef(ctx, mutableRef, nil, func(root string) (rerr error) {
+		resolvedDir, err := containerdfs.RootPath(root, source.Dir)
+		if err != nil {
+			return err
+		}
+		container, err := libcontainer.Load("/run/runc", containerID)
+		if err != nil {
+			return fmt.Errorf("failed to create libcontainer factory: %w", err)
+		}
+		state, err := container.OCIState()
+		if err != nil {
+			return fmt.Errorf("failed to get OCI state for container %s: %w", containerID, err)
+		}
+		// mount the read-write copy into the container
+		stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+		containerMount := exec.Command("container-mount", strconv.Itoa(state.Pid), resolvedDir, target)
+		containerMount.Stdout = stdio.Stdout
+		containerMount.Stderr = stdio.Stderr
+		if err := containerMount.Run(); err != nil {
+			return fmt.Errorf("failed to mount %s into container %s: %w", target, containerID, err)
+		}
+		return f()
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	immutableRef, err = mutableRef.Commit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to commit remounted ref for %s: %w", target, err)
+	}
+
+	return immutableRef, nil
 }
