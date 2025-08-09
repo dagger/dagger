@@ -38,6 +38,20 @@ defmodule Dagger.GitRef do
   end
 
   @doc """
+  Find the merge-base (best common ancestor) between this ref and another ref.
+  """
+  @spec merge_base(t(), Dagger.GitRef.t()) :: Dagger.GitRef.t()
+  def merge_base(%__MODULE__{} = git_ref, other) do
+    query_builder =
+      git_ref.query_builder |> QB.select("mergeBase") |> QB.put_arg("other", Dagger.ID.id!(other))
+
+    %Dagger.GitRef{
+      query_builder: query_builder,
+      client: git_ref.client
+    }
+  end
+
+  @doc """
   The resolved ref name at this ref.
   """
   @spec ref(t()) :: {:ok, String.t()} | {:error, term()}

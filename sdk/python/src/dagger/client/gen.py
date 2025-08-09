@@ -6160,6 +6160,21 @@ class GitRef(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(GitRefID)
 
+    def merge_base(self, other: Self) -> Self:
+        """Find the merge-base (best common ancestor) between this ref and
+        another ref.
+
+        Parameters
+        ----------
+        other:
+            The other ref to compare against.
+        """
+        _args = [
+            Arg("other", other),
+        ]
+        _ctx = self._select("mergeBase", _args)
+        return GitRef(_ctx)
+
     async def ref(self) -> str:
         """The resolved ref name at this ref.
 
@@ -6202,6 +6217,13 @@ class GitRef(Type):
         ]
         _ctx = self._select("tree", _args)
         return Directory(_ctx)
+
+    def with_(self, cb: Callable[["GitRef"], "GitRef"]) -> "GitRef":
+        """Call the provided callable with current GitRef.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 @typecheck

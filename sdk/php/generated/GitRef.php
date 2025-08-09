@@ -32,6 +32,16 @@ class GitRef extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Find the merge-base (best common ancestor) between this ref and another ref.
+     */
+    public function mergeBase(GitRefId|GitRef $other): GitRef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('mergeBase');
+        $innerQueryBuilder->setArgument('other', $other);
+        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The resolved ref name at this ref.
      */
     public function ref(): string

@@ -3283,6 +3283,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\GitRef::mergeBase",
+			"p": "Dagger/GitRef.html#method_mergeBase",
+			"d": "<p>Find the merge-base (best common ancestor) between this ref and another ref.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\GitRef::ref",
 			"p": "Dagger/GitRef.html#method_ref",
 			"d": "<p>The resolved ref name at this ref.</p>"
