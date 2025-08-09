@@ -4945,6 +4945,153 @@ func (ModuleSuite) TestContextDirectoryGit(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (ModuleSuite) TestContextGit(ctx context.Context, t *testctx.T) {
+	type testCase struct {
+		sdk    string
+		source string
+	}
+	tcs := []testCase{
+		{
+			sdk: "go",
+			source: `package main
+
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) TestRepoLocal(
+	ctx context.Context,
+	// +defaultGit="./.git"
+	git *dagger.GitRepository,
+) (string, error) {
+	return m.commitAndRef(ctx, git.Head())
+}
+
+func (m *Test) TestRepoRemote(
+	ctx context.Context,
+	// +defaultGit="https://github.com/dagger/dagger.git"
+	git *dagger.GitRepository,
+) (string, error) {
+	return m.commitAndRef(ctx, git.Tag("v0.18.2"))
+}
+
+func (m *Test) TestRefLocal(
+	ctx context.Context,
+	// +defaultGit="./.git"
+	git *dagger.GitRef,
+) (string, error) {
+	return m.commitAndRef(ctx, git)
+}
+
+func (m *Test) TestRefRemote(
+	ctx context.Context,
+	// +defaultGit="https://github.com/dagger/dagger.git#v0.18.3"
+	git *dagger.GitRef,
+) (string, error) {
+	return m.commitAndRef(ctx, git)
+}
+
+func (m *Test) commitAndRef(ctx context.Context, ref *dagger.GitRef) (string, error) {
+	commit, err := ref.Commit(ctx)
+	if err != nil {
+		return "", err
+	}
+	reference, err := ref.Ref(ctx)
+	if err != nil {
+		return "", err
+	}
+	return reference + "@" + commit, nil
+}
+`,
+		},
+	}
+	for _, tc := range tcs {
+		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			modGen := modInit(t, c, "go", tc.source).
+				WithExec([]string{"sh", "-c", `git init && git add . && git commit -m "initial commit"`}).
+				WithExec([]string{"git", "clean", "-fdx"})
+			headCommit, err := modGen.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+			require.NoError(t, err)
+			headCommit = strings.TrimSpace(headCommit)
+
+			t.Run("repo local", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-repo-local")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "refs/heads/master@"+headCommit, out)
+			})
+
+			t.Run("repo remote", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-repo-remote")).Stdout(ctx)
+				require.NoError(t, err)
+				// dagger/dagger v0.18.2 => 0b46ea3c49b5d67509f67747742e5d8b24be9ef7
+				require.Equal(t, "refs/tags/v0.18.2@0b46ea3c49b5d67509f67747742e5d8b24be9ef7", out)
+			})
+
+			t.Run("ref local", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-ref-local")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "refs/heads/master@"+headCommit, out)
+			})
+
+			t.Run("ref remote", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-ref-remote")).Stdout(ctx)
+				require.NoError(t, err)
+				// dagger/dagger v0.18.3 => 6f7af26f18061c6f575eda774f44aa7d314af4ce
+				require.Equal(t, "refs/tags/v0.18.3@6f7af26f18061c6f575eda774f44aa7d314af4ce", out)
+			})
+		})
+	}
+}
+
+func (ModuleSuite) TestContextGitRemote(ctx context.Context, t *testctx.T) {
+	// pretty much exactly the same test as above, but calling a remote git repo instead
+
+	c := connect(ctx, t)
+
+	modGen := goGitBase(t, c)
+
+	remoteModule := "github.com/jedevc/dagger-test-modules"
+	remoteRef := "context-git"
+	g := c.Git(remoteModule).Ref(remoteRef)
+	commit, err := g.Commit(ctx)
+	require.NoError(t, err)
+	fullref, err := g.Ref(ctx)
+	require.NoError(t, err)
+
+	modPath := "github.com/jedevc/dagger-test-modules/context-git@" + remoteRef
+
+	t.Run("repo local", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCallAt(modPath, "test-repo-local")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, fullref+"@"+commit, out)
+	})
+
+	t.Run("repo remote", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCallAt(modPath, "test-repo-remote")).Stdout(ctx)
+		require.NoError(t, err)
+		// dagger/dagger v0.18.2 => 0b46ea3c49b5d67509f67747742e5d8b24be9ef7
+		require.Equal(t, "refs/tags/v0.18.2@0b46ea3c49b5d67509f67747742e5d8b24be9ef7", out)
+	})
+
+	t.Run("ref local", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCallAt(modPath, "test-ref-local")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, fullref+"@"+commit, out)
+	})
+
+	t.Run("ref remote", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCallAt(modPath, "test-ref-remote")).Stdout(ctx)
+		require.NoError(t, err)
+		// dagger/dagger v0.18.3 => 6f7af26f18061c6f575eda774f44aa7d314af4ce
+		require.Equal(t, "refs/tags/v0.18.3@6f7af26f18061c6f575eda774f44aa7d314af4ce", out)
+	})
+}
+
 func (ModuleSuite) TestIgnore(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

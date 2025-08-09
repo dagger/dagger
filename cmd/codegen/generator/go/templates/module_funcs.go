@@ -162,6 +162,9 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 		if argSpec.defaultPath != "" {
 			argOptsCode = append(argOptsCode, Id("DefaultPath").Op(":").Lit(argSpec.defaultPath))
 		}
+		if argSpec.defaultGit != "" {
+			argOptsCode = append(argOptsCode, Id("DefaultGit").Op(":").Lit(argSpec.defaultGit))
+		}
 
 		if len(argSpec.ignore) > 0 {
 			ignores := make([]Code, 0, len(argSpec.ignore))
@@ -318,11 +321,15 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 		if !ok {
 			return paramSpec{}, fmt.Errorf("defaultPath pragma %q, must be a valid string", v)
 		}
-		if strings.HasPrefix(defaultPath, `"`) && strings.HasSuffix(defaultPath, `"`) {
-			defaultPath = defaultPath[1 : len(defaultPath)-1]
-		}
-
 		optional = true // If defaultPath is set, the argument becomes optional
+	}
+	defaultGit := ""
+	if v, ok := pragmas["defaultGit"]; ok {
+		defaultGit, ok = v.(string)
+		if !ok {
+			return paramSpec{}, fmt.Errorf("defaultGit pragma %q, must be a valid string", v)
+		}
+		optional = true // If defaultGit is set, the argument becomes optional
 	}
 
 	ignore := []string{}
@@ -366,6 +373,7 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 		hasDefaultValue: hasDefaultValue,
 		description:     comment,
 		defaultPath:     defaultPath,
+		defaultGit:      defaultGit,
 		ignore:          ignore,
 	}, nil
 }
@@ -398,6 +406,9 @@ type paramSpec struct {
 	// Only applies to arguments of type File or Directory.
 	// If the argument is not set, load it from the given path in the context directory
 	defaultPath string
+	// Only applies to arguments of type GitRepository or GitRef.
+	// If the argument is not set, load it from the given path in the context git
+	defaultGit string
 
 	// Only applies to arguments of type Directory.
 	// The ignore patterns are applied to the input directory, and

@@ -1067,6 +1067,7 @@ export type FunctionWithArgOpts = {
    * The source map for the argument definition.
    */
   sourceMap?: SourceMap
+  defaultGit?: string
 }
 
 /**
@@ -5843,6 +5844,7 @@ export class Function_ extends BaseClient {
  */
 export class FunctionArg extends BaseClient {
   private readonly _id?: FunctionArgID = undefined
+  private readonly _defaultGit?: string = undefined
   private readonly _defaultPath?: string = undefined
   private readonly _defaultValue?: JSON = undefined
   private readonly _description?: string = undefined
@@ -5854,6 +5856,7 @@ export class FunctionArg extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: FunctionArgID,
+    _defaultGit?: string,
     _defaultPath?: string,
     _defaultValue?: JSON,
     _description?: string,
@@ -5862,6 +5865,7 @@ export class FunctionArg extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._defaultGit = _defaultGit
     this._defaultPath = _defaultPath
     this._defaultValue = _defaultValue
     this._description = _description
@@ -5879,6 +5883,21 @@ export class FunctionArg extends BaseClient {
     const ctx = this._ctx.select("id")
 
     const response: Awaited<FunctionArgID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Only applies to arguments of type GitRef or GitRepository. If the argument is not set, load it from the given git ref or repository in the context directory
+   */
+  defaultGit = async (): Promise<string> => {
+    if (this._defaultGit) {
+      return this._defaultGit
+    }
+
+    const ctx = this._ctx.select("defaultGit")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }

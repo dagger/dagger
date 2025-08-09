@@ -108,7 +108,8 @@ defmodule Dagger.Function do
           {:default_value, Dagger.JSON.t() | nil},
           {:default_path, String.t() | nil},
           {:ignore, [String.t()]},
-          {:source_map, Dagger.SourceMapID.t() | nil}
+          {:source_map, Dagger.SourceMapID.t() | nil},
+          {:default_git, String.t() | nil}
         ]) :: Dagger.Function.t()
   def with_arg(%__MODULE__{} = function, name, type_def, optional_args \\ []) do
     query_builder =
@@ -121,6 +122,7 @@ defmodule Dagger.Function do
       |> QB.maybe_put_arg("defaultPath", optional_args[:default_path])
       |> QB.maybe_put_arg("ignore", optional_args[:ignore])
       |> QB.maybe_put_arg("sourceMap", optional_args[:source_map])
+      |> QB.maybe_put_arg("defaultGit", optional_args[:default_git])
 
     %Dagger.Function{
       query_builder: query_builder,
