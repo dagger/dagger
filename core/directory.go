@@ -961,6 +961,10 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 	if err != nil {
 		return nil, err
 	}
+	if dirRef == nil {
+		// base is empty; other is the entire diff
+		return other, nil
+	}
 	otherRef, err := getRefOrEvaluate(ctx, other)
 	if err != nil {
 		return nil, err
