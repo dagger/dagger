@@ -1,0 +1,19 @@
+{
+  "name": "coder",
+  "engineVersion": "v0.18.15-010101000000-dev-d8cce3884a2b",
+  "sdk": {
+    "source": "github.com/vito/dang/dagger-sdk"
+  },
+  "dependencies": [
+    {
+      "name": "doug",
+      "source": "github.com/vito/dagger/modules/doug@coding-agents",
+      "pin": "8f5438c7af581ada112af382275eee0ab825c814"
+    },
+    {
+      "name": "go",
+      "source": "github.com/sagikazarmark/daggerverse/go",
+      "pin": "ceffda4aebd349a24fc00e591b4ed9b801535b65"
+    }
+  ]
+}

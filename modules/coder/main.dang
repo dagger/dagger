@@ -1,0 +1,66 @@
+type Coder {
+  """
+  The source directory for the Dang project.
+  """
+  pub source: Directory! @defaultPath(
+    path: "/",
+    ignore: [
+      "bin",
+	    "**/node_modules",
+	    "**/.venv",
+	    "**/__pycache__",
+	    "docs/node_modules",
+	    "sdk/typescript/node_modules",
+	    "sdk/typescript/dist",
+	    "sdk/rust/examples/backend/target",
+	    "sdk/rust/target"
+    ]
+  )
+
+  """
+  Return a compiled Dagger CLI (frontend) binary.
+  """
+  pub daggerBinary: File! {
+    goBase.build(pkg: "./cmd/dagger")
+  }
+
+  """
+  Return a compiled Dagger engine (backend) binary.
+  """
+  pub engineBinary: File! {
+    goBase.build(pkg: "./cmd/engine")
+  }
+
+  """
+  Build the Dang binary to ./bin/dang.
+  """
+  pub build: Env! {
+    currentEnv.withHostfs(
+      source.
+        withFile("bin/dagger", daggerBinary).
+        withFile("bin/engine", engineBinary)
+    )
+  }
+
+  pub coder: LLM! {
+    doug.agent(
+      llm.
+        withEnv(currentEnv.withModule(currentModule.meta).withHostfs(source)).
+        withMCPServer(
+          "lsp",
+          container.
+            from("golang").
+            withExec(["go", "install", "golang.org/x/tools/gopls@latest"]).
+            withExec(["go", "install", "github.com/isaacphi/mcp-language-server@latest"]).
+            withDirectory("/src", source).
+            withWorkdir("/src").
+            withDefaultArgs(["mcp-language-server", "--workspace", "/src", "--lsp", "gopls"]).
+            asService
+        )
+    )
+  }
+
+  let goBase: GoWithSource! {
+    go.withCgoDisabled().withSource(source)
+  }
+}
