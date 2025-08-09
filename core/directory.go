@@ -1136,6 +1136,52 @@ func (dir *Directory) Mount(ctx context.Context, f func(string) error) error {
 	})
 }
 
+func (dir *Directory) GitIgnoreFor(ctx context.Context) ([]string, error) {
+	result := []string{}
+
+	_, err := execInMount(ctx, dir, func(root string) error {
+		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
+		if err != nil {
+			return err
+		}
+
+		return filepath.WalkDir(resolvedDir, func(path string, d fs.DirEntry, prevErr error) error {
+			if prevErr != nil {
+				return prevErr
+			}
+
+			if d.Name() != ".gitignore" {
+				return nil
+			}
+
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+
+			relPath, err := filepath.Rel(resolvedDir, path)
+			if err != nil {
+				return err
+			}
+
+			patterns := parseGitIgnore(string(content), filepath.Dir(relPath))
+
+			result = append(result, patterns...)
+
+			return nil
+		})
+	})
+	if err != nil {
+		if errors.Is(err, errEmptyResultRef) {
+			// empty directory, i.e. llb.Scratch()
+			return []string{}, nil
+		}
+		return nil, err
+	}
+
+	return result, nil
+}
+
 func validateFileName(file string) error {
 	baseFileName := filepath.Base(file)
 	if len(baseFileName) > 255 {
