@@ -1,6 +1,8 @@
 package core
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/vektah/gqlparser/v2/ast"
@@ -15,6 +17,27 @@ type Port struct {
 	Protocol                    NetworkProtocol `field:"true" doc:"The transport layer protocol."`
 	Description                 *string         `field:"true" doc:"The port description."`
 	ExperimentalSkipHealthcheck bool            `field:"true" doc:"Skip the health check when run as a service."`
+}
+
+// NewPortFromOCI parses an OCI port spec (e.g. 8080/tcp) into a Port struct
+func NewPortFromOCI(s string) (p Port, _ error) {
+	port, protoStr, ok := strings.Cut(s, "/")
+	if !ok {
+		return p, fmt.Errorf("unable to parse OCI port: missing / delimiter")
+	}
+	portNr, err := strconv.Atoi(port)
+	if err != nil {
+		return p, fmt.Errorf("unable to parse OCI port: unable to parse integer %s", port)
+	}
+	proto, err := NetworkProtocols.Lookup(strings.ToUpper(protoStr))
+	if err != nil {
+		return p, fmt.Errorf("unable to parse OCI port: unable to lookup %s: %w", protoStr, err)
+	}
+	p = Port{
+		Port:     portNr,
+		Protocol: proto,
+	}
+	return p, nil
 }
 
 func (Port) Type() *ast.Type {
