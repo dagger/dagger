@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -204,6 +205,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 	if err != nil {
 		return nil, nil, err
 	}
+
 	var opts []gitutil.Option
 
 	cleanups := cleanups.Cleanups{}
@@ -213,19 +215,9 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		}
 	}()
 
+	// Compute header (AuthToken or AuthHeader)
+	var headerLine string
 	if repo.AuthToken.Self() != nil {
-		// caller-supplied username takes priority; otherwise pick a host-specific default
-		username := repo.AuthUsername
-		switch {
-		case username != "":
-			// explicit override – use as-is
-		case repo.URL.Host == "bitbucket.org":
-			// NOTE: bitbucket.org is picky, and needs *this* username
-			username = "x-token-auth"
-		default:
-			username = "x-access-token"
-		}
-
 		secretStore, err := query.Secrets(ctx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
@@ -234,12 +226,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		if err != nil {
 			return nil, nil, err
 		}
-		authHeader := "basic " + base64.StdEncoding.EncodeToString(
-			fmt.Appendf(nil, "%s:%s", username, password),
-		)
-		opts = append(opts, gitutil.WithArgs(
-			"-c", "http."+repo.URL.Remote()+".extraheader=Authorization: "+authHeader,
-		))
+		headerLine = buildBasicAuthHeader(repo.URL.Host, repo.AuthUsername, password)
 	} else if repo.AuthHeader.Self() != nil {
 		secretStore, err := query.Secrets(ctx)
 		if err != nil {
@@ -249,11 +236,14 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		if err != nil {
 			return nil, nil, err
 		}
-		opts = append(opts, gitutil.WithArgs(
-			"-c", "http."+repo.URL.Remote()+".extraheader=Authorization: "+string(authHeader),
-		))
+		hl := strings.TrimSpace(string(authHeader))
+		if !strings.HasPrefix(strings.ToLower(hl), "authorization:") {
+			hl = "Authorization: " + hl
+		}
+		headerLine = hl
 	}
 
+	// SSH, known_hosts, DNS setup
 	if repo.SSHAuthSocket.Self() != nil {
 		socketStore, err := query.Sockets(ctx)
 		if err == nil {
@@ -283,20 +273,86 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 	if err != nil {
 		return nil, nil, err
 	}
+	var resolvPath string
 	if netConf != nil {
-		resolvPath, err := mountResolv(netConf)
+		resolvPath, err = mountResolv(netConf)
 		if err != nil {
 			return nil, nil, err
 		}
-		opts = append(opts, gitutil.WithExec(func(ctx context.Context, cmd *exec.Cmd) error {
-			return runWithStandardUmaskAndNetOverride(ctx, cmd, "", resolvPath)
-		}))
-		cleanups.Add("remove updated /etc/resolv", func() error {
-			return os.Remove(resolvPath)
-		})
+		cleanups.Add("remove updated /etc/resolv", func() error { return os.Remove(resolvPath) })
 	}
 
+	// Inject auth headers and DNS config into git commands.
+	// Auth: Uses GIT_CONFIG_* env vars to set http.extraheader for submodules.
+	// DNS: Binds custom resolv.conf in mount namespace for session consistency.
+	opts = append(opts, gitutil.WithExec(func(ctx context.Context, cmd *exec.Cmd) error {
+		if headerLine != "" {
+			base := repo.URL.Scheme + "://" + repo.URL.Host
+			entries := map[string]string{
+				"http." + base + "/.extraheader": headerLine,
+			}
+			cmd.Env = mergeGitConfigEnv(cmd.Env, entries)
+		}
+		return runWithStandardUmaskAndNetOverride(ctx, cmd, "", resolvPath)
+	}))
+
 	return gitutil.NewGitCLI(opts...), cleanups.Run, nil
+}
+
+// mergeGitConfigEnv merges key/value config pairs into the environment
+// using GIT_CONFIG_COUNT/KEY/VALUE. Preserves existing entries.
+// Keys are sorted for deterministic builds.
+func mergeGitConfigEnv(env []string, entries map[string]string) []string {
+	if len(entries) == 0 {
+		return env
+	}
+
+	const countPrefix = "GIT_CONFIG_COUNT="
+
+	next := 0
+	out := make([]string, 0, len(env)+len(entries)*2+1)
+	for _, e := range env {
+		if s, ok := strings.CutPrefix(e, countPrefix); ok {
+			if n, err := strconv.Atoi(s); err == nil && n > next {
+				next = n
+			}
+			continue // drop old COUNT; we’ll rewrite it
+		}
+		out = append(out, e)
+	}
+
+	// Deterministic: append in sorted key order.
+	keys := slices.Sorted(maps.Keys(entries))
+	for i, k := range keys {
+		v := entries[k]
+		idx := next + i
+		out = append(out,
+			"GIT_CONFIG_KEY_"+strconv.Itoa(idx)+"="+k,
+			"GIT_CONFIG_VALUE_"+strconv.Itoa(idx)+"="+v,
+		)
+	}
+
+	// Final COUNT == prior COUNT + number of new pairs.
+	out = append(out, countPrefix+strconv.Itoa(next+len(keys)))
+	return out
+}
+
+// buildBasicAuthHeader creates 'Authorization: Basic <base64(user:pass)>'.
+func buildBasicAuthHeader(host, explicitUser string, password []byte) string {
+	// caller-supplied username takes priority; otherwise pick a host-specific default
+	user := explicitUser
+	if user == "" {
+		switch host {
+		case "bitbucket.org":
+			// NOTE: bitbucket.org is picky, and needs *this* username
+			user = "x-token-auth"
+		default:
+			user = "x-access-token"
+		}
+	}
+	pw := strings.TrimSpace(string(password))
+	creds := base64.StdEncoding.EncodeToString([]byte(user + ":" + pw))
+	return "Authorization: Basic " + creds
 }
 
 func DNSConfig(ctx context.Context) (*oci.DNSConfig, error) {
@@ -491,6 +547,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	locker := query.Locker()
 	locker.Lock(indexGitSnapshot + cacheKey)
 	defer locker.Unlock(indexGitSnapshot + cacheKey)
+
 	sis, err := searchGitSnapshot(ctx, cache, cacheKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search metadata for %s: %w", cacheKey, err)
@@ -516,6 +573,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	if !ok {
 		return nil, fmt.Errorf("no buildkit session group in context")
 	}
+
 	err = ref.Repo.mountRemote(ctx, bkSessionGroup, func(remote string) error {
 		git, cleanup, err := ref.Repo.setup(ctx)
 		if err != nil {
@@ -523,6 +581,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		}
 		defer cleanup()
 		git = git.New(gitutil.WithGitDir(remote))
+
 		gitDir, err := git.GitDir(ctx)
 		if err != nil {
 			return fmt.Errorf("could not find git dir: %w", err)
@@ -686,7 +745,6 @@ func (ref *RemoteGitRef) fetchRemote(ctx context.Context, git *gitutil.GitCLI, d
 
 	return nil
 }
-
 func doGitCheckout(
 	ctx context.Context,
 	checkoutGit *gitutil.GitCLI,
@@ -714,6 +772,7 @@ func doGitCheckout(
 	if err != nil {
 		return err
 	}
+
 	_, err = checkoutGit.Run(ctx, "checkout", strings.TrimPrefix(fullref, "refs/heads/"))
 	if err != nil {
 		return fmt.Errorf("failed to checkout remote %s: %w", remote, err)
@@ -730,13 +789,13 @@ func doGitCheckout(
 	if err != nil {
 		return fmt.Errorf("failed to expire reflog for remote %s: %w", remote, err)
 	}
-
 	if err := os.Remove(filepath.Join(checkoutDirGit, "FETCH_HEAD")); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("failed to remove FETCH_HEAD for remote %s: %w", remote, err)
 	}
 
 	// TODO: this feels completely out-of-sync from how we do the rest
-	// of the clone - caching will not be as great here
+	// of the clone — caching will not be as great here.
+	// Update submodules (uses env-injected auth headers via GIT_CONFIG_* env)
 	_, err = checkoutGit.Run(ctx, "submodule", "update", "--init", "--recursive", "--depth=1")
 	if err != nil {
 		return fmt.Errorf("failed to update submodules for %s: %w", remote, err)

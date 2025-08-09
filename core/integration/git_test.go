@@ -12,7 +12,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
@@ -765,6 +767,144 @@ func (GitSuite) TestWithAuth(ctx context.Context, t *testctx.T) {
 			Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "Hello, world!", dt)
+	})
+}
+
+func (GitSuite) TestSubmoduleAuth(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	t.Cleanup(func() { _ = c.Close() })
+
+	// Unique token per run
+	authToken := c.SetSecret("submodule-test-token", "test-token-"+uuid.NewString())
+
+	// Build content declaratively (keeps your favorite part)
+	submoduleContent := c.Directory().WithNewFile("submodule.txt", "This is the submodule content")
+	parentContent := c.Directory().WithNewFile("parent.txt", "This is the parent content")
+
+	// Test setup: bare parent + submodule repos in /srv for git-http-backend.
+	//  1. Submodule: temp worktree → commit → push to /srv/submodule.git.
+	//  2. Parent: temp worktree → commit → add submodule via absolute file:// so
+	//     `git submodule add` can fetch → rewrite .gitmodules to ../submodule.git
+	//     with `git config` → commit.
+	// Result: parent history contains a relative submodule URL; over HTTP Git
+	// resolves it relative to the parent, exercising auth-header propagation.
+
+	gitReposCtr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"git", "config", "--global", "user.email", "test@dagger.io"}).
+		WithExec([]string{"git", "config", "--global", "user.name", "Test User"}).
+		WithExec([]string{"git", "config", "--global", "init.defaultBranch", "main"}).
+		WithExec([]string{"sh", "-lc", "mkdir -p /srv && git init --bare /srv/submodule.git && git init --bare /srv/parent.git"}).
+		// author submodule from Dagger content, commit, push to bare
+		WithDirectory("/tmp/sub", submoduleContent).
+		WithExec([]string{"sh", "-lc", `
+    set -eux
+    cd /tmp/sub
+    git init
+    git add .
+    git commit -m 'Initial submodule commit'
+    git remote add origin file:///srv/submodule.git
+    git push -u origin main
+  `}).
+		// author parent from Dagger content, add submodule (absolute), flip to relative, commit, push
+		WithDirectory("/tmp/parent", parentContent).
+		WithExec([]string{"sh", "-lc", `
+    set -eux
+    cd /tmp/parent
+    git init
+    git add .
+    git commit -m 'Initial parent commit'
+    git -c protocol.file.allow=always submodule add file:///srv/submodule.git sub
+    git commit -m 'Add submodule (absolute url to fetch)'
+    git config -f .gitmodules submodule.sub.url ../submodule.git
+    git add .gitmodules
+    git commit -m 'Make submodule URL relative'
+    git remote add origin file:///srv/parent.git
+    git push -u origin main
+  `})
+
+	gitReposDir := gitReposCtr.Directory("/srv") // serve this via git-http-backend
+
+	// --- lighttpd smart-http with basic auth ---
+	gitService := c.Container().
+		From("debian:bookworm-slim").
+		WithExec([]string{"bash", "-lc", `
+set -eux
+apt-get update
+apt-get install -y --no-install-recommends git lighttpd ca-certificates curl
+rm -rf /var/lib/apt/lists/*
+test -x /usr/lib/git-core/git-http-backend
+mkdir -p /var/empty
+`}).
+		WithDirectory("/var/www", gitReposDir).
+		WithMountedSecret("/tmp/token", authToken).
+		WithEnvVariable("CACHE_BUSTER", time.Now().Format(time.RFC3339Nano)).
+		WithExec([]string{"bash", "-lc", `echo 'x-access-token:'"$(cat /tmp/token)" > /etc/lighttpd/.htpasswd`}).
+		WithNewFile("/var/empty/git-http-backend.cgi", `#!/bin/sh
+set -eu
+exec git http-backend
+`).
+		WithExec([]string{"chmod", "+x", "/var/empty/git-http-backend.cgi"}).
+		WithNewFile("/etc/lighttpd/lighttpd.conf", `
+server.document-root = "/var/empty"
+server.port = 80
+server.modules = (
+  "mod_auth",
+  "mod_authn_file",
+  "mod_cgi",
+  "mod_setenv",
+  "mod_accesslog",
+  "mod_rewrite"
+)
+
+auth.backend = "plain"
+auth.backend.plain.userfile = "/etc/lighttpd/.htpasswd"
+auth.require = ( "/" => ( "method" => "basic", "realm" => "Git", "require" => "valid-user" ) )
+
+accesslog.filename = "/dev/fd/1"
+server.errorlog    = "/dev/fd/2"
+
+setenv.add-environment = (
+  "GIT_PROJECT_ROOT"    => "/var/www",
+  "GIT_HTTP_EXPORT_ALL" => ""
+)
+
+url.rewrite-if-not-file = ( "^/(.*)$" => "/git-http-backend.cgi/$1" )
+cgi.assign = ( ".cgi" => "" )
+`).
+		WithExposedPort(80).
+		WithEntrypoint([]string{"lighttpd", "-D", "-f", "/etc/lighttpd/lighttpd.conf"}).
+		AsService()
+
+	// Git endpoint for tests
+	endpoint, err := gitService.Endpoint(ctx)
+	require.NoError(t, err)
+	parentURL := "http://" + endpoint + "/parent.git"
+
+	// ---------- happy path ----------
+	t.Run("clone with HTTPAuthToken", func(ctx context.Context, t *testctx.T) {
+		tree := c.Git(parentURL, dagger.GitOpts{
+			ExperimentalServiceHost: gitService,
+			HTTPAuthUsername:        "x-access-token",
+			HTTPAuthToken:           authToken,
+		}).Branch("main").Tree()
+
+		txt, err := tree.File("parent.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "This is the parent content", txt)
+
+		sub, err := tree.File("sub/submodule.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "This is the submodule content", sub)
+	})
+
+	// ---------- negative path ----------
+	t.Run("clone without auth fails", func(ctx context.Context, t *testctx.T) {
+		_, err := c.Git(parentURL, dagger.GitOpts{
+			ExperimentalServiceHost: gitService,
+		}).Branch("main").Tree().File("parent.txt").Contents(ctx)
+		require.Error(t, err)
 	})
 }
 
