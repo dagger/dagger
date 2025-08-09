@@ -776,6 +776,21 @@ $dir | entries
 	require.Contains(t, out, "foo")
 }
 
+func (ShellSuite) TestStateVarImmutability(ctx context.Context, t *testctx.T) {
+	script := `
+dir=$(directory | with-new-file /src/foo/bar foobar | directory src)
+name=$($dir | name)
+.printenv name               # src/\n
+$dir | directory foo | name  # foo/
+.printenv name               # src/\n
+`
+	c := connect(ctx, t)
+	out, err := daggerCliBase(t, c).With(daggerShellNoMod(script)).Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "src/\nfoo/src/\n", out)
+}
+
 func (ShellSuite) TestArgsSpread(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen := daggerCliBase(t, c)

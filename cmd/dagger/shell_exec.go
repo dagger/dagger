@@ -179,11 +179,14 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 
 		// Having a span for each handler makes it much easier to debug what
 		// the shell is doing.
-		ctx, span := Tracer().Start(ctx, args[0],
-			// Don't show span by default unless there's an error or we're debugging.
-			telemetry.Passthrough(),
-			trace.WithAttributes(attribute.StringSlice("dagger.io/shell.handler.args", args)),
-		)
+		opts := make([]trace.SpanStartOption, 0, 2)
+		opts = append(opts, trace.WithAttributes(attribute.StringSlice("dagger.io/shell.handler.args", args)))
+		// Don't show span by default unless there's an error or we're debugging
+		// (with `.debug`).
+		if !h.Debug() {
+			opts = append(opts, telemetry.Passthrough())
+		}
+		ctx, span := Tracer().Start(ctx, args[0], opts...)
 		defer telemetry.End(span, func() error {
 			if cascadingErr {
 				// Early exit if an error is passed through stdin.
