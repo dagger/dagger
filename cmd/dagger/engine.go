@@ -20,8 +20,11 @@ import (
 )
 
 const (
-	GPUSupportEnv        = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
-	RunnerHostEnv        = "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
+	GPUSupportEnv = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
+
+	RunnerHostEnv       = "DAGGER_HOST"
+	RunnerHostEnvLegacy = "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
+
 	RunnerImageLoaderEnv = "_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE"
 )
 
@@ -37,6 +40,8 @@ var (
 
 func init() {
 	if v, ok := os.LookupEnv(RunnerHostEnv); ok {
+		RunnerHost = v
+	} else if v, ok := os.LookupEnv(RunnerHostEnvLegacy); ok {
 		RunnerHost = v
 	}
 	if RunnerHost == "" {
