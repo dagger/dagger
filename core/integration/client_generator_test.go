@@ -71,7 +71,7 @@ func main() {
 				generator: "typescript",
 				setup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
-						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/client"
+						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/dagger"
 
 async function main() {
     await connection(async () => {
@@ -184,7 +184,7 @@ main()`))
 				generator: "typescript",
 				setup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
-						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/client"
+						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/dagger"
 
 async function main() {
     await connection(async () => {
@@ -315,7 +315,7 @@ main()
 				generator: "typescript",
 				setup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
-						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/client"
+						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/dagger"
 
 async function main() {
     await connection(async () => {
@@ -454,7 +454,7 @@ export class Test {
   }
 }
 				`).
-						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/client"
+						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/dagger"
 
 async function main() {
   await connection(async () => {
@@ -561,7 +561,7 @@ func (ClientGeneratorTest) TestPersistence(ctx context.Context, t *testctx.T) {
 				generator: "typescript",
 				setup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
-						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/client"
+						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/dagger"
 
 async function main() {
     await connection(async () => {
@@ -695,7 +695,7 @@ main()
 		}
 		}
 					`).
-						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/client"
+						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/dagger"
 
 		async function main() {
 			await connection(async () => {
@@ -813,7 +813,7 @@ func main() {
 			generator: "typescript",
 			setup: func(ctr *dagger.Container) *dagger.Container {
 				return ctr.
-					With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/client"
+					With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/dagger"
 
 async function main() {
   await connection(async () => {
@@ -934,7 +934,7 @@ func main() {
 				outputDir: ".",
 				setup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
-						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/client"
+						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/dagger"
 
 async function main() {
   await connection(async () => {
@@ -1029,7 +1029,7 @@ func main() {
 				outputDir: ".",
 				setup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
-						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/client"
+						With(withTypeScriptSetup(`import { connection, dag } from "@dagger.io/dagger"
 
 async function main() {
   await connection(async () => {
@@ -1344,7 +1344,7 @@ func main() {
 			generator: "typescript",
 			setup: func(ctr *dagger.Container) *dagger.Container {
 				return ctr.
-					With(withTypeScriptSetup(`import { dag, connection } from "@dagger.io/client"
+					With(withTypeScriptSetup(`import { dag, connection } from "@dagger.io/dagger"
 
 async function main() {
   await connection(async () => {
