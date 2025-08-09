@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dagger/dagger/core"
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
 )
 
@@ -229,6 +230,49 @@ func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 	}
 
 	return typeDefCode, nil
+}
+
+func (spec *parsedObjectType) TypeDefObject() (*core.TypeDef, error) {
+	typeDefObject := (&core.TypeDef{}).WithObject(spec.name, strings.TrimSpace(spec.doc), coreSourceMap(spec.sourceMap))
+
+	for _, m := range spec.methods {
+		fnTypeDefObject, err := m.TypeDefObject()
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert method %s to function def: %w", m.name, err)
+		}
+		typeDefObject, err = typeDefObject.WithFunction(fnTypeDefObject.AsObject.Value.Functions[0])
+		if err != nil {
+			return nil, fmt.Errorf("failed to add function %s to type def: %w", m.name, err)
+		}
+	}
+
+	for _, field := range spec.fields {
+		if field.isPrivate {
+			continue
+		}
+
+		fieldTypeDefObject, err := field.typeSpec.TypeDefObject()
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert field type: %w", err)
+		}
+		typeDefObject, err = typeDefObject.WithObjectField(field.name, fieldTypeDefObject, strings.TrimSpace(field.doc), coreSourceMap(field.sourceMap))
+		if err != nil {
+			return nil, fmt.Errorf("failed to add field %s to type def: %w", field.name, err)
+		}
+	}
+
+	if spec.constructor != nil {
+		fnTypeDefObject, err := spec.constructor.TypeDefObject()
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert constructor to function def: %w", err)
+		}
+		typeDefObject, err = typeDefObject.WithObjectConstructor(fnTypeDefObject.AsObject.Value.Functions[0])
+		if err != nil {
+			return nil, fmt.Errorf("failed to add constructor to type def: %w", err)
+		}
+	}
+
+	return typeDefObject, nil
 }
 
 func (spec *parsedObjectType) GoType() types.Type {

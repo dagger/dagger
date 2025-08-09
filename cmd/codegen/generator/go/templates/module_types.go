@@ -6,6 +6,7 @@ import (
 	"go/types"
 	"path/filepath"
 
+	"github.com/dagger/dagger/core"
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
 	"github.com/iancoleman/strcase"
 )
@@ -20,6 +21,9 @@ type ParsedType interface {
 
 	// Go types referred to by this type
 	GoSubTypes() []types.Type
+
+	// TypeDef representation of the type
+	TypeDefObject() (*core.TypeDef, error)
 }
 
 type NamedParsedType interface {
@@ -189,6 +193,39 @@ func (spec *parsedPrimitiveType) TypeDefCode() (*Statement, error) {
 	return def, nil
 }
 
+func (spec *parsedPrimitiveType) TypeDefObject() (*core.TypeDef, error) {
+	var kind core.TypeDefKind
+	if spec.goType.Kind() == types.Invalid {
+		// NOTE: this is odd, but it doesn't matter, because the module won't
+		// pass the compilation step if there are invalid types - we just want
+		// to not error out horribly in codegen
+		kind = core.TypeDefKindVoid
+	} else {
+		switch spec.goType.Info() {
+		case types.IsString:
+			kind = core.TypeDefKindString
+		case types.IsInteger:
+			kind = core.TypeDefKindInteger
+		case types.IsBoolean:
+			kind = core.TypeDefKindBoolean
+		case types.IsFloat:
+			kind = core.TypeDefKindFloat
+		default:
+			return nil, fmt.Errorf("unsupported basic type: %+v", spec.goType)
+		}
+	}
+	var def *core.TypeDef
+	if spec.scalarType != nil {
+		def = (&core.TypeDef{}).WithScalar(spec.scalarType.Obj().Name(), "")
+	} else {
+		def = (&core.TypeDef{}).WithKind(kind)
+	}
+	if spec.isPtr {
+		def = def.WithOptional(true)
+	}
+	return def, nil
+}
+
 func (spec *parsedPrimitiveType) GoType() types.Type {
 	return spec.goType
 }
@@ -217,6 +254,14 @@ func (spec *parsedSliceType) TypeDefCode() (*Statement, error) {
 	return Qual("dag", "TypeDef").Call().Dot("WithListOf").Call(underlyingCode), nil
 }
 
+func (spec *parsedSliceType) TypeDefObject() (*core.TypeDef, error) {
+	underlyingTypeDef, err := spec.underlying.TypeDefObject()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate underlying typedef: %w", err)
+	}
+	return (&core.TypeDef{}).WithListOf(underlyingTypeDef), nil
+}
+
 func (spec *parsedSliceType) GoType() types.Type {
 	return spec.goType
 }
@@ -241,6 +286,10 @@ func (spec *parsedObjectTypeReference) TypeDefCode() (*Statement, error) {
 	return Qual("dag", "TypeDef").Call().Dot("WithObject").Call(
 		Lit(spec.name),
 	), nil
+}
+
+func (spec *parsedObjectTypeReference) TypeDefObject() (*core.TypeDef, error) {
+	return (&core.TypeDef{}).WithObject(spec.name, "", nil), nil
 }
 
 func (spec *parsedObjectTypeReference) GoType() types.Type {
@@ -274,6 +323,10 @@ func (spec *parsedIfaceTypeReference) TypeDefCode() (*Statement, error) {
 	return Qual("dag", "TypeDef").Call().Dot("WithInterface").Call(
 		Lit(spec.name),
 	), nil
+}
+
+func (spec *parsedIfaceTypeReference) TypeDefObject() (*core.TypeDef, error) {
+	return (&core.TypeDef{}).WithInterface(spec.name, "", nil), nil
 }
 
 func (spec *parsedIfaceTypeReference) GoType() types.Type {
@@ -317,4 +370,19 @@ func (ps *parseState) sourceMap(item interface{ Pos() token.Pos }) *sourceMap {
 
 func (spec *sourceMap) TypeDefCode() *Statement {
 	return Qual("dag", "SourceMap").Call(Lit(spec.filename), Lit(spec.line), Lit(spec.column))
+}
+
+func (spec *sourceMap) TypeDefObject() *core.SourceMap {
+	return &core.SourceMap{
+		Filename: spec.filename,
+		Line:     spec.line,
+		Column:   spec.column,
+	}
+}
+
+func coreSourceMap(srcMap *sourceMap) *core.SourceMap {
+	if srcMap == nil {
+		return nil
+	}
+	return srcMap.TypeDefObject()
 }

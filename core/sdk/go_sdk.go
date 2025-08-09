@@ -36,6 +36,10 @@ type goSDK struct {
 	rawConfig map[string]any
 }
 
+func (sdk *goSDK) HasModuleTypeDefs() bool {
+	return core.SelfInvocationEnabled
+}
+
 type goSDKConfig struct {
 	GoPrivate string `json:"goprivate,omitempty"`
 }
@@ -216,6 +220,141 @@ func (sdk *goSDK) Codegen(
 	}, nil
 }
 
+func (sdk *goSDK) TypeDefs(
+	ctx context.Context,
+	deps *core.ModDeps,
+	src dagql.ObjectResult[*core.ModuleSource],
+) (inst dagql.ObjectResult[*core.Module], rerr error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: load typedefs object")
+	defer telemetry.End(span, func() error { return rerr })
+
+	dag, err := sdk.root.Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag for go module sdk codegen: %w", err)
+	}
+
+	var ctr dagql.ObjectResult[*core.Container]
+
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
+	if err != nil {
+		return inst, fmt.Errorf("failed to get schema introspection json during module sdk codegen: %w", err)
+	}
+
+	modName := src.Self().ModuleOriginalName
+	contextDir := src.Self().ContextDirectory
+	srcSubpath := src.Self().SourceSubpath
+
+	ctr, err = sdk.base(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	// rm dagger.gen.go if it exists, which is going to be overwritten
+	// anyways. If it doesn't exist, we ignore not found in the implementation of
+	// `withoutFile` so it will be a no-op.
+	var updatedContextDir dagql.ObjectResult[*core.Directory]
+	if err := dag.Select(ctx, contextDir, &updatedContextDir,
+		dagql.Selector{
+			Field: "withoutFile",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.String(filepath.Join(srcSubpath, "dagger.gen.go")),
+				},
+			},
+		},
+	); err != nil {
+		return inst, fmt.Errorf("failed to remove dagger.gen.go from source directory: %w", err)
+	}
+
+	var typeDefsJSON string
+	err = dag.Select(ctx, ctr, &typeDefsJSON,
+		dagql.Selector{
+			Field: "withMountedFile",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(goSDKIntrospectionJSONPath),
+				},
+				{
+					Name:  "source",
+					Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withMountedDirectory",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(goSDKUserModContextDirPath),
+				},
+				{
+					Name:  "source",
+					Value: dagql.NewID[*core.Directory](updatedContextDir.ID()),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withWorkdir",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withExec",
+			Args: []dagql.NamedInput{
+				{
+					Name: "args",
+					Value: dagql.ArrayInput[dagql.String]{
+						"codegen",
+						"generate-typedefs",
+						"--module-source-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
+						"--module-name", dagql.String(modName),
+						"--introspection-json-path", goSDKIntrospectionJSONPath,
+					},
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString("typedefs.json"),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "contents",
+		},
+	)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get type defs json during module sdk codegen: %w", err)
+	}
+
+	err = dag.Select(ctx, dag.Root(), &inst, dagql.Selector{
+		Field: "module",
+	},
+		dagql.Selector{
+			Field: "fromJSON",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "json",
+					Value: dagql.NewString(typeDefsJSON),
+				},
+			},
+		})
+	if err != nil {
+		return inst, fmt.Errorf("failed to load module from type defs json: %w", err)
+	}
+
+	return inst, nil
+}
+
 func (sdk *goSDK) Runtime(
 	ctx context.Context,
 	deps *core.ModDeps,
@@ -226,6 +365,8 @@ func (sdk *goSDK) Runtime(
 		return inst, fmt.Errorf("failed to get dag for go module sdk runtime: %w", err)
 	}
 
+	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: load runtime")
+	defer telemetry.End(span, func() error { return rerr })
 	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
 	if err != nil {
 		return inst, err
