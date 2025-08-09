@@ -4,6 +4,8 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
+type JSONValueID = dagql.ID[*JSONValue]
+
 type ContainerID = dagql.ID[*Container]
 
 type ServiceID = dagql.ID[*Service]
