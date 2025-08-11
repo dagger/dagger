@@ -43,18 +43,6 @@ int main(int argc, char *argv[]) {
     // Step 2: Get file descriptors for the container's namespaces
     char path[256];
 
-    // User namespace (might not exist for privileged containers)
-    snprintf(path, sizeof(path), "/proc/%d/ns/user", container_pid);
-    int fd_userns = open(path, O_RDONLY);
-    if (fd_userns >= 0) {
-        printf("Entering user namespace...\n");
-        if (setns(fd_userns, CLONE_NEWUSER) < 0) {
-            perror("setns(CLONE_NEWUSER) failed");
-            // Continue anyway, might be a privileged container
-        }
-        close(fd_userns);
-    }
-
     // Mount namespace
     snprintf(path, sizeof(path), "/proc/%d/ns/mnt", container_pid);
     int fd_mntns = open(path, O_RDONLY);
