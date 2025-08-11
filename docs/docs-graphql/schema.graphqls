@@ -2560,6 +2560,12 @@ type GitRef {
   """The resolved commit id at this ref."""
   commit: String!
 
+  """Find the best common ancestor between this ref and another ref."""
+  commonAncestor(
+    """The other ref to compare against."""
+    other: GitRefID!
+  ): GitRef!
+
   """A unique identifier for this GitRef."""
   id: GitRefID!
 

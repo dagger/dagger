@@ -6316,6 +6316,15 @@ export class GitRef extends BaseClient {
   }
 
   /**
+   * Find the best common ancestor between this ref and another ref.
+   * @param other The other ref to compare against.
+   */
+  commonAncestor = (other: GitRef): GitRef => {
+    const ctx = this._ctx.select("commonAncestor", { other })
+    return new GitRef(ctx)
+  }
+
+  /**
    * The resolved ref name at this ref.
    */
   ref = async (): Promise<string> => {
@@ -6338,6 +6347,15 @@ export class GitRef extends BaseClient {
   tree = (opts?: GitRefTreeOpts): Directory => {
     const ctx = this._ctx.select("tree", { ...opts })
     return new Directory(ctx)
+  }
+
+  /**
+   * Call the provided function with current GitRef.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: GitRef) => GitRef) => {
+    return arg(this)
   }
 }
 

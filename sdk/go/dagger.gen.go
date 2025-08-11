@@ -5802,6 +5802,14 @@ type GitRef struct {
 	id     *GitRefID
 	ref    *string
 }
+type WithGitRefFunc func(r *GitRef) *GitRef
+
+// With calls the provided function with current GitRef.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *GitRef) With(f WithGitRefFunc) *GitRef {
+	return f(r)
+}
 
 func (r *GitRef) WithGraphQLQuery(q *querybuilder.Selection) *GitRef {
 	return &GitRef{
@@ -5820,6 +5828,17 @@ func (r *GitRef) Commit(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Find the best common ancestor between this ref and another ref.
+func (r *GitRef) CommonAncestor(other *GitRef) *GitRef {
+	assertNotNil("other", other)
+	q := r.query.Select("commonAncestor")
+	q = q.Arg("other", other)
+
+	return &GitRef{
+		query: q,
+	}
 }
 
 // A unique identifier for this GitRef.
