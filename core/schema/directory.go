@@ -202,8 +202,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("target").Doc(`Location of the file or directory to link to (e.g., "/existing/file").`),
 				dagql.Arg("linkName").Doc(`Location where the symbolic link will be created (e.g., "/new-file-link").`),
 			),
-		dagql.NodeFunc("__gitIgnoreFor", DagOpWrapper(srv, s.gitIgnoreFor)).
-			Doc("Load git ignore patterns in the current directory and all its children"),
+		dagql.NodeFunc("__gitignorePatterns", DagOpWrapper(srv, s.gitIgnorePatterns)).
+			Doc("Load git ignore patterns in the current directory and all its children and return them as docker-style ignore patterns"),
 	}.Install(srv)
 }
 
@@ -779,8 +779,8 @@ type gitIgnoreForArgs struct {
 	RawDagOpInternalArgs
 }
 
-func (s *directorySchema) gitIgnoreFor(ctx context.Context, parent dagql.ObjectResult[*core.Directory], _ gitIgnoreForArgs) (dagql.Array[dagql.String], error) {
-	patterns, err := parent.Self().GitIgnoreFor(ctx)
+func (s *directorySchema) gitIgnorePatterns(ctx context.Context, parent dagql.ObjectResult[*core.Directory], _ gitIgnoreForArgs) (dagql.Array[dagql.String], error) {
+	patterns, err := parent.Self().GitIgnorePatterns(ctx)
 	if err != nil {
 		return nil, err
 	}

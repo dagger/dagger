@@ -1136,7 +1136,7 @@ func (dir *Directory) Mount(ctx context.Context, f func(string) error) error {
 	})
 }
 
-func (dir *Directory) GitIgnoreFor(ctx context.Context) ([]string, error) {
+func (dir *Directory) GitIgnorePatterns(ctx context.Context) ([]string, error) {
 	result := []string{}
 
 	_, err := execInMount(ctx, dir, func(root string) error {
@@ -1150,7 +1150,7 @@ func (dir *Directory) GitIgnoreFor(ctx context.Context) ([]string, error) {
 				return prevErr
 			}
 
-			if d.Name() != ".gitignore" {
+			if !d.IsDir() && d.Name() != ".gitignore" {
 				return nil
 			}
 

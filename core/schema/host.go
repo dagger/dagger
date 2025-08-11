@@ -415,25 +415,15 @@ func loadDirectoryGitIgnorePatterns(ctx context.Context, parentPath string, host
 			},
 		},
 		dagql.Selector{
-			Field: "__gitIgnoreFor",
+			Field: "__gitignorePatterns",
 		},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load directory ignore patterns: %w", err)
 	}
 
-	for i := 1; i <= result.Len(); i++ {
-		entry, err := result.Nth(i)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get entry %d in directory ignore patterns: %w", i, err)
-		}
-
-		entryValue, ok := dagql.UnwrapAs[dagql.String](entry)
-		if !ok {
-			return nil, fmt.Errorf("expected string, got %T", entry)
-		}
-
-		patterns = append(patterns, string(entryValue))
+	for _, entry := range result {
+		patterns = append(patterns, string(entry.Self()))
 	}
 
 	return patterns, nil
