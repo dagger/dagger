@@ -549,8 +549,8 @@ For more information, refer to the documentation on [remote repository access](.
 
 :::note
 Dagger offers two important features for working with `Directory` arguments:
-- [Default paths](../types/objects/directory.mdx#default-paths): Set a default directory path to use if no value is specified for the argument.
-- [Filters](../types/objects/directory.mdx#filters): Control which files and directories are uploaded to a Dagger Function.
+- [Default paths](../types/directory.mdx#default-paths): Set a default directory path to use if no value is specified for the argument.
+- [Filters](../types/directory.mdx#filters): Control which files and directories are uploaded to a Dagger Function.
 :::
 
 ## File arguments
@@ -626,8 +626,8 @@ For more information about remote repository access, refer to the documentation 
 
 :::note
 Dagger offers two important features for working with `File` arguments:
-- [Default paths](../types/objects/directory.mdx#default-paths): Set a default directory path to use if no value is specified for the argument.
-- [Filters](../types/objects/directory.mdx#filters): Control which files are uploaded to a Dagger Function.
+- [Default paths](../types/directory.mdx#default-paths): Set a default directory path to use if no value is specified for the argument.
+- [Filters](../types/directory.mdx#filters): Control which files are uploaded to a Dagger Function.
 :::
 
 ## Container arguments
@@ -1100,5 +1100,5 @@ Hello, world
 Passing null to an optional argument signals that no default value should be used.
 
 :::note
-Dagger supports [default paths](../types/objects/directory.mdx#default-paths) for `Directory` or `File` arguments. Dagger will automatically use this default path when no value is specified for the corresponding argument.
+Dagger supports [default paths](../types/directory.mdx#default-paths) for `Directory` or `File` arguments. Dagger will automatically use this default path when no value is specified for the corresponding argument.
 :::

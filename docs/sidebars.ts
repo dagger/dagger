@@ -40,7 +40,7 @@ module.exports = {
     },
     {
       type: "category",
-      label: "Hands-on with Dagger",
+      label: "Quickstarts",
       items: [
         "getting-started/basics",
         "getting-started/ci",
@@ -52,31 +52,25 @@ module.exports = {
       type: "category",
       label: "Calling the Dagger API",
       items: [
-        {
-          type: "category",
-          label: "Clients",
-          items: [
-            "extending/clients-sdk",
-            "extending/clients-cli",
-            "extending/clients-http",
-          ],
-        },
-        {
-          type: "category",
-          label: "Types",
-          items: [
-            "types/index",
-            "types/objects/container",
-            "types/objects/directory",
-            "types/objects/file",
-            "types/objects/llm",
-            "types/objects/secret",
-            "types/objects/service",
-            "types/objects/cache-volume",
-            "types/objects/env",
-          ],
-        },
-      ]
+          "extending/clients-sdk",
+          "extending/clients-cli",
+          "extending/clients-http",
+        ],
+    },
+    {
+      type: "category",
+      label: "Types",
+      items: [
+        "types/index",
+        "types/container",
+        "types/directory",
+        "types/file",
+        "types/secret",
+        "types/service",
+        "types/cache-volume",
+        "types/llm",
+        "types/env",
+      ],
     },
     {
       type: "category",
@@ -94,6 +88,12 @@ module.exports = {
       label: "Extending Dagger",
       items: [
         "extending/index",
+      ]
+    },
+    {
+      type: "category",
+      label: "Modules",
+      items: [
         "extending/modules",
         "extending/functions",
         "extending/arguments",
@@ -124,7 +124,6 @@ module.exports = {
       type: "category",
       label: "Custom Applications",
       items: [
-        "extending/custom-applications/index",
         "extending/custom-applications/go",
         "extending/custom-applications/python",
         "extending/custom-applications/typescript",

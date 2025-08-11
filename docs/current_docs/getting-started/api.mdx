@@ -198,7 +198,7 @@ Dagger [modules](../extending/modules.mdx) are collections of Dagger functions, 
 
 ## Calling the Dagger API
 
-You can call the Dagger API from code using a custom Dagger function created with a type-safe Dagger SDK, or from the command line using the Dagger CLI or the Dagger Shell.
+You can call the Dagger API from code using a type-safe Dagger SDK, or from the command line using the Dagger CLI or the Dagger Shell.
 
 The different ways to call the Dagger API are:
 
@@ -217,8 +217,10 @@ The Dagger CLI can call any Dagger function, either from your local filesystem o
 
 ## Extending the Dagger API
 
-The Dagger API is extensible and shareable by design. You can extend the API with [custom functions](../extending/functions.mdx), which are loaded via Dagger [modules](../extending/modules.mdx). You are encouraged to write your own Dagger modules and share them with others.
+The Dagger API is extensible and shareable by design. You can extend the API by creating Dagger [modules](../extending/modules.mdx).You are encouraged to write your own Dagger modules and share them with others.
 
 Dagger also lets you import and reuse modules developed by your team, your organization or the broader Dagger community. The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules and Dagger functions, and lets you easily search and consume them.
 
 When a Dagger module is loaded, the Dagger API is [dynamically extended](../reference/api/internals.mdx#dynamic-api-extension) with new Dagger functions served by that module. So, after loading a Dagger module, an API client can now call all of the original core functions _plus_ the new Dagger functions provided by that module.
+
+You can also [embed a Dagger SDK directly into your application](../extending/custom-applications/index.mdx).
