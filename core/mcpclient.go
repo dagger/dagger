@@ -28,16 +28,14 @@ func (t *ServiceMCPTransport) Connect(ctx context.Context) (mcp.Connection, erro
 	conn.svc, err = t.Service.Self().Start(
 		ctx,
 		t.Service.ID(),
-		false, // MUST be false, otherwise
+		false, // MUST be false, otherwise MCP server won't init
 		func(stdin io.Writer, svcProc bkgw.ContainerProcess) {
 			conn.w = stdin
 		},
 		func(stdout io.Reader) {
 			conn.r = bufio.NewReader(stdout)
 		},
-		func(io.Reader) {
-			// nothing to do here, stderr will already show up in server logs
-		},
+		nil,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start service: %w", err)
