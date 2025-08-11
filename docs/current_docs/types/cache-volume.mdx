@@ -4,7 +4,7 @@ slug: /types/cachevolume
 description: "Learn about the CacheVolume type in Dagger and how to use it for container operations."
 ---
 
-import CacheDependencies from '@cookbookBuild/cache-dependencies.mdx';
+import CacheDependencies from '@cookbookBuild/_cache-dependencies.mdx';
 
 Volume caching involves caching specific parts of the filesystem and reusing them on subsequent function calls if they are unchanged. This is especially useful when dealing with package managers such as `npm`, `maven`, `pip` and similar. Since these dependencies are usually locked to specific versions in the application's manifest, re-downloading them on every session is inefficient and time-consuming.
 
