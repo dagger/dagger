@@ -75,7 +75,6 @@ func TypeDefs(ctx context.Context, cfg generator.Config, typedefFunc TypeDefFunc
 
 		slog.Info("done!")
 		break
-
 	}
 
 	return ctx.Err()
