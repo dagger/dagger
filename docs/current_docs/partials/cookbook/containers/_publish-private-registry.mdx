@@ -25,42 +25,42 @@ The following Dagger Function publishes a just-in-time container image to a priv
 
 #### Examples
 
-- Publish a just-in-time container image to Docker Hub, using the account username `user` and the password set in the `PASSWORD` environment variable:
+Publish a just-in-time container image to Docker Hub, using the account username `user` and the password set in the `PASSWORD` environment variable:
 
-    <Tabs groupId="shell">
-    <TabItem value="System shell">
-    ```shell
-    dagger -c 'publish docker.io user env://PASSWORD'
-    ```
-    </TabItem>
-    <TabItem value="Dagger Shell">
-    ```shell title="First type 'dagger' for interactive mode."
-    publish docker.io user env://PASSWORD
-    ```
-    </TabItem>
-    <TabItem value="Dagger CLI">
-    ```shell
-    dagger call publish --registry=docker.io --username=user --password=env://PASSWORD
-    ```
-    </TabItem>
-    </Tabs>
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'publish docker.io user env://PASSWORD'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+publish docker.io user env://PASSWORD
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call publish --registry=docker.io --username=user --password=env://PASSWORD
+```
+</TabItem>
+</Tabs>
 
-- Publish a just-in-time container image to GitHub Container Registry, using the account username `user` and the GitHub personal access token set in the `PASSWORD` environment variable:
+Publish a just-in-time container image to GitHub Container Registry, using the account username `user` and the GitHub personal access token set in the `PASSWORD` environment variable:
 
-    <Tabs groupId="shell">
-    <TabItem value="System shell">
-    ```shell
-    dagger -c 'publish gchr.io user env://PASSWORD'
-    ```
-    </TabItem>
-    <TabItem value="Dagger Shell">
-    ```shell title="First type 'dagger' for interactive mode."
-    publish gchr.io user env://PASSWORD
-    ```
-    </TabItem>
-    <TabItem value="Dagger CLI">
-    ```shell
-    dagger call publish --registry=gchr.io --username=user --password=env://PASSWORD
-    ```
-    </TabItem>
-    </Tabs>
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'publish gchr.io user env://PASSWORD'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+publish gchr.io user env://PASSWORD
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call publish --registry=gchr.io --username=user --password=env://PASSWORD
+```
+</TabItem>
+</Tabs>
