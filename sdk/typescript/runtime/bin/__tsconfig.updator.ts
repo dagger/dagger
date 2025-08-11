@@ -108,6 +108,7 @@ const tsConfigPath = `./tsconfig.json`
 // Import paths used by user.
 const daggerPathAlias = "@dagger.io/dagger"
 const daggerTelemetryPathAlias = "@dagger.io/dagger/telemetry"
+const daggerCorePathAlias = "@dagger.io/core"
 
 // Filename of imported path aliases.
 const daggerRootFilename = {
@@ -153,15 +154,18 @@ if (!fs.existsSync(tsConfigPath)) {
     ],
   }
 
-  if (sdkLibOrigin.value === "remote") {
-    defaultTsConfig.compilerOptions.paths["@dagger.io/core"] = [
-      "./node_modules/@dagger.io/dagger/dist/src/index",
-    ]
-  }
-
   if (standaloneClient.value === true) {
     defaultTsConfig.compilerOptions.paths[daggerPathAlias] = [
       `./${clientDir.value}/client.gen.ts`,
+    ]
+    defaultTsConfig.compilerOptions.paths[daggerCorePathAlias] = [
+      `${daggerRootFilename[sdkLibOrigin.value!]}`,
+    ]
+  }
+
+  if (sdkLibOrigin.value === "remote") {
+    defaultTsConfig.compilerOptions.paths[daggerCorePathAlias] = [
+      "./node_modules/@dagger.io/dagger/dist/src/index",
     ]
   }
 
@@ -211,15 +215,18 @@ tsconfig.compilerOptions.paths[daggerTelemetryPathAlias] = [
   `${daggerTelemetryFilename[sdkLibOrigin.value!]}`,
 ]
 
-if (sdkLibOrigin.value === "remote") {
-  tsconfig.compilerOptions.paths["@dagger.io/core"] = [
-    "./node_modules/@dagger.io/dagger/dist/src/index",
-  ]
-}
-
 if (standaloneClient.value === true) {
   tsconfig.compilerOptions.paths[daggerPathAlias] = [
     `./${clientDir.value}/client.gen.ts`,
+  ]
+  tsconfig.compilerOptions.paths[daggerCorePathAlias] = [
+    `${daggerRootFilename[sdkLibOrigin.value!]}`,
+  ]
+}
+
+if (sdkLibOrigin.value === "remote") {
+  tsconfig.compilerOptions.paths[daggerCorePathAlias] = [
+    "./node_modules/@dagger.io/dagger/dist/src/index",
   ]
 }
 

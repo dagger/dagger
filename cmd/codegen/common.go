@@ -15,7 +15,7 @@ var (
 	lang                  string
 	introspectionJSONPath string
 	bundle                bool
-	remote bool
+	remote                bool
 )
 
 func relativeTo(basepath string, tarpath string) (string, error) {
