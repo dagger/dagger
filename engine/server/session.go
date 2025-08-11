@@ -560,10 +560,8 @@ func (srv *Server) initializeDaggerClient(
 		UpstreamCacheImports: client.daggerSession.cacheImporterCfgs,
 		Frontends:            srv.frontends,
 
-		Refs:         client.daggerSession.refs,
-		RefsMu:       &client.daggerSession.refsMu,
-		Containers:   client.daggerSession.containers,
-		ContainersMu: &client.daggerSession.containersMu,
+		Refs:   client.daggerSession.refs,
+		RefsMu: &client.daggerSession.refsMu,
 
 		Interactive:        client.daggerSession.interactive,
 		InteractiveCommand: client.daggerSession.interactiveCommand,
