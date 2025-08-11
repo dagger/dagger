@@ -3,20 +3,44 @@ title: "Overview"
 description: "In addition to providing a set of core functions and types, the Dagger API can also be extended with custom Dagger Functions and custom types."
 ---
 
-import { daggerVersion } from '../partials/version';
-import DaggerModuleInit from '@partials/_dagger_module_init.mdx';
+The Dagger API is extensible and shareable by design.
 
-In addition to providing a set of core types, the Dagger API can also be extended with custom Dagger Functions and custom Types. This is achieved by creating (or installing) Dagger Modules.
+- You can extend the [Dagger API](../getting-started/api.mdx) by creating Dagger modules.
+- You can also embed a [Dagger SDK](../extending/clients-sdk.mdx) directly into your application.
 
-When a Dagger Module is loaded into a Dagger session, the Dagger API is dynamically extended with the new Dagger Functions served by that module. Consumers of the Dagger API can now use all of the original Dagger API functions, plus the new functions provided by that module.
+Both approaches let you access Dagger features for container operations, secret management, and more.
 
-Custom Dagger Functions are just regular code, written in your usual language using a type-safe Dagger SDK, and packaged and shared in Dagger Modules.
+## Modules
 
-A Dagger SDK provides two components:
+In addition to providing a set of core functions and types, the Dagger API can be extended with custom Dagger Functions and custom Types. This is achieved by creating (or installing) Dagger Modules. You are encouraged to write your own Dagger modules and share them with others.
 
-- A client library to call the Dagger API from your code
-- Tooling to extend the Dagger API with your own Dagger Functions (bundled in a Dagger module)
+When a Dagger module is loaded, the Dagger API is [dynamically extended](../reference/api/internals.mdx#dynamic-api-extension) with new Dagger functions served by that module. So, after loading a Dagger module, an API client can now call all of the original core functions _plus_ the new Dagger functions provided by that module.
 
-The Dagger API uses GraphQL as its low-level language-agnostic framework, and can also be accessed using any standard GraphQL client. However, you do not need to know GraphQL to call the Dagger API; the translation to underlying GraphQL API calls is handled internally by the Dagger SDKs.
+Dagger also lets you import and reuse modules developed by your team, your organization or the broader Dagger community. The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules and Dagger functions, and lets you easily search and consume them.
 
-Official Dagger SDKs are currently available for Go, TypeScript and Python. There are also [experimental and community SDKs contributed by the Dagger community](https://github.com/dagger/dagger/tree/main/sdk).
+## Custom applications
+
+When using a Dagger SDK in your application:
+
+1. Install the SDK for your preferred language
+2. Initialize a Dagger client in your code
+3. Use Dagger API methods to implement your workflow
+4. Run your application with `dagger run`
+
+The following SDKs are available for embedding Dagger into your application:
+
+- [**Go →**](./custom-applications/go.mdx) use the Dagger Go SDK to embed Dagger into your Go applications.
+- [**TypeScript →**](./custom-applications/typescript.mdx) use the Dagger TypeScript SDK to embed Dagger into your TypeScript applications.
+- [**Python →**](./custom-applications/python.mdx) use the Dagger Python SDK to embed Dagger into your Python applications.
+- [**PHP →**](./custom-applications/php.mdx) use the Dagger PHP SDK to embed Dagger into your PHP applications.
+
+## Modules vs custom applications
+
+Here is a quick summary of differences between these two approaches.
+
+|  | Dagger Modules | Custom applications |
+|:---|:---|:---|
+| Pre-initialized Dagger API client | Y | N |
+| Direct host access | N | Y |
+| Direct third-party module access | Y | N |
+| Cross-language interoperability | Y | N |
