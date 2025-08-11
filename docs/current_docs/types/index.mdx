@@ -1,9 +1,44 @@
 ---
-slug: /types/overview
+slug: /types
 title: "Types"
 description: "Dagger Modules are the building blocks of your workflows. They can be composed together to create complex pipelines."
 sidebar_label: "Overview"
 ---
+
+In addition to basic types (string, boolean, integer, arrays...), the Dagger API also provides powerful core types which serve as both arguments and return values for Dagger Functions.
+
+:::note
+The types listed on this page are indicative and not exhaustive. For a complete list of supported types and their fields, refer to the [Dagger API reference](https://docs.dagger.io/api/reference).
+:::
+
+## Core types
+
+The following table lists available types and what they represent:
+
+| Type | Description |
+|------|-------------|
+| `CacheVolume` | A directory whose contents persist across runs |
+| [`Container`](container.mdx) | An OCI-compatible container |
+| `CurrentModule` | The current Dagger Module and its context |
+| `Engine` | The Dagger Engine configuration and state |
+| [`Directory`](directory.mdx) | A directory (local path or Git reference) |
+| `EnvVariable` | An environment variable name and value |
+| [`Env`](env.mdx) | An environment variable name and value |
+| [`File`](file.mdx) | A file |
+| `GitRepository` | A Git repository |
+| `GitRef` | A Git reference (tag, branch, or commit) |
+| `Host` | The Dagger host environment |
+| [`LLM`](llm.mdx) | A Large Language Model (LLM) |
+| `Module` | A Dagger Module |
+| `Port` | A port exposed by a container |
+| [`Secret`](secret.mdx) | A secret credential like a password, access token or key) |
+| [`Service`](service.mdx) | A content-addressed service providing TCP connectivity |
+| `Socket` | A Unix or TCP/IP socket that can be mounted into a container |
+| `Terminal` | An interactive terminal session |
+
+Each type exposes additional fields. Some of these are discussed on their respective pages.
+
+## Dagger Modules
 
 When you work with a Dagger Workflow, you are using types that are comprised of one or more Dagger Modules. A Dagger Module is a collection of reusable code that can be shared and used across different workflows. Modules allow you to encapsulate functionality, making it easier to manage and maintain your code.
 

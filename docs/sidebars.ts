@@ -3,10 +3,7 @@ module.exports = {
     {
       type: "category",
       label: "Introduction",
-      items: [
-        "index",
-        "use-cases",
-      ]
+      items: ["index", "use-cases"],
     },
     {
       type: "category",
@@ -52,10 +49,10 @@ module.exports = {
       type: "category",
       label: "Calling the Dagger API",
       items: [
-          "extending/clients-sdk",
-          "extending/clients-cli",
-          "extending/clients-http",
-        ],
+        "extending/clients-cli",
+        "extending/clients-sdk",
+        "extending/clients-http",
+      ],
     },
     {
       type: "category",
@@ -75,20 +72,14 @@ module.exports = {
     {
       type: "category",
       label: "Integrations",
-      items: [
-        "integrations/index",
-        "integrations/ci",
-        "integrations/container-runtimes",
-      ],
+      items: ["integrations/index"],
     },
   ],
   extending: [
     {
       type: "category",
       label: "Extending Dagger",
-      items: [
-        "extending/index",
-      ]
+      items: ["extending/index"],
     },
     {
       type: "category",

@@ -4,7 +4,6 @@ slug: "/getting-started/concepts"
 description: "Understand key concepts"
 ---
 
-
 The Dagger API is an unified interface for composing Dagger workflows. It provides a set of functions and types for creating and managing application delivery workflows, including types for containers, files, directories, network services, secrets, and more. You can call these functions from `dagger`, the Dagger CLI, or from custom functions written in any supported programming language.
 
 ## Functions
@@ -223,4 +222,4 @@ Dagger also lets you import and reuse modules developed by your team, your organ
 
 When a Dagger module is loaded, the Dagger API is [dynamically extended](../reference/api/internals.mdx#dynamic-api-extension) with new Dagger functions served by that module. So, after loading a Dagger module, an API client can now call all of the original core functions _plus_ the new Dagger functions provided by that module.
 
-You can also [embed a Dagger SDK directly into your application](../extending/custom-applications/index.mdx).
+You can also embed a Dagger SDK directly into your application using [Go](../extending/custom-applications/go.mdx).
