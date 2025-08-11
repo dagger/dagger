@@ -186,12 +186,13 @@ func (m *PythonSdk) ModuleTypeDefs(
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
 ) (*dagger.Module, error) {
+	_ = introspectionJSON
 	// Ignore introspection to avoid calling codegen first
 	ctr, err := m.ModuleRuntime(ctx, modSource, nil)
 	if err != nil {
 		return nil, err
 	}
-	mod_id, err := ctr.
+	modID, err := ctr.
 		WithEnvVariable("DAGGER_MODULE_FILE", TypeDefsPath).
 		WithExec([]string{RuntimeExecutablePath, "--register"}, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
@@ -201,7 +202,7 @@ func (m *PythonSdk) ModuleTypeDefs(
 	if err != nil {
 		return nil, err
 	}
-	return dag.LoadModuleFromID(dagger.ModuleID(mod_id)), nil
+	return dag.LoadModuleFromID(dagger.ModuleID(modID)), nil
 }
 
 // Common steps for the ModuleRuntime and Codegen functions
