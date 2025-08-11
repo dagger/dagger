@@ -1915,6 +1915,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Container::exists",
+			"p": "Dagger/Container.html#method_exists",
+			"d": "<p>check if a file or directory exists</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Container::exitCode",
 			"p": "Dagger/Container.html#method_exitCode",
 			"d": "<p>The exit code of the last executed command</p>"
@@ -2386,6 +2392,12 @@
 			"n": "Dagger\\Directory::entries",
 			"p": "Dagger/Directory.html#method_entries",
 			"d": "<p>Returns a list of files and directories at the given path.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Directory::exists",
+			"p": "Dagger/Directory.html#method_exists",
+			"d": "<p>check if a file or directory exists</p>"
 		},
 		{
 			"t": "M",
@@ -3262,6 +3274,12 @@
 			"n": "Dagger\\GitRef::commit",
 			"p": "Dagger/GitRef.html#method_commit",
 			"d": "<p>The resolved commit id at this ref.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitRef::commonAncestor",
+			"p": "Dagger/GitRef.html#method_commonAncestor",
+			"d": "<p>Find the best common ancestor between this ref and another ref.</p>"
 		},
 		{
 			"t": "M",

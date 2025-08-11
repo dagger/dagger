@@ -242,7 +242,7 @@ type Container {
     behavior.
     """
     noInit: Boolean = false
-  ): Container!
+  ): Container! @deprecated(reason: "Use `Directory.build` instead")
 
   """Return the container's default arguments."""
   defaultArgs: [String!]!
@@ -274,6 +274,20 @@ type Container {
 
   """Retrieves the list of environment variables passed to commands."""
   envVariables: [EnvVariable!]!
+
+  """check if a file or directory exists"""
+  exists(
+    """Path to check (e.g., "/file.txt")."""
+    path: String!
+
+    """
+    If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+    """
+    expectedType: ExistsType
+
+    """If specified, do not follow symlinks."""
+    doNotFollowSymlinks: Boolean = false
+  ): Boolean!
 
   """
   The exit code of the last executed command
@@ -724,11 +738,18 @@ type Container {
     stdin: String = ""
 
     """
+    Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
+    """
+    redirectStdin: String = ""
+
+    """
     Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
     """
     redirectStdout: String = ""
 
-    """Like redirectStdout, but for standard error"""
+    """
+    Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
+    """
     redirectStderr: String = ""
 
     """Exit codes this command is allowed to exit with without error"""
@@ -1427,6 +1448,20 @@ type Directory {
     """Location of the directory to look at (e.g., "/src")."""
     path: String
   ): [String!]!
+
+  """check if a file or directory exists"""
+  exists(
+    """Path to check (e.g., "/file.txt")."""
+    path: String!
+
+    """
+    If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+    """
+    expectedType: ExistsType
+
+    """If specified, do not follow symlinks."""
+    doNotFollowSymlinks: Boolean = false
+  ): Boolean!
 
   """Writes the contents of the directory to a path on the host."""
   export(
@@ -2216,6 +2251,18 @@ The `ErrorValueID` scalar type represents an identifier for an object of type Er
 """
 scalar ErrorValueID
 
+"""File type."""
+enum ExistsType {
+  """Tests path is a regular file"""
+  REGULAR_TYPE
+
+  """Tests path is a directory"""
+  DIRECTORY_TYPE
+
+  """Tests path is a symlink"""
+  SYMLINK_TYPE
+}
+
 """
 A definition of a field on a custom object defined in a Module.
 
@@ -2513,6 +2560,12 @@ type GitRef {
   """The resolved commit id at this ref."""
   commit: String!
 
+  """Find the best common ancestor between this ref and another ref."""
+  commonAncestor(
+    """The other ref to compare against."""
+    other: GitRefID!
+  ): GitRef!
+
   """A unique identifier for this GitRef."""
   id: GitRefID!
 
@@ -2622,6 +2675,9 @@ type Host {
 
     """If true, the directory will always be reloaded from the host."""
     noCache: Boolean = false
+
+    """Don't apply .gitignore filter rules inside the directory"""
+    noGitAutoIgnore: Boolean = false
   ): Directory!
 
   """Accesses a file on the host."""
@@ -2935,7 +2991,7 @@ type Module {
   """
   The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
   """
-  runtime: Container!
+  runtime: Container
 
   """The SDK config used by this module."""
   sdk: SDKConfig
@@ -2952,7 +3008,7 @@ type Module {
   ): Void
 
   """The source for the module."""
-  source: ModuleSource!
+  source: ModuleSource
 
   """
   Forces evaluation of the module, including any loading into the engine and associated validation.

@@ -459,7 +459,7 @@ func (s *moduleSourceSchema) localModuleSource(
 			return inst, err
 		}
 
-		// load this module source's context directory, sdk and deps in parallel
+		// load this module source's context directory, ignore patterns, sdk and deps in parallel
 		var eg errgroup.Group
 		eg.Go(func() error {
 			if err := s.loadModuleSourceContext(ctx, localSrc); err != nil {
@@ -492,6 +492,7 @@ func (s *moduleSourceSchema) localModuleSource(
 				return nil
 			})
 		}
+
 		if err := eg.Wait(); err != nil {
 			return inst, err
 		}
@@ -946,17 +947,45 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		fullIncludePaths = append(fullIncludePaths, src.SourceRootSubpath+"/**/*")
 	}
 
-	fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
-
 	switch src.Kind {
 	case core.ModuleSourceKindLocal:
-		err := dag.Select(ctx, dag.Root(), &src.ContextDirectory,
+		moduleSourcePath := src.SourceSubpath
+		if moduleSourcePath == "" {
+			moduleSourcePath = src.SourceRootSubpath
+		}
+
+		// Load .gitignore patterns before loading the module so they can be used in the `Include` argument
+		// instead of Exclude so we get the right behaviour.
+		// We only include the .gitignore from the module source path and above up to the context directory.
+		ignorePatterns, err := loadDirectoryGitIgnorePatterns(ctx, src.Local.ContextDirectoryPath, filepath.Join(src.Local.ContextDirectoryPath, moduleSourcePath))
+		if err != nil {
+			return fmt.Errorf("failed to load .gitignore patterns: %w", err)
+		}
+
+		rebasedIgnorePatterns, err := rebaseGitIgnorePatterns(src.Local.ContextDirectoryPath, src.Local.ContextDirectoryPath, ignorePatterns)
+		if err != nil {
+			return fmt.Errorf("failed to rebase .gitignore patterns: %w", err)
+		}
+
+		for _, pattern := range rebasedIgnorePatterns {
+			pattern, found := strings.CutPrefix(pattern, "!")
+			if !found {
+				pattern = "!" + pattern
+			}
+
+			fullIncludePaths = append(fullIncludePaths, pattern)
+		}
+
+		fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
+
+		err = dag.Select(ctx, dag.Root(), &src.ContextDirectory,
 			dagql.Selector{Field: "host"},
 			dagql.Selector{
 				Field: "directory",
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String(src.Local.ContextDirectoryPath)},
 					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(fullIncludePaths...))},
+					{Name: "noGitAutoIgnore", Value: dagql.NewBoolean(true)}, // Disable .gitignore applying since it's done above.
 				},
 			},
 		)
@@ -965,6 +994,8 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		}
 
 	case core.ModuleSourceKindGit:
+		fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
+
 		err := dag.Select(ctx, dag.Root(), &src.ContextDirectory,
 			dagql.Selector{Field: "directory"},
 			dagql.Selector{
@@ -1493,19 +1524,13 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateBlueprint(
 		return parentSrc.Result, nil
 	}
 
-	// Get the blueprint's symbolic ref without version
-	bpRef := bpSrc.Git.CloneRef
-	if bpSrc.SourceRootSubpath != "" {
-		bpRef += "/" + strings.TrimPrefix(bpSrc.SourceRootSubpath, "/")
-	}
-
 	// Update the blueprint by loading it fresh
 	var bpUpdated dagql.ObjectResult[*core.ModuleSource]
 	err = dag.Select(ctx, dag.Root(), &bpUpdated,
 		dagql.Selector{
 			Field: "moduleSource",
 			Args: []dagql.NamedInput{
-				{Name: "refString", Value: dagql.String(bpRef)},
+				{Name: "refString", Value: dagql.String(bpSrc.AsString())},
 			},
 		},
 	)
@@ -2233,10 +2258,11 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 	}
 
 	// get the runtime container, which is what is exec'd when calling functions in the module
-	mod.Runtime, err = runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
+	runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module runtime: %w", err)
 	}
+	mod.Runtime = dagql.NonNull(runtime)
 
 	// construct a special function with no object or function name, which tells
 	// the SDK to return the module's definition (in terms of objects, fields and
@@ -2269,7 +2295,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 			ctx,
 			mod,
 			nil,
-			mod.Runtime,
+			mod.Runtime.Value,
 			core.NewFunction("", &core.TypeDef{
 				Kind:     core.TypeDefKindObject,
 				AsObject: dagql.NonNull(core.NewObjectTypeDef("Module", "")),
@@ -2374,8 +2400,8 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 	// Create module with blueprint source for SDK operations
 	mod := &core.Module{
-		Source:        src,
-		ContextSource: originalSrc,
+		Source:        dagql.NonNull(src),
+		ContextSource: dagql.NonNull(originalSrc),
 
 		NameField:    src.Self().ModuleName,
 		OriginalName: src.Self().ModuleOriginalName,

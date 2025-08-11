@@ -138,6 +138,7 @@
               <li><a href="#definition-ErrorID">ErrorID</a></li>
               <li><a href="#definition-ErrorValue">ErrorValue</a></li>
               <li><a href="#definition-ErrorValueID">ErrorValueID</a></li>
+              <li><a href="#definition-ExistsType">ExistsType</a></li>
               <li><a href="#definition-FieldTypeDef">FieldTypeDef</a></li>
               <li><a href="#definition-FieldTypeDefID">FieldTypeDefID</a></li>
               <li><a href="#definition-File">File</a></li>
@@ -4366,8 +4367,9 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Container-build" href="#Container-build"><code>build</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Initializes this container from a Dockerfile build. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="Container-build" href="#Container-build"><code>build</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td> Initializes this container from a Dockerfile build. <span class="deprecation-reason">Use <code>Directory.build</code> instead</span>
+                        </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -4457,6 +4459,31 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Container-envVariables" href="#Container-envVariables"><code>envVariables</code></a> - <span class="property-type"><a href="#definition-EnvVariable"><code>[EnvVariable!]!</code></a></span> </td>
                         <td> Retrieves the list of environment variables passed to commands. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Container-exists" href="#Container-exists"><code>exists</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> check if a file or directory exists </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Path to check (e.g., &quot;/file.txt&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expectedType</code></span> - <span class="property-type"><a href="#definition-ExistsType"><code>ExistsType</code></a></span></h6>
+                                <p>If specified, also validate the type of file (e.g. &quot;REGULAR_TYPE&quot;, &quot;DIRECTORY_TYPE&quot;, or &quot;SYMLINK_TYPE&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>doNotFollowSymlinks</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>If specified, do not follow symlinks.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Container-exitCode" href="#Container-exitCode"><code>exitCode</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
@@ -4985,12 +5012,16 @@
                                 <p>Content to write to the command&#39;s standard input. Example: &quot;Hello world&quot;)</p>
                               </div>
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>redirectStdin</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Redirect the command&#39;s standard input from a file in the container. Example: &quot;./stdin.txt&quot;</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>redirectStdout</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>Redirect the command&#39;s standard output to a file in the container. Example: &quot;./stdout.txt&quot;</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>redirectStderr</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>Like redirectStdout, but for standard error</p>
+                                <p>Redirect the command&#39;s standard error to a file in the container. Example: &quot;./stderr.txt&quot;</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>expect</code></span> - <span class="property-type"><a href="#definition-ReturnType"><code>ReturnType</code></a></span></h6>
@@ -6046,6 +6077,31 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>Location of the directory to look at (e.g., &quot;/src&quot;).</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Directory-exists" href="#Directory-exists"><code>exists</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> check if a file or directory exists </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Path to check (e.g., &quot;/file.txt&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expectedType</code></span> - <span class="property-type"><a href="#definition-ExistsType"><code>ExistsType</code></a></span></h6>
+                                <p>If specified, also validate the type of file (e.g. &quot;REGULAR_TYPE&quot;, &quot;DIRECTORY_TYPE&quot;, or &quot;SYMLINK_TYPE&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>doNotFollowSymlinks</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>If specified, do not follow symlinks.</p>
                               </div>
                             </div>
                           </div>
@@ -7811,6 +7867,58 @@
               </div>
             </div>
           </section>
+          <section id="definition-ExistsType" class="definition definition-enum" data-traverse-target="definition-ExistsType">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ExistsType</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>File type.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Values</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Enum Value</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <p><code>REGULAR_TYPE</code></p>
+                        </td>
+                        <td> Tests path is a regular file </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>DIRECTORY_TYPE</code></p>
+                        </td>
+                        <td> Tests path is a directory </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>SYMLINK_TYPE</code></p>
+                        </td>
+                        <td> Tests path is a symlink </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="doc-examples">
+                <div class="example-section example-section-is-code">
+                  <h5>Example</h5>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"REGULAR_TYPE"</span>
+</code></pre>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="definition-FieldTypeDef" class="definition definition-object" data-traverse-target="definition-FieldTypeDef">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -8484,6 +8592,23 @@
                         <td data-property-name=""><a class="property-name" id="GitRef-commit" href="#GitRef-commit"><code>commit</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The resolved commit id at this ref. </td>
                       </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="GitRef-commonAncestor" href="#GitRef-commonAncestor"><code>commonAncestor</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef!</code></a></span> </td>
+                        <td> Find the best common ancestor between this ref and another ref. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>other</code></span> - <span class="property-type"><a href="#definition-GitRefID"><code>GitRefID!</code></a></span></h6>
+                                <p>The other ref to compare against.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="GitRef-id" href="#GitRef-id"><code>id</code></a> - <span class="property-type"><a href="#definition-GitRefID"><code>GitRefID!</code></a></span> </td>
                         <td> A unique identifier for this GitRef. </td>
@@ -8769,6 +8894,10 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>noCache</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>If true, the directory will always be reloaded from the host.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>noGitAutoIgnore</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Don&#39;t apply .gitignore filter rules inside the directory</p>
                               </div>
                             </div>
                           </div>
@@ -9634,7 +9763,7 @@
                         <td> Objects served by this module. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Module-runtime" href="#Module-runtime"><code>runtime</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="Module-runtime" href="#Module-runtime"><code>runtime</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container</code></a></span> </td>
                         <td> The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile. </td>
                       </tr>
                       <tr>
@@ -9662,7 +9791,7 @@
                         </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Module-source" href="#Module-source"><code>source</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="Module-source" href="#Module-source"><code>source</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource</code></a></span> </td>
                         <td> The source for the module. </td>
                       </tr>
                       <tr>

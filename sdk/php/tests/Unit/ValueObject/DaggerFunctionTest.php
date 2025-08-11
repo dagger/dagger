@@ -6,11 +6,12 @@ namespace Dagger\Tests\Unit\ValueObject;
 
 use Dagger\Attribute\DaggerObject;
 use Dagger\Container;
+use Dagger\Exception\RegistrationError\MissingAttribute;
 use Dagger\File;
 use Dagger\Json;
 use Dagger\Tests\Unit\Fixture\DaggerObjectWithDaggerFunctions;
-use Dagger\ValueObject\DaggerFunction;
 use Dagger\ValueObject\Argument;
+use Dagger\ValueObject\DaggerFunction;
 use Dagger\ValueObject\Type;
 use Generator;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -27,32 +28,12 @@ use RuntimeException;
 class DaggerFunctionTest extends TestCase
 {
     #[Test]
-    public function itThrowsIfBuiltFromNonDaggerFunctions(): void
-    {
-        $reflection = new ReflectionMethod(
-            DaggerObjectWithDaggerFunctions::class,
-            'notADaggerFunction',
-        );
-
-        self::expectException(RuntimeException::class);
-
-        DaggerFunction::fromReflection($reflection);
-    }
-
-    #[Test]
-    public function ItRequiresReturnType(): void
-    {
-        $reflection = (new ReflectionClass(new #[DaggerObject] class () {
-                #[\Dagger\Attribute\DaggerFunction]
-                public function noReturnType()
-                {
-                    return 'hello world';
-                }
-            }))->getMethod('noReturnType');
-
-        self::expectExceptionMessage(
-            'DaggerFunction "noReturnType" cannot be supported without a return type',
-        );
+    #[DataProvider('provideInvalidDaggerFunctions')]
+    public function itCannotTakeInvalidDaggerFunctions(
+        ReflectionMethod $reflection,
+        \RuntimeException $expected,
+    ): void {
+        self::expectExceptionObject($expected);
 
         DaggerFunction::fromReflection($reflection);
     }
@@ -76,6 +57,38 @@ class DaggerFunctionTest extends TestCase
         $actual = DaggerFunction::fromReflection($reflectionMethod);
 
         self::assertEquals($expected, $actual);
+    }
+
+    /** @return Generator<array{0: ReflectionMethod, 1: RuntimeException}> */
+    public static function provideInvalidDaggerFunctions(): Generator
+    {
+        yield 'DaggerFunction attribute missing' => [
+            (new ReflectionClass(new #[DaggerObject] class () {
+                public function noAttribute(): string {return 'hello world';}
+            }))->getMethod('noAttribute'),
+            new RuntimeException(sprintf(
+                'Method "noAttribute" is not considered a dagger function without the %s attribute',
+                \Dagger\Attribute\DaggerFunction::class,
+            )),
+        ];
+
+        yield 'return typehint missing' => [
+            (new ReflectionClass(new #[DaggerObject] class () {
+                #[\Dagger\Attribute\DaggerFunction]
+                public function noReturnType() {return 'hello world';}
+            }))->getMethod('noReturnType'),
+            new RuntimeException(
+                'DaggerFunction "noReturnType" cannot be supported without a return type'
+            ),
+        ];
+
+        yield 'missing attribute for returning arrays' => [
+            (new ReflectionClass(new #[DaggerObject] class () {
+                #[\Dagger\Attribute\DaggerFunction]
+                public function returnsArrayWithoutAttribute(): array {return ['hello', 'world'];}
+            }))->getMethod('returnsArrayWithoutAttribute'),
+            MissingAttribute::returnsListOfType('returnsArrayWithoutAttribute'),
+        ];
     }
 
     /** @return Generator<array{ 0: bool, 1:string }> */

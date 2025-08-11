@@ -25,6 +25,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Doc(`Creates an empty directory.`),
 	}.Install(srv)
 
+	core.ExistsTypes.Install(srv)
+
 	dagql.Fields[*core.Directory]{
 		Syncer[*core.Directory]().
 			Doc(`Force evaluation in the engine.`),
@@ -46,7 +48,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to look at (e.g., "/src").`),
 			),
-		dagql.Func("glob", s.glob).
+		dagql.NodeFunc("glob", DagOpWrapper(srv, s.glob)).
 			View(AllVersion). // glob returns different results in different versions
 			Doc(`Returns a list of files and directories that matche the given pattern.`).
 			Args(
@@ -93,6 +95,13 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Doc(`Return a snapshot with files removed`).
 			Args(
 				dagql.Arg("paths").Doc(`Paths of the files to remove (e.g., ["/file.txt"]).`),
+			),
+		dagql.Func("exists", s.exists).
+			Doc(`check if a file or directory exists`).
+			Args(
+				dagql.Arg("path").Doc(`Path to check (e.g., "/file.txt").`),
+				dagql.Arg("expectedType").Doc(`If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").`),
+				dagql.Arg("doNotFollowSymlinks").Doc(`If specified, do not follow symlinks.`),
 			),
 		dagql.Func("directory", s.subdirectory).
 			Doc(`Retrieves a directory at the given path.`).
@@ -155,7 +164,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				pid 1 process in the container. Otherwise it may result in unexpected behavior.`,
 				),
 			),
-		dagql.Func("withTimestamps", s.withTimestamps).
+		dagql.NodeFunc("withTimestamps", DagOpDirectoryWrapper(srv, s.withTimestamps, WithPathFn(keepParentDir[dirWithTimestampsArgs]))).
 			Doc(`Retrieves this directory with all file/dir timestamps set to the given time.`).
 			Args(
 				dagql.Arg("timestamp").Doc(`Timestamp to set dir/files in.`,
@@ -169,7 +178,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("patch").Doc(`Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex 1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-Hello\n+World\n").`),
 			),
-		dagql.Func("asGit", s.asGit).
+		dagql.NodeFunc("asGit", s.asGit).
 			Doc(`Converts this directory to a local git repository`),
 		dagql.NodeFunc("terminal", s.terminal).
 			View(AfterVersion("v0.12.0")).
@@ -193,6 +202,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("target").Doc(`Location of the file or directory to link to (e.g., "/existing/file").`),
 				dagql.Arg("linkName").Doc(`Location where the symbolic link will be created (e.g., "/new-file-link").`),
 			),
+		dagql.NodeFunc("__gitignorePatterns", DagOpWrapper(srv, s.gitIgnorePatterns)).
+			Doc("Load git ignore patterns in the current directory and all its children and return them as docker-style ignore patterns"),
 	}.Install(srv)
 }
 
@@ -279,10 +290,20 @@ func (s *directorySchema) filter(ctx context.Context, parent *core.Directory, ar
 
 type dirWithTimestampsArgs struct {
 	Timestamp int
+
+	FSDagOpInternalArgs
 }
 
-func (s *directorySchema) withTimestamps(ctx context.Context, parent *core.Directory, args dirWithTimestampsArgs) (*core.Directory, error) {
-	return parent.WithTimestamps(ctx, args.Timestamp)
+func (s *directorySchema) withTimestamps(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirWithTimestampsArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	dir, err := parent.Self().WithTimestamps(ctx, args.Timestamp)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 func (s *directorySchema) name(ctx context.Context, parent *core.Directory, args struct{}) (dagql.String, error) {
@@ -313,10 +334,16 @@ func (s *directorySchema) entries(ctx context.Context, parent dagql.ObjectResult
 
 type globArgs struct {
 	Pattern string
+
+	RawDagOpInternalArgs
 }
 
-func (s *directorySchema) glob(ctx context.Context, parent *core.Directory, args globArgs) ([]string, error) {
-	return parent.Glob(ctx, args.Pattern)
+func (s *directorySchema) glob(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args globArgs) (dagql.Array[dagql.String], error) {
+	ents, err := parent.Self().Glob(ctx, args.Pattern)
+	if err != nil {
+		return nil, err
+	}
+	return dagql.NewStringArray(ents...), nil
 }
 
 type withPatchArgs struct {
@@ -492,6 +519,22 @@ func (s *directorySchema) withoutFiles(ctx context.Context, parent dagql.ObjectR
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+}
+
+type existsArgs struct {
+	Path                string
+	ExpectedType        dagql.Optional[core.ExistsType]
+	DoNotFollowSymlinks bool `default:"false"`
+}
+
+func (s *directorySchema) exists(ctx context.Context, parent *core.Directory, args existsArgs) (dagql.Boolean, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	exists, err := parent.Exists(ctx, srv, args.Path, args.ExpectedType.Value, args.DoNotFollowSymlinks)
+	return dagql.NewBoolean(exists), err
 }
 
 type diffArgs struct {
@@ -702,7 +745,7 @@ func (s *directorySchema) terminal(
 
 func (s *directorySchema) asGit(
 	ctx context.Context,
-	dir *core.Directory,
+	dir dagql.ObjectResult[*core.Directory],
 	_ struct{},
 ) (*core.GitRepository, error) {
 	return &core.GitRepository{
@@ -730,4 +773,17 @@ func (s *directorySchema) withSymlink(ctx context.Context, parent dagql.ObjectRe
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+}
+
+type gitIgnoreForArgs struct {
+	RawDagOpInternalArgs
+}
+
+func (s *directorySchema) gitIgnorePatterns(ctx context.Context, parent dagql.ObjectResult[*core.Directory], _ gitIgnoreForArgs) (dagql.Array[dagql.String], error) {
+	patterns, err := parent.Self().GitIgnorePatterns(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return dagql.NewStringArray(patterns...), nil
 }

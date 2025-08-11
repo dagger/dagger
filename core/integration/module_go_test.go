@@ -1342,6 +1342,60 @@ func (m *Minimal) IsEmpty() bool {
 	require.JSONEq(t, `{"minimal": {"isEmpty": true}}`, out)
 }
 
+func (GoSuite) TestPrivateEnumField(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := goGitBase(t, c).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--sdk=go", "dep")).
+		WithNewFile("dep/main.go", `package main
+
+import (
+	"context"
+	"dagger/dep/internal/dagger"
+)
+
+type Dep struct {
+	Opts []dagger.ContainerPublishOpts // +private
+}
+
+func New() *Dep {
+	return &Dep{
+		Opts: []dagger.ContainerPublishOpts{
+			{PlatformVariants: []*dagger.Container{dag.Container().From("alpine")}},
+		},
+	}
+}
+
+func (m *Dep) Publish(ctx context.Context) (string, error) {
+	// dry run a publish
+	return "registry/repo:latest", nil
+}
+`,
+		).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		With(daggerExec("install", "./dep")).
+		WithNewFile("main.go", `package main
+
+import (
+	"context"
+)
+
+type Test struct {}
+
+func (m Test) Publish(ctx context.Context) (string, error) {
+	return dag.Dep().Publish(ctx)
+}
+`,
+		)
+
+	out, err := ctr.With(daggerQuery(`{test{publish}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"test": {"publish": "registry/repo:latest"}}`, out)
+}
+
 func (GoSuite) TestJSONField(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -1392,6 +1446,7 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			WithoutFile("/work/.gitignore"). // Remove .gitignore so we can override files inside internal/dagger without ignoring them.
 			WithNewFile("/work/internal/dagger/more.go", moreContents).
 			With(daggerQuery(`{container{from(address:"` + alpineImage + `"){echo(msg:"echo!"){stdout}}}}`)).
 			Sync(ctx)
@@ -1408,6 +1463,7 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=container", "--sdk=go")).
+			WithoutFile("/work/.gitignore"). // Remove .gitignore so we can override files inside internal/dagger without ignoring them.
 			WithNewFile("/work/internal/dagger/more.go", moreContents).
 			With(daggerQuery(`{container{from(address:"` + alpineImage + `"){echo(msg:"echo!"){stdout}}}}`)).
 			Sync(ctx)

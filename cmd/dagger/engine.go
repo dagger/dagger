@@ -51,12 +51,12 @@ func defaultRunnerHost() string {
 	if tag == "" {
 		// can happen during naive dev builds (so just fallback to something
 		// semi-reasonable)
-		return "docker-container://" + distconsts.EngineContainerName
+		return "container://" + distconsts.EngineContainerName
 	}
 	if os.Getenv(GPUSupportEnv) != "" {
 		tag += "-gpu"
 	}
-	return fmt.Sprintf("docker-image://%s:%s", engine.EngineImageRepo, tag)
+	return fmt.Sprintf("image://%s:%s", engine.EngineImageRepo, tag)
 }
 
 type runClientCallback func(context.Context, *client.Client) error

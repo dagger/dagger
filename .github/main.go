@@ -204,7 +204,7 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"}, &dagger.GhaJobOpts{
 				Runner: AltPlatinumRunner(),
 			}},
-			{"container", []string{"TestContainer"}, &dagger.GhaJobOpts{}},
+			{"container", []string{"TestContainer", "TestDockerfile"}, &dagger.GhaJobOpts{}},
 			{"LLM", []string{"TestLLM"}, &dagger.GhaJobOpts{}},
 			{"cli-engine", []string{"TestCLI", "TestEngine"}, &dagger.GhaJobOpts{}},
 			{"client-generator", []string{"TestClientGenerator"}, &dagger.GhaJobOpts{}},

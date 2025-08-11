@@ -1891,6 +1891,15 @@ pub struct ContainerDirectoryOpts {
     pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerExistsOpts {
+    /// If specified, do not follow symlinks.
+    #[builder(setter(into, strip_option), default)]
+    pub do_not_follow_symlinks: Option<bool>,
+    /// If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+    #[builder(setter(into, strip_option), default)]
+    pub expected_type: Option<ExistsType>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerExportOpts {
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
@@ -2049,9 +2058,12 @@ pub struct ContainerWithExecOpts<'a> {
     /// Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.
     #[builder(setter(into, strip_option), default)]
     pub no_init: Option<bool>,
-    /// Like redirectStdout, but for standard error
+    /// Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
     #[builder(setter(into, strip_option), default)]
     pub redirect_stderr: Option<&'a str>,
+    /// Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
+    #[builder(setter(into, strip_option), default)]
+    pub redirect_stdin: Option<&'a str>,
     /// Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
     #[builder(setter(into, strip_option), default)]
     pub redirect_stdout: Option<&'a str>,
@@ -2458,6 +2470,38 @@ impl Container {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }]
+    }
+    /// check if a file or directory exists
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to check (e.g., "/file.txt").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn exists(&self, path: impl Into<String>) -> Result<bool, DaggerError> {
+        let mut query = self.selection.select("exists");
+        query = query.arg("path", path.into());
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// check if a file or directory exists
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to check (e.g., "/file.txt").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn exists_opts(
+        &self,
+        path: impl Into<String>,
+        opts: ContainerExistsOpts,
+    ) -> Result<bool, DaggerError> {
+        let mut query = self.selection.select("exists");
+        query = query.arg("path", path.into());
+        if let Some(expected_type) = opts.expected_type {
+            query = query.arg("expectedType", expected_type);
+        }
+        if let Some(do_not_follow_symlinks) = opts.do_not_follow_symlinks {
+            query = query.arg("doNotFollowSymlinks", do_not_follow_symlinks);
+        }
+        query.execute(self.graphql_client.clone()).await
     }
     /// The exit code of the last executed command
     /// Returns an error if no command was executed
@@ -3167,6 +3211,9 @@ impl Container {
         }
         if let Some(stdin) = opts.stdin {
             query = query.arg("stdin", stdin);
+        }
+        if let Some(redirect_stdin) = opts.redirect_stdin {
+            query = query.arg("redirectStdin", redirect_stdin);
         }
         if let Some(redirect_stdout) = opts.redirect_stdout {
             query = query.arg("redirectStdout", redirect_stdout);
@@ -4478,6 +4525,15 @@ pub struct DirectoryEntriesOpts<'a> {
     pub path: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryExistsOpts {
+    /// If specified, do not follow symlinks.
+    #[builder(setter(into, strip_option), default)]
+    pub do_not_follow_symlinks: Option<bool>,
+    /// If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
+    #[builder(setter(into, strip_option), default)]
+    pub expected_type: Option<ExistsType>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryExportOpts {
     /// If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.
     #[builder(setter(into, strip_option), default)]
@@ -4712,6 +4768,38 @@ impl Directory {
         let mut query = self.selection.select("entries");
         if let Some(path) = opts.path {
             query = query.arg("path", path);
+        }
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// check if a file or directory exists
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to check (e.g., "/file.txt").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn exists(&self, path: impl Into<String>) -> Result<bool, DaggerError> {
+        let mut query = self.selection.select("exists");
+        query = query.arg("path", path.into());
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// check if a file or directory exists
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to check (e.g., "/file.txt").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn exists_opts(
+        &self,
+        path: impl Into<String>,
+        opts: DirectoryExistsOpts,
+    ) -> Result<bool, DaggerError> {
+        let mut query = self.selection.select("exists");
+        query = query.arg("path", path.into());
+        if let Some(expected_type) = opts.expected_type {
+            query = query.arg("expectedType", expected_type);
+        }
+        if let Some(do_not_follow_symlinks) = opts.do_not_follow_symlinks {
+            query = query.arg("doNotFollowSymlinks", do_not_follow_symlinks);
         }
         query.execute(self.graphql_client.clone()).await
     }
@@ -6931,6 +7019,26 @@ impl GitRef {
         let query = self.selection.select("commit");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Find the best common ancestor between this ref and another ref.
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - The other ref to compare against.
+    pub fn common_ancestor(&self, other: impl IntoID<GitRefId>) -> GitRef {
+        let mut query = self.selection.select("commonAncestor");
+        query = query.arg_lazy(
+            "other",
+            Box::new(move || {
+                let other = other.clone();
+                Box::pin(async move { other.into_id().await.unwrap().quote() })
+            }),
+        );
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// A unique identifier for this GitRef.
     pub async fn id(&self) -> Result<GitRefId, DaggerError> {
         let query = self.selection.select("id");
@@ -7178,6 +7286,9 @@ pub struct HostDirectoryOpts<'a> {
     /// If true, the directory will always be reloaded from the host.
     #[builder(setter(into, strip_option), default)]
     pub no_cache: Option<bool>,
+    /// Don't apply .gitignore filter rules inside the directory
+    #[builder(setter(into, strip_option), default)]
+    pub no_git_auto_ignore: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct HostFileOpts {
@@ -7241,6 +7352,9 @@ impl Host {
         }
         if let Some(no_cache) = opts.no_cache {
             query = query.arg("noCache", no_cache);
+        }
+        if let Some(no_git_auto_ignore) = opts.no_git_auto_ignore {
+            query = query.arg("noGitAutoIgnore", no_git_auto_ignore);
         }
         Directory {
             proc: self.proc.clone(),
@@ -10583,6 +10697,15 @@ pub enum CacheSharingMode {
     Private,
     #[serde(rename = "SHARED")]
     Shared,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum ExistsType {
+    #[serde(rename = "DIRECTORY_TYPE")]
+    DirectoryType,
+    #[serde(rename = "REGULAR_TYPE")]
+    RegularType,
+    #[serde(rename = "SYMLINK_TYPE")]
+    SymlinkType,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ImageLayerCompression {

@@ -304,6 +304,7 @@ func (m *moduleRuntimeContainer) withGeneratedSDK(introspectionJSON *dagger.File
 func (m *moduleRuntimeContainer) generateClient(introspectionJSON *dagger.File) *dagger.File {
 	codegenArgs := []string{
 		codegenBinPath,
+		"generate-module",
 		"--lang", "typescript",
 		"--output", ModSourceDirPath,
 		"--module-name", m.cfg.name,

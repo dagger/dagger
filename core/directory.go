@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -16,13 +17,13 @@ import (
 
 	containerdfs "github.com/containerd/continuity/fs"
 	fscopy "github.com/dagger/dagger/engine/sources/local/copy"
+	"github.com/dagger/dagger/util/patternmatcher"
 	"github.com/dustin/go-humanize"
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
-	"github.com/moby/patternmatcher"
 	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -30,6 +31,7 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
@@ -289,80 +291,94 @@ func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error)
 	return paths, nil
 }
 
+// patternWithoutTrailingGlob is from fsuitls
+func patternWithoutTrailingGlob(p *patternmatcher.Pattern) string {
+	patStr := p.String()
+	// We use filepath.Separator here because patternmatcher.Pattern patterns
+	// get transformed to use the native path separator:
+	// https://github.com/moby/patternmatcher/blob/130b41bafc16209dc1b52a103fdac1decad04f1a/patternmatcher.go#L52
+	patStr = strings.TrimSuffix(patStr, string(filepath.Separator)+"**")
+	patStr = strings.TrimSuffix(patStr, string(filepath.Separator)+"*")
+	return patStr
+}
+
 // Glob returns a list of files that matches the given pattern.
 func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error) {
-	query, err := CurrentQuery(ctx)
+	paths := []string{}
+
+	pat, err := patternmatcher.NewPattern(pattern)
 	if err != nil {
-		return nil, err
-	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+		return nil, fmt.Errorf("failed to create glob pattern matcher: %w", err)
 	}
 
-	detach, _, err := svcs.StartBindings(ctx, dir.Services)
-	if err != nil {
-		return nil, err
+	// from fsutils
+	patternChars := "*[]?^"
+	if filepath.Separator != '\\' {
+		patternChars += `\`
 	}
-	defer detach()
-
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: dir.LLB,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	ref, err := res.SingleRef()
-	if err != nil {
-		return nil, err
-	}
-	// empty directory, i.e. llb.Scratch()
-	if ref == nil {
-		return []string{}, nil
-	}
-
-	// We use the same pattern matching function as Buildkit, since just doing
-	// IncludePatterns will still include directories we don't want
-	pm, err := patternmatcher.New([]string{pattern})
-	if err != nil {
-		return nil, err
-	}
+	onlyPrefixIncludes := !strings.ContainsAny(patternWithoutTrailingGlob(pat), patternChars)
 
 	useSlash, err := SupportsDirSlash(ctx)
 	if err != nil {
 		return nil, err
 	}
+	_, err = execInMount(ctx, dir, func(root string) error {
+		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
+		if err != nil {
+			return err
+		}
 
-	var paths []string
-	err = ref.WalkDir(ctx, buildkit.WalkDirRequest{
-		IncludePattern: pattern,
-		Path:           dir.Dir,
-		Callback: func(path string, info os.FileInfo) error {
-			// HACK: ideally, we'd have something like MatchesExact, which
-			// would skip the parent behavior that we don't really want here -
-			// oh well, let's just fake it with false
-			//nolint:staticcheck
-			match, err := pm.MatchesUsingParentResult(filepath.Clean(path), false)
+		return filepath.WalkDir(resolvedDir, func(path string, d fs.DirEntry, prevErr error) error {
+			if prevErr != nil {
+				return prevErr
+			}
+
+			path, err := filepath.Rel(resolvedDir, path)
+			if err != nil {
+				return err
+			}
+			// Skip root
+			if path == "." {
+				return nil
+			}
+
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+				break
+			}
+
+			match, err := pat.Match(path)
 			if err != nil {
 				return err
 			}
 
-			if useSlash && info.Mode().IsDir() {
-				path += "/"
-			}
 			if match {
+				if useSlash && d.IsDir() {
+					path += "/"
+				}
 				paths = append(paths, path)
+			} else if d.IsDir() && onlyPrefixIncludes {
+				// fsutils Optimization: we can skip walking this dir if no include
+				// patterns could match anything inside it.
+				dirSlash := path + string(filepath.Separator)
+				if !pat.Exclusion() {
+					patStr := patternWithoutTrailingGlob(pat) + string(filepath.Separator)
+					if !strings.HasPrefix(patStr, dirSlash) {
+						return filepath.SkipDir
+					}
+				}
 			}
 
 			return nil
-		},
+		})
 	})
 	if err != nil {
+		if errors.Is(err, errEmptyResultRef) {
+			// empty directory, i.e. llb.Scratch()
+			return []string{}, nil
+		}
 		return nil, err
 	}
 
@@ -867,28 +883,19 @@ func mergeStates(input mergeStateInput) llb.State {
 
 func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (*Directory, error) {
 	dir = dir.Clone()
-
-	st, err := dir.State()
-	if err != nil {
-		return nil, err
-	}
-
-	t := time.Unix(int64(unix), 0)
-	st = llb.Scratch().File(
-		llb.Copy(st, dir.Dir, ".", &llb.CopyInfo{
-			CopyDirContentsOnly: true,
-			CreatedTime:         &t,
-		}),
-	)
-
-	err = dir.SetState(ctx, st)
-	if err != nil {
-		return nil, err
-	}
-
-	dir.Dir = ""
-
-	return dir, nil
+	return execInMount(ctx, dir, func(root string) error {
+		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
+		if err != nil {
+			return err
+		}
+		return filepath.WalkDir(resolvedDir, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			modTime := time.Unix(int64(unix), 0)
+			return os.Chtimes(path, modTime, modTime)
+		})
+	}, withSavedSnapshot("withTimestamps %d", unix))
 }
 
 func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permissions fs.FileMode) (*Directory, error) {
@@ -977,6 +984,62 @@ func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...s
 		}
 		return nil
 	}, withSavedSnapshot("without %s", strings.Join(paths, ",")))
+}
+
+func (dir *Directory) Exists(ctx context.Context, srv *dagql.Server, targetPath string, targetType ExistsType, doNotFollowSymlinks bool) (bool, error) {
+	res, err := dir.Evaluate(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	ref, err := res.SingleRef()
+	if err != nil {
+		return false, err
+	}
+	if ref == nil {
+		return false, nil
+	}
+
+	immutableRef, err := ref.CacheRef(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	osStatFunc := os.Stat
+	if targetType == ExistsTypeSymlink || doNotFollowSymlinks {
+		// symlink testing requires the Lstat call, which does NOT follow symlinks
+		osStatFunc = os.Lstat
+	}
+
+	var fileInfo os.FileInfo
+	err = MountRef(ctx, immutableRef, nil, func(root string) error {
+		fileInfo, err = osStatFunc(path.Join(root, dir.Dir, targetPath))
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	})
+	if err != nil {
+		return false, err
+	}
+	if fileInfo == nil {
+		return false, nil // ErrNotExist occurred
+	}
+
+	m := fileInfo.Mode()
+
+	switch targetType {
+	case ExistsTypeDirectory:
+		return m.IsDir(), nil
+	case ExistsTypeRegular:
+		return m.IsRegular(), nil
+	case ExistsTypeSymlink:
+		return m&fs.ModeSymlink != 0, nil
+	case "":
+		return true, nil
+	default:
+		return false, fmt.Errorf("invalid path type %s", targetType)
+	}
 }
 
 func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (rerr error) {
@@ -1073,6 +1136,52 @@ func (dir *Directory) Mount(ctx context.Context, f func(string) error) error {
 	})
 }
 
+func (dir *Directory) GitIgnorePatterns(ctx context.Context) ([]string, error) {
+	result := []string{}
+
+	_, err := execInMount(ctx, dir, func(root string) error {
+		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
+		if err != nil {
+			return err
+		}
+
+		return filepath.WalkDir(resolvedDir, func(path string, d fs.DirEntry, prevErr error) error {
+			if prevErr != nil {
+				return prevErr
+			}
+
+			if d.IsDir() || d.Name() != ".gitignore" {
+				return nil
+			}
+
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+
+			relPath, err := filepath.Rel(resolvedDir, path)
+			if err != nil {
+				return err
+			}
+
+			patterns := parseGitIgnore(string(content), filepath.Dir(relPath))
+
+			result = append(result, patterns...)
+
+			return nil
+		})
+	})
+	if err != nil {
+		if errors.Is(err, errEmptyResultRef) {
+			// empty directory, i.e. llb.Scratch()
+			return []string{}, nil
+		}
+		return nil, err
+	}
+
+	return result, nil
+}
+
 func validateFileName(file string) error {
 	baseFileName := filepath.Base(file)
 	if len(baseFileName) > 255 {
@@ -1083,4 +1192,58 @@ func validateFileName(file string) error {
 
 func SupportsDirSlash(ctx context.Context) (bool, error) {
 	return Supports(ctx, "v0.17.0")
+}
+
+type ExistsType string
+
+var ExistsTypes = dagql.NewEnum[ExistsType]()
+
+var (
+
+	// NOTE calling ExistsTypes.Register("DIRECTORY", ...) will generate:
+	// const (
+	//     ExistsTypeDirectory ExistsType = "DIRECTORY"
+	//     Directory ExistsType = ExistsTypeDirectory
+	// )
+	// which will conflict with "type Directory struct { ... }",
+	// therefore everything will have a _TYPE suffix to avoid naming conflicts
+
+	ExistsTypeRegular = ExistsTypes.Register("REGULAR_TYPE",
+		"Tests path is a regular file")
+	ExistsTypeDirectory = ExistsTypes.Register("DIRECTORY_TYPE",
+		"Tests path is a directory")
+	ExistsTypeSymlink = ExistsTypes.Register("SYMLINK_TYPE",
+		"Tests path is a symlink")
+)
+
+func (et ExistsType) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ExistsType",
+		NonNull:   false,
+	}
+}
+
+func (et ExistsType) TypeDescription() string {
+	return "File type."
+}
+
+func (et ExistsType) Decoder() dagql.InputDecoder {
+	return ExistsTypes
+}
+
+func (et ExistsType) ToLiteral() call.Literal {
+	return ExistsTypes.Literal(et)
+}
+
+func (et ExistsType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(string(et))
+}
+
+func (et *ExistsType) UnmarshalJSON(payload []byte) error {
+	var str string
+	if err := json.Unmarshal(payload, &str); err != nil {
+		return err
+	}
+	*et = ExistsType(str)
+	return nil
 }

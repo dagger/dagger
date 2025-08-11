@@ -5,72 +5,69 @@ import importlib.metadata
 import importlib.util
 import logging
 import os
-import sys
 import typing
 
-import rich.traceback
-from rich.console import Console
+import anyio
 
+import dagger
 from dagger import telemetry
-from dagger.log import configure_logging
-from dagger.mod._exceptions import FatalError, UserError
-from dagger.mod._module import Module
+from dagger.mod._exceptions import ModuleError, ModuleLoadError, record_exception
+from dagger.mod._module import MAIN_OBJECT, Module
+
+logger = logging.getLogger(__package__)
 
 ENTRY_POINT_NAME: typing.Final[str] = "main_object"
 ENTRY_POINT_GROUP: typing.Final[str] = typing.cast(str, __package__)
-
-IMPORT_PKG = os.getenv("DAGGER_DEFAULT_PYTHON_PACKAGE", "main")
-MAIN_OBJECT = os.getenv("DAGGER_MAIN_OBJECT", "Main")
-
-errors = Console(stderr=True, style="red")
-logger = logging.getLogger(__name__)
+IMPORT_PKG: typing.Final[str] = os.getenv("DAGGER_DEFAULT_PYTHON_PACKAGE", "main")
 
 
-def app():
+def app(mod: Module | None = None) -> int | None:
     """Entrypoint for a Python Dagger module."""
     telemetry.initialize()
-
-    # TODO: Create custom exception hook to control exit code.
-    rich.traceback.install(
-        console=errors,
-        show_locals=logger.isEnabledFor(logging.DEBUG),
-        suppress=[
-            "asyncio",
-            "anyio",
-        ],
-    )
     try:
-        load_module()()
-    except FatalError as e:
-        logger.exception("Fatal error")
-        e.rich_print()
-        sys.exit(1)
+        return anyio.run(main, mod)
     finally:
         telemetry.shutdown()
 
 
+async def main(mod: Module | None = None) -> int | None:
+    """Async entrypoint for a Dagger module."""
+    # Establishing connection early on to allow returning dag.error().
+    # Note: if there's a connection error dag.error() won't be sent but
+    # should be logged and the traceback shown on the function's stderr output.
+    async with await dagger.connect():
+        try:
+            if mod is None:
+                mod = load_module()
+            return await mod.serve()
+        except (ModuleError, dagger.QueryError) as e:
+            await record_exception(e)
+            return 2
+        except Exception as e:
+            logger.exception("Unhandled exception")
+            await record_exception(e)
+            return 1
+
+
 def load_module() -> Module:
     """Load the dagger.Module instance via the main object entry point."""
+    ep = get_entry_point()
     try:
-        cls: type = get_entry_point().load()
-    except (ModuleNotFoundError, AttributeError) as e:
-        # If the main module isn't found the user won't be able to set debug level.
-        # TODO: Allow setting debug level with a pyproject.toml setting.
-        if not logger.isEnabledFor(logging.DEBUG):
-            configure_logging(logging.DEBUG)
-        msg = (
-            "Main object not found. You can configure it explicitly by adding "
-            "an entry point to your pyproject.toml file. For example:\n"
-            "\n"
-            f'[project.entry-points."{ENTRY_POINT_GROUP}"]\n'
-            f"{ENTRY_POINT_NAME} = '{IMPORT_PKG}:{MAIN_OBJECT}'\n"
+        cls = ep.load()
+    except Exception as e:
+        logger.exception(
+            "Error while importing Python module '%s' with Dagger functions",
+            ep.module,
         )
-        raise UserError(msg) from e
+        raise ModuleLoadError(str(e)) from e
     try:
         return cls.__dagger_module__
-    except AttributeError as e:
-        msg = "The main object must be a class decorated with @dagger.object_type"
-        raise UserError(msg) from e
+    except AttributeError:
+        msg = (
+            "The main object must be a class decorated with @dagger.object_type, "
+            f"found '{type(cls)}'"
+        )
+        raise ModuleLoadError(msg) from None
 
 
 def get_entry_point() -> importlib.metadata.EntryPoint:
@@ -87,6 +84,16 @@ def get_entry_point() -> importlib.metadata.EntryPoint:
     # Fallback for modules that still use the "main" package name.
     if not importlib.util.find_spec(import_pkg):
         import_pkg = "main"
+
+        if not importlib.util.find_spec(import_pkg):
+            msg = (
+                "Main object not found. You can configure it explicitly by adding "
+                "an entry point to your pyproject.toml file. For example:\n"
+                "\n"
+                f'[project.entry-points."{ENTRY_POINT_GROUP}"]\n'
+                f"{ENTRY_POINT_NAME} = '{IMPORT_PKG}:{MAIN_OBJECT}'\n"
+            )
+            raise ModuleLoadError(msg)
 
     return importlib.metadata.EntryPoint(
         group=ENTRY_POINT_GROUP,

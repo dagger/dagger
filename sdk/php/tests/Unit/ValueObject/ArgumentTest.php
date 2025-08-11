@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Dagger\Tests\Unit\ValueObject;
 
+use Dagger\Attribute\DaggerFunction;
+use Dagger\Attribute\DaggerObject;
 use Dagger\Container;
+use Dagger\Exception\RegistrationError\MissingAttribute;
 use Dagger\File;
 use Dagger\Json;
 use Dagger\Tests\Unit\Fixture\DaggerObjectWithDaggerFunctions;
@@ -16,7 +19,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
-use ReflectionFunction;
+use ReflectionClass;
 use ReflectionMethod;
 use ReflectionNamedType;
 use ReflectionParameter;
@@ -27,14 +30,12 @@ use RuntimeException;
 class ArgumentTest extends TestCase
 {
     #[Test]
-    public function itRequiresTypeHint(): void
-    {
-        $reflection = (new ReflectionFunction(fn ($noTypeHint) => null))
-            ->getParameters()[0];
-
-        self::expectExceptionMessage(
-            'Argument "noTypeHint" cannot be supported without a typehint'
-        );
+    #[DataProvider('provideInvalidArguments')]
+    public function itCannotTakeInvalidArguments(
+        ReflectionParameter $reflection,
+        RuntimeException $expected,
+    ): void {
+        self::expectExceptionObject($expected);
 
         Argument::fromReflection($reflection);
     }
@@ -59,6 +60,26 @@ class ArgumentTest extends TestCase
         $actual = Argument::fromReflection($reflectionParameter);
 
         self::assertEquals($expected, $actual);
+    }
+
+    /** @return Generator<array{0: ReflectionParameter, 1: RuntimeException}> */
+    public static function provideInvalidArguments(): Generator
+    {
+        yield 'Missing typehint for an argument' => [
+            (new ReflectionClass(new #[DaggerObject] class () {
+                #[DaggerFunction]
+                public function func($noType): void {}
+            }))->getMethod('func')->getParameters()[0],
+            new RuntimeException('Argument "noType" cannot be supported without a typehint')
+        ];
+
+        yield 'Missing ListOfType on array argument' => [
+            (new ReflectionClass(new #[DaggerObject] class () {
+                #[DaggerFunction]
+                public function func(array $noSubtype): void {}
+            }))->getMethod('func')->getParameters()[0],
+            MissingAttribute::listOfType('func', 'noSubtype')
+        ];
     }
 
     /** @return Generator<array{ 0: Argument, 1:ReflectionNamedType}> */
