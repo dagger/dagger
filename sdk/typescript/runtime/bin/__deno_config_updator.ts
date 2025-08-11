@@ -108,6 +108,7 @@ const denoConfigPath = "./deno.json"
 // Import paths used by user.
 const daggerPathAlias = "@dagger.io/dagger"
 const daggerTelemetryPathAlias = "@dagger.io/dagger/telemetry"
+const daggerCorePathAlias = "@dagger.io/core"
 
 // Filename of imported path aliases.
 const daggerRootFilename = {
@@ -174,14 +175,15 @@ for (const [key, value] of Object.entries(daggerImports)) {
   denoConfig.imports[key] = value
 }
 
-if (sdkLibOrigin.value === "remote") {
-  denoConfig.imports["@dagger.io/core"] = "npm:@dagger.io/dagger"
+if (standaloneClient.value === true) {
+  denoConfig.imports[daggerPathAlias] = [`./${clientDir.value}/client.gen.ts`]
+  denoConfig.imports[daggerCorePathAlias] = [
+    `${daggerRootFilename[sdkLibOrigin.value!]}`,
+  ]
 }
 
-if (standaloneClient.value === true) {
-  denoConfig.compilerOptions.paths[daggerPathAlias] = [
-    `./${clientDir.value}/client.gen.ts`,
-  ]
+if (sdkLibOrigin.value === "remote") {
+  denoConfig.imports[daggerCorePathAlias] = "npm:@dagger.io/dagger"
 }
 
 // Update unstable features
