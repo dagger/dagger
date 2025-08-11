@@ -3,11 +3,9 @@ package core
 import (
 	"context"
 	"fmt"
-	"io"
 	"sync"
 	"time"
 
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
@@ -129,9 +127,7 @@ type Startable interface {
 		ctx context.Context,
 		id *call.ID,
 		interactive bool,
-		forwardStdin func(io.Writer, bkgw.ContainerProcess),
-		forwardStdout func(io.Reader),
-		forwardStderr func(io.Reader),
+		io *ServiceIO,
 	) (*RunningService, error)
 }
 
@@ -182,7 +178,7 @@ dance:
 
 	svcCtx, stop := context.WithCancelCause(context.WithoutCancel(ctx))
 
-	running, err := svc.Start(svcCtx, id, false, nil, nil, nil)
+	running, err := svc.Start(svcCtx, id, false, nil)
 	if err != nil {
 		stop(err)
 		ss.l.Lock()

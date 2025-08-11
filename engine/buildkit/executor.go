@@ -236,6 +236,14 @@ type Namespaced interface {
 	Release(context.Context) error
 }
 
+// NewDirectNS creates a namespace, that's externally managed.
+func NewDirectNS(id string) Namespaced {
+	return &networkNamespace{
+		id:      id,
+		cleanup: &cleanups.Cleanups{},
+	}
+}
+
 type networkNamespace struct {
 	id      string
 	cleanup *cleanups.Cleanups
