@@ -1941,77 +1941,79 @@ func (m *MCP) IsDone() bool {
 
 func (m *MCP) toolToID(ctx context.Context, tool LLMTool, args any) (*call.ID, error) {
 	name := tool.Name
-	props, ok := tool.Schema["properties"].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("malformed tool properties: expected %T, got %T",
-			props,
-			tool.Schema["properties"])
-	}
-	argsMap, ok := args.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("malformed args: expected %T, got %T", argsMap, args)
-	}
 	var callArgs []*call.Argument
-	for k, v := range argsMap {
-		if v == nil {
-			// explicitly passing null for required arg (maybe due to strict mode); omit
-			continue
+	if propsAny, found := tool.Schema["properties"]; found && propsAny != nil {
+		props, ok := propsAny.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("malformed tool properties: expected %T, got %T",
+				props,
+				tool.Schema["properties"])
 		}
-
-		var lit call.Literal
-		var litVal = v
-
-		spec, found := props[k].(map[string]any)
-		if !found {
-			return nil, fmt.Errorf("unknown arg: %q", k)
+		argsMap, ok := args.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("malformed args: expected %T, got %T", argsMap, args)
 		}
-
-		if idType, ok := spec[jsonSchemaIDAttr].(string); ok {
-			str, ok := v.(string)
-			if !ok {
-				return nil, fmt.Errorf("expected string value, got %T", v)
+		for k, v := range argsMap {
+			if v == nil {
+				// explicitly passing null for required arg (maybe due to strict mode); omit
+				continue
 			}
-			obj, err := m.GetObject(ctx, str, idType)
+
+			var lit call.Literal
+			var litVal = v
+
+			spec, found := props[k].(map[string]any)
+			if !found {
+				return nil, fmt.Errorf("unknown arg: %q", k)
+			}
+
+			if idType, ok := spec[jsonSchemaIDAttr].(string); ok {
+				str, ok := v.(string)
+				if !ok {
+					return nil, fmt.Errorf("expected string value, got %T", v)
+				}
+				obj, err := m.GetObject(ctx, str, idType)
+				if err != nil {
+					// drop it, maybe it's an invalid value
+				} else {
+					// show the real ID in telemetry
+					litVal = obj.ID()
+				}
+			}
+
+			pattern, found := spec["pattern"]
+			if found {
+				// if we have a pattern configured:
+				//   1) validate the arg value as a sanity check, and
+				//   2) if it's an ID pattern, map the value back to the real ID
+
+				patternStr, ok := pattern.(string)
+				if !ok {
+					return nil, fmt.Errorf("expected string regex pattern, got %T", pattern)
+				}
+				str, ok := v.(string)
+				if !ok {
+					return nil, fmt.Errorf("expected string value, got %T", v)
+				}
+				re, err := regexp.Compile(patternStr)
+				if err != nil {
+					return nil, fmt.Errorf("invalid regex for %q: %w", k, err)
+				}
+				if !re.MatchString(str) {
+					return nil, fmt.Errorf("arg %q does not match pattern %s: %q", k, re.String(), str)
+				}
+			}
+
+			lit, err := call.ToLiteral(litVal)
 			if err != nil {
-				// drop it, maybe it's an invalid value
-			} else {
-				// show the real ID in telemetry
-				litVal = obj.ID()
+				return nil, err
 			}
+			callArgs = append(callArgs, call.NewArgument(k, lit, false))
 		}
-
-		pattern, found := spec["pattern"]
-		if found {
-			// if we have a pattern configured:
-			//   1) validate the arg value as a sanity check, and
-			//   2) if it's an ID pattern, map the value back to the real ID
-
-			patternStr, ok := pattern.(string)
-			if !ok {
-				return nil, fmt.Errorf("expected string regex pattern, got %T", pattern)
-			}
-			str, ok := v.(string)
-			if !ok {
-				return nil, fmt.Errorf("expected string value, got %T", v)
-			}
-			re, err := regexp.Compile(patternStr)
-			if err != nil {
-				return nil, fmt.Errorf("invalid regex for %q: %w", k, err)
-			}
-			if !re.MatchString(str) {
-				return nil, fmt.Errorf("arg %q does not match pattern %s: %q", k, re.String(), str)
-			}
-		}
-
-		lit, err := call.ToLiteral(litVal)
-		if err != nil {
-			return nil, err
-		}
-		callArgs = append(callArgs, call.NewArgument(k, lit, false))
+		sort.Slice(callArgs, func(i, j int) bool {
+			return callArgs[i].Name() < callArgs[j].Name()
+		})
 	}
-	sort.Slice(callArgs, func(i, j int) bool {
-		return callArgs[i].Name() < callArgs[j].Name()
-	})
 	return call.New().Append(
 		&ast.Type{
 			NamedType: "String",
