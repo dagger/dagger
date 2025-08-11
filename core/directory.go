@@ -1150,7 +1150,7 @@ func (dir *Directory) GitIgnorePatterns(ctx context.Context) ([]string, error) {
 				return prevErr
 			}
 
-			if !d.IsDir() && d.Name() != ".gitignore" {
+			if d.IsDir() || d.Name() != ".gitignore" {
 				return nil
 			}
 
