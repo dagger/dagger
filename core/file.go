@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -19,9 +20,11 @@ import (
 
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/moby/buildkit/cache"
+	cacheutil "github.com/moby/buildkit/cache/util"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	fstypes "github.com/tonistiigi/fsutil/types"
@@ -174,12 +177,17 @@ func (file *File) Evaluate(ctx context.Context) (*buildkit.Result, error) {
 
 // Contents handles file content retrieval
 func (file *File) Contents(ctx context.Context, offset, limit *int) ([]byte, error) {
-	r, err := file.Reader(ctx)
+	r, err := file.ReadCloser(ctx)
 	if err != nil {
 		return nil, err
 	}
+	defer r.Close()
 
 	var buf bytes.Buffer
+	w := &limitedWriter{
+		Limit:  buildkit.MaxFileContentsSize,
+		Writer: &buf,
+	}
 
 	if offset != nil || limit != nil {
 		br := bufio.NewReader(r)
@@ -192,7 +200,7 @@ func (file *File) Contents(ctx context.Context, offset, limit *int) ([]byte, err
 			}
 
 			if offset == nil || lineNum > *offset {
-				buf.Write(line)
+				w.Write(line)
 				readLines++
 				if limit != nil && readLines == *limit {
 					break
@@ -206,7 +214,7 @@ func (file *File) Contents(ctx context.Context, offset, limit *int) ([]byte, err
 			lineNum++
 		}
 	} else {
-		_, err := io.Copy(&buf, r)
+		_, err := io.Copy(w, r)
 		if err != nil {
 			return nil, err
 		}
@@ -215,8 +223,26 @@ func (file *File) Contents(ctx context.Context, offset, limit *int) ([]byte, err
 	return buf.Bytes(), nil
 }
 
+type limitedWriter struct {
+	Limit int
+	io.Writer
+	wrote int
+}
+
+func (cw *limitedWriter) Write(p []byte) (int, error) {
+	if cw.wrote+len(p) > cw.Limit {
+		return 0, fmt.Errorf("file size %d exceeds limit %d", cw.wrote+len(p), buildkit.MaxFileContentsSize)
+	}
+	n, err := cw.Writer.Write(p)
+	if err != nil {
+		return n, err
+	}
+	cw.wrote += n
+	return n, nil
+}
+
 // Reader returns an io.Reader for the file contents
-func (file *File) Reader(ctx context.Context) (io.Reader, error) {
+func (file *File) ReadCloser(ctx context.Context) (io.ReadCloser, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -231,73 +257,49 @@ func (file *File) Reader(ctx context.Context) (io.Reader, error) {
 	}
 	defer detach()
 
-	// Stat the file to get its size
-	st, err := file.Stat(ctx)
+	ref, err := getRefOrEvaluate(ctx, file)
 	if err != nil {
 		return nil, err
 	}
 
-	bk, err := query.Buildkit(ctx)
+	mountable, err := ref.Mount(ctx, true, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+		return nil, fmt.Errorf("failed to get mountable reference: %w", err)
 	}
 
-	ref, err := bkRef(ctx, bk, file.LLB)
+	lm := snapshot.LocalMounter(mountable)
+	defer lm.Unmount()
+
+	dir, err := lm.Mount()
 	if err != nil {
 		return nil, err
 	}
 
-	// Error on files that exceed MaxFileContentsSize
-	fileSize := int(st.GetSize_())
-	if fileSize > buildkit.MaxFileContentsSize {
-		return nil, fmt.Errorf("file size %d exceeds limit %d", fileSize, buildkit.MaxFileContentsSize)
+	f, err := os.Open(filepath.Join(dir, file.File))
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file %q: %w", file.File, err)
 	}
 
 	return &fileReader{
-		ref:      ref,
-		filename: file.File,
-		size:     fileSize,
-		ctx:      ctx,
+		mount: lm,
+		f:     f,
 	}, nil
 }
 
 type fileReader struct {
-	ref      bkgw.Reference
-	filename string
-	size     int
-	offset   int
-	ctx      context.Context
+	mount snapshot.Mounter
+	f     *os.File
 }
 
 func (r *fileReader) Read(p []byte) (n int, err error) {
-	if r.offset >= r.size {
-		return 0, io.EOF
-	}
+	return r.f.Read(p)
+}
 
-	// Calculate how much to read - either the buffer size or remaining file size
-	remaining := r.size - r.offset
-	chunkSize := min(remaining, len(p), buildkit.MaxFileContentsChunkSize)
-
-	chunk, err := r.ref.ReadFile(r.ctx, bkgw.ReadRequest{
-		Filename: r.filename,
-		Range: &bkgw.FileRange{
-			Offset: r.offset,
-			Length: chunkSize,
-		},
-	})
-	if err != nil {
-		return 0, err
-	}
-
-	// Copy the chunk to the provided buffer
-	n = copy(p, chunk)
-	r.offset += n
-
-	if r.offset >= r.size {
-		return n, io.EOF
-	}
-
-	return n, nil
+func (r *fileReader) Close() error {
+	return errors.Join(
+		r.f.Close(),
+		r.mount.Unmount(),
+	)
 }
 
 func (file *File) Search(ctx context.Context, opts SearchOpts) ([]*SearchResult, error) {
@@ -507,25 +509,20 @@ func (file *File) Stat(ctx context.Context) (*fstypes.Stat, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
 	detach, _, err := svcs.StartBindings(ctx, file.Services)
 	if err != nil {
 		return nil, err
 	}
 	defer detach()
-
-	ref, err := bkRef(ctx, bk, file.LLB)
+	ref, err := getRefOrEvaluate(ctx, file)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get single ref: %w", err)
 	}
-
-	return ref.StatFile(ctx, bkgw.StatRequest{
-		Path: file.File,
-	})
+	mountable, err := ref.Mount(ctx, true, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get single ref: %w", err)
+	}
+	return cacheutil.StatFile(ctx, mountable, file.File)
 }
 
 func (file *File) WithName(ctx context.Context, filename string) (*File, error) {

@@ -13,13 +13,13 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"syscall"
 	"time"
 
 	containerdfs "github.com/containerd/continuity/fs"
 	fscopy "github.com/dagger/dagger/engine/sources/local/copy"
 	"github.com/dustin/go-humanize"
 	bkcache "github.com/moby/buildkit/cache"
+	cacheutil "github.com/moby/buildkit/cache/util"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -220,33 +220,15 @@ func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, svcs *Servi
 	}
 	defer detach()
 
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: dir.LLB,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to solve: %w", err)
-	}
-
-	ref, err := res.SingleRef()
+	ref, err := getRefOrEvaluate(ctx, dir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get single ref: %w", err)
 	}
-	// empty directory, i.e. llb.Scratch()
-	if ref == nil {
-		if clean := path.Clean(src); clean == "." || clean == "/" {
-			// fake out a reasonable response
-			return &fstypes.Stat{
-				Path: src,
-				Mode: uint32(fs.ModeDir),
-			}, nil
-		}
-
-		return nil, fmt.Errorf("%s: %w", src, syscall.ENOENT)
+	mountable, err := ref.Mount(ctx, true, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get single ref: %w", err)
 	}
-
-	st, err := ref.StatFile(ctx, bkgw.StatRequest{
-		Path: src,
-	})
+	st, err := cacheutil.StatFile(ctx, mountable, src)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat file %s: %w", src, err)
 	}
