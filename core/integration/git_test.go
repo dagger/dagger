@@ -33,7 +33,7 @@ func (GitSuite) TestGit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	checkClean := func(ctx context.Context, t *testctx.T, checkout *dagger.Directory, clean bool) {
-		out, err := c.Container().From("alpine").
+		out, err := c.Container().From(alpineImage).
 			WithExec([]string{"apk", "add", "git"}).
 			WithWorkdir("/src").
 			WithMountedDirectory(".", checkout).
@@ -271,7 +271,7 @@ func (GitSuite) TestGitDepth(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	log := func(ctx context.Context, dir *dagger.Directory) (string, error) {
-		res, err := c.Container().From("alpine").
+		res, err := c.Container().From(alpineImage).
 			WithExec([]string{"apk", "add", "git"}).
 			WithWorkdir("/src").
 			WithMountedDirectory(".", dir).
@@ -941,4 +941,50 @@ func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {
 		testTags(t, git)
 		testBranches(t, git)
 	})
+}
+
+func (GitSuite) TestGitCommonAncestor(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "init"}).
+		WithExec([]string{"git", "config", "--global", "user.name", "tester"}).
+		WithExec([]string{"git", "config", "--global", "user.email", "test@dagger.io"}).
+		WithExec([]string{"sh", "-c", `echo "A" > file.txt && git add file.txt && git commit -m "A"`}).
+		WithExec([]string{"git", "checkout", "-b", "branch1"}).
+		WithExec([]string{"sh", "-c", `echo "B" >> file.txt && git add file.txt && git commit -m "B"`}).
+		WithExec([]string{"git", "checkout", "master"}).
+		WithExec([]string{"git", "checkout", "-b", "branch2"}).
+		WithExec([]string{"sh", "-c", `echo "C" >> file.txt && git add file.txt && git commit -m "C"`}).
+		WithExec([]string{"git", "checkout", "master"})
+	git := ctr.Directory(".").AsGit()
+
+	base, err := ctr.WithExec([]string{"git", "rev-parse", "master"}).Stdout(ctx)
+	require.NoError(t, err)
+	base = strings.TrimSpace(base)
+
+	// test the common ancestor between two branches
+	mergeBase := git.Branch("branch1").CommonAncestor(git.Branch("branch2"))
+	commit, err := mergeBase.Commit(ctx)
+	require.NoError(t, err)
+	require.Equal(t, base, commit)
+	ref, err := mergeBase.Ref(ctx)
+	require.NoError(t, err)
+	require.Equal(t, base, ref)
+
+	ctr = ctr.
+		WithExec([]string{"git", "checkout", "-b", "branch3"}).
+		WithExec([]string{"sh", "-c", `echo "D" >> file.txt && git add file.txt && git commit -m "D"`})
+	git2 := ctr.Directory(".").AsGit()
+
+	// test the common ancestor between two branches from different refs
+	mergeBase = git.Branch("branch1").CommonAncestor(git2.Branch("branch3"))
+	commit, err = mergeBase.Commit(ctx)
+	require.NoError(t, err)
+	require.Equal(t, base, commit)
+	ref, err = mergeBase.Ref(ctx)
+	require.NoError(t, err)
+	require.Equal(t, base, ref)
 }
