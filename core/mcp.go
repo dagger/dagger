@@ -2499,12 +2499,12 @@ func remount(
 			return fmt.Errorf("failed to get OCI state for container %s: %w", containerID, err)
 		}
 		// mount the read-write copy into the container
-		stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+		out := new(strings.Builder)
 		containerMount := exec.Command("container-mount", strconv.Itoa(state.Pid), resolvedDir, target)
-		containerMount.Stdout = stdio.Stdout
-		containerMount.Stderr = stdio.Stderr
+		containerMount.Stdout = out
+		containerMount.Stderr = out
 		if err := containerMount.Run(); err != nil {
-			return fmt.Errorf("failed to mount %s into container %s: %w", target, containerID, err)
+			return fmt.Errorf("failed to mount %s into container %s: %w\n\n%s", target, containerID, err, out.String())
 		}
 		return f()
 	})
