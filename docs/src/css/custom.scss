@@ -674,7 +674,7 @@ html[data-theme="dark"] .markdown table td {
 html[data-theme="light"] {
   .table-of-contents__link {
     &:hover {
-      background-color: rgba(26, 24, 51, 0.05) !important;
+      // background-color: rgba(26, 24, 51, 0.05) !important;
       color: var(--ifm-menu-color-active);
       border-left: 3px solid rgba(239, 123, 26, 0.5); // Light version of tangerine color
       padding-left: 0.5rem;
@@ -735,4 +735,8 @@ html[data-theme="dark"] {
   @include tablet {
     display: none !important;
   }
+}
+
+.menu__link {
+  font-size: 0.875rem !important; // 14px
 }

@@ -3,7 +3,7 @@ module.exports = {
     {
       type: "category",
       label: "Introduction",
-      items: ["index", "use-cases", "faq", "examples"],
+      items: ["index", "use-cases", "examples"],
     },
     {
       type: "category",
@@ -19,6 +19,7 @@ module.exports = {
         "features/shell",
       ],
     },
+    "faq",
   ],
   gettingStarted: [
     {
