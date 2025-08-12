@@ -65,6 +65,8 @@ type RunningService struct {
 
 	// Block until the service has exited or the provided context is canceled.
 	Wait func(ctx context.Context) error
+
+	Exec func(ctx context.Context, cmd []string, io *ServiceIO) error
 }
 
 // ServiceKey is a unique identifier for a service.

@@ -98,6 +98,10 @@ func (svc *Service) WithHostname(hostname string) *Service {
 	return svc
 }
 
+func (*Service) Evaluate(ctx context.Context) (*buildkit.Result, error) {
+	return nil, nil
+}
+
 func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 	if svc.CustomHostname != "" {
 		return svc.CustomHostname, nil
@@ -246,6 +250,33 @@ func (svc *Service) Stop(ctx context.Context, id *call.ID, kill bool) error {
 		return err
 	}
 	return svcs.Stop(ctx, id, kill, svc.TunnelUpstream.Self() != nil)
+}
+
+func (*Service) Terminal(ctx context.Context, svc dagql.ObjectResult[*Service], sio *ServiceIO) error {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return err
+	}
+	detach, runnings, err := svcs.StartBindings(ctx, ServiceBindings{
+		{
+			Service: svc,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	defer detach()
+	running := runnings[0]
+
+	if running.Exec == nil {
+		return fmt.Errorf("service %s does not support terminal", svc.ID().Digest())
+	}
+	return running.Exec(ctx, []string{"/bin/sh"}, sio)
 }
 
 type ServiceIO struct {
@@ -471,6 +502,7 @@ func (svc *Service) startContainer(
 		fmt.Sprintf("exec %s", strings.Join(svc.Args, " ")),
 		// This span continues the original withExec, by linking to it.
 		telemetry.Resume(trace.ContextWithSpanContext(ctx, svc.Creator)),
+		// telemetry.WithServiceID(svcID),
 		// Hide this span so the user can just focus on the withExec.
 		telemetry.Internal(),
 	)
@@ -627,6 +659,50 @@ func (svc *Service) startContainer(
 		}
 	}
 
+	execSvc := func(ctx context.Context, cmd []string, sio *ServiceIO) error {
+		meta := *meta
+		meta.Args = cmd
+		// if interactive {
+		meta.Tty = true
+		meta.Env = addDefaultEnvvar(meta.Env, "TERM", "xterm")
+		// }
+
+		// XXX: dupl
+		resize := make(chan executor.WinSize)
+		if sio != nil && sio.ResizeCh != nil {
+			go func() {
+				defer close(resize)
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case winSize := <-sio.ResizeCh:
+						resize <- executor.WinSize{
+							Rows: winSize.Rows,
+							Cols: winSize.Cols,
+						}
+					}
+				}
+			}()
+		}
+		var stdinReader io.ReadCloser
+		var stdoutWriter io.WriteCloser
+		var stderrWriter io.WriteCloser
+		if sio != nil {
+			stdinReader = sio.Stdin
+			stdoutWriter = sio.Stdout
+			stderrWriter = sio.Stderr
+		}
+		err = exec.Exec(ctx, svcID, executor.ProcessInfo{
+			Meta:   meta,
+			Stdin:  stdinReader,
+			Stdout: stdoutWriter,
+			Stderr: stderrWriter,
+			Resize: resize,
+		})
+		return err
+	}
+
 	select {
 	case err := <-checked:
 		if err != nil {
@@ -639,6 +715,7 @@ func (svc *Service) startContainer(
 			Ports:   ctr.Ports,
 			Stop:    stopSvc,
 			Wait:    waitSvc,
+			Exec:    execSvc,
 		}, nil
 	case <-exited:
 		if exitErr != nil {
