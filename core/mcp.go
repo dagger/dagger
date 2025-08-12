@@ -44,6 +44,8 @@ import (
 type LLMTool struct {
 	// Tool name
 	Name string `json:"name"`
+	// MCP server name providing the tool, if any
+	Server string
 	// Tool description
 	Description string `json:"description"`
 	// Tool argument schema. Key is argument name. Value is unmarshalled json-schema for the argument.
@@ -294,6 +296,7 @@ func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
 			}
 			tools = append(tools, LLMTool{
 				Name:        name + "_" + tool.Name,
+				Server:      name,
 				Description: tool.Description,
 				Schema:      anied,
 				Call: func(ctx context.Context, args any) (any, error) {
@@ -405,7 +408,7 @@ func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
 			})
 		}
 	}
-	return m.withTelemetry(tools), nil
+	return tools, nil
 }
 
 func toAny(v any) (res map[string]any, rerr error) {
@@ -578,6 +581,8 @@ func references(fieldDef *ast.FieldDefinition, types ...dagql.Typed) bool {
 
 func displayArgs(args any) string {
 	switch args := args.(type) {
+	case nil:
+		return ""
 	case map[string]any:
 		var sb strings.Builder
 		sb.WriteString("(")
@@ -606,38 +611,6 @@ func (m *MCP) call(ctx context.Context,
 	// Whether the call should be made against a freshly constructed module
 	autoConstruct *ObjectTypeDef,
 ) (res string, rerr error) {
-	var validated bool
-	var toolArgNames []string
-	var toolArgValues []string
-	for _, arg := range fieldDef.Arguments {
-		val, ok := args[arg.Name].(string)
-		if !ok {
-			continue
-		}
-		toolArgNames = append(toolArgNames, arg.Name)
-		toolArgValues = append(toolArgValues, val)
-	}
-
-	ctx, span := Tracer(ctx).Start(ctx,
-		fmt.Sprintf("%s%s", fieldDef.Name, displayArgs(args)),
-		trace.WithAttributes(
-			attribute.String(telemetry.LLMToolAttr, fieldDef.Name),
-			attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),
-			attribute.StringSlice(telemetry.LLMToolArgValuesAttr, toolArgValues),
-		),
-		telemetry.ActorEmoji("🤖"),
-		telemetry.Reveal())
-
-	defer telemetry.End(span, func() error {
-		if rerr != nil && !validated {
-			// only reveal for "plumbing" errors, not errors from the field, since
-			// those will already be shown
-			span.SetAttributes(attribute.Bool(telemetry.UIPassthroughAttr, false))
-		}
-		return rerr
-	})
-
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
 	defer func() {
 		// Capture logs produced by the tool call and prepend them to the response
 		spanID := trace.SpanContextFromContext(ctx).SpanID()
@@ -654,10 +627,6 @@ func (m *MCP) call(ctx context.Context,
 			// Avoid any extra surrounding whitespace (i.e. blank logs somehow)
 			res = strings.Trim(strings.Join(logs, "\n")+"\n\n"+res, "\n")
 		}
-
-		// Show raw response on telemetry for troubleshooting
-		fmt.Fprintln(stdio.Stdout, res)
-		stdio.Close()
 	}()
 
 	// 1. CONVERT CALL INPUTS (BRAIN -> BODY)
@@ -691,7 +660,6 @@ func (m *MCP) call(ctx context.Context,
 		if err != nil {
 			return nil, false, fmt.Errorf("failed to convert call inputs: %w", err)
 		}
-		validated = true
 		var val dagql.AnyResult
 		if err := srv.Select(
 			// reveal cache hits, even if we've already seen them within the session
@@ -1018,6 +986,59 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 		}
 		return res, true
 	}
+
+	args := toolCall.Function.Arguments
+
+	var toolArgNames []string
+	var toolArgValues []string
+	if requiredArgs, ok := tool.Schema["required"].([]string); ok {
+		for _, arg := range requiredArgs {
+			val, ok := args[arg]
+			if !ok {
+				continue
+			}
+			if str, ok := val.(string); ok {
+				toolArgNames = append(toolArgNames, arg)
+				toolArgValues = append(toolArgValues, str)
+			}
+		}
+	}
+	toolName := tool.Name
+	if tool.Server != "" {
+		toolName = strings.TrimPrefix(toolName, tool.Server+"_")
+	}
+	attrs := []attribute.KeyValue{
+		attribute.String(telemetry.LLMToolAttr, toolName),
+		attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),
+		attribute.StringSlice(telemetry.LLMToolArgValuesAttr, toolArgValues),
+	}
+	if tool.Name == "call_method" || tool.Name == "chain_methods" {
+		attrs = append(attrs, attribute.Bool(telemetry.UIPassthroughAttr, true))
+	}
+	if tool.Server != "" {
+		attrs = append(attrs, attribute.String(telemetry.LLMToolServerAttr, tool.Server))
+	}
+	ctx, span := Tracer(ctx).Start(ctx,
+		fmt.Sprintf("%s%s", tool.Name, displayArgs(args)),
+		telemetry.ActorEmoji("🤖"),
+		telemetry.Reveal(),
+		trace.WithAttributes(attrs...),
+	)
+	defer telemetry.End(span, func() error {
+		if failed {
+			return fmt.Errorf("tool call %q failed", tool.Name)
+		}
+		return nil
+	})
+
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+		log.Bool(telemetry.LogsVerboseAttr, true))
+	defer stdio.Close()
+
+	defer func() {
+		// write final result to telemetry so we see exactly what the LLM sees
+		fmt.Fprintln(stdio.Stdout, res)
+	}()
 
 	result, err := tool.Call(EnvToContext(ctx, m.env), toolCall.Function.Arguments)
 	if err != nil {
@@ -1478,78 +1499,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 
 	builtins = append(builtins, m.userProvidedValues()...)
 
-	// Attach builtin telemetry
-	return m.withTelemetry(builtins), nil
-}
-
-func (m *MCP) withTelemetry(tools []LLMTool) []LLMTool {
-	for i, builtin := range tools {
-		tools[i].Call = func(ctx context.Context, args any) (_ any, rerr error) {
-			argsMap, ok := args.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("invalid arguments type")
-			}
-			var toolArgNames []string
-			var toolArgValues []string
-			if requiredArgs, ok := builtin.Schema["required"].([]string); ok {
-				for _, arg := range requiredArgs {
-					val, ok := argsMap[arg]
-					if !ok {
-						continue
-					}
-					if str, ok := val.(string); ok {
-						toolArgNames = append(toolArgNames, arg)
-						toolArgValues = append(toolArgValues, str)
-					}
-				}
-			}
-			attrs := []attribute.KeyValue{
-				attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-				attribute.String(telemetry.LLMToolAttr, builtin.Name),
-				attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),
-				attribute.StringSlice(telemetry.LLMToolArgValuesAttr, toolArgValues),
-			}
-			if builtin.Name == "call_method" || builtin.Name == "chain_methods" {
-				attrs = append(attrs, attribute.Bool(telemetry.UIPassthroughAttr, true))
-			}
-			// do an awkward dance to make sure we still show a span even if we fail
-			// to construct parts of it (e.g. due to invalid input)
-			setupErr := func() error {
-				id, err := m.toolToID(ctx, builtin, args)
-				if err != nil {
-					return err
-				}
-				callAttr, err := id.Call().Encode()
-				if err != nil {
-					return err
-				}
-				attrs = append(attrs,
-					attribute.String(telemetry.DagDigestAttr, id.Digest().String()),
-					attribute.String(telemetry.DagCallAttr, callAttr),
-				)
-				return nil
-			}()
-			ctx, span := Tracer(ctx).Start(ctx,
-				fmt.Sprintf("%s %v", builtin.Name, args),
-				telemetry.Reveal(),
-				trace.WithAttributes(attrs...),
-			)
-			defer telemetry.End(span, func() error { return rerr })
-			if setupErr != nil {
-				return nil, setupErr
-			}
-			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-				log.Bool(telemetry.LogsVerboseAttr, true))
-			defer stdio.Close()
-			res, err := builtin.Call(ctx, args)
-			if err != nil {
-				return nil, err
-			}
-			fmt.Fprintln(stdio.Stdout, res)
-			return res, nil
-		}
-	}
-	return tools
+	return builtins, nil
 }
 
 func (m *MCP) staticMethodCallingTools(srv *dagql.Server, schema *ast.Schema, allMethods map[string]LLMTool) []LLMTool {
@@ -1937,95 +1887,6 @@ func (m *MCP) userProvidedValues() []LLMTool {
 
 func (m *MCP) IsDone() bool {
 	return len(m.env.Self().outputsByName) == 0 || m.returned
-}
-
-func (m *MCP) toolToID(ctx context.Context, tool LLMTool, args any) (*call.ID, error) {
-	name := tool.Name
-	var callArgs []*call.Argument
-	if propsAny, found := tool.Schema["properties"]; found && propsAny != nil {
-		props, ok := propsAny.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("malformed tool properties: expected %T, got %T",
-				props,
-				tool.Schema["properties"])
-		}
-		argsMap, ok := args.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("malformed args: expected %T, got %T", argsMap, args)
-		}
-		for k, v := range argsMap {
-			if v == nil {
-				// explicitly passing null for required arg (maybe due to strict mode); omit
-				continue
-			}
-
-			var lit call.Literal
-			var litVal = v
-
-			spec, found := props[k].(map[string]any)
-			if !found {
-				return nil, fmt.Errorf("unknown arg: %q", k)
-			}
-
-			if idType, ok := spec[jsonSchemaIDAttr].(string); ok {
-				str, ok := v.(string)
-				if !ok {
-					return nil, fmt.Errorf("expected string value, got %T", v)
-				}
-				obj, err := m.GetObject(ctx, str, idType)
-				if err != nil {
-					// drop it, maybe it's an invalid value
-				} else {
-					// show the real ID in telemetry
-					litVal = obj.ID()
-				}
-			}
-
-			pattern, found := spec["pattern"]
-			if found {
-				// if we have a pattern configured:
-				//   1) validate the arg value as a sanity check, and
-				//   2) if it's an ID pattern, map the value back to the real ID
-
-				patternStr, ok := pattern.(string)
-				if !ok {
-					return nil, fmt.Errorf("expected string regex pattern, got %T", pattern)
-				}
-				str, ok := v.(string)
-				if !ok {
-					return nil, fmt.Errorf("expected string value, got %T", v)
-				}
-				re, err := regexp.Compile(patternStr)
-				if err != nil {
-					return nil, fmt.Errorf("invalid regex for %q: %w", k, err)
-				}
-				if !re.MatchString(str) {
-					return nil, fmt.Errorf("arg %q does not match pattern %s: %q", k, re.String(), str)
-				}
-			}
-
-			lit, err := call.ToLiteral(litVal)
-			if err != nil {
-				return nil, err
-			}
-			callArgs = append(callArgs, call.NewArgument(k, lit, false))
-		}
-		sort.Slice(callArgs, func(i, j int) bool {
-			return callArgs[i].Name() < callArgs[j].Name()
-		})
-	}
-	return call.New().Append(
-		&ast.Type{
-			NamedType: "String",
-			NonNull:   true,
-		},
-		name, // fn name
-		"",   // view
-		nil,  // module
-		0,    // nth
-		"",   // custom digest
-		callArgs...,
-	), nil
 }
 
 var idRegex = regexp.MustCompile(`^(?P<type>[A-Z]\w*)#(?P<nth>\d+)$`)

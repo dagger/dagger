@@ -393,6 +393,12 @@ func (r *renderer) renderSpan(
 	if span != nil {
 		contentType = span.ContentType
 		if span.LLMTool != "" {
+			if span.LLMToolServer != "" {
+				fmt.Fprint(out,
+					out.String(strcase.ToLowerCamel(span.LLMToolServer)).
+						Foreground(termenv.ANSIBrightMagenta))
+				fmt.Fprint(out, " ")
+			}
 			fmt.Fprint(out, out.String(strcase.ToCamel(span.LLMTool)).Bold())
 			if len(span.LLMToolArgValues) > 0 {
 				// for now, only print the first arg, the rest are likely to be noisy.

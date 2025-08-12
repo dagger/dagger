@@ -118,6 +118,8 @@ const (
 
 	// The name of an LLM tool that this span is calling.
 	LLMToolAttr = "dagger.io/llm.tool"
+	// The name of an MCP server providing the tool.
+	LLMToolServerAttr = "dagger.io/llm.tool.server"
 
 	// The list of LLM tool arguments to show to the user.
 	LLMToolArgNamesAttr  = "dagger.io/llm.tool.args.names"

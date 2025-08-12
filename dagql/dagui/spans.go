@@ -152,6 +152,7 @@ type SpanSnapshot struct {
 
 	LLMRole          string   `json:",omitempty"`
 	LLMTool          string   `json:",omitempty"`
+	LLMToolServer    string   `json:",omitempty"`
 	LLMToolArgNames  []string `json:",omitempty"`
 	LLMToolArgValues []string `json:",omitempty"`
 
@@ -229,6 +230,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 
 	case telemetry.LLMToolAttr:
 		snapshot.LLMTool = val.(string)
+
+	case telemetry.LLMToolServerAttr:
+		snapshot.LLMToolServer = val.(string)
 
 	case telemetry.LLMToolArgNamesAttr:
 		snapshot.LLMToolArgNames = val.([]string)
