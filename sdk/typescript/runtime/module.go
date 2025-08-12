@@ -346,28 +346,22 @@ func (m *moduleRuntimeContainer) withInitTemplate() *moduleRuntimeContainer {
 
 // Add the entrypoint to the container runtime so it can be called by the engine.
 func (m *moduleRuntimeContainer) withEntrypoint() *moduleRuntimeContainer {
-	m.ctr = m.ctr.WithMountedFile(
-		m.cfg.entrypointPath(),
-		entrypointFile(),
-	)
-
-	switch m.cfg.runtime {
-	case Bun:
-		m.ctr = m.ctr.
-			WithEntrypoint([]string{"bun", m.cfg.entrypointPath()})
-	case Deno:
-		m.ctr = m.ctr.
-			WithEntrypoint([]string{
-				"deno", "run", "-A", m.cfg.entrypointPath(),
-			})
-	case Node:
-		m.ctr = m.ctr.
-			// need to specify --tsconfig because final runtime container will change working directory to a separate scratch
-			// dir, without this the paths mapped in the tsconfig.json will not be used and js module loading will fail
-			// need to specify --no-deprecation because the default package.json has no main field which triggers a warning
-			// not useful to display to the user.
-			WithEntrypoint([]string{"tsx", "--no-deprecation", "--tsconfig", m.cfg.tsConfigPath(), m.cfg.entrypointPath()})
-	}
+	m.ctr = m.ctr.
+		WithMountedFile(m.cfg.entrypointPath(), entrypointFile()).
+		WithEntrypoint(m.runtimeCmd())
 
 	return m
+}
+
+func (m *moduleRuntimeContainer) runtimeCmd() []string {
+	switch m.cfg.runtime {
+	case Bun:
+		return []string{"bun", "run", m.cfg.entrypointPath()}
+	case Deno:
+		return []string{"deno", "run", "-A", m.cfg.entrypointPath()}
+	case Node:
+		return []string{"tsx", "--no-deprecation", "--tsconfig", m.cfg.tsConfigPath(), m.cfg.entrypointPath()}
+	default:
+		return []string{}
+	}
 }
