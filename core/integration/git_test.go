@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
@@ -765,6 +766,78 @@ func (GitSuite) TestWithAuth(ctx context.Context, t *testctx.T) {
 			Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "Hello, world!", dt)
+	})
+}
+
+func (GitSuite) TestSubmoduleAuth(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	t.Cleanup(func() { _ = c.Close() })
+
+	authToken := c.SetSecret("submodule-test-token", "test-token-"+uuid.NewString())
+
+	submoduleContent := c.Directory().WithNewFile("submodule.txt", "This is the submodule content")
+	parentContent := c.Directory().WithNewFile("parent.txt", "This is the parent content")
+
+	// Create bare parent + submodule repos in /srv
+	// Git dance below is necessary: https://github.com/dagger/dagger/pull/10855#discussion_r2264174757
+	gitReposCtr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"git", "config", "--global", "user.email", "test@dagger.io"}).
+		WithExec([]string{"git", "config", "--global", "user.name", "Test User"}).
+		WithExec([]string{"git", "config", "--global", "init.defaultBranch", "main"}).
+		WithExec([]string{"sh", "-lc", "mkdir -p /srv && git init --bare /srv/submodule.git && git init --bare /srv/parent.git"}).
+		WithDirectory("/tmp/sub", submoduleContent).
+		WithExec([]string{"sh", "-lc", `
+set -eux
+cd /tmp/sub
+git init
+git add .
+git commit -m 'Initial submodule commit'
+git remote add origin file:///srv/submodule.git
+git push -u origin main
+`}).
+		WithDirectory("/tmp/parent", parentContent).
+		WithExec([]string{"sh", "-lc", `
+set -eux
+cd /tmp/parent
+git init
+git add .
+git commit -m 'Initial parent commit'
+git -c protocol.file.allow=always submodule add file:///srv/submodule.git sub
+git commit -m 'Add submodule (absolute url to fetch)'
+git config -f .gitmodules submodule.sub.url ../submodule.git
+git add .gitmodules
+git commit -m 'Make submodule URL relative'
+git remote add origin file:///srv/parent.git
+git push -u origin main
+`})
+
+	gitReposDir := gitReposCtr.Directory("/srv")
+
+	gitSrv, base := gitSmartHTTPServiceDirAuth(ctx, t, c, "", gitReposDir, "", authToken)
+	parentURL := base + "/parent.git"
+
+	t.Run("clone with HTTPAuthToken", func(ctx context.Context, t *testctx.T) {
+		tree := c.Git(parentURL, dagger.GitOpts{
+			ExperimentalServiceHost: gitSrv,
+			HTTPAuthToken:           authToken,
+		}).Branch("main").Tree()
+
+		txt, err := tree.File("parent.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "This is the parent content", txt)
+
+		sub, err := tree.File("sub/submodule.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "This is the submodule content", sub)
+	})
+
+	t.Run("clone without auth fails", func(ctx context.Context, t *testctx.T) {
+		_, err := c.Git(parentURL, dagger.GitOpts{
+			ExperimentalServiceHost: gitSrv,
+		}).Branch("main").Tree().File("parent.txt").Contents(ctx)
+		require.Error(t, err)
 	})
 }
 
