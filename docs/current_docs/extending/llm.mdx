@@ -4,7 +4,7 @@ slug: /extending/llm
 
 # LLM Integration
 
-Dagger's `LLM` core type includes API methods to attach objects to a Large Language Model (LLM), send prompts, and receive responses.
+Dagger's `LLM` type includes API methods to attach objects to a Large Language Model (LLM), send prompts, and receive responses.
 
 ## Prompts
 
@@ -96,7 +96,7 @@ llm |
 
 ## Environments
 
-Dagger [modules](../features/reusability.mdx) are collections of Dagger Functions. When you give a Dagger Module to the `LLM` core type, every Dagger Function is turned into a tool that the LLM can call.
+Dagger [modules](../features/reusability.mdx) are collections of Dagger Functions. When you give a Dagger module to the `LLM` type, every Dagger Function is turned into a tool that the LLM can call.
 
 Environments configure any number of inputs and outputs for the LLM. For example, an environment might provide a `Directory`, a `Container`, a custom module, and a `string` variable. The LLM can use the scalars and the functions of these objects to complete the assigned task.
 
@@ -127,6 +127,6 @@ Consider the following Dagger Function:
 </TabItem>
 </Tabs>
 
-Here, an instance a `Container` is attached as an input to the `Env` environment. The `Container` is a core type with a number of functions useful for a coding environment such as `WithNewFile()`, `File().Contents()`, and `WithExec()`. When this environment is attached to an `LLM`, the LLM can call any of these Dagger Functions to change the state of the `Container` and complete the assigned task.
+Here, an instance a `Container` is attached as an input to the `Env` environment. The `Container` is a type with a number of functions useful for a coding environment such as `WithNewFile()`, `File().Contents()`, and `WithExec()`. When this environment is attached to an `LLM`, the LLM can call any of these Dagger Functions to change the state of the `Container` and complete the assigned task.
 
 In the `Env`, a `Container` instance called `completed` is specified as a desired output of the LLM. This means that the LLM should return the `Container` instance as a result of completing its task. The resulting `Container` object is then available for further processing or for use in other Dagger Functions.

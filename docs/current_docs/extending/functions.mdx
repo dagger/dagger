@@ -6,7 +6,7 @@ import DaggerModuleInit from '@partials/_dagger_module_init.mdx';
 
 # Functions
 
-Dagger Functions are individual units of computation that perform a specific task by combining operations on components with custom logic. Dagger Functions are written in a programming language using a type-safe Dagger SDK, and packaged and shared in [Dagger Modules](./modules.mdx).
+Dagger Functions are individual units of computation that perform a specific task by combining operations on components with custom logic. Dagger Functions are written in a programming language using a type-safe Dagger SDK, and packaged and shared in [Dagger modules](./modules.mdx).
 
 Here's an example of a Dagger Function which calls a remote API method and returns the result:
 
@@ -113,7 +113,7 @@ Dagger Functions execute within containers spawned by the Dagger Engine. This "s
 1. Security: Even when running third-party Dagger Functions sourced from a Git repository, those Dagger Functions will not have default access to your host environment (host files, directories, environment variables, etc.). Access to these host resources can only be granted by explicitly passing them as argument values to the Dagger Function.
 :::
 
-When implementing Dagger Functions, you are free to write arbitrary code that will execute inside the Dagger Module's container. You have access to the Dagger API to make calls to the core Dagger API or other Dagger Modules you depend on, but you are also free to just use the language's standard library and/or imported third-party libraries.
+When implementing Dagger Functions, you are free to write arbitrary code that will execute inside the Dagger module's container. You have access to the Dagger API to make calls to the core Dagger API or other Dagger modules you depend on, but you are also free to just use the language's standard library and/or imported third-party libraries.
 
 The process your code executes in will currently be with the `root` user, but without a full set of Linux capabilities and other standard container sandboxing provided by `runc`.
 

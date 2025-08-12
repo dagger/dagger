@@ -1,7 +1,6 @@
 ---
 title: "GitHub"
 slug: /integrations/github
-displayed_sidebar: gettingStarted
 description: "Learn how to use Dagger with GitHub."
 ---
 
@@ -29,7 +28,7 @@ Given a Dagger Function called `foo` that accepts a `Directory` as argument, you
 dagger call foo --directory=https://github.com/ORGANIZATION/REPOSITORY#pull/NUMBER/merge
 ```
 
-If your GitHub repository contains a Dagger Module, you can test the functionality of a specific branch by calling the Dagger Module with the corresponding pull request URL, as shown below:
+If your GitHub repository contains a Dagger module, you can test the functionality of a specific branch by calling the Dagger module with the corresponding pull request URL, as shown below:
 
 ```shell
 dagger call -m github.com/ORGANIZATION/REPOSITORY@pull/NUMBER/merge --help

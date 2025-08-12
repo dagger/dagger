@@ -19,11 +19,8 @@ module.exports = {
         "features/shell",
       ],
     },
-    {
-      type: "category",
-      label: "Examples",
-      items: ["examples/index", "examples/demos"],
-    },
+    "examples",
+    "faq",
   ],
   gettingStarted: [
     {
@@ -71,8 +68,18 @@ module.exports = {
     },
     {
       type: "category",
-      label: "Integrations",
-      items: ["integrations/index"],
+      label: "Integrating with CI",
+      items: [
+        "integrations/argo-workflows",
+        "integrations/aws-codebuild",
+        "integrations/azure-pipelines",
+        "integrations/circleci",
+        "integrations/gitlab",
+        "integrations/github-actions",
+        "integrations/github",
+        "integrations/jenkins",
+        "integrations/tekton",
+      ],
     },
   ],
   extending: [
@@ -138,7 +145,6 @@ module.exports = {
       type: "category",
       label: "Configuration",
       items: [
-        "reference/configuration/index",
         "reference/configuration/cloud",
         "reference/configuration/cache",
         "reference/configuration/engine",
@@ -147,26 +153,6 @@ module.exports = {
         "reference/configuration/custom-runner",
         "reference/configuration/custom-ca",
         "reference/configuration/proxy",
-      ],
-    },
-    {
-      type: "category",
-      label: "Container Runtimes",
-      items: [
-        "reference/container-runtimes/kubernetes",
-        "reference/container-runtimes/podman",
-        "reference/container-runtimes/nerdctl",
-        "reference/container-runtimes/apple-container",
-      ],
-    },
-    {
-      type: "category",
-      label: "Best Practices",
-      items: [
-        "reference/best-practices/adopting",
-        "reference/best-practices/monorepos",
-        "reference/best-practices/modules",
-        "reference/best-practices/contributing",
       ],
     },
     {
@@ -203,15 +189,22 @@ module.exports = {
     },
     {
       type: "category",
-      label: "Engine and Runtime",
+      label: "Container Runtimes",
       items: [
-        "reference/engine-runtime/index",
-        "reference/engine-runtime/performance-caching",
-        {
-          type: "link",
-          label: "Engine Configuration Schema",
-          href: "https://docs.dagger.io/reference/engine.schema.json",
-        },
+        "reference/container-runtimes/kubernetes",
+        "reference/container-runtimes/podman",
+        "reference/container-runtimes/nerdctl",
+        "reference/container-runtimes/apple-container",
+      ],
+    },
+    {
+      type: "category",
+      label: "Best Practices",
+      items: [
+        "reference/best-practices/adopting",
+        "reference/best-practices/monorepos",
+        "reference/best-practices/modules",
+        "reference/best-practices/contributing",
       ],
     },
   ],

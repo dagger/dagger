@@ -1,6 +1,6 @@
 ---
 title: "Module Configuration"
-description: "Learn how to configure Dagger Modules, including TypeScript SDK settings, file filters, and alternative runtimes."
+description: "Learn how to configure Dagger modules, including TypeScript SDK settings, file filters, and alternative runtimes."
 keywords: ["dagger", "module", "configuration", "typescript", "sdk", "runtime", "package manager"]
 sidebar_label: "Modules"
 ---
@@ -8,13 +8,13 @@ sidebar_label: "Modules"
 
 Modules can be configured by editing their `dagger.json` file. The configuration in there contains all module metadata - from the name of the module and the SDK it uses, to the dependencies it requires. An initial configuration is automatically generated when using `dagger init` or `dagger develop` for the first time, and is kept up-to-date with `dagger config`/`dagger install`/etc.
 
-For more information, refer to the [JSON schema for the Dagger Module configuration file](https://docs.dagger.io/reference/dagger.schema.json).
+For more information, refer to the [JSON schema for the Dagger module configuration file](https://docs.dagger.io/reference/dagger.schema.json).
 
 ## File and directory filters
 
-The JSON schema for the Dagger Module configuration file `dagger.json` supports an `include` field. It tells the Dagger Engine of additional files to include or exclude when loading the module itself. By default, only `dagger.json` and all files under the module's source directory are included.
+The JSON schema for the Dagger module configuration file `dagger.json` supports an `include` field. It tells the Dagger Engine of additional files to include or exclude when loading the module itself. By default, only `dagger.json` and all files under the module's source directory are included.
 
-Notably, these filters only apply to loading the Dagger Module. They do not apply to any directories passed as arguments to the Dagger Module's functions ([pre- and post-call filtering](../../types/directory.mdx#filters) is separately available for directory arguments).
+Notably, these filters only apply to loading the Dagger module. They do not apply to any directories passed as arguments to the Dagger module's functions ([pre- and post-call filtering](../../types/directory.mdx#filters) is separately available for directory arguments).
 
 :::tip
 Adding excluding patterns prefixed with `!` is particularly useful during local module development, to avoid uploading large cache or generated files that the Dagger Engine doesn't need.
@@ -29,7 +29,7 @@ TypeScript-specific SDK settings can be configured using the standard
 
 TypeScript is supported by multiple runtimes: [Node.js](https://nodejs.org/en) (via `tsx`), [Deno](https://deno.com/) (natively) and [Bun](https://bun.sh/) (natively). The Dagger TypeScript SDK supports all of these, although Bun and Deno support is currently experimental.
 
-By default, the TypeScript SDK executes functions using the Node.js runtime, but you can configure an alternative runtime in your Dagger Module's `package.json` file.
+By default, the TypeScript SDK executes functions using the Node.js runtime, but you can configure an alternative runtime in your Dagger module's `package.json` file.
 
 To change the TypeScript SDK runtime, refer to the sections below.
 
@@ -120,7 +120,7 @@ This behavior however should be seen as a sensible fallback and not as an explic
 
 TypeScript can manage dependencies using multiple package managers. The [Node.js](https://nodejs.org/en) runtime supports [`npm`](https://www.npmjs.com/), [`pnpm`](https://pnpm.io/) and [`yarn`](https://yarnpkg.com/). The [Bun](https://bun.sh/) runtime supports `bun`.
 
-By default, the TypeScript SDK executes functions using the Node.js runtime with [yarn v1.22.22](https://yarnpkg.com/), but you can configure an alternative package manager or version in your Dagger Module's `package.json` file by setting the `packageManager` property.
+By default, the TypeScript SDK executes functions using the Node.js runtime with [yarn v1.22.22](https://yarnpkg.com/), but you can configure an alternative package manager or version in your Dagger module's `package.json` file by setting the `packageManager` property.
 
 #### Npm
 
@@ -185,7 +185,7 @@ The image to use is derived from the version in the `dagger.runtime` field if it
 It is recommended to use this feature only for advanced use cases such as adding bespoke environment variables, authentication files or operating system packages to the runtime container. Ensure that you avoid deviating from the default image too much, as doing so could create unexpected results.
 :::
 
-To change the base image, set the field `dagger.baseImage` in your Dagger Module's `package.json` file.
+To change the base image, set the field `dagger.baseImage` in your Dagger module's `package.json` file.
 
 ```json
 {

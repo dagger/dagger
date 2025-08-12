@@ -710,7 +710,7 @@ dagger -m github.com/jpadams/daggerverse/trivy@v0.3.0 call scan-container --ctr=
 
 Dagger allows you to utilize confidential information, such as passwords, API keys, SSH keys and so on, in your Dagger [modules](../features/reusability.mdx) and Dagger Functions, without exposing those secrets in plaintext logs, writing them into the filesystem of containers you're building, or inserting them into the cache.
 
-Secrets can be passed to Dagger Functions as arguments using the `Secret` core type. Here is an example of a Dagger Function which accepts a GitHub personal access token as a secret, and uses the token to authorize a request to the GitHub API:
+Secrets can be passed to Dagger Functions as arguments using the `Secret` type. Here is an example of a Dagger Function which accepts a GitHub personal access token as a secret, and uses the token to authorize a request to the GitHub API:
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">

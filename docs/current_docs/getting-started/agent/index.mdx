@@ -63,11 +63,11 @@ Once you confirm your authentication code, your Dagger CLI will be authenticated
 
 After successfully creating your organization, all future Dagger workflows can be inspected in Dagger Cloud.
 
-## Initialize a Dagger Module
+## Initialize a Dagger module
 
-In an empty directory, create a new Dagger Module. This module will host your agent functions.
+In an empty directory, create a new Dagger module. This module will host your agent functions.
 
-You can write your module in Go, Python, TypeScript, PHP, or Java. Choose the SDK you are most comfortable with and run the command below to generate a new Dagger Module:
+You can write your module in Go, Python, TypeScript, PHP, or Java. Choose the SDK you are most comfortable with and run the command below to generate a new Dagger module:
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
@@ -97,7 +97,7 @@ dagger init --sdk=java --name=coding-agent
 </TabItem>
 </Tabs>
 
-This will generate [various files that make up the Dagger Module](../../extending/modules.mdx), including some boilerplate Dagger Functions as examples.
+This will generate [various files that make up the Dagger module](../../extending/modules.mdx), including some boilerplate Dagger Functions as examples.
 
 To see the generated Dagger Functions, run:
 
@@ -109,7 +109,7 @@ You should see information about two auto-generated Dagger Functions: `container
 
 ## Create the agent
 
-Replace the generated Dagger Module files as described below.
+Replace the generated Dagger module files as described below.
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
@@ -168,7 +168,7 @@ Learn more about [agent environments](../../extending/llm#environments).
 
 ## Run the agent
 
-Dagger Shell is the fastest way to interact with the Dagger API, allowing access to both core types and custom Dagger Functions using a familiar Bash-like syntax. Type `dagger` to launch Dagger Shell in interactive mode.
+Dagger Shell is the fastest way to interact with the Dagger API, allowing access to both types and Dagger Functions using a familiar Bash-like syntax. Type `dagger` to launch Dagger Shell in interactive mode.
 
 Check the help text for the new Dagger Function:
 

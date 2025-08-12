@@ -15,7 +15,7 @@ import DaggerModuleInit from '@partials/_dagger_module_init.mdx';
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
 
-You can split your Dagger Module into multiple files, not just `main.go`. To do this, you can just create another file beside `main.go` (for example, `utils.go`):
+You can split your Dagger module into multiple files, not just `main.go`. To do this, you can just create another file beside `main.go` (for example, `utils.go`):
 
 ```
 .
@@ -27,7 +27,7 @@ You can split your Dagger Module into multiple files, not just `main.go`. To do 
 
 This file should be inside the same package as `main.go`, and as such, can access any private variables/functions/types inside the package.
 
-Additionally, you can also split your Dagger Module into Go subpackages (for example, `utils`):
+Additionally, you can also split your Dagger module into Go subpackages (for example, `utils`):
 
 ```
 .
@@ -59,7 +59,7 @@ func DoThing(client *dagger.Client) *dagger.Directory {
 
 </TabItem>
 <TabItem value="python" label="Python">
-The Dagger Module's code in Python can be split into multiple files by making a [package](https://docs.python.org/3/tutorial/modules.html#packages) and ensuring the *main object* is imported in `__init__.py`. All the other object types should already be imported from there.
+The Dagger module's code in Python can be split into multiple files by making a [package](https://docs.python.org/3/tutorial/modules.html#packages) and ensuring the *main object* is imported in `__init__.py`. All the other object types should already be imported from there.
 
 For example given this directory structure:
 
@@ -78,7 +78,7 @@ The `__init__.py` file should import the main object from `main.py`:
 
 ```python
 # src/my_module/__init__.py
-"""My very own Dagger Module"""
+"""My very own Dagger module"""
 from .main import MyModule as MyModule
 ```
 
@@ -103,7 +103,7 @@ class MyModule:
 ```
 
 :::important
-Dagger expects that a Python Dagger Module is structured like a [library](https://docs.astral.sh/uv/concepts/projects/#libraries), so that the SDK is able to load the code with an import, but it's up to the Python [build system](https://docs.astral.sh/uv/concepts/projects/#build-systems) to know where files are located in order to build and install the Python package correctly.
+Dagger expects that a Python Dagger module is structured like a [library](https://docs.astral.sh/uv/concepts/projects/#libraries), so that the SDK is able to load the code with an import, but it's up to the Python [build system](https://docs.astral.sh/uv/concepts/projects/#build-systems) to know where files are located in order to build and install the Python package correctly.
 
 This affords a lot of flexibility in how Dagger Python modules can be structured, and which tools are supported.
 :::
@@ -172,7 +172,7 @@ py-modules = ["main"]
 :::
 
 :::tip CUSTOMIZE IMPORT PACKAGE
-The Python SDK looks for the *main object* of the Dagger Module in the Python [import package that is named after the distribution package name](https://packaging.python.org/en/latest/discussions/distribution-package-vs-import-package/#how-do-distribution-package-names-and-import-package-names-compare) (in particular, using underscores `_` as a word separator).
+The Python SDK looks for the *main object* of the Dagger module in the Python [import package that is named after the distribution package name](https://packaging.python.org/en/latest/discussions/distribution-package-vs-import-package/#how-do-distribution-package-names-and-import-package-names-compare) (in particular, using underscores `_` as a word separator).
 
 If they are different, you must explicitly tell the Python SDK where the main object needs to be imported from, using the following entry point configuration in `pyproject.toml`:
 
@@ -181,7 +181,7 @@ If they are different, you must explicitly tell the Python SDK where the main ob
 main_object = "<import package>:<main object>"
 ```
 
-For example, for a Dagger Module named `my-module`:
+For example, for a Dagger module named `my-module`:
 
 - Main object: `MyModule` (required to be the name in `dagger.json`, in PascalCase)
 - Default distribution package: `my-module` (in `pyproject.toml`; can be changed)
@@ -264,7 +264,7 @@ class MyModule
 
 </TabItem>
 <TabItem value="java" label="Java">
-The Dagger Module's code in Java can be split into multiple classes, in multiple files. A few constraints apply:
+The Dagger module's code in Java can be split into multiple classes, in multiple files. A few constraints apply:
 
 - The main Dagger object must be represented by a class using the same name as the module, in PascalCase. For instance if the module name is `my-module`, the main object's class must be named `MyModule`.
 - The exposed objects must be annotated with `@Object` and the exposed functions with `@Function`.
@@ -276,7 +276,7 @@ The package in which the main object exists is not important. By convention, the
 The description of the module can be set in a `package-info.java` file, with the `@Module` annotation:
 
 ```java
-/** My Dagger Module */
+/** My Dagger module */
 @Module
 package io.dagger.modules.mymodule;
 
@@ -312,7 +312,7 @@ build   Build container
 
 ## Runtime container
 
-Dagger Modules run in a runtime container that's bootstrapped by the Dagger Engine, with the necessary environment to run the Dagger Module's code.
+Dagger modules run in a runtime container that's bootstrapped by the Dagger Engine, with the necessary environment to run the Dagger module's code.
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
@@ -396,20 +396,20 @@ They are currently hardcoded to run in [maven:3.9.9-eclipse-temurin-17](https://
 
 ## Language-native packaging
 
-The structure of a Dagger Module mimics that of each language's conventional packaging mechanisms and tools.
+The structure of a Dagger module mimics that of each language's conventional packaging mechanisms and tools.
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
 
-Dagger Modules written for use with the Go SDK are automatically created as [Go modules](https://go.dev/ref/mod). At module creation time, a `go.mod` and `go.sum` file will automatically be created  that import the necessary dependencies. Dependencies can be installed and managed just as for any standard Go environment.
+Dagger modules written for use with the Go SDK are automatically created as [Go modules](https://go.dev/ref/mod). At module creation time, a `go.mod` and `go.sum` file will automatically be created  that import the necessary dependencies. Dependencies can be installed and managed just as for any standard Go environment.
 
 After using new dependencies in your code, update your `go.mod`/`go.sum` with the newly imported dependencies by using [`go mod tidy`](https://go.dev/ref/mod#go-mod-tidy).
 
 #### Go workspaces
 
-Since it's common to have a sub-directory inside your main project containing your Dagger Module code, you can manage your modules using [Go workspaces](https://go.dev/ref/mod#workspaces).
+Since it's common to have a sub-directory inside your main project containing your Dagger module code, you can manage your modules using [Go workspaces](https://go.dev/ref/mod#workspaces).
 
-When a new Dagger Module is created, Dagger attempts to add it to a root `go.work` if it exists. If not, it can be added manually later with `go work use ./path/to/mymodule`.
+When a new Dagger module is created, Dagger attempts to add it to a root `go.work` if it exists. If not, it can be added manually later with `go work use ./path/to/mymodule`.
 
 ```go
 // go.work
@@ -427,7 +427,7 @@ use (
 </TabItem>
 <TabItem value="python" label="Python">
 
-Dagger Modules in Python are built to be installed, like libraries. At module creation time, a `pyproject.toml` and `uv.lock` file will automatically be created that depend on the locally generated client library (in `./sdk`). This dependency is configured to be editable so that changes in the code don't require a re-install.
+Dagger modules in Python are built to be installed, like libraries. At module creation time, a `pyproject.toml` and `uv.lock` file will automatically be created that depend on the locally generated client library (in `./sdk`). This dependency is configured to be editable so that changes in the code don't require a re-install.
 
 With the `uv.lock` file, Dagger uses uv's [project management](https://docs.astral.sh/uv/concepts/projects/) capabilites, but it can be opted out by removing this file, in which case Dagger falls back to [the pip interface](https://docs.astral.sh/uv/pip/) instead.
 
@@ -456,7 +456,7 @@ It will have to be manually kept in sync, though.
 
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
-Dagger Modules in Typescript are built to be installed, like libraries. The runtime container installs the module code with:
+Dagger modules in Typescript are built to be installed, like libraries. The runtime container installs the module code with:
 
 ```shell
 # executed by the runtime container
@@ -469,7 +469,7 @@ Only production dependencies are installed, not packages defined in the `devDepe
 
 </TabItem>
 <TabItem value="php" label="PHP">
-Dagger Modules in PHP are built to be installed, like libraries. The runtime container installs the module code with:
+Dagger modules in PHP are built to be installed, like libraries. The runtime container installs the module code with:
 
 ```shell
 # executed by the runtime container
@@ -480,7 +480,7 @@ This means that so long as the project has a `composer.json` file, it can be use
 
 </TabItem>
 <TabItem value="java" label="Java">
-Dagger Modules in Java are built as JAR files, using Maven. The runtime container builds the module code with:
+Dagger modules in Java are built as JAR files, using Maven. The runtime container builds the module code with:
 
 ```shell
 # executed by the runtime build container
@@ -508,7 +508,7 @@ Other build tools like Gradle might be supported in the future.
 
 Dagger can use [remote repositories](./remote-repositories.mdx) as Dagger [modules](../features/reusability.mdx). This feature is compatible with all major Git hosting platforms such as GitHub, GitLab, BitBucket, Azure DevOps, Codeberg, and Sourcehut. Dagger supports authentication via both HTTPS (using Git credential managers) and SSH (using a unified authentication approach).
 
-Here is an example of using a Go builder Dagger Module from a public repository over HTTPS:
+Here is an example of using a Go builder Dagger module from a public repository over HTTPS:
 
 ```shell
 dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call \
