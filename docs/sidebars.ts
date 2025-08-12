@@ -22,7 +22,7 @@ module.exports = {
     {
       type: "category",
       label: "Examples",
-      items: ["examples/index", "examples/demos"],
+      items: ["examples/index"],
     },
     "faq",
   ],
