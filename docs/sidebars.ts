@@ -72,8 +72,18 @@ module.exports = {
     },
     {
       type: "category",
-      label: "Integrations",
-      items: ["integrations/index"],
+      label: "Integrating with CI",
+      items: [
+        "integrations/argo-workflows",
+        "integrations/aws-codebuild",
+        "integrations/azure-pipelines",
+        "integrations/circleci",
+        "integrations/gitlab",
+        "integrations/github-actions",
+        "integrations/github",
+        "integrations/jenkins",
+        "integrations/tekton",
+      ],
     },
   ],
   extending: [
