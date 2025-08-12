@@ -39,7 +39,25 @@ func NewDirectoryDagOp(
 	srv *dagql.Server,
 	dagop *FSDagOp,
 	inputs []llb.State,
+	selfDigest digest.Digest,
+	argDigest digest.Digest,
 ) (*Directory, error) {
+	if selfDigest == "" || argDigest == "" {
+		// fall back to using op ID (which will return a different CacheMap value for each op
+		dagop.CacheKey = digest.FromString(
+			strings.Join([]string{
+				dagop.ID.Digest().String(),
+				dagop.Path,
+			}, "\x00"))
+	} else {
+		dagop.CacheKey = digest.FromString(
+			strings.Join([]string{
+				selfDigest.String(),
+				argDigest.String(),
+			}, "\x00"),
+		)
+	}
+
 	st, err := newFSDagOp[*Directory](ctx, dagop, inputs)
 	if err != nil {
 		return nil, err
@@ -96,6 +114,8 @@ type FSDagOp struct {
 	// (except for contributing to the cache key). However, it can be used by
 	// dagql running inside a dagop to determine where it should write data.
 	Path string
+
+	CacheKey digest.Digest
 }
 
 func (op FSDagOp) Name() string {
@@ -115,11 +135,21 @@ func (op FSDagOp) Digest() (digest.Digest, error) {
 }
 
 func (op FSDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
-	cm.Digest = digest.FromString(strings.Join([]string{
-		engine.BaseVersion(engine.Version),
-		op.ID.Digest().String(),
-		op.Path,
-	}, "\x00"))
+	var inputs []string
+	if op.CacheKey.String() == "" {
+		// TODO replace this with a panic("this shouldnt happen") once all FSDagOps are correctly created
+		inputs = []string{
+			engine.BaseVersion(engine.Version),
+			op.ID.Digest().String(),
+			op.Path,
+		}
+	} else {
+		inputs = []string{
+			engine.BaseVersion(engine.Version),
+			op.CacheKey.String(),
+		}
+	}
+	cm.Digest = digest.FromString(strings.Join(inputs, "\x00"))
 	return cm, nil
 }
 
