@@ -24,11 +24,20 @@ var _ mcp.Transport = (*ServiceMCPTransport)(nil)
 func (t *ServiceMCPTransport) Connect(ctx context.Context) (mcp.Connection, error) {
 	conn := &ServiceMCPConnection{}
 
-	var err error
-	conn.svc, err = t.Service.Self().Start(
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current query: %w", err)
+	}
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
+
+	conn.svc, err = svcs.StartWithIO(
 		ctx,
 		t.Service.ID(),
-		false, // MUST be false, otherwise MCP server won't init
+		t.Service.Self(),
+		true, // per-client instances
 		func(stdin io.Writer, svcProc bkgw.ContainerProcess) {
 			conn.w = stdin
 		},
