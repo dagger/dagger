@@ -1,5 +1,6 @@
 ---
 slug: /reference/adopting
+desc: "Learn how to adopt Dagger in your project and start daggerizing your workflows."
 ---
 
 # Adopting Dagger
@@ -92,14 +93,14 @@ Here are a few guidelines:
 
 ### Integrating with CI
 
-Once your workflow is daggerized, and integrated in your development toolchain, it's time for the final step: [integrating it in CI](../../integrations/ci.mdx).
+Once your workflow is daggerized, and integrated in your development toolchain, it's time for the final step: integrating it in CI.
 
 Since your daggerized workflows are packaged as Dagger modules, and modules only have one dependency - the `dagger` CLI - integrating your daggerized workflows boils down to three steps:
 
 1. Decide which event should trigger which Dagger workflow
 2. For each workflow to trigger, determine how to map inputs from the environment into arguments to the Dagger functions composing the workflow
 3. Write the resulting `dagger call` command for each workflow.
-4. Find the [integration page for your preferred platform or runtime environment](../../integrations/index.mdx), and follow the instructions.
+4. Find the integration page for your preferred platform or runtime environment, and follow the instructions.
 
 A few important notes on CI integration:
 
