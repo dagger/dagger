@@ -24,6 +24,7 @@ module.exports = {
       label: "Examples",
       items: ["examples/index", "examples/demos"],
     },
+    "faq",
   ],
   gettingStarted: [
     {
