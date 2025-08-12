@@ -12,7 +12,7 @@ Both approaches let you access Dagger features for container operations, secret 
 
 ## Modules
 
-In addition to providing a set of core functions and types, the Dagger API can be extended with custom Dagger Functions and custom Types. This is achieved by creating (or installing) Dagger Modules. You are encouraged to write your own Dagger modules and share them with others.
+In addition to providing a set of core functions and types, the Dagger API can be extended with custom Dagger Functions and custom types. This is achieved by creating (or installing) Dagger modules. You are encouraged to write your own Dagger modules and share them with others.
 
 When a Dagger module is loaded, the Dagger API is [dynamically extended](../reference/api/internals.mdx#dynamic-api-extension) with new Dagger functions served by that module. So, after loading a Dagger module, an API client can now call all of the original core functions _plus_ the new Dagger functions provided by that module.
 
@@ -38,7 +38,7 @@ The following SDKs are available for embedding Dagger into your application:
 
 Here is a quick summary of differences between these two approaches.
 
-|  | Dagger Modules | Custom applications |
+|  | Dagger modules | Custom applications |
 |:---|:---|:---|
 | Pre-initialized Dagger API client | Y | N |
 | Direct host access | N | Y |

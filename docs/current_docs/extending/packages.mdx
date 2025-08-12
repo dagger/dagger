@@ -7,7 +7,7 @@ slug: /extending/packages
 
 # Third-Party Packages
 
-Dagger Functions are just regular code, written in your usual programming language. One of the key advantages of this approach is that it opens up access to your language's existing ecosystem of packages or modules. You can easily import these packages/modules in your Dagger Module via your language's package manager.
+Dagger Functions are just regular code, written in your usual programming language. One of the key advantages of this approach is that it opens up access to your language's existing ecosystem of packages or modules. You can easily import these packages/modules in your Dagger module via your language's package manager.
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
@@ -18,7 +18,7 @@ To add a Go module, add it to your `go.mod` file using `go get`. For example:
 go get github.com/spf13/cobra
 ```
 
-Dagger lets you import [private Go modules](https://go.dev/ref/mod#private-modules) in your Dagger Module. To do this, add the URL to the private repository(ies) hosting the module(s) in a `config.goprivate` key in the module's `dagger.json` file, as shown below:
+Dagger lets you import [private Go modules](https://go.dev/ref/mod#private-modules) in your Dagger module. To do this, add the URL to the private repository(ies) hosting the module(s) in a `config.goprivate` key in the module's `dagger.json` file, as shown below:
 
 ```json
 {
@@ -141,14 +141,14 @@ composer require phpunit/phpunit
 ```
 
 :::note
-Dagger Modules installed as packages via Composer are not registered with Dagger.
+Dagger modules installed as packages via Composer are not registered with Dagger.
 
-You can access its code, like any other PHP package, but this is not the indended use-case of a Dagger Module.
+You can access its code, like any other PHP package, but this is not the indended use-case of a Dagger module.
 This may lead to unexpected behaviour.
 
 Use Composer for standard third-party packages.
 
-Use Dagger to [install Dagger Modules](./module-dependencies.mdx)
+Use Dagger to [install Dagger modules](./module-dependencies.mdx)
 :::
 
 </TabItem>

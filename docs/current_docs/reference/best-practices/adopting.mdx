@@ -80,7 +80,7 @@ Use the following resources:
 
 ### Integrating with your dev toolchain
 
-Once your workflow is daggerized, in the form of one or more Dagger Modules, it's time to integrate it with your development toolchain. Dagger is designed for flexibility, so you have many choices in how to integrate it. The downside is that it may feel like *too much* flexibility. What is the *correct* way to integrate?
+Once your workflow is daggerized, in the form of one or more Dagger modules, it's time to integrate it with your development toolchain. Dagger is designed for flexibility, so you have many choices in how to integrate it. The downside is that it may feel like *too much* flexibility. What is the *correct* way to integrate?
 
 Here are a few guidelines:
 
@@ -88,13 +88,13 @@ Here are a few guidelines:
 
 - If your team prefers (or is forced to) use another tool, whether off-the-shelf like `make`, or custom-built tool or script, it's perfectly fine to wrap your `dagger call` invocations in existing Makefile, configuration files or scripts. Some power users may scratch beneath the surface and call `dagger call` directly; others won't. Both are fine.
 
-- In some rare cases, invoking the `dagger` CLI may not possible or acceptable, and embedding Dagger as a library in an existing codebase might be the best option. This is possible, but should be used as a last resort, as there are limitations. Most notably you will only have access to the core Dagger API, without the ability to extend it with Dagger Modules. We plan to remove this limitation in the future.
+- In some rare cases, invoking the `dagger` CLI may not possible or acceptable, and embedding Dagger as a library in an existing codebase might be the best option. This is possible, but should be used as a last resort, as there are limitations. Most notably you will only have access to the core Dagger API, without the ability to extend it with Dagger modules. We plan to remove this limitation in the future.
 
 ### Integrating with CI
 
 Once your workflow is daggerized, and integrated in your development toolchain, it's time for the final step: [integrating it in CI](../../integrations/ci.mdx).
 
-Since your daggerized workflows are packaged as Dagger Modules, and modules only have one dependency - the `dagger` CLI - integrating your daggerized workflows boils down to three steps:
+Since your daggerized workflows are packaged as Dagger modules, and modules only have one dependency - the `dagger` CLI - integrating your daggerized workflows boils down to three steps:
 
 1. Decide which event should trigger which Dagger workflow
 2. For each workflow to trigger, determine how to map inputs from the environment into arguments to the Dagger functions composing the workflow
