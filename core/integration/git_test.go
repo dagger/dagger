@@ -811,33 +811,65 @@ git add .gitmodules
 git commit -m 'Make submodule URL relative'
 git remote add origin file:///srv/parent.git
 git push -u origin main
+# dumb HTTP needs server-info
+git --git-dir=/srv/submodule.git update-server-info
+git --git-dir=/srv/parent.git    update-server-info
 `})
 
 	gitReposDir := gitReposCtr.Directory("/srv")
 
-	gitSrv, base := gitSmartHTTPServiceDirAuth(ctx, t, c, "", gitReposDir, "", authToken)
-	parentURL := base + "/parent.git"
+	t.Run("smart-http", func(ctx context.Context, t *testctx.T) {
+		gitSrv, base := gitSmartHTTPServiceDirAuth(ctx, t, c, "", gitReposDir, "", authToken)
+		parentURL := base + "/parent.git"
 
-	t.Run("clone with HTTPAuthToken", func(ctx context.Context, t *testctx.T) {
-		tree := c.Git(parentURL, dagger.GitOpts{
-			ExperimentalServiceHost: gitSrv,
-			HTTPAuthToken:           authToken,
-		}).Branch("main").Tree()
+		t.Run("with auth", func(ctx context.Context, t *testctx.T) {
+			tree := c.Git(parentURL, dagger.GitOpts{
+				ExperimentalServiceHost: gitSrv,
+				HTTPAuthToken:           authToken,
+			}).Branch("main").Tree()
 
-		txt, err := tree.File("parent.txt").Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "This is the parent content", txt)
+			txt, err := tree.File("parent.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "This is the parent content", txt)
 
-		sub, err := tree.File("sub/submodule.txt").Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "This is the submodule content", sub)
+			sub, err := tree.File("sub/submodule.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "This is the submodule content", sub)
+		})
+
+		t.Run("without auth fails", func(ctx context.Context, t *testctx.T) {
+			_, err := c.Git(parentURL, dagger.GitOpts{
+				ExperimentalServiceHost: gitSrv,
+			}).Branch("main").Tree().File("parent.txt").Contents(ctx)
+			require.Error(t, err)
+		})
 	})
 
-	t.Run("clone without auth fails", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Git(parentURL, dagger.GitOpts{
-			ExperimentalServiceHost: gitSrv,
-		}).Branch("main").Tree().File("parent.txt").Contents(ctx)
-		require.Error(t, err)
+	t.Run("dumb-http", func(ctx context.Context, t *testctx.T) {
+		httpSrv, base := httpServiceDirAuth(ctx, t, c, "", gitReposDir, "x-access-token", authToken)
+		parentURL := base + "/parent.git"
+
+		t.Run("with auth fallback", func(ctx context.Context, t *testctx.T) {
+			tree := c.Git(parentURL, dagger.GitOpts{
+				ExperimentalServiceHost: httpSrv,
+				HTTPAuthToken:           authToken,
+			}).Branch("main").Tree()
+
+			txt, err := tree.File("parent.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "This is the parent content", txt)
+
+			sub, err := tree.File("sub/submodule.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "This is the submodule content", sub)
+		})
+
+		t.Run("without auth fails", func(ctx context.Context, t *testctx.T) {
+			_, err := c.Git(parentURL, dagger.GitOpts{
+				ExperimentalServiceHost: httpSrv,
+			}).Branch("main").Tree().File("parent.txt").Contents(ctx)
+			require.Error(t, err)
+		})
 	})
 }
 

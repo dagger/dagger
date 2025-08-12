@@ -799,9 +799,17 @@ func doGitCheckout(
 
 	// TODO: this feels completely out-of-sync from how we do the rest
 	// of the clone - caching will not be as great here
-	_, err = checkoutGit.Run(ctx, "submodule", "update", "--init", "--recursive", "--depth=1")
-	if err != nil {
-		return fmt.Errorf("failed to update submodules for %s: %w", remote, err)
+	subArgs := []string{"submodule", "update", "--init", "--recursive", "--depth=1"}
+	if _, err := checkoutGit.Run(ctx, subArgs...); err != nil {
+		if strings.Contains(err.Error(), "does not support shallow") {
+			subArgs = slices.DeleteFunc(subArgs, func(s string) bool {
+				return strings.HasPrefix(s, "--depth")
+			})
+			_, err = checkoutGit.Run(ctx, subArgs...)
+		}
+		if err != nil {
+			return fmt.Errorf("failed to update submodules for %s: %w", remote, err)
+		}
 	}
 
 	if discardGitDir {
