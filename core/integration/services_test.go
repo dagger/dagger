@@ -2257,6 +2257,95 @@ server {
 	return svc, url
 }
 
+func gitSmartHTTPServiceDirAuth(ctx context.Context, t testing.TB, c *dagger.Client, hostname string, dir *dagger.Directory, username string, token *dagger.Secret) (*dagger.Service, string) {
+	t.Helper()
+
+	if username == "" {
+		username = "x-access-token"
+	}
+
+	var tokenPlain string
+	if token != nil {
+		var err error
+		tokenPlain, err = token.Plaintext(ctx)
+		require.NoError(t, err)
+	}
+
+	conf := `
+server.document-root = "/var/empty"
+server.port = 80
+server.modules = (
+  "mod_auth",
+  "mod_authn_file",
+  "mod_cgi",
+  "mod_setenv",
+  "mod_accesslog",
+  "mod_rewrite"
+)
+
+accesslog.filename = "/dev/fd/1"
+server.errorlog    = "/dev/fd/2"
+
+setenv.add-environment = (
+  "GIT_PROJECT_ROOT"    => "/var/www",
+  "GIT_HTTP_EXPORT_ALL" => ""
+)
+
+url.rewrite-if-not-file = ( "^/(.*)$" => "/git-http-backend.cgi/$1" )
+cgi.assign = ( ".cgi" => "" )
+`
+	if token != nil {
+		conf += `
+auth.backend = "plain"
+auth.backend.plain.userfile = "/etc/lighttpd/.htpasswd"
+auth.require = ( "/" => ( "method" => "basic", "realm" => "Git", "require" => "valid-user" ) )
+`
+	}
+
+	ctr := c.Container().
+		From("debian:bookworm-slim").
+		WithExec([]string{"bash", "-lc", `
+set -eux
+apt-get update
+apt-get install -y --no-install-recommends git lighttpd ca-certificates
+rm -rf /var/lib/apt/lists/*
+test -x /usr/lib/git-core/git-http-backend
+`}).
+		WithDirectory("/var/www", dir).
+		WithNewFile("/var/empty/git-http-backend.cgi", `#!/bin/sh
+set -eu
+exec /usr/lib/git-core/git-http-backend
+`).
+		WithExec([]string{"chmod", "+x", "/var/empty/git-http-backend.cgi"}).
+		WithNewFile("/etc/lighttpd/lighttpd.conf", conf).
+		WithExposedPort(80).
+		WithEnvVariable("CACHE_BUSTER", time.Now().Format(time.RFC3339Nano))
+
+	if token != nil {
+		ctr = ctr.WithMountedSecret(
+			"/etc/lighttpd/.htpasswd",
+			c.SetSecret("htpasswd-"+identity.NewID(), username+":"+tokenPlain),
+			dagger.ContainerWithMountedSecretOpts{
+				Owner: "www-data",
+			},
+		)
+	}
+
+	svc := ctr.
+		WithEntrypoint([]string{"lighttpd", "-D", "-f", "/etc/lighttpd/lighttpd.conf"}).
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+
+	if hostname != "" {
+		svc = svc.WithHostname(hostname)
+	} else {
+		var err error
+		hostname, err = svc.Hostname(ctx)
+		require.NoError(t, err)
+	}
+
+	return svc, "http://" + hostname
+}
+
 func gitService(ctx context.Context, t *testctx.T, c *dagger.Client, content *dagger.Directory) (*dagger.Service, string) {
 	t.Helper()
 	return gitServiceWithBranch(ctx, t, c, content, "main")
