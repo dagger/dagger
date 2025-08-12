@@ -19,11 +19,7 @@ module.exports = {
         "features/shell",
       ],
     },
-    {
-      type: "category",
-      label: "Examples",
-      items: ["examples/index"],
-    },
+    "examples",
     "faq",
   ],
   gettingStarted: [
