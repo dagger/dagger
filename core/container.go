@@ -1672,14 +1672,6 @@ func (container *Container) Import(
 	}
 
 	container.Config = imgSpec.Config
-	container.Ports = nil
-	for portOCISpec := range container.Config.ExposedPorts {
-		p, err := NewPortFromOCI(portOCISpec)
-		if err != nil {
-			return nil, err
-		}
-		container.Ports = append(container.Ports, p)
-	}
 
 	return container, nil
 }
