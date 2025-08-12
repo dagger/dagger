@@ -125,7 +125,7 @@ Currently `drop_params: true` is required in the LiteLLM `config.yml` when used 
     ```
 
     :::note
-    This step is needed because Dagger's LLM core type runs inside the Dagger Engine and needs to reach the Ollama service running on the host. Although we are exploring the implementation of automatic tunneling, the current approach is to use the host's actual IP address (instead of `localhost`) to allow Dagger to communicate with Ollama.
+    This step is needed because Dagger's LLM type runs inside the Dagger Engine and needs to reach the Ollama service running on the host. Although we are exploring the implementation of automatic tunneling, the current approach is to use the host's actual IP address (instead of `localhost`) to allow Dagger to communicate with Ollama.
 
 1. Configure the following environment variables. Replace `YOUR-IP` with the IP address from the previous step and `MODEL-NAME` with the default model to use (this can be changed at runtime). The `/v1/` route refers to Ollama's OpenAI compatible routes.
 

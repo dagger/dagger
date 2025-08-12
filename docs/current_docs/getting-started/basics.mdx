@@ -395,7 +395,7 @@ When calling Dagger Functions, all names (functions, arguments, fields, etc.) ar
 
 ## Use arguments and return values
 
-Dagger Functions are just like regular functions: they accept [arguments](../extending/arguments.mdx) and [return values](../extending/return-types.mdx). In addition to common types (string, boolean, integer, arrays...), the Dagger API also defines powerful [core types](../extending/types.mdx) which Dagger Functions can use, such as `Directory`, `Container`, `Service`, `Secret`, and many more.
+Dagger Functions are just like regular functions: they accept [arguments](../extending/arguments.mdx) and [return values](../extending/return-types.mdx). In addition to common types (string, boolean, integer, arrays...), the Dagger API also defines powerful [types](../extending/types.mdx) which Dagger Functions can use, such as `Directory`, `Container`, `Service`, `Secret`, and many more.
 
 Here's a revision of the previous example which splits it into two smaller functions: one to build the container, and one to publish it. The builder function accepts the container image string as an argument and returns a `Container` type. The publisher function accepts a `Container` type as argument and returns the image identifier as a string.
 
