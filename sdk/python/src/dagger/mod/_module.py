@@ -64,9 +64,6 @@ class Module:
     """Builder for a :py:class:`dagger.Module`."""
 
     def __init__(self, main_name: str = MAIN_OBJECT):
-        if not main_name:
-            msg = "Main object name can't be empty"
-            raise ValueError(msg)
         self._main_name = main_name
         self._converter: JsonConverter = make_converter()
         self._objects: dict[str, ObjectType] = {}
@@ -86,6 +83,33 @@ class Module:
         """Check if the given object is the main object of the module."""
         return self.main_cls is other.cls
 
+    async def serve(self):
+        if await dag.current_function_call().parent_name():
+            result = await self.invoke()
+        else:
+            try:
+                result = await self._typedefs()
+            except TypeError as e:
+                raise RegistrationError(str(e)) from e
+
+        try:
+            output = json.dumps(result)
+        except (TypeError, ValueError) as e:
+            # Not expected to happen because unstructuring should reduce
+            # Python complex types to primitive values that are easily
+            # serialized to JSON. If not, it's something that should be caught
+            # earlier.
+            msg = f"Failed to serialize final result as JSON: {e}"
+            raise InvalidResultError(msg) from e
+
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "output => %s",
+                textwrap.shorten(repr(output), 144),
+            )
+
+        await dag.current_function_call().return_value(dagger.JSON(output))
+
     async def register(self):
         """Register the module and its types with the Dagger API."""
         try:
@@ -95,6 +119,9 @@ class Module:
         await anyio.Path(TYPE_DEF_FILE).write_text(result)
 
     async def _typedefs(self) -> dagger.ModuleID:  # noqa: C901, PLR0912
+        if not self._main_name:
+            msg = "Main object name can't be empty"
+            raise ValueError(msg)
         try:
             self.get_object(self._main_name)
         except ObjectNotFoundError as e:
@@ -209,7 +236,7 @@ class Module:
 
         return await mod.id()
 
-    async def invoke(self):
+    async def invoke(self) -> dagger.ModuleID:
         """Invoke a function and return its result.
 
         This includes getting the call context from the API and deserializing data.
@@ -282,23 +309,7 @@ class Module:
                 textwrap.shorten(repr(result), 144),
             )
 
-        try:
-            output = json.dumps(result)
-        except (TypeError, ValueError) as e:
-            # Not expected to happen because unstructuring should reduce
-            # Python complex types to primitive values that are easily
-            # serialized to JSON. If not, it's something that should be caught
-            # earlier.
-            msg = f"Failed to serialize final result as JSON: {e}"
-            raise InvalidResultError(msg) from e
-
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(
-                "output => %s",
-                textwrap.shorten(repr(output), 144),
-            )
-
-        await dag.current_function_call().return_value(dagger.JSON(output))
+        return result
 
     async def get_result(
         self,
