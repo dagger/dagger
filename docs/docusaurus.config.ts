@@ -271,6 +271,13 @@ const config: Config = {
           html: '<div class="github-stars"><iframe src="https://ghbtns.com/github-btn.html?user=dagger&repo=dagger&type=star&count=true" frameborder="0" scrolling="0" width="120" height="20" title="GitHub Stars"></iframe></div>',
           className: "navbar-github-stars",
         },
+        // add the icon and link to join discord
+        {
+          position: "right",
+          href: "https://discord.gg/dagger-io",
+          html: '<div class="discord-icon"><img src="img/discord-icon.svg" alt="Join Discord" /></div>',
+          className: "navbar-discord-link",
+        },
         {
           position: "right",
           label: "Try Dagger Cloud",
@@ -305,120 +312,6 @@ const config: Config = {
       config: {},
     },
     footer: {
-      links: [
-        {
-          title: "Resources",
-          items: [
-            {
-              label: "Case Studies",
-              to: "https://dagger.io/case-studies",
-            },
-            {
-              label: "Videos",
-              to: "https://dagger.io/videos",
-            },
-            {
-              label: "Adopting Dagger",
-              to: "https://dagger.io/adopting-dagger",
-            },
-            {
-              label: "Daggerized Projects",
-              to: "https://dagger.io/daggerized-projects",
-            },
-            {
-              label: "Docs",
-              to: "https://docs.dagger.io/",
-            },
-            {
-              label: "Blog",
-              to: "https://dagger.io/blog",
-            },
-            {
-              label: "Community Content",
-              to: "https://dagger.io/community-content",
-            },
-          ],
-        },
-        {
-          title: "Community",
-          items: [
-            {
-              label: "Events",
-              to: "https://dagger.io/events",
-            },
-            {
-              label: "Get Involved",
-              to: "https://dagger.io/community",
-            },
-            {
-              label: "Dagger Love",
-              to: "https://dagger.io/dagger-love",
-            },
-            {
-              label: "Dagger Commanders",
-              to: "https://dagger.io/commanders",
-            },
-          ],
-        },
-        {
-          title: "Product",
-          items: [
-            {
-              label: "Dagger Engine",
-              to: "https://dagger.io/dagger-engine",
-            },
-            {
-              label: "Dagger Cloud",
-              to: "https://dagger.io/cloud",
-            },
-            {
-              label: "Daggerverse",
-              to: "https://daggerverse.dev",
-            },
-            {
-              label: "Integrations",
-              to: "https://dagger.io/integrations",
-            },
-            {
-              label: "Pricing",
-              to: "https://dagger.io/pricing",
-            },
-          ],
-        },
-        {
-          title: "Company",
-          items: [
-            {
-              label: "Partners",
-              to: "https://dagger.io/partners",
-            },
-            {
-              label: "Careers",
-              to: "https://boards.greenhouse.io/dagger",
-            },
-            {
-              label: "Brand",
-              to: "https://dagger.io/brand",
-            },
-            {
-              label: "Terms of Service",
-              to: "https://dagger.io/terms-of-service",
-            },
-            {
-              label: "Privacy Policy",
-              to: "https://dagger.io/privacy-policy",
-            },
-            {
-              label: "Trademark Guidelines",
-              to: "https://dagger.io/trademark-guidelines",
-            },
-            {
-              label: "Dagger Trust Center",
-              to: "https://trust.dagger.io",
-            },
-          ],
-        },
-      ],
       copyright: `
         <hr />
         <div class="flex justify-between">

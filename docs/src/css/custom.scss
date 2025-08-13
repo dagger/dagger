@@ -196,6 +196,22 @@ div[class*="docSidebarMenu"],
     padding-left: 0.5rem !important;
     padding-right: 0.5rem !important;
   }
+  transition: border-bottom-color 0.2s;
+}
+
+// Navbar hover underline effect (matches TOC opacity)
+html[data-theme="light"] {
+  .navbar__items .navbar__item .navbar__link:not(.navbar__link--active):hover,
+  .navbar__items .navbar-blog-link:not(.navbar__link--active):hover {
+    border-bottom: 3px solid rgba(239, 123, 26, 0.5) !important; // tangerine, 50% opacity
+  }
+}
+
+html[data-theme="dark"] {
+  .navbar__items .navbar__item .navbar__link:not(.navbar__link--active):hover,
+  .navbar__items .navbar-blog-link:not(.navbar__link--active):hover {
+    border-bottom: 3px solid rgba(190, 29, 67, 0.5) !important; // crimson, 50% opacity
+  }
 }
 
 nav .sidebar {
@@ -436,6 +452,50 @@ h4 {
     mask-image: url("/img/discord-icon.svg");
     mask-size: 100%;
   }
+  // Footer social icon links
+  .footer-discord-link,
+  .footer-x-link {
+    display: inline-block;
+    width: 28px;
+    height: 28px;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 24px 24px;
+    margin: 0 4px;
+    opacity: 0.85;
+    transition: opacity 0.2s, background-color 0.2s;
+    /* No global filter, set per icon below */
+  }
+  .footer-discord-link {
+    background-image: url('/img/discord-icon.svg');
+    /* Discord icon is often black, so force it to white */
+    filter: invert(1) brightness(2) drop-shadow(0 0 2px #000);
+  }
+  .footer-x-link {
+    background-image: url('/img/x-icon.svg');
+    /* X icon should display as provided, no filter */
+    filter: none;
+  }
+  .footer-discord-link:hover,
+  .footer-x-link:hover {
+    opacity: 1;
+    background-color: rgba(255,255,255,0.08);
+    border-radius: 6px;
+  }
+}
+
+// Ensure footer icons are visible in both themes
+html[data-theme="light"] .footer-discord-link {
+  filter: invert(1) brightness(2) drop-shadow(0 0 2px #000);
+}
+html[data-theme="dark"] .footer-discord-link {
+  filter: invert(1) brightness(2) drop-shadow(0 0 2px #000);
+}
+html[data-theme="light"] .footer-x-link {
+  filter: none;
+}
+html[data-theme="dark"] .footer-x-link {
+  filter: none;
 }
 
 .footer__copyright {
@@ -706,6 +766,12 @@ html[data-theme="dark"] {
       padding-left: 0.5rem;
     }
   }
+}
+
+.navbar-discord-link {
+  display: flex;
+  align-items: center;
+  margin-right: 0.5rem;
 }
 
 // GitHub Stars Button Styling
