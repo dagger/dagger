@@ -1,0 +1,43 @@
+### Create custom spans
+
+Dagger represents operations performed by a Dagger Function as [OpenTelemetry spans](https://opentelemetry.io/docs/concepts/signals/traces/#spans). Spans are typically used to separate tasks that are running in parallel, with each branch waiting for completion.
+
+It is possible to instrument custom OpenTelemetry spans inside any Dagger Function. This allows you to define logical boundaries within complex workflows, measure execution time, and track nested operations with greater granularity. These custom spans appear in the Dagger TUI and Traces.
+
+The following Dagger Function demonstrates this by emitting custom spans for various tasks.
+
+:::warning
+The approach described below is experimental and may be deprecated in favor of a new OpenTelemetry span API. [Contribute to the ongoing discussion of this topic on GitHub](https://github.com/dagger/dagger/pull/9327).
+:::
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=../../../cookbook/snippets/custom-spans/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+```python file=../../../cookbook/snippets/custom-spans/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=../../../cookbook/snippets/custom-spans/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+:::warning
+When using spans to group and measure Dagger API function calls, ensure that the function calls are not [lazily evaluated](../../../reference/api/internals.mdx#lazy-evaluation). The duration of the corresponding spans in this case will always be zero.
+:::
+
+#### Example
+
+Execute a Dagger Function to run unit tests on the `dagger/hello-dagger` source code repository with different versions of Node.js, emitting a custom span for each version tested:
+
+```shell
+dagger call foo
+```

@@ -1,0 +1,47 @@
+### Debug workflows with the interactive terminal
+
+Dagger provides two features that can help greatly when trying to debug a workflow - opening an interactive terminal session at the failure point, or at explicit breakpoints throughout your workflow code. All context is available at the point of failure. Multiple terminals are supported in the same Dagger Function; they will open in sequence.
+
+The following Dagger Function opens an interactive terminal session at different stages in a Dagger workflow to debug a container build.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/terminal-container/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+```python file=../../../cookbook/snippets/terminal-container/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/terminal-container/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Execute a Dagger Function to build a container, and open an interactive terminal at two different points in the build process. The interactive terminal enables you to inspect the container filesystem and environment "live", during the build process.
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c container
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+container
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call container
+```
+</TabItem>
+</Tabs>

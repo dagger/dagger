@@ -12,14 +12,20 @@
     "serve": "docusaurus serve",
     "write-translations": "docusaurus write-translations",
     "write-heading-ids": "docusaurus write-heading-ids",
-    "graphql-docs": "spectaql ./docs-graphql/config.yml -t ./static/api/reference"
+    "graphql-docs": "spectaql ./docs-graphql/config.yml -t ./static/api/reference",
+    "lint": "markdownlint -c ../.markdownlint.yaml ./docs",
+    "lint:fix": "markdownlint -c ../.markdownlint.yaml --fix ."
   },
   "dependencies": {
     "@docusaurus/core": "^3.8.1",
+    "@docusaurus/mdx-loader": "^3.8.1",
+    "@docusaurus/plugin-content-docs": "^3.8.1",
     "@docusaurus/preset-classic": "^3.8.1",
     "@docusaurus/theme-classic": "^3.5.2",
+    "@docusaurus/theme-common": "^3.8.1",
     "@docusaurus/theme-mermaid": "^3.8.1",
-    "@mdx-js/react": "^3.1.0",
+    "@mdx-js/mdx": "^3.1.0",
+    "@mdx-js/react": "3.x",
     "clsx": "^2.1.1",
     "docusaurus-plugin-image-zoom": "^3.0.1",
     "docusaurus-plugin-sass": "^0.2.6",
@@ -40,7 +46,9 @@
   "devDependencies": {
     "@docusaurus/module-type-aliases": "^3.5.2",
     "@docusaurus/tsconfig": "^3.8.1",
-    "@docusaurus/types": "^3.5.2"
+    "@docusaurus/types": "^3.5.2",
+    "@types/node": "^20.0",
+    "markdownlint-cli": "^0.31.1"
   },
   "browserslist": {
     "production": [
@@ -55,7 +63,7 @@
     ]
   },
   "engines": {
-    "node": ">=18.0"
+    "node": ">=20.0"
   },
   "resolutions": {
     "**/webpack-dev-server/**/path-to-regexp": "^0.1.12"

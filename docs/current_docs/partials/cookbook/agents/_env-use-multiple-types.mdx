@@ -1,0 +1,46 @@
+### Combine inputs and outputs of multiple types
+
+The following Dagger Function creates an environment with two inputs (a container and a directory) and one output (a file). The input container is a base `golang` container, the input directory is a Git repository containing Golang source code, and the output is the built Go executable. The environment is given to an LLM with a prompt describing how it should work.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/env-use-multiple-types/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/env-use-multiple-types/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/env-use-multiple-types/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Have the agent build the Go executable and export it to the host:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'agent | export /tmp/out/myfile'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+agent | export /tmp/out/myfile
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call agent export --path=/tmp/out/myfile
+```
+</TabItem>
+</Tabs>
