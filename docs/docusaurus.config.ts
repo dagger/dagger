@@ -167,14 +167,15 @@ const config: Config = {
   ],
   themes: ["@docusaurus/theme-mermaid"],
   themeConfig: {
-    announcementBar: {
-      id: "agentic-ci-banner",
-      content:
-        'Engineering deep dive on Agentic CI — <a href="https://dagger.io/agentic-ci">Register Now</a>',
-      backgroundColor: "#131126",
-      textColor: "#ffffff",
-      isCloseable: true,
-    },
+    // (jasonmccallister) leaving this in place for future use and reference
+    // announcementBar: {
+    //   id: "agentic-ci-banner",
+    //   content:
+    //     'Engineering deep dive on Agentic CI — <a href="https://dagger.io/agentic-ci">Register Now</a>',
+    //   backgroundColor: "#131126",
+    //   textColor: "#ffffff",
+    //   isCloseable: true,
+    // },
     sidebar: {
       autoCollapseCategories: false,
       hideable: false,
