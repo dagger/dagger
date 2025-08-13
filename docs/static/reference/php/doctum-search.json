@@ -4581,6 +4581,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::withExperimentalFeatures",
+			"p": "Dagger/ModuleSource.html#method_withExperimentalFeatures",
+			"d": "<p>Enable the experimental features for the module source.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::withIncludes",
 			"p": "Dagger/ModuleSource.html#method_withIncludes",
 			"d": "<p>Update the module source with additional include patterns for files+directories from its context that are required for building it</p>"
@@ -4638,6 +4644,12 @@
 			"n": "Dagger\\ModuleSource::withoutDependencies",
 			"p": "Dagger/ModuleSource.html#method_withoutDependencies",
 			"d": "<p>Remove the provided dependencies from the module source's dependency list.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleSource::withoutExperimentalFeatures",
+			"p": "Dagger/ModuleSource.html#method_withoutExperimentalFeatures",
+			"d": "<p>Disable experimental features for the module source.</p>"
 		},
 		{
 			"t": "M",
