@@ -41,7 +41,7 @@ async def main(mod: Module | None = None, register: bool = False) -> int | None:
                 mod = load_module()
             if register:
                 return await mod.register()
-            return await mod.invoke()
+            return await mod.serve()
         except (ModuleError, dagger.QueryError) as e:
             await record_exception(e)
             return 2
