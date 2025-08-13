@@ -110,6 +110,7 @@ module.exports = {
         "extending/custom-types",
         "extending/interfaces",
         "extending/state",
+        "extending/playground",
         {
           type: "link",
           label: "Module Configuration Schema",
