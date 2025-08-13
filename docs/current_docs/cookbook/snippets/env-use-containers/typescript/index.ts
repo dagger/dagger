@@ -21,6 +21,6 @@ export class MyModule {
         Once complete, return the updated container.`,
       )
 
-      return work.env().output("result").asContainer()
+    return work.env().output("result").asContainer()
   }
 }

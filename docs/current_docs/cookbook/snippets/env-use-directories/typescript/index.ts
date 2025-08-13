@@ -28,6 +28,6 @@ export class MyModule {
         `,
       )
 
-      return work.env().output("result").asDirectory()
+    return work.env().output("result").asDirectory()
   }
 }
