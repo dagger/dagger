@@ -9418,6 +9418,16 @@ func (r *ModuleSource) WithEngineVersion(version string) *ModuleSource {
 	}
 }
 
+// Enable the experimental features for the module source.
+func (r *ModuleSource) WithExperimentalFeatures(features []string) *ModuleSource {
+	q := r.query.Select("withExperimentalFeatures")
+	q = q.Arg("features", features)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
 // Update the module source with additional include patterns for files+directories from its context that are required for building it
 func (r *ModuleSource) WithIncludes(patterns []string) *ModuleSource {
 	q := r.query.Select("withIncludes")
@@ -9510,6 +9520,15 @@ func (r *ModuleSource) WithoutClient(path string) *ModuleSource {
 func (r *ModuleSource) WithoutDependencies(dependencies []string) *ModuleSource {
 	q := r.query.Select("withoutDependencies")
 	q = q.Arg("dependencies", dependencies)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
+// Disable experimental features for the module source.
+func (r *ModuleSource) WithoutExperimentalFeatures() *ModuleSource {
+	q := r.query.Select("withoutExperimentalFeatures")
 
 	return &ModuleSource{
 		query: q,

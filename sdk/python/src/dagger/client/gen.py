@@ -9554,6 +9554,20 @@ class ModuleSource(Type):
         _ctx = self._select("withEngineVersion", _args)
         return ModuleSource(_ctx)
 
+    def with_experimental_features(self, features: list[str]) -> Self:
+        """Enable the experimental features for the module source.
+
+        Parameters
+        ----------
+        features:
+            The experimental features to enable.
+        """
+        _args = [
+            Arg("features", features),
+        ]
+        _ctx = self._select("withExperimentalFeatures", _args)
+        return ModuleSource(_ctx)
+
     def with_includes(self, patterns: list[str]) -> Self:
         """Update the module source with additional include patterns for
         files+directories from its context that are required for building it
@@ -9679,6 +9693,12 @@ class ModuleSource(Type):
             Arg("dependencies", dependencies),
         ]
         _ctx = self._select("withoutDependencies", _args)
+        return ModuleSource(_ctx)
+
+    def without_experimental_features(self) -> Self:
+        """Disable experimental features for the module source."""
+        _args: list[Arg] = []
+        _ctx = self._select("withoutExperimentalFeatures", _args)
         return ModuleSource(_ctx)
 
     def with_(self, cb: Callable[["ModuleSource"], "ModuleSource"]) -> "ModuleSource":

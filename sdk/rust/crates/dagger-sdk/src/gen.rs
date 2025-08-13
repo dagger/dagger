@@ -9924,6 +9924,26 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Enable the experimental features for the module source.
+    ///
+    /// # Arguments
+    ///
+    /// * `features` - The experimental features to enable.
+    pub fn with_experimental_features(&self, features: Vec<impl Into<String>>) -> ModuleSource {
+        let mut query = self.selection.select("withExperimentalFeatures");
+        query = query.arg(
+            "features",
+            features
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Update the module source with additional include patterns for files+directories from its context that are required for building it
     ///
     /// # Arguments
@@ -10072,6 +10092,15 @@ impl ModuleSource {
                 .map(|i| i.into())
                 .collect::<Vec<String>>(),
         );
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Disable experimental features for the module source.
+    pub fn without_experimental_features(&self) -> ModuleSource {
+        let query = self.selection.select("withoutExperimentalFeatures");
         ModuleSource {
             proc: self.proc.clone(),
             selection: query,

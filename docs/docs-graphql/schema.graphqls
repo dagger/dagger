@@ -3816,6 +3816,12 @@ type ModuleSource {
     version: String!
   ): ModuleSource!
 
+  """Enable the experimental features for the module source."""
+  withExperimentalFeatures(
+    """The experimental features to enable."""
+    features: [String!]!
+  ): ModuleSource!
+
   """
   Update the module source with additional include patterns for
   files+directories from its context that are required for building it
@@ -3876,6 +3882,9 @@ type ModuleSource {
     """The dependencies to remove."""
     dependencies: [String!]!
   ): ModuleSource!
+
+  """Disable experimental features for the module source."""
+  withoutExperimentalFeatures: ModuleSource!
 }
 
 """

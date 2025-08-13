@@ -163,6 +163,15 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		dagql.Func("withoutBlueprint", s.moduleSourceWithoutBlueprint).
 			Doc(`Remove the current blueprint from the module source.`),
 
+		dagql.Func("withExperimentalFeatures", s.moduleSourceWithExperimentalFeatures).
+			Doc(`Enable the experimental features for the module source.`).
+			Args(
+				dagql.Arg("features").Doc(`The experimental features to enable.`),
+			),
+
+		dagql.Func("withoutExperimentalFeatures", s.moduleSourceWithoutExperimentalFeatures).
+			Doc(`Disable experimental features for the module source.`),
+
 		dagql.NodeFunc("generatedContextDirectory", s.moduleSourceGeneratedContextDirectory).
 			Doc(`The generated files and directories made on top of the module source's context directory.`),
 
@@ -1543,6 +1552,43 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateBlueprint(
 	)
 	return inst, err
 }
+
+func (s *moduleSourceSchema) moduleSourceWithExperimentalFeatures(
+	_ context.Context,
+	parentSrc *core.ModuleSource,
+	args struct {
+		Features []string
+	},
+) (*core.ModuleSource, error) {
+	if parentSrc.SDK == nil {
+		return nil, fmt.Errorf("module source has no SDK")
+	}
+	tmpSrc := parentSrc.Clone()
+	if len(args.Features) > 0 {
+		if tmpSrc.SDK.Experimental == nil {
+			tmpSrc.SDK.Experimental = make(map[string]bool)
+		}
+		for _, feature := range args.Features {
+			tmpSrc.SDK.Experimental[feature] = true
+		}
+	}
+	return tmpSrc, nil
+}
+
+func (s *moduleSourceSchema) moduleSourceWithoutExperimentalFeatures(
+	_ context.Context,
+	parentSrc *core.ModuleSource,
+	args struct {
+	},
+) (*core.ModuleSource, error) {
+	if parentSrc.SDK == nil {
+		return nil, fmt.Errorf("module source has no SDK")
+	}
+	tmpSrc := parentSrc.Clone()
+	tmpSrc.SDK.Experimental = make(map[string]bool)
+	return tmpSrc, nil
+}
+
 func (s *moduleSourceSchema) moduleSourceWithUpdateDependencies(
 	ctx context.Context,
 	parentSrc dagql.ObjectResult[*core.ModuleSource],
