@@ -158,6 +158,7 @@ type SpanSnapshot struct {
 	EffectsCompleted []string `json:",omitempty"`
 
 	CallDigest  string `json:",omitempty"`
+	CallID      string `json:",omitempty"`
 	CallPayload string `json:",omitempty"`
 	CallScope   string `json:",omitempty"`
 
@@ -185,6 +186,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 	switch name {
 	case telemetry.DagDigestAttr:
 		snapshot.CallDigest = val.(string)
+
+	case telemetry.DagIDAttr:
+		snapshot.CallID = val.(string)
 
 	case telemetry.DagCallAttr:
 		snapshot.CallPayload = val.(string)

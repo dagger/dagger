@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"runtime/debug"
 
-	bkgwpb "github.com/moby/buildkit/frontend/gateway/pb"
-
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/slog"
@@ -369,32 +367,9 @@ func (s *serviceSchema) stop(ctx context.Context, parent dagql.ObjectResult[*cor
 }
 
 func (s *serviceSchema) terminal(ctx context.Context, parent dagql.ObjectResult[*core.Service], args struct{}) (res dagql.ObjectResult[*core.Service], _ error) {
-	// XXX: move into core
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return res, fmt.Errorf("failed to get current query: %w", err)
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return res, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
-	term, err := bk.OpenTerminal(ctx)
-	if err != nil {
-		return res, fmt.Errorf("failed to open terminal: %w", err)
-	}
-	// always close term; it's wrapped in a once so it won't be called multiple times
-	defer term.Close(bkgwpb.UnknownExitStatus)
-
-	if err := parent.Self().Terminal(ctx, parent, &core.ServiceIO{
-		Stdin:    term.Stdin,
-		Stdout:   term.Stdout,
-		Stderr:   term.Stderr,
-		ResizeCh: term.ResizeCh,
-	}); err != nil {
+	if err := parent.Self().Terminal(ctx, parent); err != nil {
 		return res, err
 	}
-
 	return parent, nil
 }
 

@@ -46,36 +46,20 @@ func (container *Container) TerminalError(
 	return container.terminal(ctx, svcID, nil, richErr)
 }
 
-func (container *Container) terminal(
-	ctx context.Context,
-	svcID *call.ID,
-	args *TerminalArgs,
-	richErr *buildkit.RichError,
-) error {
-	container = container.Clone()
-
-	// HACK: ensure that container is entirely built before interrupting nice
-	// progress output with the terminal
-	_, err := container.Evaluate(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to evaluate container: %w", err)
-	}
-
+func prepTerminalEnv(ctx context.Context, svcID *call.ID, richErr *buildkit.RichError) (*buildkit.TerminalClient, *termenv.Output, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get current query: %w", err)
+		return nil, nil, fmt.Errorf("failed to get current query: %w", err)
 	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get buildkit client: %w", err)
+		return nil, nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
 	term, err := bk.OpenTerminal(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to open terminal: %w", err)
+		return nil, nil, fmt.Errorf("failed to open terminal: %w", err)
 	}
-	// always close term; it's wrapped in a once so it won't be called multiple times
-	defer term.Close(bkgwpb.UnknownExitStatus)
 
 	output := idtui.NewOutput(term.Stderr)
 	if richErr == nil {
@@ -92,7 +76,7 @@ func (container *Container) terminal(
 	dump := idtui.Dump{Newline: "\r\n", Prefix: "    "}
 	fmt.Fprint(term.Stderr, dump.Newline)
 	if err := dump.DumpID(output, svcID); err != nil {
-		return fmt.Errorf("failed to serialize service ID: %w", err)
+		return nil, nil, fmt.Errorf("failed to serialize service ID: %w", err)
 	}
 	fmt.Fprint(term.Stderr, dump.Newline)
 	if richErr != nil {
@@ -100,6 +84,30 @@ func (container *Container) terminal(
 			output.String("! %s").Foreground(termenv.ANSIYellow).String(), richErr.Error())
 		fmt.Fprint(term.Stderr, dump.Newline)
 	}
+
+	return term, output, nil
+}
+
+func (container *Container) terminal(
+	ctx context.Context,
+	svcID *call.ID,
+	args *TerminalArgs,
+	richErr *buildkit.RichError,
+) error {
+	container = container.Clone()
+
+	// HACK: ensure that container is entirely built before interrupting nice
+	// progress output with the terminal
+	_, err := container.Evaluate(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to evaluate container: %w", err)
+	}
+
+	term, output, err := prepTerminalEnv(ctx, svcID, richErr)
+	if err != nil {
+		return err
+	}
+	defer term.Close(bkgwpb.UnknownExitStatus) // always close term; it's wrapped in a once so it won't be called multiple times
 
 	// Inject a custom shell prompt `dagger:<cwd>$`
 	container.Config.Env = append(container.Config.Env, fmt.Sprintf("PS1=%s %s $ ",

@@ -66,9 +66,15 @@ func AroundFunc(
 		slog.Warn("failed to encode call", "id", id.Display(), "err", err)
 		return ctx, dagql.NoopDone
 	}
+	idAttr, err := id.Encode()
+	if err != nil {
+		slog.Warn("failed to encode id", "id", id.Display(), "err", err)
+		return ctx, dagql.NoopDone
+	}
 	attrs := []attribute.KeyValue{
 		attribute.String(telemetry.DagDigestAttr, id.Digest().String()),
 		attribute.String(telemetry.DagCallAttr, callAttr),
+		attribute.String(telemetry.DagIDAttr, idAttr),
 	}
 
 	// if inside a module call, add call trace metadata. this is useful

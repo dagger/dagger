@@ -7,6 +7,9 @@ const (
 	// represents.
 	DagCallAttr = "dagger.io/dag.call"
 
+	// XXX: there's a *reason* this isn't attached, they're huge
+	DagIDAttr = "dagger.io/dag.id"
+
 	// The scope of the call.
 	//
 	// Examples: llm, graphql

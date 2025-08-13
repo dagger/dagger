@@ -19,6 +19,7 @@ import (
 	"github.com/moby/buildkit/executor"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkcontainer "github.com/moby/buildkit/frontend/gateway/container"
+	bkgwpb "github.com/moby/buildkit/frontend/gateway/pb"
 	gwpb "github.com/moby/buildkit/frontend/gateway/pb"
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
@@ -252,12 +253,17 @@ func (svc *Service) Stop(ctx context.Context, id *call.ID, kill bool) error {
 	return svcs.Stop(ctx, id, kill, svc.TunnelUpstream.Self() != nil)
 }
 
-func (*Service) Terminal(ctx context.Context, svc dagql.ObjectResult[*Service], sio *ServiceIO) error {
+func (*Service) Terminal(ctx context.Context, svc dagql.ObjectResult[*Service]) error {
+	term, _, err := prepTerminalEnv(ctx, svc.ID(), nil)
+	if err != nil {
+		return err
+	}
+	defer term.Close(bkgwpb.UnknownExitStatus) // always close term; it's wrapped in a once so it won't be called multiple times
+
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
 	}
-
 	svcs, err := query.Services(ctx)
 	if err != nil {
 		return err
@@ -271,12 +277,18 @@ func (*Service) Terminal(ctx context.Context, svc dagql.ObjectResult[*Service], 
 		return err
 	}
 	defer detach()
-	running := runnings[0]
 
+	running := runnings[0]
 	if running.Exec == nil {
 		return fmt.Errorf("service %s does not support terminal", svc.ID().Digest())
 	}
-	return running.Exec(ctx, []string{"/bin/sh"}, sio)
+	// TODO: PATH? Other env bits?
+	return running.Exec(ctx, []string{"/bin/sh"}, &ServiceIO{
+		Stdin:    term.Stdin,
+		Stdout:   term.Stdout,
+		Stderr:   term.Stderr,
+		ResizeCh: term.ResizeCh,
+	})
 }
 
 type ServiceIO struct {
