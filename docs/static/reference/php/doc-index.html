@@ -452,7 +452,9 @@
 <abbr title="Dagger\JsonValue">JsonValue</abbr>::field</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
                     <dd><p>Lookup the field at the given path, and return its value.</p></dd><dt><a href="Dagger/JsonValue.html#method_fields">
 <abbr title="Dagger\JsonValue">JsonValue</abbr>::fields</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
-                    <dd><p>List fields of the encoded object</p></dd><dt><a href="Dagger/ObjectTypeDef.html#method_fields">
+                    <dd><p>List fields of the encoded object</p></dd><dt><a href="Dagger/Module.html#method_fromJSON">
+<abbr title="Dagger\Module">Module</abbr>::fromJSON</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
+                    <dd><p>Load a module from a JSON string</p></dd><dt><a href="Dagger/ObjectTypeDef.html#method_fields">
 <abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr>::fields</a>() &mdash; <em>Method in class <a href="Dagger/ObjectTypeDef.html"><abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr></a></em></dt>
                     <dd><p>Static fields defined on this object, if any.</p></dd><dt><a href="Dagger/ObjectTypeDef.html#method_functions">
 <abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr>::functions</a>() &mdash; <em>Method in class <a href="Dagger/ObjectTypeDef.html"><abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr></a></em></dt>
@@ -1031,7 +1033,9 @@
 <abbr title="Dagger\LLM">LLM</abbr>::tools</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>print documentation for available tools</p></dd><dt><a href="Dagger/LLMTokenUsage.html#method_totalTokens">
 <abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr>::totalTokens</a>() &mdash; <em>Method in class <a href="Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a></em></dt>
-                    <dd></dd><dt><a href="Dagger/Terminal.html"><abbr title="Dagger\Terminal">Terminal</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd></dd><dt><a href="Dagger/Module.html#method_toJSON">
+<abbr title="Dagger\Module">Module</abbr>::toJSON</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
+                    <dd><p>Return a JSON string representation of the module</p></dd><dt><a href="Dagger/Terminal.html"><abbr title="Dagger\Terminal">Terminal</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>An interactive terminal that clients can connect to.</p></dd><dt><a href="Dagger/TerminalId.html"><abbr title="Dagger\TerminalId">TerminalId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The <code>TerminalID</code> scalar type represents an identifier for an object of type Terminal.</p></dd><dt><a href="Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A definition of a parameter or return type in a Module.</p></dd><dt><a href="Dagger/TypeDefId.html"><abbr title="Dagger\TypeDefId">TypeDefId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
@@ -1300,7 +1304,9 @@
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withDependencies</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>Append the provided dependencies to the module source's dependency list.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withEngineVersion">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withEngineVersion</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>Upgrade the engine version of the module to the given value.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withIncludes">
+                    <dd><p>Upgrade the engine version of the module to the given value.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withExperimentalFeatures">
+<abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withExperimentalFeatures</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
+                    <dd><p>Enable the experimental features for the module source.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withIncludes">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withIncludes</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>Update the module source with additional include patterns for files+directories from its context that are required for building it</p></dd><dt><a href="Dagger/ModuleSource.html#method_withName">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withName</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -1318,7 +1324,9 @@
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withoutClient</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>Remove a client from the module source.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withoutDependencies">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withoutDependencies</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>Remove the provided dependencies from the module source's dependency list.</p></dd><dt><a href="Dagger/Service.html#method_withHostname">
+                    <dd><p>Remove the provided dependencies from the module source's dependency list.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withoutExperimentalFeatures">
+<abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withoutExperimentalFeatures</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
+                    <dd><p>Disable experimental features for the module source.</p></dd><dt><a href="Dagger/Service.html#method_withHostname">
 <abbr title="Dagger\Service">Service</abbr>::withHostname</a>() &mdash; <em>Method in class <a href="Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a></em></dt>
                     <dd><p>Configures a hostname which can be used by clients within the session to reach this container.</p></dd><dt><a href="Dagger/TypeDef.html#method_withConstructor">
 <abbr title="Dagger\TypeDef">TypeDef</abbr>::withConstructor</a>() &mdash; <em>Method in class <a href="Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></em></dt>
