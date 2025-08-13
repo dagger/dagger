@@ -23,8 +23,8 @@ The reference scheme for directory arguments is currently under discussion [here
 
 Dagger provides additional flexibility in referencing file and directory arguments through the following options:
 
-- Version specification: Add `#version` to target a particular version of the repository. This can be a tag, branch name, or full commit hash. If omitted, the default branch is used.
-- Monorepo support: Append `:subpath` after the version specification to access a specific subdirectory within the repository. Note that specifying a version is mandatory when including a subpath.
+- **Version specification**: Add `#version` to target a particular version of the repository. This can be a tag, branch name, or full commit hash. If omitted, the default branch is used.
+- **Monorepo support**: Append `:subpath` after the version specification to access a specific subdirectory within the repository. Note that specifying a version is mandatory when including a subpath.
 
 :::important
 When referencing a specific subdirectory (subpath) within a repository, you must always include a version specification. The format is always `#version:subpath`.
@@ -42,9 +42,9 @@ Dagger supports various reference schemes for Dagger modules, as below:
 
 Dagger provides additional flexibility in referencing modules through the following options:
 
-- The `.git` extension is optional for HTTP refs or explicit SSH refs, except for [GitLab, when referencing modules stored on a private repo or private subgroup](https://gitlab.com/gitlab-org/gitlab-foss/-/blob/master/lib/gitlab/middleware/go.rb#L229-237).
-- Monorepo support: Append `/subpath` to access a specific subdirectory within the repository.
-- Version specification: Add `@version` to target a particular version of the module. This can be a tag, branch name, or full commit hash. If omitted, the default branch is used.
+- **Optional extension**: The `.git` extension is optional for HTTP refs or explicit SSH refs, except for [GitLab, when referencing modules stored on a private repo or private subgroup](https://gitlab.com/gitlab-org/gitlab-foss/-/blob/master/lib/gitlab/middleware/go.rb#L229-237).
+- **Monorepo support**: Append `/subpath` to access a specific subdirectory within the repository.
+- **Version specification**: Add `@version` to target a particular version of the module. This can be a tag, branch name, or full commit hash. If omitted, the default branch is used.
 </TabItem>
 </Tabs>
 
@@ -95,10 +95,10 @@ If this works, Dagger will be able to use the same credentials to access your pr
 
 #### Credential manager configuration
 
-- GitHub: Use [`gh auth login`](https://docs.github.com/en/get-started/getting-started-with-git/caching-your-github-credentials-in-git#github-cli) or [configure credentials via Git Credential Manager](https://docs.github.com/en/get-started/getting-started-with-git/caching-your-github-credentials-in-git#git-credential-manager)
-- GitLab: Use [`glab auth login`](https://gitlab.com/gitlab-org/cli/-/blob/main/docs/source/auth/login.md) or [configure credentials via Git Credential Manager](https://github.com/git-ecosystem/git-credential-manager)
-- Azure DevOps: Use [Git Credential Manager](https://learn.microsoft.com/en-us/azure/devops/repos/git/set-up-credential-managers)
-- BitBucket: Configure credentials using the [Git credential system](https://git-scm.com/book/en/v2/Git-Tools-Credential-Storage) (the widely-adopted implementation is [Git Credential Manager](https://github.com/git-ecosystem/git-credential-manager))
+- **GitHub**: Use [`gh auth login`](https://docs.github.com/en/get-started/getting-started-with-git/caching-your-github-credentials-in-git#github-cli) or [configure credentials via Git Credential Manager](https://docs.github.com/en/get-started/getting-started-with-git/caching-your-github-credentials-in-git#git-credential-manager)
+- **GitLab**: Use [`glab auth login`](https://gitlab.com/gitlab-org/cli/-/blob/main/docs/source/auth/login.md) or [configure credentials via Git Credential Manager](https://github.com/git-ecosystem/git-credential-manager)
+- **Azure DevOps**: Use [Git Credential Manager](https://learn.microsoft.com/en-us/azure/devops/repos/git/set-up-credential-managers)
+- **BitBucket**: Configure credentials using the [Git credential system](https://git-scm.com/book/en/v2/Git-Tools-Credential-Storage) (the widely-adopted implementation is [Git Credential Manager](https://github.com/git-ecosystem/git-credential-manager))
 
 ### SSH authentication
 

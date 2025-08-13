@@ -218,9 +218,9 @@ This Dagger Function includes the context as input and error as return in its si
 Dagger Functions are implemented as [@dagger.function][@function] decorated
 methods, of a [@dagger.object_type][@object_type] decorated class.
 
-It's possible for a module to implement multiple classes (*object types*), but
-**the first one needs to have a name that matches the module's name**, in
-*PascalCase*. This object is sometimes referred to as the *main object*.
+It's possible for a module to implement multiple classes (object types), but
+the first one needs to have a name that matches the module's name, in
+PascalCase. This object is sometimes referred to as the "main object".
 
 For example, for a module initialized with `dagger init --name=my-module`,
 the main object needs to be named `MyModule`.
@@ -289,7 +289,7 @@ Here's what you should see:
 
 :::important
 Dagger Functions execute within containers spawned by the Dagger Engine. This "sandboxing" serves a few important purposes:
-1. Reproducibility: Executing in a well-defined and well-controlled container ensures that a Dagger Function runs the same way every time it is invoked. It also guards against creating "hidden dependencies" on ambient properties of the execution environment that could change at any moment.
-1. Caching: A reproducible containerized environment makes it possible to cache the result of Dagger Function execution, which in turn allows Dagger to automatically speed up operations.
-1. Security: Even when running third-party Dagger Functions sourced from a Git repository, those Dagger Functions will not have default access to your host environment (host files, directories, environment variables, etc.). Access to these host resources can only be granted by explicitly passing them as argument values to the Dagger Function.
+1. **Reproducibility**: Executing in a well-defined and well-controlled container ensures that a Dagger Function runs the same way every time it is invoked. It also guards against creating "hidden dependencies" on ambient properties of the execution environment that could change at any moment.
+1. **Caching**: A reproducible containerized environment makes it possible to cache the result of Dagger Function execution, which in turn allows Dagger to automatically speed up operations.
+1. **Security**: Even when running third-party Dagger Functions sourced from a Git repository, those Dagger Functions will not have default access to your host environment (host files, directories, environment variables, etc.). Access to these host resources can only be granted by explicitly passing them as argument values to the Dagger Function.
 :::

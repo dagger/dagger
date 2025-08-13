@@ -183,9 +183,9 @@ main_object = "<import package>:<main object>"
 
 For example, for a Dagger module named `my-module`:
 
-- Main object: `MyModule` (required to be the name in `dagger.json`, in PascalCase)
-- Default distribution package: `my-module` (in `pyproject.toml`; can be changed)
-- Default import package: `src/my_module` (normalized after distribution package name; can be changed)
+- **Main object**: `MyModule` (required to be the name in `dagger.json`; in PascalCase)
+- **Default distribution package**: `my-module` (in `pyproject.toml`; can be changed)
+- **Default import package**: `src/my_module` (normalized after distribution package name; can be changed)
 
 Then, the default `main_object` entry point that the Python SDK looks for is `my_module:MyModule`, with a fallback to `main:MyModule` for backwards compatibility.
 
@@ -229,7 +229,7 @@ class MyModule {
 </TabItem>
 <TabItem value="php" label="PHP">
 
-Only functions from your main class (`MyModule.php`) can _initially_ be called by Dagger. However, it is possible to create other classes and access them from your main class:
+Only functions from your main class (`MyModule.php`) can initially be called by Dagger. However, it is possible to create other classes and access them from your main class:
 
 ```php
 // src/MyModule.php
@@ -342,7 +342,7 @@ base-image = "acme/python:3.11"
 
 This can be useful to add a few requirements to the module's execution environment such as system packages like `git`, or to add necessary environment variables, for example. However, don't deviate from the default base image too much or it may break in a future version of Dagger.
 
-⚠️ **Override at own risk!**
+Override this at your own risk!
 :::
 
 </TabItem>
