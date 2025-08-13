@@ -75,8 +75,9 @@ func (proto ModuleSourceKind) HumanString() string {
 }
 
 type SDKConfig struct {
-	Source string `field:"true" name:"source" doc:"Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
-	Config map[string]any
+	Source       string `field:"true" name:"source" doc:"Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
+	Config       map[string]any
+	Experimental map[string]bool
 }
 
 func (*SDKConfig) Type() *ast.Type {
@@ -93,6 +94,13 @@ func (*SDKConfig) TypeDescription() string {
 func (sdk SDKConfig) Clone() *SDKConfig {
 	cp := sdk
 	return &cp
+}
+
+func (sdk *SDKConfig) ExperimentalFeatureEnabled(feature string) bool {
+	if sdk.Experimental == nil {
+		return false
+	}
+	return sdk.Experimental[feature]
 }
 
 type ModuleSource struct {
