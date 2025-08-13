@@ -890,8 +890,9 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 
 	if modCfg.SDK != nil {
 		src.SDK = &core.SDKConfig{
-			Source: modCfg.SDK.Source,
-			Config: modCfg.SDK.Config,
+			Source:       modCfg.SDK.Source,
+			Config:       modCfg.SDK.Config,
+			Experimental: modCfg.SDK.Experimental,
 		}
 	}
 
@@ -1805,8 +1806,9 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 
 	if src.SDK != nil {
 		modCfg.SDK = &modules.SDK{
-			Source: src.SDK.Source,
-			Config: src.SDK.Config,
+			Source:       src.SDK.Source,
+			Config:       src.SDK.Config,
+			Experimental: src.SDK.Experimental,
 		}
 	}
 
@@ -1975,7 +1977,7 @@ func (s *moduleSourceSchema) runCodegen(
 	if srcInst.Self().SDK != nil {
 		// Only if the SDK implements a specific `moduleTypeDefs` function.
 		// If not, we will have circular dependency issues.
-		if sdkImpl, ok := srcInst.Self().SDKImpl.AsRuntime(); ok && sdkImpl.HasModuleTypeDefs() {
+		if sdkImpl, ok := srcInst.Self().SDKImpl.AsRuntime(); ok && sdkImpl.HasModuleTypeDefs() && srcInst.Self().SDK.ExperimentalFeatureEnabled("self-calls") {
 			var mod dagql.ObjectResult[*core.Module]
 			err = dag.Select(ctx, srcInst, &mod, dagql.Selector{
 				Field: "asModule",
@@ -2301,7 +2303,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 
 	modName := src.Self().ModuleName
 
-	if runtimeImpl.HasModuleTypeDefs() {
+	if runtimeImpl.HasModuleTypeDefs() && src.Self().SDK.ExperimentalFeatureEnabled("self-calls") {
 		var resultInst dagql.ObjectResult[*core.Module]
 		resultInst, err = runtimeImpl.TypeDefs(ctx, mod.Deps, srcInstContentHashed)
 		if err != nil {
@@ -2392,7 +2394,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		return nil, fmt.Errorf("failed to patch module %q: %w", modName, err)
 	}
 
-	if runtimeImpl.HasModuleTypeDefs() {
+	if runtimeImpl.HasModuleTypeDefs() && src.Self().SDK.ExperimentalFeatureEnabled("self-calls") {
 		// append module types to the module itself so self calls are possible
 		mod.Deps = mod.Deps.Append(mod)
 	}
@@ -2516,7 +2518,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		}
 
 		// BEGIN: self call
-		if runtimeImpl.HasModuleTypeDefs() {
+		if runtimeImpl.HasModuleTypeDefs() && src.Self().SDK.ExperimentalFeatureEnabled("self-calls") {
 			mod.Deps = mod.Deps.Append(mod)
 		}
 		// END: self call
