@@ -604,13 +604,17 @@ func (mod *Module) namespaceSourceMap(modPath string, sourceMap dagql.Nullable[*
 		return sourceMap
 	}
 
-	if mod.Source.Value.Self().Kind != ModuleSourceKindLocal {
-		// TODO: handle remote git files
-		return nil
-	}
-
 	sourceMap.Value.Module = mod.Name()
 	sourceMap.Value.Filename = filepath.Join(modPath, sourceMap.Value.Filename)
+
+	if mod.Source.Value.Self().Kind == ModuleSourceKindGit {
+		link, err := mod.Source.Value.Self().Git.Link(sourceMap.Value.Filename, sourceMap.Value.Line, sourceMap.Value.Column)
+		if err != nil {
+			return dagql.Null[*SourceMap]()
+		}
+		sourceMap.Value.URL = link
+	}
+
 	return sourceMap
 }
 

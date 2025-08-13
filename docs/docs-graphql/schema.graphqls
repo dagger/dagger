@@ -10,7 +10,7 @@ directive @experimental(
 ) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 
 """Indicates the source information for where a given field is defined."""
-directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
+directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!, url: String!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
 
 type Binding {
   """Retrieve the binding value, as type CacheVolume"""
@@ -3917,6 +3917,11 @@ type SourceMap {
 
   """The module dependency this was declared in."""
   module: String!
+
+  """
+  The URL to the file, if any. This can be used to link to the source map in the browser.
+  """
+  url: String!
 }
 
 """

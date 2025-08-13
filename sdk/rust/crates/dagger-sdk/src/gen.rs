@@ -10171,6 +10171,11 @@ impl SourceMap {
         let query = self.selection.select("module");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The URL to the file, if any. This can be used to link to the source map in the browser.
+    pub async fn url(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("url");
+        query.execute(self.graphql_client.clone()).await
+    }
 }
 #[derive(Clone)]
 pub struct Terminal {

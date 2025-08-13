@@ -1298,6 +1298,7 @@ type SourceMap struct {
 	Filename string `field:"true" doc:"The filename from the module source."`
 	Line     int    `field:"true" doc:"The line number within the filename."`
 	Column   int    `field:"true" doc:"The column number within the line."`
+	URL      string `field:"true" doc:"The URL to the file, if any. This can be used to link to the source map in the browser."`
 }
 
 func (*SourceMap) Type() *ast.Type {
@@ -1317,37 +1318,58 @@ func (sourceMap SourceMap) Clone() *SourceMap {
 }
 
 func (sourceMap *SourceMap) TypeDirective() *ast.Directive {
-	return &ast.Directive{
-		Name: "sourceMap",
-		Arguments: ast.ArgumentList{
-			{
-				Name: "module",
-				Value: &ast.Value{
-					Kind: ast.StringValue,
-					Raw:  sourceMap.Module,
-				},
-			},
-			{
-				Name: "filename",
-				Value: &ast.Value{
-					Kind: ast.StringValue,
-					Raw:  sourceMap.Filename,
-				},
-			},
-			{
-				Name: "line",
-				Value: &ast.Value{
-					Kind: ast.IntValue,
-					Raw:  fmt.Sprint(sourceMap.Line),
-				},
-			},
-			{
-				Name: "column",
-				Value: &ast.Value{
-					Kind: ast.IntValue,
-					Raw:  fmt.Sprint(sourceMap.Column),
-				},
-			},
-		},
+	if sourceMap == nil {
+		return nil
 	}
+
+	directive := &ast.Directive{
+		Name:      "sourceMap",
+		Arguments: ast.ArgumentList{},
+	}
+	if sourceMap.Module != "" {
+		directive.Arguments = append(directive.Arguments, &ast.Argument{
+			Name: "module",
+			Value: &ast.Value{
+				Kind: ast.StringValue,
+				Raw:  sourceMap.Module,
+			},
+		})
+	}
+	if sourceMap.Filename != "" {
+		directive.Arguments = append(directive.Arguments, &ast.Argument{
+			Name: "filename",
+			Value: &ast.Value{
+				Kind: ast.StringValue,
+				Raw:  sourceMap.Filename,
+			},
+		})
+	}
+	if sourceMap.Line != 0 {
+		directive.Arguments = append(directive.Arguments, &ast.Argument{
+			Name: "line",
+			Value: &ast.Value{
+				Kind: ast.IntValue,
+				Raw:  fmt.Sprint(sourceMap.Line),
+			},
+		})
+	}
+	if sourceMap.Column != 0 {
+		directive.Arguments = append(directive.Arguments, &ast.Argument{
+			Name: "column",
+			Value: &ast.Value{
+				Kind: ast.IntValue,
+				Raw:  fmt.Sprint(sourceMap.Column),
+			},
+		})
+	}
+	if sourceMap.URL != "" {
+		directive.Arguments = append(directive.Arguments, &ast.Argument{
+			Name: "url",
+			Value: &ast.Value{
+				Kind: ast.StringValue,
+				Raw:  sourceMap.URL,
+			},
+		})
+	}
+	return directive
 }

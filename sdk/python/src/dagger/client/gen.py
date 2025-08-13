@@ -9903,6 +9903,28 @@ class SourceMap(Type):
         _ctx = self._select("module", _args)
         return await _ctx.execute(str)
 
+    async def url(self) -> str:
+        """The URL to the file, if any. This can be used to link to the source
+        map in the browser.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("url", _args)
+        return await _ctx.execute(str)
+
 
 @typecheck
 class Terminal(Type):
