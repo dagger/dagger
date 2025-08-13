@@ -64,3 +64,7 @@ dagger core container \
 </Tabs>
 
 This example will take some time to complete on the first run, as the cache volumes will not exist at that point. Subsequent runs will be significantly faster (assuming there is no other change), since Dagger will simply use the dependencies from the cache volumes instead of downloading them again.
+
+:::note
+Cache volumes are scoped by default to the modules they're defined in. To share a cache volume across modules, you must intentionally pass a reference to it via constructor or function arguments.
+:::
