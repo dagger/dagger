@@ -43,9 +43,9 @@ This example calls multiple functions from the Dagger API in sequence to create 
 
 ## Types
 
-Like regular functions, Dagger functions can accept arguments. You can see this in the previous example: the `from` function accepts a container image address (`--address`) as argument, the file function accepts a filesystem location (`--path`) as argument, and so on.
+Like regular functions, Dagger Functions can accept arguments. You can see this in the previous example: the `from` function accepts a container image address (`--address`) as argument, the file function accepts a filesystem location (`--path`) as argument, and so on.
 
-In addition to supporting basic types (string, boolean, integer, array...), the Dagger API also provides [powerful types](../types/index.mdx) for working with workflows, such as `Container`, `GitRepository`, `Directory`, `Service`, `Secret`. You can use these types as arguments to Dagger functions.
+In addition to supporting basic types (string, boolean, integer, array...), the Dagger API also provides [powerful types](../types/index.mdx) for working with workflows, such as `Container`, `GitRepository`, `Directory`, `Service`, `Secret`. You can use these types as arguments to Dagger Functions.
 
 Here's an example:
 
@@ -84,9 +84,9 @@ This example creates a scratch container, adds Dagger's GitHub repository to it,
 
 Each of Dagger's types comes with functions of its own, which can be used to interact with the corresponding object.
 
-When calling a Dagger function that returns a type, the Dagger API lets you follow up by calling one of that type's functions, which itself can return another type, and so on. This is called "function chaining", and is a core feature of Dagger.
+When calling a Dagger Function that returns a type, the Dagger API lets you follow up by calling one of that type's functions, which itself can return another type, and so on. This is called "function chaining", and is a core feature of Dagger.
 
-For example, if a Dagger function returns a `Directory`, the caller can continue the chain by calling a function from the `Directory` type to export it to the local filesystem, modify it, mount it into a container, and so on.
+For example, if a Dagger Function returns a `Directory`, the caller can continue the chain by calling a function from the `Directory` type to export it to the local filesystem, modify it, mount it into a container, and so on.
 
 Although you may not have realized it, you've already seen function chaining in action. Both the previous examples chain functions together into workflows. Here is one more example to illustrate the concept:
 
@@ -135,7 +135,7 @@ This example chains multiple function calls into a workflow that builds the Dagg
 - `file` returns the built binary as a `File` type
 - `export` exports the binary artifact to the Dagger host as `./dagger.bin`
 
-Functions can be chained with the CLI, or programmatically in a [custom Dagger function](../extending/functions.mdx) using a Dagger SDK. The following are equivalent:
+Functions can be chained with the CLI, or programmatically in a [custom Dagger Function](../extending/functions.mdx) using a Dagger SDK. The following are equivalent:
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
@@ -193,7 +193,7 @@ As these example illustrate, function chaining is extremely powerful. See [more 
 
 ## Modules
 
-Dagger [modules](../extending/modules.mdx) are collections of Dagger functions, packaged together for easy sharing and consumption. They are portable and reusable across languages.
+Dagger [modules](../extending/modules.mdx) are collections of Dagger Functions, packaged together for easy sharing and consumption. They are portable and reusable across languages.
 
 ## Calling the Dagger API
 
@@ -211,15 +211,15 @@ The different ways to call the Dagger API are:
   - [`dagger query`](../extending/clients-http.mdx#dagger-cli)
 
 :::note
-The Dagger CLI can call any Dagger function, either from your local filesystem or from a remote Git repository. They can be used interactively, from a shell script, or from a CI configuration. Apart from the Dagger CLI, no other infrastructure or tooling is required to call Dagger functions.
+The Dagger CLI can call any Dagger Function, either from your local filesystem or from a remote Git repository. They can be used interactively, from a shell script, or from a CI configuration. Apart from the Dagger CLI, no other infrastructure or tooling is required to call Dagger Functions.
 :::
 
 ## Extending the Dagger API
 
 The Dagger API is extensible and shareable by design. You can extend the API by creating Dagger [modules](../extending/modules.mdx).You are encouraged to write your own Dagger modules and share them with others.
 
-Dagger also lets you import and reuse modules developed by your team, your organization or the broader Dagger community. The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules and Dagger functions, and lets you easily search and consume them.
+Dagger also lets you import and reuse modules developed by your team, your organization or the broader Dagger community. The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules and Dagger Functions, and lets you easily search and consume them.
 
-When a Dagger module is loaded, the Dagger API is [dynamically extended](../reference/api/internals.mdx#dynamic-api-extension) with new Dagger functions served by that module. So, after loading a Dagger module, an API client can now call all of the original core functions _plus_ the new Dagger functions provided by that module.
+When a Dagger module is loaded, the Dagger API is [dynamically extended](../reference/api/internals.mdx#dynamic-api-extension) with new Dagger Functions served by that module. So, after loading a Dagger module, an API client can now call all of the original core functions _plus_ the new Dagger Functions provided by that module.
 
 You can also embed a Dagger SDK directly into your application using [Go](../extending/custom-applications/go.mdx).
