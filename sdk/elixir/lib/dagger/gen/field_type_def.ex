@@ -53,7 +53,7 @@ defmodule Dagger.FieldTypeDef do
   @doc """
   The location of this field declaration.
   """
-  @spec source_map(t()) :: Dagger.SourceMap.t()
+  @spec source_map(t()) :: Dagger.SourceMap.t() | nil
   def source_map(%__MODULE__{} = field_type_def) do
     query_builder =
       field_type_def.query_builder |> QB.select("sourceMap")

@@ -89,7 +89,7 @@ defmodule Dagger.Function do
   @doc """
   The location of this function declaration.
   """
-  @spec source_map(t()) :: Dagger.SourceMap.t()
+  @spec source_map(t()) :: Dagger.SourceMap.t() | nil
   def source_map(%__MODULE__{} = function) do
     query_builder =
       function.query_builder |> QB.select("sourceMap")

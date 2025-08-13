@@ -599,9 +599,9 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 	return nil
 }
 
-func (mod *Module) namespaceSourceMap(modPath string, sourceMap *SourceMap) *SourceMap {
-	if sourceMap == nil {
-		return nil
+func (mod *Module) namespaceSourceMap(modPath string, sourceMap dagql.Nullable[*SourceMap]) dagql.Nullable[*SourceMap] {
+	if !sourceMap.Valid {
+		return sourceMap
 	}
 
 	if mod.Source.Value.Self().Kind != ModuleSourceKindLocal {
@@ -609,8 +609,8 @@ func (mod *Module) namespaceSourceMap(modPath string, sourceMap *SourceMap) *Sou
 		return nil
 	}
 
-	sourceMap.Module = mod.Name()
-	sourceMap.Filename = filepath.Join(modPath, sourceMap.Filename)
+	sourceMap.Value.Module = mod.Name()
+	sourceMap.Value.Filename = filepath.Join(modPath, sourceMap.Value.Filename)
 	return sourceMap
 }
 

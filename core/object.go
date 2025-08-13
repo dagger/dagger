@@ -288,8 +288,8 @@ func (obj *ModuleObject) TypeDefinition(view dagql.View) *ast.Definition {
 		Kind: ast.Object,
 		Name: obj.Type().Name(),
 	}
-	if obj.TypeDef.SourceMap != nil {
-		def.Directives = append(def.Directives, obj.TypeDef.SourceMap.TypeDirective())
+	if obj.TypeDef.SourceMap.Valid {
+		def.Directives = append(def.Directives, obj.TypeDef.SourceMap.Value.TypeDirective())
 	}
 	return def
 }
@@ -336,8 +336,8 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 			Module: obj.Module.IDModule(),
 		}
 
-		if objDef.SourceMap != nil {
-			spec.Directives = append(spec.Directives, objDef.SourceMap.TypeDirective())
+		if objDef.SourceMap.Valid {
+			spec.Directives = append(spec.Directives, objDef.SourceMap.Value.TypeDirective())
 		}
 
 		dag.Root().ObjectType().Extend(
@@ -432,8 +432,8 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 	spec.Directives = append(spec.Directives, &ast.Directive{
 		Name: trivialFieldDirectiveName,
 	})
-	if field.SourceMap != nil {
-		spec.Directives = append(spec.Directives, field.SourceMap.TypeDirective())
+	if field.SourceMap.Valid {
+		spec.Directives = append(spec.Directives, field.SourceMap.Value.TypeDirective())
 	}
 	return dagql.Field[*ModuleObject]{
 		Spec: spec,
