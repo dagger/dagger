@@ -6,10 +6,10 @@ from dagger import dag, function, object_type
 class MyModule:
     @function
     def agent(self) -> dagger.Directory:
-        dir = dag.git("github.com/dagger/dagger").branch("main").tree()
+        dirname = dag.git("github.com/dagger/dagger").branch("main").tree()
         environment = (
             dag.env()
-            .with_directory_input("source", dir, "the source directory to use")
+            .with_directory_input("source", dirname, "the source directory to use")
             .with_directory_output("result", "the updated directory")
         )
 
@@ -20,7 +20,7 @@ class MyModule:
                 """
                 You have access to a directory containing various files.
                 Translate only the README file in the directory to French and Spanish.
-                Ensure that the translations are accurate and maintain the original 
+                Ensure that the translations are accurate and maintain the original
                 formatting.
                 Do not modify any other files in the directory.
                 Create a subdirectory named translations to store the translated files.

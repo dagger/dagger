@@ -18,7 +18,7 @@ class MyModule:
             .with_env(environment)
             .with_prompt(
                 """
-                You are a software engineer with deep knowledge of Web application 
+                You are a software engineer with deep knowledge of Web application
                 development.
                 You have access to a container.
                 Install the necessary tools and libraries to create a
