@@ -9463,6 +9463,7 @@ export class SourceMap extends BaseClient {
   private readonly _filename?: string = undefined
   private readonly _line?: number = undefined
   private readonly _module?: string = undefined
+  private readonly _url?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -9474,6 +9475,7 @@ export class SourceMap extends BaseClient {
     _filename?: string,
     _line?: number,
     _module?: string,
+    _url?: string,
   ) {
     super(ctx)
 
@@ -9482,6 +9484,7 @@ export class SourceMap extends BaseClient {
     this._filename = _filename
     this._line = _line
     this._module = _module
+    this._url = _url
   }
 
   /**
@@ -9553,6 +9556,21 @@ export class SourceMap extends BaseClient {
     }
 
     const ctx = this._ctx.select("module")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The URL to the file, if any. This can be used to link to the source map in the browser.
+   */
+  url = async (): Promise<string> => {
+    if (this._url) {
+      return this._url
+    }
+
+    const ctx = this._ctx.select("url")
 
     const response: Awaited<string> = await ctx.execute()
 

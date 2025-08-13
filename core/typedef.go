@@ -24,7 +24,7 @@ type Function struct {
 	Args        []*FunctionArg `field:"true" doc:"Arguments accepted by the function, if any."`
 	ReturnType  *TypeDef       `field:"true" doc:"The type returned by the function."`
 
-	SourceMap *SourceMap `field:"true" doc:"The location of this function declaration."`
+	SourceMap dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this function declaration."`
 
 	// Below are not in public API
 
@@ -67,8 +67,8 @@ func (fn Function) Clone() *Function {
 	if fn.ReturnType != nil {
 		cp.ReturnType = fn.ReturnType.Clone()
 	}
-	if fn.SourceMap != nil {
-		cp.SourceMap = fn.SourceMap.Clone()
+	if fn.SourceMap.Valid {
+		cp.SourceMap.Value = fn.SourceMap.Value.Clone()
 	}
 	return &cp
 }
@@ -79,8 +79,8 @@ func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec
 		Description: formatGqlDescription(fn.Description),
 		Type:        fn.ReturnType.ToTyped(),
 	}
-	if fn.SourceMap != nil {
-		spec.Directives = append(spec.Directives, fn.SourceMap.TypeDirective())
+	if fn.SourceMap.Valid {
+		spec.Directives = append(spec.Directives, fn.SourceMap.Value.TypeDirective())
 	}
 	for _, arg := range fn.Args {
 		modType, ok, err := mod.ModTypeFor(ctx, arg.TypeDef, true)
@@ -114,8 +114,8 @@ func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec
 			Type:        input,
 			Default:     defaultVal,
 		}
-		if arg.SourceMap != nil {
-			argSpec.Directives = append(argSpec.Directives, arg.SourceMap.TypeDirective())
+		if arg.SourceMap.Valid {
+			argSpec.Directives = append(argSpec.Directives, arg.SourceMap.Value.TypeDirective())
 		}
 
 		spec.Args.Add(argSpec)
@@ -131,22 +131,28 @@ func (fn *Function) WithDescription(desc string) *Function {
 
 func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultValue JSON, defaultPath string, ignore []string, sourceMap *SourceMap) *Function {
 	fn = fn.Clone()
-	fn.Args = append(fn.Args, &FunctionArg{
+	arg := &FunctionArg{
 		Name:         strcase.ToLowerCamel(name),
 		Description:  desc,
-		SourceMap:    sourceMap,
 		TypeDef:      typeDef,
 		DefaultValue: defaultValue,
 		OriginalName: name,
 		DefaultPath:  defaultPath,
 		Ignore:       ignore,
-	})
+	}
+	if sourceMap != nil {
+		arg.SourceMap = dagql.NonNull(sourceMap)
+	}
+	fn.Args = append(fn.Args, arg)
 	return fn
 }
 
 func (fn *Function) WithSourceMap(sourceMap *SourceMap) *Function {
+	if sourceMap == nil {
+		return fn
+	}
 	fn = fn.Clone()
-	fn.SourceMap = sourceMap
+	fn.SourceMap = dagql.NonNull(sourceMap)
 	return fn
 }
 
@@ -205,13 +211,13 @@ func (fn *Function) LookupArg(name string) (*FunctionArg, bool) {
 
 type FunctionArg struct {
 	// Name is the standardized name of the argument (lowerCamelCase), as used for the resolver in the graphql schema
-	Name         string     `field:"true" doc:"The name of the argument in lowerCamelCase format."`
-	Description  string     `field:"true" doc:"A doc string for the argument, if any."`
-	SourceMap    *SourceMap `field:"true" doc:"The location of this arg declaration."`
-	TypeDef      *TypeDef   `field:"true" doc:"The type of the argument."`
-	DefaultValue JSON       `field:"true" doc:"A default value to use for this argument when not explicitly set by the caller, if any."`
-	DefaultPath  string     `field:"true" doc:"Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory"`
-	Ignore       []string   `field:"true" doc:"Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner."`
+	Name         string                     `field:"true" doc:"The name of the argument in lowerCamelCase format."`
+	Description  string                     `field:"true" doc:"A doc string for the argument, if any."`
+	SourceMap    dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this arg declaration."`
+	TypeDef      *TypeDef                   `field:"true" doc:"The type of the argument."`
+	DefaultValue JSON                       `field:"true" doc:"A default value to use for this argument when not explicitly set by the caller, if any."`
+	DefaultPath  string                     `field:"true" doc:"Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory"`
+	Ignore       []string                   `field:"true" doc:"Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner."`
 
 	// Below are not in public API
 
@@ -224,8 +230,8 @@ func (arg FunctionArg) Clone() *FunctionArg {
 	if arg.TypeDef != nil {
 		cp.TypeDef = arg.TypeDef.Clone()
 	}
-	if arg.SourceMap != nil {
-		cp.SourceMap = arg.SourceMap.Clone()
+	if arg.SourceMap.Valid {
+		cp.SourceMap.Value = arg.SourceMap.Value.Clone()
 	}
 	// NB(vito): don't bother copying DefaultValue, it's already 'any' so it's
 	// hard to imagine anything actually mutating it at runtime vs. replacing it
@@ -481,13 +487,17 @@ func (typeDef *TypeDef) WithObjectField(name string, fieldType *TypeDef, desc st
 		return nil, fmt.Errorf("cannot add function to non-object type: %s", typeDef.Kind)
 	}
 	typeDef = typeDef.Clone()
-	typeDef.AsObject.Value.Fields = append(typeDef.AsObject.Value.Fields, &FieldTypeDef{
+
+	field := &FieldTypeDef{
 		Name:         strcase.ToLowerCamel(name),
 		OriginalName: name,
 		Description:  desc,
-		SourceMap:    sourceMap,
 		TypeDef:      fieldType,
-	})
+	}
+	if sourceMap != nil {
+		field.SourceMap = dagql.NonNull(sourceMap)
+	}
+	typeDef.AsObject.Value.Fields = append(typeDef.AsObject.Value.Fields, field)
 	return typeDef, nil
 }
 
@@ -624,12 +634,12 @@ func (typeDef *TypeDef) IsSubtypeOf(otherDef *TypeDef) bool {
 
 type ObjectTypeDef struct {
 	// Name is the standardized name of the object (CamelCase), as used for the object in the graphql schema
-	Name        string                    `field:"true" doc:"The name of the object."`
-	Description string                    `field:"true" doc:"The doc string for the object, if any."`
-	SourceMap   *SourceMap                `field:"true" doc:"The location of this object declaration."`
-	Fields      []*FieldTypeDef           `field:"true" doc:"Static fields defined on this object, if any."`
-	Functions   []*Function               `field:"true" doc:"Functions defined on this object, if any."`
-	Constructor dagql.Nullable[*Function] `field:"true" doc:"The function used to construct new instances of this object, if any"`
+	Name        string                     `field:"true" doc:"The name of the object."`
+	Description string                     `field:"true" doc:"The doc string for the object, if any."`
+	SourceMap   dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this object declaration."`
+	Fields      []*FieldTypeDef            `field:"true" doc:"Static fields defined on this object, if any."`
+	Functions   []*Function                `field:"true" doc:"Functions defined on this object, if any."`
+	Constructor dagql.Nullable[*Function]  `field:"true" doc:"The function used to construct new instances of this object, if any"`
 
 	// SourceModuleName is currently only set when returning the TypeDef from the Objects field on Module
 	SourceModuleName string `field:"true" doc:"If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise."`
@@ -692,16 +702,19 @@ func (obj ObjectTypeDef) Clone() *ObjectTypeDef {
 		cp.Constructor.Value = obj.Constructor.Value.Clone()
 	}
 
-	if cp.SourceMap != nil {
-		cp.SourceMap = cp.SourceMap.Clone()
+	if cp.SourceMap.Valid {
+		cp.SourceMap.Value = cp.SourceMap.Value.Clone()
 	}
 
 	return &cp
 }
 
 func (obj *ObjectTypeDef) WithSourceMap(sourceMap *SourceMap) *ObjectTypeDef {
+	if sourceMap == nil {
+		return obj
+	}
 	obj = obj.Clone()
-	obj.SourceMap = sourceMap
+	obj.SourceMap = dagql.NonNull(sourceMap)
 	return obj
 }
 
@@ -773,7 +786,7 @@ type FieldTypeDef struct {
 	Description string   `field:"true" doc:"A doc string for the field, if any."`
 	TypeDef     *TypeDef `field:"true" doc:"The type of the field."`
 
-	SourceMap *SourceMap `field:"true" doc:"The location of this field declaration."`
+	SourceMap dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this field declaration."`
 
 	// Below are not in public API
 
@@ -802,18 +815,18 @@ func (typeDef FieldTypeDef) Clone() *FieldTypeDef {
 	if typeDef.TypeDef != nil {
 		cp.TypeDef = typeDef.TypeDef.Clone()
 	}
-	if typeDef.SourceMap != nil {
-		cp.SourceMap = typeDef.SourceMap.Clone()
+	if typeDef.SourceMap.Valid {
+		cp.SourceMap.Value = typeDef.SourceMap.Value.Clone()
 	}
 	return &cp
 }
 
 type InterfaceTypeDef struct {
 	// Name is the standardized name of the interface (CamelCase), as used for the interface in the graphql schema
-	Name        string      `field:"true" doc:"The name of the interface."`
-	Description string      `field:"true" doc:"The doc string for the interface, if any."`
-	SourceMap   *SourceMap  `field:"true" doc:"The location of this interface declaration."`
-	Functions   []*Function `field:"true" doc:"Functions defined on this interface, if any."`
+	Name        string                     `field:"true" doc:"The name of the interface."`
+	Description string                     `field:"true" doc:"The doc string for the interface, if any."`
+	SourceMap   dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this interface declaration."`
+	Functions   []*Function                `field:"true" doc:"Functions defined on this interface, if any."`
 	// SourceModuleName is currently only set when returning the TypeDef from the Objects field on Module
 	SourceModuleName string `field:"true" doc:"If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise."`
 
@@ -850,16 +863,19 @@ func (iface InterfaceTypeDef) Clone() *InterfaceTypeDef {
 	for i, fn := range iface.Functions {
 		cp.Functions[i] = fn.Clone()
 	}
-	if cp.SourceMap != nil {
-		cp.SourceMap = cp.SourceMap.Clone()
+	if cp.SourceMap.Valid {
+		cp.SourceMap.Value = cp.SourceMap.Value.Clone()
 	}
 
 	return &cp
 }
 
 func (iface *InterfaceTypeDef) WithSourceMap(sourceMap *SourceMap) *InterfaceTypeDef {
+	if sourceMap == nil {
+		return iface
+	}
 	iface = iface.Clone()
-	iface.SourceMap = sourceMap
+	iface.SourceMap = dagql.NonNull(sourceMap)
 	return iface
 }
 
@@ -989,10 +1005,10 @@ func (typeDef *InputTypeDef) ToInputObjectSpec() dagql.InputObjectSpec {
 
 type EnumTypeDef struct {
 	// Name is the standardized name of the enum (CamelCase), as used for the enum in the graphql schema
-	Name        string               `field:"true" doc:"The name of the enum."`
-	Description string               `field:"true" doc:"A doc string for the enum, if any."`
-	Members     []*EnumMemberTypeDef `field:"true" doc:"The members of the enum."`
-	SourceMap   *SourceMap           `field:"true" doc:"The location of this enum declaration."`
+	Name        string                     `field:"true" doc:"The name of the enum."`
+	Description string                     `field:"true" doc:"A doc string for the enum, if any."`
+	Members     []*EnumMemberTypeDef       `field:"true" doc:"The members of the enum."`
+	SourceMap   dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this enum declaration."`
 
 	// SourceModuleName is currently only set when returning the TypeDef from the Enum field on Module
 	SourceModuleName string `field:"true" doc:"If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise."`
@@ -1016,12 +1032,15 @@ func (*EnumTypeDef) TypeDescription() string {
 }
 
 func NewEnumTypeDef(name, description string, sourceMap *SourceMap) *EnumTypeDef {
-	return &EnumTypeDef{
+	typedef := &EnumTypeDef{
 		Name:         strcase.ToCamel(name),
 		OriginalName: name,
 		Description:  description,
-		SourceMap:    sourceMap,
 	}
+	if sourceMap != nil {
+		typedef.SourceMap = dagql.NonNull(sourceMap)
+	}
+	return typedef
 }
 
 func (enum EnumTypeDef) Clone() *EnumTypeDef {
@@ -1031,18 +1050,18 @@ func (enum EnumTypeDef) Clone() *EnumTypeDef {
 	for i, value := range enum.Members {
 		cp.Members[i] = value.Clone()
 	}
-	if enum.SourceMap != nil {
-		cp.SourceMap = enum.SourceMap.Clone()
+	if enum.SourceMap.Valid {
+		cp.SourceMap.Value = enum.SourceMap.Value.Clone()
 	}
 
 	return &cp
 }
 
 type EnumMemberTypeDef struct {
-	Name        string     `field:"true" doc:"The name of the enum member."`
-	Value       string     `field:"true" doc:"The value of the enum member"`
-	Description string     `field:"true" doc:"A doc string for the enum member, if any."`
-	SourceMap   *SourceMap `field:"true" doc:"The location of this enum member declaration."`
+	Name        string                     `field:"true" doc:"The name of the enum member."`
+	Value       string                     `field:"true" doc:"The value of the enum member"`
+	Description string                     `field:"true" doc:"A doc string for the enum member, if any."`
+	SourceMap   dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this enum member declaration."`
 
 	OriginalName string
 }
@@ -1061,30 +1080,36 @@ func (*EnumMemberTypeDef) TypeDescription() string {
 }
 
 func NewEnumMemberTypeDef(name, value, description string, sourceMap *SourceMap) *EnumMemberTypeDef {
-	return &EnumMemberTypeDef{
+	typedef := &EnumMemberTypeDef{
 		OriginalName: name,
 		Name:         strcase.ToScreamingSnake(name),
 		Value:        value,
 		Description:  description,
-		SourceMap:    sourceMap,
 	}
+	if sourceMap != nil {
+		typedef.SourceMap = dagql.NonNull(sourceMap)
+	}
+	return typedef
 }
 
 func NewEnumValueTypeDef(name, value, description string, sourceMap *SourceMap) *EnumMemberTypeDef {
-	return &EnumMemberTypeDef{
+	typedef := &EnumMemberTypeDef{
 		OriginalName: name,
 		Name:         value,
 		Value:        value,
 		Description:  description,
-		SourceMap:    sourceMap,
 	}
+	if sourceMap != nil {
+		typedef.SourceMap = dagql.NonNull(sourceMap)
+	}
+	return typedef
 }
 
 func (enumValue EnumMemberTypeDef) Clone() *EnumMemberTypeDef {
 	cp := enumValue
 
-	if enumValue.SourceMap != nil {
-		cp.SourceMap = enumValue.SourceMap.Clone()
+	if enumValue.SourceMap.Valid {
+		cp.SourceMap.Value = enumValue.SourceMap.Value.Clone()
 	}
 
 	return &cp
@@ -1273,6 +1298,7 @@ type SourceMap struct {
 	Filename string `field:"true" doc:"The filename from the module source."`
 	Line     int    `field:"true" doc:"The line number within the filename."`
 	Column   int    `field:"true" doc:"The column number within the line."`
+	URL      string `field:"true" doc:"The URL to the file, if any. This can be used to link to the source map in the browser."`
 }
 
 func (*SourceMap) Type() *ast.Type {
@@ -1292,37 +1318,58 @@ func (sourceMap SourceMap) Clone() *SourceMap {
 }
 
 func (sourceMap *SourceMap) TypeDirective() *ast.Directive {
-	return &ast.Directive{
-		Name: "sourceMap",
-		Arguments: ast.ArgumentList{
-			{
-				Name: "module",
-				Value: &ast.Value{
-					Kind: ast.StringValue,
-					Raw:  sourceMap.Module,
-				},
-			},
-			{
-				Name: "filename",
-				Value: &ast.Value{
-					Kind: ast.StringValue,
-					Raw:  sourceMap.Filename,
-				},
-			},
-			{
-				Name: "line",
-				Value: &ast.Value{
-					Kind: ast.IntValue,
-					Raw:  fmt.Sprint(sourceMap.Line),
-				},
-			},
-			{
-				Name: "column",
-				Value: &ast.Value{
-					Kind: ast.IntValue,
-					Raw:  fmt.Sprint(sourceMap.Column),
-				},
-			},
-		},
+	if sourceMap == nil {
+		return nil
 	}
+
+	directive := &ast.Directive{
+		Name:      "sourceMap",
+		Arguments: ast.ArgumentList{},
+	}
+	if sourceMap.Module != "" {
+		directive.Arguments = append(directive.Arguments, &ast.Argument{
+			Name: "module",
+			Value: &ast.Value{
+				Kind: ast.StringValue,
+				Raw:  sourceMap.Module,
+			},
+		})
+	}
+	if sourceMap.Filename != "" {
+		directive.Arguments = append(directive.Arguments, &ast.Argument{
+			Name: "filename",
+			Value: &ast.Value{
+				Kind: ast.StringValue,
+				Raw:  sourceMap.Filename,
+			},
+		})
+	}
+	if sourceMap.Line != 0 {
+		directive.Arguments = append(directive.Arguments, &ast.Argument{
+			Name: "line",
+			Value: &ast.Value{
+				Kind: ast.IntValue,
+				Raw:  fmt.Sprint(sourceMap.Line),
+			},
+		})
+	}
+	if sourceMap.Column != 0 {
+		directive.Arguments = append(directive.Arguments, &ast.Argument{
+			Name: "column",
+			Value: &ast.Value{
+				Kind: ast.IntValue,
+				Raw:  fmt.Sprint(sourceMap.Column),
+			},
+		})
+	}
+	if sourceMap.URL != "" {
+		directive.Arguments = append(directive.Arguments, &ast.Argument{
+			Name: "url",
+			Value: &ast.Value{
+				Kind: ast.StringValue,
+				Raw:  sourceMap.URL,
+			},
+		})
+	}
+	return directive
 }

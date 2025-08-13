@@ -9831,6 +9831,7 @@ type SourceMap struct {
 	id       *SourceMapID
 	line     *int
 	module   *string
+	url      *string
 }
 
 func (r *SourceMap) WithGraphQLQuery(q *querybuilder.Selection) *SourceMap {
@@ -9924,6 +9925,19 @@ func (r *SourceMap) Module(ctx context.Context) (string, error) {
 		return *r.module, nil
 	}
 	q := r.query.Select("module")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The URL to the file, if any. This can be used to link to the source map in the browser.
+func (r *SourceMap) URL(ctx context.Context) (string, error) {
+	if r.url != nil {
+		return *r.url, nil
+	}
+	q := r.query.Select("url")
 
 	var response string
 

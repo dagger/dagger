@@ -6,9 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -593,22 +591,9 @@ func (s *moduleSourceSchema) gitModuleSource(
 		gitSrc.Git.Symbolic += "/" + gitSrc.SourceRootSubpath
 	}
 
-	parsedURL, err := url.Parse(gitSrc.Git.HTMLRepoURL)
+	gitSrc.Git.HTMLURL, err = gitSrc.Git.Link(gitSrc.SourceRootSubpath, -1, -1)
 	if err != nil {
-		gitSrc.Git.HTMLURL = gitSrc.Git.HTMLRepoURL + path.Join("/src", gitSrc.Git.Commit, gitSrc.SourceRootSubpath)
-	} else {
-		switch parsedURL.Host {
-		case "github.com", "gitlab.com":
-			gitSrc.Git.HTMLURL = gitSrc.Git.HTMLRepoURL + path.Join("/tree", gitSrc.Git.Commit, gitSrc.SourceRootSubpath)
-		case "dev.azure.com":
-			if gitSrc.SourceRootSubpath != "." {
-				gitSrc.Git.HTMLURL = fmt.Sprintf("%s/commit/%s?path=/%s", gitSrc.Git.HTMLRepoURL, gitSrc.Git.Commit, gitSrc.SourceRootSubpath)
-			} else {
-				gitSrc.Git.HTMLURL = gitSrc.Git.HTMLRepoURL + path.Join("/commit", gitSrc.Git.Commit)
-			}
-		default:
-			gitSrc.Git.HTMLURL = gitSrc.Git.HTMLRepoURL + path.Join("/src", gitSrc.Git.Commit, gitSrc.SourceRootSubpath)
-		}
+		return inst, fmt.Errorf("failed to get git module source HTML URL: %w", err)
 	}
 
 	var configContents string

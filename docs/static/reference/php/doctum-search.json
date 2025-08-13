@@ -4243,6 +4243,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\SourceMap::url",
+			"p": "Dagger/SourceMap.html#method_url",
+			"d": "<p>The URL to the file, if any. This can be used to link to the source map in the browser.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Terminal::id",
 			"p": "Dagger/Terminal.html#method_id",
 			"d": "<p>A unique identifier for this Terminal.</p>"
