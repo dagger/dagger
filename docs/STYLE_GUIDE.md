@@ -59,6 +59,7 @@
   - Dagger Functions
   - Dagger Engine
   - Dagger Cloud
+  - Dagger Shell
   - Traces
   - Daggerverse
 
