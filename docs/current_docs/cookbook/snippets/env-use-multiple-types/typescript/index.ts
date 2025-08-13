@@ -23,6 +23,6 @@ export class MyModule {
         Once complete, return only the built binary.`,
       )
 
-      return work.env().output("file").asFile()
+    return work.env().output("file").asFile()
   }
 }

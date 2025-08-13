@@ -17,9 +17,9 @@ export class MyModule {
         You will receive a question and you need to provide a detailed answer.
         Make sure to use the provided context and environment variables.
         Your answer should be clear and concise.
-        Your question is: $question`
+        Your question is: $question`,
       )
 
-      return await work.env().output("answer").asString()
+    return await work.env().output("answer").asString()
   }
 }
