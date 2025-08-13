@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestExtractGitIgnorePatterns(t *testing.T) {
+func TestParseGitIgnore(t *testing.T) {
 	t.Run("absolute paths", func(t *testing.T) {
 		gitIgnoreContent := `foo
 bar
@@ -51,6 +51,19 @@ foo/bar
 		)
 
 		require.Equal(t, []string{"!**/bar", "!baz/foo/x"}, patterns)
+	})
+
+	t.Run("dir only exclusion", func(t *testing.T) {
+		gitIgnoreContent := `foo/
+!build*/
+./node_modules/
+`
+
+		patterns := parseGitIgnore(
+			gitIgnoreContent, ".",
+		)
+
+		require.Equal(t, []string{"**/foo/**", "!**/build*/**", "node_modules/**"}, patterns)
 	})
 
 	t.Run("parent dir setting", func(t *testing.T) {
