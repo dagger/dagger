@@ -153,11 +153,16 @@ module.exports = {
         "reference/configuration/custom-runner",
         "reference/configuration/custom-ca",
         "reference/configuration/proxy",
+        {
+          type: "link",
+          label: "Engine Configuration Schema",
+          href: "https://docs.dagger.io/engine.schema.json",
+        },
       ],
     },
     {
       type: "category",
-      label: "API and SDKs Documentation",
+      label: "API and SDKs",
       items: [
         "reference/api/internals",
         {
@@ -201,9 +206,9 @@ module.exports = {
       type: "category",
       label: "Best Practices",
       items: [
-        "reference/best-practices/adopting",
         "reference/best-practices/monorepos",
         "reference/best-practices/modules",
+        "reference/best-practices/adopting",
         "reference/best-practices/contributing",
       ],
     },
