@@ -21,7 +21,7 @@ from cattrs.cols import is_sequence
 from graphql.pyutils import snake_to_camel
 
 from dagger.client.base import Type
-from dagger.mod._arguments import DefaultPath, Ignore, Name
+from dagger.mod._arguments import DefaultGit, DefaultPath, Ignore, Name
 from dagger.mod._types import ContextPath
 
 asyncify = anyio.to_thread.run_sync
@@ -111,6 +111,12 @@ def get_ignore(obj: Any) -> list[str] | None:
 def get_default_path(obj: Any) -> ContextPath | None:
     """Get the last DefaultPath() of an annotated type."""
     meta = get_meta(obj, DefaultPath)
+    return meta.from_context if meta else None
+
+
+def get_default_git(obj: Any) -> ContextPath | None:
+    """Get the last DefaultGit() of an annotated type."""
+    meta = get_meta(obj, DefaultGit)
     return meta.from_context if meta else None
 
 

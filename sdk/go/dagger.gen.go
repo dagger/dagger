@@ -5250,6 +5250,8 @@ type FunctionWithArgOpts struct {
 	DefaultValue JSON
 	// If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
 	DefaultPath string
+	// If the argument is a GitRepository or GitRef type, default to load git from context.
+	DefaultGit string
 	// Patterns to ignore when loading the contextual argument value.
 	Ignore []string
 	// The source map for the argument definition.
@@ -5272,6 +5274,10 @@ func (r *Function) WithArg(name string, typeDef *TypeDef, opts ...FunctionWithAr
 		// `defaultPath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DefaultPath) {
 			q = q.Arg("defaultPath", opts[i].DefaultPath)
+		}
+		// `defaultGit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DefaultGit) {
+			q = q.Arg("defaultGit", opts[i].DefaultGit)
 		}
 		// `ignore` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Ignore) {
@@ -5317,6 +5323,7 @@ func (r *Function) WithSourceMap(sourceMap *SourceMap) *Function {
 type FunctionArg struct {
 	query *querybuilder.Selection
 
+	defaultGit   *string
 	defaultPath  *string
 	defaultValue *JSON
 	description  *string
@@ -5328,6 +5335,19 @@ func (r *FunctionArg) WithGraphQLQuery(q *querybuilder.Selection) *FunctionArg {
 	return &FunctionArg{
 		query: q,
 	}
+}
+
+// Only applies to arguments of type GitRef or GitRepository. If the argument is not set, load it from the given git ref or repository in the context directory
+func (r *FunctionArg) DefaultGit(ctx context.Context) (string, error) {
+	if r.defaultGit != nil {
+		return *r.defaultGit, nil
+	}
+	q := r.query.Select("defaultGit")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory

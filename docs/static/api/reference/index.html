@@ -8191,6 +8191,10 @@
                                 <p>If the argument is a Directory or File type, default to load path from context directory, relative to root directory.</p>
                               </div>
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>defaultGit</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>If the argument is a GitRepository or GitRef type, default to load git from context.</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>ignore</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
                                 <p>Patterns to ignore when loading the contextual argument value.</p>
                               </div>
@@ -8264,6 +8268,10 @@
                       </tr>
                     </thead>
                     <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="FunctionArg-defaultGit" href="#FunctionArg-defaultGit"><code>defaultGit</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Only applies to arguments of type GitRef or GitRepository. If the argument is not set, load it from the given git ref or repository in the context directory </td>
+                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="FunctionArg-defaultPath" href="#FunctionArg-defaultPath"><code>defaultPath</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory </td>

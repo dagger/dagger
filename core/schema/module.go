@@ -144,6 +144,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("description").Doc(`A doc string for the argument, if any`),
 				dagql.Arg("defaultValue").Doc(`A default value to use for this argument if not explicitly set by the caller, if any`),
 				dagql.Arg("defaultPath").Doc(`If the argument is a Directory or File type, default to load path from context directory, relative to root directory.`),
+				dagql.Arg("defaultGit").Doc(`If the argument is a GitRepository or GitRef type, default to load git from context.`),
 				dagql.Arg("ignore").Doc(`Patterns to ignore when loading the contextual argument value.`),
 				dagql.Arg("sourceMap").Doc(`The source map for the argument definition.`),
 			),
@@ -475,6 +476,7 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 	Description  string    `default:""`
 	DefaultValue core.JSON `default:""`
 	DefaultPath  string    `default:""`
+	DefaultGit   string    `default:""`
 	Ignore       []string  `default:"[]"`
 	SourceMap    dagql.Optional[core.SourceMapID]
 }) (*core.Function, error) {
@@ -494,20 +496,51 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 	}
 
 	// Check if both values are used, return an error if so.
-	if args.DefaultValue != nil && args.DefaultPath != "" {
-		return nil, fmt.Errorf("cannot set both default value and default path from context")
+	defaultSet := []bool{
+		args.DefaultValue != nil,
+		args.DefaultPath != "",
+		args.DefaultGit != "",
+	}
+	defaultCount := 0
+	for _, v := range defaultSet {
+		if v {
+			defaultCount++
+		}
+	}
+	if defaultCount > 1 {
+		return nil, fmt.Errorf("cannot set more than one default value")
 	}
 
 	// Check if default path from context is set for non-directory or non-file type
-	if argType.Self().Kind == core.TypeDefKindObject && args.DefaultPath != "" &&
-		(argType.Self().AsObject.Value.Name != "Directory" && argType.Self().AsObject.Value.Name != "File") {
-		return nil, fmt.Errorf("can only set default path for Directory or File type, not %s", argType.Self().AsObject.Value.Name)
+	if args.DefaultPath != "" {
+		if argType.Self().Kind != core.TypeDefKindObject {
+			return nil, fmt.Errorf("can only set default path for Object, not %s", argType.Self().Kind)
+		}
+		name := argType.Self().AsObject.Value.Name
+		if name != "Directory" && name != "File" {
+			return nil, fmt.Errorf("can only set default path for Directory or File type, not %s", name)
+		}
+	}
+	// Check if default git from context is set for non-git type
+	if args.DefaultGit != "" {
+		if argType.Self().Kind != core.TypeDefKindObject {
+			return nil, fmt.Errorf("can only set default git for Object type, not %s", argType.Self().Kind)
+		}
+		name := argType.Self().AsObject.Value.Name
+		if name != "GitRepository" && name != "GitRef" {
+			return nil, fmt.Errorf("can only set default git for GitRepository or GitRef type, not %s", name)
+		}
 	}
 
 	// Check if ignore is set for non-directory type
-	if argType.Self().Kind == core.TypeDefKindObject &&
-		len(args.Ignore) > 0 && argType.Self().AsObject.Value.Name != "Directory" {
-		return nil, fmt.Errorf("can only set ignore for Directory type, not %s", argType.Self().AsObject.Value.Name)
+	if len(args.Ignore) > 0 {
+		if argType.Self().Kind != core.TypeDefKindObject {
+			return nil, fmt.Errorf("can only set ignore for Object type, not %s", argType.Self().Kind)
+		}
+		name := argType.Self().AsObject.Value.Name
+		if name != "Directory" {
+			return nil, fmt.Errorf("can only set ignore for Directory type, not %s", name)
+		}
 	}
 
 	// When using a default path SDKs can't set a default value and the argument
@@ -516,8 +549,11 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 	if args.DefaultPath != "" {
 		td = td.WithOptional(true)
 	}
+	if args.DefaultGit != "" {
+		td = td.WithOptional(true)
+	}
 
-	return fn.WithArg(args.Name, td, args.Description, args.DefaultValue, args.DefaultPath, args.Ignore, sourceMap), nil
+	return fn.WithArg(args.Name, td, args.Description, args.DefaultValue, args.DefaultPath, args.DefaultGit, args.Ignore, sourceMap), nil
 }
 
 func (s *moduleSchema) functionWithSourceMap(ctx context.Context, fn *core.Function, args struct {

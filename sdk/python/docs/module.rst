@@ -17,6 +17,8 @@ Dagger Modules support.
 
 .. autoclass:: DefaultPath
 
+.. autoclass:: DefaultGit
+
 .. autoclass:: Ignore
 
 .. autoclass:: Enum

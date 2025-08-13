@@ -78,6 +78,7 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
         ?string $description = '',
         ?Json $defaultValue = null,
         ?string $defaultPath = '',
+        ?string $defaultGit = '',
         ?array $ignore = null,
         SourceMapId|SourceMap|null $sourceMap = null,
     ): Function_ {
@@ -92,6 +93,9 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $defaultPath) {
         $innerQueryBuilder->setArgument('defaultPath', $defaultPath);
+        }
+        if (null !== $defaultGit) {
+        $innerQueryBuilder->setArgument('defaultGit', $defaultGit);
         }
         if (null !== $ignore) {
         $innerQueryBuilder->setArgument('ignore', $ignore);

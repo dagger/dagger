@@ -18,6 +18,17 @@ defmodule Dagger.FunctionArg do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Only applies to arguments of type GitRef or GitRepository. If the argument is not set, load it from the given git ref or repository in the context directory
+  """
+  @spec default_git(t()) :: {:ok, String.t()} | {:error, term()}
+  def default_git(%__MODULE__{} = function_arg) do
+    query_builder =
+      function_arg.query_builder |> QB.select("defaultGit")
+
+    Client.execute(function_arg.client, query_builder)
+  end
+
+  @doc """
   Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory
   """
   @spec default_path(t()) :: {:ok, String.t()} | {:error, term()}

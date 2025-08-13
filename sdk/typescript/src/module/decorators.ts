@@ -43,6 +43,8 @@ export const enumType = registry.enumType
  *
  * @param opts.defaultPath Only applies to arguments of type File or Directory. If the argument is not set,
  * load it from the given path in the context directory.
+ * @param opts.defaultGit Only applies to arguments of type GitRespository or
+ * GitRef. If the argument is not set, load it from the context git repository.
  * @param opts.ignore Only applies to arguments of type Directory. The ignore patterns are applied to the input directory,
  * and matching entries are filtered out, in a cache-efficient manner..
  *

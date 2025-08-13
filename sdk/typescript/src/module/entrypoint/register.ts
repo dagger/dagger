@@ -146,10 +146,11 @@ export class Register {
         }
 
         // Check if both values are used, return an error if so.
-        if (arg.defaultValue && arg.defaultPath) {
-          throw new Error(
-            "cannot set both default value and default path from context",
-          )
+        if (
+          [arg.defaultValue, arg.defaultPath, arg.defaultGit].filter((v) => v)
+            .length > 1
+        ) {
+          throw new Error("cannot set both multiple defaults")
         }
 
         // We do not set the default value if it's not a primitive type, we let TypeScript
@@ -171,6 +172,9 @@ export class Register {
         // If the argument is a contextual argument, it becomes optional.
         if (arg.defaultPath) {
           opts.defaultPath = arg.defaultPath
+        }
+        if (arg.defaultGit) {
+          opts.defaultGit = arg.defaultGit
         }
 
         if (arg.ignore) {

@@ -52,6 +52,28 @@ class DefaultPath:
 
 
 @dataclasses.dataclass(slots=True, frozen=True)
+class DefaultGit:
+    """If the argument is omitted, load it from the given git repository.
+
+    Only applies to arguments of type :py:class:`dagger.GitRepository` or
+    :py:class:`dagger.GitRef`.
+
+    Mutually exclusive with setting a default value for the parameter. When
+    used within Python, the parameter should be required.
+
+    Example usage::
+
+        @function
+        def build(self, src: Annotated[dagger.GitRepository, DefaultGit(".")]): ...
+    """
+
+    from_context: ContextPath
+
+    def __str__(self) -> str:
+        return self.from_context
+
+
+@dataclasses.dataclass(slots=True, frozen=True)
 class Ignore:
     """Ignore patterns for :py:class:`dagger.Directory` arguments.
 
@@ -92,6 +114,7 @@ class Parameter:
     doc: str | None = None
     ignore: list[str] | None = None
     default_path: ContextPath | None = None
+    default_git: ContextPath | None = None
     default_value: dagger.JSON | None = None
 
     conv: dataclasses.InitVar[JsonConverter]
@@ -122,7 +145,14 @@ class Parameter:
 
     @property
     def is_optional(self) -> bool:
-        return self.has_default or self.default_path is not None or self.is_nullable
+        return any(
+            [
+                self.has_default,
+                self.default_path is not None,
+                self.default_git is not None,
+                self.is_nullable,
+            ]
+        )
 
     def _validate(self):
         extra = {"parameter": self.signature}
@@ -151,6 +181,25 @@ class Parameter:
                 # fast to avoid astonishment.
                 msg = (
                     "DefaultPath can't be used with an empty path in "
+                    f"parameter '{self.signature.name}'"
+                )
+                raise BadUsageError(msg, extra=extra)
+
+        if self.default_git:
+            if self.has_default and not (
+                self.is_nullable and self.signature.default is None
+            ):
+                msg = (
+                    f"DefaultGit can't be used in parameter '{self.signature.name}' "
+                    "since it already defines a default value."
+                )
+                raise BadUsageError(msg, extra=extra)
+
+            if not self.default_git:
+                # NB: We could instead warn or just ignore, but it's better to fail
+                # fast to avoid astonishment.
+                msg = (
+                    "DefaultGit can't be used with an empty path in "
                     f"parameter '{self.signature.name}'"
                 )
                 raise BadUsageError(msg, extra=extra)
