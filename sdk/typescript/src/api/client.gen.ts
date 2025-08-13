@@ -8659,6 +8659,15 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * Enable the experimental features for the module source.
+   * @param features The experimental features to enable.
+   */
+  withExperimentalFeatures = (features: string[]): ModuleSource => {
+    const ctx = this._ctx.select("withExperimentalFeatures", { features })
+    return new ModuleSource(ctx)
+  }
+
+  /**
    * Update the module source with additional include patterns for files+directories from its context that are required for building it
    * @param patterns The new additional include patterns.
    */
@@ -8734,6 +8743,14 @@ export class ModuleSource extends BaseClient {
    */
   withoutDependencies = (dependencies: string[]): ModuleSource => {
     const ctx = this._ctx.select("withoutDependencies", { dependencies })
+    return new ModuleSource(ctx)
+  }
+
+  /**
+   * Disable experimental features for the module source.
+   */
+  withoutExperimentalFeatures = (): ModuleSource => {
+    const ctx = this._ctx.select("withoutExperimentalFeatures")
     return new ModuleSource(ctx)
   }
 

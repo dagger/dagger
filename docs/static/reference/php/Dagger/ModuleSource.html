@@ -466,6 +466,16 @@
                     <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
                 </div>
                 <div class="col-md-8">
+                    <a href="#method_withExperimentalFeatures">withExperimentalFeatures</a>(array $features)
+        
+                                            <p><p>Enable the experimental features for the module source.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
+                </div>
+                <div class="col-md-8">
                     <a href="#method_withIncludes">withIncludes</a>(array $patterns)
         
                                             <p><p>Update the module source with additional include patterns for files+directories from its context that are required for building it</p></p>                </div>
@@ -549,6 +559,16 @@
                     <a href="#method_withoutDependencies">withoutDependencies</a>(array $dependencies)
         
                                             <p><p>Remove the provided dependencies from the module source's dependency list.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withoutExperimentalFeatures">withoutExperimentalFeatures</a>()
+        
+                                            <p><p>Disable experimental features for the module source.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -1726,8 +1746,50 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_withIncludes">
+                    <h3 id="method_withExperimentalFeatures">
         <div class="location">at line 313</div>
+        <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
+    <strong>withExperimentalFeatures</strong>(array $features)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Enable the experimental features for the module source.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>array</td>
+                <td>$features</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withIncludes">
+        <div class="location">at line 323</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withIncludes</strong>(array $patterns)
         </code>
@@ -1769,7 +1831,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withName">
-        <div class="location">at line 323</div>
+        <div class="location">at line 333</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withName</strong>(string $name)
         </code>
@@ -1811,7 +1873,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withSDK">
-        <div class="location">at line 333</div>
+        <div class="location">at line 343</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withSDK</strong>(string $source)
         </code>
@@ -1853,7 +1915,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withSourceSubpath">
-        <div class="location">at line 343</div>
+        <div class="location">at line 353</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withSourceSubpath</strong>(string $path)
         </code>
@@ -1895,7 +1957,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withUpdateBlueprint">
-        <div class="location">at line 353</div>
+        <div class="location">at line 363</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withUpdateBlueprint</strong>()
         </code>
@@ -1927,7 +1989,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withUpdateDependencies">
-        <div class="location">at line 362</div>
+        <div class="location">at line 372</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withUpdateDependencies</strong>(array $dependencies)
         </code>
@@ -1969,7 +2031,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutBlueprint">
-        <div class="location">at line 372</div>
+        <div class="location">at line 382</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withoutBlueprint</strong>()
         </code>
@@ -2001,7 +2063,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutClient">
-        <div class="location">at line 381</div>
+        <div class="location">at line 391</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withoutClient</strong>(string $path)
         </code>
@@ -2043,7 +2105,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutDependencies">
-        <div class="location">at line 391</div>
+        <div class="location">at line 401</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withoutDependencies</strong>(array $dependencies)
         </code>
@@ -2066,6 +2128,38 @@
             </tr>
             </table>
 
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withoutExperimentalFeatures">
+        <div class="location">at line 411</div>
+        <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
+    <strong>withoutExperimentalFeatures</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Disable experimental features for the module source.</p></p>                        
+        </div>
+        <div class="tags">
             
                             <h4>Return Value</h4>
 
