@@ -21,6 +21,14 @@ func URLForTrace(ctx context.Context) (url string, msg string, ok bool) {
 		token, ok := ParseDaggerToken(cloudToken)
 		if ok {
 			orgName = token.orgName
+		} else {
+			// DAGGER_CLOUD_TOKEN might be OIDC so try fetching
+			// the org from the state
+			org, err := auth.CurrentOrg()
+			if err != nil {
+				return "", "", false
+			}
+			orgName = org.Name
 		}
 	} else {
 		// Try OAuth next
