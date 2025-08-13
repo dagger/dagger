@@ -6,13 +6,13 @@ from dagger import dag, function, object_type
 class MyModule:
     @function
     def agent(self) -> dagger.File:
-        dir = dag.git("github.com/golang/example").branch("master").tree()
+        dirName = dag.git("github.com/golang/example").branch("master").tree()
         builder = dag.container().from_("golang:latest")
 
         environment = (
             dag.env()
             .with_container_input("container", builder, "a Golang container")
-            .with_directory_input("directory", dir, "a directory with source code")
+            .with_directory_input("directory", dirName, "a directory with source code")
             .with_file_output("file", "the built Go executable")
         )
 
