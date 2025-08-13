@@ -541,7 +541,7 @@ func getRefOrEvaluate[T fileOrDirectory](ctx context.Context, t T) (bkcache.Immu
 //   - If a pattern is negative exclusion (starts with `!`) or targets directory only
 //     (ends with `/`), we treat it as a regular path then read the exclusion to make
 //     sure the recusive pattern is applied if needed.
-//     For directory only exclusion, we need to add a `/**` suffix to the path to make sure 
+//     For directory only exclusion, we need to add a `/**` suffix to the path to make sure
 //     the exclusion is only applied to directory and not files that may match the pattern
 //     (see https://github.com/dagger/dagger/issues/10868).
 //     Example: !foo becomes foo then **/foo then !**/foo
