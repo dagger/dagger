@@ -20,7 +20,7 @@ export class MyModule {
         `You have access to a Golang container.
         You also have access to a directory containing Go source code.
         Mount the directory into the container and build the Go application.
-        Once complete, return only the built binary.`
+        Once complete, return only the built binary.`,
       )
 
       return work.env().output("file").asFile()

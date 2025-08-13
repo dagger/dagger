@@ -18,7 +18,7 @@ export class MyModule {
         You have access to a container.
         Install the necessary tools and libraries to create a
         complete development environment for Web applications.
-        Once complete, return the updated container.`
+        Once complete, return the updated container.`,
       )
 
       return work.env().output("result").asContainer()

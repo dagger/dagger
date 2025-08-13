@@ -25,7 +25,7 @@ export class MyModule {
         Do not delete any files or directories.
         Do not investigate any sub-directories.
         Once complete, return the 'translations' directory.
-        `
+        `,
       )
 
       return work.env().output("result").asDirectory()

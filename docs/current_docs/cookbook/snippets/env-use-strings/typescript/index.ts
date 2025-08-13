@@ -3,9 +3,7 @@ import { dag, object, func } from "@dagger.io/dagger"
 @object()
 export class MyModule {
   @func()
-  async agent(
-    question: string,
-  ): Promise<string> {
+  async agent(question: string): Promise<string> {
     const environment = dag
       .env()
       .withStringInput("question", question, "the question")
