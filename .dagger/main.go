@@ -357,7 +357,7 @@ func (dev *DaggerDev) Scan(ctx context.Context) error {
 	}
 
 	ctr := dag.Container().
-		From("aquasec/trivy:0.64.1@sha256:a8ca29078522f30393bdb34225e4c0994d38f37083be81a42da3a2a7e1488e9e").
+		From("aquasec/trivy:0.65.0@sha256:a22415a38938a56c379387a8163fcb0ce38b10ace73e593475d3658d578b2436").
 		WithMountedDirectory("/mnt/ignores", ignoreFiles).
 		WithMountedCache("/root/.cache/", dag.CacheVolume("trivy-cache")).
 		With(dev.withDockerCfg)
@@ -389,6 +389,7 @@ func (dev *DaggerDev) Scan(ctx context.Context) error {
 		src := dev.Source
 		src = src.
 			WithoutDirectory("docs").
+			WithoutDirectory("sdk/rust/examples").
 			WithoutDirectory("sdk/rust/crates/dagger-sdk/examples").
 			WithoutDirectory("core/integration/testdata").
 			WithoutDirectory("dagql/idtui/viztest")
