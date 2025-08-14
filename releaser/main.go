@@ -244,6 +244,7 @@ func (r *Releaser) Publish(
 	// 	}
 	// 	report.Artifacts = append(report.Artifacts, artifact)
 	// }
+	_ = netlifyToken
 
 	components := []struct {
 		name    string
