@@ -13,7 +13,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
@@ -773,7 +772,7 @@ func (GitSuite) TestSubmoduleAuth(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	t.Cleanup(func() { _ = c.Close() })
 
-	authToken := c.SetSecret("submodule-test-token", "test-token-"+uuid.NewString())
+	authToken := c.SetSecret("submodule-test-token", "test-token-"+identity.NewID())
 
 	submoduleContent := c.Directory().WithNewFile("submodule.txt", "This is the submodule content")
 	parentContent := c.Directory().WithNewFile("parent.txt", "This is the parent content")
@@ -842,6 +841,8 @@ git --git-dir=/srv/parent.git    update-server-info
 				ExperimentalServiceHost: gitSrv,
 			}).Branch("main").Tree().File("parent.txt").Contents(ctx)
 			require.Error(t, err)
+			requireErrOut(t, err, "git error")
+			requireErrOut(t, err, "Authentication failed")
 		})
 	})
 
@@ -869,6 +870,8 @@ git --git-dir=/srv/parent.git    update-server-info
 				ExperimentalServiceHost: httpSrv,
 			}).Branch("main").Tree().File("parent.txt").Contents(ctx)
 			require.Error(t, err)
+			requireErrOut(t, err, "git error")
+			requireErrOut(t, err, "Authentication failed")
 		})
 	})
 }

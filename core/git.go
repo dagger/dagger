@@ -256,7 +256,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		if err != nil {
 			return nil, nil, err
 		}
-		authHeader = "basic " + base64.StdEncoding.EncodeToString(
+		authHeader = "Basic " + base64.StdEncoding.EncodeToString(
 			fmt.Appendf(nil, "%s:%s", username, password),
 		)
 	} else if repo.AuthHeader.Self() != nil {

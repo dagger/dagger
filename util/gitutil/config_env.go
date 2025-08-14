@@ -37,11 +37,13 @@ func MergeGitConfigEnv(env []string, entries map[string]string) []string {
 			continue
 		}
 		if s, ok := strings.CutPrefix(e, keyPrefix); ok {
-			if n, err := strconv.Atoi(strings.SplitN(s, "=", 2)[0]); err == nil && n > maxIdx {
+			head, _, _ := strings.Cut(s, "=")
+			if n, err := strconv.Atoi(head); err == nil && n > maxIdx {
 				maxIdx = n
 			}
 		} else if s, ok := strings.CutPrefix(e, valPrefix); ok {
-			if n, err := strconv.Atoi(strings.SplitN(s, "=", 2)[0]); err == nil && n > maxIdx {
+			head, _, _ := strings.Cut(s, "=")
+			if n, err := strconv.Atoi(head); err == nil && n > maxIdx {
 				maxIdx = n
 			}
 		}
