@@ -2130,10 +2130,6 @@ func (s *containerSchema) asTarball(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get services: %w", err)
-	}
 	engineHostPlatform := query.Platform()
 
 	if args.MediaTypes == "" {
@@ -2201,12 +2197,6 @@ func (s *containerSchema) asTarball(
 	if !ok {
 		return inst, fmt.Errorf("no buildkit session group found")
 	}
-
-	detach, _, err := svcs.StartBindings(ctx, services)
-	if err != nil {
-		return inst, err
-	}
-	defer detach()
 
 	filePath := args.DagOpPath
 
@@ -2542,23 +2532,11 @@ func (s *containerSchema) exposedPorts(ctx context.Context, parent *core.Contain
 	for ociPort := range parent.Config.ExposedPorts {
 		p, exists := ports[ociPort]
 		if !exists {
-			// ignore errors when parsing from OCI
-			port, protoStr, ok := strings.Cut(ociPort, "/")
-			if !ok {
-				continue
-			}
-			portNr, err := strconv.Atoi(port)
+			var err error
+			p, err = core.NewPortFromOCI(ociPort)
 			if err != nil {
+				// ignore errors when parsing from OCI
 				continue
-			}
-			proto, err := core.NetworkProtocols.Lookup(strings.ToUpper(protoStr))
-			if err != nil {
-				// FIXME(vito): should this and above return nil, err instead?
-				continue
-			}
-			p = core.Port{
-				Port:     portNr,
-				Protocol: proto,
 			}
 		}
 		exposedPorts = append(exposedPorts, p)
