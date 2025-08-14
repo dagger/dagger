@@ -27,10 +27,10 @@ With Dagger, you:
 ## Get started
 
 - [Installation →](./getting-started/installation.mdx) Install Dagger and set up your development environment
-- [Basics →](./getting-started/basics.mdx) Learn Dagger fundamentals
-- [CI Quickstart →](./getting-started/ci.mdx) Build your first workflow
+- [Basics →](./getting-started/quickstarts/basics/index.mdx) Learn Dagger fundamentals
+- [CI Quickstart →](./getting-started/quickstarts/ci/index.mdx) Build your first workflow
 
-## Dagger Platform
+## Dagger platform
 
 Dagger consists of a number of components, all of which work together in an integrated fashion to provide a framework to build and run composable workflows.
 
@@ -38,13 +38,13 @@ Dagger consists of a number of components, all of which work together in an inte
 
 Types are the basic building blocks - such as containers, directories, files, and LLMs - that hold data (state) and offer operations (methods) you can link together. Each operation on a type runs inside a container, ensuring consistent, isolated execution.
 
-[**Learn more about types →**](./types/index.mdx)
+[**Learn more about types →**](./getting-started/types/index.mdx)
 
 ### Functions
 
 Dagger Functions are individual units of computation that perform a specific task by combining operations on types with custom logic. Dagger Functions are written in a programming language using a type-safe Dagger SDK, and packaged and shared in Dagger modules.
 
-[**Learn more about Dagger Functions →**](./extending/functions.mdx)
+[**Learn more about Dagger Functions →**](./extending/modules/functions.mdx)
 
 ### Modules
 
@@ -52,7 +52,7 @@ Dagger Functions are packaged, shared and reused using Dagger modules.
 
 When a Dagger module is loaded into a Dagger session, the Dagger API is dynamically extended with new functions served by that module. So, after loading a Dagger module, an API client can now call all of the original core functions plus the new functions provided by that module.
 
-[**Learn more about Dagger modules →**](./features/reusability.mdx)
+[**Learn more about Dagger modules →**](./introduction/features/reusability.mdx)
 
 ### CLI
 
@@ -76,7 +76,7 @@ Dagger SDKs provide resources for developing Dagger modules using a familiar lan
 2. A *server generator*, to *extend* the Dagger API with native code.
 3. Examples and reference documentation
 
-[**Learn more about Dagger SDKs →**](./extending/clients-sdk.mdx)
+[**Learn more about Dagger SDKs →**](./getting-started/api/clients-sdk.mdx)
 
 ### API
 
