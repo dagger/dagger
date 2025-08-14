@@ -44,6 +44,11 @@
                 <version>${netty-handler.version}</version>
             </dependency>
             <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-codec-http2</artifactId>
+                <version>${netty-codec-http2.version}</version>
+            </dependency>
+            <dependency>
                 <groupId>jakarta.json</groupId>
                 <artifactId>jakarta.json-api</artifactId>
                 <version>${jakarta.json-api.version}</version>
@@ -323,6 +328,7 @@
         <smallrye-graphql.version>2.14.0</smallrye-graphql.version>
         <netty-common.version>4.2.4.Final</netty-common.version>
         <netty-handler.version>4.2.4.Final</netty-handler.version>
+        <netty-codec-http2.version>4.2.4.Final</netty-codec-http2.version>
         <system-stubs-jupiter.version>2.1.8</system-stubs-jupiter.version>
         <xdg-java.version>0.1.1</xdg-java.version>
         <yasson.version>3.0.4</yasson.version>
