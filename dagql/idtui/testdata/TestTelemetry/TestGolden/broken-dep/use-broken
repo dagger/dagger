@@ -12,11 +12,13 @@ Expected stderr:
   ┃ ./main.go:6:6: undefined: ctx
   ! process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
 
-Error logs:
+● parsing command line arguments X.Xs
 
-▼ Container.withExec(args: ["go", "build", "-ldflags", "-s -w", "-o", "/runtime", "."]): Container! X.Xs ERROR
-# dagger/broken
-./main.go:6:6: undefined: ctx
-! process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
+● brokenDep: BrokenDep! X.Xs
+▼ .useBroken: Void X.Xs ERROR
+! call function "Broken": process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
+├─● broken: Broken! X.Xs
+╰─✘ .broken: Void X.Xs ERROR
+  ! call function "Broken": process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

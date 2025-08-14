@@ -7890,6 +7890,20 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         }]
     }
+    /// Load a module from a JSON string
+    ///
+    /// # Arguments
+    ///
+    /// * `json` - The JSON string to load
+    pub fn from_json(&self, json: impl Into<String>) -> Module {
+        let mut query = self.selection.select("fromJSON");
+        query = query.arg("json", json.into());
+        Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The generated files and directories made on top of the module source's context directory.
     pub fn generated_context_directory(&self) -> Directory {
         let query = self.selection.select("generatedContextDirectory");
@@ -7980,6 +7994,11 @@ impl Module {
     /// Forces evaluation of the module, including any loading into the engine and associated validation.
     pub async fn sync(&self) -> Result<ModuleId, DaggerError> {
         let query = self.selection.select("sync");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Return a JSON string representation of the module
+    pub async fn to_json(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("toJSON");
         query.execute(self.graphql_client.clone()).await
     }
     /// Retrieves the module with the given description
@@ -8320,6 +8339,26 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Enable the experimental features for the module source.
+    ///
+    /// # Arguments
+    ///
+    /// * `features` - The experimental features to enable.
+    pub fn with_experimental_features(&self, features: Vec<impl Into<String>>) -> ModuleSource {
+        let mut query = self.selection.select("withExperimentalFeatures");
+        query = query.arg(
+            "features",
+            features
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Update the module source with additional include patterns for files+directories from its context that are required for building it
     ///
     /// # Arguments
@@ -8448,6 +8487,15 @@ impl ModuleSource {
                 .map(|i| i.into())
                 .collect::<Vec<String>>(),
         );
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Disable experimental features for the module source.
+    pub fn without_experimental_features(&self) -> ModuleSource {
+        let query = self.selection.select("withoutExperimentalFeatures");
         ModuleSource {
             proc: self.proc.clone(),
             selection: query,

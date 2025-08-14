@@ -51,6 +51,8 @@ var (
 	developSourcePath string
 	developRecursive  bool
 
+	selfCalls bool
+
 	force bool
 )
 
@@ -133,6 +135,7 @@ func init() {
 	moduleInitCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate. See https://spdx.org/licenses/")
 	moduleInitCmd.Flags().StringSliceVar(&moduleIncludes, "include", nil, "Paths to include when loading the module. Only needed when extra paths are required to build the module. They are expected to be relative to the directory containing the module's dagger.json file (the module source root).")
 	moduleInitCmd.Flags().StringVar(&initBlueprint, "blueprint", "", "Reference another module as blueprint")
+	moduleInitCmd.Flags().BoolVar(&selfCalls, "with-self-calls", false, "Enable self-calls capability for the module (experimental)")
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
 	modulePublishCmd.Flags().StringVarP(&moduleURL, "mod", "m", "", "Module reference to publish, remote git repo (defaults to current directory)")
@@ -286,6 +289,13 @@ dagger init --sdk=go
 				})
 				// Install the blueprint
 				modSrc = modSrc.WithBlueprint(blueprintSrc)
+			}
+
+			if selfCalls {
+				if sdk == "" {
+					return fmt.Errorf("cannot enable self-calls feature without specifying --sdk")
+				}
+				modSrc = modSrc.WithExperimentalFeatures([]string{"self-calls"})
 			}
 
 			// Export generated files, including dagger.json

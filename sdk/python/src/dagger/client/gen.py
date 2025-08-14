@@ -7342,6 +7342,20 @@ class Module(Type):
         _ctx = self._select("enums", _args)
         return await _ctx.execute_object_list(TypeDef)
 
+    def from_json(self, json: str) -> Self:
+        """Load a module from a JSON string
+
+        Parameters
+        ----------
+        json:
+            The JSON string to load
+        """
+        _args = [
+            Arg("json", json),
+        ]
+        _ctx = self._select("fromJSON", _args)
+        return Module(_ctx)
+
     def generated_context_directory(self) -> Directory:
         """The generated files and directories made on top of the module source's
         context directory.
@@ -7477,6 +7491,27 @@ class Module(Type):
 
     def __await__(self):
         return self.sync().__await__()
+
+    async def to_json(self) -> str:
+        """Return a JSON string representation of the module
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("toJSON", _args)
+        return await _ctx.execute(str)
 
     def with_description(self, description: str) -> Self:
         """Retrieves the module with the given description
@@ -8150,6 +8185,20 @@ class ModuleSource(Type):
         _ctx = self._select("withEngineVersion", _args)
         return ModuleSource(_ctx)
 
+    def with_experimental_features(self, features: list[str]) -> Self:
+        """Enable the experimental features for the module source.
+
+        Parameters
+        ----------
+        features:
+            The experimental features to enable.
+        """
+        _args = [
+            Arg("features", features),
+        ]
+        _ctx = self._select("withExperimentalFeatures", _args)
+        return ModuleSource(_ctx)
+
     def with_includes(self, patterns: list[str]) -> Self:
         """Update the module source with additional include patterns for
         files+directories from its context that are required for building it
@@ -8261,6 +8310,12 @@ class ModuleSource(Type):
             Arg("dependencies", dependencies),
         ]
         _ctx = self._select("withoutDependencies", _args)
+        return ModuleSource(_ctx)
+
+    def without_experimental_features(self) -> Self:
+        """Disable experimental features for the module source."""
+        _args: list[Arg] = []
+        _ctx = self._select("withoutExperimentalFeatures", _args)
         return ModuleSource(_ctx)
 
     def with_(self, cb: Callable[["ModuleSource"], "ModuleSource"]) -> "ModuleSource":
