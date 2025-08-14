@@ -25,7 +25,11 @@ func (s *cacheSchema) Install(srv *dagql.Server) {
 			),
 	}.Install(srv)
 
-	dagql.Fields[*core.CacheVolume]{}.Install(srv)
+	dagql.Fields[*core.CacheVolume]{
+		dagql.FuncWithCacheKey("snapshot", s.snapshot, dagql.CachePerCall).
+			Experimental("This API is highly experimental and may be removed or replaced entirely.").
+			Doc(`Creates an immutable snapshot from the cache volume's current contents.`),
+	}.Install(srv)
 }
 
 func (s *cacheSchema) Dependencies() []SchemaResolvers {
@@ -49,6 +53,10 @@ func (s *cacheSchema) cacheVolumeCacheKey(ctx context.Context, parent dagql.Obje
 	namespaceKey := namespaceFromModule(m)
 	cacheCfg.Digest = dagql.HashFrom(cacheCfg.Digest.String(), namespaceKey)
 	return &cacheCfg, nil
+}
+
+func (s *cacheSchema) snapshot(ctx context.Context, parent *core.CacheVolume, args struct{}) (inst *core.Directory, _ error) {
+	return parent.Snapshot(ctx)
 }
 
 func (s *cacheSchema) cacheVolume(ctx context.Context, parent dagql.ObjectResult[*core.Query], args cacheArgs) (dagql.Result[*core.CacheVolume], error) {

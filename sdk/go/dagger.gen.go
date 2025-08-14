@@ -616,6 +616,17 @@ func (r *CacheVolume) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// Retrieves this directory with the given Git-compatible patch applied.
+//
+// Experimental: This API is highly experimental and may be removed or replaced entirely.
+func (r *CacheVolume) Snapshot() *Directory {
+	q := r.query.Select("snapshot")
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // Dagger Cloud configuration and state
 type Cloud struct {
 	query *querybuilder.Selection
