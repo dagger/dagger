@@ -1,0 +1,201 @@
+---
+title: Constructors
+slug: /extending/constructors
+description: Learn how to create and use constructors in Dagger modules, including simple and complex constructors, default values, and asynchronous usage.
+---
+
+
+import PartialComplexConstructorOutput from '../../partials/_complex_constructor_output.mdx';
+
+# Constructors
+
+Every Dagger module has a constructor. The default one is generated automatically and has no arguments.
+
+It's possible to write a custom constructor. The mechanism to do this is SDK-specific.
+
+This is a simple way to accept module-wide configuration, or just to set a few attributes without having to create setter functions for them.
+
+:::important
+Dagger modules have only one constructor. Constructors of [custom types](./custom-types.mdx) are not registered; they are constructed by the function that chains them.
+:::
+
+## Simple constructor
+
+The default constructor for a module can be overridden by registering a custom constructor. Its parameters are available as flags in the `dagger` command directly.
+
+:::important
+If you plan to use constructor fields in other module functions, ensure that they are declared as public (in Go and TypeScript). This is because Dagger stores fields using serialization and private fields are omitted during the serialization process. As a result, if a field is not declared as public, calling methods that use it will produce unexpected results.
+:::
+
+Here is an example module with a custom constructor:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=./snippets/constructors/go/simple/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=./snippets/constructors/python/simple/main.py
+```
+
+:::important
+Dagger `@object_type` classes are Python data classes that become exposed to the Dagger API. This means that you can adjust the generation of the constructor using standard data class features, such as [fields](https://docs.python.org/3/library/dataclasses.html#dataclasses.field) and [post-init processing](https://docs.python.org/3/library/dataclasses.html#post-init-processing). Refer to the [official `dataclasses` documentation](https://docs.python.org/3/library/dataclasses.html) to learn more.
+:::
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=./snippets/constructors/typescript/simple/index.ts
+```
+
+</TabItem>
+<TabItem value="php" label="PHP">
+
+```php file=./snippets/constructors/php/simple/src/MyModule.php
+```
+
+:::info
+In the PHP SDK the constructor must be the [magic method `__construct`](https://www.php.net/manual/en/language.oop5.decon.php#object.construct).
+As with any method, only public methods with the `#[DaggerFunction]` attribute will be registered with Dagger.
+:::
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/constructors/java/simple/MyModule.java
+```
+
+:::info
+In the Java SDK, the constructor must be public. A public empty constructor is also required in order to create the object from the serialized data.
+:::
+</TabItem>
+</Tabs>
+
+Here is an example call for this Dagger Function:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c '. --name=Foo | message'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+. --name=Foo | message
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call --name=Foo message
+```
+</TabItem>
+</Tabs>
+
+The result will be:
+
+```shell
+Hello, Foo!
+```
+
+## Default values for complex types
+
+Constructors can be passed both simple and complex types (such as `Container`, `Directory`, `Service` etc.) as arguments. Default values can be assigned in both cases.
+
+:::important
+Explicitly declare the type even when it can be inferred, so that the Dagger SDK can extend the GraphQL schema correctly.
+:::
+
+Here is an example of a Dagger module with a default constructor argument of type `Container`:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=./snippets/constructors/go/default-object/main.go
+```
+
+<PartialComplexConstructorOutput />
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=./snippets/constructors/python/default-object/main.py
+```
+
+<PartialComplexConstructorOutput />
+
+#### Dagger objects are Python data classes
+
+Since `@object_type` classes are [Python data classes](https://docs.python.org/3/library/dataclasses.html), you can fine tune the generation of the constructor in different ways.
+
+Here is a more complex example:
+
+```python file=./snippets/constructors/python/complex/main.py
+```
+
+A few important notes:
+
+- Data class fields become constructor arguments by default unless specified as `field(init=False)`. So, even though the `container` field is not added as a constructor argument it's still a required field that must be initialized  either with a default value or in post-init processing.
+- The [`__post_init__` function](https://docs.python.org/3/library/dataclasses.html#post-init-processing) is called at the end of the auto-generated constructor which can be used, for example, to initialize field values that depend on other field values.
+- Setting a default value like `None` in an attribute is the same as setting `dataclasses.field(default=None)`. `dataclasses.field()` is only required to specify other non-default values, like `init` or to set the default using a [factory function](https://docs.python.org/3/library/dataclasses.html#default-factory-functions).
+- The `dagger.field` descriptor wraps `dataclasses.field`, adding two important differences:
+  - `dagger.field()` is used to expose the attribute as a Dagger Function in the API (a simple getter), but it also becomes a part of the object's state.
+  - Not all arguments from `dataclasses.field()` can be set with `dagger.field()` which sets opinionated defaults, but you can specify both simple values and factory functions via the same `default` argument while with `dataclasses.field()` you need to use separate `default` and `default_factory` arguments.
+
+#### Factory function
+
+For default values that are more complex, dynamic or just [mutable](https://docs.python.org/3/library/dataclasses.html#mutable-default-values), use a [factory function](https://docs.python.org/3/library/dataclasses.html#default-factory-functions) without arguments in
+[`dataclasses.field(default_factory=...)`](https://docs.python.org/3/library/dataclasses.html#dataclasses.field) or [`dagger.field(default=...)`](https://dagger-io.readthedocs.io/en/latest/module.html#dagger.field):
+
+```python file=./snippets/constructors/python/factory/main.py
+```
+
+#### Asynchronous usage
+
+If a constructor argument needs an asynchronous call to set the default value, it's
+possible to replace the default constructor function from `__init__()` to
+a factory class method named `create`, as in the following code listing:
+
+:::warning
+This factory class method must be named `create`.
+:::
+
+```python file=./snippets/constructors/python/async/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=./snippets/constructors/typescript/default-object/index.ts
+```
+
+This default value can also be assigned directly in the field:
+
+```typescript file=./snippets/constructors/typescript/default-object-in-field/index.ts
+```
+
+:::important
+When assigning default values to complex types in TypeScript, it is necessary to use the `??` notation for this assignment. It is not possible to use the classic TypeScript notation for default arguments because the argument in this case is not a TypeScript primitive.
+:::
+
+<PartialComplexConstructorOutput />
+
+</TabItem>
+<TabItem value="php" label="PHP">
+
+```php file=./snippets/constructors/php/default-object/src/MyModule.php
+```
+
+<PartialComplexConstructorOutput />
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/constructors/java/default-object/MyModule.java
+```
+
+<PartialComplexConstructorOutput />
+
+</TabItem>
+</Tabs>
