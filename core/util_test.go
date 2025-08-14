@@ -63,7 +63,7 @@ foo/bar
 			gitIgnoreContent, ".",
 		)
 
-		require.Equal(t, []string{"**/foo/**", "!**/build*/**", "node_modules/**"}, patterns)
+		require.Equal(t, []string{"**/foo/", "!**/build*/**", "node_modules/"}, patterns)
 	})
 
 	t.Run("parent dir setting", func(t *testing.T) {
