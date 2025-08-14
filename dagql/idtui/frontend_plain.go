@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -14,6 +15,7 @@ import (
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/cleanups"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
 	"github.com/vito/go-interact/interact"
@@ -168,7 +170,7 @@ func (fe *frontendPlain) addVirtualLog(span trace.Span, name string, fields ...s
 	spanDt.logs = append(spanDt.logs, logLine{newCursorBuffer([]byte(line)), time.Now()})
 }
 
-func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run func(context.Context) error) error {
+func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run func(context.Context) (cleanups.CleanupF, error)) error {
 	if opts.TooFastThreshold == 0 {
 		opts.TooFastThreshold = 100 * time.Millisecond
 	}
@@ -192,7 +194,11 @@ func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run f
 		}()
 	}
 
-	runErr := run(ctx)
+	cleanup, runErr := run(ctx)
+	if cleanup != nil {
+		runErr = errors.Join(runErr, cleanup())
+	}
+
 	fe.finalRender()
 
 	fe.db.WriteDot(opts.DotOutputFilePath, opts.DotFocusField, opts.DotShowInternal)

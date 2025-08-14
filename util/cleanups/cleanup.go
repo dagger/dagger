@@ -9,15 +9,17 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
+type CleanupF = func() error
+
 type Cleanups struct {
-	funcs []func() error
+	funcs []CleanupF
 }
 
 type CleanupFunc struct {
-	fn func() error
+	fn CleanupF
 }
 
-func (c *Cleanups) Add(msg string, f func() error) CleanupFunc {
+func (c *Cleanups) Add(msg string, f CleanupF) CleanupFunc {
 	fOnce := sync.OnceValue(func() error {
 		slog.ExtraDebug("running cleanup", "msg", msg)
 		start := time.Now()
@@ -52,7 +54,7 @@ func (c *Cleanups) Run() error {
 	return rerr
 }
 
-func IgnoreErrs(fn func() error, ignored ...error) func() error {
+func IgnoreErrs(fn CleanupF, ignored ...error) CleanupF {
 	return func() error {
 		err := fn()
 		for _, ig := range ignored {
@@ -64,7 +66,7 @@ func IgnoreErrs(fn func() error, ignored ...error) func() error {
 	}
 }
 
-func Infallible(fn func()) func() error {
+func Infallible(fn func()) CleanupF {
 	return func() error {
 		fn()
 		return nil

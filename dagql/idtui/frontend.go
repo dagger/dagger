@@ -27,6 +27,7 @@ import (
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/session/prompt"
+	"github.com/dagger/dagger/util/cleanups"
 )
 
 type (
@@ -63,7 +64,7 @@ var loggedOutTraceMsg = fmt.Sprintf("Setup tracing at %%s. To hide set %s=1", Sk
 
 type Frontend interface {
 	// Run starts a frontend, and runs the target function.
-	Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) error) error
+	Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) (cleanups.CleanupF, error)) error
 
 	// Opts returns the opts of the currently running frontend.
 	Opts() *dagui.FrontendOpts
