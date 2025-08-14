@@ -60,6 +60,7 @@
   - Dagger Engine
   - Dagger Cloud
   - Dagger Shell
+  - Dagger API
   - Traces
   - Daggerverse
 
