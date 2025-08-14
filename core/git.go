@@ -234,6 +234,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		}
 	}()
 
+	var authHeader string
 	if repo.AuthToken.Self() != nil {
 		// caller-supplied username takes priority; otherwise pick a host-specific default
 		username := repo.AuthUsername
@@ -255,24 +256,19 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		if err != nil {
 			return nil, nil, err
 		}
-		authHeader := "basic " + base64.StdEncoding.EncodeToString(
+		authHeader = "Basic " + base64.StdEncoding.EncodeToString(
 			fmt.Appendf(nil, "%s:%s", username, password),
 		)
-		opts = append(opts, gitutil.WithArgs(
-			"-c", "http."+repo.URL.Remote()+".extraheader=Authorization: "+authHeader,
-		))
 	} else if repo.AuthHeader.Self() != nil {
 		secretStore, err := query.Secrets(ctx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
 		}
-		authHeader, err := secretStore.GetSecretPlaintext(ctx, repo.AuthHeader.ID().Digest())
+		byteAuthHeader, err := secretStore.GetSecretPlaintext(ctx, repo.AuthHeader.ID().Digest())
 		if err != nil {
 			return nil, nil, err
 		}
-		opts = append(opts, gitutil.WithArgs(
-			"-c", "http."+repo.URL.Remote()+".extraheader=Authorization: "+string(authHeader),
-		))
+		authHeader = string(byteAuthHeader)
 	}
 
 	if repo.SSHAuthSocket.Self() != nil {
@@ -304,8 +300,11 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 	if err != nil {
 		return nil, nil, err
 	}
+
+	var resolvPath string
 	if netConf != nil {
-		resolvPath, err := mountResolv(netConf)
+		var err error
+		resolvPath, err = mountResolv(netConf)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -316,6 +315,18 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 			return os.Remove(resolvPath)
 		})
 	}
+
+	opts = append(opts, gitutil.WithExec(func(ctx context.Context, cmd *exec.Cmd) error {
+		if authHeader != "" {
+			// Scope auth to this host and make it inherit to sub-commands:
+			// use GIT_CONFIG_* so submodule clones see http.extraheader (unlike -c).
+			base := repo.URL.Scheme + "://" + repo.URL.Host
+			cmd.Env = gitutil.MergeGitConfigEnv(cmd.Env, map[string]string{
+				"http." + base + "/.extraheader": "Authorization: " + authHeader,
+			})
+		}
+		return runWithStandardUmaskAndNetOverride(ctx, cmd, "", resolvPath)
+	}))
 
 	return gitutil.NewGitCLI(opts...), cleanups.Run, nil
 }
@@ -788,9 +799,17 @@ func doGitCheckout(
 
 	// TODO: this feels completely out-of-sync from how we do the rest
 	// of the clone - caching will not be as great here
-	_, err = checkoutGit.Run(ctx, "submodule", "update", "--init", "--recursive", "--depth=1")
-	if err != nil {
-		return fmt.Errorf("failed to update submodules for %s: %w", remote, err)
+	subArgs := []string{"submodule", "update", "--init", "--recursive", "--depth=1"}
+	if _, err := checkoutGit.Run(ctx, subArgs...); err != nil {
+		if strings.Contains(err.Error(), "does not support shallow") {
+			subArgs = slices.DeleteFunc(subArgs, func(s string) bool {
+				return strings.HasPrefix(s, "--depth")
+			})
+			_, err = checkoutGit.Run(ctx, subArgs...)
+		}
+		if err != nil {
+			return fmt.Errorf("failed to update submodules for %s: %w", remote, err)
+		}
 	}
 
 	if discardGitDir {

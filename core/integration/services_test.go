@@ -2257,6 +2257,85 @@ server {
 	return svc, url
 }
 
+func gitSmartHTTPServiceDirAuth(ctx context.Context, t testing.TB, c *dagger.Client, hostname string, dir *dagger.Directory, username string, token *dagger.Secret) (*dagger.Service, string) {
+	t.Helper()
+
+	if username == "" {
+		username = "x-access-token"
+	}
+
+	var tokenPlaintext string
+	if token != nil {
+		var err error
+		tokenPlaintext, err = token.Plaintext(ctx)
+		require.NoError(t, err)
+	}
+
+	tmpl, err := template.New("").Parse(`
+server {
+	listen       80;
+	server_name  localhost;
+
+	# Route everything to git-http-backend (smart-HTTP)
+	location ~ ^/(.*)$ {
+		{{ if .token }}
+		auth_basic            "Git";
+		auth_basic_user_file  /usr/share/nginx/htpasswd;
+		{{ end }}
+
+		include               /etc/nginx/fastcgi_params;
+		fastcgi_param         GIT_HTTP_EXPORT_ALL "";
+		fastcgi_param         GIT_PROJECT_ROOT      /var/www;
+		fastcgi_param         PATH_INFO             /$1;
+		fastcgi_param         SCRIPT_FILENAME       /usr/lib/git-core/git-http-backend;
+		fastcgi_pass          unix:/var/run/fcgiwrap.socket;
+	}
+}
+`)
+	require.NoError(t, err)
+
+	var config bytes.Buffer
+	require.NoError(t, tmpl.Execute(&config, map[string]any{
+		"token": tokenPlaintext,
+	}))
+
+	ctr := c.Container().
+		From("nginx").
+		WithExec([]string{"sh", "-lc", `
+set -eux
+apt-get update
+apt-get install -y --no-install-recommends git fcgiwrap spawn-fcgi ca-certificates
+rm -rf /var/lib/apt/lists/*
+test -x /usr/lib/git-core/git-http-backend
+`}).
+		WithNewFile("/etc/nginx/conf.d/default.conf", config.String()).
+		WithMountedDirectory("/var/www", dir).
+		WithEnvVariable("CACHE_BUSTER", fmt.Sprintf("%s-%d", username, time.Now().UnixNano()))
+
+	if token != nil {
+		ctr = ctr.WithMountedSecret(
+			"/usr/share/nginx/htpasswd",
+			c.SetSecret("htpasswd-"+identity.NewID(), username+":{PLAIN}"+tokenPlaintext),
+			dagger.ContainerWithMountedSecretOpts{Owner: "nginx"},
+		)
+	}
+
+	svc := ctr.
+		WithExposedPort(80).
+		WithEntrypoint([]string{"sh", "-lc",
+			"spawn-fcgi -s /var/run/fcgiwrap.socket -M 766 /usr/sbin/fcgiwrap && exec nginx -g 'daemon off;'"}).
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+
+	if hostname == "" {
+		var err error
+		hostname, err = svc.Hostname(ctx)
+		require.NoError(t, err)
+	} else {
+		svc = svc.WithHostname(hostname)
+	}
+	return svc, "http://" + hostname
+}
+
 func gitService(ctx context.Context, t *testctx.T, c *dagger.Client, content *dagger.Directory) (*dagger.Service, string) {
 	t.Helper()
 	return gitServiceWithBranch(ctx, t, c, content, "main")
