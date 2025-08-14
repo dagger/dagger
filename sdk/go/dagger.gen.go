@@ -9551,6 +9551,7 @@ type Service struct {
 	id       *ServiceID
 	start    *ServiceID
 	stop     *ServiceID
+	sync     *ServiceID
 	up       *Void
 }
 type WithServiceFunc func(r *Service) *Service
@@ -9727,6 +9728,27 @@ func (r *Service) Stop(ctx context.Context, opts ...ServiceStopOpts) (*Service, 
 	return &Service{
 		query: q.Root().Select("loadServiceFromID").Arg("id", id),
 	}, nil
+}
+
+// Forces evaluation of the pipeline in the engine.
+func (r *Service) Sync(ctx context.Context) (*Service, error) {
+	q := r.query.Select("sync")
+
+	var id ServiceID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Service{
+		query: q.Root().Select("loadServiceFromID").Arg("id", id),
+	}, nil
+}
+
+func (r *Service) Terminal() *Service {
+	q := r.query.Select("terminal")
+
+	return &Service{
+		query: q,
+	}
 }
 
 // ServiceUpOpts contains options for Service.Up

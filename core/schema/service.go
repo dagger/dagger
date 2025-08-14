@@ -94,6 +94,9 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Service]{
+		Syncer[*core.Service]().
+			Doc(`Forces evaluation of the pipeline in the engine.`),
+
 		dagql.NodeFunc("hostname", s.hostname).
 			Doc(`Retrieves a hostname which can be used by clients to reach this container.`),
 
@@ -137,6 +140,9 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("kill").Doc(`Immediately kill the service without waiting for a graceful exit`),
 			),
+
+		dagql.NodeFunc("terminal", s.terminal).
+			DoNotCache("Imperatively mutates runtime state."),
 	}.Install(srv)
 }
 
@@ -358,6 +364,13 @@ func (s *serviceSchema) stop(ctx context.Context, parent dagql.ObjectResult[*cor
 	}
 	id := dagql.NewID[*core.Service](parent.ID())
 	return dagql.NewResultForCurrentID(ctx, id)
+}
+
+func (s *serviceSchema) terminal(ctx context.Context, parent dagql.ObjectResult[*core.Service], args struct{}) (res dagql.ObjectResult[*core.Service], _ error) {
+	if err := parent.Self().Terminal(ctx, parent); err != nil {
+		return res, err
+	}
+	return parent, nil
 }
 
 type UpArgs struct {
