@@ -438,7 +438,6 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 	defer fe.mu.Unlock()
 	defer fe.flush()
 	defer fe.recalculateViewLocked() // recalculate view *after* updating the db
-	slog.Debug("frontend exporting spans", "spans", len(spans))
 	return fe.db.ExportSpans(ctx, spans)
 }
 

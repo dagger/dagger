@@ -270,7 +270,6 @@ func (fe plainSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.Re
 		for i, span := range spans {
 			spanIDs[i] = span.SpanContext().SpanID().String()
 		}
-		slog.Debug("frontend exporting spans", "spans", len(spanIDs))
 	}
 
 	for _, span := range spans {
