@@ -5,7 +5,7 @@ pub enum ConnectError {
     #[error("failed to connect to dagger engine")]
     FailedToConnect(#[source] eyre::Error),
 
-    #[error("an error occurred from the dagger context call")]
+    #[error("an error occurred from the dagger context call: {0:}")]
     DaggerContext(#[source] eyre::Error),
 
     #[error("failed to shutdown the dagger connection")]
