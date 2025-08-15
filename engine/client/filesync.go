@@ -18,6 +18,7 @@ import (
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	"github.com/dagger/dagger/util/fsxutil"
 )
 
 type Filesyncer struct {
@@ -103,6 +104,12 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 		fs, err := fsutil.NewFS(absPath)
 		if err != nil {
 			return err
+		}
+		if opts.UseGitIgnore {
+			fs, err = fsxutil.NewGitIgnoreFS(fs)
+			if err != nil {
+				return err
+			}
 		}
 		fs, err = fsutil.NewFilterFS(fs, &fsutil.FilterOpt{
 			IncludePatterns: opts.IncludePatterns,

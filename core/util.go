@@ -542,48 +542,48 @@ func getRefOrEvaluate[T fileOrDirectory](ctx context.Context, t T) (bkcache.Immu
 //     (ends with `/`), we treat is as a regular path then read the exclusion to make
 //     sure the recusive pattern is applied if needed.
 //     Example: !foo becomes foo then **/foo then !**/foo
-func parseGitIgnore(gitIgnoreContent string, parentDir string) []string {
-	ignorePatterns := []string{}
-
-	// Split gitignore files by line
-	ignorePatternsLines := strings.Split(gitIgnoreContent, "\n")
-
-	for _, linePattern := range ignorePatternsLines {
-		// ignore comments, negatives and empty lines
-		if strings.HasPrefix(linePattern, "#") || linePattern == "" {
-			continue
-		}
-
-		// Save if the pattern is a directory only or negate so we can work with the path
-		// only and reconstruct it later
-		isDirOnly := strings.HasSuffix(linePattern, "/")
-		isNegate := strings.HasPrefix(linePattern, "!")
-		pattern := strings.TrimPrefix(strings.TrimSuffix(linePattern, "/"), "!")
-
-		// Based on https://git-scm.com/docs/gitignore
-		// If there is a separator at the beginning or middle (or both) of the pattern, then the pattern is relative.
-		// Otherwise, the pattern is recursive.
-		// If pattern is already starting with **, not change needed
-		// If the pattern starts with *, it's not recursive but only matches the directory itself.
-		if !strings.Contains(pattern, "/") &&
-			!strings.HasPrefix(pattern, "**") &&
-			!strings.HasPrefix(pattern, "*") {
-			pattern = "**/" + pattern
-		}
-
-		// Rebase the pattern based on the relative path from the context.
-		relativePattern := filepath.Join(parentDir, pattern)
-
-		// Reconstruct the pattern with negative or directory only pattern
-		if isNegate {
-			relativePattern = "!" + relativePattern
-		}
-		if isDirOnly {
-			relativePattern += "/"
-		}
-
-		ignorePatterns = append(ignorePatterns, relativePattern)
-	}
-
-	return ignorePatterns
-}
+// func parseGitIgnore(gitIgnoreContent string, parentDir string) []string {
+// 	ignorePatterns := []string{}
+//
+// 	// Split gitignore files by line
+// 	ignorePatternsLines := strings.Split(gitIgnoreContent, "\n")
+//
+// 	for _, linePattern := range ignorePatternsLines {
+// 		// ignore comments, negatives and empty lines
+// 		if strings.HasPrefix(linePattern, "#") || linePattern == "" {
+// 			continue
+// 		}
+//
+// 		// Save if the pattern is a directory only or negate so we can work with the path
+// 		// only and reconstruct it later
+// 		isDirOnly := strings.HasSuffix(linePattern, "/")
+// 		isNegate := strings.HasPrefix(linePattern, "!")
+// 		pattern := strings.TrimPrefix(strings.TrimSuffix(linePattern, "/"), "!")
+//
+// 		// Based on https://git-scm.com/docs/gitignore
+// 		// If there is a separator at the beginning or middle (or both) of the pattern, then the pattern is relative.
+// 		// Otherwise, the pattern is recursive.
+// 		// If pattern is already starting with **, not change needed
+// 		// If the pattern starts with *, it's not recursive but only matches the directory itself.
+// 		if !strings.Contains(pattern, "/") &&
+// 			!strings.HasPrefix(pattern, "**") &&
+// 			!strings.HasPrefix(pattern, "*") {
+// 			pattern = "**/" + pattern
+// 		}
+//
+// 		// Rebase the pattern based on the relative path from the context.
+// 		relativePattern := filepath.Join(parentDir, pattern)
+//
+// 		// Reconstruct the pattern with negative or directory only pattern
+// 		if isNegate {
+// 			relativePattern = "!" + relativePattern
+// 		}
+// 		if isDirOnly {
+// 			relativePattern += "/"
+// 		}
+//
+// 		ignorePatterns = append(ignorePatterns, relativePattern)
+// 	}
+//
+// 	return ignorePatterns
+// }
