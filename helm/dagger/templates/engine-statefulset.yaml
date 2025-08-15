@@ -37,6 +37,9 @@ spec:
       {{- end }}
       labels:
         name: {{ include "dagger.fullname" . }}-engine
+        {{- if .Values.engine.service.enabled }}
+        app: {{ include "dagger.fullname" . }}-engine
+        {{- end }}
         {{- include "dagger.labels" . | nindent 8 }}
     spec:
       {{- with .Values.engine.nodeSelector }}
@@ -104,7 +107,7 @@ spec:
             - name: dagger
               containerPort: {{ .Values.engine.port }}
               protocol: TCP
-              {{- if .Values.engine.hostPort }}
+              {{- if and .Values.engine.hostPort (not .Values.engine.service.enabled) }}
               hostPort: {{ .Values.engine.hostPort }}
               {{- end }}
           {{- end }}
