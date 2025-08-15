@@ -900,11 +900,11 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 	dir = dir.Clone()
 
 	thisDirPath := dir.Dir
-	if thisDirPath == "" {
+	if thisDirPath == "" || thisDirPath == "." {
 		thisDirPath = "/"
 	}
 	otherDirPath := other.Dir
-	if otherDirPath == "" {
+	if otherDirPath == "" || thisDirPath == "." {
 		otherDirPath = "/"
 	}
 	if thisDirPath != otherDirPath {
