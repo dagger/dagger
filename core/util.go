@@ -539,9 +539,14 @@ func getRefOrEvaluate[T fileOrDirectory](ctx context.Context, t T) (bkcache.Immu
 //     Example: foo/bar stays foo/bar but foo becomes **/foo
 //
 //   - If a pattern is negative exclusion (starts with `!`) or targets directory only
-//     (ends with `/`), we treat is as a regular path then read the exclusion to make
+//     (ends with `/`), we treat it as a regular path then read the exclusion to make
 //     sure the recusive pattern is applied if needed.
+//     For directory only exclusion, we need to add a `/**` suffix to the path to make sure
+//     the exclusion is only applied to directory and not files that may match the pattern
+//     (see https://github.com/dagger/dagger/issues/10868).
 //     Example: !foo becomes foo then **/foo then !**/foo
+//     Example: foo/ becomes **/foo/
+//     Example: foo*/ becomes **/foo*/**
 func parseGitIgnore(gitIgnoreContent string, parentDir string) []string {
 	ignorePatterns := []string{}
 
@@ -580,6 +585,12 @@ func parseGitIgnore(gitIgnoreContent string, parentDir string) []string {
 		}
 		if isDirOnly {
 			relativePattern += "/"
+
+			// If the patterns contains a wildcard, we add recursive pattern to avoid
+			// matching files that may match the pattern.
+			if strings.Contains(strings.TrimPrefix(relativePattern, "**/"), "*") {
+				relativePattern += "**"
+			}
 		}
 
 		ignorePatterns = append(ignorePatterns, relativePattern)
