@@ -3,7 +3,7 @@
 
 [build.environment]
   NODE_VERSION = "20"
-  
+
 [context.production]
   ignore = "false"
 
@@ -18,18 +18,162 @@
   status = 302
   force = true
 
+## start: specific redirects for 0.18 docs ##
 
-###### start: specific redirects for ci+agent docs ######
+[[redirects]]
+  from = "/api"
+  to = "/extending"
+  status = 301
+
+[[redirects]]
+  from = "/api/custom-functions"
+  to = "/extending/functions"
+  status = 301
+
+[[redirects]]
+  from = "/api/return-values"
+  to = "/extending/return-types"
+  status = 301
+
+[[redirects]]
+  from = "/api/default-paths"
+  to = "/getting-started/types/directory"
+  status = 301
+
+[[redirects]]
+  from = "/api/filters"
+  to = "/getting-started/types/directory"
+  status = 301
+
+## end: specific redirects for 0.18 docs ##
+
+## start: redirects for docs between 0.9 and 0.18 ##
+
+[[redirects]]
+  from = "/developer-guide"
+  to = "/extending"
+  status = 301
+
+[[redirects]]
+  from = "/developer-guide/go"
+  to = "/extending"
+  status = 301
+
+[[redirects]]
+  from = "/developer-guide/python"
+  to = "/extending"
+  status = 301
+
+[[redirects]]
+  from = "/developer-guide/typescript"
+  to = "/extending"
+  status = 301
+
+[[redirects]]
+  from = "/manuals/developer"
+  to = "/extending"
+  status = 301
+
+[[redirects]]
+  from = "/manuals/developer/known-issues"
+  to = "https://github.com/dagger/dagger/issues"
+  status = 301
+
+[[redirects]]
+  from = "/manuals/user"
+  to = "/getting-started"
+  status = 301
+
+[[redirects]]
+  from = "/user-guide"
+  to = "/getting-started"
+  status = 301
+
+[[redirects]]
+  from = "/manuals/administrator"
+  to = "/reference"
+  status = 301
+
+[[redirects]]
+  from = "/reference/typescript/classes/api_client_gen.container"
+  to = "/reference/typescript/api/client.gen/classes/Container"
+  status = 301
+
+[[redirects]]
+  # redirect temporary zenith labs page to current docs
+  from = "/labs/project-zenith"
+  to = "/"
+  status = 301
+
+[[redirects]]
+  # redirect temporary zenith page to current docs
+  from = "/zenith"
+  to = "/"
+  status = 301
+
+## end: redirects for docs between 0.9 and 0.18 ##
+
+## start: wildcard redirects ##
+## todo: move to end ##
+
+[[redirects]]
+  from = "/ci/integrations/*"
+  to = "/getting-started/ci-integrations/:splat"
+  status = 301
+
+[[redirects]]
+  from = "/integrations/*"
+  to = "/getting-started/ci-integrations/:splat"
+  status = 301
+
+[[redirects]]
+  from = "/api/*"
+  to = "/extending/:splat"
+  status = 301
+
+[[redirects]]
+  from = "/manuals/developer/*"
+  to = "/extending"
+  status = 301
+
+[[redirects]]
+  from = "/manuals/user/*"
+  to = "/getting-started"
+  status = 301
+
+[[redirects]]
+  from = "/manuals/administrator/*"
+  to = "/reference"
+  status = 301
+
+[[redirects]]
+  from = "/developer-guide/go/*"
+  to = "/extending"
+  status = 301
+
+[[redirects]]
+  from = "/developer-guide/python/*"
+  to = "/extending"
+  status = 301
+
+[[redirects]]
+  from = "/developer-guide/typescript/*"
+  to = "/extending"
+  status = 301
+
+[[redirects]]
+  from = "/user-guide/*"
+  to = "/getting-started"
+  status = 301
+
+## end: wildcard redirects ##
+
+## todo: lines below this still to be updated
+
 [[redirects]]
   # redirect /ai-agents/quickstart page
   from = "/ai-agents/quickstart"
   to = "/quickstart/agent"
-  status = 301
-
-[[redirects]]
-  # redirect /integrations pages to CI-specific ones
-  from = "/integrations/*"
-  to = "/ci/integrations/:splat"
   status = 301
 
 [[redirects]]
@@ -127,17 +271,6 @@
   to = "/quickstart"
   status = 301
 
-[[redirects]]
-  # redirect temporary zenith labs page to current docs
-  from = "/labs/project-zenith"
-  to = "/"
-  status = 301
-
-[[redirects]]
-  # redirect temporary zenith page to current docs
-  from = "/zenith"
-  to = "/"
-  status = 301
 
 [[redirects]]
   # redirect modules feature page
@@ -151,418 +284,9 @@
   to = "/features/security"
   status = 301
 
-# redirects for developer manual pages
-[[redirects]]
-  from = "/developer-guide"
-  to = "/api"
-  status = 301
-
-[[redirects]]
-  from = "/developer-guide/go"
-  to = "/api"
-  status = 301
-
-[[redirects]]
-  from = "/developer-guide/python"
-  to = "/api"
-  status = 301
-
-[[redirects]]
-  from = "/developer-guide/typescript"
-  to = "/api"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer"
-  to = "/api"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer/architecture"
-  to = "/api/internals"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer/cache-volumes"
-  to = "/api/cache-volumes"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer/chaining"
-  to = "/api/chaining"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer/custom-types"
-  to = "/api/custom-types"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer/debugging"
-  to = "/api/terminal"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer/dependencies"
-  to = "/api/packages"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer/documentation"
-  to = "/api/documentation"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer/entrypoint-function"
-  to = "/api/constructors"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer/enumerations"
-  to = "/api/enumerations"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer/error-handling"
-  to = "/api/error-handling"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer/execution-environment"
-  to = "/api/custom-functions"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer/functions"
-  to = "/api/custom-functions"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer/ide-integration"
-  to = "/api/ide-integration"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer/interfaces"
-  to = "/api/interfaces"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer/known-issues"
-  to = "https://github.com/dagger/dagger/issues"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer/module-structure"
-  to = "/api/module-structure"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer/modules-vs-functions"
-  to = "/api/custom-functions"
-  status = 301
-
-[[redirects]]
-  from = "/api/publish"
-  to = "/api/daggerverse"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer/publish-modules"
-  to = "/api/publish"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer/secrets"
-  to = "/api/secrets"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer/services"
-  to = "/api/services"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer/state-functions"
-  to = "/api/state"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer/typescript/356352/runtime"
-  to = "/configuration/modules"
-  status = 301
-
-[[redirects]]
-  from = "/reference/typescript/classes/api_client_gen.container"
-  to = "/reference/typescript/api/client.gen/classes/Container"
-  status = 301
-
-[[redirects]]
-  from = "/developer-guide/go/264203/functions"
-  to = "/api/custom-functions"
-  status = 301
-
-[[redirects]]
-  from = "/developer-guide/python/820256/module-structure"
-  to = "/api/module-structure"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer/overview/942201/execution-environment"
-  to = "/api/custom-functions"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/developer/python/640201/documentation"
-  to = "/api/documentation"
-  status = 301
-
-
-[[redirects]]
-  from = "/manuals/developer/go"
-  to = "/api"
-  status = 301
-
-# redirects for user manual pages
-[[redirects]]
-  from = "/manuals/user"
-  to = "/api"
-  status = 301
-
-[[redirects]]
-  from = "/user-guide"
-  to = "/api"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/arguments"
-  to = "/api/arguments"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/artifacts"
-  to = "/api/return-values"
-  status = 301
-
 [[redirects]]
   from = "/api/254103/build-custom-client"
   to = "/api/http"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/call"
-  to = "/api/cli"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/chaining"
-  to = "/api/chaining"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/cloud/*"
-  to = "/configuration/cloud"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/cloud-get-started"
-  to = "/configuration/cloud"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/consume-artifacts"
-  to = "/api/chaining"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/containers"
-  to = "/api/return-values#container-return-values"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/directories"
-  to = "/api/return-values#directory-return-values"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/exec"
-  to = "/api/chaining#execute-commands-in-containers"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/export"
-  to = "/api/chaining#export-directories-files-and-containers"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/files"
-  to = "/api/return-values#directory-return-values"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/functions"
-  to = "/api/custom-functions"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/host"
-  to = "/api/custom-functions"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/host-env"
-  to = "/api/arguments#string-arguments"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/host-fs"
-  to = "/api/arguments#local-directories"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/host-services"
-  to = "/api/arguments#service-arguments"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/inspect"
-  to = "/api/chaining#inspect-directories-files-and-containers"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/produce-artifacts"
-  to = "/api/return-values"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/publish"
-  to = "/api/chaining#publish-containers"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/remote-images"
-  to = "/api/arguments#container-arguments"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/remote-repositories"
-  to = "/api/remote-modules"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/remotes"
-  to = "/api/remote-modules"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/services"
-  to = "/api/services"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/terminal"
-  to = "/api/terminal"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/troubleshooting"
-  to = "/troubleshooting"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/932727/troubleshooting"
-  to = "/troubleshooting"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/tui"
-  to = "/api/terminal"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/919011/tui"
-  to = "/api/terminal"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/user/visualization"
-  to = "/features/visualization"
-  status = 301
-
-# redirects for administrator manual pages
-[[redirects]]
-  from = "/manuals/administrator"
-  to = "/configuration"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/administrator/caching"
-  to = "/features/caching"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/administrator/ci"
-  to = "/ci/integrations"
-  status = 301
-
-[[redirects]]
-  from = "/user-guide/ci"
-  to = "/ci/integrations"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/administrator/cloud"
-  to = "/configuration/cloud"
-  status = 301
-
-[[redirects]]
-  from = "/user-guide/cloud/*"
-  to = "/configuration/cloud"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/administrator/custom-ca"
-  to = "/configuration/custom-ca"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/administrator/custom-registry"
-  to = "/configuration/custom-registry"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/administrator/272381/custom-registry"
-  to = "/configuration/custom-registry"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/administrator/custom-runner"
-  to = "/configuration/custom-runner"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/administrator/472258/custom-runner"
-  to = "/configuration/custom-runner"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/administrator/engine"
-  to = "/configuration"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/administrator/organizations"
-  to = "/configuration/cloud#organizations"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/administrator/proxy"
-  to = "/configuration/proxy"
-  status = 301
-
-[[redirects]]
-  from = "/manuals/administrator/roles-permissions"
-  to = "/configuration/cloud#roles-and-permissions"
   status = 301
 
 # redirects for integrations pages
@@ -1320,7 +1044,7 @@
 [[redirects]]
   # redirect quickstart custom function page to new URL
   from = "/quickstart/428201/custom-modules"
-  to = "/quickstart/428201/custom-function"
+  to = "/extending/functions"
   status = 301
 
 [[redirects]]
