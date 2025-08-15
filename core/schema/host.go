@@ -258,11 +258,53 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		return i, fmt.Errorf("path %q escapes workdir; use an absolute path instead", args.Path)
 	}
 
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return i, fmt.Errorf("failed to get current query: %w", err)
+	}
+
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return i, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
+	hostPath := args.Path
+	hostPath, err = bk.AbsPath(ctx, hostPath)
+	if err != nil {
+		return i, fmt.Errorf("failed to get absolute path from git ignore root %s: %w", hostPath, err)
+	}
+
+	relPath := "."
+
+	// If NoGitAutoIgnore is not set, we load all the .gitgnore patterns inside the context directory
+	// (if ContextDirectoryPath is set) or the git repo if .git is found.
+	if !args.NoGitAutoIgnore {
+		originalPath := hostPath
+		if args.GitIgnoreRoot != "" {
+			hostPath = args.GitIgnoreRoot
+			hostPath, err = bk.AbsPath(ctx, hostPath)
+			if err != nil {
+				return i, fmt.Errorf("failed to get absolute path from git ignore root %s: %w", hostPath, err)
+			}
+		} else {
+			dotGitPath, found, err := findUp(ctx, core.NewCallerStatFS(bk), args.Path, ".git")
+			if err != nil {
+				return i, fmt.Errorf("failed to find up .git: %w", err)
+			}
+			if found {
+				hostPath = dotGitPath
+			}
+		}
+		relPath, err = filepath.Rel(hostPath, originalPath)
+		if err != nil {
+			return i, fmt.Errorf("failed to get relative path from %q: %w", originalPath, err)
+		}
+	}
+
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return i, fmt.Errorf("failed to get requester session ID: %w", err)
 	}
-
 	stableID := clientMetadata.ClientStableID
 	if stableID == "" {
 		slog.WarnContext(ctx, "client stable ID not set, using random value")
@@ -275,100 +317,56 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		buildkit.WithTracePropagation(ctx),
 	}
 
-	// HACK(cwlbraa): to bust the cache with noCache:true, we exclude a random text path.
-	// No real chance of excluding something real this changes both the name and the cache key without modification to localsource.
-	// To be removed via dagopification.
-	if args.NoCache {
-		args.Exclude = append(args.Exclude, rand.Text())
-	}
-
 	localName := fmt.Sprintf("upload %s from %s (client id: %s, session id: %s)", args.Path, stableID, clientMetadata.ClientID, clientMetadata.SessionID)
+
+	includePatterns := make([]string, 0, 2+len(args.Include))
+	if relPath != "." && relPath != "" {
+		includePatterns = append(includePatterns, "!*", relPath)
+	}
+	for _, include := range args.Include {
+		include, negative := strings.CutPrefix(include, "!")
+		if !filepath.IsLocal(include) {
+			continue
+		}
+		include = filepath.Join(relPath, include)
+		if negative {
+			include = "!" + include
+		}
+		includePatterns = append(includePatterns, include)
+	}
+	localOpts = append(localOpts, llb.IncludePatterns(includePatterns))
 	if len(args.Include) > 0 {
 		localName += fmt.Sprintf(" (include: %s)", strings.Join(args.Include, ", "))
-		localOpts = append(localOpts, llb.IncludePatterns(args.Include))
 	}
 
-	excludesPatterns := []string{}
-
-	// If NoGitAutoIgnore is not set, we load all the .gitgnore patterns inside the context directory
-	// (if ContextDirectoryPath is set) or the git repo if .git is found.
-	var dotGitIgnoreParentPath string
+	excludePatterns := make([]string, 0, len(args.Exclude))
+	// HACK: to bust the cache and pass custom options, we put them in
+	// excludePatterns. we filter them out later.
 	if !args.NoGitAutoIgnore {
-		if args.GitIgnoreRoot != "" {
-			dotGitIgnoreParentPath = args.GitIgnoreRoot
-		} else {
-			query, err := core.CurrentQuery(ctx)
-			if err != nil {
-				return i, fmt.Errorf("failed to get current query: %w", err)
-			}
-
-			bk, err := query.Buildkit(ctx)
-			if err != nil {
-				return i, fmt.Errorf("failed to get buildkit client: %w", err)
-			}
-
-			dotGitPath, found, err := findUp(ctx, core.NewCallerStatFS(bk), args.Path, ".git")
-			if err != nil {
-				return i, fmt.Errorf("failed to find up .git: %w", err)
-			}
-
-			if found {
-				dotGitIgnoreParentPath = dotGitPath
-			}
-		}
+		excludePatterns = append(excludePatterns, "[dagger.gitignore]")
 	}
-
-	if dotGitIgnoreParentPath != "" {
-		hostPath := args.Path
-		if !filepath.IsAbs(hostPath) {
-			query, err := core.CurrentQuery(ctx)
-			if err != nil {
-				return i, fmt.Errorf("failed to get current query: %w", err)
-			}
-
-			bk, err := query.Buildkit(ctx)
-			if err != nil {
-				return i, fmt.Errorf("failed to get buildkit client: %w", err)
-			}
-
-			hostPath, err = bk.AbsPath(ctx, hostPath)
-			if err != nil {
-				return i, fmt.Errorf("failed to get absolute path from host path %s: %w", hostPath, err)
-			}
-		}
-
-		ignorePatterns, err := loadDirectoryGitIgnorePatterns(ctx, dotGitIgnoreParentPath, hostPath)
-		if err != nil {
-			return i, fmt.Errorf("failed to load .gitignore patterns: %w", err)
-		}
-
-		rebasedIgnorePatterns, err := rebaseGitIgnorePatterns(dotGitIgnoreParentPath, hostPath, ignorePatterns)
-		if err != nil {
-			return i, fmt.Errorf("failed to rebase .gitignore patterns: %w", err)
-		}
-
-		excludesPatterns = append(excludesPatterns, rebasedIgnorePatterns...)
+	if args.NoCache {
+		excludePatterns = append(excludePatterns, "[dagger.cachebuster="+rand.Text()+"]")
 	}
-
-	// Add the exclude args from directive after the .gitignore so they can
-	// be overridden.
+	for _, exclude := range args.Exclude {
+		exclude, negative := strings.CutPrefix(exclude, "!")
+		if !filepath.IsLocal(exclude) {
+			continue
+		}
+		exclude = filepath.Join(relPath, exclude)
+		if negative {
+			exclude = "!" + exclude
+		}
+		excludePatterns = append(excludePatterns, exclude)
+	}
+	localOpts = append(localOpts, llb.ExcludePatterns(excludePatterns))
 	if len(args.Exclude) > 0 {
-		excludesPatterns = append(excludesPatterns, args.Exclude...)
-	}
-
-	if len(excludesPatterns) > 0 {
-		localName += fmt.Sprintf(" (exclude: %s)", strings.Join(excludesPatterns, ", "))
-		localOpts = append(localOpts, llb.ExcludePatterns(excludesPatterns))
+		localName += fmt.Sprintf(" (exclude: %s)", strings.Join(args.Exclude, ", "))
 	}
 
 	localOpts = append(localOpts, llb.WithCustomName(localName))
 
-	localLLB := llb.Local(args.Path, localOpts...)
-
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return i, err
-	}
+	localLLB := llb.Local(hostPath, localOpts...)
 
 	localDef, err := localLLB.Marshal(ctx, llb.Platform(query.Platform().Spec()))
 	if err != nil {
@@ -377,64 +375,55 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	localPB := localDef.ToPB()
 
 	dir, err := dagql.NewObjectResultForCurrentID(ctx, srv,
-		core.NewDirectory(localPB, "/", query.Platform(), nil),
+		core.NewDirectory(localPB, relPath, query.Platform(), nil),
 	)
 	if err != nil {
 		return i, fmt.Errorf("failed to create instance: %w", err)
 	}
 
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return i, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
 	return core.MakeDirectoryContentHashed(ctx, bk, dir)
 }
 
-func loadDirectoryGitIgnorePatterns(ctx context.Context, parentPath string, hostPath string) (patterns []string, rerr error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
-	}
+// func loadDirectoryGitIgnorePatterns(ctx context.Context, parentPath string, hostPath string) (patterns []string, rerr error) {
+// 	srv, err := core.CurrentDagqlServer(ctx)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
+// 	}
+//
+// 	gitIgnoreIncludePath, err := getGitIgnoreIncludePaths(parentPath, hostPath)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to get git ignore include paths: %w", err)
+// 	}
+//
+// 	var result dagql.ResultArray[dagql.String]
+// 	err = srv.Select(ctx, srv.Root(), &result,
+// 		dagql.Selector{Field: "host"},
+// 		dagql.Selector{
+// 			Field: "directory",
+// 			Args: []dagql.NamedInput{
+// 				{Name: "path", Value: dagql.String(parentPath)},
+// 				{Name: "include", Value: dagql.ArrayInput[dagql.String](
+// 					dagql.NewStringArray(gitIgnoreIncludePath...),
+// 				)},
+// 				{Name: "noGitAutoIgnore", Value: dagql.Boolean(true)},
+// 			},
+// 		},
+// 		dagql.Selector{
+// 			Field: "__gitignorePatterns",
+// 		},
+// 	)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to load directory ignore patterns: %w", err)
+// 	}
+//
+// 	for _, entry := range result {
+// 		patterns = append(patterns, string(entry.Self()))
+// 	}
+//
+// 	return patterns, nil
+// }
 
-	gitIgnoreIncludePath, err := getGitIgnoreIncludePaths(parentPath, hostPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get git ignore include paths: %w", err)
-	}
-
-	var result dagql.ResultArray[dagql.String]
-	err = srv.Select(ctx, srv.Root(), &result,
-		dagql.Selector{Field: "host"},
-		dagql.Selector{
-			Field: "directory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(parentPath)},
-				{Name: "include", Value: dagql.ArrayInput[dagql.String](
-					dagql.NewStringArray(gitIgnoreIncludePath...),
-				)},
-				{Name: "noGitAutoIgnore", Value: dagql.Boolean(true)},
-			},
-		},
-		dagql.Selector{
-			Field: "__gitignorePatterns",
-		},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load directory ignore patterns: %w", err)
-	}
-
-	for _, entry := range result {
-		patterns = append(patterns, string(entry.Self()))
-	}
-
-	return patterns, nil
-}
-
-func rebaseGitIgnorePatterns(parentPath string, hostPath string, patterns []string) ([]string, error) {
-	relativePathToParent, err := filepath.Rel(parentPath, hostPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get relative path from %q: %w", parentPath, err)
-	}
-
+func rebaseGitIgnorePatterns(relPath string, patterns []string) []string {
 	result := []string{}
 	// Rebased the ignore patterns to be relative to the mounted path from the context directory.
 	// - If the contextual path is /foo/bar, all /foo/bar/.gitignore patterns must become the root or they'll not be applied correctly
@@ -449,9 +438,9 @@ func rebaseGitIgnorePatterns(parentPath string, hostPath string, patterns []stri
 	//   - foo/bar/baz/qux -> baz/qux
 	for _, pattern := range patterns {
 		if !strings.HasPrefix(pattern, "**") &&
-			!strings.HasPrefix(pattern, relativePathToParent+"/") &&
-			!strings.HasPrefix(pattern, "!"+relativePathToParent+"/") &&
-			relativePathToParent != "." {
+			!strings.HasPrefix(pattern, relPath+"/") &&
+			!strings.HasPrefix(pattern, "!"+relPath+"/") &&
+			relPath != "." {
 			continue
 		}
 
@@ -460,14 +449,14 @@ func rebaseGitIgnorePatterns(parentPath string, hostPath string, patterns []stri
 		// !foo/bar/baz -> baz -> !baz
 		if strings.HasPrefix(pattern, "!") {
 			pattern = strings.TrimPrefix(pattern, "!")
-			result = append(result, "!"+strings.TrimPrefix(pattern, relativePathToParent+"/"))
+			result = append(result, "!"+strings.TrimPrefix(pattern, relPath+"/"))
 			continue
 		}
 
-		result = append(result, strings.TrimPrefix(pattern, relativePathToParent+"/"))
+		result = append(result, strings.TrimPrefix(pattern, relPath+"/"))
 	}
 
-	return result, nil
+	return result
 }
 
 type hostSocketArgs struct {

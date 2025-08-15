@@ -934,32 +934,32 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 
 	switch src.Kind {
 	case core.ModuleSourceKindLocal:
-		moduleSourcePath := src.SourceSubpath
-		if moduleSourcePath == "" {
-			moduleSourcePath = src.SourceRootSubpath
-		}
+		// moduleSourcePath := src.SourceSubpath
+		// if moduleSourcePath == "" {
+		// 	moduleSourcePath = src.SourceRootSubpath
+		// }
 
 		// Load .gitignore patterns before loading the module so they can be used in the `Include` argument
 		// instead of Exclude so we get the right behaviour.
 		// We only include the .gitignore from the module source path and above up to the context directory.
-		ignorePatterns, err := loadDirectoryGitIgnorePatterns(ctx, src.Local.ContextDirectoryPath, filepath.Join(src.Local.ContextDirectoryPath, moduleSourcePath))
-		if err != nil {
-			return fmt.Errorf("failed to load .gitignore patterns: %w", err)
-		}
-
-		rebasedIgnorePatterns, err := rebaseGitIgnorePatterns(src.Local.ContextDirectoryPath, src.Local.ContextDirectoryPath, ignorePatterns)
-		if err != nil {
-			return fmt.Errorf("failed to rebase .gitignore patterns: %w", err)
-		}
-
-		for _, pattern := range rebasedIgnorePatterns {
-			pattern, found := strings.CutPrefix(pattern, "!")
-			if !found {
-				pattern = "!" + pattern
-			}
-
-			fullIncludePaths = append(fullIncludePaths, pattern)
-		}
+		// ignorePatterns, err := loadDirectoryGitIgnorePatterns(ctx, src.Local.ContextDirectoryPath, filepath.Join(src.Local.ContextDirectoryPath, moduleSourcePath))
+		// if err != nil {
+		// 	return fmt.Errorf("failed to load .gitignore patterns: %w", err)
+		// }
+		//
+		// rebasedIgnorePatterns, err := rebaseGitIgnorePatterns(src.Local.ContextDirectoryPath, src.Local.ContextDirectoryPath, ignorePatterns)
+		// if err != nil {
+		// 	return fmt.Errorf("failed to rebase .gitignore patterns: %w", err)
+		// }
+		//
+		// for _, pattern := range rebasedIgnorePatterns {
+		// 	pattern, found := strings.CutPrefix(pattern, "!")
+		// 	if !found {
+		// 		pattern = "!" + pattern
+		// 	}
+		//
+		// 	fullIncludePaths = append(fullIncludePaths, pattern)
+		// }
 
 		fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
 
@@ -970,7 +970,7 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String(src.Local.ContextDirectoryPath)},
 					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(fullIncludePaths...))},
-					{Name: "noGitAutoIgnore", Value: dagql.NewBoolean(true)}, // Disable .gitignore applying since it's done above.
+					// {Name: "noGitAutoIgnore", Value: dagql.NewBoolean(true)}, // Disable .gitignore applying since it's done above.
 				},
 			},
 		)
