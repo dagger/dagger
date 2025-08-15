@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"dagger/only-runtime/internal/dagger"
+
+	"dagger.io/dagger/dag"
 )
 
 type OnlyRuntime struct {
@@ -24,7 +26,7 @@ func (m *OnlyRuntime) ModuleRuntime(
 	introspectionJSON *dagger.File,
 ) (*dagger.Container, error) {
 	return dag.Container().
-		From("golang:1.24.3-alpine").
+		From("golang:1.25.0-alpine").
 		WithDirectory("/src", m.Src).
 		WithWorkdir("/src").
 		WithExec([]string{"go", "build", "-o", "/bin/sdk", "."}).
