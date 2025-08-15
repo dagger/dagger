@@ -227,6 +227,30 @@ func (PHPSuite) TestObjectKind(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (PHPSuite) TestConstructor(_ context.Context, t *testctx.T) {
+	t.Run("value set", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		module := phpModule(t, c, "constructor/value-set")
+
+		out, err := module.
+			With(daggerCall("--arg=foo", "get-constructor-arg")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foo", out)
+	})
+
+	t.Run("value manipulated", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		module := phpModule(t, c, "constructor/value-manipulated")
+
+		out, err := module.
+			With(daggerCall("--arg=true", "get-constructor-arg")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "false", out)
+	})
+}
+
 func phpModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
 	t.Helper()
 	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/php", moduleName))
