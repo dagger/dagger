@@ -98,12 +98,33 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 				slog.ErrorContext(ctx, "failed to unlazy layers", "err", err)
 			}
 
-			container, err := core.NewContainer(parent.Platform())
+			container, err := core.NewContainer(ctx, parent.Platform())
 			if err != nil {
 				return nil, fmt.Errorf("new container: %w", err)
 			}
 
-			container.FS = ctrDef.ToPB()
+			// TODO: ? ugly
+			curSrv, err := core.CurrentDagqlServer(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get server: %w", err)
+			}
+			curID := dagql.CurrentID(ctx)
+			view := dagql.View(curID.View())
+			objType, ok := curSrv.ObjectType("Container")
+			if !ok {
+				return nil, fmt.Errorf("failed to get Container object type for parent container")
+			}
+			fieldSpec, ok := objType.FieldSpec("rootfs", view)
+			if !ok {
+				return nil, fmt.Errorf("failed to get rootfs field spec for parent container")
+			}
+			astType := fieldSpec.Type.Type()
+			rootfsID := curID.Append(astType, "rootfs", string(view), fieldSpec.Module, 0, "")
+			rootfsDir := core.NewDirectory(ctrDef.ToPB(), "/", container.Platform, container.Services)
+			container.FS, err = dagql.NewObjectResultForID(rootfsDir, curSrv, rootfsID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create rootfs object result: %w", err)
+			}
 
 			goSDKContentStore, err := local.NewStore(distconsts.EngineContainerBuiltinContentDir)
 			if err != nil {
@@ -376,9 +397,9 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	}
 	localPB := localDef.ToPB()
 
-	dir, err := dagql.NewObjectResultForCurrentID(ctx, srv,
-		core.NewDirectory(localPB, "/", query.Platform(), nil),
-	)
+	dir := core.NewDirectory(localPB, "/", query.Platform(), nil)
+	dir.IsContentHashed = true
+	dirRes, err := dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 	if err != nil {
 		return i, fmt.Errorf("failed to create instance: %w", err)
 	}
@@ -387,7 +408,7 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	if err != nil {
 		return i, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	return core.MakeDirectoryContentHashed(ctx, bk, dir)
+	return core.MakeDirectoryContentHashed(ctx, bk, dirRes)
 }
 
 func loadDirectoryGitIgnorePatterns(ctx context.Context, parentPath string, hostPath string) (patterns []string, rerr error) {
