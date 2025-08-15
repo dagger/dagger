@@ -9,7 +9,7 @@ description: "Learn how to use the Dagger API with raw HTTP queries, and how to 
 The Dagger API is an HTTP API that uses GraphQL as its low-level language-agnostic framework. Therefore, it's possible to call the Dagger API using raw HTTP queries, from [any language that supports GraphQL](https://graphql.org/code/). GraphQL has a large and growing list of client implementations in over 20 languages.
 
 :::note
-In practice, calling the API using HTTP or GraphQL is optional. Typically, you will instead use a custom Dagger function created with a type-safe Dagger SDK, or from the command line using the Dagger CLI.
+In practice, calling the API using HTTP or GraphQL is optional. Typically, you will instead use a custom Dagger Function created with a type-safe Dagger SDK, or from the command line using the Dagger CLI.
 :::
 
 Dagger creates a unique local API endpoint for GraphQL HTTP queries for every Dagger session. This API endpoint is served by the local host at the port specified by the `DAGGER_SESSION_PORT` environment variable, and can be directly read from the environment in your client code. For example, if `DAGGER_SESSION_PORT` is set to `12345`, the API endpoint can be reached at `http://127.0.0.1:$DAGGER_SESSION_PORT/query`
