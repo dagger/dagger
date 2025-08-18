@@ -73,8 +73,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"`,
 				),
 			),
-		// FIXME: deprecate
 		dagql.Func("build", s.build).
+			Deprecated("Use `Directory.build` instead").
 			Doc(`Initializes this container from a Dockerfile build.`).
 			Args(
 				dagql.Arg("context").Doc("Directory context used by the Dockerfile."),
@@ -454,10 +454,12 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					Doc("For true this can be removed. For false, use `useEntrypoint` instead."),
 				dagql.Arg("stdin").Doc(
 					`Content to write to the command's standard input. Example: "Hello world")`),
+				dagql.Arg("redirectStdin").Doc(
+					`Redirect the command's standard input from a file in the container. Example: "./stdin.txt"`),
 				dagql.Arg("redirectStdout").Doc(
 					`Redirect the command's standard output to a file in the container. Example: "./stdout.txt"`),
 				dagql.Arg("redirectStderr").Doc(
-					`Like redirectStdout, but for standard error`),
+					`Redirect the command's standard error to a file in the container. Example: "./stderr.txt"`),
 				dagql.Arg("expect").Doc(`Exit codes this command is allowed to exit with without error`),
 				dagql.Arg("experimentalPrivilegedNesting").Doc(
 					`Provides Dagger access to the executed command.`),
@@ -956,6 +958,10 @@ func (args containerExecArgs) Digest() (digest.Digest, error) {
 
 func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerExecArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
 	ctr := parent.Self().Clone()
+
+	if args.Stdin != "" && args.RedirectStdin != "" {
+		return inst, fmt.Errorf("cannot set both stdin and redirectStdin")
+	}
 
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -2124,10 +2130,6 @@ func (s *containerSchema) asTarball(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get services: %w", err)
-	}
 	engineHostPlatform := query.Platform()
 
 	if args.MediaTypes == "" {
@@ -2195,12 +2197,6 @@ func (s *containerSchema) asTarball(
 	if !ok {
 		return inst, fmt.Errorf("no buildkit session group found")
 	}
-
-	detach, _, err := svcs.StartBindings(ctx, services)
-	if err != nil {
-		return inst, err
-	}
-	defer detach()
 
 	filePath := args.DagOpPath
 
@@ -2536,23 +2532,11 @@ func (s *containerSchema) exposedPorts(ctx context.Context, parent *core.Contain
 	for ociPort := range parent.Config.ExposedPorts {
 		p, exists := ports[ociPort]
 		if !exists {
-			// ignore errors when parsing from OCI
-			port, protoStr, ok := strings.Cut(ociPort, "/")
-			if !ok {
-				continue
-			}
-			portNr, err := strconv.Atoi(port)
+			var err error
+			p, err = core.NewPortFromOCI(ociPort)
 			if err != nil {
+				// ignore errors when parsing from OCI
 				continue
-			}
-			proto, err := core.NetworkProtocols.Lookup(strings.ToUpper(protoStr))
-			if err != nil {
-				// FIXME(vito): should this and above return nil, err instead?
-				continue
-			}
-			p = core.Port{
-				Port:     portNr,
-				Protocol: proto,
 			}
 		}
 		exposedPorts = append(exposedPorts, p)

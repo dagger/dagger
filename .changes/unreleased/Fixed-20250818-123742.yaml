@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+    Ensure that introspection methods support `includeDeprecated` arg
+time: 2025-08-18T12:37:42.633560195+01:00
+custom:
+    Author: jedevc
+    PR: "10889"

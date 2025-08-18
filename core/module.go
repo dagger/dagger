@@ -20,10 +20,10 @@ import (
 
 type Module struct {
 	// The source of the module
-	Source dagql.ObjectResult[*ModuleSource] `field:"true" name:"source" doc:"The source for the module."`
+	Source dagql.Nullable[dagql.ObjectResult[*ModuleSource]] `field:"true" name:"source" doc:"The source for the module."`
 
 	// The source to load contextual dirs/files from, which may be different than Source for blueprints
-	ContextSource dagql.ObjectResult[*ModuleSource]
+	ContextSource dagql.Nullable[dagql.ObjectResult[*ModuleSource]]
 
 	// The name of the module
 	NameField string `field:"true" name:"name" doc:"The name of the module"`
@@ -39,7 +39,7 @@ type Module struct {
 	Deps *ModDeps
 
 	// Runtime is the container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
-	Runtime dagql.ObjectResult[*Container] `field:"true" name:"runtime" doc:"The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile."`
+	Runtime dagql.Nullable[dagql.ObjectResult[*Container]] `field:"true" name:"runtime" doc:"The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile."`
 
 	// The following are populated while initializing the module
 
@@ -77,36 +77,44 @@ func (mod *Module) Name() string {
 }
 
 func (mod *Module) GetSource() *ModuleSource {
-	return mod.Source.Self()
+	if !mod.Source.Valid {
+		return nil
+	}
+	return mod.Source.Value.Self()
 }
 
 func (mod *Module) IDModule() *call.Module {
+	if !mod.Source.Valid {
+		panic("no module source")
+	}
+	src := mod.Source.Value.Self()
+
 	var ref, pin string
-	switch mod.Source.Self().Kind {
+	switch src.Kind {
 	case ModuleSourceKindLocal:
-		ref = filepath.Join(mod.Source.Self().Local.ContextDirectoryPath, mod.Source.Self().SourceRootSubpath)
+		ref = filepath.Join(src.Local.ContextDirectoryPath, src.SourceRootSubpath)
 
 	case ModuleSourceKindGit:
-		ref = mod.Source.Self().Git.CloneRef
-		if mod.Source.Self().SourceRootSubpath != "" {
-			ref += "/" + strings.TrimPrefix(mod.Source.Self().SourceRootSubpath, "/")
+		ref = src.Git.CloneRef
+		if src.SourceRootSubpath != "" {
+			ref += "/" + strings.TrimPrefix(src.SourceRootSubpath, "/")
 		}
-		if mod.Source.Self().Git.Version != "" {
-			ref += "@" + mod.Source.Self().Git.Version
+		if src.Git.Version != "" {
+			ref += "@" + src.Git.Version
 		}
-		pin = mod.Source.Self().Git.Commit
+		pin = src.Git.Commit
 
 	case ModuleSourceKindDir:
 		// FIXME: this is better than nothing, but no other code handles refs that
 		// are an encoded ID right now
 		var err error
-		ref, err = mod.Source.Self().ContextDirectory.ID().Encode()
+		ref, err = src.ContextDirectory.ID().Encode()
 		if err != nil {
 			panic(fmt.Sprintf("failed to encode context directory ID: %v", err))
 		}
 
 	default:
-		panic(fmt.Sprintf("unexpected module source kind %q", mod.Source.Self().Kind))
+		panic(fmt.Sprintf("unexpected module source kind %q", src.Kind))
 	}
 
 	return call.NewModule(mod.ResultID, mod.Name(), ref, pin)
@@ -237,7 +245,7 @@ func (mod *Module) CacheConfigForCall(
 	)
 	cacheCfg.Digest = dagql.HashFrom(
 		curIDNoMod.Digest().String(),
-		mod.Source.Self().Digest,
+		mod.Source.Value.Self().Digest,
 		mod.NameField, // the module source content digest only includes the original name
 	)
 
@@ -591,25 +599,29 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 	return nil
 }
 
-func (mod *Module) namespaceSourceMap(modPath string, sourceMap *SourceMap) *SourceMap {
-	if sourceMap == nil {
-		return nil
+func (mod *Module) namespaceSourceMap(modPath string, sourceMap dagql.Nullable[*SourceMap]) dagql.Nullable[*SourceMap] {
+	if !sourceMap.Valid {
+		return sourceMap
 	}
 
-	if mod.Source.Self().Kind != ModuleSourceKindLocal {
-		// TODO: handle remote git files
-		return nil
+	sourceMap.Value.Module = mod.Name()
+	sourceMap.Value.Filename = filepath.Join(modPath, sourceMap.Value.Filename)
+
+	if mod.Source.Value.Self().Kind == ModuleSourceKindGit {
+		link, err := mod.Source.Value.Self().Git.Link(sourceMap.Value.Filename, sourceMap.Value.Line, sourceMap.Value.Column)
+		if err != nil {
+			return dagql.Null[*SourceMap]()
+		}
+		sourceMap.Value.URL = link
 	}
 
-	sourceMap.Module = mod.Name()
-	sourceMap.Filename = filepath.Join(modPath, sourceMap.Filename)
 	return sourceMap
 }
 
 // modulePath gets the prefix for the file sourcemaps, so that the sourcemap is
 // relative to the context directory
 func (mod *Module) modulePath() string {
-	return mod.Source.Self().SourceSubpath
+	return mod.Source.Value.Self().SourceSubpath
 }
 
 // Patch is called after all types have been loaded - here we can update any
@@ -706,22 +718,22 @@ var _ HasPBDefinitions = (*Module)(nil)
 
 func (mod *Module) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	var defs []*pb.Definition
-	if mod.Source.Self() != nil {
-		dirDefs, err := mod.Source.Self().PBDefinitions(ctx)
+	if mod.Source.Valid && mod.Source.Value.Self() != nil {
+		dirDefs, err := mod.Source.Value.Self().PBDefinitions(ctx)
 		if err != nil {
 			return nil, err
 		}
 		defs = append(defs, dirDefs...)
 	}
-	if mod.ContextSource.Self() != nil {
-		dirDefs, err := mod.ContextSource.Self().PBDefinitions(ctx)
+	if mod.ContextSource.Valid && mod.ContextSource.Value.Self() != nil {
+		dirDefs, err := mod.ContextSource.Value.Self().PBDefinitions(ctx)
 		if err != nil {
 			return nil, err
 		}
 		defs = append(defs, dirDefs...)
 	}
-	if mod.Runtime.Self() != nil {
-		dirDefs, err := mod.Runtime.Self().PBDefinitions(ctx)
+	if mod.Runtime.Valid && mod.Runtime.Value.Self() != nil {
+		dirDefs, err := mod.Runtime.Value.Self().PBDefinitions(ctx)
 		if err != nil {
 			return nil, err
 		}

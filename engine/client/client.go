@@ -267,7 +267,7 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 		return fmt.Errorf("parse runner host: %w", err)
 	}
 
-	driver, err := drivers.GetDriver(remote.Scheme)
+	driver, err := drivers.GetDriver(ctx, remote.Scheme)
 	if err != nil {
 		return err
 	}
@@ -319,7 +319,7 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 
 	imageBackend := c.ImageLoaderBackend
 	if imageBackend == nil {
-		imageBackend = driver.ImageLoader()
+		imageBackend = driver.ImageLoader(ctx)
 	}
 	if imageBackend != nil {
 		imgloadCtx, span := Tracer(ctx).Start(ctx, "configuring image store")

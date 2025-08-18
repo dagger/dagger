@@ -93,16 +93,17 @@ func namespaceFromModule(m *core.Module) string {
 		return "mainClient"
 	}
 
-	name := m.Source.Self().ModuleOriginalName
+	src := m.Source.Value
+	name := src.Self().ModuleOriginalName
 
 	var symbolic string
-	switch m.Source.Self().Kind {
+	switch src.Self().Kind {
 	case core.ModuleSourceKindLocal:
-		symbolic = m.Source.Self().SourceRootSubpath
+		symbolic = src.Self().SourceRootSubpath
 	case core.ModuleSourceKindGit:
-		symbolic = m.Source.Self().Git.Symbolic
+		symbolic = src.Self().Git.Symbolic
 	case core.ModuleSourceKindDir:
-		symbolic = m.Source.ID().Digest().String()
+		symbolic = m.Source.Value.ID().Digest().String()
 	}
 
 	return "mod(" + name + symbolic + ")"

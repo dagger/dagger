@@ -10,7 +10,7 @@ directive @experimental(
 ) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 
 """Indicates the source information for where a given field is defined."""
-directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
+directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!, url: String!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
 
 type Binding {
   """Retrieve the binding value, as type CacheVolume"""
@@ -245,7 +245,7 @@ type Container {
     behavior.
     """
     noInit: Boolean = false
-  ): Container!
+  ): Container! @deprecated(reason: "Use `Directory.build` instead")
 
   """Return the container's default arguments."""
   defaultArgs: [String!]!
@@ -741,11 +741,18 @@ type Container {
     stdin: String = ""
 
     """
+    Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
+    """
+    redirectStdin: String = ""
+
+    """
     Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
     """
     redirectStdout: String = ""
 
-    """Like redirectStdout, but for standard error"""
+    """
+    Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
+    """
     redirectStderr: String = ""
 
     """Exit codes this command is allowed to exit with without error"""
@@ -1821,7 +1828,7 @@ type EnumTypeDef {
   name: String!
 
   """The location of this enum declaration."""
-  sourceMap: SourceMap!
+  sourceMap: SourceMap
 
   """
   If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise.
@@ -1848,7 +1855,7 @@ type EnumValueTypeDef {
   name: String!
 
   """The location of this enum member declaration."""
-  sourceMap: SourceMap!
+  sourceMap: SourceMap
 
   """The value of the enum member"""
   value: String!
@@ -2335,7 +2342,7 @@ type FieldTypeDef {
   name: String!
 
   """The location of this field declaration."""
-  sourceMap: SourceMap!
+  sourceMap: SourceMap
 
   """The type of the field."""
   typeDef: TypeDef!
@@ -2471,7 +2478,7 @@ type Function {
   returnType: TypeDef!
 
   """The location of this function declaration."""
-  sourceMap: SourceMap!
+  sourceMap: SourceMap
 
   """Returns the function with the provided argument"""
   withArg(
@@ -2548,7 +2555,7 @@ type FunctionArg {
   name: String!
 
   """The location of this arg declaration."""
-  sourceMap: SourceMap!
+  sourceMap: SourceMap
 
   """The type of the argument."""
   typeDef: TypeDef!
@@ -2654,6 +2661,12 @@ scalar GeneratedCodeID
 type GitRef {
   """The resolved commit id at this ref."""
   commit: String!
+
+  """Find the best common ancestor between this ref and another ref."""
+  commonAncestor(
+    """The other ref to compare against."""
+    other: GitRefID!
+  ): GitRef!
 
   """A unique identifier for this GitRef."""
   id: GitRefID!
@@ -2903,7 +2916,7 @@ type InterfaceTypeDef {
   name: String!
 
   """The location of this interface declaration."""
-  sourceMap: SourceMap!
+  sourceMap: SourceMap
 
   """
   If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.
@@ -3077,7 +3090,7 @@ type Module {
   """
   The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
   """
-  runtime: Container!
+  runtime: Container
 
   """The SDK config used by this module."""
   sdk: SDKConfig
@@ -3094,7 +3107,7 @@ type Module {
   ): Void
 
   """The source for the module."""
-  source: ModuleSource!
+  source: ModuleSource
 
   """
   Forces evaluation of the module, including any loading into the engine and associated validation.
@@ -3391,7 +3404,7 @@ type ObjectTypeDef {
   name: String!
 
   """The location of this object declaration."""
-  sourceMap: SourceMap!
+  sourceMap: SourceMap
 
   """
   If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
@@ -4022,6 +4035,11 @@ type SourceMap {
 
   """The module dependency this was declared in."""
   module: String!
+
+  """
+  The URL to the file, if any. This can be used to link to the source map in the browser.
+  """
+  url: String!
 }
 
 """

@@ -16,12 +16,46 @@ Expected stderr:
 
 ● python: Python! X.Xs
 ▼ .pending: Void X.Xs ERROR
-! process "false" did not complete successfully: exit code: 1
+┃ ERROR [dagger.mod]: API error while executing function
+┃ Traceback (most recent call last):
+┃   File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/src/main/__init__.py", line XXX, in pending
+┃     return await (
+┃            ^^^^^^^
+┃   File "<@beartype(dagger.client.gen.Container.sync) at 0xXXXXXXXXXXXX>", line XXX, in sync
+┃   File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/sdk/src/dagger/client/gen.py", line XXX, in sync
+┃     return await self._ctx.execute_sync(self, "sync", _args)
+┃            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+┃   File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/sdk/src/dagger/client/_core.py", line XXX, in execute_sync
+┃     id_ = await ctx.execute(Scalar)
+┃           ^^^^^^^^^^^^^^^^^^^^^^^^^
+┃   File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/sdk/src/dagger/client/_core.py", line XXX, in execute
+┃     raise error from e
+┃ dagger.ExecError: process "false" did not complete successfully: exit code: 1
 ├─$ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
 ├─● .withEnvVariable(name: "NOW", value: "20XX-XX-XX XX:XX:XX.XXXX"): Container! X.Xs
 ├─● .withExec(args: ["sleep", "1"]): Container! X.Xs
 ├─✘ .withExec(args: ["false"]): Container! X.Xs ERROR
 │ ! process "false" did not complete successfully: exit code: 1
 ╰─○ .withExec(args: ["sleep", "1"]): Container! X.Xs
+
+Error logs:
+
+▼ .pending: Void X.Xs ERROR
+ERROR [dagger.mod]: API error while executing function
+Traceback (most recent call last):
+  File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/src/main/__init__.py", line XXX, in pending
+    return await (
+           ^^^^^^^
+  File "<@beartype(dagger.client.gen.Container.sync) at 0xXXXXXXXXXXXX>", line XXX, in sync
+  File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/sdk/src/dagger/client/gen.py", line XXX, in sync
+    return await self._ctx.execute_sync(self, "sync", _args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/sdk/src/dagger/client/_core.py", line XXX, in execute_sync
+    id_ = await ctx.execute(Scalar)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/sdk/src/dagger/client/_core.py", line XXX, in execute
+    raise error from e
+dagger.ExecError: process "false" did not complete successfully: exit code: 1
+! process "false" did not complete successfully: exit code: 1
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

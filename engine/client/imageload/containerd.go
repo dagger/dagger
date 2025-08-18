@@ -17,10 +17,6 @@ func init() {
 	register("containerd", &Containerd{})
 }
 
-func (Containerd) ID() string {
-	return "containerd"
-}
-
 func (loader Containerd) Loader(ctx context.Context) (_ *Loader, rerr error) {
 	_, span := otel.Tracer("").Start(ctx, "dial containerd")
 	defer telemetry.End(span, func() error { return rerr })

@@ -880,7 +880,20 @@
                 }
               }
             },
-            "args": [],
+            "args": [
+              {
+                "name": "includeDeprecated",
+                "description": "",
+                "defaultValue": "false",
+                "type": {
+                  "kind": "SCALAR",
+                  "name": "Boolean"
+                },
+                "isDeprecated": false,
+                "deprecationReason": "",
+                "directives": []
+              }
+            ],
             "isDeprecated": false,
             "deprecationReason": "",
             "directives": []
@@ -1187,7 +1200,20 @@
                 }
               }
             },
-            "args": [],
+            "args": [
+              {
+                "name": "includeDeprecated",
+                "description": "",
+                "defaultValue": "false",
+                "type": {
+                  "kind": "SCALAR",
+                  "name": "Boolean"
+                },
+                "isDeprecated": false,
+                "deprecationReason": "",
+                "directives": []
+              }
+            ],
             "isDeprecated": false,
             "deprecationReason": "",
             "directives": []
@@ -1630,7 +1656,20 @@
                 }
               }
             },
-            "args": [],
+            "args": [
+              {
+                "name": "includeDeprecated",
+                "description": "",
+                "defaultValue": "false",
+                "type": {
+                  "kind": "SCALAR",
+                  "name": "Boolean"
+                },
+                "isDeprecated": false,
+                "deprecationReason": "",
+                "directives": []
+              }
+            ],
             "isDeprecated": false,
             "deprecationReason": "",
             "directives": []
@@ -1947,6 +1986,23 @@
               "ofType": {
                 "kind": "SCALAR",
                 "name": "Int",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "defaultValue": null,
+            "deprecationReason": null,
+            "description": "",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "url",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
                 "ofType": null
               }
             }

@@ -139,6 +139,11 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Doc(`The resolved commit id at this ref.`),
 		dagql.NodeFunc("ref", DagOpWrapper(srv, s.fetchRef)).
 			Doc(`The resolved ref name at this ref.`),
+		dagql.NodeFunc("commonAncestor", s.commonAncestor).
+			Doc(`Find the best common ancestor between this ref and another ref.`).
+			Args(
+				dagql.Arg("other").Doc(`The other ref to compare against.`),
+			),
 	}.Install(srv)
 }
 
@@ -470,9 +475,10 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 	}
 
 	if ref, ok := inst.Self().Backend.(*core.RemoteGitRef); ok {
+		repo := ref.Repo().(*core.RemoteGitRepository)
 		dgstInputs := []string{
 			// include the full remote url
-			ref.Repo.URL.String(),
+			repo.URL.String(),
 			// include the fully resolved ref + commit, since the remote repo
 			// *might* change
 			ref.FullRef,
@@ -481,9 +487,9 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 			// handle a cache hit where the result has a different auth
 			// method than the caller used (i.e. a git repo is pulled w/
 			// a token but hits cache for a dir where a ssh sock was used)
-			strconv.FormatBool(ref.Repo.AuthToken.Self() != nil),
-			strconv.FormatBool(ref.Repo.AuthHeader.Self() != nil),
-			strconv.FormatBool(ref.Repo.SSHAuthSocket.Self() != nil),
+			strconv.FormatBool(repo.AuthToken.Self() != nil),
+			strconv.FormatBool(repo.AuthHeader.Self() != nil),
+			strconv.FormatBool(repo.SSHAuthSocket.Self() != nil),
 			// finally, the legacy args
 			strconv.FormatBool(inst.Self().Repo.DiscardGitDir),
 		}
@@ -707,4 +713,37 @@ func (s *gitSchema) fetchRef(
 		return "", err
 	}
 	return dagql.NewString(ref), nil
+}
+
+type mergeBaseArgs struct {
+	Other core.GitRefID
+
+	RawDagOpInternalArgs
+}
+
+func (s *gitSchema) commonAncestor(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.GitRef],
+	args mergeBaseArgs,
+) (inst dagql.ObjectResult[*core.GitRef], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+	other, err := args.Other.Load(ctx, srv)
+	if err != nil {
+		return inst, err
+	}
+
+	ref1 := parent.Self().Backend
+	ref2 := other.Self().Backend
+	mergeBaseRef, err := core.MergeBase(ctx, ref1, ref2)
+	if err != nil {
+		return inst, err
+	}
+	result := &core.GitRef{
+		Repo:    parent.Self().Repo,
+		Backend: mergeBaseRef,
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, result)
 }

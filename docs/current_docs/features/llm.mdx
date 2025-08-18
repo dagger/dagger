@@ -1,14 +1,15 @@
 ---
+title: "LLM Integration"
 slug: /features/llm
 description: "Build powerful AI agents with Large Language Models"
+toc_max_heading_level: 2
 ---
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
-import VideoPlayer from '../../src/components/VideoPlayer';
+
+import VideoPlayer from '@components/VideoPlayer';
 
 # LLM Integration
 
-Dagger can be used as a runtime and programming environment for AI agents. Dagger provides an `LLM` core type that enables native integration of Large Language Models (LLM) in your workflows.
+Dagger can be used as a runtime and programming environment for AI agents. Dagger provides an `LLM` type that enables native integration of Large Language Models (LLM) in your workflows.
 
 ## Tool use
 
@@ -20,7 +21,7 @@ A key feature of Dagger's LLM integration is out-of-the-box support for tool use
 
 Environments configure any number of inputs and outputs for the LLM. For example, an environment might provide a `Directory`, a `Container`, a custom module, and a `string` variable. The LLM can use these objects and their functions to complete the assigned task.
 
-The documentation for the modules are provided to the LLM via [inline documentation](../api/documentation.mdx) in your Dagger Functions. The LLM can then analyze the available tools and select which ones to use.
+The documentation for the modules are provided to the LLM via [inline documentation](../extending/documentation.mdx) in your Dagger Functions. The LLM can then analyze the available tools and select which ones to use.
 
 Here's an example:
 
@@ -64,15 +65,15 @@ Consider the following Dagger Function:
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
-```go file=../quickstart/agent/snippets/part1/go/main.go
+```go file=../getting-started/agent/snippets/part1/go/main.go
 ```
 </TabItem>
 <TabItem value="python" label="Python">
-```python file=../quickstart/agent/snippets/part1/python/src/coding_agent/main.py
+```python file=../getting-started/agent/snippets/part1/python/src/coding_agent/main.py
 ```
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
-```typescript file=../quickstart/agent/snippets/part1/typescript/src/index.ts
+```typescript file=../getting-started/agent/snippets/part1/typescript/src/index.ts
 ```
 </TabItem>
 </Tabs>
@@ -126,17 +127,8 @@ Find all the unit tests. Deduce what the application does. Describe it in one pa
 
 Dagger supports a wide range of popular language models, including those from OpenAI, Anthropic and Google. Dagger can access these models either through their respective cloud-based APIs or using local providers like Docker Model Runner or Ollama.
 
-Dagger uses your system's standard environment variables to route LLM requests. Dagger will look for these variables in your environment, or in a `.env` file in the current directory. Learn more about [configuring LLM endpoints in Dagger](../configuration/llm.mdx).
+Dagger uses your system's standard environment variables to route LLM requests. Dagger will look for these variables in your environment, or in a `.env` file in the current directory. Learn more about [configuring LLM endpoints in Dagger](../reference/configuration/llm.mdx).
 
 ## Observability
 
-Dagger provides [end-to-end tracing](./visualization.mdx) of prompts, tool calls, and even low-level system operations. All agent state changes are observable in real time.
-
-<VideoPlayer src="/img/current_docs/features/llm-cloud-trace.webm" alt="LLM observability example" />
-
-## Learn more
-
-- [Build an AI agent with our quickstart](../quickstart/agent/index.mdx)
-- [Browse examples of agentic workflows](../examples.mdx)
-- [Learn about the agent loop and how to work with LLM prompts and responses](../api/llm.mdx)
-- [Configure LLM endpoints](../configuration/llm.mdx)
+Dagger provides [end-to-end tracing](./observability.mdx) of prompts, tool calls, and even low-level system operations. All agent state changes are observable in real time.

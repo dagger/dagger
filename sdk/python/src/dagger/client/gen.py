@@ -285,40 +285,40 @@ class ExistsType(Enum):
 class ImageLayerCompression(Enum):
     """Compression algorithm to use for image layers."""
 
+    EStarGZ = "EStarGZ"
     ESTARGZ = "EStarGZ"
-    EStarGZ = ESTARGZ
 
+    Gzip = "Gzip"
     GZIP = "Gzip"
-    Gzip = GZIP
 
+    Uncompressed = "Uncompressed"
     UNCOMPRESSED = "Uncompressed"
-    Uncompressed = UNCOMPRESSED
 
+    Zstd = "Zstd"
     ZSTD = "Zstd"
-    Zstd = ZSTD
 
 
 class ImageMediaTypes(Enum):
     """Mediatypes to use in published or exported image metadata."""
 
+    DockerMediaTypes = "DockerMediaTypes"
     DOCKER = "DockerMediaTypes"
-    DockerMediaTypes = DOCKER
 
+    OCIMediaTypes = "OCIMediaTypes"
     OCI = "OCIMediaTypes"
-    OCIMediaTypes = OCI
 
 
 class ModuleSourceKind(Enum):
     """The kind of module source."""
 
+    DIR_SOURCE = "DIR_SOURCE"
     DIR = "DIR_SOURCE"
-    DIR_SOURCE = DIR
 
+    GIT_SOURCE = "GIT_SOURCE"
     GIT = "GIT_SOURCE"
-    GIT_SOURCE = GIT
 
+    LOCAL_SOURCE = "LOCAL_SOURCE"
     LOCAL = "LOCAL_SOURCE"
-    LOCAL_SOURCE = LOCAL
 
 
 class NetworkProtocol(Enum):
@@ -345,86 +345,86 @@ class ReturnType(Enum):
 class TypeDefKind(Enum):
     """Distinguishes the different kinds of TypeDefs."""
 
+    BOOLEAN_KIND = "BOOLEAN_KIND"
+    """A boolean value."""
     BOOLEAN = "BOOLEAN_KIND"
     """A boolean value."""
-    BOOLEAN_KIND = BOOLEAN
-    """A boolean value."""
 
+    ENUM_KIND = "ENUM_KIND"
+    """A GraphQL enum type and its values
+
+    Always paired with an EnumTypeDef.
+    """
     ENUM = "ENUM_KIND"
     """A GraphQL enum type and its values
 
     Always paired with an EnumTypeDef.
     """
-    ENUM_KIND = ENUM
-    """A GraphQL enum type and its values
 
-    Always paired with an EnumTypeDef.
-    """
-
+    FLOAT_KIND = "FLOAT_KIND"
+    """A float value."""
     FLOAT = "FLOAT_KIND"
     """A float value."""
-    FLOAT_KIND = FLOAT
-    """A float value."""
 
+    INPUT_KIND = "INPUT_KIND"
+    """A graphql input type, used only when representing the core API via TypeDefs."""
     INPUT = "INPUT_KIND"
     """A graphql input type, used only when representing the core API via TypeDefs."""
-    INPUT_KIND = INPUT
-    """A graphql input type, used only when representing the core API via TypeDefs."""
 
+    INTEGER_KIND = "INTEGER_KIND"
+    """An integer value."""
     INTEGER = "INTEGER_KIND"
     """An integer value."""
-    INTEGER_KIND = INTEGER
-    """An integer value."""
 
+    INTERFACE_KIND = "INTERFACE_KIND"
+    """Always paired with an InterfaceTypeDef.
+
+    A named type of functions that can be matched+implemented by other objects+interfaces.
+    """
     INTERFACE = "INTERFACE_KIND"
     """Always paired with an InterfaceTypeDef.
 
     A named type of functions that can be matched+implemented by other objects+interfaces.
     """
-    INTERFACE_KIND = INTERFACE
-    """Always paired with an InterfaceTypeDef.
 
-    A named type of functions that can be matched+implemented by other objects+interfaces.
+    LIST_KIND = "LIST_KIND"
+    """Always paired with a ListTypeDef.
+
+    A list of values all having the same type.
     """
-
     LIST = "LIST_KIND"
     """Always paired with a ListTypeDef.
 
     A list of values all having the same type.
     """
-    LIST_KIND = LIST
-    """Always paired with a ListTypeDef.
 
-    A list of values all having the same type.
+    OBJECT_KIND = "OBJECT_KIND"
+    """Always paired with an ObjectTypeDef.
+
+    A named type defined in the GraphQL schema, with fields and functions.
     """
-
     OBJECT = "OBJECT_KIND"
     """Always paired with an ObjectTypeDef.
 
     A named type defined in the GraphQL schema, with fields and functions.
     """
-    OBJECT_KIND = OBJECT
-    """Always paired with an ObjectTypeDef.
 
-    A named type defined in the GraphQL schema, with fields and functions.
-    """
-
+    SCALAR_KIND = "SCALAR_KIND"
+    """A scalar value of any basic kind."""
     SCALAR = "SCALAR_KIND"
     """A scalar value of any basic kind."""
-    SCALAR_KIND = SCALAR
-    """A scalar value of any basic kind."""
 
+    STRING_KIND = "STRING_KIND"
+    """A string value."""
     STRING = "STRING_KIND"
     """A string value."""
-    STRING_KIND = STRING
-    """A string value."""
 
-    VOID = "VOID_KIND"
+    VOID_KIND = "VOID_KIND"
     """A special kind used to signify that no value is returned.
 
     This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
     """
-    VOID_KIND = VOID
+    VOID = "VOID_KIND"
     """A special kind used to signify that no value is returned.
 
     This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
@@ -820,7 +820,7 @@ class Container(Type):
             result in unexpected behavior.
         """
         _args = [
-            Arg("args", () if args is None else args, ()),
+            Arg("args", [] if args is None else args, []),
             Arg("useEntrypoint", use_entrypoint, False),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
@@ -864,8 +864,8 @@ class Container(Type):
         _args = [
             Arg(
                 "platformVariants",
-                () if platform_variants is None else platform_variants,
-                (),
+                [] if platform_variants is None else platform_variants,
+                [],
             ),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
@@ -884,6 +884,9 @@ class Container(Type):
         no_init: bool | None = False,
     ) -> Self:
         """Initializes this container from a Dockerfile build.
+
+        .. deprecated::
+            Use `Directory.build` instead
 
         Parameters
         ----------
@@ -911,12 +914,17 @@ class Container(Type):
             processes be the pid 1 process in the container. Otherwise it may
             result in unexpected behavior.
         """
+        warnings.warn(
+            'Method "build" is deprecated: Use `Directory.build` instead',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("context", context),
             Arg("dockerfile", dockerfile, "Dockerfile"),
             Arg("target", target, ""),
-            Arg("buildArgs", () if build_args is None else build_args, ()),
-            Arg("secrets", () if secrets is None else secrets, ()),
+            Arg("buildArgs", [] if build_args is None else build_args, []),
+            Arg("secrets", [] if secrets is None else secrets, []),
             Arg("noInit", no_init, False),
         ]
         _ctx = self._select("build", _args)
@@ -1175,8 +1183,8 @@ class Container(Type):
             Arg("path", path),
             Arg(
                 "platformVariants",
-                () if platform_variants is None else platform_variants,
-                (),
+                [] if platform_variants is None else platform_variants,
+                [],
             ),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
@@ -1233,8 +1241,8 @@ class Container(Type):
             Arg("name", name),
             Arg(
                 "platformVariants",
-                () if platform_variants is None else platform_variants,
-                (),
+                [] if platform_variants is None else platform_variants,
+                [],
             ),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
@@ -1495,8 +1503,8 @@ class Container(Type):
             Arg("address", address),
             Arg(
                 "platformVariants",
-                () if platform_variants is None else platform_variants,
-                (),
+                [] if platform_variants is None else platform_variants,
+                [],
             ),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
@@ -1603,7 +1611,7 @@ class Container(Type):
             absolutely necessary and only with trusted commands.
         """
         _args = [
-            Arg("cmd", () if cmd is None else cmd, ()),
+            Arg("cmd", [] if cmd is None else cmd, []),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
@@ -1676,8 +1684,8 @@ class Container(Type):
         """
         _args = [
             Arg("random", random, False),
-            Arg("ports", () if ports is None else ports, ()),
-            Arg("args", () if args is None else args, ()),
+            Arg("ports", [] if ports is None else ports, []),
+            Arg("args", [] if args is None else args, []),
             Arg("useEntrypoint", use_entrypoint, False),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
@@ -1813,8 +1821,8 @@ class Container(Type):
         _args = [
             Arg("path", path),
             Arg("directory", directory),
-            Arg("exclude", () if exclude is None else exclude, ()),
-            Arg("include", () if include is None else include, ()),
+            Arg("exclude", [] if exclude is None else exclude, []),
+            Arg("include", [] if include is None else include, []),
             Arg("owner", owner, ""),
             Arg("expand", expand, False),
         ]
@@ -1880,6 +1888,7 @@ class Container(Type):
         *,
         use_entrypoint: bool | None = False,
         stdin: str | None = "",
+        redirect_stdin: str | None = "",
         redirect_stdout: str | None = "",
         redirect_stderr: str | None = "",
         expect: ReturnType | None = ReturnType.SUCCESS,
@@ -1906,11 +1915,15 @@ class Container(Type):
         stdin:
             Content to write to the command's standard input. Example: "Hello
             world")
+        redirect_stdin:
+            Redirect the command's standard input from a file in the
+            container. Example: "./stdin.txt"
         redirect_stdout:
             Redirect the command's standard output to a file in the container.
             Example: "./stdout.txt"
         redirect_stderr:
-            Like redirectStdout, but for standard error
+            Redirect the command's standard error to a file in the container.
+            Example: "./stderr.txt"
         expect:
             Exit codes this command is allowed to exit with without error
         experimental_privileged_nesting:
@@ -1935,6 +1948,7 @@ class Container(Type):
             Arg("args", args),
             Arg("useEntrypoint", use_entrypoint, False),
             Arg("stdin", stdin, ""),
+            Arg("redirectStdin", redirect_stdin, ""),
             Arg("redirectStdout", redirect_stdout, ""),
             Arg("redirectStderr", redirect_stderr, ""),
             Arg("expect", expect, ReturnType.SUCCESS),
@@ -2874,8 +2888,8 @@ class CurrentModule(Type):
         """
         _args = [
             Arg("path", path),
-            Arg("exclude", () if exclude is None else exclude, ()),
-            Arg("include", () if include is None else include, ()),
+            Arg("exclude", [] if exclude is None else exclude, []),
+            Arg("include", [] if include is None else include, []),
         ]
         _ctx = self._select("workdir", _args)
         return Directory(_ctx)
@@ -3041,9 +3055,9 @@ class Directory(Type):
         _args = [
             Arg("dockerfile", dockerfile, "Dockerfile"),
             Arg("platform", platform, None),
-            Arg("buildArgs", () if build_args is None else build_args, ()),
+            Arg("buildArgs", [] if build_args is None else build_args, []),
             Arg("target", target, ""),
-            Arg("secrets", () if secrets is None else secrets, ()),
+            Arg("secrets", [] if secrets is None else secrets, []),
             Arg("noInit", no_init, False),
         ]
         _ctx = self._select("dockerBuild", _args)
@@ -3190,8 +3204,8 @@ class Directory(Type):
             in the new snapshot. Example: (e.g., ["app/", "package.*"]).
         """
         _args = [
-            Arg("exclude", () if exclude is None else exclude, ()),
-            Arg("include", () if include is None else include, ()),
+            Arg("exclude", [] if exclude is None else exclude, []),
+            Arg("include", [] if include is None else include, []),
         ]
         _ctx = self._select("filter", _args)
         return Directory(_ctx)
@@ -3369,7 +3383,7 @@ class Directory(Type):
         """
         _args = [
             Arg("container", container, None),
-            Arg("cmd", () if cmd is None else cmd, ()),
+            Arg("cmd", [] if cmd is None else cmd, []),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
@@ -3404,8 +3418,8 @@ class Directory(Type):
         _args = [
             Arg("path", path),
             Arg("directory", directory),
-            Arg("exclude", () if exclude is None else exclude, ()),
-            Arg("include", () if include is None else include, ()),
+            Arg("exclude", [] if exclude is None else exclude, []),
+            Arg("include", [] if include is None else include, []),
         ]
         _ctx = self._select("withDirectory", _args)
         return Directory(_ctx)
@@ -5758,7 +5772,7 @@ class Function(Type):
             Arg("description", description, ""),
             Arg("defaultValue", default_value, None),
             Arg("defaultPath", default_path, ""),
-            Arg("ignore", () if ignore is None else ignore, ()),
+            Arg("ignore", [] if ignore is None else ignore, []),
             Arg("sourceMap", source_map, None),
         ]
         _ctx = self._select("withArg", _args)
@@ -6299,6 +6313,20 @@ class GitRef(Type):
         _ctx = self._select("commit", _args)
         return await _ctx.execute(str)
 
+    def common_ancestor(self, other: Self) -> Self:
+        """Find the best common ancestor between this ref and another ref.
+
+        Parameters
+        ----------
+        other:
+            The other ref to compare against.
+        """
+        _args = [
+            Arg("other", other),
+        ]
+        _ctx = self._select("commonAncestor", _args)
+        return GitRef(_ctx)
+
     async def id(self) -> GitRefID:
         """A unique identifier for this GitRef.
 
@@ -6365,6 +6393,13 @@ class GitRef(Type):
         ]
         _ctx = self._select("tree", _args)
         return Directory(_ctx)
+
+    def with_(self, cb: Callable[["GitRef"], "GitRef"]) -> "GitRef":
+        """Call the provided callable with current GitRef.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 @typecheck
@@ -6613,8 +6648,8 @@ class Host(Type):
         """
         _args = [
             Arg("path", path),
-            Arg("exclude", () if exclude is None else exclude, ()),
-            Arg("include", () if include is None else include, ()),
+            Arg("exclude", [] if exclude is None else exclude, []),
+            Arg("include", [] if include is None else include, []),
             Arg("noCache", no_cache, False),
         ]
         _ctx = self._select("directory", _args)
@@ -6752,7 +6787,7 @@ class Host(Type):
         _args = [
             Arg("service", service),
             Arg("native", native, False),
-            Arg("ports", () if ports is None else ports, ()),
+            Arg("ports", [] if ports is None else ports, []),
         ]
         _ctx = self._select("tunnel", _args)
         return Service(_ctx)
@@ -9963,7 +9998,7 @@ class Service(Type):
             If the API returns an error.
         """
         _args = [
-            Arg("ports", () if ports is None else ports, ()),
+            Arg("ports", [] if ports is None else ports, []),
             Arg("random", random, False),
         ]
         _ctx = self._select("up", _args)
@@ -10131,6 +10166,28 @@ class SourceMap(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("module", _args)
+        return await _ctx.execute(str)
+
+    async def url(self) -> str:
+        """The URL to the file, if any. This can be used to link to the source
+        map in the browser.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("url", _args)
         return await _ctx.execute(str)
 
 

@@ -56,7 +56,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to look at (e.g., "/src").`),
 			),
-		dagql.Func("glob", s.glob).
+		dagql.NodeFunc("glob", DagOpWrapper(srv, s.glob)).
 			View(AllVersion). // glob returns different results in different versions
 			Doc(`Returns a list of files and directories that matche the given pattern.`).
 			Args(
@@ -200,7 +200,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("patch").Doc(`Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex 1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-Hello\n+World\n").`),
 			),
-		dagql.Func("asGit", s.asGit).
+		dagql.NodeFunc("asGit", s.asGit).
 			Doc(`Converts this directory to a local git repository`),
 		dagql.NodeFunc("terminal", s.terminal).
 			View(AfterVersion("v0.12.0")).
@@ -371,10 +371,16 @@ func (s *directorySchema) entries(ctx context.Context, parent dagql.ObjectResult
 
 type globArgs struct {
 	Pattern string
+
+	RawDagOpInternalArgs
 }
 
-func (s *directorySchema) glob(ctx context.Context, parent *core.Directory, args globArgs) ([]string, error) {
-	return parent.Glob(ctx, args.Pattern)
+func (s *directorySchema) glob(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args globArgs) (dagql.Array[dagql.String], error) {
+	ents, err := parent.Self().Glob(ctx, args.Pattern)
+	if err != nil {
+		return nil, err
+	}
+	return dagql.NewStringArray(ents...), nil
 }
 
 type withPatchArgs struct {
@@ -787,7 +793,7 @@ func (s *directorySchema) terminal(
 
 func (s *directorySchema) asGit(
 	ctx context.Context,
-	dir *core.Directory,
+	dir dagql.ObjectResult[*core.Directory],
 	_ struct{},
 ) (*core.GitRepository, error) {
 	return &core.GitRepository{

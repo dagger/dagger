@@ -3333,6 +3333,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\GitRef::commonAncestor",
+			"p": "Dagger/GitRef.html#method_commonAncestor",
+			"d": "<p>Find the best common ancestor between this ref and another ref.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\GitRef::id",
 			"p": "Dagger/GitRef.html#method_id",
 			"d": "<p>A unique identifier for this GitRef.</p>"
@@ -4314,6 +4320,12 @@
 			"n": "Dagger\\SourceMap::module",
 			"p": "Dagger/SourceMap.html#method_module",
 			"d": "<p>The module dependency this was declared in.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\SourceMap::url",
+			"p": "Dagger/SourceMap.html#method_url",
+			"d": "<p>The URL to the file, if any. This can be used to link to the source map in the browser.</p>"
 		},
 		{
 			"t": "M",

@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling==1.27.0", "hatch-vcs==0.5.0"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.8.4,<0.9.0"]
+build-backend = "uv_build"
 
 [project]
 name = "dagger-io"
-dynamic = ["version"]
+version = "0.0.0"
 description = "A client package for running Dagger pipelines in Python."
 readme = "README.md"
 authors = [{ name = "Dagger", email = "hello@dagger.io" }]
@@ -28,13 +28,15 @@ requires-python = ">=3.10"
 dependencies = [
     "anyio>=3.6.2",
     "cattrs>=25.1.0",
-    "gql[httpx]>=3.5.0",
+    "gql[httpx]~=3.5.0",
     "beartype>=0.18.2",
     "platformdirs>=2.6.2",
     "typing_extensions>=4.13.0",
     "rich>=10.11.0",
     "opentelemetry-sdk>=1.23.0",
     "opentelemetry-exporter-otlp-proto-http>=1.23.0",
+    "opentelemetry-instrumentation-logging>=0.54b1",
+    "exceptiongroup>=1.3.0",
 ]
 
 [project.urls]
@@ -69,15 +71,9 @@ codegen = { workspace = true }
 [tool.uv.workspace]
 members = ["codegen"]
 
-[tool.hatch.version]
-source = "vcs"
-fallback-version = "0.0.0"
-
-[tool.hatch.build.targets.sdist]
-only-include = ["src", "tests", "docs", "CHANGELOG.md", "README.md"]
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/dagger"]
+[tool.uv.build-backend]
+module-name = "dagger"
+source-include = ["tests/**", "docs/**", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/"]

@@ -1,16 +1,13 @@
 [project]
 name = "main"
 version = "0.0.0"
-requires-python = ">=3.12"
-dependencies = [
-    "asyncer",
-    "dagger-io",
-]
+requires-python = ">=3.13"
+dependencies = ["asyncer", "dagger-io"]
 
 [tool.uv.sources]
 dagger-io = { path = "sdk", editable = true }
 asyncer = { git = "https://github.com/tiangolo/asyncer", tag = "0.0.5" }
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.8.4,<0.9.0"]
+build-backend = "uv_build"

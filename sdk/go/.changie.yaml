@@ -37,6 +37,30 @@ headerFormat: |-
 
   🐹 https://pkg.go.dev/dagger.io/dagger@{{.Version}}
 footerFormat: |-
+  {{- $contributorSet := dict }}
+  {{- $maintainers := list "dependabot[bot]" }}
+  {{- range $member := .Env.MAINTAINERS | default "[]" | fromJson }}
+    {{- $member := lower $member }}
+    {{- $maintainers = append $maintainers $member }}
+  {{- end }}
+  {{- range $change := .Changes }}
+    {{- $authorList := splitList " " $change.Custom.Author }}
+    {{- range $author := $authorList }}
+      {{- if not (has $author $maintainers) }}
+        {{- $contributorSet = set $contributorSet $author true }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+  {{- if $contributorSet -}}
+  ### Contributors
+  Special thanks to our external contributors this release!
+  {{- $contributors := keys $contributorSet | sortAlpha }}
+  {{- range $k := $contributors }}
+  - @{{ $k }}
+  {{- end }}
+
+  {{ end -}}
+
   ### What to do next
   - Read the [documentation](https://docs.dagger.io/sdk/go)
   - Join our [Discord server](https://discord.gg/dagger-io)

@@ -233,8 +233,8 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			Type:        fnTypeDef.ReturnType.ToTyped(),
 			Module:      iface.mod.IDModule(),
 		}
-		if fnTypeDef.SourceMap != nil {
-			fieldDef.Directives = append(fieldDef.Directives, fnTypeDef.SourceMap.TypeDirective())
+		if fnTypeDef.SourceMap.Valid {
+			fieldDef.Directives = append(fieldDef.Directives, fnTypeDef.SourceMap.Value.TypeDirective())
 		}
 
 		for _, argMetadata := range fnTypeDef.Args {
@@ -264,8 +264,8 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				Description: formatGqlDescription(argMetadata.Description),
 				Type:        argMetadata.TypeDef.ToInput(),
 			}
-			if argMetadata.SourceMap != nil {
-				inputSpec.Directives = append(inputSpec.Directives, argMetadata.SourceMap.TypeDirective())
+			if argMetadata.SourceMap.Valid {
+				inputSpec.Directives = append(inputSpec.Directives, argMetadata.SourceMap.Value.TypeDirective())
 			}
 			fieldDef.Args.Add(inputSpec)
 		}
@@ -491,8 +491,8 @@ func (iface *InterfaceAnnotatedValue) TypeDefinition(view dagql.View) *ast.Defin
 		Kind: ast.Object,
 		Name: iface.Type().Name(),
 	}
-	if iface.TypeDef.SourceMap != nil {
-		def.Directives = append(def.Directives, iface.TypeDef.SourceMap.TypeDirective())
+	if iface.TypeDef.SourceMap.Valid {
+		def.Directives = append(def.Directives, iface.TypeDef.SourceMap.Value.TypeDirective())
 	}
 	return def
 }

@@ -119,7 +119,9 @@ func (s *ShellStateStore) Load(key string) (*ShellState, error) {
 	if !exists {
 		return nil, fmt.Errorf("tried to access non-existent state %q", key)
 	}
-	return &st, st.Error
+	cp := st
+	cp.Calls = slices.Clone(st.Calls)
+	return &cp, cp.Error
 }
 
 // Extract is like [Load] but also deletes the state from memory.

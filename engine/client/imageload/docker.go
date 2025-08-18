@@ -5,24 +5,25 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
-	"strings"
+	"regexp"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/util/traceexec"
 	"go.opentelemetry.io/otel"
 )
 
-type Docker struct{}
+type Docker struct {
+	Cmd string
+}
 
 func init() {
-	register("docker-image", &Docker{})
+	register("docker-image", &Docker{"docker"})
+	register("podman-image", &Docker{"podman"})
+	register("finch-image", &Docker{"finch"})
+	register("nerdctl-image", &Docker{"nerdctl"})
 }
 
-func (Docker) ID() string {
-	return "docker"
-}
-
-func (loader Docker) Loader(ctx context.Context) (_ *Loader, rerr error) {
+func (loader Docker) Loader(ctx context.Context) (*Loader, error) {
 	return &Loader{
 		TarballLoader: loader.loadTarball,
 	}, nil
@@ -32,23 +33,20 @@ func (loader Docker) loadTarball(ctx context.Context, name string, tarball io.Re
 	ctx, span := otel.Tracer("").Start(ctx, "load "+name)
 	defer telemetry.End(span, func() error { return rerr })
 
-	cmd := exec.CommandContext(ctx, "docker", "load")
+	cmd := exec.CommandContext(ctx, loader.Cmd, "load")
 	cmd.Stdin = tarball
-	stdout, err := traceexec.Exec(ctx, cmd, telemetry.Encapsulated())
+	stdout, _, err := traceexec.ExecOutput(ctx, cmd, telemetry.Encapsulated())
 	if err != nil {
 		return fmt.Errorf("docker load failed: %w", err)
 	}
 
-	_, imageID, ok := strings.Cut(stdout, "Loaded image ID: sha256:")
-	if !ok {
-		_, imageID, ok = strings.Cut(stdout, "Loaded image: sha256:") // podman
-		if !ok {
-			return fmt.Errorf("unexpected output from docker load")
-		}
+	result := regexp.MustCompile(`\b(sha256:[0-9a-f]+|\S+:\S+)\b`).FindStringSubmatch(stdout)
+	if len(result) == 0 {
+		return fmt.Errorf("unexpected output from docker load: %s", stdout)
 	}
-	imageID = strings.TrimSpace(imageID)
+	imageID := result[1]
 
-	_, err = traceexec.Exec(ctx, exec.CommandContext(ctx, "docker", "tag", imageID, name), telemetry.Encapsulated())
+	err = traceexec.Exec(ctx, exec.CommandContext(ctx, loader.Cmd, "tag", imageID, name), telemetry.Encapsulated())
 	if err != nil {
 		return fmt.Errorf("docker tag failed: %w", err)
 	}

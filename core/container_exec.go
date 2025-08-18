@@ -48,6 +48,8 @@ type ContainerExecOpts struct {
 
 	// Content to write to the command's standard input before closing
 	Stdin string `default:""`
+	// Redirect the command's standard input from a file in the container
+	RedirectStdin string `default:""`
 
 	// Redirect the command's standard output to a file in the container
 	RedirectStdout string `default:""`
@@ -117,6 +119,7 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 	if execMD.HostAliases == nil {
 		execMD.HostAliases = make(map[string][]string)
 	}
+	execMD.RedirectStdinPath = opts.RedirectStdin
 	execMD.RedirectStdoutPath = opts.RedirectStdout
 	execMD.RedirectStderrPath = opts.RedirectStderr
 	execMD.SystemEnvNames = container.SystemEnvNames
@@ -352,14 +355,25 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	}
 	meta.Env = append(meta.Env, secretEnv...)
 
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
+	detach, _, err := svcs.StartBindings(ctx, container.Services)
+	if err != nil {
+		return nil, err
+	}
+	defer detach()
+
 	worker := opt.Worker.(*buildkit.Worker)
 	worker = worker.ExecWorker(opt.CauseCtx, *execMD)
 	exec := worker.Executor()
-	_, execErr := exec.Run(ctx, "", p.Root, p.Mounts, executor.ProcessInfo{
-		Meta:  meta,
-		Stdin: io.NopCloser(strings.NewReader(opts.Stdin)),
-		// Stdout/Stderr are setup in Worker.setupStdio
-	}, nil)
+	procInfo := executor.ProcessInfo{Meta: meta}
+	if opts.Stdin != "" {
+		// Stdin/Stdout/Stderr can be setup in Worker.setupStdio
+		procInfo.Stdin = io.NopCloser(strings.NewReader(opts.Stdin))
+	}
+	_, execErr := exec.Run(ctx, "", p.Root, p.Mounts, procInfo, nil)
 
 	for i, ref := range p.OutputRefs {
 		// commit all refs

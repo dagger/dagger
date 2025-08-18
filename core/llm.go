@@ -994,7 +994,7 @@ func (llm *LLM) allowed(ctx context.Context) error {
 		return fmt.Errorf("failed to figure out module while deciding if llm is allowed: %w", err)
 	}
 
-	src := module.Self().ContextSource.Self()
+	src := module.Self().ContextSource.Value.Self()
 	if src.Kind != ModuleSourceKindGit {
 		return nil
 	}

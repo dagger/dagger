@@ -239,6 +239,10 @@ var coreDirectives = []DirectiveSpec{
 				Name: "column",
 				Type: Int(0),
 			},
+			InputSpec{
+				Name: "url",
+				Type: String(""),
+			},
 		),
 		Locations: []DirectiveLocation{
 			DirectiveLocationScalar,

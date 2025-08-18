@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/sys/mount"
 	"github.com/vektah/gqlparser/v2/ast"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/dagql"
@@ -50,6 +52,10 @@ type GitRepositoryBackend interface {
 	Ref(ctx context.Context, ref string) (GitRefBackend, error)
 	Tags(ctx context.Context, patterns []string, sort string) (tags []string, err error)
 	Branches(ctx context.Context, patterns []string, sort string) (branches []string, err error)
+
+	mount(ctx context.Context, depth int, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error
+
+	equivalent(GitRepositoryBackend) bool
 }
 
 func (*GitRepository) Type() *ast.Type {
@@ -91,8 +97,12 @@ type GitRef struct {
 type GitRefBackend interface {
 	HasPBDefinitions
 
+	Repo() GitRepositoryBackend
+
 	Resolve(ctx context.Context) (commit string, ref string, err error)
 	Tree(ctx context.Context, srv *dagql.Server, discard bool, depth int) (checkout *Directory, err error)
+
+	mount(ctx context.Context, depth int, fn func(*gitutil.GitCLI) error) error
 }
 
 func (*GitRef) Type() *ast.Type {
@@ -140,7 +150,7 @@ func (repo *RemoteGitRepository) PBDefinitions(ctx context.Context) ([]*pb.Defin
 
 func (repo *RemoteGitRepository) Ref(ctx context.Context, refstr string) (GitRefBackend, error) {
 	ref := &RemoteGitRef{
-		Repo: repo,
+		repo: repo,
 	}
 
 	// force resolution now, since the remote might change, and we don't want inconsistencies
@@ -197,6 +207,17 @@ func (repo *RemoteGitRepository) lsRemote(ctx context.Context, args []string, pa
 	defer cleanup()
 
 	return runLsRemote(ctx, git, repo.URL.Remote(), args, patterns, sort)
+}
+
+func (repo *RemoteGitRepository) equivalent(other GitRepositoryBackend) bool {
+	remoteRepo, ok := other.(*RemoteGitRepository)
+	if !ok {
+		return false
+	}
+	if repo.URL.Remote() != remoteRepo.URL.Remote() {
+		return false
+	}
+	return true
 }
 
 func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, _ func() error, rerr error) {
@@ -377,7 +398,137 @@ func mergeResolv(dst *os.File, src io.Reader, dns *oci.DNSConfig) error {
 	return nil
 }
 
-func (repo *RemoteGitRepository) mountRemote(ctx context.Context, g bksession.Group, fn func(string) error) (retErr error) {
+func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) (retErr error) {
+	g, _ := buildkit.CurrentBuildkitSessionGroup(ctx)
+	return repo.initRemote(ctx, g, func(remote string) error {
+		git, cleanup, err := repo.setup(ctx)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		git = git.New(gitutil.WithGitDir(remote))
+		gitDir, err := git.GitDir(ctx)
+		if err != nil {
+			return fmt.Errorf("could not find git dir: %w", err)
+		}
+
+		var fetchRefs []*RemoteGitRef
+		for _, ref := range refs {
+			ref := ref.(*RemoteGitRef)
+
+			// skip fetch if commit already exists
+			doFetch := true
+			if res, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "rev-parse", "--verify", ref.FullRef+"^{commit}"); err != nil {
+				return fmt.Errorf("failed to rev-parse: %w", err)
+			} else if strings.TrimSpace(string(res)) == ref.Commit {
+				doFetch = false
+
+				if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
+					// if shallow, check we have enough depth
+					if depth <= 0 {
+						doFetch = true
+					} else {
+						// HACK: this is a pretty terrible way to guess the depth,
+						// since it only traces *one* path.
+						res, err := git.New().Run(ctx, "rev-list", "--first-parent", "--count", ref.Commit)
+						if err != nil {
+							return fmt.Errorf("failed to rev-list: %w", err)
+						}
+						res = bytes.TrimSpace(res)
+						count, err := strconv.Atoi(string(res))
+						if err != nil {
+							return fmt.Errorf("failed to parse rev-list output: %w", err)
+						}
+						if count < depth {
+							doFetch = true
+						}
+					}
+				}
+			}
+
+			if doFetch {
+				fetchRefs = append(fetchRefs, ref)
+			}
+		}
+
+		err = repo.fetch(ctx, git, depth, fetchRefs)
+		if err != nil {
+			return err
+		}
+		_, err = git.Run(ctx, "reflog", "expire", "--all", "--expire=now")
+		if err != nil {
+			return fmt.Errorf("failed to expire reflog for remote %s: %w", repo.URL.Remote(), err)
+		}
+
+		return fn(git)
+	})
+}
+
+func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI, depth int, refs []*RemoteGitRef) error {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+
+	gitDir, err := git.GitDir(ctx)
+	if err != nil {
+		return err
+	}
+
+	var refSpecs []string
+	for _, ref := range refs {
+		if gitutil.IsCommitSHA(ref.FullRef) {
+			// TODO: may need fallback if git remote doesn't support fetching by commit
+			refSpecs = append(refSpecs, ref.FullRef)
+		} else {
+			refSpecs = append(refSpecs, ref.FullRef+":"+ref.FullRef)
+		}
+	}
+
+	args := []string{
+		"fetch",
+		"--tags",
+		"--update-head-ok",
+		"--force",
+	}
+	if depth <= 0 {
+		if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
+			args = append(args, "--unshallow")
+		}
+	} else {
+		args = append(args, "--depth="+fmt.Sprint(depth))
+	}
+	args = append(args, "origin")
+	args = append(args, refSpecs...)
+
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get services: %w", err)
+	}
+	detach, _, err := svcs.StartBindings(ctx, repo.Services)
+	if err != nil {
+		return err
+	}
+	defer detach()
+
+	if _, err := git.Run(ctx, args...); err != nil {
+		if strings.Contains(err.Error(), "does not support shallow") {
+			// fallback to full fetch
+			args = slices.DeleteFunc(args, func(s string) bool {
+				return strings.HasPrefix(s, "--depth")
+			})
+			_, err = git.Run(ctx, args...)
+		}
+
+		if err != nil {
+			return fmt.Errorf("failed to fetch remote %s: %w", repo.URL.Remote(), err)
+		}
+	}
+
+	return nil
+}
+
+func (repo *RemoteGitRepository) initRemote(ctx context.Context, g bksession.Group, fn func(string) error) (retErr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -467,7 +618,7 @@ func (repo *RemoteGitRepository) mountRemote(ctx context.Context, g bksession.Gr
 }
 
 type RemoteGitRef struct {
-	Repo *RemoteGitRepository
+	repo *RemoteGitRepository
 
 	FullRef string
 	Commit  string
@@ -477,6 +628,10 @@ var _ GitRefBackend = (*RemoteGitRef)(nil)
 
 func (ref *RemoteGitRef) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	return nil, nil
+}
+
+func (ref *RemoteGitRef) Repo() GitRepositoryBackend {
+	return ref.repo
 }
 
 func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int) (_ *Directory, rerr error) {
@@ -516,61 +671,16 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	if !ok {
 		return nil, fmt.Errorf("no buildkit session group in context")
 	}
-	err = ref.Repo.mountRemote(ctx, bkSessionGroup, func(remote string) error {
-		git, cleanup, err := ref.Repo.setup(ctx)
-		if err != nil {
-			return err
-		}
-		defer cleanup()
-		git = git.New(gitutil.WithGitDir(remote))
-		gitDir, err := git.GitDir(ctx)
+	err = ref.mount(ctx, depth, func(git *gitutil.GitCLI) error {
+		gitURL, err := git.URL(ctx)
 		if err != nil {
 			return fmt.Errorf("could not find git dir: %w", err)
-		}
-
-		// skip fetch if commit already exists
-		doFetch := true
-		if res, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "rev-parse", "--verify", ref.FullRef+"^{commit}"); err != nil {
-			return fmt.Errorf("failed to rev-parse: %w", err)
-		} else if strings.TrimSpace(string(res)) == ref.Commit {
-			doFetch = false
-
-			if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
-				// if shallow, check we have enough depth
-				if depth <= 0 {
-					doFetch = true
-				} else {
-					res, err := git.New().Run(ctx, "rev-list", "--count", ref.Commit)
-					if err != nil {
-						return fmt.Errorf("failed to rev-list: %w", err)
-					}
-					res = bytes.TrimSpace(res)
-					count, err := strconv.Atoi(string(res))
-					if err != nil {
-						return fmt.Errorf("failed to parse rev-list output: %w", err)
-					}
-					if count < depth {
-						doFetch = true
-					}
-				}
-			}
-		}
-
-		if doFetch {
-			err := ref.fetchRemote(ctx, git, depth)
-			if err != nil {
-				return err
-			}
-			_, err = git.Run(ctx, "reflog", "expire", "--all", "--expire=now")
-			if err != nil {
-				return fmt.Errorf("failed to expire reflog for remote %s: %w", ref.Repo.URL.Remote(), err)
-			}
 		}
 
 		checkoutRef, err = cache.New(ctx, nil, bkSessionGroup,
 			bkcache.CachePolicyRetain,
 			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-			bkcache.WithDescription(fmt.Sprintf("git checkout for %s (%s %s)", ref.Repo.URL.Remote(), ref.FullRef, ref.Commit)))
+			bkcache.WithDescription(fmt.Sprintf("git checkout for %s (%s %s)", ref.repo.URL.Remote(), ref.FullRef, ref.Commit)))
 		if err != nil {
 			return err
 		}
@@ -586,15 +696,15 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			if err != nil {
 				return err
 			}
-			_, err = checkoutGit.Run(ctx, "remote", "add", "origin", "file://"+gitDir)
+			_, err = checkoutGit.Run(ctx, "remote", "add", "origin", gitURL)
 			if err != nil {
 				return err
 			}
 
-			return doGitCheckout(ctx, checkoutGit, ref.Repo.URL.Remote(), ref.FullRef, ref.Commit, depth, discardGitDir)
+			return doGitCheckout(ctx, checkoutGit, ref.repo.URL.Remote(), ref.FullRef, ref.Commit, depth, discardGitDir)
 		})
 		if err != nil {
-			return fmt.Errorf("failed to checkout %s in %s: %w", ref.FullRef, ref.Repo.URL.Remote(), err)
+			return fmt.Errorf("failed to checkout %s in %s: %w", ref.FullRef, ref.repo.URL.Remote(), err)
 		}
 
 		return nil
@@ -624,65 +734,8 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	return checkout, nil
 }
 
-func (ref *RemoteGitRef) fetchRemote(ctx context.Context, git *gitutil.GitCLI, depth int) error {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return err
-	}
-
-	gitDir, err := git.GitDir(ctx)
-	if err != nil {
-		return err
-	}
-
-	var refSpec string
-	if gitutil.IsCommitSHA(ref.FullRef) {
-		// TODO: may need fallback if git remote doesn't support fetching by commit
-		refSpec = ref.FullRef
-	} else {
-		refSpec = ref.FullRef + ":" + ref.FullRef
-	}
-
-	args := []string{
-		"fetch",
-		"--tags",
-		"--update-head-ok",
-		"--force",
-	}
-	if depth <= 0 {
-		if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
-			args = append(args, "--unshallow")
-		}
-	} else {
-		args = append(args, "--depth="+fmt.Sprint(depth))
-	}
-	args = append(args, "origin", refSpec)
-
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get services: %w", err)
-	}
-	detach, _, err := svcs.StartBindings(ctx, ref.Repo.Services)
-	if err != nil {
-		return err
-	}
-	defer detach()
-
-	if _, err := git.Run(ctx, args...); err != nil {
-		if strings.Contains(err.Error(), "does not support shallow") {
-			// fallback to full fetch
-			args = slices.DeleteFunc(args, func(s string) bool {
-				return strings.HasPrefix(s, "--depth")
-			})
-			_, err = git.Run(ctx, args...)
-		}
-
-		if err != nil {
-			return fmt.Errorf("failed to fetch remote %s: %w", ref.Repo.URL.Remote(), err)
-		}
-	}
-
-	return nil
+func (ref *RemoteGitRef) mount(ctx context.Context, depth int, fn func(*gitutil.GitCLI) error) error {
+	return ref.repo.mount(ctx, depth, []GitRefBackend{ref}, fn)
 }
 
 func doGitCheckout(
@@ -758,13 +811,13 @@ func (ref *RemoteGitRef) resolve(ctx context.Context, refstr string) (commit str
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get services: %w", err)
 	}
-	detach, _, err := svcs.StartBindings(ctx, ref.Repo.Services)
+	detach, _, err := svcs.StartBindings(ctx, ref.repo.Services)
 	if err != nil {
 		return "", "", err
 	}
 	defer detach()
 
-	git, cleanup, err := ref.Repo.setup(ctx)
+	git, cleanup, err := ref.repo.setup(ctx)
 	if err != nil {
 		return "", "", err
 	}
@@ -780,19 +833,19 @@ func (ref *RemoteGitRef) resolve(ctx context.Context, refstr string) (commit str
 	out, err := git.Run(ctx,
 		"ls-remote",
 		"--symref",
-		ref.Repo.URL.Remote(),
+		ref.repo.URL.Remote(),
 		target,
 		target+"^{}",
 	)
 	if err != nil {
-		return "", "", fmt.Errorf("cannot resolve %q: %w", ref.Repo.URL.Remote(), err)
+		return "", "", fmt.Errorf("cannot resolve %q: %w", ref.repo.URL.Remote(), err)
 	}
 
 	if gitutil.IsCommitSHA(refstr) {
 		return refstr, refstr, nil
 	}
 
-	return parseGitRefOutput(refstr, string(out), "\t")
+	return parseLsRemote(refstr, string(out))
 }
 
 func (ref *RemoteGitRef) Resolve(ctx context.Context) (commit string, fullref string, _ error) {
@@ -800,18 +853,18 @@ func (ref *RemoteGitRef) Resolve(ctx context.Context) (commit string, fullref st
 }
 
 type LocalGitRepository struct {
-	Directory *Directory
+	Directory dagql.ObjectResult[*Directory]
 }
 
 var _ GitRepositoryBackend = (*LocalGitRepository)(nil)
 
 func (repo *LocalGitRepository) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	return repo.Directory.PBDefinitions(ctx)
+	return repo.Directory.Self().PBDefinitions(ctx)
 }
 
 func (repo *LocalGitRepository) Ref(ctx context.Context, ref string) (GitRefBackend, error) {
 	return &LocalGitRef{
-		Repo: repo,
+		repo: repo,
 		Ref:  ref,
 	}, nil
 }
@@ -838,11 +891,25 @@ func (repo *LocalGitRepository) Branches(ctx context.Context, patterns []string,
 	return branches, nil
 }
 
+func (repo *LocalGitRepository) equivalent(other GitRepositoryBackend) bool {
+	localRepo, ok := other.(*LocalGitRepository)
+	if !ok {
+		return false
+	}
+	if repo.Directory.ID() != localRepo.Directory.ID() {
+		return false
+	}
+	return true
+}
+
 func (repo *LocalGitRepository) lsRemote(ctx context.Context, args []string, patterns []string, sort string) ([]string, error) {
 	results := []string{}
-	err := repo.mount(ctx, func(src string) error {
-		var err error
-		results, err = runLsRemote(ctx, gitutil.NewGitCLI(), "file://"+src, args, patterns, sort)
+	err := repo.mount(ctx, 0, nil, func(git *gitutil.GitCLI) error {
+		gitURL, err := git.URL(ctx)
+		if err != nil {
+			return err
+		}
+		results, err = runLsRemote(ctx, gitutil.NewGitCLI(), gitURL, args, patterns, sort)
 		return err
 	})
 	if err != nil {
@@ -851,7 +918,7 @@ func (repo *LocalGitRepository) lsRemote(ctx context.Context, args []string, pat
 	return results, nil
 }
 
-func (repo *LocalGitRepository) mount(ctx context.Context, f func(string) error) error {
+func (repo *LocalGitRepository) mount(ctx context.Context, depth int, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -860,30 +927,41 @@ func (repo *LocalGitRepository) mount(ctx context.Context, f func(string) error)
 	if err != nil {
 		return fmt.Errorf("failed to get services: %w", err)
 	}
-	detach, _, err := svcs.StartBindings(ctx, repo.Directory.Services)
+	detach, _, err := svcs.StartBindings(ctx, repo.Directory.Self().Services)
 	if err != nil {
 		return err
 	}
 	defer detach()
 
-	return mountLLB(ctx, repo.Directory.LLB, func(root string) error {
-		src, err := fs.RootPath(root, repo.Directory.Dir)
+	return mountLLB(ctx, repo.Directory.Self().LLB, func(root string) error {
+		src, err := fs.RootPath(root, repo.Directory.Self().Dir)
 		if err != nil {
 			return err
 		}
-		return f(src)
+
+		git := gitutil.NewGitCLI(gitutil.WithDir(src))
+		return fn(git)
 	})
 }
 
+func (ref *LocalGitRef) mount(ctx context.Context, depth int, fn func(*gitutil.GitCLI) error) error {
+	return ref.repo.mount(ctx, depth, []GitRefBackend{ref}, fn)
+}
+
 type LocalGitRef struct {
-	Repo *LocalGitRepository
-	Ref  string
+	repo *LocalGitRepository
+
+	Ref string
 }
 
 var _ GitRefBackend = (*LocalGitRef)(nil)
 
 func (ref *LocalGitRef) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	return ref.Repo.PBDefinitions(ctx)
+	return ref.repo.PBDefinitions(ctx)
+}
+
+func (ref *LocalGitRef) Repo() GitRepositoryBackend {
+	return ref.repo
 }
 
 func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int) (_ *Directory, rerr error) {
@@ -915,11 +993,10 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 		}
 	}()
 
-	err = ref.Repo.mount(ctx, func(src string) error {
-		git := gitutil.NewGitCLI(gitutil.WithDir(src))
-		gitDir, err := git.GitDir(ctx)
+	err = ref.mount(ctx, depth, func(git *gitutil.GitCLI) error {
+		gitURL, err := git.URL(ctx)
 		if err != nil {
-			return fmt.Errorf("could not find git dir: %w", err)
+			return fmt.Errorf("could not find git url: %w", err)
 		}
 
 		return MountRef(ctx, bkref, bkSessionGroup, func(checkoutDir string) error {
@@ -937,12 +1014,12 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 			if err != nil {
 				return err
 			}
-			_, err = checkoutGit.Run(ctx, "remote", "add", "origin", "file://"+gitDir)
+			_, err = checkoutGit.Run(ctx, "remote", "add", "origin", gitURL)
 			if err != nil {
 				return err
 			}
 
-			return doGitCheckout(ctx, checkoutGit, "file://"+gitDir, fullref, commit, depth, discardGitDir)
+			return doGitCheckout(ctx, checkoutGit, gitURL, fullref, commit, depth, discardGitDir)
 		})
 	})
 	if err != nil {
@@ -965,27 +1042,139 @@ func (ref *LocalGitRef) Resolve(ctx context.Context) (string, string, error) {
 	}
 
 	var commit, fullref string
-	err := ref.Repo.mount(ctx, func(src string) error {
-		git := gitutil.NewGitCLI(gitutil.WithDir(src))
-
-		targetref := ref.Ref
-		out, err := git.Run(ctx, "symbolic-ref", targetref)
-		if err == nil {
-			targetref = strings.TrimSpace(string(out))
-		} else if !strings.Contains(err.Error(), "is not a symbolic ref") {
-			return err
+	err := ref.mount(ctx, 0, func(git *gitutil.GitCLI) error {
+		target := ref.Ref
+		if gitutil.IsCommitSHA(ref.Ref) {
+			target = "HEAD"
 		}
-		out, err = git.Run(ctx, "show-ref", "--deref", "--head", targetref, targetref+"^{}")
+
+		gitURL, err := git.URL(ctx)
 		if err != nil {
 			return err
 		}
-		commit, fullref, err = parseGitRefOutput(targetref, string(out), " ")
+
+		out, err := git.Run(ctx,
+			"ls-remote",
+			"--symref",
+			gitURL,
+			target,
+			target+"^{}",
+		)
+		if err != nil {
+			return err
+		}
+
+		if gitutil.IsCommitSHA(ref.Ref) {
+			commit, fullref = ref.Ref, ref.Ref
+			return nil
+		}
+		commit, fullref, err = parseLsRemote(ref.Ref, string(out))
 		return err
 	})
 	if err != nil {
 		return "", "", err
 	}
 	return commit, fullref, nil
+}
+
+func MergeBase(ctx context.Context, ref1 GitRefBackend, ref2 GitRefBackend) (GitRefBackend, error) {
+	if ref1.Repo().equivalent(ref2.Repo()) { // fast-path, just grab both refs from the same repo
+		repo := ref1.Repo()
+		commit1, _, err := ref1.Resolve(ctx)
+		if err != nil {
+			return nil, err
+		}
+		commit2, _, err := ref2.Resolve(ctx)
+		if err != nil {
+			return nil, err
+		}
+		var mergeBase string
+		err = repo.mount(ctx, 0, []GitRefBackend{ref1, ref2}, func(git *gitutil.GitCLI) error {
+			out, err := git.Run(ctx, "merge-base", commit1, commit2)
+			if err != nil {
+				return fmt.Errorf("git merge-base failed: %w", err)
+			}
+			mergeBase = strings.TrimSpace(string(out))
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		return repo.Ref(ctx, mergeBase)
+	}
+
+	git, commits, cleanup, err := refJoin(ctx, []GitRefBackend{ref1, ref2})
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
+	out, err := git.Run(ctx, append([]string{"merge-base"}, commits...)...)
+	if err != nil {
+		return nil, fmt.Errorf("git merge-base failed: %w", err)
+	}
+	mergeBase := strings.TrimSpace(string(out))
+	return ref1.Repo().Ref(ctx, mergeBase)
+}
+
+// refJoin creates a temporary git repository, adds the given refs as remotes,
+// fetches them, and returns a GitCLI instance.
+func refJoin(ctx context.Context, refs []GitRefBackend) (_ *gitutil.GitCLI, _ []string, _ func() error, rerr error) {
+	tmpDir, err := os.MkdirTemp("", "dagger-mergebase")
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to create temp dir: %w", err)
+	}
+	cleanup := func() error {
+		return os.RemoveAll(tmpDir)
+	}
+	defer func() {
+		if rerr != nil {
+			cleanup()
+		}
+	}()
+	git := gitutil.NewGitCLI(
+		gitutil.WithDir(tmpDir),
+		gitutil.WithGitDir(filepath.Join(tmpDir, ".git")),
+	)
+	if _, err := git.Run(ctx, "-c", "init.defaultBranch=main", "init"); err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to init temp repo: %w", err)
+	}
+
+	eg, egCtx := errgroup.WithContext(ctx)
+	mu := sync.Mutex{} // cannot simultaneously add+fetch remotes
+	commits := make([]string, len(refs))
+
+	for i, ref := range refs {
+		eg.Go(func() error {
+			commit, _, err := ref.Resolve(egCtx)
+			if err != nil {
+				return err
+			}
+			commits[i] = commit
+			return ref.mount(egCtx, 0, func(gitN *gitutil.GitCLI) error {
+				remoteURL, err := gitN.URL(egCtx)
+				if err != nil {
+					return err
+				}
+				remoteName := fmt.Sprintf("origin%d", i+1)
+				mu.Lock()
+				defer mu.Unlock()
+				if _, err := git.Run(egCtx, "remote", "add", remoteName, remoteURL); err != nil {
+					return fmt.Errorf("failed to add remote %s: %w", remoteName, err)
+				}
+				if _, err := git.Run(egCtx, "fetch", "--no-tags", remoteName, commit); err != nil {
+					return fmt.Errorf("failed to fetch ref %d: %w", i+1, err)
+				}
+				return nil
+			})
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return nil, nil, nil, err
+	}
+	return git, commits, cleanup, nil
 }
 
 func mountKnownHosts(knownHosts string) (string, error) {
@@ -1149,9 +1338,9 @@ func runLsRemote(ctx context.Context, git *gitutil.GitCLI, remote string, args [
 	return results, nil
 }
 
-// parses output from git-show-ref and git-ls-remote to find the correctly
+// parseLsRemote parses output from git-ls-remote to find the correctly
 // matching ref and commit for a target
-func parseGitRefOutput(target string, out string, separator string) (commit string, ref string, err error) {
+func parseLsRemote(target string, out string) (commit string, ref string, err error) {
 	lines := strings.Split(out, "\n")
 
 	symrefs := make(map[string]string)
@@ -1170,7 +1359,7 @@ func parseGitRefOutput(target string, out string, separator string) (commit stri
 	var match, headMatch, tagMatch *reference
 
 	for _, line := range lines {
-		fields := strings.Split(line, separator)
+		fields := strings.Split(line, "\t")
 		if len(fields) < 2 {
 			continue
 		}

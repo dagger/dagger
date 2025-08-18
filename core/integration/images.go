@@ -12,7 +12,8 @@ const (
 	alpineArm    = "arm64v8/alpine"
 	alpineAmd    = "amd64/alpine"
 
-	nodeImage = "node:22.11.0-alpine@sha256:b64ced2e7cd0a4816699fe308ce6e8a08ccba463c757c00c14cd372e3d2c763e"
+	nodeImage   = "node:22.11.0-alpine@sha256:b64ced2e7cd0a4816699fe308ce6e8a08ccba463c757c00c14cd372e3d2c763e"
+	pythonImage = "python:3.13-slim@sha256:4c2cf9917bd1cbacc5e9b07320025bdb7cdf2df7b0ceaccb55e9dd7e30987419"
 
 	// TODO: use these
 	// registryImage   = "registry:2"

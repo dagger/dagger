@@ -30,19 +30,19 @@ const (
 )
 
 func (funcs goTemplateFuncs) isModuleCode() bool {
-	return funcs.cfg.ModuleName != ""
+	return funcs.cfg.ModuleConfig != nil && funcs.cfg.ModuleConfig.ModuleName != ""
 }
 
 func (funcs goTemplateFuncs) isStandaloneClient() bool {
-	return funcs.cfg.ClientOnly
+	return funcs.cfg.ClientConfig != nil
 }
 
-func (funcs goTemplateFuncs) Dependencies() []generator.ModuleSourceDependencies {
-	return funcs.cfg.ModuleDependencies
+func (funcs goTemplateFuncs) Dependencies() []generator.ModuleSourceDependency {
+	return funcs.cfg.ClientConfig.ModuleDependencies
 }
 
 func (funcs goTemplateFuncs) HasLocalDependencies() bool {
-	for _, dep := range funcs.cfg.ModuleDependencies {
+	for _, dep := range funcs.cfg.ClientConfig.ModuleDependencies {
 		if dep.Kind == "LOCAL_SOURCE" {
 			return true
 		}
@@ -52,11 +52,20 @@ func (funcs goTemplateFuncs) HasLocalDependencies() bool {
 }
 
 func (funcs goTemplateFuncs) moduleRelPath(path string) string {
+	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
+		return path
+	}
+
+	moduleParentPath := ""
+	if funcs.cfg.ModuleConfig != nil {
+		moduleParentPath = funcs.cfg.ModuleConfig.ModuleParentPath
+	}
+
 	return filepath.Join(
 		// path to the root of this module (since we're probably in internal/dagger/)
 		"../..",
 		// path from the module root to the context directory
-		funcs.cfg.ModuleParentPath,
+		moduleParentPath,
 		// path from the context directory to the desired path
 		path,
 	)
@@ -100,7 +109,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 		pkg:        funcs.modulePkg,
 		fset:       funcs.moduleFset,
 		schema:     funcs.schema,
-		moduleName: funcs.cfg.ModuleName,
+		moduleName: funcs.cfg.ModuleConfig.ModuleName,
 
 		methods: make(map[string][]method),
 	}

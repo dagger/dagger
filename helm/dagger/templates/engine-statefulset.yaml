@@ -151,6 +151,9 @@ spec:
             {{- with .Values.engine.volumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+        {{- with .Values.engine.sidecars }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       terminationGracePeriodSeconds: {{ .Values.engine.terminationGracePeriodSeconds }}
       volumes:
         {{- if .Values.engine.hostPath.dataVolume.enabled }}

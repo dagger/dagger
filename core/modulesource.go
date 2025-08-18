@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -488,6 +490,30 @@ type GitModuleSource struct {
 	UnfilteredContextDir dagql.ObjectResult[*Directory]
 }
 
+func (src GitModuleSource) Link(filepath string, line int, column int) (string, error) {
+	parsedURL, err := url.Parse(src.HTMLRepoURL)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse git repo URL %q: %w", src.HTMLRepoURL, err)
+	}
+
+	switch parsedURL.Host {
+	case "github.com", "gitlab.com":
+		result := src.HTMLRepoURL + path.Join("/tree", src.Commit, filepath)
+		if line > 0 {
+			result += fmt.Sprintf("#L%d", line)
+		}
+		return result, nil
+	case "dev.azure.com":
+		result := src.HTMLRepoURL + path.Join("/commit", src.Commit)
+		if filepath != "." {
+			result += "?path=/" + filepath
+		}
+		return result, nil
+	default:
+		return src.HTMLRepoURL + path.Join("/src", src.Commit, filepath), nil
+	}
+}
+
 func (src GitModuleSource) Clone() *GitModuleSource {
 	return &src
 }
@@ -731,7 +757,7 @@ func NewCoreDirStatFS(dir *Directory, bk *buildkit.Client) *CoreDirStatFS {
 }
 
 func (fs CoreDirStatFS) Stat(ctx context.Context, path string) (*fsutiltypes.Stat, error) {
-	stat, err := fs.dir.Stat(ctx, fs.bk, nil, path)
+	stat, err := fs.dir.Stat(ctx, fs.bk, path)
 	if err != nil {
 		return nil, err
 	}

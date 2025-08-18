@@ -22,6 +22,20 @@ type TypeScriptGenerator struct {
 
 // Generate will generate the TypeScript SDK code and might modify the schema to reorder types in a alphanumeric fashion.
 func (g *TypeScriptGenerator) GenerateModule(_ context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
+	target := filepath.Join(g.Config.ModuleConfig.ModuleSourcePath, "sdk/src/api", ClientGenFile)
+
+	return generate(g.Config, target, schema, schemaVersion)
+}
+
+func (g *TypeScriptGenerator) GenerateClient(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
+	return generate(g.Config, ClientGenFile, schema, schemaVersion)
+}
+
+func (g *TypeScriptGenerator) GenerateLibrary(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
+	return generate(g.Config, ClientGenFile, schema, schemaVersion)
+}
+
+func generate(config generator.Config, target string, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
 	generator.SetSchema(schema)
 
 	sort.SliceStable(schema.Types, func(i, j int) bool {
@@ -44,7 +58,7 @@ func (g *TypeScriptGenerator) GenerateModule(_ context.Context, schema *introspe
 		})
 	}
 
-	tmpl := templates.New(schemaVersion, g.Config)
+	tmpl := templates.New(schemaVersion, config)
 	data := struct {
 		Schema        *introspection.Schema
 		SchemaVersion string
@@ -62,11 +76,6 @@ func (g *TypeScriptGenerator) GenerateModule(_ context.Context, schema *introspe
 
 	mfs := memfs.New()
 
-	target := ClientGenFile
-	if g.Config.ModuleName != "" {
-		target = filepath.Join(g.Config.ModuleSourcePath, "sdk/src/api", ClientGenFile)
-	}
-
 	if err := mfs.MkdirAll(filepath.Dir(target), 0700); err != nil {
 		return nil, fmt.Errorf("failed to create target directory %s: %w", filepath.Dir(target), err)
 	}
@@ -77,9 +86,4 @@ func (g *TypeScriptGenerator) GenerateModule(_ context.Context, schema *introspe
 	return &generator.GeneratedState{
 		Overlay: mfs,
 	}, nil
-}
-
-func (g *TypeScriptGenerator) GenerateClient(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
-	// This is the same as the module generator for TypeScript
-	return g.GenerateModule(ctx, schema, schemaVersion)
 }

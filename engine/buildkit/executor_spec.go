@@ -56,6 +56,7 @@ const (
 	DaggerClientIDEnv        = "_DAGGER_NESTED_CLIENT_ID"
 	DaggerCallDigestEnv      = "_DAGGER_CALL_DIGEST"
 	DaggerEngineVersionEnv   = "_DAGGER_ENGINE_VERSION"
+	DaggerRedirectStdinEnv   = "_DAGGER_REDIRECT_STDIN"
 	DaggerRedirectStdoutEnv  = "_DAGGER_REDIRECT_STDOUT"
 	DaggerRedirectStderrEnv  = "_DAGGER_REDIRECT_STDERR"
 	DaggerHostnameAliasesEnv = "_DAGGER_HOSTNAME_ALIASES"
@@ -79,6 +80,7 @@ var removeEnvs = map[string]struct{}{
 	// envs that are used to scope cache but not needed at runtime
 	DaggerCallDigestEnv:      {},
 	DaggerEngineVersionEnv:   {},
+	DaggerRedirectStdinEnv:   {},
 	DaggerRedirectStdoutEnv:  {},
 	DaggerRedirectStderrEnv:  {},
 	DaggerHostnameAliasesEnv: {},
@@ -579,7 +581,7 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 	state.cleanups.Add("close container stderr file", stderrFile.Close)
 	stderrWriters = append(stderrWriters, stderrFile)
 
-	if w.execMD != nil && (w.execMD.RedirectStdoutPath != "" || w.execMD.RedirectStderrPath != "") {
+	if w.execMD != nil && (w.execMD.RedirectStdinPath != "" || w.execMD.RedirectStdoutPath != "" || w.execMD.RedirectStderrPath != "") {
 		ctrFS, err := containerfs.NewContainerFS(state.spec, nil)
 		if err != nil {
 			return err
@@ -591,6 +593,22 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 		}
 		if !path.IsAbs(ctrCwd) {
 			ctrCwd = filepath.Join("/", ctrCwd)
+		}
+
+		redirectStdinPath := w.execMD.RedirectStdinPath
+		if redirectStdinPath != "" {
+			if state.procInfo.Stdin != nil {
+				return fmt.Errorf("cannot set redirect stdin path %q when stdin is already set", redirectStdinPath)
+			}
+			if !path.IsAbs(redirectStdinPath) {
+				redirectStdinPath = filepath.Join(ctrCwd, redirectStdinPath)
+			}
+			redirectStdinFile, err := ctrFS.Open(redirectStdinPath)
+			if err != nil {
+				return fmt.Errorf("open redirect stdin file: %w", err)
+			}
+			state.cleanups.Add("close redirect stdin file", redirectStdinFile.Close)
+			state.procInfo.Stdin = io.NopCloser(redirectStdinFile)
 		}
 
 		redirectStdoutPath := w.execMD.RedirectStdoutPath
