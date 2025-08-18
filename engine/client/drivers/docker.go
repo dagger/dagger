@@ -100,7 +100,14 @@ func (d docker) ContainerRun(ctx context.Context, name string, opts runOpts) err
 
 	cmd := exec.CommandContext(ctx, d.cmd, args...)
 	cmd.Env = envs
-	return traceexec.Exec(ctx, cmd)
+	_, stderr, err := traceexec.ExecOutput(ctx, cmd)
+	if err != nil {
+		if isContainerAlreadyInUseOutput(stderr) {
+			return errContainerAlreadyExists
+		}
+		return err
+	}
+	return nil
 }
 
 func (d docker) ContainerExec(ctx context.Context, name string, args []string) (string, string, error) {
@@ -143,4 +150,16 @@ func (d docker) ContainerLs(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	return strings.Split(stdout, "\n"), nil
+}
+
+func isContainerAlreadyInUseOutput(output string) bool {
+	switch {
+	case strings.Contains(output, "is already in use"):
+		// docker/podman cli output
+		return true
+	case strings.Contains(output, "is already used"):
+		// nerdctl cli output
+		return true
+	}
+	return false
 }
