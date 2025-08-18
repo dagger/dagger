@@ -105,6 +105,9 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("name", s.currentModuleName).
 			Doc(`The name of the module being executed in`),
 
+		dagql.Func("meta", s.currentModuleMeta).
+			Doc(`The fully instantiated module implementing the current function call.`),
+
 		dagql.NodeFunc("source", s.currentModuleSource).
 			Doc(`The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).`),
 
@@ -544,7 +547,7 @@ func (s *moduleSchema) currentModule(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current module: %w", err)
 	}
-	return &core.CurrentModule{Meta: mod}, nil
+	return &core.CurrentModule{Module: mod}, nil
 }
 
 func (s *moduleSchema) currentFunctionCall(ctx context.Context, self *core.Query, _ struct{}) (*core.FunctionCall, error) {
@@ -687,7 +690,15 @@ func (s *moduleSchema) currentModuleName(
 	curMod *core.CurrentModule,
 	args struct{},
 ) (string, error) {
-	return curMod.Meta.Self().NameField, nil
+	return curMod.Module.NameField, nil
+}
+
+func (s *moduleSchema) currentModuleMeta(
+	ctx context.Context,
+	curMod *core.CurrentModule,
+	args struct{},
+) (dagql.ObjectResult[*core.Module], error) {
+	return curMod.Meta(ctx)
 }
 
 func (s *moduleSchema) currentModuleSource(
@@ -700,7 +711,7 @@ func (s *moduleSchema) currentModuleSource(
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	curSrc := curMod.Self().Meta.Self().Source.Value
+	curSrc := curMod.Self().Module.Source.Value
 	if curSrc.Self() == nil {
 		return inst, errors.New("invalid unset current module source")
 	}

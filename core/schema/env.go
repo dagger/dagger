@@ -87,7 +87,7 @@ type environmentArgs struct {
 func (s environmentSchema) environment(ctx context.Context, parent *core.Query, args environmentArgs) (*core.Env, error) {
 	var hostfs dagql.ObjectResult[*core.Directory]
 	if mod, err := parent.CurrentModule(ctx); err == nil {
-		hostfs = mod.Self().GetSource().ContextDirectory
+		hostfs = mod.GetSource().ContextDirectory
 	} else {
 		// FIXME: inherit from somewhere?
 		if err := s.srv.Select(ctx, s.srv.Root(), &hostfs, dagql.Selector{

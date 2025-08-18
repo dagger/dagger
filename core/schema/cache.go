@@ -46,7 +46,7 @@ func (s *cacheSchema) cacheVolumeCacheKey(ctx context.Context, parent dagql.Obje
 	if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
 		return nil, err
 	}
-	namespaceKey := namespaceFromModule(m.Self())
+	namespaceKey := namespaceFromModule(m)
 	cacheCfg.Digest = dagql.HashFrom(cacheCfg.Digest.String(), namespaceKey)
 	return &cacheCfg, nil
 }
@@ -67,7 +67,7 @@ func (s *cacheSchema) cacheVolume(ctx context.Context, parent dagql.ObjectResult
 	if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
 		return inst, err
 	}
-	namespaceKey := namespaceFromModule(m.Self())
+	namespaceKey := namespaceFromModule(m)
 	err = srv.Select(ctx, srv.Root(), &inst, dagql.Selector{
 		Field: "cacheVolume",
 		Args: []dagql.NamedInput{
