@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -235,11 +236,6 @@ func (sdk *goSDK) TypeDefs(
 
 	var ctr dagql.ObjectResult[*core.Container]
 
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
-	if err != nil {
-		return inst, fmt.Errorf("failed to get schema introspection json during module sdk codegen: %w", err)
-	}
-
 	modName := src.Self().ModuleOriginalName
 	contextDir := src.Self().ContextDirectory
 	srcSubpath := src.Self().SourceSubpath
@@ -249,21 +245,8 @@ func (sdk *goSDK) TypeDefs(
 		return inst, err
 	}
 
-	var typeDefsJSON string
-	err = dag.Select(ctx, ctr, &typeDefsJSON,
-		dagql.Selector{
-			Field: "withMountedFile",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "path",
-					Value: dagql.NewString(goSDKIntrospectionJSONPath),
-				},
-				{
-					Name:  "source",
-					Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
-				},
-			},
-		},
+	var typeDefsID string
+	err = dag.Select(ctx, ctr, &typeDefsID,
 		dagql.Selector{
 			Field: "withMountedDirectory",
 			Args: []dagql.NamedInput{
@@ -296,8 +279,11 @@ func (sdk *goSDK) TypeDefs(
 						"generate-typedefs",
 						"--module-source-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
 						"--module-name", dagql.String(modName),
-						"--introspection-json-path", goSDKIntrospectionJSONPath,
 					},
+				},
+				{
+					Name:  "experimentalPrivilegedNesting",
+					Value: dagql.Boolean(true),
 				},
 			},
 		},
@@ -318,15 +304,18 @@ func (sdk *goSDK) TypeDefs(
 		return inst, fmt.Errorf("failed to get type defs json during module sdk codegen: %w", err)
 	}
 
-	err = dag.Select(ctx, dag.Root(), &inst, dagql.Selector{
-		Field: "module",
-	},
+	var modID core.ModuleID
+	if err = json.Unmarshal([]byte(typeDefsID), &modID); err != nil {
+		return inst, err
+	}
+
+	err = dag.Select(ctx, dag.Root(), &inst,
 		dagql.Selector{
-			Field: "fromJSON",
+			Field: "loadModuleFromID",
 			Args: []dagql.NamedInput{
 				{
-					Name:  "json",
-					Value: dagql.NewString(typeDefsJSON),
+					Name:  "id",
+					Value: dagql.NewID[*core.Module](modID.ID()),
 				},
 			},
 		})

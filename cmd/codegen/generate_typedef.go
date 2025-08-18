@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/spf13/cobra"
@@ -23,6 +24,15 @@ func GenerateTypeDefs(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get global configuration: %w", err)
 	}
 	defer cfg.Close()
+
+	// ensure we have a dagger connection, this will be required to create type defs
+	if cfg.Dag == nil {
+		dag, err := dagger.Connect(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to connect to dagger daemon: %w", err)
+		}
+		cfg.Dag = dag
+	}
 
 	moduleConfig := &generator.ModuleGeneratorConfig{
 		ModuleName: moduleName,
