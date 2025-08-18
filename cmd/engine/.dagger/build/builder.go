@@ -339,52 +339,21 @@ func (build *Builder) qemuBins(ctx context.Context) []*dagger.File {
 	return bins
 }
 
-func (build *Builder) cniPlugins() []*dagger.File {
-	// We build the CNI plugins from source to enable upgrades to go and other dependencies that
-	// can contain CVEs in the builds on github releases
-	// If GPU support is enabled use a Debian image:
-	var ctr *dagger.Container
-	switch build.base {
-	case "alpine", "":
-		ctr = dag.
-			Alpine(dagger.AlpineOpts{
-				Branch:   consts.AlpineVersion,
-				Packages: []string{"build-base", "go~" + consts.GolangVersion, "git"},
-			}).
-			Container()
-	case "ubuntu":
-		// TODO: there's no guarantee the bullseye libc is compatible with the ubuntu image w/ rebase this onto
-		ctr = dag.
-			Container().
-			From(fmt.Sprintf("golang:%s-bullseye", consts.GolangVersion)).
-			WithExec([]string{"apt-get", "update"}).
-			WithExec([]string{"apt-get", "install", "-y", "git", "build-essential"})
-	case "wolfi":
-		ctr = dag.
-			Wolfi().
-			Container(dagger.WolfiContainerOpts{Packages: []string{
-				"build-base", "go~" + consts.GolangVersion, "git",
-			}})
-	}
+func (build *Builder) cniPlugins() (bins []*dagger.File) {
+	src := dag.Git("github.com/containernetworking/plugins").Tag(consts.CniVersion).Tree()
 
-	ctr = ctr.WithMountedCache("/root/go/pkg/mod", dag.CacheVolume("go-mod")).
-		WithMountedCache("/root/.cache/go-build", dag.CacheVolume("go-build")).
-		WithMountedDirectory("/src", dag.Git("github.com/containernetworking/plugins").Tag(consts.CniVersion).Tree()).
-		WithWorkdir("/src").
-		With(build.goPlatformEnv)
-
-	var bins []*dagger.File
 	for _, pluginPath := range []string{
-		"plugins/main/bridge",
-		"plugins/main/loopback",
-		"plugins/meta/firewall",
-		"plugins/ipam/host-local",
+		"./plugins/main/bridge",
+		"./plugins/main/loopback",
+		"./plugins/meta/firewall",
+		"./plugins/ipam/host-local",
 	} {
-		pluginName := filepath.Base(pluginPath)
-		bins = append(bins, ctr.
-			WithWorkdir(pluginPath).
-			WithExec([]string{"go", "build", "-o", pluginName, "-ldflags", "-s -w", "."}).
-			File(pluginName))
+		bin := dag.Go(src).Binary(pluginPath, dagger.GoBinaryOpts{
+			NoSymbols: true,
+			NoDwarf:   true,
+			Platform:  build.platform,
+		})
+		bins = append(bins, bin)
 	}
 
 	return bins
