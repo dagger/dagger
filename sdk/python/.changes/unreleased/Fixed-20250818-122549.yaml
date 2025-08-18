@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+    Update constraints for gql to prevent fetching incompatible version
+time: 2025-08-18T12:25:49.144254095+01:00
+custom:
+    Author: jedevc
+    PR: "10888"
