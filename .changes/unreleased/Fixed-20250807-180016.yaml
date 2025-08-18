@@ -1,6 +1,0 @@
-kind: Fixed
-body: 'shell: Fixed passing objects on `http` and `git` stdlib commands'
-time: 2025-08-07T18:00:16.277293Z
-custom:
-    Author: helderco
-    PR: "10845"
