@@ -6,7 +6,7 @@ import (
 	"go/types"
 	"path/filepath"
 
-	"github.com/dagger/dagger/core"
+	"dagger.io/dagger"
 	. "github.com/dave/jennifer/jen" //nolint:staticcheck
 	"github.com/iancoleman/strcase"
 )
@@ -23,7 +23,12 @@ type ParsedType interface {
 	GoSubTypes() []types.Type
 
 	// TypeDef representation of the type
-	TypeDefObject() (*core.TypeDef, error)
+	TypeDefObject(*dagger.Client) (*dagger.TypeDef, error)
+}
+
+type FuncParsedType interface {
+	ParsedType
+	TypeDefObjectFunc(*dagger.Client) (*dagger.Function, error)
 }
 
 type NamedParsedType interface {
@@ -193,32 +198,32 @@ func (spec *parsedPrimitiveType) TypeDefCode() (*Statement, error) {
 	return def, nil
 }
 
-func (spec *parsedPrimitiveType) TypeDefObject() (*core.TypeDef, error) {
-	var kind core.TypeDefKind
+func (spec *parsedPrimitiveType) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef, error) {
+	var kind dagger.TypeDefKind
 	if spec.goType.Kind() == types.Invalid {
 		// NOTE: this is odd, but it doesn't matter, because the module won't
 		// pass the compilation step if there are invalid types - we just want
 		// to not error out horribly in codegen
-		kind = core.TypeDefKindVoid
+		kind = dagger.TypeDefKindVoidKind
 	} else {
 		switch spec.goType.Info() {
 		case types.IsString:
-			kind = core.TypeDefKindString
+			kind = dagger.TypeDefKindStringKind
 		case types.IsInteger:
-			kind = core.TypeDefKindInteger
+			kind = dagger.TypeDefKindIntegerKind
 		case types.IsBoolean:
-			kind = core.TypeDefKindBoolean
+			kind = dagger.TypeDefKindBooleanKind
 		case types.IsFloat:
-			kind = core.TypeDefKindFloat
+			kind = dagger.TypeDefKindFloatKind
 		default:
 			return nil, fmt.Errorf("unsupported basic type: %+v", spec.goType)
 		}
 	}
-	var def *core.TypeDef
+	var def *dagger.TypeDef
 	if spec.scalarType != nil {
-		def = (&core.TypeDef{}).WithScalar(spec.scalarType.Obj().Name(), "")
+		def = dag.TypeDef().WithScalar(spec.scalarType.Obj().Name())
 	} else {
-		def = (&core.TypeDef{}).WithKind(kind)
+		def = dag.TypeDef().WithKind(kind)
 	}
 	if spec.isPtr {
 		def = def.WithOptional(true)
@@ -254,12 +259,12 @@ func (spec *parsedSliceType) TypeDefCode() (*Statement, error) {
 	return Qual("dag", "TypeDef").Call().Dot("WithListOf").Call(underlyingCode), nil
 }
 
-func (spec *parsedSliceType) TypeDefObject() (*core.TypeDef, error) {
-	underlyingTypeDef, err := spec.underlying.TypeDefObject()
+func (spec *parsedSliceType) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef, error) {
+	underlyingTypeDef, err := spec.underlying.TypeDefObject(dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate underlying typedef: %w", err)
 	}
-	return (&core.TypeDef{}).WithListOf(underlyingTypeDef), nil
+	return dag.TypeDef().WithListOf(underlyingTypeDef), nil
 }
 
 func (spec *parsedSliceType) GoType() types.Type {
@@ -288,8 +293,8 @@ func (spec *parsedObjectTypeReference) TypeDefCode() (*Statement, error) {
 	), nil
 }
 
-func (spec *parsedObjectTypeReference) TypeDefObject() (*core.TypeDef, error) {
-	return (&core.TypeDef{}).WithObject(spec.name, "", nil), nil
+func (spec *parsedObjectTypeReference) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef, error) {
+	return dag.TypeDef().WithObject(spec.name), nil
 }
 
 func (spec *parsedObjectTypeReference) GoType() types.Type {
@@ -325,8 +330,8 @@ func (spec *parsedIfaceTypeReference) TypeDefCode() (*Statement, error) {
 	), nil
 }
 
-func (spec *parsedIfaceTypeReference) TypeDefObject() (*core.TypeDef, error) {
-	return (&core.TypeDef{}).WithInterface(spec.name, "", nil), nil
+func (spec *parsedIfaceTypeReference) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef, error) {
+	return dag.TypeDef().WithInterface(spec.name), nil
 }
 
 func (spec *parsedIfaceTypeReference) GoType() types.Type {
@@ -372,17 +377,6 @@ func (spec *sourceMap) TypeDefCode() *Statement {
 	return Qual("dag", "SourceMap").Call(Lit(spec.filename), Lit(spec.line), Lit(spec.column))
 }
 
-func (spec *sourceMap) TypeDefObject() *core.SourceMap {
-	return &core.SourceMap{
-		Filename: spec.filename,
-		Line:     spec.line,
-		Column:   spec.column,
-	}
-}
-
-func coreSourceMap(srcMap *sourceMap) *core.SourceMap {
-	if srcMap == nil {
-		return nil
-	}
-	return srcMap.TypeDefObject()
+func (spec *sourceMap) TypeDefObject(dag *dagger.Client) *dagger.SourceMap {
+	return dag.SourceMap(spec.filename, spec.line, spec.column)
 }

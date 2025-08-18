@@ -8673,20 +8673,6 @@ class Module(Type):
         _ctx = self._select("enums", _args)
         return await _ctx.execute_object_list(TypeDef)
 
-    def from_json(self, json: str) -> Self:
-        """Load a module from a JSON string
-
-        Parameters
-        ----------
-        json:
-            The JSON string to load
-        """
-        _args = [
-            Arg("json", json),
-        ]
-        _ctx = self._select("fromJSON", _args)
-        return Module(_ctx)
-
     def generated_context_directory(self) -> Directory:
         """The generated files and directories made on top of the module source's
         context directory.
@@ -8835,27 +8821,6 @@ class Module(Type):
 
     def __await__(self):
         return self.sync().__await__()
-
-    async def to_json(self) -> str:
-        """Return a JSON string representation of the module
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("toJSON", _args)
-        return await _ctx.execute(str)
 
     def user_defaults(self) -> EnvFile:
         """User-defined default values, loaded from local .env files."""

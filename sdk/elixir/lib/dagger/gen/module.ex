@@ -71,20 +71,6 @@ defmodule Dagger.Module do
   end
 
   @doc """
-  Load a module from a JSON string
-  """
-  @spec from_json(t(), String.t()) :: Dagger.Module.t()
-  def from_json(%__MODULE__{} = module, json) do
-    query_builder =
-      module.query_builder |> QB.select("fromJSON") |> QB.put_arg("json", json)
-
-    %Dagger.Module{
-      query_builder: query_builder,
-      client: module.client
-    }
-  end
-
-  @doc """
   The generated files and directories made on top of the module source's context directory.
   """
   @spec generated_context_directory(t()) :: Dagger.Directory.t()
@@ -260,17 +246,6 @@ defmodule Dagger.Module do
          client: module.client
        }}
     end
-  end
-
-  @doc """
-  Return a JSON string representation of the module
-  """
-  @spec to_json(t()) :: {:ok, String.t()} | {:error, term()}
-  def to_json(%__MODULE__{} = module) do
-    query_builder =
-      module.query_builder |> QB.select("toJSON")
-
-    Client.execute(module.client, query_builder)
   end
 
   @doc """

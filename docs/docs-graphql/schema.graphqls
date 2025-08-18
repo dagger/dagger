@@ -3545,12 +3545,6 @@ type Module {
   """Enumerations served by this module."""
   enums: [TypeDef!]!
 
-  """Load a module from a JSON string"""
-  fromJSON(
-    """The JSON string to load"""
-    json: String!
-  ): Module!
-
   """
   The generated files and directories made on top of the module source's context directory.
   """
@@ -3604,9 +3598,6 @@ type Module {
   Forces evaluation of the module, including any loading into the engine and associated validation.
   """
   sync: ModuleID!
-
-  """Return a JSON string representation of the module"""
-  toJSON: String!
 
   """User-defined default values, loaded from local .env files."""
   userDefaults: EnvFile!

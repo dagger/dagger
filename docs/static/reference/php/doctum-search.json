@@ -4263,12 +4263,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Module::fromJSON",
-			"p": "Dagger/Module.html#method_fromJSON",
-			"d": "<p>Load a module from a JSON string</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Module::generatedContextDirectory",
 			"p": "Dagger/Module.html#method_generatedContextDirectory",
 			"d": "<p>The generated files and directories made on top of the module source's context directory.</p>"
@@ -4332,12 +4326,6 @@
 			"n": "Dagger\\Module::sync",
 			"p": "Dagger/Module.html#method_sync",
 			"d": "<p>Forces evaluation of the module, including any loading into the engine and associated validation.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Module::toJSON",
-			"p": "Dagger/Module.html#method_toJSON",
-			"d": "<p>Return a JSON string representation of the module</p>"
 		},
 		{
 			"t": "M",

@@ -9435,20 +9435,6 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         }]
     }
-    /// Load a module from a JSON string
-    ///
-    /// # Arguments
-    ///
-    /// * `json` - The JSON string to load
-    pub fn from_json(&self, json: impl Into<String>) -> Module {
-        let mut query = self.selection.select("fromJSON");
-        query = query.arg("json", json.into());
-        Module {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// The generated files and directories made on top of the module source's context directory.
     pub fn generated_context_directory(&self) -> Directory {
         let query = self.selection.select("generatedContextDirectory");
@@ -9550,11 +9536,6 @@ impl Module {
     /// Forces evaluation of the module, including any loading into the engine and associated validation.
     pub async fn sync(&self) -> Result<ModuleId, DaggerError> {
         let query = self.selection.select("sync");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Return a JSON string representation of the module
-    pub async fn to_json(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("toJSON");
         query.execute(self.graphql_client.clone()).await
     }
     /// User-defined default values, loaded from local .env files.

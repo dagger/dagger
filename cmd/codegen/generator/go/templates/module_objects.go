@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dagger/dagger/core"
+	"dagger.io/dagger"
 	. "github.com/dave/jennifer/jen" //nolint:staticcheck
 )
 
@@ -232,18 +232,25 @@ func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 	return typeDefCode, nil
 }
 
-func (spec *parsedObjectType) TypeDefObject() (*core.TypeDef, error) {
-	typeDefObject := (&core.TypeDef{}).WithObject(spec.name, strings.TrimSpace(spec.doc), coreSourceMap(spec.sourceMap))
+func (spec *parsedObjectType) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef, error) {
+	withObjectOpts := dagger.TypeDefWithObjectOpts{}
+	if spec.doc != "" {
+		withObjectOpts.Description = strings.TrimSpace(spec.doc)
+	}
+	if spec.sourceMap != nil {
+		withObjectOpts.SourceMap = spec.sourceMap.TypeDefObject(dag)
+	}
+	if spec.name == "" {
+		panic(spec)
+	}
+	typeDefObject := dag.TypeDef().WithObject(spec.name, withObjectOpts)
 
 	for _, m := range spec.methods {
-		fnTypeDefObject, err := m.TypeDefObject()
+		fnTypeDefObject, err := m.TypeDefObjectFunc(dag)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert method %s to function def: %w", m.name, err)
 		}
-		typeDefObject, err = typeDefObject.WithFunction(fnTypeDefObject.AsObject.Value.Functions[0])
-		if err != nil {
-			return nil, fmt.Errorf("failed to add function %s to type def: %w", m.name, err)
-		}
+		typeDefObject = typeDefObject.WithFunction(fnTypeDefObject)
 	}
 
 	for _, field := range spec.fields {
@@ -251,25 +258,26 @@ func (spec *parsedObjectType) TypeDefObject() (*core.TypeDef, error) {
 			continue
 		}
 
-		fieldTypeDefObject, err := field.typeSpec.TypeDefObject()
+		fieldTypeDefObject, err := field.typeSpec.TypeDefObject(dag)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert field type: %w", err)
 		}
-		typeDefObject, err = typeDefObject.WithObjectField(field.name, fieldTypeDefObject, strings.TrimSpace(field.doc), coreSourceMap(field.sourceMap))
-		if err != nil {
-			return nil, fmt.Errorf("failed to add field %s to type def: %w", field.name, err)
+		withFieldOpts := dagger.TypeDefWithFieldOpts{}
+		if field.doc != "" {
+			withFieldOpts.Description = field.doc
 		}
+		if field.sourceMap != nil {
+			withFieldOpts.SourceMap = field.sourceMap.TypeDefObject(dag)
+		}
+		typeDefObject = typeDefObject.WithField(field.name, fieldTypeDefObject, withFieldOpts)
 	}
 
 	if spec.constructor != nil {
-		fnTypeDefObject, err := spec.constructor.TypeDefObject()
+		fnTypeDefObject, err := spec.constructor.TypeDefObjectFunc(dag)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert constructor to function def: %w", err)
 		}
-		typeDefObject, err = typeDefObject.WithObjectConstructor(fnTypeDefObject.AsObject.Value.Functions[0])
-		if err != nil {
-			return nil, fmt.Errorf("failed to add constructor to type def: %w", err)
-		}
+		typeDefObject = typeDefObject.WithConstructor(fnTypeDefObject)
 	}
 
 	return typeDefObject, nil

@@ -14,7 +14,6 @@ import (
 type TypeDefFunc func(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error)
 
 func TypeDefs(ctx context.Context, cfg generator.Config, typedefFunc TypeDefFunc) error {
-	var err error
 	var introspectionSchema *introspection.Schema
 	var introspectionSchemaVersion string
 	if cfg.IntrospectionJSON != "" {
@@ -24,15 +23,10 @@ func TypeDefs(ctx context.Context, cfg generator.Config, typedefFunc TypeDefFunc
 		}
 		introspectionSchema = resp.Schema
 		introspectionSchemaVersion = resp.SchemaVersion
-	} else {
-		introspectionSchema, introspectionSchemaVersion, err = introspection.Introspect(ctx, cfg.Dag)
-		if err != nil {
-			return err
-		}
-	}
 
-	// Set the parent schema
-	generator.SetSchemaParents(introspectionSchema)
+		// Set the parent schema
+		generator.SetSchemaParents(introspectionSchema)
+	}
 
 	logsW := os.Stdout
 

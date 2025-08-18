@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dagger/dagger/core"
+	"dagger.io/dagger"
 	. "github.com/dave/jennifer/jen" //nolint:staticcheck
 	"github.com/iancoleman/strcase"
 )
@@ -127,18 +127,22 @@ func (spec *parsedIfaceType) TypeDefCode() (*Statement, error) {
 	return typeDefCode, nil
 }
 
-func (spec *parsedIfaceType) TypeDefObject() (*core.TypeDef, error) {
-	typeDefObject := (&core.TypeDef{}).WithInterface(spec.name, strings.TrimSpace(spec.doc), coreSourceMap(spec.sourceMap))
+func (spec *parsedIfaceType) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef, error) {
+	opts := dagger.TypeDefWithInterfaceOpts{}
+	if spec.doc != "" {
+		opts.Description = strings.TrimSpace(spec.doc)
+	}
+	if spec.sourceMap != nil {
+		opts.SourceMap = spec.sourceMap.TypeDefObject(dag)
+	}
+	typeDefObject := dag.TypeDef().WithInterface(spec.name, opts)
 
 	for _, m := range spec.methods {
-		fnTypeDefObj, err := m.TypeDefObject()
+		fnTypeDefObj, err := m.TypeDefObjectFunc(dag)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert method %s to function def: %w", m.name, err)
 		}
-		typeDefObject, err = typeDefObject.WithFunction(fnTypeDefObj.AsObject.Value.Functions[0])
-		if err != nil {
-			return nil, fmt.Errorf("failed to add method %s to type def: %w", m.name, err)
-		}
+		typeDefObject = typeDefObject.WithFunction(fnTypeDefObj)
 	}
 
 	return typeDefObject, nil

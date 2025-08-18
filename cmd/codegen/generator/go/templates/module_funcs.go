@@ -9,8 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/dagql"
+	"dagger.io/dagger"
 	. "github.com/dave/jennifer/jen" //nolint:staticcheck
 	"github.com/mitchellh/mapstructure"
 )
@@ -20,7 +19,6 @@ const errorTypeName = "error"
 var voidDef = Qual("dag", "TypeDef").Call().
 	Dot("WithKind").Call(Id("dagger").Dot("TypeDefKindVoidKind")).
 	Dot("WithOptional").Call(Lit(true))
-var voidDefObject = (&core.TypeDef{}).WithKind(core.TypeDefKindVoid).WithOptional(true)
 
 func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*funcTypeSpec, error) {
 	spec := &funcTypeSpec{
@@ -97,6 +95,7 @@ type funcTypeSpec struct {
 }
 
 var _ ParsedType = &funcTypeSpec{}
+var _ FuncParsedType = &funcTypeSpec{}
 
 func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 	var fnReturnTypeDefCode *Statement
@@ -186,25 +185,29 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 	return fnTypeDefCode, nil
 }
 
-func (spec *funcTypeSpec) TypeDefObject() (*core.TypeDef, error) {
-	var fnReturnTypeDef *core.TypeDef
+func (spec *funcTypeSpec) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef, error) {
+	return nil, nil
+}
+
+func (spec *funcTypeSpec) TypeDefObjectFunc(dag *dagger.Client) (*dagger.Function, error) {
+	var fnReturnTypeDef *dagger.TypeDef
 	if spec.returnSpec == nil {
-		fnReturnTypeDef = voidDefObject
+		fnReturnTypeDef = dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)
 	} else {
 		var err error
-		fnReturnTypeDef, err = spec.returnSpec.TypeDefObject()
+		fnReturnTypeDef, err = spec.returnSpec.TypeDefObject(dag)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate return type object: %w", err)
 		}
 	}
 
-	fnTypeDefObject := core.NewFunction(spec.name, fnReturnTypeDef)
+	fnTypeDefObject := dag.Function(spec.name, fnReturnTypeDef)
 
 	if spec.doc != "" {
 		fnTypeDefObject = fnTypeDefObject.WithDescription(strings.TrimSpace(spec.doc))
 	}
 	if spec.sourceMap != nil {
-		fnTypeDefObject.WithSourceMap(coreSourceMap(spec.sourceMap))
+		fnTypeDefObject.WithSourceMap(spec.sourceMap.TypeDefObject(dag))
 	}
 
 	for _, argSpec := range spec.argSpecs {
@@ -213,7 +216,7 @@ func (spec *funcTypeSpec) TypeDefObject() (*core.TypeDef, error) {
 			continue
 		}
 
-		argTypeDefObject, err := argSpec.typeSpec.TypeDefObject()
+		argTypeDefObject, err := argSpec.typeSpec.TypeDefObject(dag)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate arg type object: %w", err)
 		}
@@ -221,7 +224,13 @@ func (spec *funcTypeSpec) TypeDefObject() (*core.TypeDef, error) {
 			argTypeDefObject = argTypeDefObject.WithOptional(true)
 		}
 
-		var defaultValueJSON core.JSON
+		argOpts := dagger.FunctionWithArgOpts{}
+		if argSpec.description != "" {
+			argOpts.Description = strings.TrimSpace(argSpec.description)
+		}
+		if argSpec.sourceMap != nil {
+			argOpts.SourceMap = argSpec.sourceMap.TypeDefObject(dag)
+		}
 		if argSpec.hasDefaultValue {
 			var defaultValue string
 			if enumType, ok := argSpec.typeSpec.(*parsedEnumTypeReference); ok {
@@ -241,16 +250,21 @@ func (spec *funcTypeSpec) TypeDefObject() (*core.TypeDef, error) {
 				}
 				defaultValue = string(v)
 			}
-			defaultValueJSON = core.JSON(defaultValue)
+			argOpts.DefaultValue = dagger.JSON(defaultValue)
 		}
 
-		fnTypeDefObject = fnTypeDefObject.WithArg(argSpec.name, argTypeDefObject, strings.TrimSpace(argSpec.description), defaultValueJSON, argSpec.defaultPath, argSpec.ignore, coreSourceMap(argSpec.sourceMap))
+		if argSpec.defaultPath != "" {
+			argOpts.DefaultPath = argSpec.defaultPath
+		}
+
+		if len(argSpec.ignore) > 0 {
+			argOpts.Ignore = argSpec.ignore
+		}
+
+		fnTypeDefObject = fnTypeDefObject.WithArg(argSpec.name, argTypeDefObject, argOpts)
 	}
 
-	return (&core.TypeDef{
-		Kind:     core.TypeDefKindObject,
-		AsObject: dagql.NonNull(core.NewObjectTypeDef("", "")),
-	}).WithFunction(fnTypeDefObject)
+	return fnTypeDefObject, nil
 }
 
 func (spec *funcTypeSpec) GoType() types.Type {

@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/dagger/dagger/core"
+	"dagger.io/dagger"
 	. "github.com/dave/jennifer/jen" //nolint:staticcheck
 )
 
@@ -40,8 +40,8 @@ func (spec *parsedEnumTypeReference) TypeDefCode() (*Statement, error) {
 	return Qual("dag", "TypeDef").Call().Dot("WithEnum").Call(Lit(spec.name)), nil
 }
 
-func (spec *parsedEnumTypeReference) TypeDefObject() (*core.TypeDef, error) {
-	return (&core.TypeDef{}).WithEnum(spec.name, "", nil), nil
+func (spec *parsedEnumTypeReference) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef, error) {
+	return dag.TypeDef().WithEnum(spec.name), nil
 }
 
 func (spec *parsedEnumTypeReference) GoType() types.Type {
@@ -241,15 +241,28 @@ func (spec *parsedEnumType) TypeDefCode() (*Statement, error) {
 	return typeDefCode, nil
 }
 
-func (spec *parsedEnumType) TypeDefObject() (*core.TypeDef, error) {
-	typeDefObject := (&core.TypeDef{}).WithEnum(spec.name, strings.TrimSpace(spec.doc), coreSourceMap(spec.sourceMap))
+func (spec *parsedEnumType) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef, error) {
+	withEnumOpts := dagger.TypeDefWithEnumOpts{}
+	if spec.doc != "" {
+		withEnumOpts.Description = strings.TrimSpace(spec.doc)
+	}
+	if spec.sourceMap != nil {
+		withEnumOpts.SourceMap = spec.sourceMap.TypeDefObject(dag)
+	}
+	typeDefObject := dag.TypeDef().WithEnum(spec.name, withEnumOpts)
 
-	var err error
 	for _, val := range spec.values {
-		typeDefObject, err = typeDefObject.WithEnumMember(val.name, val.value, strings.TrimSpace(val.doc), coreSourceMap(val.sourceMap))
-		if err != nil {
-			return nil, err
+		memberOpts := dagger.TypeDefWithEnumMemberOpts{}
+		if val.value != "" {
+			memberOpts.Value = val.value
 		}
+		if val.doc != "" {
+			memberOpts.Description = strings.TrimSpace(val.doc)
+		}
+		if val.sourceMap != nil {
+			memberOpts.SourceMap = val.sourceMap.TypeDefObject(dag)
+		}
+		typeDefObject = typeDefObject.WithEnumMember(val.name, memberOpts)
 	}
 	return typeDefObject, nil
 }
