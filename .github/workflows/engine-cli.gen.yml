@@ -1292,7 +1292,7 @@ jobs:
                 path: ${{ steps.exec.outputs.stderr_file }}
               if: always()
             - name: Capture dev engine logs
-              run: docker logs "dagger-engine.dev-${{ github.run_id }}-${{ github.job }}" &> /tmp/actions-call-engine.log
+              run: docker logs "dagger-engine-v0.18.15" &> /tmp/actions-call-engine.log
               shell: bash
               if: always()
             - name: Upload dev engine logs
@@ -1556,7 +1556,7 @@ jobs:
                 path: ${{ steps.exec.outputs.stderr_file }}
               if: always()
             - name: Capture dev engine logs
-              run: docker logs "dagger-engine.dev-${{ github.run_id }}-${{ github.job }}" &> /tmp/actions-call-engine.log
+              run: docker logs "dagger-engine-v0.18.15" &> /tmp/actions-call-engine.log
               shell: bash
               if: always()
             - name: Upload dev engine logs
@@ -1820,7 +1820,7 @@ jobs:
                 path: ${{ steps.exec.outputs.stderr_file }}
               if: always()
             - name: Capture dev engine logs
-              run: docker logs "dagger-engine.dev-${{ github.run_id }}-${{ github.job }}" &> /tmp/actions-call-engine.log
+              run: docker logs "dagger-engine-v0.18.15" &> /tmp/actions-call-engine.log
               shell: bash
               if: always()
             - name: Upload dev engine logs
@@ -2084,7 +2084,7 @@ jobs:
                 path: ${{ steps.exec.outputs.stderr_file }}
               if: always()
             - name: Capture dev engine logs
-              run: docker logs "dagger-engine.dev-${{ github.run_id }}-${{ github.job }}" &> /tmp/actions-call-engine.log
+              run: docker logs "dagger-engine-v0.18.15" &> /tmp/actions-call-engine.log
               shell: bash
               if: always()
             - name: Upload dev engine logs
@@ -2348,7 +2348,7 @@ jobs:
                 path: ${{ steps.exec.outputs.stderr_file }}
               if: always()
             - name: Capture dev engine logs
-              run: docker logs "dagger-engine.dev-${{ github.run_id }}-${{ github.job }}" &> /tmp/actions-call-engine.log
+              run: docker logs "dagger-engine-v0.18.15" &> /tmp/actions-call-engine.log
               shell: bash
               if: always()
             - name: Upload dev engine logs
@@ -2612,7 +2612,7 @@ jobs:
                 path: ${{ steps.exec.outputs.stderr_file }}
               if: always()
             - name: Capture dev engine logs
-              run: docker logs "dagger-engine.dev-${{ github.run_id }}-${{ github.job }}" &> /tmp/actions-call-engine.log
+              run: docker logs "dagger-engine-v0.18.15" &> /tmp/actions-call-engine.log
               shell: bash
               if: always()
             - name: Upload dev engine logs
@@ -2876,7 +2876,7 @@ jobs:
                 path: ${{ steps.exec.outputs.stderr_file }}
               if: always()
             - name: Capture dev engine logs
-              run: docker logs "dagger-engine.dev-${{ github.run_id }}-${{ github.job }}" &> /tmp/actions-call-engine.log
+              run: docker logs "dagger-engine-v0.18.15" &> /tmp/actions-call-engine.log
               shell: bash
               if: always()
             - name: Upload dev engine logs
@@ -3140,7 +3140,7 @@ jobs:
                 path: ${{ steps.exec.outputs.stderr_file }}
               if: always()
             - name: Capture dev engine logs
-              run: docker logs "dagger-engine.dev-${{ github.run_id }}-${{ github.job }}" &> /tmp/actions-call-engine.log
+              run: docker logs "dagger-engine-v0.18.15" &> /tmp/actions-call-engine.log
               shell: bash
               if: always()
             - name: Upload dev engine logs
@@ -3404,7 +3404,7 @@ jobs:
                 path: ${{ steps.exec.outputs.stderr_file }}
               if: always()
             - name: Capture dev engine logs
-              run: docker logs "dagger-engine.dev-${{ github.run_id }}-${{ github.job }}" &> /tmp/actions-call-engine.log
+              run: docker logs "dagger-engine-v0.18.15" &> /tmp/actions-call-engine.log
               shell: bash
               if: always()
             - name: Upload dev engine logs
@@ -3668,7 +3668,7 @@ jobs:
                 path: ${{ steps.exec.outputs.stderr_file }}
               if: always()
             - name: Capture dev engine logs
-              run: docker logs "dagger-engine.dev-${{ github.run_id }}-${{ github.job }}" &> /tmp/actions-call-engine.log
+              run: docker logs "dagger-engine-v0.18.15" &> /tmp/actions-call-engine.log
               shell: bash
               if: always()
             - name: Upload dev engine logs

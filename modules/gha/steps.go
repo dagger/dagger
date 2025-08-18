@@ -63,7 +63,13 @@ func (j *Job) uploadEngineLogsStep() []api.JobStep {
 		return nil
 	}
 
-	engineCtr := "dagger-engine.dev-${{ github.run_id }}-${{ github.job }}"
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// engineCtr := "dagger-engine.dev-${{ github.run_id }}-${{ github.job }}"
+	engineCtr := "dagger-engine-v0.18.15"
 	return []api.JobStep{
 		{
 			Name:  "Capture dev engine logs",
