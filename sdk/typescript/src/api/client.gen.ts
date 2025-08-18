@@ -1992,11 +1992,23 @@ function TypeDefKindNameToValue(name: string): TypeDefKind {
  */
 export type Void = string & { __Void: never }
 
+export type __DirectiveArgsOpts = {
+  includeDeprecated?: boolean
+}
+
+export type __FieldArgsOpts = {
+  includeDeprecated?: boolean
+}
+
 export type __TypeEnumValuesOpts = {
   includeDeprecated?: boolean
 }
 
 export type __TypeFieldsOpts = {
+  includeDeprecated?: boolean
+}
+
+export type __TypeInputFieldsOpts = {
   includeDeprecated?: boolean
 }
 
