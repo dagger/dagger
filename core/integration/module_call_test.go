@@ -989,11 +989,11 @@ func (m *Test) Mod(ctx context.Context, module *dagger.Module) *dagger.Module {
 
 		out, err := modGen.With(daggerCall("mod-src", "--mod-src", ".", "context-directory", "entries")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, ".git/\n.gitattributes\n.gitignore\nLICENSE\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
+		require.Equal(t, ".git/\n.gitattributes\n.gitignore\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
 
 		out, err = modGen.With(daggerCall("mod", "--module", ".", "source", "context-directory", "entries")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, ".git/\n.gitattributes\n.gitignore\nLICENSE\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
+		require.Equal(t, ".git/\n.gitattributes\n.gitignore\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
 	})
 
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {

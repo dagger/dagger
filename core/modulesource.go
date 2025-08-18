@@ -346,7 +346,6 @@ func (src *ModuleSource) LoadContext(
 					{Name: "path", Value: dagql.String(path)},
 					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(ignore...))},
 					{Name: "noCache", Value: dagql.NewBoolean(true)},
-					{Name: "gitIgnoreRoot", Value: dagql.String(ctxPath)},
 				},
 			},
 		)
