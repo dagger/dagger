@@ -7712,7 +7712,6 @@ type Module struct {
 	name        *string
 	serve       *Void
 	sync        *ModuleID
-	toJSON      *string
 }
 type WithModuleFunc func(r *Module) *Module
 
@@ -7806,16 +7805,6 @@ func (r *Module) Enums(ctx context.Context) ([]TypeDef, error) {
 	}
 
 	return convert(response), nil
-}
-
-// Load a module from a JSON string
-func (r *Module) FromJSON(json string) *Module {
-	q := r.query.Select("fromJSON")
-	q = q.Arg("json", json)
-
-	return &Module{
-		query: q,
-	}
 }
 
 // The generated files and directories made on top of the module source's context directory.
@@ -8008,19 +7997,6 @@ func (r *Module) Sync(ctx context.Context) (*Module, error) {
 	return &Module{
 		query: q.Root().Select("loadModuleFromID").Arg("id", id),
 	}, nil
-}
-
-// Return a JSON string representation of the module
-func (r *Module) ToJSON(ctx context.Context) (string, error) {
-	if r.toJSON != nil {
-		return *r.toJSON, nil
-	}
-	q := r.query.Select("toJSON")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
 // Retrieves the module with the given description

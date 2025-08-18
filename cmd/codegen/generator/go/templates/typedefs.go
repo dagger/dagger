@@ -2,6 +2,7 @@ package templates
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"go/token"
@@ -11,7 +12,6 @@ import (
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
-	"github.com/dagger/dagger/core"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -194,7 +194,8 @@ func (funcs goTemplateFuncs) visitTypes(
 }
 
 func (funcs goTemplateFuncs) TypeDefs() (string, error) {
-	module := &core.Module{}
+	dag := funcs.cfg.Dag
+	module := dag.Module()
 
 	err := funcs.visitTypes(
 		false,
@@ -206,30 +207,30 @@ func (funcs goTemplateFuncs) TypeDefs() (string, error) {
 		},
 		func(ps *parseState, named *types.Named, obj *types.TypeName, objTypeSpec *parsedObjectType, strct *types.Struct) error {
 			var err error
-			typeDef, err := objTypeSpec.TypeDefObject()
+			typeDef, err := objTypeSpec.TypeDefObject(dag)
 			if err != nil {
 				return err
 			}
-			module, err = module.WithObject(funcs.ctx, typeDef)
-			return err
+			module = module.WithObject(typeDef)
+			return nil
 		},
 		func(ps *parseState, named *types.Named, obj *types.TypeName, ifaceTypeSpec *parsedIfaceType, iface *types.Interface) error {
 			var err error
-			typeDef, err := ifaceTypeSpec.TypeDefObject()
+			typeDef, err := ifaceTypeSpec.TypeDefObject(dag)
 			if err != nil {
 				return err
 			}
-			module, err = module.WithInterface(funcs.ctx, typeDef)
-			return err
+			module = module.WithInterface(typeDef)
+			return nil
 		},
 		func(ps *parseState, named *types.Named, obj *types.TypeName, enumTypeSpec *parsedEnumType, enum *types.Basic) error {
 			var err error
-			typeDef, err := enumTypeSpec.TypeDefObject()
+			typeDef, err := enumTypeSpec.TypeDefObject(dag)
 			if err != nil {
 				return err
 			}
-			module, err = module.WithEnum(funcs.ctx, typeDef)
-			return err
+			module = module.WithEnum(typeDef)
+			return nil
 		})
 	if err != nil {
 		if errors.Is(err, errEmptyCode) {
@@ -246,5 +247,13 @@ func (funcs goTemplateFuncs) TypeDefs() (string, error) {
 		}
 	}()
 
-	return module.ToJSONString()
+	id, err := module.ID(funcs.ctx)
+	if err != nil {
+		return "", err
+	}
+	jsonID, err := json.Marshal(id)
+	if err != nil {
+		return "", err
+	}
+	return string(jsonID), nil
 }
