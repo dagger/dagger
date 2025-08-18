@@ -175,6 +175,24 @@ func CurrentOrg() (*Org, error) {
 	return &org, nil
 }
 
+func CurrentOrgName() (string, error) {
+	var orgName string
+	if cloudToken := os.Getenv("DAGGER_CLOUD_TOKEN"); cloudToken != "" {
+		token, ok := ParseDaggerToken(cloudToken)
+		if ok {
+			orgName = token.orgName
+		} else {
+			org, err := CurrentOrg()
+			if err != nil {
+				return "", err
+			}
+			orgName = org.Name
+		}
+	} else {
+	}
+	return orgName, nil
+}
+
 func SetCurrentOrg(org *Org) error {
 	if err := os.MkdirAll(filepath.Dir(orgFile), 0o755); err != nil {
 		return err
@@ -189,7 +207,7 @@ func SetCurrentOrg(org *Org) error {
 }
 
 var (
-	oidcOnce      sync.Once
+	oidcOnce  sync.Once
 	oidcLogin *oidcTokenResponse
 	oidcErr   error
 )
@@ -197,8 +215,9 @@ var (
 func fetchOIDCAuth(ctx context.Context) (string, error) {
 	// getOIDCToken calls both GitHub OIDC as well as Dagger Cloud's own OIDC endpoint
 	// It's not a big deal if we call it more than once per session but
+
 	// it makes sense to avoid it were possible.
-	once.Do(func() {
+	oidcOnce.Do(func() {
 		oidcLogin, oidcErr = getOIDCToken(ctx)
 	})
 	if oidcErr != nil {
@@ -297,4 +316,26 @@ func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	r2.Header.Set("Authorization", t.header)
 
 	return http.DefaultTransport.RoundTrip(r2)
+}
+
+type daggerToken struct {
+	orgName string
+	token   string
+}
+
+func ParseDaggerToken(s string) (daggerToken, bool) {
+	s, ok := strings.CutPrefix(s, "dag_")
+	if !ok {
+		return daggerToken{}, false
+	}
+
+	orgName, token, ok := strings.Cut(s, "_")
+	if !ok {
+		return daggerToken{}, false
+	}
+
+	return daggerToken{
+		orgName: orgName,
+		token:   token,
+	}, true
 }
