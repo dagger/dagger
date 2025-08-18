@@ -62,7 +62,11 @@ func (d docker) ImageLoader(ctx context.Context) imageload.Backend {
 }
 
 func (d docker) ContainerRun(ctx context.Context, name string, opts runOpts) error {
-	args := []string{"run", "--name", name, "-d"}
+	args := []string{"run",
+		"--name", name,
+		"-d",
+		"--restart", "always", // load-bearing to prevent https://github.com/dagger/dagger/issues/7785 from being fatal
+	}
 	for _, volume := range opts.volumes {
 		args = append(args, "-v", volume)
 	}
