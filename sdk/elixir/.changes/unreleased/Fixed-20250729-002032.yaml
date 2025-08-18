@@ -1,6 +1,0 @@
-kind: Fixed
-body: Fix default value doesn't set to Elixir default value properly.
-time: 2025-07-29T00:20:32.056859132+07:00
-custom:
-    Author: wingyplus
-    PR: "10804"
