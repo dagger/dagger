@@ -22,14 +22,16 @@ const (
 	TypeDefsFile = "typedefs.json"
 )
 
-func (g *GoGenerator) GenerateTypeDefs(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
+func (g *GoGenerator) GenerateTypeDefs(ctx context.Context, schema *introspection.Schema, _ string) (*generator.GeneratedState, error) {
 	if g.Config.ModuleConfig == nil {
 		return nil, fmt.Errorf("generateTypeDefs is called but no typedef config is set")
 	}
 
 	moduleConfig := g.Config.ModuleConfig
 
-	generator.SetSchema(schema)
+	if schema != nil {
+		generator.SetSchema(schema)
+	}
 
 	outDir := filepath.Clean(moduleConfig.ModuleSourcePath)
 
