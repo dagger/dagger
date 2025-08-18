@@ -189,7 +189,7 @@ func SetCurrentOrg(org *Org) error {
 }
 
 var (
-	once      sync.Once
+	oidcOnce      sync.Once
 	oidcLogin *oidcTokenResponse
 	oidcErr   error
 )
