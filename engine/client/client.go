@@ -1165,8 +1165,8 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 	}
 
 	var cloudOrg string
-	if o, _ := auth.CurrentOrg(); o != nil {
-		cloudOrg = o.Name
+	if o, _ := auth.CurrentOrgName(); o != "" {
+		cloudOrg = o
 	}
 
 	return engine.ClientMetadata{
