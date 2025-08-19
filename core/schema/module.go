@@ -109,6 +109,9 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.NodeFunc("source", s.currentModuleSource).
 			Doc(`The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).`),
 
+		dagql.NodeFunc("git", s.currentModuleGit).
+			Doc(`The git repository containing the module's source code, if any.`),
+
 		dagql.NodeFuncWithCacheKey("workdir", s.currentModuleWorkdir, dagql.CachePerClient).
 			Doc(`Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.`).
 			Args(
@@ -759,6 +762,24 @@ func (s *moduleSchema) currentModuleSource(
 	}
 
 	return inst, err
+}
+
+func (s *moduleSchema) currentModuleGit(
+	ctx context.Context,
+	curMod dagql.ObjectResult[*core.CurrentModule],
+	args struct{},
+) (inst dagql.ObjectResult[*core.GitRepository], err error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	curSrc := curMod.Self().Module.Source.Value
+	if curSrc.Self() == nil {
+		return inst, errors.New("invalid unset current module source")
+	}
+
+	return curSrc.Self().LoadContextGit(ctx, dag)
 }
 
 func (s *moduleSchema) currentModuleWorkdir(

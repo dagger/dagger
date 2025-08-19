@@ -2590,6 +2590,15 @@ func (r *CurrentModule) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModu
 	}
 }
 
+// The git repository containing the module's source code, if any.
+func (r *CurrentModule) Git() *GitRepository {
+	q := r.query.Select("git")
+
+	return &GitRepository{
+		query: q,
+	}
+}
+
 // A unique identifier for this CurrentModule.
 func (r *CurrentModule) ID(ctx context.Context) (CurrentModuleID, error) {
 	if r.id != nil {

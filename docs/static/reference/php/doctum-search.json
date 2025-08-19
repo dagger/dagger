@@ -2349,6 +2349,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\CurrentModule::git",
+			"p": "Dagger/CurrentModule.html#method_git",
+			"d": "<p>The git repository containing the module's source code, if any.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\CurrentModule::id",
 			"p": "Dagger/CurrentModule.html#method_id",
 			"d": "<p>A unique identifier for this CurrentModule.</p>"
