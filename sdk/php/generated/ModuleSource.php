@@ -427,9 +427,10 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     /**
      * Disable experimental features for the module source.
      */
-    public function withoutExperimentalFeatures(): ModuleSource
+    public function withoutExperimentalFeatures(array $features): ModuleSource
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutExperimentalFeatures');
+        $innerQueryBuilder->setArgument('features', $features);
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }
