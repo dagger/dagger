@@ -245,6 +245,20 @@ defmodule Dagger.Directory do
   end
 
   @doc """
+  The address this directory was originally loaded from, if any
+  """
+  @spec original_address(t()) :: Dagger.Address.t()
+  def original_address(%__MODULE__{} = directory) do
+    query_builder =
+      directory.query_builder |> QB.select("originalAddress")
+
+    %Dagger.Address{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc """
   Force evaluation in the engine.
   """
   @spec sync(t()) :: {:ok, Dagger.Directory.t()} | {:error, term()}

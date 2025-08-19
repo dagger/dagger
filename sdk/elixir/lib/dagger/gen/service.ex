@@ -57,6 +57,20 @@ defmodule Dagger.Service do
   end
 
   @doc """
+  The address this service was originally loaded from, if any
+  """
+  @spec original_address(t()) :: Dagger.Address.t()
+  def original_address(%__MODULE__{} = service) do
+    query_builder =
+      service.query_builder |> QB.select("originalAddress")
+
+    %Dagger.Address{
+      query_builder: query_builder,
+      client: service.client
+    }
+  end
+
+  @doc """
   Retrieves the list of ports provided by the service.
   """
   @spec ports(t()) :: {:ok, [Dagger.Port.t()]} | {:error, term()}
