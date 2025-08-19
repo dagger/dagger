@@ -1877,6 +1877,7 @@ class Container(Type):
         *,
         use_entrypoint: bool | None = False,
         stdin: str | None = "",
+        redirect_stdin: str | None = "",
         redirect_stdout: str | None = "",
         redirect_stderr: str | None = "",
         expect: ReturnType | None = ReturnType.SUCCESS,
@@ -1903,11 +1904,15 @@ class Container(Type):
         stdin:
             Content to write to the command's standard input. Example: "Hello
             world")
+        redirect_stdin:
+            Redirect the command's standard input from a file in the
+            container. Example: "./stdin.txt"
         redirect_stdout:
             Redirect the command's standard output to a file in the container.
             Example: "./stdout.txt"
         redirect_stderr:
-            Like redirectStdout, but for standard error
+            Redirect the command's standard error to a file in the container.
+            Example: "./stderr.txt"
         expect:
             Exit codes this command is allowed to exit with without error
         experimental_privileged_nesting:
@@ -1932,6 +1937,7 @@ class Container(Type):
             Arg("args", args),
             Arg("useEntrypoint", use_entrypoint, False),
             Arg("stdin", stdin, ""),
+            Arg("redirectStdin", redirect_stdin, ""),
             Arg("redirectStdout", redirect_stdout, ""),
             Arg("redirectStderr", redirect_stderr, ""),
             Arg("expect", expect, ReturnType.SUCCESS),
@@ -6130,6 +6136,20 @@ class GitRef(Type):
         _ctx = self._select("commit", _args)
         return await _ctx.execute(str)
 
+    def common_ancestor(self, other: Self) -> Self:
+        """Find the best common ancestor between this ref and another ref.
+
+        Parameters
+        ----------
+        other:
+            The other ref to compare against.
+        """
+        _args = [
+            Arg("other", other),
+        ]
+        _ctx = self._select("commonAncestor", _args)
+        return GitRef(_ctx)
+
     async def id(self) -> GitRefID:
         """A unique identifier for this GitRef.
 
@@ -6196,6 +6216,13 @@ class GitRef(Type):
         ]
         _ctx = self._select("tree", _args)
         return Directory(_ctx)
+
+    def with_(self, cb: Callable[["GitRef"], "GitRef"]) -> "GitRef":
+        """Call the provided callable with current GitRef.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 @typecheck
@@ -9870,6 +9897,28 @@ class SourceMap(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("module", _args)
+        return await _ctx.execute(str)
+
+    async def url(self) -> str:
+        """The URL to the file, if any. This can be used to link to the source
+        map in the browser.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("url", _args)
         return await _ctx.execute(str)
 
 

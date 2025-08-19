@@ -776,6 +776,21 @@ $dir | entries
 	require.Contains(t, out, "foo")
 }
 
+func (ShellSuite) TestStateVarImmutability(ctx context.Context, t *testctx.T) {
+	script := `
+dir=$(directory | with-new-file /src/foo/bar foobar | directory src)
+name=$($dir | name)
+.printenv name               # src/\n
+$dir | directory foo | name  # foo/
+.printenv name               # src/\n
+`
+	c := connect(ctx, t)
+	out, err := daggerCliBase(t, c).With(daggerShellNoMod(script)).Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "src/\nfoo/src/\n", out)
+}
+
 func (ShellSuite) TestArgsSpread(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen := daggerCliBase(t, c)
@@ -984,6 +999,24 @@ func (ShellSuite) TestCommandStateArgs(ctx context.Context, t *testctx.T) {
 	_, err := daggerCliBase(t, c).With(daggerShell(script)).Sync(ctx)
 
 	requireErrOut(t, err, fmt.Sprintf("%q does not exist", cmd))
+}
+
+func (ShellSuite) TestStdlibStateArgs(ctx context.Context, t *testctx.T) {
+	// Test an object argument on a stdlib command
+	contents := rand.Text()
+	script := fmt.Sprintf(`
+svc=$(container | from %s | with-mounted-directory /srv . | with-workdir /srv | with-exposed-port 8000 | as-service --args="python,-m,http.server")
+http http://$($svc | endpoint)/index.html --experimental-service-host $svc | contents
+`, pythonImage)
+
+	c := connect(ctx, t)
+	out, err := daggerCliBase(t, c).
+		WithNewFile("index.html", contents).
+		With(daggerShell(script)).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, contents, out)
 }
 
 func (ShellSuite) TestExecStderr(ctx context.Context, t *testctx.T) {

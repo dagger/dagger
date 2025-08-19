@@ -28,6 +28,14 @@ func (cli *GitCLI) GitDir(ctx context.Context) (string, error) {
 	return cli.clean(cli.Run(ctx, "rev-parse", "--absolute-git-dir"))
 }
 
+func (cli *GitCLI) URL(ctx context.Context) (string, error) {
+	gitDir, err := cli.GitDir(ctx)
+	if err != nil {
+		return "", err
+	}
+	return "file://" + gitDir, nil
+}
+
 func (cli *GitCLI) clean(dt []byte, err error) (string, error) {
 	out := string(dt)
 	out = strings.ReplaceAll(strings.Split(out, "\n")[0], "'", "")

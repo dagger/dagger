@@ -6,9 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -592,22 +590,9 @@ func (s *moduleSourceSchema) gitModuleSource(
 		gitSrc.Git.Symbolic += "/" + gitSrc.SourceRootSubpath
 	}
 
-	parsedURL, err := url.Parse(gitSrc.Git.HTMLRepoURL)
+	gitSrc.Git.HTMLURL, err = gitSrc.Git.Link(gitSrc.SourceRootSubpath, -1, -1)
 	if err != nil {
-		gitSrc.Git.HTMLURL = gitSrc.Git.HTMLRepoURL + path.Join("/src", gitSrc.Git.Commit, gitSrc.SourceRootSubpath)
-	} else {
-		switch parsedURL.Host {
-		case "github.com", "gitlab.com":
-			gitSrc.Git.HTMLURL = gitSrc.Git.HTMLRepoURL + path.Join("/tree", gitSrc.Git.Commit, gitSrc.SourceRootSubpath)
-		case "dev.azure.com":
-			if gitSrc.SourceRootSubpath != "." {
-				gitSrc.Git.HTMLURL = fmt.Sprintf("%s/commit/%s?path=/%s", gitSrc.Git.HTMLRepoURL, gitSrc.Git.Commit, gitSrc.SourceRootSubpath)
-			} else {
-				gitSrc.Git.HTMLURL = gitSrc.Git.HTMLRepoURL + path.Join("/commit", gitSrc.Git.Commit)
-			}
-		default:
-			gitSrc.Git.HTMLURL = gitSrc.Git.HTMLRepoURL + path.Join("/src", gitSrc.Git.Commit, gitSrc.SourceRootSubpath)
-		}
+		return inst, fmt.Errorf("failed to get git module source HTML URL: %w", err)
 	}
 
 	var configContents string
@@ -2227,10 +2212,11 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 	}
 
 	// get the runtime container, which is what is exec'd when calling functions in the module
-	mod.Runtime, err = runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
+	runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module runtime: %w", err)
 	}
+	mod.Runtime = dagql.NonNull(runtime)
 
 	// construct a special function with no object or function name, which tells
 	// the SDK to return the module's definition (in terms of objects, fields and
@@ -2263,7 +2249,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 			ctx,
 			mod,
 			nil,
-			mod.Runtime,
+			mod.Runtime.Value,
 			core.NewFunction("", &core.TypeDef{
 				Kind:     core.TypeDefKindObject,
 				AsObject: dagql.NonNull(core.NewObjectTypeDef("Module", "")),
@@ -2368,8 +2354,8 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 	// Create module with blueprint source for SDK operations
 	mod := &core.Module{
-		Source:        src,
-		ContextSource: originalSrc,
+		Source:        dagql.NonNull(src),
+		ContextSource: dagql.NonNull(originalSrc),
 
 		NameField:    src.Self().ModuleName,
 		OriginalName: src.Self().ModuleOriginalName,

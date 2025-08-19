@@ -1,0 +1,48 @@
+### Build image from Dockerfile using different build context
+
+The following function builds an image from a Dockerfile with a build context that is different than the current working directory.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/builds/dockerfile-context/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/builds/dockerfile-context/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/builds/dockerfile-context/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Build an image from the source code in `https://github.com/dockersamples/python-flask-redis` using the Dockerfile from a different build context, at `https://github.com/vimagick/dockerfiles#master:registry-cli/Dockerfile`:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'build https://github.com/dockersamples/python-flask-redis https://github.com/vimagick/dockerfiles#master:registry-cli/Dockerfile'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+build https://github.com/dockersamples/python-flask-redis https://github.com/vimagick/dockerfiles#master:registry-cli/Dockerfile
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call \
+    build --src="https://github.com/dockersamples/python-flask-redis" \
+    --dockerfile=https://github.com/vimagick/dockerfiles#master:registry-cli/Dockerfile
+```
+</TabItem>
+</Tabs>

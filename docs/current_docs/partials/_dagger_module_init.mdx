@@ -1,7 +1,4 @@
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
-
-Dagger Functions are packaged, shared and reused using Dagger modules. A new Dagger module is initialized by calling `dagger init`. This creates a new `dagger.json` configuration file in the current working directory, together with sample Dagger Function source code. The configuration file will default the name of the module to the current directory name, unless an alternative is specified with the `--name` argument.
+A new Dagger module is initialized by calling `dagger init`. This creates a new `dagger.json` configuration file in the current working directory, together with sample Dagger Function source code. The configuration file will default the name of the module to the current directory name, unless an alternative is specified with the `--name` argument.
 
 Once a module is initialized, `dagger develop --sdk=...` sets up or updates all the resources needed to develop the module locally. By default, the module source code will be stored in the current working directory, unless an alternative is specified with the `--source` argument.
 
@@ -26,7 +23,7 @@ The default template from `dagger develop` creates the following structure:
 
 In this structure:
 
-- `dagger.json` is the [Dagger module configuration file](../configuration/modules.mdx).
+- `dagger.json` is the Dagger module configuration file.
 - `go.mod`/`go.sum` manage the Go module and its dependencies.
 - `main.go` is where your Dagger module code goes. It contains sample code to help you get started.
 - `internal` contains automatically-generated types and helpers needed to configure and run the module:
@@ -54,7 +51,7 @@ For examples of modules written in Go, see [Daggerverse Modules in Go](https://d
 
 In this structure:
 
-- `dagger.json` is the [Dagger module configuration file](../configuration/modules.mdx).
+- `dagger.json` is the Dagger module configuration file.
 - `pyproject.toml` manages the Python project configuration.
 - `uv.lock` manages the module's pinned dependencies.
 - `src/my_module/` is where your Dagger module code goes. It contains sample code to help you get started.
@@ -82,7 +79,7 @@ For examples of modules written in Python, see [Daggerverse Modules in Python](h
 
 In this structure:
 
-- `dagger.json` is the [Dagger module configuration file](../configuration/modules.mdx).
+- `dagger.json` is the Dagger module configuration file.
 - `package.json` manages the module dependencies.
 - `src/` is where your Dagger module code goes. It contains sample code to help you get started.
 - `sdk/` contains the bundled TypeScript SDK.
@@ -106,7 +103,7 @@ For examples of modules written in Typescript, see [Daggerverse Modules in Types
 
 In this structure:
 
-- `dagger.json` is the [Dagger module configuration file](../configuration/modules.mdx).
+- `dagger.json` is the Dagger module configuration file.
 - `composer.json` manages the module dependencies.
 - `src/` is where your Dagger module code goes. It contains sample code to help you get started.
 - `sdk/` contains the PHP SDK.
@@ -137,7 +134,7 @@ For examples of modules written in PHP, see [Daggerverse Modules in PHP](https:/
 
 In this structure:
 
-- `dagger.json` is the [Dagger module configuration file](../configuration/modules.mdx).
+- `dagger.json` is the Dagger module configuration file.
 - `pom.xml` manages the module dependencies.
 - `src/main/java/io/dagger/modules/mymodule/` is where your Dagger module code goes. It contains sample code to help you get started.
     - `MyModule.java` is the main class that contains the Dagger Functions.

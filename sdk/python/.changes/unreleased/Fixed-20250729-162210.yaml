@@ -1,6 +1,0 @@
-kind: Fixed
-body: Fix wrong enum value aliases in client bindings
-time: 2025-07-29T16:22:10.242263Z
-custom:
-    Author: jedevc
-    PR: "10802"

@@ -370,6 +370,10 @@ func (funcs typescriptTemplateFuncs) toSingleType(value string) string {
 }
 
 func (funcs typescriptTemplateFuncs) moduleRelPath(path string) string {
+	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
+		return path
+	}
+
 	moduleParentPath := ""
 	if funcs.cfg.ModuleConfig != nil {
 		moduleParentPath = funcs.cfg.ModuleConfig.ModuleParentPath

@@ -9,7 +9,6 @@ import typing
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, TypeVar, cast
 
-import anyio
 import cattrs
 import cattrs.gen
 from cattrs.preconf import is_primitive_enum
@@ -19,14 +18,16 @@ from typing_extensions import dataclass_transform, overload
 import dagger
 from dagger import dag
 from dagger.client._core import configure_converter_enum
-from dagger.mod._arguments import Parameter
 from dagger.mod._converter import make_converter, to_typedef
 from dagger.mod._exceptions import (
-    ConversionError,
-    FatalError,
+    BadUsageError,
     FunctionError,
-    InternalError,
-    UserError,
+    InvalidInputError,
+    InvalidResultError,
+    ObjectNotFoundError,
+    RegistrationError,
+    log_exception_only,
+    transform_error,
 )
 from dagger.mod._resolver import (
     Constructor,
@@ -40,19 +41,20 @@ from dagger.mod._resolver import (
 from dagger.mod._types import APIName, FieldDefinition, FunctionDefinition, PythonName
 from dagger.mod._utils import (
     asyncify,
-    await_maybe,
     extract_enum_member_doc,
     get_doc,
     get_parent_module_doc,
     is_annotated,
-    to_pascal_case,
 )
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__package__)
 
 OBJECT_DEF_KEY: typing.Final[str] = "__dagger_object__"
 FIELD_DEF_KEY: typing.Final[str] = "__dagger_field__"
 FUNCTION_DEF_KEY: typing.Final[str] = "__dagger_function__"
+MODULE_NAME: typing.Final[str] = os.getenv("DAGGER_MODULE", "")
+MAIN_OBJECT: typing.Final[str] = os.getenv("DAGGER_MAIN_OBJECT", "")
+
 
 T = TypeVar("T", bound=type)
 
@@ -60,15 +62,19 @@ T = TypeVar("T", bound=type)
 class Module:
     """Builder for a :py:class:`dagger.Module`."""
 
-    def __init__(self, name: str = os.getenv("DAGGER_MODULE_NAME", "")):
-        self.name: str = name
+    def __init__(self, main_name: str = MAIN_OBJECT):
+        self._main_name = main_name
         self._converter: JsonConverter = make_converter()
         self._objects: dict[str, ObjectType] = {}
         self._enums: dict[str, type[enum.Enum]] = {}
         self._main: ObjectType | None = None
+        # Escape hatch if there's too much noise from showing stack traces
+        # from exceptions raised in functions by default. Not documented
+        # intentionally for now.
+        self.log_exceptions = True
 
     @property
-    def main_cls(self) -> type:
+    def main_cls(self) -> type[ObjectType]:
         assert self._main is not None
         return self._main.cls
 
@@ -76,35 +82,24 @@ class Module:
         """Check if the given object is the main object of the module."""
         return self.main_cls is other.cls
 
-    def set_module_name(self, name: str):
-        self.name = name
-        self._main = self.get_object(to_pascal_case(name))
-
-    def __call__(self) -> None:
-        anyio.run(self._run)
-
-    async def _run(self):
-        async with await dagger.connect():
-            await self.serve()
-
     async def serve(self):
-        self.set_module_name(await dag.current_module().name())
-
-        try:
-            if parent_name := await dag.current_function_call().parent_name():
-                result = await self._invoke(parent_name)
-            else:
+        if parent_name := await dag.current_function_call().parent_name():
+            result = await self._invoke(parent_name)
+        else:
+            try:
                 result = await self._register()
-        except FunctionError as e:
-            logger.exception("Error while executing function")
-            await dag.current_function_call().return_error(dag.error(str(e)))
-            raise SystemExit(2) from None
+            except TypeError as e:
+                raise RegistrationError(str(e)) from e
 
         try:
             output = json.dumps(result)
         except (TypeError, ValueError) as e:
-            msg = f"Failed to serialize result: {e}"
-            raise InternalError(msg) from e
+            # Not expected to happen because unstructuring should reduce
+            # Python complex types to primitive values that are easily
+            # serialized to JSON. If not, it's something that should be caught
+            # earlier.
+            msg = f"Failed to serialize final result as JSON: {e}"
+            raise InvalidResultError(msg) from e
 
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
@@ -116,6 +111,17 @@ class Module:
 
     async def _register(self) -> dagger.ModuleID:  # noqa: C901, PLR0912
         """Register the module and its types with the Dagger API."""
+        try:
+            self.get_object(self._main_name)
+        except ObjectNotFoundError as e:
+            msg = (
+                f"Main object with name '{self._main_name}' not found or class not "
+                "decorated with '@dagger.object_type'\n"
+                f"If you believe the module name '{MODULE_NAME}' is incorrectly "
+                "being converted into PascalCase, please file a bug report."
+            )
+            raise ObjectNotFoundError(msg, extra=e.extra) from None
+
         mod = dag.module()
 
         # Object types
@@ -147,21 +153,33 @@ class Module:
                 types = typing.get_type_hints(obj_type.cls)
 
                 for field_name, field in obj_type.fields.items():
+                    ctx = f"type for field '{field.original_name}' in {obj_type}"
                     type_def = type_def.with_field(
                         field_name,
-                        to_typedef(types[field.original_name]),
+                        to_typedef(types[field.original_name], ctx),
                         description=get_doc(field.return_type),
                     )
 
             # Object/interface functions
             for func_name, func in obj_type.functions.items():
-                func_def = dag.function(func_name, to_typedef(func.return_type))
+                what = f"function '{func_name}'" if func_name else "constructor"
+
+                func_def = dag.function(
+                    func_name,
+                    to_typedef(
+                        func.return_type,
+                        f"return type for {what} in {obj_type}",
+                    ),
+                )
 
                 if doc := func.doc:
                     func_def = func_def.with_description(doc)
 
                 for param in func.parameters.values():
-                    arg_def = to_typedef(param.resolved_type)
+                    arg_def = to_typedef(
+                        param.resolved_type,
+                        f"parameter type for '{param.name}' in {what} and {obj_type}",
+                    )
 
                     if param.is_nullable:
                         arg_def = arg_def.with_optional(True)
@@ -222,8 +240,12 @@ class Module:
             try:
                 parent_state = json.loads(parent_json) or {}
             except ValueError as e:
-                msg = f"Unable to decode parent value `{parent_json}`: {e}"
-                raise FatalError(msg) from e
+                logger.exception("Failed to decode JSON parent value")
+                msg = "Unable to decode the parent object's state"
+                extra = {
+                    "parent_json": parent_json,
+                }
+                raise InvalidInputError(msg, extra=extra) from e
 
         inputs = {}
         for arg in input_args:
@@ -236,8 +258,12 @@ class Module:
                 # for more granular control over the error.
                 inputs[arg_name] = json.loads(arg_value)
             except ValueError as e:
-                msg = f"Unable to decode input argument `{arg_name}`: {e}"
-                raise InternalError(msg) from e
+                logger.exception("Failed to decode JSON input value")
+                msg = f"Unable to decode input argument '{arg_name}'"
+                extra = {
+                    "json_value": arg_value,
+                }
+                raise InvalidInputError(msg, extra=extra) from e
 
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
@@ -265,49 +291,6 @@ class Module:
 
         return result
 
-    async def get_structured_result(
-        self,
-        parent_name: str,
-        parent_state: Mapping[str, Any],
-        name: str,
-        raw_inputs: Mapping[str, Any],
-    ):
-        """Execute a function and return its result as a primitive value."""
-        obj_type = self.get_object(parent_name)
-
-        if name == "":
-            fn = obj_type.get_constructor(self._converter)
-        else:
-            parent = await self._get_parent_instance(obj_type.cls, parent_state)
-
-            # NB: fields are not executed by the SDK, they're returned directly by
-            # the engine, but this is still useful for testing.
-            if name in obj_type.fields:
-                f = obj_type.fields[name]
-                result = getattr(parent, f.original_name)
-                return result, f.return_type
-
-            fn = obj_type.get_bound_function(parent, name)
-
-        inputs = await self._convert_inputs(fn.parameters, raw_inputs)
-        bound = fn.bind_arguments(**inputs)
-
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("func => %s", repr(fn.signature))
-            logger.debug("input args => %s", repr(raw_inputs))
-            logger.debug("bound args => %s", repr(bound.arguments))
-
-        try:
-            result = await self.call(fn.wrapped, *bound.args, **bound.kwargs)
-        except Exception as e:
-            raise FunctionError(e) from e
-
-        if inspect.iscoroutine(result):
-            msg = "Result is a coroutine. Did you forget to add async/await?"
-            raise UserError(msg)
-
-        return result, fn.return_type
-
     async def get_result(
         self,
         parent_name: str,
@@ -315,65 +298,177 @@ class Module:
         name: str,
         raw_inputs: Mapping[str, Any],
     ) -> Any:
-        result, return_type = await self.get_structured_result(
+        """Get function result as an unstructured Python primitive."""
+        result, fn = await self.get_structured_result(
             parent_name,
             parent_state,
             name,
             raw_inputs,
         )
-        if return_type is not None:
-            return await self.unstructure(result, return_type)
+        if fn.return_type is not None:
+            try:
+                return await self.unstructure(result, fn.return_type)
+            except Exception as e:
+                log_exception_only(e, "Invalid result from function")
+                msg = transform_error(
+                    e,
+                    origin=getattr(fn, "wrapped", None),
+                    typ=fn.return_type,
+                )
+                msg += (
+                    "\n"
+                    "Please check if the returned value at runtime matches "
+                    "the function's declared return type."
+                )
+                raise InvalidResultError(msg) from e
         return None
+
+    async def get_structured_result(
+        self,
+        parent_name: str,
+        parent_state: Mapping[str, Any],
+        name: str,
+        raw_inputs: Mapping[str, Any],
+    ) -> tuple[Any, Field | Function]:
+        """Execute a function and return its result as a primitive value."""
+        obj_type = self.get_object(parent_name)
+
+        if name == "":
+            fn = obj_type.get_constructor(self._converter)
+        else:
+            parent = await self._get_parent_instance(obj_type, parent_state)
+
+            # NB: fields are not executed by the SDK, they're returned directly by
+            # the engine, but this is still useful for testing.
+            if name in obj_type.fields:
+                f = obj_type.fields[name]
+                result = getattr(parent, f.original_name)
+                return result, f
+
+            fn = obj_type.get_bound_function(parent, name)
+
+        inputs = await self._convert_inputs(fn, raw_inputs)
+        bound = fn.bind_arguments(**inputs)
+
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("func => %s", repr(fn.signature))
+            logger.debug("input args => %s", repr(raw_inputs))
+            logger.debug("bound args => %s", repr(bound.arguments))
+
+        result = await self.call(fn.wrapped, *bound.args, **bound.kwargs)
+
+        # Provide better errors for missing async/await
+        if inspect.iscoroutine(result):
+            result.close()  # avoid RuntimeWarning
+
+            if not inspect.iscoroutinefunction(fn.wrapped):
+                msg = (
+                    f"Function '{fn}' returned a coroutine.\n"
+                    "Did you forget to add 'async' to the function signature?"
+                )
+            else:
+                msg = (
+                    f"Async function '{fn}' was never awaited.\n"
+                    "Did you forget to add an 'await' to the return value?"
+                )
+            raise FunctionError(msg) from None
+
+        return result, fn
 
     async def call(self, func: Func[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
         """Call a function and return its result."""
-        return await await_maybe(func(*args, **kwargs))
-
-    async def structure(self, obj: Any, cl: type[T], origin: Any | None = None) -> T:
-        """Convert a primitive value to the expected type."""
         try:
-            return await asyncify(self._converter.structure, obj, cl)
+            # We could await based on the return value instead of checking function
+            # color but that would silently allow incorrect code which is
+            # especially bad if not intentional and we don't warn user about it.
+            result = func(*args, **kwargs)
+            if inspect.iscoroutinefunction(func):
+                result = await cast(typing.Awaitable[R], result)
+        except FunctionError:
+            # Escape hatch to fully control logging from user code.
+            raise
+        except dagger.QueryError as e:
+            tb = e.__traceback__
+            # Exclude the line in "try" above
+            if tb:
+                tb = tb.tb_next
+            # Exclude the underlying TransportQueryError to reduce noise
+            e.__cause__ = None
+            logger.exception(
+                "API error while executing function",
+                exc_info=(type(e), e, tb),
+            )
+            # Preserve API error so it's properly propagated.
+            raise e from None
         except Exception as e:
-            raise ConversionError(e, origin=origin) from e
+            # Escape hatch if too noisy.
+            if self.log_exceptions:
+                # Logging the exception will show the full stack trace on stderr.
+                logger.exception("Unhandled exception while executing function")
+            raise FunctionError(str(e)) from e
+
+        return result
+
+    async def structure(self, obj: Any, cl: type[T]) -> T:
+        """Convert a primitive value to the expected type."""
+        return await asyncify(self._converter.structure, obj, cl)
 
     async def unstructure(self, obj: Any, unstructure_as: Any) -> Awaitable[Any]:
         """Convert a result to primitive values."""
-        try:
-            return await asyncify(self._converter.unstructure, obj, unstructure_as)
-        except Exception as e:
-            msg = "Failed to convert result to primitive values"
-            raise ConversionError(e).as_user(msg) from e
+        return await asyncify(self._converter.unstructure, obj, unstructure_as)
 
     def get_object(self, name: str) -> ObjectType:
         """Get the object type definition for the given name."""
         try:
             return self._objects[name]
-        except KeyError as e:
-            msg = f"No `@dagger.object_type` decorated class named {name} was found"
-            raise UserError(msg) from e
+        except KeyError:
+            # Not expected to happen during invoke because registration should
+            # fail first.
+            msg = f"No '@dagger.object_type' decorated class named '{name}' was found"
+            extra = {"objects_found": self._objects.keys()}
+            raise ObjectNotFoundError(msg, extra=extra) from None
 
-    async def _get_parent_instance(self, cls: type[T], state: Mapping[str, Any]) -> T:
+    async def _get_parent_instance(
+        self,
+        obj_type: ObjectType[T],
+        state: Mapping[str, Any],
+    ) -> T:
         """Instantiate the parent object from its state."""
         try:
-            return await self.structure(state, cls)
-        except ConversionError as e:
-            msg = f"Failed to instantiate {cls.__name__}"
-            raise e.as_user(msg) from e
+            return await self.structure(state, obj_type.cls)
+        except Exception as e:
+            log_exception_only(e, "Failed to instantiate parent object")
+            msg = transform_error(
+                e,
+                f"Failed to instantiate parent object '{obj_type}'",
+                origin=obj_type.cls,
+                typ=obj_type.cls,
+            )
+            # If API is able to make the call this is likely a bug in the SDK.
+            # For example, if the registration phase reports a type that isn't
+            # compatible with cattrs' converter.
+            msg += (
+                "\n"
+                "This could be an error in the Python SDK. "
+                "If so, please file a bug report."
+            )
+            extra = {"object_state": state}
+            raise InvalidInputError(msg, extra=extra) from e
 
     async def _convert_inputs(
         self,
-        params: Mapping[PythonName, Parameter],
+        fn: Function,
         inputs: Mapping[APIName, Any],
     ) -> Mapping[PythonName, Any]:
         """Convert arguments from lower level primitives to the expected types."""
         kwargs = {}
 
         # Convert arguments to the expected type.
-        for python_name, param in params.items():
+        for python_name, param in fn.parameters.items():
             if param.name not in inputs:
                 if not param.is_optional:
-                    msg = f"Missing required argument: {python_name}"
-                    raise UserError(msg)
+                    msg = f"Missing required function argument '{python_name}'"
+                    raise InvalidInputError(msg)
 
                 if param.has_default:
                     continue
@@ -385,9 +480,35 @@ class Module:
 
             try:
                 kwargs[python_name] = await self.structure(value, type_)
-            except ConversionError as e:
-                msg = f"Invalid argument `{param.name}`"
-                raise e.as_user(msg) from e
+            except Exception as e:
+                log_exception_only(
+                    e,
+                    "Failed to convert from primitive input value for argument '%s'",
+                    param.name,
+                )
+                msg = transform_error(
+                    e,
+                    (
+                        "Failed to convert from primitive input value for argument "
+                        f"'{param.name}'"
+                    ),
+                    origin=fn.wrapped,
+                    typ=type_,
+                )
+                # Same as before, the API can't reasonably hold a value that
+                # contradicts its type.
+                msg += (
+                    "\n"
+                    "This could be an error in the Python SDK. "
+                    "If so, please file a bug report."
+                )
+                extra = {
+                    "function_name": fn.original_name,
+                    "parameter_name": python_name,
+                    "expected_type": type_,
+                    "actual_type": type(value),
+                }
+                raise InvalidInputError(msg, extra=extra) from e
 
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("structured args => %s", repr(kwargs))
@@ -540,11 +661,9 @@ class Module:
         def wrapper(cls: T) -> T:
             if not inspect.isclass(cls):
                 msg = f"Expected a class, got {type(cls)}"
-                raise UserError(msg)
+                raise BadUsageError(msg)
 
             # Check for InitVar inside Annotated
-            # TODO: Maybe try to transform field automatically, but check
-            # with community first on how this is usually handled.
             fields = inspect.get_annotations(cls)
             for name, t in fields.items():
                 if is_annotated(t) and isinstance(t.__origin__, dataclasses.InitVar):
@@ -552,10 +671,10 @@ class Module:
                     # in Annotated[init_t.type, *meta]
                     t.__origin__ = t.__origin__.type
                     msg = (
-                        f"Field `{name}` is an InitVar wrapped in Annotated. "
+                        f"Field '{name}' is an InitVar wrapped in Annotated. "
                         f"The correct syntax is: InitVar[{t}]"
                     )
-                    raise UserError(msg)
+                    raise BadUsageError(msg)
 
             wrapped = dataclasses.dataclass(kw_only=True)(cls)
             return self._process_type(wrapped)
@@ -568,6 +687,8 @@ class Module:
         cls.__dagger_module__ = self
         cls.__dagger_object_type__ = obj_def
         self._objects[cls.__name__] = obj_def
+        if cls.__name__ == self._main_name:
+            self._main = obj_def
 
         # Find all constructors from other objects, decorated with `@mod.function`
         def _is_constructor(fn) -> typing.TypeGuard[Constructor]:
@@ -689,12 +810,12 @@ class Module:
 
         def wrapper(cls: T) -> T:
             if not inspect.isclass(cls):
-                msg = f"Expected an enum, got {type(cls)}"
-                raise UserError(msg)
+                msg = f"Expected an enum.Enum subclass, got {type(cls)}"
+                raise BadUsageError(msg)
 
             if not issubclass(cls, enum.Enum):
-                msg = f"Class {cls.__name__} is not an enum.Enum"
-                raise UserError(msg)
+                msg = f"Class '{cls.__name__}' is not an enum.Enum subclass"
+                raise BadUsageError(msg)
 
             cls = cast(T, enum.unique(cls))
             self._enums.setdefault(cls.__name__, cls)

@@ -210,7 +210,7 @@ func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callab
 			ctx,
 			mod,
 			t.typeDef,
-			mod.Runtime,
+			mod.Runtime.Value,
 			fun,
 		)
 	}
@@ -288,8 +288,8 @@ func (obj *ModuleObject) TypeDefinition(view dagql.View) *ast.Definition {
 		Kind: ast.Object,
 		Name: obj.Type().Name(),
 	}
-	if obj.TypeDef.SourceMap != nil {
-		def.Directives = append(def.Directives, obj.TypeDef.SourceMap.TypeDirective())
+	if obj.TypeDef.SourceMap.Valid {
+		def.Directives = append(def.Directives, obj.TypeDef.SourceMap.Value.TypeDirective())
 	}
 	return def
 }
@@ -336,8 +336,8 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 			Module: obj.Module.IDModule(),
 		}
 
-		if objDef.SourceMap != nil {
-			spec.Directives = append(spec.Directives, objDef.SourceMap.TypeDirective())
+		if objDef.SourceMap.Valid {
+			spec.Directives = append(spec.Directives, objDef.SourceMap.Value.TypeDirective())
 		}
 
 		dag.Root().ObjectType().Extend(
@@ -365,7 +365,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		return fmt.Errorf("constructor function for object %s must return that object", objDef.OriginalName)
 	}
 
-	fn, err := NewModFunction(ctx, mod, objDef, mod.Runtime, fnTypeDef)
+	fn, err := NewModFunction(ctx, mod, objDef, mod.Runtime.Value, fnTypeDef)
 	if err != nil {
 		return fmt.Errorf("failed to create function: %w", err)
 	}
@@ -432,8 +432,8 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 	spec.Directives = append(spec.Directives, &ast.Directive{
 		Name: trivialFieldDirectiveName,
 	})
-	if field.SourceMap != nil {
-		spec.Directives = append(spec.Directives, field.SourceMap.TypeDirective())
+	if field.SourceMap.Valid {
+		spec.Directives = append(spec.Directives, field.SourceMap.Value.TypeDirective())
 	}
 	return dagql.Field[*ModuleObject]{
 		Spec: spec,
@@ -465,7 +465,7 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 		ctx,
 		mod,
 		objDef,
-		mod.Runtime,
+		mod.Runtime.Value,
 		fun,
 	)
 	if err != nil {

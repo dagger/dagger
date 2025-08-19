@@ -34,8 +34,12 @@ async def test_git_repository():
 
 
 async def test_container_build():
-    repo = dag.git("https://github.com/dagger/dagger").tag("v0.3.0").tree()
-    dagger_img = dag.container().build(repo)
+    dagger_img = (
+        await dag.git("https://github.com/dagger/dagger")
+        .tag("v0.3.0")
+        .tree()
+        .docker_build()
+    )
 
     out = await dagger_img.with_exec(["dagger", "version"]).stdout()
 
@@ -52,9 +56,9 @@ async def test_input_arg(alpine_image: str):
     CMD printenv
     """
     out = await (
-        dag.container()
-        .build(
-            dag.directory().with_new_file("Dockerfile", dockerfile),
+        dag.directory()
+        .with_new_file("Dockerfile", dockerfile)
+        .docker_build(
             build_args=[dagger.BuildArg("SPAM", "egg")],
         )
         .with_exec([])

@@ -425,12 +425,17 @@ export type ContainerWithExecOpts = {
   stdin?: string
 
   /**
+   * Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
+   */
+  redirectStdin?: string
+
+  /**
    * Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
    */
   redirectStdout?: string
 
   /**
-   * Like redirectStdout, but for standard error
+   * Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
    */
   redirectStderr?: string
 
@@ -1987,11 +1992,23 @@ function TypeDefKindNameToValue(name: string): TypeDefKind {
  */
 export type Void = string & { __Void: never }
 
+export type __DirectiveArgsOpts = {
+  includeDeprecated?: boolean
+}
+
+export type __FieldArgsOpts = {
+  includeDeprecated?: boolean
+}
+
 export type __TypeEnumValuesOpts = {
   includeDeprecated?: boolean
 }
 
 export type __TypeFieldsOpts = {
+  includeDeprecated?: boolean
+}
+
+export type __TypeInputFieldsOpts = {
   includeDeprecated?: boolean
 }
 
@@ -3046,8 +3063,9 @@ export class Container extends BaseClient {
    * Defaults to the container's default arguments (see "defaultArgs" and "withDefaultArgs").
    * @param opts.useEntrypoint Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.
    * @param opts.stdin Content to write to the command's standard input. Example: "Hello world")
+   * @param opts.redirectStdin Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
    * @param opts.redirectStdout Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
-   * @param opts.redirectStderr Like redirectStdout, but for standard error
+   * @param opts.redirectStderr Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
    * @param opts.expect Exit codes this command is allowed to exit with without error
    * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. Like --privileged in Docker
@@ -6305,6 +6323,15 @@ export class GitRef extends BaseClient {
   }
 
   /**
+   * Find the best common ancestor between this ref and another ref.
+   * @param other The other ref to compare against.
+   */
+  commonAncestor = (other: GitRef): GitRef => {
+    const ctx = this._ctx.select("commonAncestor", { other })
+    return new GitRef(ctx)
+  }
+
+  /**
    * The resolved ref name at this ref.
    */
   ref = async (): Promise<string> => {
@@ -6327,6 +6354,15 @@ export class GitRef extends BaseClient {
   tree = (opts?: GitRefTreeOpts): Directory => {
     const ctx = this._ctx.select("tree", { ...opts })
     return new Directory(ctx)
+  }
+
+  /**
+   * Call the provided function with current GitRef.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: GitRef) => GitRef) => {
+    return arg(this)
   }
 }
 
@@ -9433,6 +9469,7 @@ export class SourceMap extends BaseClient {
   private readonly _filename?: string = undefined
   private readonly _line?: number = undefined
   private readonly _module?: string = undefined
+  private readonly _url?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -9444,6 +9481,7 @@ export class SourceMap extends BaseClient {
     _filename?: string,
     _line?: number,
     _module?: string,
+    _url?: string,
   ) {
     super(ctx)
 
@@ -9452,6 +9490,7 @@ export class SourceMap extends BaseClient {
     this._filename = _filename
     this._line = _line
     this._module = _module
+    this._url = _url
   }
 
   /**
@@ -9523,6 +9562,21 @@ export class SourceMap extends BaseClient {
     }
 
     const ctx = this._ctx.select("module")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The URL to the file, if any. This can be used to link to the source map in the browser.
+   */
+  url = async (): Promise<string> => {
+    if (this._url) {
+      return this._url
+    }
+
+    const ctx = this._ctx.select("url")
 
     const response: Awaited<string> = await ctx.execute()
 

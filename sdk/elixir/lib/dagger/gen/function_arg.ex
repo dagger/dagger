@@ -86,7 +86,7 @@ defmodule Dagger.FunctionArg do
   @doc """
   The location of this arg declaration.
   """
-  @spec source_map(t()) :: Dagger.SourceMap.t()
+  @spec source_map(t()) :: Dagger.SourceMap.t() | nil
   def source_map(%__MODULE__{} = function_arg) do
     query_builder =
       function_arg.query_builder |> QB.select("sourceMap")

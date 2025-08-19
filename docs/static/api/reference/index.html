@@ -5012,12 +5012,16 @@
                                 <p>Content to write to the command&#39;s standard input. Example: &quot;Hello world&quot;)</p>
                               </div>
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>redirectStdin</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Redirect the command&#39;s standard input from a file in the container. Example: &quot;./stdin.txt&quot;</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>redirectStdout</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>Redirect the command&#39;s standard output to a file in the container. Example: &quot;./stdout.txt&quot;</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>redirectStderr</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>Like redirectStdout, but for standard error</p>
+                                <p>Redirect the command&#39;s standard error to a file in the container. Example: &quot;./stderr.txt&quot;</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>expect</code></span> - <span class="property-type"><a href="#definition-ReturnType"><code>ReturnType</code></a></span></h6>
@@ -6780,7 +6784,7 @@
                         <td> The name of the enum. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="EnumTypeDef-sourceMap" href="#EnumTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="EnumTypeDef-sourceMap" href="#EnumTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap</code></a></span> </td>
                         <td> The location of this enum declaration. </td>
                       </tr>
                       <tr>
@@ -6847,7 +6851,7 @@
                         <td> The name of the enum member. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-sourceMap" href="#EnumValueTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-sourceMap" href="#EnumValueTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap</code></a></span> </td>
                         <td> The location of this enum member declaration. </td>
                       </tr>
                       <tr>
@@ -7950,7 +7954,7 @@
                         <td> The name of the field in lowerCamelCase format. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="FieldTypeDef-sourceMap" href="#FieldTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="FieldTypeDef-sourceMap" href="#FieldTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap</code></a></span> </td>
                         <td> The location of this field declaration. </td>
                       </tr>
                       <tr>
@@ -8154,7 +8158,7 @@
                         <td> The type returned by the function. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Function-sourceMap" href="#Function-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="Function-sourceMap" href="#Function-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap</code></a></span> </td>
                         <td> The location of this function declaration. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
@@ -8285,7 +8289,7 @@
                         <td> The name of the argument in lowerCamelCase format. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="FunctionArg-sourceMap" href="#FunctionArg-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="FunctionArg-sourceMap" href="#FunctionArg-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap</code></a></span> </td>
                         <td> The location of this arg declaration. </td>
                       </tr>
                       <tr>
@@ -8587,6 +8591,23 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="GitRef-commit" href="#GitRef-commit"><code>commit</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The resolved commit id at this ref. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="GitRef-commonAncestor" href="#GitRef-commonAncestor"><code>commonAncestor</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef!</code></a></span> </td>
+                        <td> Find the best common ancestor between this ref and another ref. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>other</code></span> - <span class="property-type"><a href="#definition-GitRefID"><code>GitRefID!</code></a></span></h6>
+                                <p>The other ref to compare against.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="GitRef-id" href="#GitRef-id"><code>id</code></a> - <span class="property-type"><a href="#definition-GitRefID"><code>GitRefID!</code></a></span> </td>
@@ -9274,7 +9295,7 @@
                         <td> The name of the interface. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="InterfaceTypeDef-sourceMap" href="#InterfaceTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="InterfaceTypeDef-sourceMap" href="#InterfaceTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap</code></a></span> </td>
                         <td> The location of this interface declaration. </td>
                       </tr>
                       <tr>
@@ -9738,7 +9759,7 @@
                         <td> Objects served by this module. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Module-runtime" href="#Module-runtime"><code>runtime</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="Module-runtime" href="#Module-runtime"><code>runtime</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container</code></a></span> </td>
                         <td> The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile. </td>
                       </tr>
                       <tr>
@@ -9766,7 +9787,7 @@
                         </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Module-source" href="#Module-source"><code>source</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="Module-source" href="#Module-source"><code>source</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource</code></a></span> </td>
                         <td> The source for the module. </td>
                       </tr>
                       <tr>
@@ -10446,7 +10467,7 @@
                         <td> The name of the object. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="ObjectTypeDef-sourceMap" href="#ObjectTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="ObjectTypeDef-sourceMap" href="#ObjectTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap</code></a></span> </td>
                         <td> The location of this object declaration. </td>
                       </tr>
                       <tr>
@@ -11091,6 +11112,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="SourceMap-module" href="#SourceMap-module"><code>module</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The module dependency this was declared in. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="SourceMap-url" href="#SourceMap-url"><code>url</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The URL to the file, if any. This can be used to link to the source map in the browser. </td>
                       </tr>
                     </tbody>
                   </table>

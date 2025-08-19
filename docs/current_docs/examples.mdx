@@ -1,5 +1,6 @@
 ---
 slug: /examples
+title: "Examples"
 description: Explore real-world examples of Dagger in action, from AI agents to CI/CD implementations.
 ---
 
@@ -7,13 +8,13 @@ description: Explore real-world examples of Dagger in action, from AI agents to 
 
 This page showcases real-world examples of Dagger in action, with a focus on working implementations you can study and adapt.
 
+## Agents and agentic CI
+
 :::info
 Watch a [livestream of building an AI agent with Dagger](https://www.youtube.com/watch?v=1rDcyiR0wZE).
 :::
 
 - [Toy Programmer](https://github.com/shykes/toy-programmer): A simple programmer micro-agent for demonstration purposes
-
-{/* - [Melvin](https://github.com/shykes/melvin): An experimental open-source coding agent made of small composable modules */}
 
 - [Multi-Agent Demo](https://github.com/kpenfound/agents/tree/main/multiagent-demo): A demonstration using multiple LLMs to collaboratively solve a problem
 
@@ -33,9 +34,7 @@ Watch a [livestream of building an AI agent with Dagger](https://www.youtube.com
 
 - [Database Agent](https://github.com/jasonmccallister/database-agent): An agent that connects to an existing database and allows the user to ask plain language questions to explore and query a database.
 
-- [OpenMeter](https://github.com/openmeterio/openmeter/tree/main/.dagger): A set of pipelines to test, lint, scan, publish and release multiple assets, includings SDKs, binaries, Helm charts and container images
-
-- [Goreleaser](https://github.com/goreleaser/goreleaser/tree/main/dagger): A pipeline to lint, test, and build a Go application
+## Portable CI
 
 - [cdebug](https://github.com/iximiuz/cdebug/tree/main/ci): A pipeline with `containerd` tests
 
@@ -51,14 +50,22 @@ Watch a [livestream of building an AI agent with Dagger](https://www.youtube.com
 
 - [Symfony Demo Application](https://github.com/vikram-dagger/symfony-sample-app/tree/main/.dagger): A pipeline to lint, test and perform static analysis on a Symfony application
 
-## Cookbook examples
+## Monorepos
 
-The [Dagger Cookbook](/cookbook) contains practical code examples for common tasks:
+- [Dagger](https://github.com/openmeterio/openmeter/tree/main/.dagger): Dagger's own CI pipelines, used to test, lint, build, and release multiple assets, includings the Dagger CLI, Dagger SDKs, and Dagger documentation.
 
-- [Filesystem operations](/cookbook#filesystem): Working with files and directories
-- [Build operations](/cookbook#builds): Building applications and container images
-- [Service management](/cookbook#services): Working with services and networking
-- [Secret management](/cookbook#secrets): Managing sensitive data securely
+- [OpenMeter](https://github.com/openmeterio/openmeter/tree/main/.dagger): A set of pipelines to test, lint, scan, publish and release multiple assets, includings SDKs, binaries, Helm charts and container images
+
+## Cookbook
+
+The [Dagger Cookbook](cookbook/index.mdx) contains practical code examples for common tasks:
+
+- [Filesystem operations](cookbook/filesystems.mdx): Working with files and directories
+- [Build operations](cookbook/builds.mdx): Building applications and container images
+- [Agentic operations](cookbook/agents.mdx): Working with agents and environments
+- [Service management](cookbook/services.mdx): Working with services and networking
+- [Secret management](cookbook/secrets.mdx): Managing sensitive data securely
+- [Troubleshooting](cookbook/errors.mdx): Handling and debugging errors
 
 ## Contribute examples
 

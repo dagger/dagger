@@ -229,19 +229,22 @@ func (r *Releaser) Publish(
 		return &report, nil
 	}
 
-	if semver.IsValid(version) {
-		artifact = &ReleaseReportArtifact{
-			Name: "📖 Docs",
-			Link: "https://docs.dagger.io",
-		}
-		if !dryRun {
-			err = dag.Docs().Publish(ctx, netlifyToken)
-			if err != nil {
-				artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
-			}
-		}
-		report.Artifacts = append(report.Artifacts, artifact)
-	}
+	// NOTE: disabled for now, as requested by the team!
+	// should be re-enabled once we've updated the docs to the new version
+	// if semver.IsValid(version) {
+	// 	artifact = &ReleaseReportArtifact{
+	// 		Name: "📖 Docs",
+	// 		Link: "https://docs.dagger.io",
+	// 	}
+	// 	if !dryRun {
+	// 		err = dag.Docs().Publish(ctx, netlifyToken)
+	// 		if err != nil {
+	// 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
+	// 		}
+	// 	}
+	// 	report.Artifacts = append(report.Artifacts, artifact)
+	// }
+	_ = netlifyToken
 
 	components := []struct {
 		name    string

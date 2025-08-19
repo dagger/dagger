@@ -1,6 +1,0 @@
-kind: Fixed
-body: Prompt mode now handles interrupts more gracefully, continuing from where the agent left off rather than completely forgetting the prompt.
-time: 2025-07-21T11:10:16.055120258-04:00
-custom:
-    Author: vito
-    PR: "10765"
