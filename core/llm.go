@@ -446,7 +446,7 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 	return router, err
 }
 
-func (query *Query) NewLLM(ctx context.Context, model string, maxAPICalls int) (*LLM, error) {
+func (q *Query) NewLLM(ctx context.Context, model string, maxAPICalls int) (*LLM, error) {
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err

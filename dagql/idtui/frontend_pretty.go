@@ -2282,7 +2282,6 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 		// Check for Markdown content type
 		contentType := ""
 		eof := false
-		// verbose := false
 		for attr := range log.WalkAttributes {
 			if attr.Key == telemetry.ContentTypeAttr {
 				contentType = attr.Value.AsString()
@@ -2290,9 +2289,6 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 			if attr.Key == telemetry.StdioEOFAttr {
 				eof = attr.Value.AsBool()
 			}
-			// if attr.Key == telemetry.LogsVerboseAttr {
-			// 	verbose = attr.Value.AsBool()
-			// }
 		}
 
 		if eof && log.SpanID().IsValid() {
@@ -2301,19 +2297,6 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 		}
 
 		targetID := log.SpanID()
-		// toolSpan := l.findLLMToolSpan(targetID)
-		// if toolSpan != nil {
-		// 	if toolSpan.ID.SpanID == targetID {
-		// 		// don't show the LLM tool call's direct logs;
-		// 		// those are for debugging purposes only
-		// 		continue
-		// 	} else if verbose {
-		// 		// Don't route verbose logs to an LLM tool output
-		// 		continue
-		// 	} else {
-		// 		targetID = toolSpan.ID.SpanID
-		// 	}
-		// }
 
 		vterm := l.spanLogs(targetID)
 
@@ -2321,24 +2304,6 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 			_, _ = vterm.WriteMarkdown([]byte(log.Body().AsString()))
 		} else {
 			_, _ = fmt.Fprint(vterm, log.Body().AsString())
-		}
-	}
-	return nil
-}
-func (l *prettyLogs) findLLMToolSpan(id trace.SpanID) *dagui.Span {
-	spanID := dagui.SpanID{SpanID: id}
-	current := l.DB.Spans.Map[spanID]
-	if current == nil {
-		return nil
-	}
-	if current.LLMTool != "" {
-		// don't show the LLM tool call's direct logs;
-		// those are for debugging purposes only
-		return current
-	}
-	for parent := range current.Parents {
-		if parent.LLMTool != "" {
-			return parent
 		}
 	}
 	return nil
