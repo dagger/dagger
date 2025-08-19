@@ -29,7 +29,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 		// TODO: there's probably a way to avoid this
 		dagql.Func("__immutableRef", s.immutableRef).
 			Args(
-				dagql.Arg("ref").Doc("Reference to a mutable ref to make immutable."),
+				dagql.Arg("ref").Doc("The immutable ref ID."),
 			),
 	}.Install(srv)
 
