@@ -561,8 +561,8 @@ func (m *MCP) typeTools(allTools map[string]LLMTool, srv *dagql.Server, schema *
 			return fmt.Errorf("field %q: %w", field.Name, err)
 		}
 		var toolName string
-		if typeDef.Name == schema.Query.Name { //||
-			// (autoConstruct != nil && allTools[toolName].Name == "") {
+		if typeDef.Name == schema.Query.Name ||
+			(autoConstruct != nil && allTools[toolName].Name == "") {
 			toolName = field.Name
 		} else {
 			toolName = typeDef.Name + "." + field.Name
