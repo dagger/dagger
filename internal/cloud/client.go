@@ -49,12 +49,17 @@ func NewClient(ctx context.Context) (*Client, error) {
 	if err != nil {
 		if cloudToken := os.Getenv("DAGGER_CLOUD_TOKEN"); cloudToken != "" {
 			httpClient.Transport, err = auth.DaggerCloudTransport(ctx, cloudToken)
+			if err != nil {
+				return nil, err
+			}
+
 			return &Client{
 				u:           u,
 				h:           httpClient,
 				engineToken: cloudToken,
 			}, nil
 		}
+
 		return nil, err
 	}
 	httpClient = oauth2.NewClient(ctx, tokenSource)

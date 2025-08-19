@@ -82,10 +82,6 @@ import (
 	"github.com/dagger/dagger/engine/sources/local"
 )
 
-const (
-	daggerCacheServiceURL = "https://api.dagger.cloud/magicache"
-)
-
 type Server struct {
 	controlapi.UnimplementedControlServer
 	engineName string
