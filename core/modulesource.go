@@ -244,7 +244,7 @@ func (src *ModuleSource) Pin() string {
 	case ModuleSourceKindLocal:
 		return ""
 	case ModuleSourceKindGit:
-		return src.Git.Pin
+		return src.Git.Commit
 	default:
 		return ""
 	}
@@ -497,7 +497,8 @@ type GitModuleSource struct {
 
 	// The resolved commit hash of the source
 	Commit string
-	Pin    string
+	// The fully resolved git ref string of the source
+	Ref string
 
 	// The full git repo for the module source without any include filtering
 	UnfilteredContextDir dagql.ObjectResult[*Directory]

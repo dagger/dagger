@@ -519,7 +519,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to resolve git src: %w", err)
 	}
-	gitCommit, _, err := gitRef.Self().Resolve(ctx)
+	gitCommit, gitRefFull, err := gitRef.Self().Resolve(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to resolve git src to commit: %w", err)
 	}
@@ -532,7 +532,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 			RepoRootPath: parsed.RepoRoot.Root,
 			Version:      modVersion,
 			Commit:       gitCommit,
-			Pin:          gitCommit,
+			Ref:          gitRefFull,
 			CloneRef:     parsed.SourceCloneRef,
 		},
 	}
@@ -1827,7 +1827,7 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 			case core.ModuleSourceKindGit:
 				// parent=local, dep=git
 				depCfg.Source = depSrc.Self().AsString()
-				depCfg.Pin = depSrc.Self().Git.Pin
+				depCfg.Pin = depSrc.Self().Git.Commit
 
 			default:
 				return nil, fmt.Errorf("unhandled module source kind: %s", src.Kind.HumanString())
@@ -1842,7 +1842,7 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 			case core.ModuleSourceKindGit:
 				// parent=git, dep=git
 				// check if the dep is the same git repo + pin as the parent, if so make it a local dep
-				if src.Git.CloneRef == depSrc.Self().Git.CloneRef && src.Git.Pin == depSrc.Self().Git.Pin {
+				if src.Git.CloneRef == depSrc.Self().Git.CloneRef && src.Git.Commit == depSrc.Self().Git.Commit {
 					parentSrcRoot := filepath.Join("/", src.SourceRootSubpath)
 					depSrcRoot := filepath.Join("/", depSrc.Self().SourceRootSubpath)
 					depSrcRoot, err := pathutil.LexicalRelativePath(parentSrcRoot, depSrcRoot)
@@ -1852,7 +1852,7 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 					depCfg.Source = depSrcRoot
 				} else {
 					depCfg.Source = depSrc.Self().AsString()
-					depCfg.Pin = depSrc.Self().Git.Pin
+					depCfg.Pin = depSrc.Self().Git.Commit
 				}
 
 			default:
@@ -1878,7 +1878,7 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 			case core.ModuleSourceKindGit:
 				// parent=dir, dep=git
 				depCfg.Source = depSrc.Self().AsString()
-				depCfg.Pin = depSrc.Self().Git.Pin
+				depCfg.Pin = depSrc.Self().Git.Commit
 
 			default:
 				// Local not supported since there's nothing we could plausibly put in the dagger.json for
