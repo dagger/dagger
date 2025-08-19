@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
+
 	"typescript-sdk/internal/dagger"
 	"typescript-sdk/tsdistconsts"
 
@@ -342,6 +344,27 @@ func (m *moduleRuntimeContainer) withInitTemplate() *moduleRuntimeContainer {
 		WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/QuickStart/%s/g", strcase.ToCamel(name)), "src/index.ts"})
 
 	return m
+}
+
+// Check if there's any user source files
+func (m *moduleRuntimeContainer) hasUserSourceFiles(ctx context.Context) (bool, error) {
+	sourcesFiles, err := m.ctr.Directory(".").Glob(ctx, "src/**/*.ts")
+	if err != nil {
+		return false, fmt.Errorf("failed to list user source files: %w", err)
+	}
+
+	return len(sourcesFiles) > 0, nil
+}
+
+func (m *moduleRuntimeContainer) addInitTemplateIfNoUserFile(ctx context.Context) (*moduleRuntimeContainer, error) {
+	// Check if there's any user source files, if not, add the template file.
+	// NOTE: This should be moved in a `Init` function once we improve the SDK interface.
+	if hasSourceFiles, err := m.hasUserSourceFiles(ctx); err != nil {
+		return nil, err
+	} else if !hasSourceFiles {
+		return m.withInitTemplate(), nil
+	}
+	return m, nil
 }
 
 // Add the entrypoint to the container runtime so it can be called by the engine.
