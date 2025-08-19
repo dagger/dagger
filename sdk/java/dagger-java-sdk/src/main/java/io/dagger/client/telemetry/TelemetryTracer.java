@@ -5,6 +5,7 @@ import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Context;
 
 public class TelemetryTracer {
 
@@ -14,13 +15,9 @@ public class TelemetryTracer {
     this.tracer = openTelemetry.getTracer(name);
   }
 
-  public Span startSpan(String name, Attributes attributes) {
-    return tracer.spanBuilder(name).setAllAttributes(attributes).startSpan();
-  }
-
-  public <T> T startActiveSpan(String name, Attributes attributes, TelemetrySupplier<T> function)
+  public <T> T startActiveSpan(String name, Context context, Attributes attributes, TelemetrySupplier<T> function)
       throws Exception {
-    Span span = tracer.spanBuilder(name).setAllAttributes(attributes).startSpan();
+    Span span = tracer.spanBuilder(name).setParent(context).setAllAttributes(attributes).startSpan();
 
     try (var scope = span.makeCurrent()) {
       return function.get();

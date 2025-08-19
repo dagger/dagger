@@ -1,8 +1,9 @@
 package io.dagger.client.telemetry;
 
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
@@ -20,6 +21,7 @@ public class TelemetryInitializer {
   private static final String SERVICE_NAME = "dagger-java-sdk";
   private static final String OTLP_DISABLED = System.getenv("OTEL_SDK_DISABLED");
   private static final String OTLP_ENDPOINT = System.getenv("OTEL_EXPORTER_OTLP_ENDPOINT");
+  private static final String OTLP_TRACES_ENDPOINT = System.getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT");
   private static final String OTLP_PROTOCOL = System.getenv("OTEL_EXPORTER_OTLP_PROTOCOL");
 
   private static OpenTelemetrySdk INSTANCE;
@@ -29,23 +31,28 @@ public class TelemetryInitializer {
       return INSTANCE;
     }
 
-    if (StringUtils.equalsIgnoreCase(OTLP_DISABLED, "TRUE")
-        || (!StringUtils.startsWith(OTLP_ENDPOINT, "http://")
-            && !StringUtils.startsWith(OTLP_ENDPOINT, "https://"))) {
+    if (Strings.CI.equals(OTLP_DISABLED, "TRUE")) {
+      return OpenTelemetry.noop();
+    }
+
+    if (!Strings.CS.startsWith(OTLP_ENDPOINT, "http://")
+        && !Strings.CS.startsWith(OTLP_ENDPOINT, "https://")
+        && !Strings.CS.startsWith(OTLP_TRACES_ENDPOINT, "http://")
+        && !Strings.CS.startsWith(OTLP_TRACES_ENDPOINT, "https://")) {
       return OpenTelemetry.noop();
     }
 
     Resource resource = Resource.getDefault().merge(Resource.builder().put("serviceName", SERVICE_NAME).build());
 
     SpanExporter spanExporter;
-    if (OTLP_PROTOCOL.contains("grpc")) {
-      spanExporter = OtlpGrpcSpanExporter.builder()
-          .setEndpoint(OTLP_ENDPOINT)
+    if (Strings.CI.equals(OTLP_PROTOCOL, "http/protobuf")) {
+      spanExporter = OtlpHttpSpanExporter.builder()
+          .setEndpoint(Optional.ofNullable(OTLP_TRACES_ENDPOINT).orElse(OTLP_ENDPOINT))
           .setTimeout(2, TimeUnit.SECONDS)
           .build();
     } else {
-      spanExporter = OtlpHttpSpanExporter.builder()
-          .setEndpoint(OTLP_ENDPOINT)
+      spanExporter = OtlpGrpcSpanExporter.builder()
+          .setEndpoint(Optional.ofNullable(OTLP_TRACES_ENDPOINT).orElse(OTLP_ENDPOINT))
           .setTimeout(2, TimeUnit.SECONDS)
           .build();
     }
