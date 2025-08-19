@@ -198,6 +198,7 @@
               <li><a href="#definition-ModuleConfigClientID">ModuleConfigClientID</a></li>
               <li><a href="#definition-ModuleID">ModuleID</a></li>
               <li><a href="#definition-ModuleSource">ModuleSource</a></li>
+              <li><a href="#definition-ModuleSourceExperimentalFeature">ModuleSourceExperimentalFeature</a></li>
               <li><a href="#definition-ModuleSourceID">ModuleSourceID</a></li>
               <li><a href="#definition-ModuleSourceKind">ModuleSourceKind</a></li>
               <li><a href="#definition-NetworkProtocol">NetworkProtocol</a></li>
@@ -11856,7 +11857,7 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>features</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span></h6>
+                                <h6 class="field-argument-name"><span class="property-name"><code>features</code></span> - <span class="property-type"><a href="#definition-ModuleSourceExperimentalFeature"><code>[ModuleSourceExperimentalFeature!]!</code></a></span></h6>
                                 <p>The experimental features to enable.</p>
                               </div>
                             </div>
@@ -12007,12 +12008,71 @@
                           </div>
                         </td>
                       </tr>
-                      <tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="ModuleSource-withoutExperimentalFeatures" href="#ModuleSource-withoutExperimentalFeatures"><code>withoutExperimentalFeatures</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
                         <td> Disable experimental features for the module source. </td>
                       </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>features</code></span> - <span class="property-type"><a href="#definition-ModuleSourceExperimentalFeature"><code>[ModuleSourceExperimentalFeature!]!</code></a></span></h6>
+                                <p>The experimental features to disable.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-ModuleSourceExperimentalFeature" class="definition definition-enum" data-traverse-target="definition-ModuleSourceExperimentalFeature">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ModuleSourceExperimentalFeature</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Experimental features of a module</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Values</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Enum Value</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <p><code>SELF_CALLS_FEATURE</code></p>
+                        </td>
+                        <td> Self calls </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>SELF_CALLS</code></p>
+                        </td>
+                        <td> Self calls </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="doc-examples">
+                <div class="example-section example-section-is-code">
+                  <h5>Example</h5>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"SELF_CALLS_FEATURE"</span>
+</code></pre>
                 </div>
               </div>
             </div>

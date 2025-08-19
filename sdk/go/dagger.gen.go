@@ -9395,7 +9395,7 @@ func (r *ModuleSource) WithEngineVersion(version string) *ModuleSource {
 }
 
 // Enable the experimental features for the module source.
-func (r *ModuleSource) WithExperimentalFeatures(features []string) *ModuleSource {
+func (r *ModuleSource) WithExperimentalFeatures(features []ModuleSourceExperimentalFeature) *ModuleSource {
 	q := r.query.Select("withExperimentalFeatures")
 	q = q.Arg("features", features)
 
@@ -9503,8 +9503,9 @@ func (r *ModuleSource) WithoutDependencies(dependencies []string) *ModuleSource 
 }
 
 // Disable experimental features for the module source.
-func (r *ModuleSource) WithoutExperimentalFeatures() *ModuleSource {
+func (r *ModuleSource) WithoutExperimentalFeatures(features []ModuleSourceExperimentalFeature) *ModuleSource {
 	q := r.query.Select("withoutExperimentalFeatures")
+	q = q.Arg("features", features)
 
 	return &ModuleSource{
 		query: q,
@@ -12489,6 +12490,60 @@ const (
 
 	ImageMediaTypesDockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
 	ImageMediaTypesDocker           ImageMediaTypes = ImageMediaTypesDockerMediaTypes
+)
+
+// Experimental features of a module
+type ModuleSourceExperimentalFeature string
+
+func (ModuleSourceExperimentalFeature) IsEnum() {}
+
+func (v ModuleSourceExperimentalFeature) Name() string {
+	switch v {
+	case ModuleSourceExperimentalFeatureSelfCallsFeature:
+		return "SELF_CALLS_FEATURE"
+	default:
+		return ""
+	}
+}
+
+func (v ModuleSourceExperimentalFeature) Value() string {
+	return string(v)
+}
+
+func (v *ModuleSourceExperimentalFeature) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *ModuleSourceExperimentalFeature) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "SELF_CALLS":
+		*v = ModuleSourceExperimentalFeatureSelfCalls
+	case "SELF_CALLS_FEATURE":
+		*v = ModuleSourceExperimentalFeatureSelfCallsFeature
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// Self calls
+	ModuleSourceExperimentalFeatureSelfCallsFeature ModuleSourceExperimentalFeature = "SELF_CALLS_FEATURE"
+	// Self calls
+	ModuleSourceExperimentalFeatureSelfCalls ModuleSourceExperimentalFeature = ModuleSourceExperimentalFeatureSelfCallsFeature
 )
 
 // The kind of module source.

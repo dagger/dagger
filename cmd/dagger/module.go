@@ -51,7 +51,8 @@ var (
 	developSourcePath string
 	developRecursive  bool
 
-	selfCalls bool
+	selfCalls   bool
+	noSelfCalls bool
 
 	force bool
 )
@@ -157,6 +158,8 @@ func init() {
 	moduleDevelopCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate. See https://spdx.org/licenses/")
 	moduleDevelopCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
 	moduleDevelopCmd.Flags().Lookup("compat").NoOptDefVal = "skip"
+	moduleDevelopCmd.Flags().BoolVar(&selfCalls, "with-self-calls", false, "Enable self-calls capability for the module (experimental)")
+	moduleDevelopCmd.Flags().BoolVar(&noSelfCalls, "without-self-calls", false, "Disable self-calls capability for the module")
 	moduleAddFlags(moduleDevelopCmd, moduleDevelopCmd.Flags(), false)
 }
 
@@ -295,7 +298,7 @@ dagger init --sdk=go
 				if sdk == "" {
 					return fmt.Errorf("cannot enable self-calls feature without specifying --sdk")
 				}
-				modSrc = modSrc.WithExperimentalFeatures([]string{"self-calls"})
+				modSrc = modSrc.WithExperimentalFeatures([]dagger.ModuleSourceExperimentalFeature{dagger.ModuleSourceExperimentalFeatureSelfCalls})
 			}
 
 			// Export generated files, including dagger.json
@@ -572,6 +575,12 @@ This command is idempotent: you can run it at any time, any number of times. It 
 `,
 	Args:    cobra.NoArgs,
 	GroupID: moduleGroup.ID,
+	PreRunE: func(cmd *cobra.Command, _ []string) error {
+		if selfCalls && noSelfCalls {
+			return fmt.Errorf("cannot use --with-self-calls and --without-self-calls at the same time")
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
@@ -585,6 +594,12 @@ This command is idempotent: you can run it at any time, any number of times. It 
 				// We can only export updated generated files for a local modules
 				RequireKind: dagger.ModuleSourceKindLocalSource,
 			})
+
+			if selfCalls {
+				modSrc = modSrc.WithExperimentalFeatures([]dagger.ModuleSourceExperimentalFeature{dagger.ModuleSourceExperimentalFeatureSelfCalls})
+			} else if noSelfCalls {
+				modSrc = modSrc.WithoutExperimentalFeatures([]dagger.ModuleSourceExperimentalFeature{dagger.ModuleSourceExperimentalFeatureSelfCalls})
+			}
 
 			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
 			if err != nil {

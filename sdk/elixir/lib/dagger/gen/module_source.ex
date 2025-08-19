@@ -475,7 +475,8 @@ defmodule Dagger.ModuleSource do
   @doc """
   Enable the experimental features for the module source.
   """
-  @spec with_experimental_features(t(), [String.t()]) :: Dagger.ModuleSource.t()
+  @spec with_experimental_features(t(), [Dagger.ModuleSourceExperimentalFeature.t()]) ::
+          Dagger.ModuleSource.t()
   def with_experimental_features(%__MODULE__{} = module_source, features) do
     query_builder =
       module_source.query_builder
@@ -637,10 +638,13 @@ defmodule Dagger.ModuleSource do
   @doc """
   Disable experimental features for the module source.
   """
-  @spec without_experimental_features(t()) :: Dagger.ModuleSource.t()
-  def without_experimental_features(%__MODULE__{} = module_source) do
+  @spec without_experimental_features(t(), [Dagger.ModuleSourceExperimentalFeature.t()]) ::
+          Dagger.ModuleSource.t()
+  def without_experimental_features(%__MODULE__{} = module_source, features) do
     query_builder =
-      module_source.query_builder |> QB.select("withoutExperimentalFeatures")
+      module_source.query_builder
+      |> QB.select("withoutExperimentalFeatures")
+      |> QB.put_arg("features", features)
 
     %Dagger.ModuleSource{
       query_builder: query_builder,

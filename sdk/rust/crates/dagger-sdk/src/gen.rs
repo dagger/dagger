@@ -9910,15 +9910,12 @@ impl ModuleSource {
     /// # Arguments
     ///
     /// * `features` - The experimental features to enable.
-    pub fn with_experimental_features(&self, features: Vec<impl Into<String>>) -> ModuleSource {
+    pub fn with_experimental_features(
+        &self,
+        features: Vec<ModuleSourceExperimentalFeature>,
+    ) -> ModuleSource {
         let mut query = self.selection.select("withExperimentalFeatures");
-        query = query.arg(
-            "features",
-            features
-                .into_iter()
-                .map(|i| i.into())
-                .collect::<Vec<String>>(),
-        );
+        query = query.arg("features", features);
         ModuleSource {
             proc: self.proc.clone(),
             selection: query,
@@ -10080,8 +10077,16 @@ impl ModuleSource {
         }
     }
     /// Disable experimental features for the module source.
-    pub fn without_experimental_features(&self) -> ModuleSource {
-        let query = self.selection.select("withoutExperimentalFeatures");
+    ///
+    /// # Arguments
+    ///
+    /// * `features` - The experimental features to disable.
+    pub fn without_experimental_features(
+        &self,
+        features: Vec<ModuleSourceExperimentalFeature>,
+    ) -> ModuleSource {
+        let mut query = self.selection.select("withoutExperimentalFeatures");
+        query = query.arg("features", features);
         ModuleSource {
             proc: self.proc.clone(),
             selection: query,
@@ -12640,6 +12645,13 @@ pub enum ImageMediaTypes {
     Oci,
     #[serde(rename = "OCIMediaTypes")]
     OciMediaTypes,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum ModuleSourceExperimentalFeature {
+    #[serde(rename = "SELF_CALLS")]
+    SelfCalls,
+    #[serde(rename = "SELF_CALLS_FEATURE")]
+    SelfCallsFeature,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ModuleSourceKind {

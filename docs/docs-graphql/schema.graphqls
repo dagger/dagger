@@ -3810,7 +3810,7 @@ type ModuleSource {
   """Enable the experimental features for the module source."""
   withExperimentalFeatures(
     """The experimental features to enable."""
-    features: [String!]!
+    features: [ModuleSourceExperimentalFeature!]!
   ): ModuleSource!
 
   """
@@ -3875,7 +3875,19 @@ type ModuleSource {
   ): ModuleSource!
 
   """Disable experimental features for the module source."""
-  withoutExperimentalFeatures: ModuleSource!
+  withoutExperimentalFeatures(
+    """The experimental features to disable."""
+    features: [ModuleSourceExperimentalFeature!]!
+  ): ModuleSource!
+}
+
+"""Experimental features of a module"""
+enum ModuleSourceExperimentalFeature {
+  """Self calls"""
+  SELF_CALLS_FEATURE
+
+  """Self calls"""
+  SELF_CALLS
 }
 
 """

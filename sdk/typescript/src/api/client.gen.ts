@@ -1514,6 +1514,50 @@ export type ModuleConfigClientID = string & { __ModuleConfigClientID: never }
 export type ModuleID = string & { __ModuleID: never }
 
 /**
+ * Experimental features of a module
+ */
+export enum ModuleSourceExperimentalFeature {
+  /**
+   * Self calls
+   */
+  SelfCalls = "SELF_CALLS_FEATURE",
+
+  /**
+   * Self calls
+   */
+  SelfCallsFeature = ModuleSourceExperimentalFeature.SelfCalls,
+}
+
+/**
+ * Utility function to convert a ModuleSourceExperimentalFeature value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function ModuleSourceExperimentalFeatureValueToName(
+  value: ModuleSourceExperimentalFeature,
+): string {
+  switch (value) {
+    case ModuleSourceExperimentalFeature.SelfCalls:
+      return "SELF_CALLS"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a ModuleSourceExperimentalFeature name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function ModuleSourceExperimentalFeatureNameToValue(
+  name: string,
+): ModuleSourceExperimentalFeature {
+  switch (name) {
+    case "SELF_CALLS":
+      return ModuleSourceExperimentalFeature.SelfCalls
+    default:
+      return name as ModuleSourceExperimentalFeature
+  }
+}
+/**
  * The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
  */
 export type ModuleSourceID = string & { __ModuleSourceID: never }
@@ -9335,7 +9379,9 @@ export class ModuleSource extends BaseClient {
    * Enable the experimental features for the module source.
    * @param features The experimental features to enable.
    */
-  withExperimentalFeatures = (features: string[]): ModuleSource => {
+  withExperimentalFeatures = (
+    features: ModuleSourceExperimentalFeature[],
+  ): ModuleSource => {
     const ctx = this._ctx.select("withExperimentalFeatures", { features })
     return new ModuleSource(ctx)
   }
@@ -9430,9 +9476,12 @@ export class ModuleSource extends BaseClient {
 
   /**
    * Disable experimental features for the module source.
+   * @param features The experimental features to disable.
    */
-  withoutExperimentalFeatures = (): ModuleSource => {
-    const ctx = this._ctx.select("withoutExperimentalFeatures")
+  withoutExperimentalFeatures = (
+    features: ModuleSourceExperimentalFeature[],
+  ): ModuleSource => {
+    const ctx = this._ctx.select("withoutExperimentalFeatures", { features })
     return new ModuleSource(ctx)
   }
 
