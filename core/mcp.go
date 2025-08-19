@@ -26,7 +26,6 @@ import (
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/iancoleman/strcase"
-	"github.com/moby/buildkit/cache"
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -56,8 +55,10 @@ type LLMTool struct {
 	// GraphQL API field that this tool corresponds to
 	Field *ast.FieldDefinition `json:"-"`
 	// Function implementing the tool.
-	Call func(context.Context, any) (any, error) `json:"-"`
+	Call LLMToolFunc `json:"-"`
 }
+
+type LLMToolFunc = func(context.Context, any) (any, error)
 
 // Internal implementation of the MCP standard,
 // for exposing a Dagger environment to a LLM via tool calling.
@@ -639,7 +640,7 @@ func (m *MCP) call(ctx context.Context,
 		logs, err := m.captureLogs(ctx, spanID)
 		if err != nil {
 			slog.Error("failed to capture logs", "error", err)
-		} else if len(logs) >= 0 {
+		} else if len(logs) > 0 {
 			// Keep track of this span's logs so we can read more of it later
 			m.loggedSpans = append(m.loggedSpans, spanID)
 
@@ -1314,7 +1315,6 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 	}, true
 }
 
-//nolint:gocyclo
 func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMTool, error) {
 	schema := srv.Schema()
 
@@ -1431,11 +1431,11 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 	})
 
 	if m.staticTools {
-		builtins = append(builtins, m.staticMethodCallingTools(srv, schema, allMethods)...)
+		builtins = append(builtins, m.staticMethodCallingTools(srv, allMethods)...)
 	}
 
 	builtins = append(builtins, LLMTool{
-		Name:        "ReadLogs",
+		Name:        "read_logs",
 		Description: "Read logs from the most recent execution. Can filter with grep pattern or read the last N lines.",
 		Schema: map[string]any{
 			"type": "object",
@@ -1459,50 +1459,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 			"additionalProperties": false,
 		},
 		Strict: false,
-		Call: ToolFunc(srv, func(ctx context.Context, args struct {
-			Offset int    `default:"0"`
-			Limit  int    `default:"100"`
-			Grep   string `default:""`
-		}) (any, error) {
-			if len(m.loggedSpans) == 0 {
-				return nil, fmt.Errorf("no logs captured")
-			}
-
-			logs, err := m.captureLogs(ctx, m.loggedSpans[len(m.loggedSpans)-1])
-			if err != nil {
-				return nil, fmt.Errorf("failed to capture logs: %w", err)
-			}
-
-			// Trim the last Offset lines
-			if args.Offset >= len(logs) {
-				return nil, fmt.Errorf("offset %d is beyond log length %d", args.Offset, len(logs))
-			}
-			logs = logs[:len(logs)-args.Offset]
-
-			// Apply grep filter if specified
-			if args.Grep != "" {
-				re, err := regexp.Compile(args.Grep)
-				if err != nil {
-					return nil, fmt.Errorf("invalid grep pattern %q: %w", args.Grep, err)
-				}
-				var filteredLogs []string
-				for i, line := range logs {
-					if re.MatchString(line) {
-						filteredLogs = append(filteredLogs, fmt.Sprintf("%6d→%s", i+1, line))
-					}
-				}
-				logs = filteredLogs
-			} else {
-				for i, line := range logs {
-					logs[i] = fmt.Sprintf("%6d→%s", i+1, line)
-				}
-			}
-
-			// Apply line limit if specified
-			logs = limitLines(logs, args.Limit, llmLogsMaxLineLen)
-
-			return strings.Join(logs, "\n"), nil
-		}),
+		Call:   m.readLogsTool(srv),
 	})
 
 	if returnTool, ok := m.returnBuiltin(); ok {
@@ -1514,7 +1471,54 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 	return builtins, nil
 }
 
-func (m *MCP) staticMethodCallingTools(srv *dagql.Server, schema *ast.Schema, allMethods map[string]LLMTool) []LLMTool {
+func (m *MCP) readLogsTool(srv *dagql.Server) LLMToolFunc {
+	return ToolFunc(srv, func(ctx context.Context, args struct {
+		Offset int    `default:"0"`
+		Limit  int    `default:"100"`
+		Grep   string `default:""`
+	}) (any, error) {
+		if len(m.loggedSpans) == 0 {
+			return nil, fmt.Errorf("no logs captured")
+		}
+
+		logs, err := m.captureLogs(ctx, m.loggedSpans[len(m.loggedSpans)-1])
+		if err != nil {
+			return nil, fmt.Errorf("failed to capture logs: %w", err)
+		}
+
+		// Trim the last Offset lines
+		if args.Offset >= len(logs) {
+			return nil, fmt.Errorf("offset %d is beyond log length %d", args.Offset, len(logs))
+		}
+		logs = logs[:len(logs)-args.Offset]
+
+		// Apply grep filter if specified
+		if args.Grep != "" {
+			re, err := regexp.Compile(args.Grep)
+			if err != nil {
+				return nil, fmt.Errorf("invalid grep pattern %q: %w", args.Grep, err)
+			}
+			var filteredLogs []string
+			for i, line := range logs {
+				if re.MatchString(line) {
+					filteredLogs = append(filteredLogs, fmt.Sprintf("%6d→%s", i+1, line))
+				}
+			}
+			logs = filteredLogs
+		} else {
+			for i, line := range logs {
+				logs[i] = fmt.Sprintf("%6d→%s", i+1, line)
+			}
+		}
+
+		// Apply line limit if specified
+		logs = limitLines(logs, args.Limit, llmLogsMaxLineLen)
+
+		return strings.Join(logs, "\n"), nil
+	})
+}
+
+func (m *MCP) staticMethodCallingTools(srv *dagql.Server, allMethods map[string]LLMTool) []LLMTool {
 	var tools []LLMTool
 
 	tools = append(tools, LLMTool{
@@ -1527,37 +1531,7 @@ func (m *MCP) staticMethodCallingTools(srv *dagql.Server, schema *ast.Schema, al
 			"additionalProperties": false,
 		},
 		Strict: true,
-		Call: ToolFunc(srv, func(ctx context.Context, args struct{}) (any, error) {
-			type toolDesc struct {
-				Name         string            `json:"name"`
-				Returns      string            `json:"returns"`
-				RequiredArgs map[string]string `json:"required_args,omitempty"`
-			}
-			var methods []toolDesc
-			for _, method := range allMethods {
-				reqArgs := map[string]string{}
-				var returns string
-				if method.Field != nil {
-					returns = method.Field.Type.String()
-					for _, arg := range method.Field.Arguments {
-						if arg.DefaultValue != nil || !arg.Type.NonNull {
-							// optional
-							continue
-						}
-						reqArgs[arg.Name] = arg.Type.String()
-					}
-				}
-				methods = append(methods, toolDesc{
-					Name:         method.Name,
-					RequiredArgs: reqArgs,
-					Returns:      returns,
-				})
-			}
-			sort.Slice(methods, func(i, j int) bool {
-				return methods[i].Name < methods[j].Name
-			})
-			return toolStructuredResponse(methods)
-		}),
+		Call:   m.listMethodsTool(srv, allMethods),
 	})
 
 	if len(allMethods) > 0 {
@@ -1580,62 +1554,7 @@ func (m *MCP) staticMethodCallingTools(srv *dagql.Server, schema *ast.Schema, al
 				"additionalProperties": false,
 			},
 			Strict: true,
-			Call: ToolFunc(srv, func(ctx context.Context, args struct {
-				Methods []string
-			}) (any, error) {
-				methodCounts := make(map[string]int)
-				for _, toolName := range args.Methods {
-					methodCounts[toolName]++
-				}
-				// perform a sanity check; some LLMs will do silly things like request
-				// the same tool 3 times when told to call it 3 times
-				for tool, count := range methodCounts {
-					if count > 1 {
-						return "", fmt.Errorf("tool %s selected more than once (%d times)", tool, count)
-					}
-				}
-				type methodDef struct {
-					Name        string         `json:"name"`
-					Returns     string         `json:"returns,omitempty"`
-					Description string         `json:"description"`
-					Schema      map[string]any `json:"argsSchema"`
-				}
-				var selectedMethods []methodDef
-				var unknownMethods []string
-				for methodName := range methodCounts {
-					method, found := allMethods[methodName]
-					if found {
-						var returns string
-						if method.Field != nil {
-							returns = method.Field.Type.String()
-						}
-						selectedMethods = append(selectedMethods, methodDef{
-							Name:        method.Name,
-							Returns:     returns,
-							Description: method.Description,
-							Schema:      method.Schema,
-						})
-					} else {
-						unknownMethods = append(unknownMethods, methodName)
-					}
-				}
-				if len(unknownMethods) > 0 {
-					return nil, fmt.Errorf("unknown methods: %v; use list_methods first", unknownMethods)
-				}
-				for _, method := range selectedMethods {
-					m.selectedMethods[method.Name] = true
-				}
-				sort.Slice(selectedMethods, func(i, j int) bool {
-					return selectedMethods[i].Name < selectedMethods[j].Name
-				})
-				res := map[string]any{
-					"added_methods": selectedMethods,
-				}
-				if len(unknownMethods) > 0 {
-					res["unknown_methods"] = unknownMethods
-				}
-				return toolStructuredResponse(res)
-			}),
+			Call:   m.selectMethodsTool(srv, allMethods),
 		}, LLMTool{
 			Name:        "call_method",
 			Description: "Call a method on an object. Methods must be selected with `select_methods` before calling them. Self represents the object to call the method on, and args specify any additional parameters to pass.",
@@ -1660,46 +1579,7 @@ func (m *MCP) staticMethodCallingTools(srv *dagql.Server, schema *ast.Schema, al
 				"additionalProperties": false,
 			},
 			Strict: false,
-			Call: func(ctx context.Context, argsAny any) (_ any, rerr error) {
-				var call struct {
-					Self   string         `json:"self"`
-					Method string         `json:"method"`
-					Args   map[string]any `json:"args"`
-				}
-				pl, err := json.Marshal(argsAny)
-				if err != nil {
-					return nil, err
-				}
-				if err := json.Unmarshal(pl, &call); err != nil {
-					return nil, err
-				}
-				if call.Args == nil {
-					call.Args = make(map[string]any)
-				}
-				// Add self parameter to the method call
-				if call.Self != "" {
-					call.Args["self"] = call.Self
-					matches := idRegex.FindStringSubmatch(call.Self)
-					if matches == nil {
-						return nil, fmt.Errorf("invalid ID format: %q", call.Self)
-					}
-					typeName := matches[idRegex.SubexpIndex("type")]
-					if !strings.Contains(call.Method, ".") {
-						// allow omitting the TypeName. prefix, which models are more prone
-						// to guessing
-						call.Method = fmt.Sprintf("%s.%s", typeName, call.Method)
-					}
-				}
-				var method LLMTool
-				method, found := allMethods[call.Method]
-				if !found {
-					return nil, fmt.Errorf("method not defined: %q; use list_methods first", call.Method)
-				}
-				if !m.selectedMethods[call.Method] {
-					return nil, fmt.Errorf("method not selected: %q; use select_methods first", call.Method)
-				}
-				return method.Call(ctx, call.Args)
-			},
+			Call:   m.callMethodTool(allMethods),
 		}, LLMTool{
 			Name: "chain_methods",
 			Description: `Invoke multiple methods sequentially, passing the result of one method as the receiver of the next
@@ -1736,52 +1616,193 @@ NOTE: you must select methods before chaining them`,
 				"additionalProperties": false,
 			},
 			Strict: false,
-			Call: func(ctx context.Context, argsAny any) (_ any, rerr error) {
-				var toolArgs struct {
-					Self  string        `json:"self"`
-					Chain []ChainedCall `json:"chain"`
-				}
-				pl, err := json.Marshal(argsAny)
-				if err != nil {
-					return nil, err
-				}
-				if err := json.Unmarshal(pl, &toolArgs); err != nil {
-					return nil, err
-				}
-				if err := m.validateAndNormalizeChain(ctx, toolArgs.Self, toolArgs.Chain, allMethods, schema); err != nil {
-					return nil, err
-				}
-				var res any
-				for i, call := range toolArgs.Chain {
-					var tool LLMTool
-					tool, found := allMethods[call.Method]
-					if !found {
-						return nil, fmt.Errorf("tool not found: %q", call.Method)
-					}
-					if call.Args == nil {
-						call.Args = make(map[string]any)
-					}
-					args := maps.Clone(call.Args)
-					if i > 0 {
-						if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](m.LastResult()); ok {
-							// override, since the whole point is to chain from the previous
-							// value; any value here is surely mistaken or hallucinated
-							args["self"] = m.Ingest(obj, "")
-						}
-					} else {
-						args["self"] = toolArgs.Self
-					}
-					res, err = tool.Call(ctx, args)
-					if err != nil {
-						return nil, fmt.Errorf("call %q: %w", call.Method, err)
-					}
-				}
-				return res, nil
-			},
+			Call:   m.chainMethodsTool(srv, allMethods),
 		})
 	}
 
 	return tools
+}
+
+func (m *MCP) listMethodsTool(srv *dagql.Server, allMethods map[string]LLMTool) LLMToolFunc {
+	return ToolFunc(srv, func(ctx context.Context, args struct{}) (any, error) {
+		type toolDesc struct {
+			Name         string            `json:"name"`
+			Returns      string            `json:"returns"`
+			RequiredArgs map[string]string `json:"required_args,omitempty"`
+		}
+		var methods []toolDesc
+		for _, method := range allMethods {
+			reqArgs := map[string]string{}
+			var returns string
+			if method.Field != nil {
+				returns = method.Field.Type.String()
+				for _, arg := range method.Field.Arguments {
+					if arg.DefaultValue != nil || !arg.Type.NonNull {
+						// optional
+						continue
+					}
+					reqArgs[arg.Name] = arg.Type.String()
+				}
+			}
+			methods = append(methods, toolDesc{
+				Name:         method.Name,
+				RequiredArgs: reqArgs,
+				Returns:      returns,
+			})
+		}
+		sort.Slice(methods, func(i, j int) bool {
+			return methods[i].Name < methods[j].Name
+		})
+		return toolStructuredResponse(methods)
+	})
+}
+
+func (m *MCP) selectMethodsTool(srv *dagql.Server, allMethods map[string]LLMTool) LLMToolFunc {
+	return ToolFunc(srv, func(ctx context.Context, args struct {
+		Methods []string
+	}) (any, error) {
+		methodCounts := make(map[string]int)
+		for _, toolName := range args.Methods {
+			methodCounts[toolName]++
+		}
+		// perform a sanity check; some LLMs will do silly things like request
+		// the same tool 3 times when told to call it 3 times
+		for tool, count := range methodCounts {
+			if count > 1 {
+				return "", fmt.Errorf("tool %s selected more than once (%d times)", tool, count)
+			}
+		}
+		type methodDef struct {
+			Name        string         `json:"name"`
+			Returns     string         `json:"returns,omitempty"`
+			Description string         `json:"description"`
+			Schema      map[string]any `json:"argsSchema"`
+		}
+		var selectedMethods []methodDef
+		var unknownMethods []string
+		for methodName := range methodCounts {
+			method, found := allMethods[methodName]
+			if found {
+				var returns string
+				if method.Field != nil {
+					returns = method.Field.Type.String()
+				}
+				selectedMethods = append(selectedMethods, methodDef{
+					Name:        method.Name,
+					Returns:     returns,
+					Description: method.Description,
+					Schema:      method.Schema,
+				})
+			} else {
+				unknownMethods = append(unknownMethods, methodName)
+			}
+		}
+		if len(unknownMethods) > 0 {
+			return nil, fmt.Errorf("unknown methods: %v; use list_methods first", unknownMethods)
+		}
+		for _, method := range selectedMethods {
+			m.selectedMethods[method.Name] = true
+		}
+		sort.Slice(selectedMethods, func(i, j int) bool {
+			return selectedMethods[i].Name < selectedMethods[j].Name
+		})
+		res := map[string]any{
+			"added_methods": selectedMethods,
+		}
+		if len(unknownMethods) > 0 {
+			res["unknown_methods"] = unknownMethods
+		}
+		return toolStructuredResponse(res)
+	})
+}
+
+func (m *MCP) callMethodTool(allMethods map[string]LLMTool) LLMToolFunc {
+	return func(ctx context.Context, argsAny any) (_ any, rerr error) {
+		var call struct {
+			Self   string         `json:"self"`
+			Method string         `json:"method"`
+			Args   map[string]any `json:"args"`
+		}
+		pl, err := json.Marshal(argsAny)
+		if err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(pl, &call); err != nil {
+			return nil, err
+		}
+		if call.Args == nil {
+			call.Args = make(map[string]any)
+		}
+		// Add self parameter to the method call
+		if call.Self != "" {
+			call.Args["self"] = call.Self
+			matches := idRegex.FindStringSubmatch(call.Self)
+			if matches == nil {
+				return nil, fmt.Errorf("invalid ID format: %q", call.Self)
+			}
+			typeName := matches[idRegex.SubexpIndex("type")]
+			if !strings.Contains(call.Method, ".") {
+				// allow omitting the TypeName. prefix, which models are more prone
+				// to guessing
+				call.Method = fmt.Sprintf("%s.%s", typeName, call.Method)
+			}
+		}
+		var method LLMTool
+		method, found := allMethods[call.Method]
+		if !found {
+			return nil, fmt.Errorf("method not defined: %q; use list_methods first", call.Method)
+		}
+		if !m.selectedMethods[call.Method] {
+			return nil, fmt.Errorf("method not selected: %q; use select_methods first", call.Method)
+		}
+		return method.Call(ctx, call.Args)
+	}
+}
+
+func (m *MCP) chainMethodsTool(srv *dagql.Server, allMethods map[string]LLMTool) LLMToolFunc {
+	schema := srv.Schema()
+	return func(ctx context.Context, argsAny any) (_ any, rerr error) {
+		var toolArgs struct {
+			Self  string        `json:"self"`
+			Chain []ChainedCall `json:"chain"`
+		}
+		pl, err := json.Marshal(argsAny)
+		if err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(pl, &toolArgs); err != nil {
+			return nil, err
+		}
+		if err := m.validateAndNormalizeChain(ctx, toolArgs.Self, toolArgs.Chain, allMethods, schema); err != nil {
+			return nil, err
+		}
+		var res any
+		for i, call := range toolArgs.Chain {
+			var tool LLMTool
+			tool, found := allMethods[call.Method]
+			if !found {
+				return nil, fmt.Errorf("tool not found: %q", call.Method)
+			}
+			if call.Args == nil {
+				call.Args = make(map[string]any)
+			}
+			args := maps.Clone(call.Args)
+			if i > 0 {
+				if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](m.LastResult()); ok {
+					// override, since the whole point is to chain from the previous
+					// value; any value here is surely mistaken or hallucinated
+					args["self"] = m.Ingest(obj, "")
+				}
+			} else {
+				args["self"] = toolArgs.Self
+			}
+			res, err = tool.Call(ctx, args)
+			if err != nil {
+				return nil, fmt.Errorf("call %q: %w", call.Method, err)
+			}
+		}
+		return res, nil
+	}
 }
 
 func directlyExposeTools(allMethods map[string]LLMTool) []LLMTool {
@@ -2328,7 +2349,7 @@ func remount(
 	target string,
 	source *Directory,
 	f func() error,
-) (immutableRef cache.ImmutableRef, rerr error) {
+) (immutableRef bkcache.ImmutableRef, rerr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
