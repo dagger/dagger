@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -234,43 +233,6 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		}
 	}()
 
-	var authHeader string
-	if repo.AuthToken.Self() != nil {
-		// caller-supplied username takes priority; otherwise pick a host-specific default
-		username := repo.AuthUsername
-		switch {
-		case username != "":
-			// explicit override – use as-is
-		case repo.URL.Host == "bitbucket.org":
-			// NOTE: bitbucket.org is picky, and needs *this* username
-			username = "x-token-auth"
-		default:
-			username = "x-access-token"
-		}
-
-		secretStore, err := query.Secrets(ctx)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
-		}
-		password, err := secretStore.GetSecretPlaintext(ctx, repo.AuthToken.ID().Digest())
-		if err != nil {
-			return nil, nil, err
-		}
-		authHeader = "Basic " + base64.StdEncoding.EncodeToString(
-			fmt.Appendf(nil, "%s:%s", username, password),
-		)
-	} else if repo.AuthHeader.Self() != nil {
-		secretStore, err := query.Secrets(ctx)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
-		}
-		byteAuthHeader, err := secretStore.GetSecretPlaintext(ctx, repo.AuthHeader.ID().Digest())
-		if err != nil {
-			return nil, nil, err
-		}
-		authHeader = string(byteAuthHeader)
-	}
-
 	if repo.SSHAuthSocket.Self() != nil {
 		socketStore, err := query.Sockets(ctx)
 		if err == nil {
@@ -308,23 +270,34 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		if err != nil {
 			return nil, nil, err
 		}
-		opts = append(opts, gitutil.WithExec(func(ctx context.Context, cmd *exec.Cmd) error {
-			return runWithStandardUmaskAndNetOverride(ctx, cmd, "", resolvPath)
-		}))
 		cleanups.Add("remove updated /etc/resolv", func() error {
 			return os.Remove(resolvPath)
 		})
 	}
 
-	opts = append(opts, gitutil.WithExec(func(ctx context.Context, cmd *exec.Cmd) error {
-		if authHeader != "" {
-			// Scope auth to this host and make it inherit to sub-commands:
-			// use GIT_CONFIG_* so submodule clones see http.extraheader (unlike -c).
-			base := repo.URL.Scheme + "://" + repo.URL.Host
-			cmd.Env = gitutil.MergeGitConfigEnv(cmd.Env, map[string]string{
-				"http." + base + "/.extraheader": "Authorization: " + authHeader,
-			})
+	if repo.AuthToken.Self() != nil {
+		secretStore, err := query.Secrets(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
 		}
+		password, err := secretStore.GetSecretPlaintext(ctx, repo.AuthToken.ID().Digest())
+		if err != nil {
+			return nil, nil, err
+		}
+		opts = append(opts, gitutil.WithHTTPTokenAuth(repo.URL, string(password), repo.AuthUsername))
+	} else if repo.AuthHeader.Self() != nil {
+		secretStore, err := query.Secrets(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
+		}
+		byteAuthHeader, err := secretStore.GetSecretPlaintext(ctx, repo.AuthHeader.ID().Digest())
+		if err != nil {
+			return nil, nil, err
+		}
+		opts = append(opts, gitutil.WithHTTPAuthorizationHeader(repo.URL, string(byteAuthHeader)))
+	}
+
+	opts = append(opts, gitutil.WithExec(func(ctx context.Context, cmd *exec.Cmd) error {
 		return runWithStandardUmaskAndNetOverride(ctx, cmd, "", resolvPath)
 	}))
 
