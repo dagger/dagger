@@ -153,6 +153,11 @@ module.exports = {
         "reference/configuration/custom-runner",
         "reference/configuration/custom-ca",
         "reference/configuration/proxy",
+        {
+          type: "link",
+          label: "Engine Configuration Schema",
+          href: "https://docs.dagger.io/engine.schema.json",
+        },
       ],
     },
     {
