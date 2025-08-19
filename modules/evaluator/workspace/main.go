@@ -122,7 +122,7 @@ func (*Workspace) defaultAttempts(provider string) int {
 	switch strings.ToLower(provider) {
 	case "google":
 		// Gemini has no token usage limit, just an API rate limit.
-		return 10
+		return 3
 	case "openai":
 		// OpenAI is more sensitive to token usage.
 		return 5
