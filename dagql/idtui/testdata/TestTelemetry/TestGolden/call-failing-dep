@@ -16,7 +16,7 @@ Expected stderr:
 
 ● viztest: Viztest! X.Xs
 ▼ .callFailingDep: Void X.Xs ERROR
-╰─✘ Dep.failingFunction: Void X.Xs ERROR
+  ✘ Dep.failingFunction: Void X.Xs ERROR
   ! this function always fails
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

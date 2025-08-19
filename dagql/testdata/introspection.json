@@ -1839,6 +1839,57 @@
       {
         "args": [
           {
+            "defaultValue": null,
+            "deprecationReason": null,
+            "description": "",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "path",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "defaultValue": null,
+            "deprecationReason": null,
+            "description": "",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "ignore",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "LIST",
+                "name": null,
+                "ofType": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "description": "Indicates that the argument defaults to a contextual path.",
+        "locations": [
+          "ARGUMENT_DEFINITION"
+        ],
+        "name": "defaultPath"
+      },
+      {
+        "args": [
+          {
             "defaultValue": "\"No longer supported\"",
             "deprecationReason": null,
             "description": "Explains why this element was deprecated, usually also including a suggestion for how to access supported similar data. Formatted in [Markdown](https://daringfireball.net/projects/markdown/).",

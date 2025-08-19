@@ -634,11 +634,12 @@ func (svc *Service) startContainer(
 		}
 
 		return &RunningService{
-			Service: svc,
-			Host:    fullHost,
-			Ports:   ctr.Ports,
-			Stop:    stopSvc,
-			Wait:    waitSvc,
+			Service:     svc,
+			Host:        fullHost,
+			Ports:       ctr.Ports,
+			Stop:        stopSvc,
+			Wait:        waitSvc,
+			ContainerID: svcID,
 		}, nil
 	case <-exited:
 		if exitErr != nil {

@@ -215,9 +215,6 @@ type InterfaceTypeDefID string
 // An arbitrary JSON-encoded value.
 type JSON string
 
-// The `JSONValueID` scalar type represents an identifier for an object of type JSONValue.
-type JSONValueID string
-
 // The `LLMID` scalar type represents an identifier for an object of type LLM.
 type LLMID string
 
@@ -255,6 +252,9 @@ type SDKConfigID string
 
 // The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
 type ScalarTypeDefID string
+
+// The `SearchResultID` scalar type represents an identifier for an object of type SearchResult.
+type SearchResultID string
 
 // The `SecretID` scalar type represents an identifier for an object of type Secret.
 type SecretID string
@@ -398,24 +398,6 @@ func (r *Binding) AsGitRepository() *GitRepository {
 	}
 }
 
-// Retrieve the binding value, as type JSONValue
-func (r *Binding) AsJSONValue() *JSONValue {
-	q := r.query.Select("asJSONValue")
-
-	return &JSONValue{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type LLM
-func (r *Binding) AsLLM() *LLM {
-	q := r.query.Select("asLLM")
-
-	return &LLM{
-		query: q,
-	}
-}
-
 // Retrieve the binding value, as type Module
 func (r *Binding) AsModule() *Module {
 	q := r.query.Select("asModule")
@@ -439,6 +421,15 @@ func (r *Binding) AsModuleSource() *ModuleSource {
 	q := r.query.Select("asModuleSource")
 
 	return &ModuleSource{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type SearchResult
+func (r *Binding) AsSearchResult() *SearchResult {
+	q := r.query.Select("asSearchResult")
+
+	return &SearchResult{
 		query: q,
 	}
 }
@@ -2614,6 +2605,14 @@ func (r *CurrentModule) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+func (r *CurrentModule) Meta() *Module {
+	q := r.query.Select("meta")
+
+	return &Module{
+		query: q,
+	}
+}
+
 // The name of the module being executed in
 func (r *CurrentModule) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
@@ -3029,6 +3028,96 @@ func (r *Directory) Name(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// DirectorySearchOpts contains options for Directory.Search
+type DirectorySearchOpts struct {
+	// Directory or file paths to search
+	Paths []string
+	// Glob patterns to match (e.g., "*.md")
+	Globs []string
+	// Interpret the pattern as a literal string instead of a regular expression.
+	Literal bool
+	// Enable searching across multiple lines.
+	Multiline bool
+	// Allow the . pattern to match newlines in multiline mode.
+	Dotall bool
+	// Enable case-insensitive matching.
+	IgnoreCase bool
+	// Only return matching files, not lines and content
+	FilesOnly bool
+	// Limit the number of results to return
+	Limit int
+}
+
+// Searches for content matching the given regular expression or literal string.
+//
+// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+func (r *Directory) Search(ctx context.Context, pattern string, opts ...DirectorySearchOpts) ([]SearchResult, error) {
+	q := r.query.Select("search")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `paths` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Paths) {
+			q = q.Arg("paths", opts[i].Paths)
+		}
+		// `globs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Globs) {
+			q = q.Arg("globs", opts[i].Globs)
+		}
+		// `literal` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Literal) {
+			q = q.Arg("literal", opts[i].Literal)
+		}
+		// `multiline` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Multiline) {
+			q = q.Arg("multiline", opts[i].Multiline)
+		}
+		// `dotall` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Dotall) {
+			q = q.Arg("dotall", opts[i].Dotall)
+		}
+		// `ignoreCase` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IgnoreCase) {
+			q = q.Arg("ignoreCase", opts[i].IgnoreCase)
+		}
+		// `filesOnly` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FilesOnly) {
+			q = q.Arg("filesOnly", opts[i].FilesOnly)
+		}
+		// `limit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Limit) {
+			q = q.Arg("limit", opts[i].Limit)
+		}
+	}
+	q = q.Arg("pattern", pattern)
+
+	q = q.Select("id")
+
+	type search struct {
+		Id SearchResultID
+	}
+
+	convert := func(fields []search) []SearchResult {
+		out := []SearchResult{}
+
+		for i := range fields {
+			val := SearchResult{id: &fields[i].Id}
+			val.query = q.Root().Select("loadSearchResultFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []search
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // Force evaluation in the engine.
@@ -4033,6 +4122,14 @@ func (r *Env) WithGraphQLQuery(q *querybuilder.Selection) *Env {
 	}
 }
 
+func (r *Env) Hostfs() *Directory {
+	q := r.query.Select("hostfs")
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // A unique identifier for this Env.
 func (r *Env) ID(ctx context.Context) (EnvID, error) {
 	if r.id != nil {
@@ -4351,48 +4448,22 @@ func (r *Env) WithGitRepositoryOutput(name string, description string) *Env {
 	}
 }
 
-// Create or update a binding of type JSONValue in the environment
-func (r *Env) WithJSONValueInput(name string, value *JSONValue, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withJSONValueInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
+// Return a new environment with a new host filesystem
+func (r *Env) WithHostfs(hostfs *Directory) *Env {
+	assertNotNil("hostfs", hostfs)
+	q := r.query.Select("withHostfs")
+	q = q.Arg("hostfs", hostfs)
 
 	return &Env{
 		query: q,
 	}
 }
 
-// Declare a desired JSONValue output to be assigned in the environment
-func (r *Env) WithJSONValueOutput(name string, description string) *Env {
-	q := r.query.Select("withJSONValueOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type LLM in the environment
-func (r *Env) WithLLMInput(name string, value *LLM, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withLLMInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired LLM output to be assigned in the environment
-func (r *Env) WithLLMOutput(name string, description string) *Env {
-	q := r.query.Select("withLLMOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
+// load a module and expose its functions to the model
+func (r *Env) WithModule(module *Module) *Env {
+	assertNotNil("module", module)
+	q := r.query.Select("withModule")
+	q = q.Arg("module", module)
 
 	return &Env{
 		query: q,
@@ -4463,6 +4534,30 @@ func (r *Env) WithModuleSourceInput(name string, value *ModuleSource, descriptio
 // Declare a desired ModuleSource output to be assigned in the environment
 func (r *Env) WithModuleSourceOutput(name string, description string) *Env {
 	q := r.query.Select("withModuleSourceOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type SearchResult in the environment
+func (r *Env) WithSearchResultInput(name string, value *SearchResult, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withSearchResultInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired SearchResult output to be assigned in the environment
+func (r *Env) WithSearchResultOutput(name string, description string) *Env {
+	q := r.query.Select("withSearchResultOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -4560,6 +4655,15 @@ func (r *Env) WithStringOutput(name string, description string) *Env {
 	q := r.query.Select("withStringOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Return a new environment without any outputs
+func (r *Env) WithoutOutputs() *Env {
+	q := r.query.Select("withoutOutputs")
 
 	return &Env{
 		query: q,
@@ -4973,12 +5077,30 @@ func (r *File) WithGraphQLQuery(q *querybuilder.Selection) *File {
 	}
 }
 
+// FileContentsOpts contains options for File.Contents
+type FileContentsOpts struct {
+	// Start reading after this line
+	Offset int
+	// Maximum number of lines to read
+	Limit int
+}
+
 // Retrieves the contents of the file.
-func (r *File) Contents(ctx context.Context) (string, error) {
+func (r *File) Contents(ctx context.Context, opts ...FileContentsOpts) (string, error) {
 	if r.contents != nil {
 		return *r.contents, nil
 	}
 	q := r.query.Select("contents")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `offset` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Offset) {
+			q = q.Arg("offset", opts[i].Offset)
+		}
+		// `limit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Limit) {
+			q = q.Arg("limit", opts[i].Limit)
+		}
+	}
 
 	var response string
 
@@ -5090,6 +5212,96 @@ func (r *File) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// FileSearchOpts contains options for File.Search
+type FileSearchOpts struct {
+	// Interpret the pattern as a literal string instead of a regular expression.
+	Literal bool
+	// Enable searching across multiple lines.
+	Multiline bool
+	// Allow the . pattern to match newlines in multiline mode.
+	Dotall bool
+	// Enable case-insensitive matching.
+	IgnoreCase bool
+	// Only return matching files, not lines and content
+	FilesOnly bool
+	// Limit the number of results to return
+	Limit int
+
+	Paths []string
+
+	Globs []string
+}
+
+// Searches for content matching the given regular expression or literal string.
+//
+// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+func (r *File) Search(ctx context.Context, pattern string, opts ...FileSearchOpts) ([]SearchResult, error) {
+	q := r.query.Select("search")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `literal` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Literal) {
+			q = q.Arg("literal", opts[i].Literal)
+		}
+		// `multiline` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Multiline) {
+			q = q.Arg("multiline", opts[i].Multiline)
+		}
+		// `dotall` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Dotall) {
+			q = q.Arg("dotall", opts[i].Dotall)
+		}
+		// `ignoreCase` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IgnoreCase) {
+			q = q.Arg("ignoreCase", opts[i].IgnoreCase)
+		}
+		// `filesOnly` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FilesOnly) {
+			q = q.Arg("filesOnly", opts[i].FilesOnly)
+		}
+		// `limit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Limit) {
+			q = q.Arg("limit", opts[i].Limit)
+		}
+		// `paths` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Paths) {
+			q = q.Arg("paths", opts[i].Paths)
+		}
+		// `globs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Globs) {
+			q = q.Arg("globs", opts[i].Globs)
+		}
+	}
+	q = q.Arg("pattern", pattern)
+
+	q = q.Select("id")
+
+	type search struct {
+		Id SearchResultID
+	}
+
+	convert := func(fields []search) []SearchResult {
+		out := []SearchResult{}
+
+		for i := range fields {
+			val := SearchResult{id: &fields[i].Id}
+			val.query = q.Root().Select("loadSearchResultFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []search
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // Retrieves the size of the file, in bytes.
 func (r *File) Size(ctx context.Context) (int, error) {
 	if r.size != nil {
@@ -5120,6 +5332,43 @@ func (r *File) Sync(ctx context.Context) (*File, error) {
 func (r *File) WithName(name string) *File {
 	q := r.query.Select("withName")
 	q = q.Arg("name", name)
+
+	return &File{
+		query: q,
+	}
+}
+
+// FileWithReplacedOpts contains options for File.WithReplaced
+type FileWithReplacedOpts struct {
+	// Replace all occurrences of the pattern.
+	All bool
+	// Replace the first match after the specified line.
+	FirstAfter int
+}
+
+// Retrieves the file with content replaced with the given text.
+//
+// If 'all' is true, all occurrences of the pattern will be replaced.
+//
+// If 'firstAfter' is specified, only the first match starting at the specified line will be replaced.
+//
+// If neither are specified, and there are multiple matches for the pattern, this will error.
+//
+// If there are no matches for the pattern, this will error.
+func (r *File) WithReplaced(search string, replacement string, opts ...FileWithReplacedOpts) *File {
+	q := r.query.Select("withReplaced")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `all` optional argument
+		if !querybuilder.IsZeroValue(opts[i].All) {
+			q = q.Arg("all", opts[i].All)
+		}
+		// `firstAfter` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FirstAfter) {
+			q = q.Arg("firstAfter", opts[i].FirstAfter)
+		}
+	}
+	q = q.Arg("search", search)
+	q = q.Arg("replacement", replacement)
 
 	return &File{
 		query: q,
@@ -6583,250 +6832,10 @@ func (r *InterfaceTypeDef) SourceModuleName(ctx context.Context) (string, error)
 	return response, q.Execute(ctx)
 }
 
-type JSONValue struct {
-	query *querybuilder.Selection
-
-	asBoolean *bool
-	asInteger *int
-	asString  *string
-	contents  *JSON
-	id        *JSONValueID
-}
-type WithJSONValueFunc func(r *JSONValue) *JSONValue
-
-// With calls the provided function with current JSONValue.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *JSONValue) With(f WithJSONValueFunc) *JSONValue {
-	return f(r)
-}
-
-func (r *JSONValue) WithGraphQLQuery(q *querybuilder.Selection) *JSONValue {
-	return &JSONValue{
-		query: q,
-	}
-}
-
-// Decode an array from json
-func (r *JSONValue) AsArray(ctx context.Context) ([]JSONValue, error) {
-	q := r.query.Select("asArray")
-
-	q = q.Select("id")
-
-	type asArray struct {
-		Id JSONValueID
-	}
-
-	convert := func(fields []asArray) []JSONValue {
-		out := []JSONValue{}
-
-		for i := range fields {
-			val := JSONValue{id: &fields[i].Id}
-			val.query = q.Root().Select("loadJSONValueFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []asArray
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// Decode a boolean from json
-func (r *JSONValue) AsBoolean(ctx context.Context) (bool, error) {
-	if r.asBoolean != nil {
-		return *r.asBoolean, nil
-	}
-	q := r.query.Select("asBoolean")
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Decode an integer from json
-func (r *JSONValue) AsInteger(ctx context.Context) (int, error) {
-	if r.asInteger != nil {
-		return *r.asInteger, nil
-	}
-	q := r.query.Select("asInteger")
-
-	var response int
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Decode a string from json
-func (r *JSONValue) AsString(ctx context.Context) (string, error) {
-	if r.asString != nil {
-		return *r.asString, nil
-	}
-	q := r.query.Select("asString")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// JSONValueContentsOpts contains options for JSONValue.Contents
-type JSONValueContentsOpts struct {
-	// Pretty-print
-	Pretty bool
-	// Optional line prefix
-	//
-	// Default: "  "
-	Indent string
-}
-
-// Return the value encoded as json
-func (r *JSONValue) Contents(ctx context.Context, opts ...JSONValueContentsOpts) (JSON, error) {
-	if r.contents != nil {
-		return *r.contents, nil
-	}
-	q := r.query.Select("contents")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `pretty` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Pretty) {
-			q = q.Arg("pretty", opts[i].Pretty)
-		}
-		// `indent` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Indent) {
-			q = q.Arg("indent", opts[i].Indent)
-		}
-	}
-
-	var response JSON
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Lookup the field at the given path, and return its value.
-func (r *JSONValue) Field(path []string) *JSONValue {
-	q := r.query.Select("field")
-	q = q.Arg("path", path)
-
-	return &JSONValue{
-		query: q,
-	}
-}
-
-// List fields of the encoded object
-func (r *JSONValue) Fields(ctx context.Context) ([]string, error) {
-	q := r.query.Select("fields")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// A unique identifier for this JSONValue.
-func (r *JSONValue) ID(ctx context.Context) (JSONValueID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response JSONValueID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *JSONValue) XXX_GraphQLType() string {
-	return "JSONValue"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *JSONValue) XXX_GraphQLIDType() string {
-	return "JSONValueID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *JSONValue) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *JSONValue) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// Encode a boolean to json
-func (r *JSONValue) NewBoolean(value bool) *JSONValue {
-	q := r.query.Select("newBoolean")
-	q = q.Arg("value", value)
-
-	return &JSONValue{
-		query: q,
-	}
-}
-
-// Encode an integer to json
-func (r *JSONValue) NewInteger(value int) *JSONValue {
-	q := r.query.Select("newInteger")
-	q = q.Arg("value", value)
-
-	return &JSONValue{
-		query: q,
-	}
-}
-
-// Encode a string to json
-func (r *JSONValue) NewString(value string) *JSONValue {
-	q := r.query.Select("newString")
-	q = q.Arg("value", value)
-
-	return &JSONValue{
-		query: q,
-	}
-}
-
-// Return a new json value, decoded from the given content
-func (r *JSONValue) WithContents(contents JSON) *JSONValue {
-	q := r.query.Select("withContents")
-	q = q.Arg("contents", contents)
-
-	return &JSONValue{
-		query: q,
-	}
-}
-
-// Set a new field at the given path
-func (r *JSONValue) WithField(path []string, value *JSONValue) *JSONValue {
-	assertNotNil("value", value)
-	q := r.query.Select("withField")
-	q = q.Arg("path", path)
-	q = q.Arg("value", value)
-
-	return &JSONValue{
-		query: q,
-	}
-}
-
 type LLM struct {
 	query *querybuilder.Selection
 
+	hasPrompt   *bool
 	historyJSON *JSON
 	id          *LLMID
 	lastReply   *string
@@ -6877,6 +6886,19 @@ func (r *LLM) Env() *Env {
 	return &Env{
 		query: q,
 	}
+}
+
+// Indicates that the LLM can be synced or stepped
+func (r *LLM) HasPrompt(ctx context.Context) (bool, error) {
+	if r.hasPrompt != nil {
+		return *r.hasPrompt, nil
+	}
+	q := r.query.Select("hasPrompt")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // return the llm message history
@@ -6955,7 +6977,7 @@ func (r *LLM) LastReply(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// synchronize LLM state
+// Loop completing tool calls until the LLM ends its turn
 func (r *LLM) Loop() *LLM {
 	q := r.query.Select("loop")
 
@@ -6988,6 +7010,15 @@ func (r *LLM) Provider(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Returns an LLM that will only sync one step instead of looping
+func (r *LLM) Step() *LLM {
+	q := r.query.Select("step")
+
+	return &LLM{
+		query: q,
+	}
 }
 
 // synchronize LLM state
@@ -7023,6 +7054,28 @@ func (r *LLM) Tools(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Return a new LLM with the specified tool disabled
+func (r *LLM) WithBlockedFunction(typeName string, fieldName string) *LLM {
+	q := r.query.Select("withBlockedFunction")
+	q = q.Arg("typeName", typeName)
+	q = q.Arg("fieldName", fieldName)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Provide the calling object as an input to the LLM environment
+func (r *LLM) WithCaller(name string, description string) *LLM {
+	q := r.query.Select("withCaller")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &LLM{
+		query: q,
+	}
 }
 
 // allow the LLM to interact with an environment via MCP
@@ -8681,6 +8734,14 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 	}
 }
 
+func (r *Client) CurrentEnv() *Env {
+	q := r.query.Select("currentEnv")
+
+	return &Env{
+		query: q,
+	}
+}
+
 // The FunctionCall context that the SDK caller is currently executing in.
 //
 // If the caller is not currently executing in a function, this will return an error.
@@ -8768,6 +8829,8 @@ type EnvOpts struct {
 	Privileged bool
 	// Allow new outputs to be declared and saved in the environment
 	Writable bool
+	// Instead of a dynamic method set, provide all methods of all inputs as static tools
+	Static bool
 }
 
 // Initialize a new environment
@@ -8783,6 +8846,10 @@ func (r *Client) Env(opts ...EnvOpts) *Env {
 		// `writable` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Writable) {
 			q = q.Arg("writable", opts[i].Writable)
+		}
+		// `static` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Static) {
+			q = q.Arg("static", opts[i].Static)
 		}
 	}
 
@@ -8954,15 +9021,6 @@ func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 	q = q.Arg("url", url)
 
 	return &File{
-		query: q,
-	}
-}
-
-// Initialize a JSON value
-func (r *Client) JSON() *JSONValue {
-	q := r.query.Select("json")
-
-	return &JSONValue{
 		query: q,
 	}
 }
@@ -9276,16 +9334,6 @@ func (r *Client) LoadInterfaceTypeDefFromID(id InterfaceTypeDefID) *InterfaceTyp
 	}
 }
 
-// Load a JSONValue from its ID.
-func (r *Client) LoadJSONValueFromID(id JSONValueID) *JSONValue {
-	q := r.query.Select("loadJSONValueFromID")
-	q = q.Arg("id", id)
-
-	return &JSONValue{
-		query: q,
-	}
-}
-
 // Load a LLM from its ID.
 func (r *Client) LoadLLMFromID(id LLMID) *LLM {
 	q := r.query.Select("loadLLMFromID")
@@ -9392,6 +9440,16 @@ func (r *Client) LoadScalarTypeDefFromID(id ScalarTypeDefID) *ScalarTypeDef {
 	q = q.Arg("id", id)
 
 	return &ScalarTypeDef{
+		query: q,
+	}
+}
+
+// Load a SearchResult from its ID.
+func (r *Client) LoadSearchResultFromID(id SearchResultID) *SearchResult {
+	q := r.query.Select("loadSearchResultFromID")
+	q = q.Arg("id", id)
+
+	return &SearchResult{
 		query: q,
 	}
 }
@@ -9730,6 +9788,97 @@ func (r *ScalarTypeDef) SourceModuleName(ctx context.Context) (string, error) {
 		return *r.sourceModuleName, nil
 	}
 	q := r.query.Select("sourceModuleName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+type SearchResult struct {
+	query *querybuilder.Selection
+
+	filePath     *string
+	id           *SearchResultID
+	lineNumber   *int
+	matchedLines *string
+}
+
+func (r *SearchResult) WithGraphQLQuery(q *querybuilder.Selection) *SearchResult {
+	return &SearchResult{
+		query: q,
+	}
+}
+
+func (r *SearchResult) FilePath(ctx context.Context) (string, error) {
+	if r.filePath != nil {
+		return *r.filePath, nil
+	}
+	q := r.query.Select("filePath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this SearchResult.
+func (r *SearchResult) ID(ctx context.Context) (SearchResultID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response SearchResultID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *SearchResult) XXX_GraphQLType() string {
+	return "SearchResult"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *SearchResult) XXX_GraphQLIDType() string {
+	return "SearchResultID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *SearchResult) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *SearchResult) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+func (r *SearchResult) LineNumber(ctx context.Context) (int, error) {
+	if r.lineNumber != nil {
+		return *r.lineNumber, nil
+	}
+	q := r.query.Select("lineNumber")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *SearchResult) MatchedLines(ctx context.Context) (string, error) {
+	if r.matchedLines != nil {
+		return *r.matchedLines, nil
+	}
+	q := r.query.Select("matchedLines")
 
 	var response string
 

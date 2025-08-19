@@ -42,6 +42,8 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc("allow the LLM to interact with an environment via MCP"),
 		dagql.Func("env", s.env).
 			Doc("return the LLM's current environment"),
+		dagql.Func("withStaticTools", s.withStaticTools).
+			Doc("Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration"),
 		dagql.Func("withModel", s.withModel).
 			Doc("swap out the llm model").
 			Args(
@@ -51,6 +53,12 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc("append a prompt to the llm context").
 			Args(
 				dagql.Arg("prompt").Doc("The prompt to send"),
+			),
+		dagql.Func("withCaller", s.withCaller).
+			Doc("Provide the calling object as an input to the LLM environment").
+			Args(
+				dagql.Arg("name").Doc("The name of the binding"),
+				dagql.Arg("description").Doc("The description of the input"),
 			),
 		dagql.Func("__mcp", func(ctx context.Context, self *core.LLM, _ struct{}) (dagql.Nullable[core.Void], error) {
 			return dagql.Null[core.Void](), self.MCP(ctx, srv)
@@ -68,6 +76,18 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			),
 		dagql.Func("withoutDefaultSystemPrompt", s.withoutDefaultSystemPrompt).
 			Doc("Disable the default system prompt"),
+		dagql.Func("withBlockedFunction", s.withBlockedFunction).
+			Doc("Return a new LLM with the specified tool disabled").
+			Args(
+				dagql.Arg("typeName").Doc("The type name whose field will be disabled"),
+				dagql.Arg("fieldName").Doc("The field name to disable"),
+			),
+		dagql.Func("withMCPServer", s.withMCPServer).
+			Doc("Add an external MCP server to the LLM").
+			Args(
+				dagql.Arg("name").Doc("The name of the MCP server"),
+				dagql.Arg("service").Doc("The MCP service to run. If the service exposes a port, HTTP+SSE will be used to communicate."),
+			),
 		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[*core.LLM], _ struct{}) (res dagql.Result[dagql.ID[*core.LLM]], _ error) {
 			var inst dagql.Result[*core.LLM]
 			if err := srv.Select(ctx, self, &inst, dagql.Selector{
@@ -80,8 +100,12 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		}).
 			Doc("synchronize LLM state"),
 		dagql.Func("loop", s.loop).
+			Doc("Loop completing tool calls until the LLM ends its turn"),
+		dagql.Func("step", s.step).
+			Doc("Returns an LLM that will only sync one step instead of looping"),
+		dagql.Func("hasPrompt", s.hasPrompt).
 			// Deprecated("use sync").
-			Doc("synchronize LLM state"),
+			Doc("Indicates that the LLM can be synced or stepped"),
 		dagql.Func("attempt", s.attempt).
 			Doc("create a branch in the LLM's history"),
 		dagql.Func("tools", s.tools).
@@ -93,6 +117,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 	dagql.Fields[*core.LLMTokenUsage]{}.Install(srv)
 }
+
 func (s *llmSchema) withEnv(ctx context.Context, llm *core.LLM, args struct {
 	Env core.EnvID
 }) (*core.LLM, error) {
@@ -100,12 +125,23 @@ func (s *llmSchema) withEnv(ctx context.Context, llm *core.LLM, args struct {
 	if err != nil {
 		return nil, err
 	}
-	return llm.WithEnv(env.Self()), nil
+	return llm.WithEnv(env), nil
 }
 
-func (s *llmSchema) env(ctx context.Context, llm *core.LLM, args struct{}) (*core.Env, error) {
+func (s *llmSchema) withStaticTools(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
+	return llm.WithStaticTools(), nil
+}
+
+func (s *llmSchema) withCaller(ctx context.Context, llm *core.LLM, args struct {
+	Name        string
+	Description string
+}) (*core.LLM, error) {
+	return llm.WithCaller(ctx, args.Name, args.Description)
+}
+
+func (s *llmSchema) env(ctx context.Context, llm *core.LLM, args struct{}) (res dagql.ObjectResult[*core.Env], _ error) {
 	if err := llm.Sync(ctx); err != nil {
-		return nil, err
+		return res, err
 	}
 	return llm.Env(), nil
 }
@@ -156,6 +192,24 @@ func (s *llmSchema) withoutDefaultSystemPrompt(ctx context.Context, llm *core.LL
 	return llm.WithoutDefaultSystemPrompt(), nil
 }
 
+func (s *llmSchema) withBlockedFunction(ctx context.Context, llm *core.LLM, args struct {
+	TypeName  string
+	FieldName string
+}) (*core.LLM, error) {
+	return llm.WithBlockedFunction(ctx, args.TypeName, args.FieldName)
+}
+
+func (s *llmSchema) withMCPServer(ctx context.Context, llm *core.LLM, args struct {
+	Name    string
+	Service core.ServiceID
+}) (*core.LLM, error) {
+	svc, err := args.Service.Load(ctx, s.srv)
+	if err != nil {
+		return nil, err
+	}
+	return llm.WithMCPServer(args.Name, svc), nil
+}
+
 func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args struct {
 	File core.FileID
 }) (*core.LLM, error) {
@@ -168,6 +222,14 @@ func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args stru
 
 func (s *llmSchema) loop(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
 	return llm, llm.Sync(ctx)
+}
+
+func (s *llmSchema) step(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
+	return llm.Step(), nil
+}
+
+func (s *llmSchema) hasPrompt(ctx context.Context, llm *core.LLM, args struct{}) (bool, error) {
+	return llm.HasPrompt(), nil
 }
 
 func (s *llmSchema) attempt(_ context.Context, llm *core.LLM, _ struct {
@@ -190,7 +252,7 @@ func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
 	if args.MaxAPICalls.Valid {
 		maxAPICalls = args.MaxAPICalls.Value.Int()
 	}
-	return core.NewLLM(ctx, model, maxAPICalls, s.srv)
+	return parent.NewLLM(ctx, model, maxAPICalls)
 }
 
 func (s *llmSchema) history(ctx context.Context, llm *core.LLM, _ struct{}) ([]string, error) {
@@ -210,7 +272,7 @@ func (s *llmSchema) historyJSONString(ctx context.Context, llm *core.LLM, _ stru
 }
 
 func (s *llmSchema) tools(ctx context.Context, llm *core.LLM, _ struct{}) (string, error) {
-	return llm.ToolsDoc()
+	return llm.ToolsDoc(ctx)
 }
 
 func (s *llmSchema) bindResult(ctx context.Context, llm *core.LLM, args struct {

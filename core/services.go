@@ -65,6 +65,9 @@ type RunningService struct {
 
 	// Block until the service has exited or the provided context is canceled.
 	Wait func(ctx context.Context) error
+
+	// The runc container ID, if any
+	ContainerID string
 }
 
 // ServiceKey is a unique identifier for a service.
@@ -136,6 +139,16 @@ type Startable interface {
 // already starting, it waits for it to finish and returns the running service.
 // If the service failed to start, it tries again.
 func (ss *Services) Start(ctx context.Context, id *call.ID, svc Startable, clientSpecific bool) (*RunningService, error) {
+	return ss.StartWithIO(ctx, id, svc, clientSpecific, nil)
+}
+
+func (ss *Services) StartWithIO(
+	ctx context.Context,
+	id *call.ID,
+	svc Startable,
+	clientSpecific bool,
+	sio *ServiceIO,
+) (*RunningService, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -178,7 +191,7 @@ dance:
 
 	svcCtx, stop := context.WithCancelCause(context.WithoutCancel(ctx))
 
-	running, err := svc.Start(svcCtx, id, false, nil)
+	running, err := svc.Start(svcCtx, id, false, sio)
 	if err != nil {
 		stop(err)
 		ss.l.Lock()
