@@ -307,6 +307,20 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Initialize a JSON value
+  """
+  @spec json(t()) :: Dagger.JSONValue.t()
+  def json(%__MODULE__{} = client) do
+    query_builder =
+      client.query_builder |> QB.select("json")
+
+    %Dagger.JSONValue{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Initialize a Large Language Model (LLM)
 
   > #### Experimental {: .warning}
@@ -720,6 +734,20 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("loadInterfaceTypeDefFromID") |> QB.put_arg("id", id)
 
     %Dagger.InterfaceTypeDef{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a JSONValue from its ID.
+  """
+  @spec load_json_value_from_id(t(), Dagger.JSONValueID.t()) :: Dagger.JSONValue.t()
+  def load_json_value_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadJSONValueFromID") |> QB.put_arg("id", id)
+
+    %Dagger.JSONValue{
       query_builder: query_builder,
       client: client.client
     }

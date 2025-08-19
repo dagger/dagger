@@ -245,6 +245,29 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Create or update a binding of type JSONValue in the environment
+     */
+    public function withJSONValueInput(string $name, JsonValueId|JsonValue $value, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withJSONValueInput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Declare a desired JSONValue output to be assigned in the environment
+     */
+    public function withJSONValueOutput(string $name, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withJSONValueOutput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Create or update a binding of type LLM in the environment
      */
     public function withLLMInput(string $name, LLMId|LLM $value, string $description): Env

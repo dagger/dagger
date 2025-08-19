@@ -768,6 +768,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\JsonValue",
+			"p": "Dagger/JsonValue.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\JsonValueId",
+			"p": "Dagger/JsonValueId.html",
+			"d": "<p>The <code>JSONValueID</code> scalar type represents an identifier for an object of type JSONValue.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\LLM",
 			"p": "Dagger/LLM.html",
 			"d": null,
@@ -1237,6 +1257,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Binding::asJSONValue",
+			"p": "Dagger/Binding.html#method_asJSONValue",
+			"d": "<p>Retrieve the binding value, as type JSONValue</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Binding::asLLM",
 			"p": "Dagger/Binding.html#method_asLLM",
 			"d": "<p>Retrieve the binding value, as type LLM</p>"
@@ -1429,6 +1455,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::json",
+			"p": "Dagger/Client.html#method_json",
+			"d": "<p>Initialize a JSON value</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::llm",
 			"p": "Dagger/Client.html#method_llm",
 			"d": "<p>Initialize a Large Language Model (LLM)</p>"
@@ -1600,6 +1632,12 @@
 			"n": "Dagger\\Client::loadInterfaceTypeDefFromID",
 			"p": "Dagger/Client.html#method_loadInterfaceTypeDefFromID",
 			"d": "<p>Load a InterfaceTypeDef from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadJSONValueFromID",
+			"p": "Dagger/Client.html#method_loadJSONValueFromID",
+			"d": "<p>Load a JSONValue from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -2833,6 +2871,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withJSONValueInput",
+			"p": "Dagger/Env.html#method_withJSONValueInput",
+			"d": "<p>Create or update a binding of type JSONValue in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withJSONValueOutput",
+			"p": "Dagger/Env.html#method_withJSONValueOutput",
+			"d": "<p>Declare a desired JSONValue output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withLLMInput",
 			"p": "Dagger/Env.html#method_withLLMInput",
 			"d": "<p>Create or update a binding of type LLM in the environment</p>"
@@ -3460,6 +3510,84 @@
 			"n": "Dagger\\InterfaceTypeDef::sourceModuleName",
 			"p": "Dagger/InterfaceTypeDef.html#method_sourceModuleName",
 			"d": "<p>If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::asArray",
+			"p": "Dagger/JsonValue.html#method_asArray",
+			"d": "<p>Decode an array from json</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::asBoolean",
+			"p": "Dagger/JsonValue.html#method_asBoolean",
+			"d": "<p>Decode a boolean from json</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::asInteger",
+			"p": "Dagger/JsonValue.html#method_asInteger",
+			"d": "<p>Decode an integer from json</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::asString",
+			"p": "Dagger/JsonValue.html#method_asString",
+			"d": "<p>Decode a string from json</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::contents",
+			"p": "Dagger/JsonValue.html#method_contents",
+			"d": "<p>Return the value encoded as json</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::field",
+			"p": "Dagger/JsonValue.html#method_field",
+			"d": "<p>Lookup the field at the given path, and return its value.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::fields",
+			"p": "Dagger/JsonValue.html#method_fields",
+			"d": "<p>List fields of the encoded object</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::id",
+			"p": "Dagger/JsonValue.html#method_id",
+			"d": "<p>A unique identifier for this JSONValue.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::newBoolean",
+			"p": "Dagger/JsonValue.html#method_newBoolean",
+			"d": "<p>Encode a boolean to json</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::newInteger",
+			"p": "Dagger/JsonValue.html#method_newInteger",
+			"d": "<p>Encode an integer to json</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::newString",
+			"p": "Dagger/JsonValue.html#method_newString",
+			"d": "<p>Encode a string to json</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::withContents",
+			"p": "Dagger/JsonValue.html#method_withContents",
+			"d": "<p>Return a new json value, decoded from the given content</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::withField",
+			"p": "Dagger/JsonValue.html#method_withField",
+			"d": "<p>Set a new field at the given path</p>"
 		},
 		{
 			"t": "M",

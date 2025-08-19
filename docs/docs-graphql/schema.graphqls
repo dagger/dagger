@@ -37,6 +37,9 @@ type Binding {
   """Retrieve the binding value, as type GitRepository"""
   asGitRepository: GitRepository!
 
+  """Retrieve the binding value, as type JSONValue"""
+  asJSONValue: JSONValue!
+
   """Retrieve the binding value, as type LLM"""
   asLLM: LLM!
 
@@ -2013,6 +2016,27 @@ type Env {
     description: String!
   ): Env!
 
+  """Create or update a binding of type JSONValue in the environment"""
+  withJSONValueInput(
+    """The name of the binding"""
+    name: String!
+
+    """The JSONValue value to assign to the binding"""
+    value: JSONValueID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired JSONValue output to be assigned in the environment"""
+  withJSONValueOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Create or update a binding of type LLM in the environment"""
   withLLMInput(
     """The name of the binding"""
@@ -2830,6 +2854,79 @@ scalar InterfaceTypeDefID
 """An arbitrary JSON-encoded value."""
 scalar JSON
 
+type JSONValue {
+  """Decode an array from json"""
+  asArray: [JSONValue!]!
+
+  """Decode a boolean from json"""
+  asBoolean: Boolean!
+
+  """Decode an integer from json"""
+  asInteger: Int!
+
+  """Decode a string from json"""
+  asString: String!
+
+  """Return the value encoded as json"""
+  contents(
+    """Pretty-print"""
+    pretty: Boolean = false
+
+    """Optional line prefix"""
+    indent: String = "  "
+  ): JSON!
+
+  """Lookup the field at the given path, and return its value."""
+  field(
+    """Path of the field to lookup, encoded as an array of field names"""
+    path: [String!]!
+  ): JSONValue!
+
+  """List fields of the encoded object"""
+  fields: [String!]!
+
+  """A unique identifier for this JSONValue."""
+  id: JSONValueID!
+
+  """Encode a boolean to json"""
+  newBoolean(
+    """New boolean value"""
+    value: Boolean!
+  ): JSONValue!
+
+  """Encode an integer to json"""
+  newInteger(
+    """New integer value"""
+    value: Int!
+  ): JSONValue!
+
+  """Encode a string to json"""
+  newString(
+    """New string value"""
+    value: String!
+  ): JSONValue!
+
+  """Return a new json value, decoded from the given content"""
+  withContents(
+    """New JSON-encoded contents"""
+    contents: JSON!
+  ): JSONValue!
+
+  """Set a new field at the given path"""
+  withField(
+    """Path of the field to set, encoded as an array of field names"""
+    path: [String!]!
+
+    """The new value of the field"""
+    value: JSONValueID!
+  ): JSONValue!
+}
+
+"""
+The `JSONValueID` scalar type represents an identifier for an object of type JSONValue.
+"""
+scalar JSONValueID
+
 type LLM {
   """create a branch in the LLM's history"""
   attempt(number: Int!): LLM!
@@ -3518,6 +3615,9 @@ type Query {
     experimentalServiceHost: ServiceID
   ): File!
 
+  """Initialize a JSON value"""
+  json: JSONValue!
+
   """Initialize a Large Language Model (LLM)"""
   llm(
     """Model to use"""
@@ -3610,6 +3710,9 @@ type Query {
 
   """Load a InterfaceTypeDef from its ID."""
   loadInterfaceTypeDefFromID(id: InterfaceTypeDefID!): InterfaceTypeDef!
+
+  """Load a JSONValue from its ID."""
+  loadJSONValueFromID(id: JSONValueID!): JSONValue!
 
   """Load a LLM from its ID."""
   loadLLMFromID(id: LLMID!): LLM!
