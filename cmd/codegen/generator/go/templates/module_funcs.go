@@ -318,10 +318,6 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 		if !ok {
 			return paramSpec{}, fmt.Errorf("defaultPath pragma %q, must be a valid string", v)
 		}
-		if strings.HasPrefix(defaultPath, `"`) && strings.HasSuffix(defaultPath, `"`) {
-			defaultPath = defaultPath[1 : len(defaultPath)-1]
-		}
-
 		optional = true // If defaultPath is set, the argument becomes optional
 	}
 
