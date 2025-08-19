@@ -1,3 +1,6 @@
+"""Indicates that the argument defaults to a contextual path."""
+directive @defaultPath(path: String!, ignore: [String!]!) on ARGUMENT_DEFINITION
+
 """Indicates the underlying value of an enum member."""
 directive @enumValue(value: String!) on ENUM_VALUE
 
@@ -39,9 +42,6 @@ type Binding {
 
   """Retrieve the binding value, as type JSONValue"""
   asJSONValue: JSONValue!
-
-  """Retrieve the binding value, as type LLM"""
-  asLLM: LLM!
 
   """Retrieve the binding value, as type Module"""
   asModule: Module!
@@ -1317,6 +1317,9 @@ type CurrentModule {
   """A unique identifier for this CurrentModule."""
   id: CurrentModuleID!
 
+  """The fully instantiated module implementing the current function call."""
+  meta: Module!
+
   """The name of the module being executed in"""
   name: String!
 
@@ -1831,6 +1834,8 @@ The `EnumValueTypeDefID` scalar type represents an identifier for an object of t
 scalar EnumValueTypeDefID
 
 type Env {
+  hostfs: Directory!
+
   """A unique identifier for this Env."""
   id: EnvID!
 
@@ -2016,6 +2021,12 @@ type Env {
     description: String!
   ): Env!
 
+  """Return a new environment with a new host filesystem"""
+  withHostfs(
+    """The directory to set as the host filesystem"""
+    hostfs: DirectoryID!
+  ): Env!
+
   """Create or update a binding of type JSONValue in the environment"""
   withJSONValueInput(
     """The name of the binding"""
@@ -2037,26 +2048,8 @@ type Env {
     description: String!
   ): Env!
 
-  """Create or update a binding of type LLM in the environment"""
-  withLLMInput(
-    """The name of the binding"""
-    name: String!
-
-    """The LLM value to assign to the binding"""
-    value: LLMID!
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired LLM output to be assigned in the environment"""
-  withLLMOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
+  """load a module and expose its functions to the model"""
+  withModule(module: ModuleID!): Env!
 
   """
   Create or update a binding of type ModuleConfigClient in the environment
@@ -2210,6 +2203,9 @@ type Env {
     """The description of the output"""
     description: String!
   ): Env!
+
+  """Return a new environment without any outputs"""
+  withoutOutputs: Env!
 }
 
 """
@@ -2937,6 +2933,9 @@ type LLM {
   """return the LLM's current environment"""
   env: Env!
 
+  """Indicates that the LLM can be synced or stepped"""
+  hasPrompt: Boolean!
+
   """return the llm message history"""
   history: [String!]!
 
@@ -2949,7 +2948,7 @@ type LLM {
   """return the last llm reply from the history"""
   lastReply: String!
 
-  """synchronize LLM state"""
+  """Loop completing tool calls until the LLM ends its turn"""
   loop: LLM!
 
   """return the model used by the llm"""
@@ -2957,6 +2956,9 @@ type LLM {
 
   """return the provider used by the llm"""
   provider: String!
+
+  """Returns an LLM that will only sync one step instead of looping"""
+  step: LLM!
 
   """synchronize LLM state"""
   sync: LLMID!
@@ -2967,8 +2969,37 @@ type LLM {
   """print documentation for available tools"""
   tools: String!
 
+  """Return a new LLM with the specified tool disabled"""
+  withBlockedFunction(
+    """The type name whose field will be disabled"""
+    typeName: String!
+
+    """The field name to disable"""
+    fieldName: String!
+  ): LLM!
+
+  """Provide the calling object as an input to the LLM environment"""
+  withCaller(
+    """The name of the binding"""
+    name: String!
+
+    """The description of the input"""
+    description: String!
+  ): LLM!
+
   """allow the LLM to interact with an environment via MCP"""
   withEnv(env: EnvID!): LLM!
+
+  """Add an external MCP server to the LLM"""
+  withMCPServer(
+    """The name of the MCP server"""
+    name: String!
+
+    """
+    The MCP service to run. If the service exposes a port, HTTP+SSE will be used to communicate.
+    """
+    service: ServiceID!
+  ): LLM!
 
   """swap out the llm model"""
   withModel(
@@ -2987,6 +3018,11 @@ type LLM {
     """The file to read the prompt from"""
     file: FileID!
   ): LLM!
+
+  """
+  Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
+  """
+  withStaticTools: LLM!
 
   """Add a system prompt to the LLM's environment"""
   withSystemPrompt(
@@ -3487,6 +3523,8 @@ type Query {
     """
     platform: Platform
   ): Container!
+
+  currentEnv: Env!
 
   """
   The FunctionCall context that the SDK caller is currently executing in.

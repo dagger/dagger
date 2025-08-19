@@ -526,12 +526,6 @@ class Binding(Type):
         _ctx = self._select("asJSONValue", _args)
         return JSONValue(_ctx)
 
-    def as_llm(self) -> "LLM":
-        """Retrieve the binding value, as type LLM"""
-        _args: list[Arg] = []
-        _ctx = self._select("asLLM", _args)
-        return LLM(_ctx)
-
     def as_module(self) -> "Module":
         """Retrieve the binding value, as type Module"""
         _args: list[Arg] = []
@@ -2835,6 +2829,12 @@ class CurrentModule(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(CurrentModuleID)
 
+    def meta(self) -> "Module":
+        """The fully instantiated module implementing the current function call."""
+        _args: list[Arg] = []
+        _ctx = self._select("meta", _args)
+        return Module(_ctx)
+
     async def name(self) -> str:
         """The name of the module being executed in
 
@@ -4223,6 +4223,11 @@ class EnumValueTypeDef(Type):
 
 @typecheck
 class Env(Type):
+    def hostfs(self) -> Directory:
+        _args: list[Arg] = []
+        _ctx = self._select("hostfs", _args)
+        return Directory(_ctx)
+
     async def id(self) -> EnvID:
         """A unique identifier for this Env.
 
@@ -4612,6 +4617,20 @@ class Env(Type):
         _ctx = self._select("withGitRepositoryOutput", _args)
         return Env(_ctx)
 
+    def with_hostfs(self, hostfs: Directory) -> Self:
+        """Return a new environment with a new host filesystem
+
+        Parameters
+        ----------
+        hostfs:
+            The directory to set as the host filesystem
+        """
+        _args = [
+            Arg("hostfs", hostfs),
+        ]
+        _ctx = self._select("withHostfs", _args)
+        return Env(_ctx)
+
     def with_json_value_input(
         self,
         name: str,
@@ -4654,46 +4673,12 @@ class Env(Type):
         _ctx = self._select("withJSONValueOutput", _args)
         return Env(_ctx)
 
-    def with_llm_input(
-        self,
-        name: str,
-        value: "LLM",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type LLM in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The LLM value to assign to the binding
-        description:
-            The purpose of the input
-        """
+    def with_module(self, module: "Module") -> Self:
+        """load a module and expose its functions to the model"""
         _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
+            Arg("module", module),
         ]
-        _ctx = self._select("withLLMInput", _args)
-        return Env(_ctx)
-
-    def with_llm_output(self, name: str, description: str) -> Self:
-        """Declare a desired LLM output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withLLMOutput", _args)
+        _ctx = self._select("withModule", _args)
         return Env(_ctx)
 
     def with_module_config_client_input(
@@ -4991,6 +4976,12 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withStringOutput", _args)
+        return Env(_ctx)
+
+    def without_outputs(self) -> Self:
+        """Return a new environment without any outputs"""
+        _args: list[Arg] = []
+        _ctx = self._select("withoutOutputs", _args)
         return Env(_ctx)
 
     def with_(self, cb: Callable[["Env"], "Env"]) -> "Env":
@@ -7115,6 +7106,25 @@ class LLM(Type):
         _ctx = self._select("env", _args)
         return Env(_ctx)
 
+    async def has_prompt(self) -> bool:
+        """Indicates that the LLM can be synced or stepped
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("hasPrompt", _args)
+        return await _ctx.execute(bool)
+
     async def history(self) -> list[str]:
         """return the llm message history
 
@@ -7201,7 +7211,7 @@ class LLM(Type):
         return await _ctx.execute(str)
 
     def loop(self) -> Self:
-        """synchronize LLM state"""
+        """Loop completing tool calls until the LLM ends its turn"""
         _args: list[Arg] = []
         _ctx = self._select("loop", _args)
         return LLM(_ctx)
@@ -7248,6 +7258,12 @@ class LLM(Type):
         _ctx = self._select("provider", _args)
         return await _ctx.execute(str)
 
+    def step(self) -> Self:
+        """Returns an LLM that will only sync one step instead of looping"""
+        _args: list[Arg] = []
+        _ctx = self._select("step", _args)
+        return LLM(_ctx)
+
     async def sync(self) -> Self:
         """synchronize LLM state
 
@@ -7291,12 +7307,64 @@ class LLM(Type):
         _ctx = self._select("tools", _args)
         return await _ctx.execute(str)
 
+    def with_blocked_function(self, type_name: str, field_name: str) -> Self:
+        """Return a new LLM with the specified tool disabled
+
+        Parameters
+        ----------
+        type_name:
+            The type name whose field will be disabled
+        field_name:
+            The field name to disable
+        """
+        _args = [
+            Arg("typeName", type_name),
+            Arg("fieldName", field_name),
+        ]
+        _ctx = self._select("withBlockedFunction", _args)
+        return LLM(_ctx)
+
+    def with_caller(self, name: str, description: str) -> Self:
+        """Provide the calling object as an input to the LLM environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            The description of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withCaller", _args)
+        return LLM(_ctx)
+
     def with_env(self, env: Env) -> Self:
         """allow the LLM to interact with an environment via MCP"""
         _args = [
             Arg("env", env),
         ]
         _ctx = self._select("withEnv", _args)
+        return LLM(_ctx)
+
+    def with_mcp_server(self, name: str, service: "Service") -> Self:
+        """Add an external MCP server to the LLM
+
+        Parameters
+        ----------
+        name:
+            The name of the MCP server
+        service:
+            The MCP service to run. If the service exposes a port, HTTP+SSE
+            will be used to communicate.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("service", service),
+        ]
+        _ctx = self._select("withMCPServer", _args)
         return LLM(_ctx)
 
     def with_model(self, model: str) -> Self:
@@ -7339,6 +7407,14 @@ class LLM(Type):
             Arg("file", file),
         ]
         _ctx = self._select("withPromptFile", _args)
+        return LLM(_ctx)
+
+    def with_static_tools(self) -> Self:
+        """Use a static set of tools for method calls, e.g. for MCP clients that
+        do not support dynamic tool registration
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withStaticTools", _args)
         return LLM(_ctx)
 
     def with_system_prompt(self, prompt: str) -> Self:
@@ -8834,6 +8910,11 @@ class Client(Root):
         ]
         _ctx = self._select("container", _args)
         return Container(_ctx)
+
+    def current_env(self) -> Env:
+        _args: list[Arg] = []
+        _ctx = self._select("currentEnv", _args)
+        return Env(_ctx)
 
     def current_function_call(self) -> FunctionCall:
         """The FunctionCall context that the SDK caller is currently executing

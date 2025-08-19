@@ -15,6 +15,17 @@ defmodule Dagger.Env do
 
   @type t() :: %__MODULE__{}
 
+  @spec hostfs(t()) :: Dagger.Directory.t()
+  def hostfs(%__MODULE__{} = env) do
+    query_builder =
+      env.query_builder |> QB.select("hostfs")
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
   @doc """
   A unique identifier for this Env.
   """
@@ -381,6 +392,20 @@ defmodule Dagger.Env do
   end
 
   @doc """
+  Return a new environment with a new host filesystem
+  """
+  @spec with_hostfs(t(), Dagger.Directory.t()) :: Dagger.Env.t()
+  def with_hostfs(%__MODULE__{} = env, hostfs) do
+    query_builder =
+      env.query_builder |> QB.select("withHostfs") |> QB.put_arg("hostfs", Dagger.ID.id!(hostfs))
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
   Create or update a binding of type JSONValue in the environment
   """
   @spec with_json_value_input(t(), String.t(), Dagger.JSONValue.t(), String.t()) :: Dagger.Env.t()
@@ -416,33 +441,12 @@ defmodule Dagger.Env do
   end
 
   @doc """
-  Create or update a binding of type LLM in the environment
+  load a module and expose its functions to the model
   """
-  @spec with_llm_input(t(), String.t(), Dagger.LLM.t(), String.t()) :: Dagger.Env.t()
-  def with_llm_input(%__MODULE__{} = env, name, value, description) do
+  @spec with_module(t(), Dagger.Module.t()) :: Dagger.Env.t()
+  def with_module(%__MODULE__{} = env, module) do
     query_builder =
-      env.query_builder
-      |> QB.select("withLLMInput")
-      |> QB.put_arg("name", name)
-      |> QB.put_arg("value", Dagger.ID.id!(value))
-      |> QB.put_arg("description", description)
-
-    %Dagger.Env{
-      query_builder: query_builder,
-      client: env.client
-    }
-  end
-
-  @doc """
-  Declare a desired LLM output to be assigned in the environment
-  """
-  @spec with_llm_output(t(), String.t(), String.t()) :: Dagger.Env.t()
-  def with_llm_output(%__MODULE__{} = env, name, description) do
-    query_builder =
-      env.query_builder
-      |> QB.select("withLLMOutput")
-      |> QB.put_arg("name", name)
-      |> QB.put_arg("description", description)
+      env.query_builder |> QB.select("withModule") |> QB.put_arg("module", Dagger.ID.id!(module))
 
     %Dagger.Env{
       query_builder: query_builder,
@@ -694,6 +698,20 @@ defmodule Dagger.Env do
       |> QB.select("withStringOutput")
       |> QB.put_arg("name", name)
       |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Return a new environment without any outputs
+  """
+  @spec without_outputs(t()) :: Dagger.Env.t()
+  def without_outputs(%__MODULE__{} = env) do
+    query_builder =
+      env.query_builder |> QB.select("withoutOutputs")
 
     %Dagger.Env{
       query_builder: query_builder,

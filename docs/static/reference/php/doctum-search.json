@@ -1263,12 +1263,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Binding::asLLM",
-			"p": "Dagger/Binding.html#method_asLLM",
-			"d": "<p>Retrieve the binding value, as type LLM</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Binding::asModule",
 			"p": "Dagger/Binding.html#method_asModule",
 			"d": "<p>Retrieve the binding value, as type Module</p>"
@@ -1368,6 +1362,12 @@
 			"n": "Dagger\\Client::container",
 			"p": "Dagger/Client.html#method_container",
 			"d": "<p>Creates a scratch container, with no image or metadata.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::currentEnv",
+			"p": "Dagger/Client.html#method_currentEnv",
+			"d": null
 		},
 		{
 			"t": "M",
@@ -2349,6 +2349,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\CurrentModule::meta",
+			"p": "Dagger/CurrentModule.html#method_meta",
+			"d": "<p>The fully instantiated module implementing the current function call.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\CurrentModule::name",
 			"p": "Dagger/CurrentModule.html#method_name",
 			"d": "<p>The name of the module being executed in</p>"
@@ -2745,6 +2751,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::hostfs",
+			"p": "Dagger/Env.html#method_hostfs",
+			"d": null
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::id",
 			"p": "Dagger/Env.html#method_id",
 			"d": "<p>A unique identifier for this Env.</p>"
@@ -2871,6 +2883,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withHostfs",
+			"p": "Dagger/Env.html#method_withHostfs",
+			"d": "<p>Return a new environment with a new host filesystem</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withJSONValueInput",
 			"p": "Dagger/Env.html#method_withJSONValueInput",
 			"d": "<p>Create or update a binding of type JSONValue in the environment</p>"
@@ -2883,15 +2901,9 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Env::withLLMInput",
-			"p": "Dagger/Env.html#method_withLLMInput",
-			"d": "<p>Create or update a binding of type LLM in the environment</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Env::withLLMOutput",
-			"p": "Dagger/Env.html#method_withLLMOutput",
-			"d": "<p>Declare a desired LLM output to be assigned in the environment</p>"
+			"n": "Dagger\\Env::withModule",
+			"p": "Dagger/Env.html#method_withModule",
+			"d": "<p>load a module and expose its functions to the model</p>"
 		},
 		{
 			"t": "M",
@@ -2976,6 +2988,12 @@
 			"n": "Dagger\\Env::withStringOutput",
 			"p": "Dagger/Env.html#method_withStringOutput",
 			"d": "<p>Create or update an input value of type string</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withoutOutputs",
+			"p": "Dagger/Env.html#method_withoutOutputs",
+			"d": "<p>Return a new environment without any outputs</p>"
 		},
 		{
 			"t": "M",
@@ -3609,6 +3627,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\LLM::hasPrompt",
+			"p": "Dagger/LLM.html#method_hasPrompt",
+			"d": "<p>Indicates that the LLM can be synced or stepped</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\LLM::history",
 			"p": "Dagger/LLM.html#method_history",
 			"d": "<p>return the llm message history</p>"
@@ -3635,7 +3659,7 @@
 			"t": "M",
 			"n": "Dagger\\LLM::loop",
 			"p": "Dagger/LLM.html#method_loop",
-			"d": "<p>synchronize LLM state</p>"
+			"d": "<p>Loop completing tool calls until the LLM ends its turn</p>"
 		},
 		{
 			"t": "M",
@@ -3648,6 +3672,12 @@
 			"n": "Dagger\\LLM::provider",
 			"p": "Dagger/LLM.html#method_provider",
 			"d": "<p>return the provider used by the llm</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::step",
+			"p": "Dagger/LLM.html#method_step",
+			"d": "<p>Returns an LLM that will only sync one step instead of looping</p>"
 		},
 		{
 			"t": "M",
@@ -3669,9 +3699,27 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\LLM::withBlockedFunction",
+			"p": "Dagger/LLM.html#method_withBlockedFunction",
+			"d": "<p>Return a new LLM with the specified tool disabled</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::withCaller",
+			"p": "Dagger/LLM.html#method_withCaller",
+			"d": "<p>Provide the calling object as an input to the LLM environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\LLM::withEnv",
 			"p": "Dagger/LLM.html#method_withEnv",
 			"d": "<p>allow the LLM to interact with an environment via MCP</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::withMCPServer",
+			"p": "Dagger/LLM.html#method_withMCPServer",
+			"d": "<p>Add an external MCP server to the LLM</p>"
 		},
 		{
 			"t": "M",
@@ -3690,6 +3738,12 @@
 			"n": "Dagger\\LLM::withPromptFile",
 			"p": "Dagger/LLM.html#method_withPromptFile",
 			"d": "<p>append the contents of a file to the llm context</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::withStaticTools",
+			"p": "Dagger/LLM.html#method_withStaticTools",
+			"d": "<p>Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration</p>"
 		},
 		{
 			"t": "M",

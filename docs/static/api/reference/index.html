@@ -31,6 +31,7 @@
               <li><a href="#query-cacheVolume">cacheVolume</a></li>
               <li><a href="#query-cloud">cloud</a></li>
               <li><a href="#query-container">container</a></li>
+              <li><a href="#query-currentEnv">currentEnv</a></li>
               <li><a href="#query-currentFunctionCall">currentFunctionCall</a></li>
               <li><a href="#query-currentModule">currentModule</a></li>
               <li><a href="#query-currentTypeDefs">currentTypeDefs</a></li>
@@ -380,6 +381,31 @@
   }</span></span>
 }</span></span>
 </code></pre>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-currentEnv" class="operation operation-query" data-traverse-target="query-currentEnv">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>currentEnv</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Env"><code>Env!</code></a>
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
                 </div>
               </div>
             </div>
@@ -4089,10 +4115,6 @@
                         <td> Retrieve the binding value, as type JSONValue </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asLLM" href="#Binding-asLLM"><code>asLLM</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type LLM </td>
-                      </tr>
-                      <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asModule" href="#Binding-asModule"><code>asModule</code></a> - <span class="property-type"><a href="#definition-Module"><code>Module!</code></a></span> </td>
                         <td> Retrieve the binding value, as type Module </td>
                       </tr>
@@ -5952,6 +5974,10 @@
                         <td> A unique identifier for this CurrentModule. </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="CurrentModule-meta" href="#CurrentModule-meta"><code>meta</code></a> - <span class="property-type"><a href="#definition-Module"><code>Module!</code></a></span> </td>
+                        <td> The fully instantiated module implementing the current function call. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="CurrentModule-name" href="#CurrentModule-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The name of the module being executed in </td>
                       </tr>
@@ -6990,6 +7016,11 @@
                     </thead>
                     <tbody>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Env-hostfs" href="#Env-hostfs"><code>hostfs</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Env-id" href="#Env-id"><code>id</code></a> - <span class="property-type"><a href="#definition-EnvID"><code>EnvID!</code></a></span> </td>
                         <td> A unique identifier for this Env. </td>
                       </tr>
@@ -7402,6 +7433,23 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withHostfs" href="#Env-withHostfs"><code>withHostfs</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Return a new environment with a new host filesystem </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>hostfs</code></span> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span></h6>
+                                <p>The directory to set as the host filesystem</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withJSONValueInput" href="#Env-withJSONValueInput"><code>withJSONValueInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Create or update a binding of type JSONValue in the environment </td>
                       </tr>
@@ -7448,8 +7496,8 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Env-withLLMInput" href="#Env-withLLMInput"><code>withLLMInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
-                        <td> Create or update a binding of type LLM in the environment </td>
+                        <td data-property-name=""><a class="property-name" id="Env-withModule" href="#Env-withModule"><code>withModule</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> load a module and expose its functions to the model </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -7457,37 +7505,7 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-LLMID"><code>LLMID!</code></a></span></h6>
-                                <p>The LLM value to assign to the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The purpose of the input</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Env-withLLMOutput" href="#Env-withLLMOutput"><code>withLLMOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
-                        <td> Declare a desired LLM output to be assigned in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>A description of the desired value of the binding</p>
+                                <h6 class="field-argument-name"><span class="property-name"><code>module</code></span> - <span class="property-type"><a href="#definition-ModuleID"><code>ModuleID!</code></a></span></h6>
                               </div>
                             </div>
                           </div>
@@ -7814,6 +7832,10 @@
                             </div>
                           </div>
                         </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Env-withoutOutputs" href="#Env-withoutOutputs"><code>withoutOutputs</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Return a new environment without any outputs </td>
                       </tr>
                     </tbody>
                   </table>
@@ -9718,6 +9740,10 @@
                         <td> return the LLM's current environment </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-hasPrompt" href="#LLM-hasPrompt"><code>hasPrompt</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> Indicates that the LLM can be synced or stepped </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="LLM-history" href="#LLM-history"><code>history</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
                         <td> return the llm message history </td>
                       </tr>
@@ -9735,7 +9761,7 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="LLM-loop" href="#LLM-loop"><code>loop</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
-                        <td> synchronize LLM state </td>
+                        <td> Loop completing tool calls until the LLM ends its turn </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="LLM-model" href="#LLM-model"><code>model</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -9744,6 +9770,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="LLM-provider" href="#LLM-provider"><code>provider</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> return the provider used by the llm </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-step" href="#LLM-step"><code>step</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Returns an LLM that will only sync one step instead of looping </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="LLM-sync" href="#LLM-sync"><code>sync</code></a> - <span class="property-type"><a href="#definition-LLMID"><code>LLMID!</code></a></span> </td>
@@ -9758,6 +9788,48 @@
                         <td> print documentation for available tools </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withBlockedFunction" href="#LLM-withBlockedFunction"><code>withBlockedFunction</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Return a new LLM with the specified tool disabled </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>typeName</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The type name whose field will be disabled</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>fieldName</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The field name to disable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withCaller" href="#LLM-withCaller"><code>withCaller</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Provide the calling object as an input to the LLM environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The description of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="LLM-withEnv" href="#LLM-withEnv"><code>withEnv</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
                         <td> allow the LLM to interact with an environment via MCP </td>
                       </tr>
@@ -9768,6 +9840,27 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>env</code></span> - <span class="property-type"><a href="#definition-EnvID"><code>EnvID!</code></a></span></h6>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withMCPServer" href="#LLM-withMCPServer"><code>withMCPServer</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Add an external MCP server to the LLM </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the MCP server</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>service</code></span> - <span class="property-type"><a href="#definition-ServiceID"><code>ServiceID!</code></a></span></h6>
+                                <p>The MCP service to run. If the service exposes a port, HTTP+SSE will be used to communicate.</p>
                               </div>
                             </div>
                           </div>
@@ -9823,6 +9916,10 @@
                             </div>
                           </div>
                         </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-withStaticTools" href="#LLM-withStaticTools"><code>withStaticTools</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="LLM-withSystemPrompt" href="#LLM-withSystemPrompt"><code>withSystemPrompt</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>

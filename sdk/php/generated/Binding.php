@@ -92,15 +92,6 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieve the binding value, as type LLM
-     */
-    public function asLLM(): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asLLM');
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Retrieve the binding value, as type Module
      */
     public function asModule(): Module
