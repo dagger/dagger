@@ -20,8 +20,9 @@ public class Telemetry implements AutoCloseable {
   public <T> void trace(String name, Attributes attributes, TelemetrySupplier<T> supplier)
       throws Exception {
     TelemetryTracer tracer = new TelemetryTracer(TelemetryInitializer.init(), TRACER_NAME);
-    try (Scope ignored = getContext().makeCurrent()) {
-      tracer.startActiveSpan(name, attributes, supplier);
+    Context ctx = getContext();
+    try (Scope ignored = ctx.makeCurrent()) {
+      tracer.startActiveSpan(name, ctx, attributes, supplier);
     }
   }
 
