@@ -165,7 +165,10 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 			),
 
 		dagql.Func("withoutExperimentalFeatures", s.moduleSourceWithoutExperimentalFeatures).
-			Doc(`Disable experimental features for the module source.`),
+			Doc(`Disable experimental features for the module source.`).
+			Args(
+				dagql.Arg("features").Doc(`The experimental features to disable.`),
+			),
 
 		dagql.NodeFunc("generatedContextDirectory", s.moduleSourceGeneratedContextDirectory).
 			Doc(`The generated files and directories made on top of the module source's context directory.`),
@@ -1521,7 +1524,7 @@ func (s *moduleSourceSchema) moduleSourceWithExperimentalFeatures(
 	_ context.Context,
 	parentSrc *core.ModuleSource,
 	args struct {
-		Features []string
+		Features []core.ModuleSourceExperimentalFeature
 	},
 ) (*core.ModuleSource, error) {
 	if parentSrc.SDK == nil {
@@ -1533,7 +1536,7 @@ func (s *moduleSourceSchema) moduleSourceWithExperimentalFeatures(
 			tmpSrc.SDK.Experimental = make(map[string]bool)
 		}
 		for _, feature := range args.Features {
-			tmpSrc.SDK.Experimental[feature] = true
+			tmpSrc.SDK.Experimental[feature.String()] = true
 		}
 	}
 	return tmpSrc, nil
@@ -1543,13 +1546,23 @@ func (s *moduleSourceSchema) moduleSourceWithoutExperimentalFeatures(
 	_ context.Context,
 	parentSrc *core.ModuleSource,
 	args struct {
+		Features []core.ModuleSourceExperimentalFeature
 	},
 ) (*core.ModuleSource, error) {
 	if parentSrc.SDK == nil {
 		return nil, fmt.Errorf("module source has no SDK")
 	}
 	tmpSrc := parentSrc.Clone()
-	tmpSrc.SDK.Experimental = make(map[string]bool)
+	if len(args.Features) > 0 {
+		if tmpSrc.SDK.Experimental == nil {
+			tmpSrc.SDK.Experimental = make(map[string]bool)
+		}
+		for _, feature := range args.Features {
+			tmpSrc.SDK.Experimental[feature.String()] = false
+		}
+	} else {
+		tmpSrc.SDK.Experimental = make(map[string]bool)
+	}
 	return tmpSrc, nil
 }
 
@@ -1943,6 +1956,13 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 	return modCfg, nil
 }
 
+func canSelfCalls(src dagql.ObjectResult[*core.ModuleSource]) bool {
+	sdkImpl, ok := src.Self().SDKImpl.AsRuntime()
+	return ok &&
+		sdkImpl.HasModuleTypeDefs() &&
+		src.Self().SDK.ExperimentalFeatureEnabled(core.ModuleSourceExperimentalFeatureSelfCalls)
+}
+
 func (s *moduleSourceSchema) runCodegen(
 	ctx context.Context,
 	srcInst dagql.ObjectResult[*core.ModuleSource],
@@ -1979,7 +1999,7 @@ func (s *moduleSourceSchema) runCodegen(
 	if srcInst.Self().SDK != nil {
 		// Only if the SDK implements a specific `moduleTypeDefs` function.
 		// If not, we will have circular dependency issues.
-		if sdkImpl, ok := srcInst.Self().SDKImpl.AsRuntime(); ok && sdkImpl.HasModuleTypeDefs() && srcInst.Self().SDK.ExperimentalFeatureEnabled("self-calls") {
+		if canSelfCalls(srcInst) {
 			var mod dagql.ObjectResult[*core.Module]
 			err = dag.Select(ctx, srcInst, &mod, dagql.Selector{
 				Field: "asModule",
@@ -2302,7 +2322,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 
 	modName := src.Self().ModuleName
 
-	if runtimeImpl.HasModuleTypeDefs() && src.Self().SDK.ExperimentalFeatureEnabled("self-calls") {
+	if canSelfCalls(src) {
 		var resultInst dagql.ObjectResult[*core.Module]
 		resultInst, err = runtimeImpl.TypeDefs(ctx, mod.Deps, srcInstContentHashed)
 		if err != nil {
@@ -2393,7 +2413,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		return nil, fmt.Errorf("failed to patch module %q: %w", modName, err)
 	}
 
-	if runtimeImpl.HasModuleTypeDefs() && src.Self().SDK.ExperimentalFeatureEnabled("self-calls") {
+	if canSelfCalls(src) {
 		// append module types to the module itself so self calls are possible
 		mod.Deps = mod.Deps.Append(mod)
 	}
@@ -2496,11 +2516,9 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 			return inst, err
 		}
 
-		// BEGIN: self call
-		if runtimeImpl.HasModuleTypeDefs() && src.Self().SDK.ExperimentalFeatureEnabled("self-calls") {
+		if canSelfCalls(src) {
 			mod.Deps = mod.Deps.Append(mod)
 		}
-		// END: self call
 
 		// pre-load the module Runtime
 		if !mod.Runtime.Valid {
