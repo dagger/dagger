@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+
 	"typescript-sdk/internal/dagger"
 )
 
@@ -78,6 +79,10 @@ func (t *TypescriptSdk) ModuleTypeDefs(
 		withInstalledDependencies().
 		withUserSourceCode()
 
+	if runtime, err = runtime.addInitTemplateIfNoUserFile(ctx); err != nil {
+		return nil, err
+	}
+
 	modID, err := runtime.
 		Container().
 		WithMountedFile(runtime.cfg.entrypointPath(), entrypointFile()).
@@ -116,15 +121,8 @@ func (t *TypescriptSdk) Codegen(
 		withGeneratedLockFile().
 		withUserSourceCode()
 
-	// Check if there's any user source files, if not, add the template file.
-	// NOTE: This should be moved in a `Init` function once we improve the SDK interface.
-	sourcesFiles, err := runtimeBaseCtr.Container().Directory(".").Glob(ctx, "src/**/*.ts")
-	if err != nil {
-		return nil, fmt.Errorf("failed to list user source files: %w", err)
-	}
-
-	if len(sourcesFiles) == 0 {
-		runtimeBaseCtr = runtimeBaseCtr.withInitTemplate()
+	if runtimeBaseCtr, err = runtimeBaseCtr.addInitTemplateIfNoUserFile(ctx); err != nil {
+		return nil, err
 	}
 
 	// Extract codegen directory
