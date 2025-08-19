@@ -1,6 +1,7 @@
 Expected stdout:
 
 .git/
+chroma.go
 debug.go
 demos/
 frontend.go
@@ -42,6 +43,7 @@ Expected stderr:
 │ ┆ dir: Address.directory: Directory!
 │ ): String! X.Xs
 ┃ .git/
+┃ chroma.go
 ┃ debug.go
 ┃ demos/
 ┃ frontend.go

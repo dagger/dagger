@@ -18,6 +18,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/iancoleman/strcase"
 	"github.com/joho/godotenv"
+	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
@@ -35,7 +36,7 @@ func init() {
 
 const (
 	modelDefaultAnthropic = string(anthropic.ModelClaudeSonnet4_0)
-	modelDefaultGoogle    = "gemini-2.0-flash"
+	modelDefaultGoogle    = "gemini-2.5-flash"
 	modelDefaultOpenAI    = "gpt-4.1"
 	modelDefaultMeta      = "llama-3.2"
 	modelDefaultMistral   = "mistral-7b-instruct"
@@ -61,6 +62,9 @@ func resolveModelAlias(maybeAlias string) string {
 
 // An instance of a LLM (large language model), with its state and tool calling environment
 type LLM struct {
+	// The environment accessible to the LLM, exposed over MCP
+	mcp *MCP
+
 	maxAPICalls int
 	apiCalls    int
 
@@ -69,17 +73,15 @@ type LLM struct {
 	endpoint    *LLMEndpoint
 	endpointMtx *sync.Mutex
 
-	once *sync.Once
-	err  error
+	syncOneStep bool
+	once        *sync.Once
+	err         error
 
 	// History of messages
 	messages []*ModelMessage
 
 	// Whether to disable the default system prompt
 	disableDefaultSystemPrompt bool
-
-	// The environment accessible to the LLM, exposed over MCP
-	mcp *MCP
 }
 
 type LLMEndpoint struct {
@@ -444,14 +446,75 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 	return router, err
 }
 
-func NewLLM(ctx context.Context, model string, maxAPICalls int, srv *dagql.Server) (*LLM, error) {
+func (query *Query) NewLLM(ctx context.Context, model string, maxAPICalls int) (*LLM, error) {
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var env dagql.ObjectResult[*Env]
+	if err := srv.Select(ctx, srv.Root(), &env, dagql.Selector{
+		Field: "env",
+	}); err != nil {
+		return nil, err
+	}
 	return &LLM{
 		model:       model,
 		maxAPICalls: maxAPICalls,
-		mcp:         NewEnv(srv).MCP(),
+		mcp:         newMCP(env),
 		once:        &sync.Once{},
 		endpointMtx: &sync.Mutex{},
 	}, nil
+}
+
+func (llm *LLM) WithStaticTools() *LLM {
+	llm = llm.Clone()
+	llm.mcp.staticTools = true
+	return llm
+}
+
+// Add the calling object as an input binding to the environment
+func (llm *LLM) WithCaller(ctx context.Context, name, description string) (*LLM, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fc, err := query.CurrentFunctionCall(ctx)
+	if err != nil {
+		return nil, err
+	}
+	deps, err := query.CurrentServedDeps(ctx)
+	if err != nil {
+		return nil, err
+	}
+	srv, err := deps.Schema(ctx)
+	if err != nil {
+		return nil, err
+	}
+	obj, err := srv.Load(ctx, fc.ParentID)
+	if err != nil {
+		return nil, err
+	}
+	var newEnv dagql.ObjectResult[*Env]
+	if err := srv.Select(ctx, llm.mcp.env, &newEnv, dagql.Selector{
+		Field: "with" + obj.Type().Name() + "Input",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "name",
+				Value: dagql.String(name),
+			},
+			{
+				Name:  "value",
+				Value: dagql.NewDynamicID(fc.ParentID, obj),
+			},
+			{
+				Name:  "description",
+				Value: dagql.String(description),
+			},
+		},
+	}); err != nil {
+		return nil, err
+	}
+	return llm.WithEnv(newEnv), nil
 }
 
 // loadLLMRouter creates an LLM router that routes to the root client
@@ -516,8 +579,8 @@ func (llm *LLM) Endpoint(ctx context.Context) (*LLMEndpoint, error) {
 }
 
 // Generate a human-readable documentation of tools available to the model
-func (llm *LLM) ToolsDoc() (string, error) {
-	tools, err := llm.mcp.Tools()
+func (llm *LLM) ToolsDoc(ctx context.Context) (string, error) {
+	tools, err := llm.mcp.Tools(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -549,7 +612,7 @@ func (llm *LLM) WithPrompt(
 	prompt string,
 ) *LLM {
 	prompt = os.Expand(prompt, func(key string) string {
-		if binding, found := llm.mcp.env.Input(key); found {
+		if binding, found := llm.mcp.env.Self().Input(key); found {
 			return binding.String()
 		}
 		// leave unexpanded, perhaps it refers to an object var
@@ -586,6 +649,25 @@ func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
 func (llm *LLM) WithoutDefaultSystemPrompt() *LLM {
 	llm = llm.Clone()
 	llm.disableDefaultSystemPrompt = true
+	return llm
+}
+
+// Disable the default system prompt
+func (llm *LLM) WithBlockedFunction(ctx context.Context, typeName, funcName string) (*LLM, error) {
+	llm = llm.Clone()
+	if err := llm.mcp.BlockFunction(ctx, typeName, funcName); err != nil {
+		return nil, err
+	}
+	return llm, nil
+}
+
+// Add an external MCP server to the LLM
+func (llm *LLM) WithMCPServer(name string, svc dagql.ObjectResult[*Service]) *LLM {
+	llm = llm.Clone()
+	llm.mcp = llm.mcp.WithMCPServer(&MCPServerConfig{
+		Name:    name,
+		Service: svc,
+	})
 	return llm
 }
 
@@ -631,6 +713,13 @@ func (err *ModelFinishedError) Error() string {
 	return fmt.Sprintf("model finished: %s", err.Reason)
 }
 
+// Send configures the LLM to only evaluate one step when syncing.
+func (llm *LLM) Step() *LLM {
+	llm = llm.Clone()
+	llm.syncOneStep = true
+	return llm
+}
+
 // send the context to the LLM endpoint, process replies and tool calls; continue in a loop
 // Synchronize LLM state:
 // 1. Send context to LLM endpoint
@@ -664,7 +753,8 @@ func (llm *LLM) Interject(ctx context.Context) error {
 	}
 	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", telemetry.Reveal(), trace.WithAttributes(
 		attribute.String(telemetry.UIActorEmojiAttr, "🧑"),
-		attribute.String(telemetry.UIMessageAttr, "sent"),
+		attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageSent),
+		attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleUser),
 	))
 	defer span.End()
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
@@ -753,7 +843,7 @@ func (llm *LLM) loop(ctx context.Context) error {
 		}
 		llm.apiCalls++
 
-		tools, err := llm.mcp.Tools()
+		tools, err := llm.mcp.Tools(ctx)
 		if err != nil {
 			return err
 		}
@@ -773,7 +863,8 @@ func (llm *LLM) loop(ctx context.Context) error {
 			func() {
 				ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", telemetry.Reveal(), trace.WithAttributes(
 					attribute.String(telemetry.UIActorEmojiAttr, "🧑"),
-					attribute.String(telemetry.UIMessageAttr, "sent"),
+					attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageSent),
+					attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleUser),
 				))
 				defer span.End()
 				stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
@@ -793,7 +884,13 @@ func (llm *LLM) loop(ctx context.Context) error {
 		client := ep.Client
 		err = backoff.Retry(func() error {
 			var sendErr error
+			ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
+				attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+				attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
+				attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
+			))
 			res, sendErr = client.SendQuery(ctx, messagesToSend, tools)
+			telemetry.End(span, func() error { return sendErr })
 			if sendErr != nil {
 				var finished *ModelFinishedError
 				if errors.As(sendErr, &finished) {
@@ -838,8 +935,8 @@ func (llm *LLM) loop(ctx context.Context) error {
 			ToolCalls:  res.ToolCalls,
 			TokenUsage: res.TokenUsage,
 		})
+
 		// Handle tool calls
-		// calls := res.Choices[0].Message.ToolCalls
 		if len(res.ToolCalls) == 0 {
 			if interjected, interjectErr := llm.autoInterject(ctx); interjectErr != nil {
 				// interjecting failed or was interrupted
@@ -851,21 +948,36 @@ func (llm *LLM) loop(ctx context.Context) error {
 			// no interjection and none needed - we're just done
 			break
 		}
+
+		// Run tool calls in parallel
+		toolCalls := pool.NewWithResults[*ModelMessage]()
 		for _, toolCall := range res.ToolCalls {
-			content, isError := llm.mcp.Call(ctx, tools, toolCall)
-			llm.messages = append(llm.messages, &ModelMessage{
-				Role:        "user", // Anthropic only allows tool call results in user messages
-				Content:     content,
-				ToolCallID:  toolCall.ID,
-				ToolErrored: isError,
+			toolCalls.Go(func() *ModelMessage {
+				content, isError := llm.mcp.Call(ctx, tools, toolCall)
+				return &ModelMessage{
+					Role:        "user", // Anthropic only allows tool call results in user messages
+					Content:     content,
+					ToolCallID:  toolCall.ID,
+					ToolErrored: isError,
+				}
 			})
 		}
+		llm.messages = append(llm.messages, toolCalls.Wait()...)
+
 		if llm.mcp.Returned() {
 			// we returned; exit the loop, since some models just keep going
 			break
 		}
+		if llm.syncOneStep {
+			// we're configured to only do one step; return early
+			return nil
+		}
 	}
 	return nil
+}
+
+func (llm *LLM) HasPrompt() bool {
+	return len(llm.messages) > 0 && llm.messages[len(llm.messages)-1].Role == "user"
 }
 
 func (llm *LLM) allowed(ctx context.Context) error {
@@ -971,13 +1083,13 @@ func (llm *LLM) HistoryJSON(ctx context.Context) (JSON, error) {
 	return JSON(result), nil
 }
 
-func (llm *LLM) WithEnv(env *Env) *LLM {
+func (llm *LLM) WithEnv(env dagql.ObjectResult[*Env]) *LLM {
 	llm = llm.Clone()
-	llm.mcp = env.Clone().MCP()
+	llm.mcp.env = env
 	return llm
 }
 
-func (llm *LLM) Env() *Env {
+func (llm *LLM) Env() dagql.ObjectResult[*Env] {
 	return llm.mcp.env
 }
 
@@ -1012,7 +1124,6 @@ func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) 
 		Key:          name,
 		Value:        llm.mcp.LastResult(),
 		ExpectedType: llm.mcp.LastResult().Type().Name(),
-		env:          llm.mcp.env,
 	}
 	res.Valid = true
 	return res, nil

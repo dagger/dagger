@@ -85,7 +85,7 @@ func withEngine(
 			return nil
 		})
 
-		if debug {
+		if debugFlag {
 			params.LogLevel = slog.LevelDebug
 		}
 

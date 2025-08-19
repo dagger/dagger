@@ -8,10 +8,18 @@ import (
 	"log"
 	"maps"
 	"os"
+	"slices"
+	"strings"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
+	"github.com/charmbracelet/bubbles/key"
+	"github.com/dagger/dagger/core/openrouter"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -52,10 +60,13 @@ type LLMSession struct {
 	// undo       *LLMSession
 	dag        *dagger.Client
 	llm        *dagger.LLM
+	models     openrouter.Models
 	model      string
 	skipEnv    map[string]bool
 	syncedVars map[string]digest.Digest
 	shell      *shellCallHandler
+	beforeFS   *dagger.Directory
+	afterFS    *dagger.Directory
 }
 
 func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, shellHandler *shellCallHandler) (*LLMSession, error) {
@@ -76,20 +87,19 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, she
 		shell: shellHandler,
 	}
 
+	// TODO: cache this
+	models, err := openrouter.FetchModels(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.models = models
+
 	// don't sync the initial env vars
 	for k := range shellHandler.runner.Env.Each {
 		s.skipEnv[k] = true
 	}
 
 	s.reset(ctx)
-
-	// figure out what the model resolved to
-	model, err := s.llm.Model(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	s.model = model
 
 	return s, nil
 }
@@ -99,8 +109,7 @@ func (s *LLMSession) reset(ctx context.Context) {
 		WithEnv(s.dag.Env(dagger.EnvOpts{
 			Privileged: true,
 			Writable:   true,
-		})).
-		WithSystemPrompt(`When the user's query contains a variable like $foo, determine if the request is asking you to save a value. If so, declare the output binding.`))
+		})))
 }
 
 func (s *LLMSession) Fork() *LLMSession {
@@ -127,22 +136,145 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 	}
 	s.model = resolvedModel
 
-	s.updateLLMAndAgentVar(ctx, s.llm.WithPrompt(input))
+	prompted := s.llm.WithPrompt(input)
 
-	prompted, err := s.llm.Sync(ctx)
-	if err != nil {
-		return s, err
+	for {
+		prompted = prompted.Step()
+		s.updateLLMAndAgentVar(ctx, prompted)
+
+		prompted, err := s.llm.Sync(ctx)
+		if err != nil {
+			return s, err
+		}
+		// NB: this is currently redundant since Sync updates LLM state in-place, but
+		// safest option is to respect the return value anyway in case it changes
+		s.updateLLMAndAgentVar(ctx, prompted)
+
+		s.afterFS = prompted.Env().Hostfs()
+
+		dirDiff, err := dirDiff(ctx, s.beforeFS, s.afterFS)
+		if err != nil {
+			return s, err
+		}
+
+		if dirDiff.HasChanges() {
+			diff := ""
+			for _, fp := range dirDiff.Added {
+				diff += fmt.Sprintf("%s\n", termenv.String("+ "+fp).Bold().Foreground(termenv.ANSIGreen))
+			}
+			for _, fp := range dirDiff.Changed {
+				diff += fmt.Sprintf("%s\n", termenv.String("• "+fp).Bold().Foreground(termenv.ANSIYellow))
+			}
+			dirs := map[string]bool{}
+		removed:
+			for _, fp := range dirDiff.Removed {
+				for dir := range dirs {
+					if strings.HasPrefix(fp, dir) {
+						// don't show removed files in directories that were already removed
+						continue removed
+					}
+				}
+				// if the path ends with a slash, it's a directory
+				if strings.HasSuffix(fp, "/") {
+					dirs[fp] = true
+				}
+				diff += fmt.Sprintf("%s\n", termenv.String("− "+fp).Bold().Foreground(termenv.ANSIRed))
+			}
+			Frontend.SetSidebarContent(idtui.SidebarSection{
+				Title:   "Changes",
+				Content: diff,
+				KeyMap: []key.Binding{
+					key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "sync")),
+				},
+			})
+		}
+
+		hasMore, err := prompted.HasPrompt(ctx)
+		if err != nil {
+			return s, err
+		}
+		if !hasMore {
+			break
+		}
 	}
-
-	// NB: this is currently redundant since Sync updates LLM state in-place, but
-	// safest option is to respect the return value anyway in case it changes
-	s.updateLLMAndAgentVar(ctx, prompted)
 
 	if err := s.syncVarsFromLLM(ctx); err != nil {
 		return s, err
 	}
 
 	return s, nil
+}
+
+func dirDiff(ctx context.Context, before, after *dagger.Directory) (*DirDiff, error) {
+	beforeFiles, err := before.Glob(ctx, "**/*")
+	if err != nil {
+		return nil, err
+	}
+	afterFiles, err := after.Glob(ctx, "**/*")
+	if err != nil {
+		return nil, err
+	}
+	changedFiles, err := before.Diff(after).Glob(ctx, "**/*")
+	if err != nil {
+		return nil, err
+	}
+	removed := map[string]bool{}
+	added := map[string]bool{}
+	for _, fp := range afterFiles {
+		added[fp] = true
+	}
+	for _, fp := range beforeFiles {
+		if added[fp] {
+			delete(added, fp)
+		} else {
+			removed[fp] = true
+		}
+	}
+	changedFiles = slices.DeleteFunc(changedFiles, func(s string) bool {
+		return added[s] || strings.HasSuffix(s, "/")
+	})
+	return &DirDiff{
+		Before:  before,
+		After:   after,
+		Added:   slices.Sorted(maps.Keys(added)),
+		Changed: changedFiles,
+		Removed: slices.Sorted(maps.Keys(removed)),
+	}, nil
+}
+
+type DirDiff struct {
+	Before, After *dagger.Directory
+
+	Added, Changed, Removed []string
+}
+
+func (diff *DirDiff) HasChanges() bool {
+	return len(diff.Added) > 0 || len(diff.Changed) > 0 || len(diff.Removed) > 0
+}
+
+func (diff *DirDiff) Apply(ctx context.Context, dest string) (rerr error) {
+	slog.Debug("exporting", "dest", dest)
+	_, err := diff.Before.Diff(diff.After).Export(ctx, dest)
+	if err != nil {
+		slog.Debug("exporting failed", "error", err)
+		return err
+	}
+
+	for _, p := range diff.Removed {
+		if strings.HasSuffix(p, "/") {
+			// Be a little paranoid about directory paths for now, and just leave the
+			// directories there.
+			// This might be stupid.
+			continue
+		}
+		slog.Debug("removing", "path", p)
+		if err := os.Remove(p); err != nil {
+			slog.Error("failed to remove", "path", p, "error", err)
+			return err
+		}
+	}
+
+	return nil
 }
 
 var dbg *log.Logger
@@ -163,6 +295,92 @@ const (
 
 func (s *LLMSession) updateLLMAndAgentVar(ctx context.Context, llm *dagger.LLM) error {
 	s.llm = llm
+
+	// figure out what the model resolved to
+	model, err := s.llm.Model(ctx)
+	if err != nil {
+		return err
+	}
+	s.model = model
+
+	inputTokens, err := llm.TokenUsage().InputTokens(ctx)
+	if err != nil {
+		return err
+	}
+	outputTokens, err := llm.TokenUsage().OutputTokens(ctx)
+	if err != nil {
+		return err
+	}
+	cacheReads, err := llm.TokenUsage().CachedTokenReads(ctx)
+	if err != nil {
+		return err
+	}
+	cacheWrites, err := llm.TokenUsage().CachedTokenWrites(ctx)
+	if err != nil {
+		return err
+	}
+	lines := []string{
+		idtui.DotFilled + " " + termenv.String(s.model).Bold().String(),
+	}
+
+	if opts.Verbosity > dagui.ShowInternalVerbosity {
+		if inputTokens > 0 {
+			lines = append(lines,
+				fmt.Sprintf("%s "+termenv.String("%d").Bold().String(),
+					"  Tokens In: ",
+					inputTokens))
+		}
+		if outputTokens > 0 {
+			lines = append(lines,
+				fmt.Sprintf("%s "+termenv.String("%d").Bold().String(),
+					"  Tokens Out:",
+					outputTokens))
+		}
+		if cacheReads > 0 {
+			lines = append(lines,
+				fmt.Sprintf("%s "+termenv.String("%d").Bold().String(),
+					"  Cache Reads: ",
+					cacheReads))
+		}
+		if cacheWrites > 0 {
+			lines = append(lines,
+				fmt.Sprintf("%s "+termenv.String("%d").Bold().String(),
+					"  Cache Writes:",
+					cacheWrites))
+		}
+	}
+
+	if m := s.models.Lookup(s.model); m != nil {
+		inputCost := m.Pricing.Prompt.Cost(inputTokens)
+		outputCost := m.Pricing.Completion.Cost(outputTokens)
+		cacheReadCost := m.Pricing.InputCacheRead.Cost(cacheReads)
+		cacheWriteCost := m.Pricing.InputCacheWrite.Cost(cacheWrites)
+		totalCost := inputCost + outputCost + cacheReadCost + cacheWriteCost
+		if totalCost > 0 {
+			contextUsage := int(float64(inputTokens) / float64(m.ContextLength) * 100)
+			contextStyle := termenv.String("%d%%").Bold()
+			if contextUsage > 80 {
+				contextStyle = contextStyle.Foreground(termenv.ANSIYellow)
+			}
+			if contextUsage > 90 {
+				contextStyle = contextStyle.Foreground(termenv.ANSIRed)
+			}
+			if contextUsage > 100 {
+				contextStyle = contextStyle.Foreground(termenv.ANSIBrightRed)
+			}
+			lines = append(lines,
+				fmt.Sprintf("  Cost: "+termenv.String("$%0.2f").Bold().String(),
+					totalCost),
+				fmt.Sprintf("  Context: "+contextStyle.String(),
+					contextUsage),
+			)
+		}
+	}
+
+	Frontend.SetSidebarContent(idtui.SidebarSection{
+		Title:   "LLM",
+		Content: strings.Join(lines, "\n"),
+	})
 	if err := s.assignShell(ctx, agentVar, s.llm); err != nil {
 		return err
 	}
@@ -185,6 +403,10 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 			// from the agent var
 			s.llm = s.llm.WithGraphQLQuery(st.QueryBuilder(s.dag))
 		}
+	}
+
+	if s.beforeFS == nil {
+		s.beforeFS = s.llm.Env().Hostfs()
 	}
 
 	syncedEnvQ := s.dag.QueryBuilder().
@@ -283,28 +505,30 @@ func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
 		if isNull {
 			return nil
 		}
-		if typeName == "" || typeName == "Query" {
+		switch typeName {
+		case "", "Query", "Void":
 			return nil
-		}
-		if typeName == "String" {
+		case "String":
 			str, err := bnd.AsString(ctx)
 			if err != nil {
 				return err
 			}
-			return s.assignShellString(ctx, name, str)
+			s.assignShellString(ctx, name, str)
+			return nil
+		default:
+			var objID string
+			if err :=
+				s.dag.QueryBuilder().
+					Select("loadBindingFromID").
+					Arg("id", bnd).
+					Select("as" + typeName).
+					Select("id").
+					Bind(&objID).
+					Execute(ctx); err != nil {
+				return err
+			}
+			return s.assignShell(ctx, name, &dynamicObject{objID, typeName})
 		}
-		var objID string
-		if err :=
-			s.dag.QueryBuilder().
-				Select("loadBindingFromID").
-				Arg("id", bnd).
-				Select("as" + typeName).
-				Select("id").
-				Bind(&objID).
-				Execute(ctx); err != nil {
-			return err
-		}
-		return s.assignShell(ctx, name, &dynamicObject{objID, typeName})
 	}
 
 	// assign all outputs
@@ -341,18 +565,24 @@ func (s *LLMSession) assignShell(ctx context.Context, name string, idable dagqlO
 	if err != nil {
 		return err
 	}
-	return s.assignShellString(ctx, name, val)
+	s.assignShellString(ctx, name, val)
+	return nil
 }
 
-func (s *LLMSession) assignShellString(ctx context.Context, name string, val string) error {
+func (s *LLMSession) assignShellString(ctx context.Context, name string, val string) {
+	if len(val) > 100 {
+		slog.Debug("value is too long", "name", name, "value", val)
+		return
+	}
 	quot, err := syntax.Quote(val, syntax.LangBash)
 	if err != nil {
-		return err
+		slog.Error("failed to quote value", "name", name, "value", val, "error", err.Error())
+		return
 	}
 	if err := s.shell.Eval(ctx, fmt.Sprintf("%s=%s", name, quot)); err != nil {
-		return err
+		slog.Error("failed to assign value", "name", name, "quoted", quot, "error", err.Error())
 	}
-	return nil
+	return
 }
 
 func (s *LLMSession) toShell(ctx context.Context, idable dagqlObject) (string, error) {
@@ -453,4 +683,35 @@ func (s *LLMSession) Model(ctx context.Context, model string) (*LLMSession, erro
 	}
 	s.model = model
 	return s, nil
+}
+
+func (s *LLMSession) SyncToLocal(ctx context.Context) error {
+	if s.llm == nil {
+		return fmt.Errorf("no LLM session active")
+	}
+
+	if s.afterFS == nil {
+		return fmt.Errorf("nothing to sync")
+	}
+
+	// Get the current filesystem state from the LLM environment
+	diff, err := dirDiff(ctx, s.beforeFS, s.afterFS)
+	if err != nil {
+		return err
+	}
+
+	// Export the entire directory to the local filesystem (current working directory)
+	if err := diff.Apply(ctx, "."); err != nil {
+		return fmt.Errorf("failed to sync changes to local filesystem: %w", err)
+	}
+
+	s.beforeFS = s.afterFS
+
+	// Update sidebar to show sync success
+	Frontend.SetSidebarContent(idtui.SidebarSection{
+		Title:   "Changes",
+		Content: "", // empty content will hide it
+	})
+
+	return nil
 }
