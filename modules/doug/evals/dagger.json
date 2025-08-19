@@ -1,0 +1,17 @@
+{
+  "name": "evals",
+  "engineVersion": "v0.18.15-010101000000-dev-4080f50a531b",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "doug",
+      "source": ".."
+    },
+    {
+      "name": "evaluator",
+      "source": "../../evaluator"
+    }
+  ]
+}

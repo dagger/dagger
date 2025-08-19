@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -12,7 +13,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"syscall"
 	"time"
 
 	containerdfs "github.com/containerd/continuity/fs"
@@ -20,11 +20,11 @@ import (
 	"github.com/dagger/dagger/util/patternmatcher"
 	"github.com/dustin/go-humanize"
 	bkcache "github.com/moby/buildkit/cache"
+	cacheutil "github.com/moby/buildkit/cache/util"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
-	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
@@ -204,33 +204,15 @@ func (dir *Directory) Digest(ctx context.Context) (string, error) {
 func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, src string) (*fstypes.Stat, error) {
 	src = path.Join(dir.Dir, src)
 
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: dir.LLB,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to solve: %w", err)
-	}
-
-	ref, err := res.SingleRef()
+	ref, err := getRefOrEvaluate(ctx, dir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get single ref: %w", err)
 	}
-	// empty directory, i.e. llb.Scratch()
-	if ref == nil {
-		if clean := path.Clean(src); clean == "." || clean == "/" {
-			// fake out a reasonable response
-			return &fstypes.Stat{
-				Path: src,
-				Mode: uint32(fs.ModeDir),
-			}, nil
-		}
-
-		return nil, fmt.Errorf("%s: %w", src, syscall.ENOENT)
+	mountable, err := ref.Mount(ctx, true, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get single ref: %w", err)
 	}
-
-	st, err := ref.StatFile(ctx, bkgw.StatRequest{
-		Path: src,
-	})
+	st, err := cacheutil.StatFile(ctx, mountable, src)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat file %s: %w", src, err)
 	}
@@ -521,6 +503,52 @@ func (dir *Directory) WithPatch(ctx context.Context, patch string) (*Directory, 
 	}
 	dir.Result = snap
 	return dir, nil
+}
+
+func (dir *Directory) Search(ctx context.Context, opts SearchOpts, paths []string, globs []string) ([]*SearchResult, error) {
+	ref, err := getRefOrEvaluate(ctx, dir)
+	if err != nil {
+		return nil, err
+	}
+	if ref == nil {
+		// empty directory, i.e. llb.Scratch()
+		return []*SearchResult{}, nil
+	}
+
+	opt, ok := buildkit.CurrentOpOpts(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit opts in context")
+	}
+	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	results := []*SearchResult{}
+	err = MountRef(ctx, ref, bkSessionGroup, func(root string) error {
+		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
+		if err != nil {
+			return err
+		}
+		rgArgs := opts.RipgrepArgs()
+		for _, glob := range globs {
+			rgArgs = append(rgArgs, "--glob="+glob)
+		}
+		if len(paths) > 0 {
+			rgArgs = append(rgArgs, "--")
+			rgArgs = append(rgArgs, paths...)
+		}
+		rg := exec.Command("rg", rgArgs...)
+		rg.Dir = resolvedDir
+		results, err = opts.RunRipgrep(ctx, rg)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return results, nil
 }
 
 func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory, error) {
@@ -897,8 +925,6 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permiss
 }
 
 func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, error) {
-	dir = dir.Clone()
-
 	thisDirPath := dir.Dir
 	if thisDirPath == "" {
 		thisDirPath = "/"
@@ -911,23 +937,32 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 		// TODO(vito): work around with llb.Copy shenanigans?
 		return nil, fmt.Errorf("cannot diff with different relative paths: %q != %q", dir.Dir, other.Dir)
 	}
-
-	lowerSt, err := dir.State()
+	dirRef, err := getRefOrEvaluate(ctx, dir)
 	if err != nil {
 		return nil, err
 	}
-
-	upperSt, err := other.State()
+	if dirRef == nil {
+		// base is empty; other is the entire diff
+		return other, nil
+	}
+	otherRef, err := getRefOrEvaluate(ctx, other)
 	if err != nil {
 		return nil, err
 	}
-
-	err = dir.SetState(ctx, llb.Diff(lowerSt, upperSt))
+	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	return dir, nil
+	diffRef, err := query.BuildkitCache().Diff(ctx, dirRef, otherRef, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to diff directories: %w", err)
+	}
+	diffDir, err := NewScratchDirectory(ctx, query.Platform())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create scratch directory for diff: %w", err)
+	}
+	diffDir.Result = diffRef
+	return diffDir, nil
 }
 
 func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...string) (*Directory, error) {
@@ -1089,7 +1124,7 @@ func (dir *Directory) Mount(ctx context.Context, f func(string) error) error {
 func validateFileName(file string) error {
 	baseFileName := filepath.Base(file)
 	if len(baseFileName) > 255 {
-		return errors.Errorf("File name length exceeds the maximum supported 255 characters")
+		return errors.New("File name length exceeds the maximum supported 255 characters")
 	}
 	return nil
 }

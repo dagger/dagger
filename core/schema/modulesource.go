@@ -1937,7 +1937,7 @@ func (s *moduleSourceSchema) runCodegen(
 		var gitAttrsContents []byte
 		gitAttrsFile, err := srcInst.Self().ContextDirectory.Self().File(ctx, gitAttrsPath)
 		if err == nil {
-			gitAttrsContents, err = gitAttrsFile.Contents(ctx)
+			gitAttrsContents, err = gitAttrsFile.Contents(ctx, nil, nil)
 			if err != nil {
 				return res, fmt.Errorf("failed to get git attributes file contents: %w", err)
 			}
@@ -1983,7 +1983,7 @@ func (s *moduleSourceSchema) runCodegen(
 		var gitIgnoreContents []byte
 		gitIgnoreFile, err := srcInst.Self().ContextDirectory.Self().File(ctx, gitIgnorePath)
 		if err == nil {
-			gitIgnoreContents, err = gitIgnoreFile.Contents(ctx)
+			gitIgnoreContents, err = gitIgnoreFile.Contents(ctx, nil, nil)
 			if err != nil {
 				return res, fmt.Errorf("failed to get .gitignore file contents: %w", err)
 			}

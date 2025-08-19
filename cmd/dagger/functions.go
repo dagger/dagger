@@ -571,7 +571,7 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 		// else to sub-select. In that case `q` will be nil to signal that we
 		// just want to return the object's name, without making an API request.
 		if q == nil {
-			return handleResponse(fn.ReturnType, nil, o, e)
+			return handleResponse(ctx, fc.c.Dagger(), fn.ReturnType, nil, o, e)
 		}
 
 		var response any
@@ -580,7 +580,7 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 			return err
 		}
 
-		return handleResponse(fn.ReturnType, response, o, e)
+		return handleResponse(ctx, fc.c.Dagger(), fn.ReturnType, response, o, e)
 	}
 }
 
@@ -645,9 +645,14 @@ func makeRequest(ctx context.Context, q *querybuilder.Selection, response any) e
 	return nil
 }
 
-func handleResponse(returnType *modTypeDef, response any, o, e io.Writer) error {
+func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modTypeDef, response any, o, e io.Writer) error {
 	if returnType.Kind == dagger.TypeDefKindVoidKind {
 		return nil
+	}
+
+	// Check if the function returns an LLM type - start interactive prompt mode
+	if returnType.Name() == "LLM" {
+		return startInteractivePromptMode(ctx, dag, response)
 	}
 
 	// Handle the `export` convenience, i.e, -o,--output flag.
@@ -692,6 +697,47 @@ func handleResponse(returnType *modTypeDef, response any, o, e io.Writer) error 
 	}
 
 	return err
+}
+
+// startInteractivePromptMode starts the interactive shell with the returned LLM assigned as $agent
+func startInteractivePromptMode(ctx context.Context, dag *dagger.Client, response any) error {
+	// Extract the LLM ID from the response
+	var llmID string
+	switch v := response.(type) {
+	case string:
+		llmID = v
+	case map[string]any:
+		if id, ok := v["id"].(string); ok {
+			llmID = id
+		} else {
+			return fmt.Errorf("startInteractivePromptMode: no ID found in LLM object: %+v", v)
+		}
+	default:
+		return fmt.Errorf("startInteractivePromptMode: unexpected response type for LLM: %T", v)
+	}
+
+	// Start the shell handler with prompt mode
+	handler := &shellCallHandler{
+		dag:  dag,
+		mode: modePrompt, // Set mode to prompt
+	}
+
+	// Initialize the handler
+	if err := handler.Initialize(ctx); err != nil {
+		return err
+	}
+
+	// Load the LLM from the ID and assign it as $agent
+	llm := dag.LoadLLMFromID(dagger.LLMID(llmID))
+	if _, err := handler.llm(ctx); err != nil { // init llmSession
+		return err
+	}
+	if err := handler.llmSession.updateLLMAndAgentVar(ctx, llm); err != nil {
+		return err
+	}
+
+	// Start interactive mode
+	return handler.runInteractive(ctx)
 }
 
 func printID(w io.Writer, response any, typeDef *modTypeDef) error {

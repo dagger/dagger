@@ -69,6 +69,8 @@ func NewDots(output io.Writer) Frontend {
 	}
 }
 
+func (fe *frontendDots) SetSidebarContent(SidebarSection) {}
+
 func (fe *frontendDots) Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) error) error {
 	fe.opts = opts
 	return fe.reporter.Run(ctx, opts, func(ctx context.Context) error {

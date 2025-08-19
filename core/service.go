@@ -537,6 +537,15 @@ func (svc *Service) startContainer(
 	}()
 
 	stopSvc := func(ctx context.Context, force bool) error {
+		if stdinClient != nil {
+			stdinClient.Close()
+		}
+		if stdoutClient != nil {
+			stdoutClient.Close()
+		}
+		if stderrClient != nil {
+			stderrClient.Close()
+		}
 		stopped.Store(true)
 		sig := syscall.SIGTERM
 		if force {
@@ -571,11 +580,12 @@ func (svc *Service) startContainer(
 		}
 
 		return &RunningService{
-			Service: svc,
-			Host:    fullHost,
-			Ports:   ctr.Ports,
-			Stop:    stopSvc,
-			Wait:    waitSvc,
+			Service:   svc,
+			Host:      fullHost,
+			Ports:     ctr.Ports,
+			Stop:      stopSvc,
+			Wait:      waitSvc,
+			Container: gc,
 		}, nil
 	case <-exited:
 		if exitErr != nil {

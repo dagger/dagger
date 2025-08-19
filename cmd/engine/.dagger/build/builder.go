@@ -136,6 +136,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 					"dnsmasq", "iptables", "ip6tables", "iptables-legacy",
 					// for Kata Containers integration
 					"e2fsprogs",
+					// for Directory.search
+					"ripgrep",
 				},
 				Arch: build.platformSpec.Architecture,
 			}).
@@ -160,6 +162,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 				"iptables", "git", "dnsmasq-base", "network-manager",
 				"gpg", "curl",
 				"e2fsprogs",
+				// for Directory.search
+				"ripgrep",
 			}).
 			WithExec([]string{
 				"update-alternatives",
@@ -184,6 +188,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 			"iptables", "ip6tables", "dnsmasq",
 			// for Kata Containers integration
 			"e2fsprogs",
+			// for Directory.search
+			"ripgrep",
 		}
 		if build.gpuSupport {
 			pkgs = append(pkgs, "nvidia-driver", "nvidia-tools")
@@ -210,6 +216,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		{path: consts.EngineServerPath, file: build.engineBinary(build.race)},
 		{path: "/usr/bin/dial-stdio", file: build.dialstdioBinary()},
 		{path: "/opt/cni/bin/dnsname", file: build.dnsnameBinary()},
+		{path: "/usr/bin/container-mount", file: build.containerMountBinary()},
 		{path: consts.RuncPath, file: build.runcBin()},
 		{path: consts.DaggerInitPath, file: build.daggerInit()},
 	}
@@ -264,6 +271,18 @@ func (build *Builder) dnsnameBinary() *dagger.File {
 
 func (build *Builder) dialstdioBinary() *dagger.File {
 	return build.binary("./cmd/dialstdio", false, false)
+}
+
+func (build *Builder) containerMountBinary() *dagger.File {
+	return dag.
+		Wolfi().
+		Container(dagger.WolfiContainerOpts{
+			Packages: []string{"build-base"},
+		}).
+		WithWorkdir("/src").
+		WithMountedDirectory(".", build.source).
+		WithExec([]string{"gcc", "-static", "-o", "container-mount", "./cmd/container-mount/main.c"}).
+		File("container-mount")
 }
 
 func (build *Builder) binary(pkg string, version bool, race bool) *dagger.File {

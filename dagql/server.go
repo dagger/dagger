@@ -268,6 +268,23 @@ var coreDirectives = []DirectiveSpec{
 			DirectiveLocationEnumValue,
 		},
 	},
+	{
+		Name:        "defaultPath",
+		Description: FormatDescription(`Indicates that the argument defaults to a contextual path.`),
+		Args: NewInputSpecs(
+			InputSpec{
+				Name: "path",
+				Type: String(""),
+			},
+			InputSpec{
+				Name: "ignore",
+				Type: ArrayInput[String](nil),
+			},
+		),
+		Locations: []DirectiveLocation{
+			DirectiveLocationArgumentDefinition,
+		},
+	},
 }
 
 // Root returns the root object of the server. It is suitable for passing to
@@ -645,6 +662,11 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 	// user-calls in the UI.
 	ctx = withInternal(ctx)
 
+	var defaultView View
+	if id := CurrentID(ctx); id != nil {
+		defaultView = View(id.View())
+	}
+
 	var res AnyResult = self
 	for i, sel := range sels {
 		nth := sel.Nth
@@ -652,6 +674,9 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 		// grab the NthValue below
 		if nth != 0 {
 			sel.Nth = 0
+		}
+		if sel.View == "" {
+			sel.View = defaultView
 		}
 
 		var err error

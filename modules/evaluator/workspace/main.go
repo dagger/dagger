@@ -43,7 +43,7 @@ var testedModels = []string{
 	// "gpt-4o",
 	"gpt-4.1",
 	// "qwen2.5-coder:14b",
-	"gemini-2.0-flash",
+	"gemini-2.5-flash",
 	"claude-sonnet-4-0",
 }
 
