@@ -176,21 +176,19 @@ func CurrentOrg() (*Org, error) {
 }
 
 func CurrentOrgName() (string, error) {
-	var orgName string
 	if cloudToken := os.Getenv("DAGGER_CLOUD_TOKEN"); cloudToken != "" {
 		token, ok := ParseDaggerToken(cloudToken)
 		if ok {
-			orgName = token.orgName
-		} else {
-			org, err := CurrentOrg()
-			if err != nil {
-				return "", err
-			}
-			orgName = org.Name
+			return token.orgName, nil
 		}
-	} else {
 	}
-	return orgName, nil
+	// if the token is not valid or not present we fall back to reading from
+	// disk
+	org, err := CurrentOrg()
+	if err != nil {
+		return "", err
+	}
+	return org.Name, nil
 }
 
 func SetCurrentOrg(org *Org) error {
