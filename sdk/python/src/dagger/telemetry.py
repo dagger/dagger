@@ -4,12 +4,21 @@ from collections.abc import Callable
 from typing import Final, Literal
 
 from opentelemetry import context, propagate, trace
+from opentelemetry._logs import get_logger_provider
 from opentelemetry.environment_variables import (
+    _OTEL_PYTHON_LOGGER_PROVIDER,
     OTEL_LOGS_EXPORTER,
     OTEL_METRICS_EXPORTER,
     OTEL_PYTHON_TRACER_PROVIDER,
     OTEL_TRACES_EXPORTER,
 )
+from opentelemetry.instrumentation.logging import LoggingInstrumentor
+from opentelemetry.instrumentation.logging.environment_variables import (
+    OTEL_PYTHON_LOG_CORRELATION,
+    OTEL_PYTHON_LOG_FORMAT,
+    OTEL_PYTHON_LOG_LEVEL,
+)
+from opentelemetry.sdk import _logs as sdklogs
 from opentelemetry.sdk import trace as sdktrace
 from opentelemetry.sdk._configuration import _BaseConfigurator as _BaseSDKConfigurator
 from opentelemetry.sdk._configuration import (
@@ -31,7 +40,6 @@ from opentelemetry.sdk.environment_variables import (
     OTEL_SERVICE_NAME,
 )
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter
-from opentelemetry.semconv.trace import SpanAttributes
 from opentelemetry.trace import get_tracer_provider, propagation
 
 __all__ = [
@@ -47,30 +55,38 @@ SERVICE_NAME: Final = "dagger-python-sdk"
 logger = logging.getLogger(__name__)
 
 
-def initialize():
-    """Configure telemetry."""
+def initialize(*, debug: bool = False):
+    """Configure telemetry.
+
+    If debug is True, enables console exporters.
+    """
     _DaggerPropagationConfigurator().configure()
-    _DaggerOtelConfigurator().configure()
+    _DaggerOtelConfigurator().configure(debug=debug)
 
 
 def get_tracer() -> trace.Tracer:
     """Returns a tracer to use with Dagger."""
     initialize()
-    return trace.get_tracer(
-        "dagger.io/sdk.python",
-        schema_url=SpanAttributes.SCHEMA_URL,
-    )
+    return trace.get_tracer("dagger.io/sdk.python")
 
 
 def shutdown():
     """Process all spans that have not yet been processed."""
-    provider = get_tracer_provider()
+    # TODO: set a timeout
 
-    if isinstance(provider, sdktrace.TracerProvider):
-        provider.force_flush()
-        # shutdown is called automatically on exit, we just need the forced
-        # flush, but might as well shutdown now too
-        provider.shutdown()
+    tracer_provider = get_tracer_provider()
+    logger_provider = get_logger_provider()
+
+    # Provider shutdown is called automatically on exit, we just need the forced
+    # flush but might as well shutdown now too.
+
+    if isinstance(tracer_provider, sdktrace.TracerProvider):
+        tracer_provider.force_flush()
+        tracer_provider.shutdown()
+
+    if isinstance(logger_provider, sdklogs.LoggerProvider):
+        logger_provider.force_flush()
+        logger_provider.shutdown()
 
 
 def otel_configured() -> bool:
@@ -142,6 +158,8 @@ def _init_tracing(exporters: dict[str, type[SpanExporter]]):
 
 
 class _DaggerOtelConfigurator(_BaseConfigurator):
+    exporters = ("otlp",)
+
     # NB: This is based on opentelemetry.sdk._configuration._OtelSDKConfigurator
     # which is experimental. Instead of importing just the configurator, we're
     # importing several private functions because we need more control over
@@ -157,6 +175,9 @@ class _DaggerOtelConfigurator(_BaseConfigurator):
             logger.debug("Telemetry disabled")
             return
 
+        if kwargs.get("debug"):
+            self.exporters += ("console",)
+
         logger.debug("Initializing telemetry")
         self._prepare_env()
         self._initialize()
@@ -170,15 +191,24 @@ class _DaggerOtelConfigurator(_BaseConfigurator):
 
         # The default is a NoOpProvider.
         os.environ.setdefault(OTEL_PYTHON_TRACER_PROVIDER, "sdk_tracer_provider")
+        os.environ.setdefault(_OTEL_PYTHON_LOGGER_PROVIDER, "sdk_logger_provider")
 
-        # TODO: The following env vars should be set by the shim rather than in the SDK.
+        # Logging instrumentation.
+        os.environ.setdefault(OTEL_PYTHON_LOG_CORRELATION, "true")
+        os.environ.setdefault(OTEL_PYTHON_LOG_LEVEL, "warning")
+        os.environ.setdefault(
+            OTEL_PYTHON_LOG_FORMAT,
+            "%(levelname)s [%(name)s]: %(message)s",
+        )
 
-        for exporter in (
+        # TODO: The rest of the env vars should be set by the shim rather than in the SDK.
+
+        for name in (
             OTEL_TRACES_EXPORTER,
             OTEL_LOGS_EXPORTER,
             OTEL_METRICS_EXPORTER,
         ):
-            os.environ.setdefault(exporter, "otlp")
+            os.environ.setdefault(name, ",".join(self.exporters))
 
         _vars = {
             OTEL_EXPORTER_OTLP_ENDPOINT: OTEL_EXPORTER_OTLP_INSECURE,
@@ -211,3 +241,6 @@ class _DaggerOtelConfigurator(_BaseConfigurator):
             )
 
             init(exporters)
+
+        # The logging instrumentor injects the trace context into logs
+        LoggingInstrumentor().instrument()

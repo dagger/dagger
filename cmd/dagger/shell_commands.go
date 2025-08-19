@@ -48,6 +48,10 @@ type ShellCommand struct {
 
 	// Hidden hides the command from `.help`
 	Hidden bool
+
+	// NoResolveStateArgs indicates that the command should not resolve state
+	// values in arguments, before passing them to Run.
+	NoResolveStateArgs bool
 }
 
 // Name is the command name.
@@ -149,15 +153,18 @@ func (c *ShellCommand) Execute(ctx context.Context, h *shellCallHandler, args []
 			return fmt.Errorf("command %q %w\n\nUsage: %s", c.Name(), err, c.Use)
 		}
 	}
-	// resolve state values in arguments
-	a, err := h.resolveResults(ctx, args)
-	if err != nil {
-		return err
+	if !c.NoResolveStateArgs {
+		// resolve state values in arguments
+		a, err := h.resolveResults(ctx, args)
+		if err != nil {
+			return err
+		}
+		args = a
 	}
 	if h.Debug() {
-		shellDebug(ctx, "Command: "+c.Name(), a, st)
+		shellDebug(ctx, "Command: "+c.Name(), args, st)
 	}
-	return c.Run(ctx, c, a, st)
+	return c.Run(ctx, c, args, st)
 }
 
 func (h *shellCallHandler) BuiltinCommand(name string) (*ShellCommand, error) {
@@ -715,6 +722,10 @@ Without arguments, the current working directory is replaced by the initial cont
 				HelpFunc: func(cmd *ShellCommand) string {
 					return h.FunctionDoc(def, fn)
 				},
+				// Don't resolve state args since this is calling functionCall
+				// which needs state args to be passed as-is for specialized
+				// flag handling.
+				NoResolveStateArgs: true,
 				Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
 					emptySt := h.NewState()
 					st, err := h.functionCall(ctx, &emptySt, fn.CmdName(), args)

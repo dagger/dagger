@@ -752,6 +752,7 @@ defmodule Dagger.Container do
   @spec with_exec(t(), [String.t()], [
           {:use_entrypoint, boolean() | nil},
           {:stdin, String.t() | nil},
+          {:redirect_stdin, String.t() | nil},
           {:redirect_stdout, String.t() | nil},
           {:redirect_stderr, String.t() | nil},
           {:expect, Dagger.ReturnType.t() | nil},
@@ -767,6 +768,7 @@ defmodule Dagger.Container do
       |> QB.put_arg("args", args)
       |> QB.maybe_put_arg("useEntrypoint", optional_args[:use_entrypoint])
       |> QB.maybe_put_arg("stdin", optional_args[:stdin])
+      |> QB.maybe_put_arg("redirectStdin", optional_args[:redirect_stdin])
       |> QB.maybe_put_arg("redirectStdout", optional_args[:redirect_stdout])
       |> QB.maybe_put_arg("redirectStderr", optional_args[:redirect_stderr])
       |> QB.maybe_put_arg("expect", optional_args[:expect])

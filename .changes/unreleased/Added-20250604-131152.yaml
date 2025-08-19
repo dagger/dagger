@@ -1,6 +1,0 @@
-kind: Added
-body: New `container.Exists` and `directory.Exists` API for testing if a file exists, and optionally type (e.g. file or directory)
-time: 2025-06-04T13:11:52.988524315-07:00
-custom:
-    Author: alexcb
-    PR: "10449"

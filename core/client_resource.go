@@ -17,7 +17,7 @@ func GetClientResourceAccessor(ctx context.Context, parent *Query, externalName 
 
 	var scopeDigest digest.Digest
 	if m != nil {
-		scopeDigest = digest.Digest(m.Source.Self().Digest)
+		scopeDigest = digest.Digest(m.Source.Value.Self().Digest)
 	}
 
 	// Use an HMAC, which allows us to keep the externalName un-inferrable.

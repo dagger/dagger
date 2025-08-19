@@ -100,6 +100,8 @@ type containerBackend interface {
 	ContainerLs(ctx context.Context) ([]string, error)
 }
 
+var errContainerAlreadyExists = errors.New("container already exists")
+
 type runOpts struct {
 	image string
 
@@ -305,8 +307,10 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 
 	if err := d.backend.ContainerRun(ctx, containerName, runOptions); err != nil {
 		// maybe someone else started the container simultaneously?
-		if exists, _ := d.backend.ContainerExists(ctx, containerName); exists {
-			return nil, fmt.Errorf("failed to run container: %w", err)
+		if !errors.Is(err, errContainerAlreadyExists) {
+			if exists, _ := d.backend.ContainerExists(ctx, containerName); !exists {
+				return nil, fmt.Errorf("failed to run container: %w", err)
+			}
 		}
 	}
 

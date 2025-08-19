@@ -52,6 +52,10 @@ func (funcs goTemplateFuncs) HasLocalDependencies() bool {
 }
 
 func (funcs goTemplateFuncs) moduleRelPath(path string) string {
+	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
+		return path
+	}
+
 	moduleParentPath := ""
 	if funcs.cfg.ModuleConfig != nil {
 		moduleParentPath = funcs.cfg.ModuleConfig.ModuleParentPath

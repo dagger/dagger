@@ -109,7 +109,7 @@ defmodule Dagger.ObjectTypeDef do
   @doc """
   The location of this object declaration.
   """
-  @spec source_map(t()) :: Dagger.SourceMap.t()
+  @spec source_map(t()) :: Dagger.SourceMap.t() | nil
   def source_map(%__MODULE__{} = object_type_def) do
     query_builder =
       object_type_def.query_builder |> QB.select("sourceMap")

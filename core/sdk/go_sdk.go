@@ -87,9 +87,10 @@ func (sdk *goSDK) GenerateClient(
 
 	codegenArgs := dagql.ArrayInput[dagql.String]{
 		"generate-client",
-		"--output", dagql.String(outputDir),
+		"--output", dagql.String(filepath.Join(goSDKUserModContextDirPath, rootSourcePath)),
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
 		dagql.String(fmt.Sprintf("--module-source-id=%s", modSourceID)),
+		dagql.String(fmt.Sprintf("--client-dir=%s", outputDir)),
 	}
 
 	err = dag.Select(ctx, ctr, &ctr,

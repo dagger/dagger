@@ -398,8 +398,10 @@ type scrubber struct {
 	repl   string
 }
 
-const privateIP = `10\.\d+\.\d+\.\d+`
-const month = `Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec`
+const (
+	privateIP = `10\.\d+\.\d+\.\d+`
+	month     = `Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec`
+)
 
 var scrubs = []scrubber{
 	// Redis logs
@@ -564,6 +566,16 @@ var scrubs = []scrubber{
 		regexp.MustCompile(`\$ container: Container! X\.Xs CACHED`),
 		"$ container: Container! X.Xs CACHED",
 		"● container: Container! X.Xs",
+	},
+	{
+		regexp.MustCompile(`, line \d+, in`),
+		"File \"/src/some/path/to/module.py\", line 386, in some_func",
+		", line XXX, in",
+	},
+	{
+		regexp.MustCompile(`0x[0-9a-f]+`),
+		"File \"<@beartype(dagger.client.gen.Container.sync) at 0x7f80cbe716c0>\", line 12, in sync",
+		"0xXXXXXXXXXXXX",
 	},
 }
 

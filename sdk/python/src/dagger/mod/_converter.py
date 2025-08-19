@@ -38,9 +38,7 @@ if typing.TYPE_CHECKING:
 
 
 def make_converter():
-    conv = make_json_converter(
-        detailed_validation=True,
-    )
+    conv = make_json_converter()
 
     conv.register_structure_hook_func(
         is_id_type_subclass,
@@ -82,7 +80,7 @@ def dagger_interface_structure(id_, cls: type[Interface]):
 def dagger_type_unstructure(obj):
     """Get id from dagger object."""
     if not is_id_type(obj) and not isinstance(obj, Interface):
-        msg = f"Expected dagger Type object, got `{type(obj)}`"
+        msg = f"Expected dagger Type object, got '{type(obj)}'"
         raise TypeError(msg)
     return syncify(obj.id)
 
@@ -94,7 +92,7 @@ def to_interface_impl(proto: type) -> type[Interface]:
     mod = get_module(proto)
 
     if typ is None or not typ.interface or mod is None:
-        msg = f"Unexpected interface type `{proto}`"
+        msg = f"Unexpected interface type '{proto}'"
         raise TypeError(msg)
 
     methods = {
@@ -166,17 +164,18 @@ def make_method(name: str, func: Function, proto: type) -> typing.Callable:  # n
 
 
 @functools.cache
-def to_typedef(annotation: typing.Any) -> "TypeDef":  # noqa: C901, PLR0911
+def to_typedef(annotation: typing.Any, context: str = "type") -> "TypeDef":  # noqa: C901, PLR0911
     """Convert Python object to API type."""
     if is_initvar(annotation):
-        return to_typedef(annotation.type)
+        return to_typedef(annotation.type, context)
 
     if is_annotated(annotation):
-        return to_typedef(strip_annotations(annotation))
+        return to_typedef(strip_annotations(annotation), context)
 
     td = dag.type_def()
 
     typ = TypeHint(annotation)
+    error_msg = f"unsupported {context}: {typ.hint!r}"
 
     if is_nullable(typ):
         td = td.with_optional(True)
@@ -185,8 +184,7 @@ def to_typedef(annotation: typing.Any) -> "TypeDef":  # noqa: C901, PLR0911
 
     # Can't represent unions in the API.
     if is_union(typ):
-        msg = f"Unsupported union type: {typ.hint}"
-        raise TypeError(msg)
+        raise TypeError(error_msg)
 
     builtins = {
         str: dagger.TypeDefKind.STRING_KIND,
@@ -221,5 +219,4 @@ def to_typedef(annotation: typing.Any) -> "TypeDef":  # noqa: C901, PLR0911
         if is_id_type_subclass(cls):
             return td.with_object(name)
 
-    msg = f"Unsupported type: {typ.hint!r}"
-    raise TypeError(msg)
+    raise TypeError(error_msg)

@@ -1,6 +1,0 @@
-kind: Fixed
-body: Switching to prompt mode now properly initializes and displays the model, logging an error if initialization fails.
-time: 2025-07-21T11:10:42.014457354-04:00
-custom:
-    Author: vito
-    PR: "10765"

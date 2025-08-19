@@ -1,0 +1,72 @@
+
+### Request a file over HTTP/HTTPS and save it in a container
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/read-file-http/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/read-file-http/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/read-file-http/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+**Examples**
+
+Request the `README.md` file from the public `dagger/dagger` GitHub repository over HTTPS, save it as `/src/myfile` in the container, and return the container:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'read-file-http https://raw.githubusercontent.com/dagger/dagger/refs/heads/main/README.md'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    read-file-http https://raw.githubusercontent.com/dagger/dagger/refs/heads/main/README.md
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call read-file-http --url=https://raw.githubusercontent.com/dagger/dagger/refs/heads/main/README.md
+    ```
+    </TabItem>
+    </Tabs>
+
+Request the `README.md` file from the public `dagger/dagger` GitHub repository over HTTPS, save it as `/src/myfile` in the container, and display its contents:
+
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
+    ```shell
+    dagger <<EOF
+    read-file-http https://raw.githubusercontent.com/dagger/dagger/refs/heads/main/README.md |
+      file /src/myfile |
+      contents
+    EOF
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="First type 'dagger' for interactive mode."
+    read-file-http https://raw.githubusercontent.com/dagger/dagger/refs/heads/main/README.md | file /src/myfile | contents
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call \
+      read-file-http --url=https://raw.githubusercontent.com/dagger/dagger/refs/heads/main/README.md \
+      file --path=/src/myfile \
+      contents
+    ```
+    </TabItem>
+    </Tabs>

@@ -894,8 +894,8 @@ from dagger import dag
 @dagger.object_type
 class Test:
     @dagger.function
-    def use_hello(self) -> str:
-        return dag.dep().hello()
+    async def use_hello(self) -> str:
+        return await dag.dep().hello()
 `
 
 var useTSOuter = `

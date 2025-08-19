@@ -82,6 +82,7 @@ type ExecutionMetadata struct {
 	// search domains to install prior to the session's domain
 	ExtraSearchDomains []string
 
+	RedirectStdinPath  string
 	RedirectStdoutPath string
 	RedirectStderrPath string
 

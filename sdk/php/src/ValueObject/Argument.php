@@ -6,7 +6,10 @@ namespace Dagger\ValueObject;
 
 use Dagger\Attribute;
 use Dagger\Client\IdAble;
+use Dagger\Exception\RegistrationError\MissingAttribute;
+use Dagger\Exception\UnsupportedType;
 use Dagger\Json;
+use ReflectionNamedType;
 use ReflectionParameter;
 use Roave\BetterReflection\Reflection\ReflectionParameter as BetterReflectionParameter;
 use RuntimeException;
@@ -51,10 +54,6 @@ final readonly class Argument
             ?->newInstance()
             ?->description;
 
-        $listOfTypeAttribute = (current($parameter
-            ->getAttributes(Attribute\ListOfType::class)) ?: null)
-            ?->newInstance();
-
         $defaultPathAttribute = (current($parameter
             ->getAttributes(Attribute\DefaultPath::class)) ?: null)
             ?->newInstance();
@@ -66,13 +65,36 @@ final readonly class Argument
         return new self(
             name: $parameter->name,
             description: $description ?? $argAttribute?->description ?? '',
-            type: $listOfTypeAttribute?->type === null ?
-                Type::fromReflection($type) :
-                ListOfType::fromReflection($type, $listOfTypeAttribute),
+            type: self::getType($parameter),
             default: self::getDefault($parameter),
             defaultPath: $defaultPathAttribute?->path,
             ignore: $ignoreAttribute?->ignore,
         );
+    }
+
+    private static function getType(ReflectionParameter $parameter): ListOfType | Type
+    {
+        $type = $parameter->getType();
+
+        if (! $type instanceof ReflectionNamedType) {
+            throw new UnsupportedType(
+                'The PHP SDK only supports named types and nullable named types',
+            );
+        }
+
+        if ($type->getName() === 'array') {
+            $attribute = (current($parameter
+                ->getAttributes(Attribute\ListOfType::class)) ?: null)
+                ?->newInstance()
+                ?? throw MissingAttribute::listOfType(
+                    $parameter->getDeclaringFunction()->getName(),
+                    $parameter->getName(),
+                );
+
+            return ListOfType::fromReflection($type, $attribute);
+        }
+
+        return Type::fromReflection($type);
     }
 
     private static function getDefault(ReflectionParameter $parameter): ?Json

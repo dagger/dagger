@@ -1440,6 +1440,129 @@ func (ClientGeneratorTest) TestMissmatchDependencyVersion(ctx context.Context, t
 	require.Contains(t, out, "error serving dependency hello: module hello")
 }
 
+func (ClientGeneratorTest) TestNoGoProjectSetup(ctx context.Context, t *testctx.T) {
+	t.Run("add main after generating the client on an empty directory", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modCtr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+			With(nonNestedDevEngine(c)).
+			With(daggerNonNestedExec("init", "--name=test")).
+			With(daggerClientInstall("go"))
+
+		// Verify that we generated the go.mod and the library in the default location
+		generatedFiles, err := modCtr.Directory(".").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, generatedFiles, "dagger.json")
+		require.Contains(t, generatedFiles, "go.mod")
+		require.Contains(t, generatedFiles, "dagger/")
+
+		// Add a main.go file to use the generated client.
+		modCtr = modCtr.WithNewFile("main.go", `package main
+import (
+	"context"
+	"fmt"
+
+	"test/dagger/dag"
+)
+
+func main() {
+	ctx := context.Background()
+
+	res, err := dag.Container().From("alpine:3.20.2").WithExec([]string{"echo", "hello"}).Stdout(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("result:", res)
+}
+`)
+
+		out, err := modCtr.With(daggerNonNestedRun("go", "run", "main.go")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "result: hello\n")
+	})
+
+	t.Run("generate client as a sub module of an existing go project", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modCtr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+			With(nonNestedDevEngine(c)).
+			WithWorkdir("/work").
+			WithExec([]string{"go", "mod", "init", "test"}).
+			WithWorkdir("/work/lib").
+			With(daggerNonNestedExec("init", "--name=testlib")).
+			With(daggerClientInstall("go")).
+			WithWorkdir("/work").
+			// Add the generated client to the parent go.mod
+			WithExec([]string{"go", "mod", "edit", "-require", "testlib@v0.0.0"}).
+			WithExec([]string{"go", "mod", "edit", "-replace", "testlib=./lib"}).
+			WithNewFile("main.go", `package main
+import (
+	"context"
+	"fmt"
+
+	"testlib/dagger/dag"
+)
+
+func main() {
+	ctx := context.Background()
+
+	res, err := dag.Container().From("alpine:3.20.2").WithExec([]string{"echo", "hello"}).Stdout(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("result:", res)
+}`).
+			WithExec([]string{"go", "mod", "tidy"})
+
+		out, err := modCtr.With(daggerNonNestedRun("go", "run", "main.go")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "result: hello\n")
+	})
+
+	t.Run("generate a client on a go project with only a go.mod file", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modCtr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+			With(nonNestedDevEngine(c)).
+			WithExec([]string{"go", "mod", "init", "test.com/test"}).
+			With(daggerNonNestedExec("init", "--name=test")).
+			With(daggerClientInstall("go")).
+			WithNewFile("main.go", `package main
+import (
+	"context"
+	"fmt"
+
+	"test.com/test/dagger/dag"
+)
+
+func main() {
+	ctx := context.Background()
+
+	res, err := dag.Container().From("alpine:3.20.2").WithExec([]string{"echo", "hello"}).Stdout(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("result:", res)
+}
+`)
+
+		out, err := modCtr.With(daggerNonNestedRun("go", "run", "main.go")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "result: hello\n")
+	})
+}
+
 func withGoSetup(content string, outputDir string) func(*dagger.Container) *dagger.Container {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
