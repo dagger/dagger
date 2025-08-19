@@ -1,0 +1,6 @@
+kind: Fixed
+body: ensure HTTP auth is propagated to submodules
+time: 2025-08-19T08:16:19.523483245-07:00
+custom:
+    Author: grouville
+    PR: "10855"
