@@ -1965,6 +1965,35 @@ func (ModuleSuite) TestCurrentModuleAPI(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "nice", strings.TrimSpace(out))
 	})
 
+	t.Run("git", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithExec([]string{"apk", "add", "git"}).
+			WithExec([]string{"git", "config", "--global", "user.name", "test"}).
+			WithExec([]string{"git", "config", "--global", "user.email", "test@example.com"}).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			WithNewFile("/work/main.go", `package main
+
+			import "context"
+
+			type Test struct {}
+
+			func (m *Test) Fn(ctx context.Context) (string, error) {
+				repo := dag.CurrentModule().Git()
+				return repo.Head().Ref(ctx)
+			}
+			`,
+			).
+			WithExec([]string{"sh", "-c", "git init && git add . && git commit -m 'init'"}).
+			With(daggerCall("fn")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "refs/heads/master", strings.TrimSpace(out))
+	})
+
 	t.Run("workdir", func(ctx context.Context, t *testctx.T) {
 		t.Run("dir", func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)

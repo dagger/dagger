@@ -4445,6 +4445,15 @@ pub struct CurrentModuleWorkdirOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 impl CurrentModule {
+    /// The git repository containing the module's source code, if any.
+    pub fn git(&self) -> GitRepository {
+        let query = self.selection.select("git");
+        GitRepository {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// A unique identifier for this CurrentModule.
     pub async fn id(&self) -> Result<CurrentModuleId, DaggerError> {
         let query = self.selection.select("id");

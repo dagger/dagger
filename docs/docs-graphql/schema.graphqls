@@ -1314,6 +1314,9 @@ scalar ContainerID
 
 """Reflective module API provided to functions at runtime."""
 type CurrentModule {
+  """The git repository containing the module's source code, if any."""
+  git: GitRepository!
+
   """A unique identifier for this CurrentModule."""
   id: CurrentModuleID!
 

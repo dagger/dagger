@@ -637,7 +637,7 @@ func (fn *ModuleFunction) loadContextualArg(
 
 	switch arg.TypeDef.AsObject.Value.Name {
 	case "Directory":
-		dir, err := fn.mod.ContextSource.Value.Self().LoadContext(ctx, dag, arg.DefaultPath, arg.Ignore)
+		dir, err := fn.mod.ContextSource.Value.Self().LoadContextDir(ctx, dag, arg.DefaultPath, arg.Ignore)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", arg.DefaultPath, err)
 		}
@@ -649,7 +649,7 @@ func (fn *ModuleFunction) loadContextualArg(
 		filePath := filepath.Base(arg.DefaultPath)
 
 		// Load the directory containing the file.
-		dir, err := fn.mod.ContextSource.Value.Self().LoadContext(ctx, dag, dirPath, nil)
+		dir, err := fn.mod.ContextSource.Value.Self().LoadContextDir(ctx, dag, dirPath, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", dirPath, err)
 		}
@@ -677,44 +677,13 @@ func (fn *ModuleFunction) loadContextualArg(
 
 		if filepath.Clean(arg.DefaultPath) == "." || filepath.Clean(arg.DefaultPath) == ".git" {
 			// handle getting the git repo from the current module context
-
-			if gitSrc := fn.mod.ContextSource.Value.Self().Git; gitSrc != nil {
-				// easy, we're running a git repo
-				err := dag.Select(ctx, dag.Root(), &git,
-					dagql.Selector{
-						Field: "git",
-						Args: []dagql.NamedInput{
-							{Name: "url", Value: dagql.String(gitSrc.CloneRef)},
-							// NOTE: pin HEAD to the module's git commit and ref
-							// this matches the behavior of calling a checked out local source module
-							{Name: "commit", Value: dagql.String(gitSrc.Commit)},
-							{Name: "ref", Value: dagql.String(gitSrc.Ref)},
-						},
-					},
-				)
-
-				if err != nil {
-					return nil, fmt.Errorf("failed to load contextual git repository: %w", err)
-				}
-			} else {
-				// bit harder, this is actually a local directory
-				dir, err := fn.mod.ContextSource.Value.Self().LoadContext(ctx, dag, "/", nil)
-				if err != nil {
-					return nil, fmt.Errorf("failed to load contextual git: %w", err)
-				}
-
-				err = dag.Select(ctx, dir, &git,
-					dagql.Selector{
-						Field: "asGit",
-					},
-				)
-				if err != nil {
-					return nil, fmt.Errorf("failed to load contextual git repository: %w", err)
-				}
+			var err error
+			git, err = fn.mod.ContextSource.Value.Self().LoadContextGit(ctx, dag)
+			if err != nil {
+				return nil, err
 			}
 		} else if gitURL, err := gitutil.ParseURL(arg.DefaultPath); err == nil {
 			// handle an arbitrary git URL
-
 			args := []dagql.NamedInput{
 				{Name: "url", Value: dagql.String(gitURL.String())},
 			}

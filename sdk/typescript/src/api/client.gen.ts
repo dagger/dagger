@@ -3663,6 +3663,14 @@ export class CurrentModule extends BaseClient {
   }
 
   /**
+   * The git repository containing the module's source code, if any.
+   */
+  git = (): GitRepository => {
+    const ctx = this._ctx.select("git")
+    return new GitRepository(ctx)
+  }
+
+  /**
    * The name of the module being executed in
    */
   name = async (): Promise<string> => {
