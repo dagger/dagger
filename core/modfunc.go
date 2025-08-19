@@ -281,9 +281,10 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, err
 	}
 
+	callID := dagql.CurrentID(ctx)
 	execMD := buildkit.ExecutionMetadata{
 		ClientID:          identity.NewID(),
-		CallID:            dagql.CurrentID(ctx),
+		CallID:            callID,
 		ExecID:            identity.NewID(),
 		Internal:          true,
 		ParentIDs:         map[digest.Digest]*resource.ID{},
@@ -351,7 +352,31 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	fnCall := &FunctionCall{
 		Name:      fn.metadata.OriginalName,
 		Parent:    parentJSON,
+		ParentID:  callID.Receiver(),
 		InputArgs: callInputs,
+	}
+	if env, ok := EnvFromContext(ctx); ok {
+		fnCall.EnvID = env.ID()
+	} else {
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, err
+		}
+		var env dagql.ObjectResult[*Env]
+		if err := srv.Select(ctx, srv.Root(), &env, dagql.Selector{
+			Field: "env",
+		}, dagql.Selector{
+			Field: "withHostfs",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "hostfs",
+					Value: dagql.NewID[*Directory](mod.GetSource().ContextDirectory.ID()),
+				},
+			},
+		}); err != nil {
+			return nil, fmt.Errorf("failed to create env: %w", err)
+		}
+		fnCall.EnvID = env.ID()
 	}
 	if fn.objDef != nil {
 		fnCall.ParentName = fn.objDef.OriginalName

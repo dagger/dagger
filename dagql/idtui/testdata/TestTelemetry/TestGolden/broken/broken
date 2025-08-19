@@ -7,7 +7,7 @@ Expected stderr:
 ╰─● starting session X.Xs
  
 ▼ load module: ./viztest/broken-dep/broken X.Xs ERROR
-╰─▼ Container.withExec(args: ["go", "build", "-ldflags", "-s -w", "-o", "/runtime", "."]): Container! X.Xs ERROR
+  ▼ Container.withExec(args: ["go", "build", "-ldflags", "-s -w", "-o", "/runtime", "."]): Container! X.Xs ERROR
   ┃ # dagger/broken
   ┃ ./main.go:6:6: undefined: ctx
   ! process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1

@@ -234,7 +234,7 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 	h.wd = h.initwd
 
 	// not h.Debug() on purpose because it's only set from within an interpreter run
-	if debug {
+	if debugFlag {
 		slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 		slog.Debug("initial workdir",
 			"context", h.initwd.Context,
@@ -342,13 +342,24 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 	}
 
 	// Create a new span for this command
-	ctx, span := Tracer().Start(ctx, line,
+	spanName := line
+	if h.mode == modePrompt {
+		spanName = ""
+	}
+	var span trace.Span
+	ctx, span = Tracer().Start(ctx, spanName,
 		trace.WithAttributes(
 			attribute.String(telemetry.ContentTypeAttr, h.mode.ContentType()),
 			attribute.Bool(telemetry.CanceledAttr, line == ""),
 		),
 	)
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.End(span, func() error {
+		if errors.Is(rerr, context.Canceled) {
+			span.SetAttributes(attribute.Bool(telemetry.CanceledAttr, true))
+			return nil
+		}
+		return rerr
+	})
 
 	// redirect stdio to the current span
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
@@ -370,6 +381,7 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 			return err
 		}
 		h.llmSession = newLLM
+		h.llmModel = newLLM.model
 		return nil
 	}
 
@@ -387,7 +399,7 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 	// that should hardly cause memory issues.
 	defer h.state.Prune(ctx)
 
-	if debug {
+	if debugFlag {
 		// requires `--debug -vvvv` and .debug` for full dump
 		defer h.state.debug(ctx, h.Debug())
 	}
@@ -504,6 +516,7 @@ func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
 		return nil, err
 	}
 	h.llmSession = s
+	h.llmModel = s.model
 	return h.llmSession, h.llmErr
 }
 
@@ -519,6 +532,20 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, msg tea.KeyMsg) tea
 		h.mode = modeShell
 		return func() tea.Msg {
 			return idtui.UpdatePromptMsg{}
+		}
+	case "ctrl+s":
+		if h.llmSession != nil {
+			return func() tea.Msg {
+				if err := h.llmSession.SyncToLocal(ctx); err != nil {
+					slog.Error("failed to sync changes to local filesystem", "error", err.Error())
+					// Show error in sidebar
+					Frontend.SetSidebarContent(idtui.SidebarSection{
+						Title:   "Changes",
+						Content: termenv.String("SYNC ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
+					})
+				}
+				return idtui.UpdatePromptMsg{}
+			}
 		}
 	}
 	return nil

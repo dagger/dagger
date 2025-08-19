@@ -107,8 +107,8 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 	fmt.Fprintln(stderr, logMsg)
 	q = q.Root().
 		Select("llm").
-		Select("withEnv").
-		Arg("env", envID).
+		Select("withStaticTools").
+		Select("withEnv").Arg("env", envID).
 		Select("__mcp")
 
 	var response any
