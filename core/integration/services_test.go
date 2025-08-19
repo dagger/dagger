@@ -2386,14 +2386,16 @@ git config --global user.name "Test User"
 mkdir srv
 
 cd repo
-	git init
-	git branch -m %s
-	git add * || true
-	git commit -m "init"
+	if [ ! -d .git ]; then
+		git init
+		git branch -m %s
+		git add * || true
+		git commit -m "init"
+	fi
 cd ..
 
 cd srv
-	git clone --bare ../repo repo.git
+	git clone --no-local --bare ../repo repo.git
 	cd repo.git
 		git update-server-info
 	cd ..

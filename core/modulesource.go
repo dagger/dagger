@@ -285,9 +285,9 @@ func (src *ModuleSource) CalcDigest() digest.Digest {
 	return dagql.HashFrom(inputs...)
 }
 
-// LoadContext loads addition files+directories from the module source's context, including those that
+// LoadContextDir loads addition files+directories from the module source's context, including those that
 // may have not been included in the original module source load.
-func (src *ModuleSource) LoadContext(
+func (src *ModuleSource) LoadContextDir(
 	ctx context.Context,
 	dag *dagql.Server,
 	path string,
@@ -463,6 +463,49 @@ func (src *ModuleSource) LoadContext(
 	}
 	if err := query.AddClientResourcesFromID(ctx, &resource.ID{ID: *inst.ID()}, mainClientMetadata.ClientID, false); err != nil {
 		return inst, fmt.Errorf("failed to add client resources from directory source: %w", err)
+	}
+
+	return inst, nil
+}
+
+func (src *ModuleSource) LoadContextGit(
+	ctx context.Context,
+	dag *dagql.Server,
+) (inst dagql.ObjectResult[*GitRepository], err error) {
+	if src.Kind == ModuleSourceKindGit {
+		// easy, we're running a git repo
+		err := dag.Select(ctx, dag.Root(), &inst,
+			dagql.Selector{
+				Field: "git",
+				Args: []dagql.NamedInput{
+					{Name: "url", Value: dagql.String(src.Git.CloneRef)},
+					// NOTE: pin HEAD to the module's git commit and ref
+					// this matches the behavior of calling a checked out local source module
+					{Name: "commit", Value: dagql.String(src.Git.Commit)},
+					{Name: "ref", Value: dagql.String(src.Git.Ref)},
+				},
+			},
+		)
+
+		if err != nil {
+			return inst, fmt.Errorf("failed to load contextual git repository: %w", err)
+		}
+		return inst, nil
+	}
+
+	// bit harder, this is actually a local directory
+	dir, err := src.LoadContextDir(ctx, dag, "/", []string{".git"}, nil)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load contextual git: %w", err)
+	}
+
+	err = dag.Select(ctx, dir, &inst,
+		dagql.Selector{
+			Field: "asGit",
+		},
+	)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load contextual git repository: %w", err)
 	}
 
 	return inst, nil
