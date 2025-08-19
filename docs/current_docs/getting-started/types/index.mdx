@@ -1,21 +1,34 @@
 ---
 slug: /getting-started/types
 title: "Types"
-description: "Dagger modules are the building blocks of your workflows. They can be composed together to create complex pipelines."
+description: "Dagger types are the building blocks of your workflows. They can be composed together to create complex pipelines."
 sidebar_label: "Overview"
+toc_max_heading_level: 2
 ---
 
-In addition to basic types (string, boolean, integer, arrays...), the Dagger API also provides powerful types which you ca use as both arguments and return values for Dagger Functions.
+
+import ContainerType from "@daggerTypes/_container.mdx";
+import CacheVolumeType from "@daggerTypes/_cache-volume.mdx";
+import GitRepositoryType from "@daggerTypes/_git-repository.mdx";
+import DirectoryType from "@daggerTypes/_directory.mdx";
+import EnvType from "@daggerTypes/_env.mdx";
+import LlmType from "@daggerTypes/_env.mdx";
+import FileType from "@daggerTypes/_file.mdx";
+import CurrentModuleType from "@daggerTypes/_current-module.mdx";
+import SecretType from "@daggerTypes/_secret.mdx";
+import ServiceType from "@daggerTypes/_service.mdx";
+
+In addition to basic types (string, boolean, integer, arrays...), the Dagger API also provides powerful types which you can use as both arguments and return values for Dagger Functions.
 
 :::note
 The types listed on this page are indicative and not exhaustive. For a complete list of supported types and their fields, refer to the [Dagger API reference](https://docs.dagger.io/api/reference).
 :::
 
-The following table lists available types and what they represent:
+The following table lists some of the available types and what they represent:
 
 | Type | Description |
 |------|-------------|
-| `CacheVolume` | A directory whose contents persist across runs |
+| [`CacheVolume`](cache-volume.mdx) | A directory whose contents persist across runs |
 | [`Container`](container.mdx) | An OCI-compatible container |
 | `CurrentModule` | The current Dagger module and its context |
 | `Engine` | The Dagger Engine configuration and state |
@@ -23,7 +36,7 @@ The following table lists available types and what they represent:
 | `EnvVariable` | An environment variable name and value |
 | [`Env`](env.mdx) | An environment variable name and value |
 | [`File`](file.mdx) | A file |
-| `GitRepository` | A Git repository |
+| [`GitRepository`](git-repository.mdx) | A Git repository |
 | `GitRef` | A Git reference (tag, branch, or commit) |
 | `Host` | The Dagger host environment |
 | [`LLM`](llm.mdx) | A Large Language Model (LLM) |
@@ -34,7 +47,34 @@ The following table lists available types and what they represent:
 | `Socket` | A Unix or TCP/IP socket that can be mounted into a container |
 | `Terminal` | An interactive terminal session |
 
-Each type exposes additional fields. Some of these are discussed on their respective pages.
+Each type exposes additional fields. Some of these are discussed below.
+
+## Container
+<ContainerType />
+
+## CurrentModule
+<CurrentModuleType />
+
+## Directory
+<DirectoryType />
+
+## File
+<FileType />
+
+## Env
+<EnvType />
+
+## Secret
+<SecretType />
+
+## Service
+<ServiceType />
+
+## CacheVolume
+<CacheVolumeType />
+
+## GitRepository
+<GitRepositoryType />
 
 :::tip
 In addition to the default Dagger types, you can create and add your own custom types to Dagger. These custom types can be used in Dagger modules and can be composed with other types to create complex workflows. Learn more about [creating custom types and developing Dagger modules](../../extending/index.mdx).

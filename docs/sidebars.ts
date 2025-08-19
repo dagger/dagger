@@ -60,9 +60,10 @@ module.exports = {
         "getting-started/types/file",
         "getting-started/types/secret",
         "getting-started/types/service",
-        "getting-started/types/cache-volume",
         "getting-started/types/llm",
         "getting-started/types/env",
+        "getting-started/types/cache-volume",
+        "getting-started/types/git-repository",
       ],
     },
     {
