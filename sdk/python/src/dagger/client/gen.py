@@ -323,6 +323,15 @@ class ImageMediaTypes(Enum):
     OCI = "OCIMediaTypes"
 
 
+class ModuleSourceExperimentalFeature(Enum):
+    """Experimental features of a module"""
+
+    SELF_CALLS_FEATURE = "SELF_CALLS_FEATURE"
+    """Self calls"""
+    SELF_CALLS = "SELF_CALLS_FEATURE"
+    """Self calls"""
+
+
 class ModuleSourceKind(Enum):
     """The kind of module source."""
 
@@ -8993,7 +9002,10 @@ class ModuleSource(Type):
         _ctx = self._select("withEngineVersion", _args)
         return ModuleSource(_ctx)
 
-    def with_experimental_features(self, features: list[str]) -> Self:
+    def with_experimental_features(
+        self,
+        features: list[ModuleSourceExperimentalFeature],
+    ) -> Self:
         """Enable the experimental features for the module source.
 
         Parameters
@@ -9120,9 +9132,20 @@ class ModuleSource(Type):
         _ctx = self._select("withoutDependencies", _args)
         return ModuleSource(_ctx)
 
-    def without_experimental_features(self) -> Self:
-        """Disable experimental features for the module source."""
-        _args: list[Arg] = []
+    def without_experimental_features(
+        self,
+        features: list[ModuleSourceExperimentalFeature],
+    ) -> Self:
+        """Disable experimental features for the module source.
+
+        Parameters
+        ----------
+        features:
+            The experimental features to disable.
+        """
+        _args = [
+            Arg("features", features),
+        ]
         _ctx = self._select("withoutExperimentalFeatures", _args)
         return ModuleSource(_ctx)
 
@@ -11548,6 +11571,7 @@ __all__ = [
     "ModuleConfigClientID",
     "ModuleID",
     "ModuleSource",
+    "ModuleSourceExperimentalFeature",
     "ModuleSourceID",
     "ModuleSourceKind",
     "NetworkProtocol",
