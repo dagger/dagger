@@ -634,15 +634,6 @@ func (r *Binding) AsJSONValue() *JSONValue {
 	}
 }
 
-// Retrieve the binding value, as type LLM
-func (r *Binding) AsLLM() *LLM {
-	q := r.query.Select("asLLM")
-
-	return &LLM{
-		query: q,
-	}
-}
-
 // Retrieve the binding value, as type Module
 func (r *Binding) AsModule() *Module {
 	q := r.query.Select("asModule")
@@ -3023,6 +3014,15 @@ func (r *CurrentModule) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// The fully instantiated module implementing the current function call.
+func (r *CurrentModule) Meta() *Module {
+	q := r.query.Select("meta")
+
+	return &Module{
+		query: q,
+	}
+}
+
 // The name of the module being executed in
 func (r *CurrentModule) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
@@ -4628,6 +4628,14 @@ func (r *Env) WithGraphQLQuery(q *querybuilder.Selection) *Env {
 	}
 }
 
+func (r *Env) Hostfs() *Directory {
+	q := r.query.Select("hostfs")
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // A unique identifier for this Env.
 func (r *Env) ID(ctx context.Context) (EnvID, error) {
 	if r.id != nil {
@@ -5018,6 +5026,17 @@ func (r *Env) WithGitRepositoryOutput(name string, description string) *Env {
 	}
 }
 
+// Return a new environment with a new host filesystem
+func (r *Env) WithHostfs(hostfs *Directory) *Env {
+	assertNotNil("hostfs", hostfs)
+	q := r.query.Select("withHostfs")
+	q = q.Arg("hostfs", hostfs)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create or update a binding of type JSONValue in the environment
 func (r *Env) WithJSONValueInput(name string, value *JSONValue, description string) *Env {
 	assertNotNil("value", value)
@@ -5042,24 +5061,11 @@ func (r *Env) WithJSONValueOutput(name string, description string) *Env {
 	}
 }
 
-// Create or update a binding of type LLM in the environment
-func (r *Env) WithLLMInput(name string, value *LLM, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withLLMInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired LLM output to be assigned in the environment
-func (r *Env) WithLLMOutput(name string, description string) *Env {
-	q := r.query.Select("withLLMOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
+// load a module and expose its functions to the model
+func (r *Env) WithModule(module *Module) *Env {
+	assertNotNil("module", module)
+	q := r.query.Select("withModule")
+	q = q.Arg("module", module)
 
 	return &Env{
 		query: q,
@@ -5275,6 +5281,15 @@ func (r *Env) WithStringOutput(name string, description string) *Env {
 	q := r.query.Select("withStringOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Return a new environment without any outputs
+func (r *Env) WithoutOutputs() *Env {
+	q := r.query.Select("withoutOutputs")
 
 	return &Env{
 		query: q,
@@ -7940,6 +7955,7 @@ func (r *JSONValue) WithField(path []string, value *JSONValue) *JSONValue {
 type LLM struct {
 	query *querybuilder.Selection
 
+	hasPrompt   *bool
 	historyJSON *JSON
 	id          *LLMID
 	lastReply   *string
@@ -7990,6 +8006,19 @@ func (r *LLM) Env() *Env {
 	return &Env{
 		query: q,
 	}
+}
+
+// Indicates that the LLM can be synced or stepped
+func (r *LLM) HasPrompt(ctx context.Context) (bool, error) {
+	if r.hasPrompt != nil {
+		return *r.hasPrompt, nil
+	}
+	q := r.query.Select("hasPrompt")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // return the llm message history
@@ -8068,7 +8097,7 @@ func (r *LLM) LastReply(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// synchronize LLM state
+// Loop completing tool calls until the LLM ends its turn
 func (r *LLM) Loop() *LLM {
 	q := r.query.Select("loop")
 
@@ -8101,6 +8130,15 @@ func (r *LLM) Provider(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Returns an LLM that will only sync one step instead of looping
+func (r *LLM) Step() *LLM {
+	q := r.query.Select("step")
+
+	return &LLM{
+		query: q,
+	}
 }
 
 // synchronize LLM state
@@ -8138,11 +8176,45 @@ func (r *LLM) Tools(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Return a new LLM with the specified tool disabled
+func (r *LLM) WithBlockedFunction(typeName string, fieldName string) *LLM {
+	q := r.query.Select("withBlockedFunction")
+	q = q.Arg("typeName", typeName)
+	q = q.Arg("fieldName", fieldName)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Provide the calling object as an input to the LLM environment
+func (r *LLM) WithCaller(name string, description string) *LLM {
+	q := r.query.Select("withCaller")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // allow the LLM to interact with an environment via MCP
 func (r *LLM) WithEnv(env *Env) *LLM {
 	assertNotNil("env", env)
 	q := r.query.Select("withEnv")
 	q = q.Arg("env", env)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Add an external MCP server to the LLM
+func (r *LLM) WithMCPServer(name string, service *Service) *LLM {
+	assertNotNil("service", service)
+	q := r.query.Select("withMCPServer")
+	q = q.Arg("name", name)
+	q = q.Arg("service", service)
 
 	return &LLM{
 		query: q,
@@ -8174,6 +8246,15 @@ func (r *LLM) WithPromptFile(file *File) *LLM {
 	assertNotNil("file", file)
 	q := r.query.Select("withPromptFile")
 	q = q.Arg("file", file)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
+func (r *LLM) WithStaticTools() *LLM {
+	q := r.query.Select("withStaticTools")
 
 	return &LLM{
 		query: q,
@@ -9810,6 +9891,14 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 	}
 
 	return &Container{
+		query: q,
+	}
+}
+
+func (r *Client) CurrentEnv() *Env {
+	q := r.query.Select("currentEnv")
+
+	return &Env{
 		query: q,
 	}
 }

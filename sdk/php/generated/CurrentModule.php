@@ -23,6 +23,15 @@ class CurrentModule extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The fully instantiated module implementing the current function call.
+     */
+    public function meta(): Module
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('meta');
+        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The name of the module being executed in
      */
     public function name(): string
