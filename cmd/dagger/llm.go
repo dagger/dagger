@@ -582,7 +582,6 @@ func (s *LLMSession) assignShellString(ctx context.Context, name string, val str
 	if err := s.shell.Eval(ctx, fmt.Sprintf("%s=%s", name, quot)); err != nil {
 		slog.Error("failed to assign value", "name", name, "quoted", quot, "error", err.Error())
 	}
-	return
 }
 
 func (s *LLMSession) toShell(ctx context.Context, idable dagqlObject) (string, error) {
