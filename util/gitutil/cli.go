@@ -3,8 +3,10 @@ package gitutil
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"slices"
@@ -32,6 +34,7 @@ type GitCLI struct {
 	sshKnownHosts string
 
 	ignoreError bool
+	config      map[string]string
 }
 
 // Option provides a variadic option for configuring the git client.
@@ -107,6 +110,53 @@ func WithIgnoreError() Option {
 	return func(b *GitCLI) {
 		b.ignoreError = true
 	}
+}
+
+// WithConfig merges git config key-value pairs into the environment using
+// GIT_CONFIG_COUNT/KEY_i/VALUE_i so they propagate to all child processes.
+func WithConfig(entries map[string]string) Option {
+	return func(b *GitCLI) {
+		if len(entries) == 0 {
+			return
+		}
+		if b.config == nil {
+			b.config = make(map[string]string, len(entries))
+		}
+		maps.Copy(b.config, entries)
+	}
+}
+
+// WithHTTPTokenAuth scopes an Authorization header built from a token to the
+// given remote's host using http.<base>/.extraheader so sub-commands inherit it
+func WithHTTPTokenAuth(remote *GitURL, token, username string) Option {
+	if remote.Scheme != HTTPProtocol && remote.Scheme != HTTPSProtocol {
+		return func(*GitCLI) {}
+	}
+
+	if username == "" {
+		if remote.Host == "bitbucket.org" {
+			username = "x-token-auth"
+		} else {
+			username = "x-access-token"
+		}
+	}
+
+	creds := username + ":" + token
+	header := "Basic " + base64.StdEncoding.EncodeToString([]byte(creds))
+	return WithHTTPAuthorizationHeader(remote, header)
+}
+
+// WithHTTPAuthorizationHeader scopes a prebuilt Authorization header
+// (e.g., "Basic ...") to http.<base>/.extraheader for the given remote.
+func WithHTTPAuthorizationHeader(remote *GitURL, header string) Option {
+	if remote.Scheme != HTTPProtocol && remote.Scheme != HTTPSProtocol {
+		return func(*GitCLI) {}
+	}
+
+	base := remote.Scheme + "://" + remote.Host
+	return WithConfig(map[string]string{
+		"http." + base + "/.extraheader": "Authorization: " + header,
+	})
 }
 
 type StreamFunc func(context.Context) (io.WriteCloser, io.WriteCloser, func())
@@ -222,6 +272,10 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, rerr erro
 	}
 	if cli.sshAuthSock != "" {
 		cmd.Env = append(cmd.Env, "SSH_AUTH_SOCK="+cli.sshAuthSock)
+	}
+
+	if len(cli.config) > 0 {
+		cmd.Env = MergeGitConfigEnv(cmd.Env, cli.config)
 	}
 
 	var err error
