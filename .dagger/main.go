@@ -81,7 +81,8 @@ func New(
 		if strings.HasPrefix(module, "dagql/idtui/viztest/broken") {
 			continue
 		}
-		if strings.HasPrefix(module, "modules/evaluator/") {
+		if strings.HasPrefix(module, "modules/claude/") {
+			// re-enable after we ship its dependent APIs
 			continue
 		}
 		dev.ModCodegenTargets = append(dev.ModCodegenTargets, module)
@@ -135,7 +136,8 @@ func (dev *DaggerDev) Lint(
 				if strings.HasPrefix(pkg, "dagql/idtui/viztest/broken") {
 					continue
 				}
-				if strings.HasPrefix(pkg, "modules/evaluator/") {
+				if strings.HasPrefix(pkg, "modules/claude/") {
+					// re-enable after we ship its dependent APIs
 					continue
 				}
 				pkgs = append(pkgs, pkg)
