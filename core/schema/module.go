@@ -106,6 +106,9 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("name", s.currentModuleName).
 			Doc(`The name of the module being executed in`),
 
+		dagql.Func("meta", s.currentModuleMeta).
+			Doc(`The fully instantiated module implementing the current function call.`),
+
 		dagql.NodeFunc("source", s.currentModuleSource).
 			Doc(`The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).`),
 
@@ -705,6 +708,14 @@ func (s *moduleSchema) currentModuleName(
 	args struct{},
 ) (string, error) {
 	return curMod.Module.NameField, nil
+}
+
+func (s *moduleSchema) currentModuleMeta(
+	ctx context.Context,
+	curMod *core.CurrentModule,
+	args struct{},
+) (dagql.ObjectResult[*core.Module], error) {
+	return curMod.Meta(ctx)
 }
 
 func (s *moduleSchema) currentModuleSource(

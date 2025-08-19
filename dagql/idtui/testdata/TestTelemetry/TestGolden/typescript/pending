@@ -16,11 +16,11 @@ Expected stderr:
 
 ● typescript: Typescript! X.Xs
 ▼ .pending: Void X.Xs ERROR
-├─$ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
-├─● .withEnvVariable(name: "NOW", value: "XXXX-XX-XXTXX:XX:XX.XXXZ"): Container! X.Xs
-├─● .withExec(args: ["sleep", "1"]): Container! X.Xs
-├─✘ .withExec(args: ["false"]): Container! X.Xs ERROR
-│ ! process "false" did not complete successfully: exit code: 1
-╰─○ .withExec(args: ["sleep", "1"]): Container! X.Xs
+  $ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
+  ● .withEnvVariable(name: "NOW", value: "XXXX-XX-XXTXX:XX:XX.XXXZ"): Container! X.Xs
+  ● .withExec(args: ["sleep", "1"]): Container! X.Xs
+  ✘ .withExec(args: ["false"]): Container! X.Xs ERROR
+  ! process "false" did not complete successfully: exit code: 1
+  ○ .withExec(args: ["sleep", "1"]): Container! X.Xs
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

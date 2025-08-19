@@ -16,7 +16,7 @@ Expected stderr:
 
 ● typescript: Typescript! X.Xs
 ▼ .failLog: Void X.Xs ERROR
-╰─▼ Container.withExec(args: ["sh", "-c", "echo im doing a lot of work; echo and then failing; exit 1"]): Container! X.Xs ERROR
+  ▼ Container.withExec(args: ["sh", "-c", "echo im doing a lot of work; echo and then failing; exit 1"]): Container! X.Xs ERROR
   ┃ im doing a lot of work
   ┃ and then failing
   ! process "sh -c echo im doing a lot of work; echo and then failing; exit 1" did not complete successfully: exit code: 1

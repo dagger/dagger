@@ -875,6 +875,14 @@ type CurrentModule struct {
 	Module *Module
 }
 
+func (mod *CurrentModule) Meta(ctx context.Context) (dagql.ObjectResult[*Module], error) {
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*Module]{}, err
+	}
+	return dagql.NewObjectResultForID(mod.Module, srv, mod.Module.ResultID)
+}
+
 func (*CurrentModule) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "CurrentModule",
