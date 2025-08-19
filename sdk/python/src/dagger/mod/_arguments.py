@@ -33,8 +33,10 @@ class Name:
 class DefaultPath:
     """If the argument is omitted, load it from the given path in the context directory.
 
-    Only applies to arguments of type :py:class:`dagger.Directory` or
-    :py:class:`dagger.File`.
+    Only applies to arguments of type
+    :py:class:`dagger.Directory`/:py:class:`dagger.File`
+    or :py:class:`dagger.GitRepository`/:py:class:`dagger.GitRef`.
+
 
     Mutually exclusive with setting a default value for the parameter. When
     used within Python, the parameter should be required.
@@ -43,6 +45,10 @@ class DefaultPath:
 
         @function
         def build(self, src: Annotated[dagger.Directory, DefaultPath("..")]): ...
+
+
+        @function
+        def build(self, src: Annotated[dagger.GitRef, DefaultPath("./.git")]): ...
     """
 
     from_context: ContextPath
@@ -122,7 +128,13 @@ class Parameter:
 
     @property
     def is_optional(self) -> bool:
-        return self.has_default or self.default_path is not None or self.is_nullable
+        return any(
+            [
+                self.has_default,
+                self.default_path is not None,
+                self.is_nullable,
+            ]
+        )
 
     def _validate(self):
         extra = {"parameter": self.signature}
