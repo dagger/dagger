@@ -313,7 +313,7 @@ func NewContainerDagOp(
 	ctr *Container,
 	extraInputs []llb.State,
 ) (*Container, error) {
-	mounts, inputs, outputCount, err := getAllContainerMounts(ctr)
+	mounts, inputs, _, outputCount, err := getAllContainerMounts(ctr)
 	if err != nil {
 		return nil, err
 	}
@@ -563,7 +563,7 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 // getAllContainerMounts gets the list of all mounts for a container, as well as all the
 // inputs that are part of it, and the total number of outputs. Each mount's
 // Input maps to an index in the returned states.
-func getAllContainerMounts(container *Container) (mounts []*pb.Mount, states []llb.State, outputCount int, _ error) {
+func getAllContainerMounts(container *Container) (mounts []*pb.Mount, states []llb.State, refs []bkcache.ImmutableRef, outputCount int, _ error) {
 	outputIdx := 0
 	inputIdxs := map[digest.Digest]pb.InputIndex{}
 
@@ -598,6 +598,7 @@ func getAllContainerMounts(container *Container) (mounts []*pb.Mount, states []l
 				mount.Input = pb.InputIndex(len(states))
 				inputIdxs[*dag.OpDigest] = mount.Input
 				states = append(states, st)
+				refs = append(refs, mnt.Result)
 			}
 		}
 
@@ -639,15 +640,15 @@ func getAllContainerMounts(container *Container) (mounts []*pb.Mount, states []l
 	}
 
 	// handle our normal mounts
-	if err := addMount(ContainerMount{Source: container.FS, Target: "/"}); err != nil {
-		return nil, nil, 0, err
+	if err := addMount(ContainerMount{Source: container.FS, Result: container.FSResult, Target: "/"}); err != nil {
+		return nil, nil, nil, 0, err
 	}
-	if err := addMount(ContainerMount{Source: container.Meta, Target: buildkit.MetaMountDestPath}); err != nil {
-		return nil, nil, 0, err
+	if err := addMount(ContainerMount{Source: container.Meta, Result: container.MetaResult, Target: buildkit.MetaMountDestPath}); err != nil {
+		return nil, nil, nil, 0, err
 	}
 	for _, mount := range container.Mounts {
 		if err := addMount(mount); err != nil {
-			return nil, nil, 0, err
+			return nil, nil, nil, 0, err
 		}
 	}
 
@@ -678,7 +679,7 @@ func getAllContainerMounts(container *Container) (mounts []*pb.Mount, states []l
 	// handle socket mounts
 	for _, socket := range container.Sockets {
 		if socket.ContainerPath == "" {
-			return nil, nil, 0, fmt.Errorf("unsupported socket: only unix paths are implemented")
+			return nil, nil, nil, 0, fmt.Errorf("unsupported socket: only unix paths are implemented")
 		}
 		uid, gid := 0, 0
 		if socket.Owner != nil {
@@ -699,7 +700,7 @@ func getAllContainerMounts(container *Container) (mounts []*pb.Mount, states []l
 		mounts = append(mounts, mount)
 	}
 
-	return mounts, states, outputIdx, nil
+	return mounts, states, refs, outputIdx, nil
 }
 
 // setAllContainerMounts is the reverse of getAllContainerMounts, and rewrites

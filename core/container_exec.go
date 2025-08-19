@@ -309,6 +309,23 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 				}
 			}
 
+			for i, res := range results {
+				iref := res.Sys().(*worker.WorkerRef).ImmutableRef
+				switch i {
+				case 0:
+					container.FSResult = iref
+				case 1:
+					container.MetaResult = iref
+				default:
+					mountIdx := i - 2
+					if mountIdx >= len(container.Mounts) {
+						// something is disastourously wrong, panic!
+						panic(fmt.Sprintf("index %d escapes number of mounts %d", mountIdx, len(container.Mounts)))
+					}
+					container.Mounts[mountIdx].Result = iref
+				}
+			}
+
 			rerr = errdefs.WithExecError(rerr, execInputs, execMounts)
 			rerr = buildkit.RichError{
 				ExecError: rerr.(*errdefs.ExecError),
@@ -316,7 +333,9 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 				Mounts:    mounts.Mounts,
 				ExecMD:    execMD,
 				Meta:      metaSpec,
-				Secretenv: secretEnvs,
+				Terminal: func(ctx context.Context, richErr *buildkit.RichError) error {
+					return container.TerminalError(ctx, richErr.ExecMD.CallID, richErr)
+				},
 			}
 		} else {
 			// Only release actives if err is nil.

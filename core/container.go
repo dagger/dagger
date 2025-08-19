@@ -1811,6 +1811,15 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 	}, nil
 }
 
+func (container *Container) AsRecoveredService(ctx context.Context, richErr *buildkit.RichError) (*Service, error) {
+	return &Service{
+		Creator:   trace.SpanContextFromContext(ctx),
+		Container: container,
+		ExecMeta:  richErr.Meta,
+		ExecMD:    richErr.ExecMD,
+	}, nil
+}
+
 func (container *Container) ownership(ctx context.Context, owner string) (*Ownership, error) {
 	if owner == "" {
 		// do not change ownership
