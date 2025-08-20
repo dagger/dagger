@@ -52,7 +52,7 @@ const (
 const cliZenFrontmatter = `---
 title: "CLI Reference"
 description: "Learn how to use the Dagger CLI to run composable workflows in containers."
-slug: /reference/cli
+slug: "/reference/cli"
 ---
 
 `
