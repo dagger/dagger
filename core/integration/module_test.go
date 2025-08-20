@@ -6059,6 +6059,114 @@ export class Dep {
 	}
 }
 
+func (ModuleSuite) TestSelfCalls(ctx context.Context, t *testctx.T) {
+	tcs := []struct {
+		sdk    string
+		source string
+	}{
+		{
+			sdk: "go",
+			source: `package main
+
+import (
+	"context"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) ContainerEcho(
+	// +optional
+	// +default="Hello Self Calls"
+	stringArg string,
+) *dagger.Container {
+	return dag.Container().From("alpine:latest").WithExec([]string{"echo", stringArg})
+}
+
+func (m *Test) Print(ctx context.Context, stringArg string) (string, error) {
+	return dag.Test().ContainerEcho(dagger.TestContainerEchoOpts{
+		StringArg: stringArg,
+	}).Stdout(ctx)
+}
+
+func (m *Test) PrintDefault(ctx context.Context) (string, error) {
+	return dag.Test().ContainerEcho().Stdout(ctx)
+}
+`,
+		},
+		{
+			sdk: "typescript",
+			source: `import { dag, Container, object, func } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+  /**
+   * Returns a container that echoes whatever string argument is provided
+   */
+  @func()
+  containerEcho(stringArg: string = "Hello Self Calls"): Container {
+    return dag.container().from("alpine:latest").withExec(["echo", stringArg])
+  }
+
+  @func()
+  async print(stringArg: string): Promise<string> {
+    return dag.test().containerEcho({stringArg}).stdout()
+  }
+
+  @func()
+  async printDefault(): Promise<string> {
+    return dag.test().containerEcho().stdout()
+  }
+}
+`,
+		},
+		{
+			sdk: "python",
+			source: `import dagger
+from dagger import dag, function, object_type
+
+@object_type
+class Test:
+    @function
+    def container_echo(self, string_arg: str = "Hello Self Calls") -> dagger.Container:
+        return dag.container().from_("alpine:latest").with_exec(["echo", string_arg])
+
+    @function
+    async def print(self, string_arg: str) -> str:
+        return await dag.test().container_echo(string_arg=string_arg).stdout()
+
+    @function
+    async def print_default(self) -> str:
+        return await dag.test().container_echo().stdout()
+`,
+		},
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			modGen := modInit(t, c, tc.sdk, tc.source, "--with-self-calls")
+
+			t.Run("can call with arguments", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.
+					With(daggerQuery(`{test{print(stringArg:"hello")}}`)).
+					Stdout(ctx)
+				require.NoError(t, err)
+				require.JSONEq(t, `{"test":{"print":"hello\n"}}`, out)
+			})
+
+			t.Run("can call with optional arguments", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.
+					With(daggerQuery(`{test{printDefault}}`)).
+					Stdout(ctx)
+				require.NoError(t, err)
+				require.JSONEq(t, `{"test":{"printDefault":"Hello Self Calls\n"}}`, out)
+			})
+		})
+	}
+}
+
 func (ModuleSuite) TestLoadWhenNoModule(ctx context.Context, t *testctx.T) {
 	// verify that if a module is loaded from a directory w/ no module we don't
 	// load extra files
@@ -6595,7 +6703,7 @@ func sdkCodegenFile(t *testctx.T, sdk string) string {
 	}
 }
 
-func modInit(t *testctx.T, c *dagger.Client, sdk, contents string) *dagger.Container {
+func modInit(t *testctx.T, c *dagger.Client, sdk, contents string, extra ...string) *dagger.Container {
 	t.Helper()
 	return goGitBase(t, c).
 		With(func(ctr *dagger.Container) *dagger.Container {
@@ -6608,20 +6716,22 @@ func modInit(t *testctx.T, c *dagger.Client, sdk, contents string) *dagger.Conta
 			}
 			return ctr
 		}).
-		With(withModInit(sdk, contents))
+		With(withModInit(sdk, contents, extra...))
 }
 
-func withModInit(sdk, contents string) dagger.WithContainerFunc {
-	return withModInitAt(".", sdk, contents)
+func withModInit(sdk, contents string, extra ...string) dagger.WithContainerFunc {
+	return withModInitAt(".", sdk, contents, extra...)
 }
 
-func withModInitAt(dir, sdk, contents string) dagger.WithContainerFunc {
+func withModInitAt(dir, sdk, contents string, extra ...string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		name := filepath.Base(dir)
 		if name == "." {
 			name = "test"
 		}
-		args := []string{"init", "--sdk=" + sdk, "--name=" + name, "--source=" + dir, dir}
+		args := []string{"init", "--sdk=" + sdk, "--name=" + name, "--source=" + dir}
+		args = append(args, extra...)
+		args = append(args, dir)
 		ctr = ctr.With(daggerExec(args...))
 		if contents != "" {
 			return ctr.With(sdkSourceAt(dir, sdk, contents))
