@@ -394,7 +394,6 @@ func (w *Workflow) asWorkflow() api.Workflow {
 	jobs := map[string]api.Job{}
 	for _, job := range w.Jobs {
 		steps := []api.JobStep{}
-		steps = append(steps, job.checkoutStep()) // TODO: make checkout configurable
 		steps = append(steps, job.installDaggerSteps()...)
 		steps = append(steps, job.warmEngineStep())
 		for _, cmd := range job.SetupCommands {
