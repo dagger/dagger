@@ -199,6 +199,11 @@ div[class*="docSidebarMenu"],
   transition: border-bottom-color 0.2s;
 }
 
+/* Add margin to navbar items except the last one */
+.navbar__items .navbar__item:not(:last-child) {
+  margin-right: 3px;
+}
+
 // Navbar hover underline effect (matches TOC opacity)
 html[data-theme="light"] {
   .navbar__items .navbar__item .navbar__link:not(.navbar__link--active):hover,
@@ -293,7 +298,7 @@ html[data-theme="dark"] {
 }
 
 .theme-doc-sidebar-item-category {
-  font-weight: bold;
+  font-weight: 600;
   color: var(--ifm-menu-color);
   // no hover effect
   &:hover {
@@ -323,7 +328,7 @@ html[data-theme="dark"] {
 
 .theme-doc-sidebar-item-category .menu__link--active {
   color: var(--ifm-menu-color);
-  font-weight: bold;
+  font-weight: 600;
   &:hover {
     color: var(--ifm-menu-color);
   }
