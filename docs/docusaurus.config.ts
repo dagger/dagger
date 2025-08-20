@@ -265,6 +265,7 @@ const config: Config = {
           className: "navbar-blog-link",
           activeBaseRegex: "^/cookbook/?.*",
         },
+        // TODO(jasonmccallister): Add these items back in the nav or possible swizzle into a sidebar or toc?
         // {
         //   position: "right",
         //   href: "https://github.com/dagger/dagger",
