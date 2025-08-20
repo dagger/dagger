@@ -2515,11 +2515,6 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	runtimeImpl, ok := src.Self().SDKImpl.AsRuntime()
-	if !ok {
-		return inst, ErrSDKRuntimeNotImplemented{SDK: src.Self().SDK.Source}
-	}
-
 	if src.Self().ModuleName == "" {
 		return inst, fmt.Errorf("module name must be set")
 	}
@@ -2588,7 +2583,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		}
 
 		// pre-load the module Runtime
-		if !mod.Runtime.Valid {
+		if runtimeImpl, ok := src.Self().SDKImpl.AsRuntime(); ok && !mod.Runtime.Valid {
 			runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
 			if err != nil {
 				return inst, err
