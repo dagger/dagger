@@ -367,6 +367,11 @@ body {
   border-radius: 8px !important; /* More rounded edges */
   font-weight: 600 !important;
   transition: all 0.2s ease-in-out !important;
+
+  // Hide on tablet resolutions
+  // @include tablet {
+  //   display: none !important;
+  // }
 }
 
 /* Light mode styling for Dagger Cloud button */
@@ -456,6 +461,11 @@ h4 {
     background-color: white;
     mask-image: url("/img/discord-icon.svg");
     mask-size: 100%;
+
+    // Hide on tablet resolutions
+    @include tablet {
+      display: none !important;
+    }
   }
   // Footer social icon links
   .footer-discord-link,
@@ -586,6 +596,44 @@ html[data-theme="dark"] .DocSearch.DocSearch-Button {
 
   @include mobile {
     background-color: #{$plum-color} !important; /* Match announcement bar color in dark mode */
+  }
+}
+
+// Use mobile-style search (magnifying glass only) on tablet screens
+@include tablet {
+  .DocSearch-Button {
+    width: 48px !important;
+    min-width: 48px !important;
+    padding: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+
+    .DocSearch-Button-Container {
+      justify-content: center !important;
+      align-items: center !important;
+      display: flex !important;
+    }
+
+    .DocSearch-Search-Icon {
+      width: 20px !important;
+      height: 20px !important;
+      margin: 0 !important;
+    }
+
+    .DocSearch-Button-Placeholder,
+    .DocSearch-Button-Keys {
+      display: none !important;
+    }
+  }
+
+  // Apply mobile hover effect for dark theme on tablet
+  html[data-theme="dark"] .DocSearch.DocSearch-Button {
+    background-color: #{$plum-color} !important;
+
+    &:hover {
+      background-color: rgba(62, 59, 107, 0.8) !important;
+    }
   }
 }
 
@@ -781,6 +829,11 @@ html[data-theme="dark"] {
   display: flex;
   align-items: center;
   margin-right: 0.5rem;
+
+  // Hide on tablet resolutions
+  @include tablet {
+    display: none !important;
+  }
 }
 
 // GitHub Stars Button Styling
