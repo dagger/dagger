@@ -2,11 +2,13 @@ package schema
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/opencontainers/go-digest"
 )
 
 // DagOpWrapper caches an arbitrary dagql field as a buildkit operation
@@ -103,6 +105,23 @@ func DagOpFile[T dagql.Typed, A any](
 	}, deps)
 }
 
+// func DagOpDirectoryWrapperWithDirParent[A DagOpInternalArgsIface](
+// 	srv *dagql.Server,
+// 	fn dagql.NodeFuncHandler[*core.Directory, A, dagql.ObjectResult[*core.Directory]],
+// 	opts ...DagOpOptsFn[*core.Directory, A],
+// ) dagql.NodeFuncHandler[*core.Directory, A, dagql.ObjectResult[*core.Directory]] {
+// 	return func(ctx context.Context, self dagql.ObjectResult[*core.Directory], args A) (inst dagql.ObjectResult[*core.Directory], err error) {
+// 		if args.InDagOp() {
+// 			return fn(ctx, self, args)
+// 		}
+// 		dir, err := DagOpDirectory(ctx, srv, self.Self(), args, "", fn, opts...)
+// 		if err != nil {
+// 			return inst, err
+// 		}
+// 		return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+// 	}
+// }
+
 // DagOpDirectoryWrapper caches a directory field as a buildkit operation,
 // similar to DagOpFileWrapper.
 func DagOpDirectoryWrapper[T dagql.Typed, A DagOpInternalArgsIface](
@@ -150,6 +169,18 @@ func getOpts[T dagql.Typed, A any](opts ...DagOpOptsFn[T, A]) *DagOpOpts[T, A] {
 	return &o
 }
 
+func getSelfDigest(a any) (digest.Digest, error) {
+	switch x := a.(type) {
+	case *core.Directory:
+		return core.DigestOf(x.WithoutInputs())
+	case *core.GitRef:
+		return "", nil // fallback to using dagop ID
+		// return core.DigestOf(x)
+	default:
+		return "", fmt.Errorf("unable to create digest: unknown type %T", a)
+	}
+}
+
 // NOTE: prefer DagOpDirectoryWrapper where possible, this is for low-level
 // plumbing, where more control over *which* operations should be cached is
 // needed.
@@ -163,6 +194,16 @@ func DagOpDirectory[T dagql.Typed, A any](
 	opts ...DagOpOptsFn[T, A],
 ) (*core.Directory, error) {
 	o := getOpts(opts...)
+
+	selfDigest, err := getSelfDigest(self)
+	if err != nil {
+		return nil, err
+	}
+
+	argDigest, err := core.DigestOf(args)
+	if err != nil {
+		return nil, err
+	}
 
 	deps, err := extractLLBDependencies(ctx, self)
 	if err != nil {
@@ -182,7 +223,7 @@ func DagOpDirectory[T dagql.Typed, A any](
 		// buildkit content caching
 		ID:   currentIDForFSDagOp(ctx, filename),
 		Path: filename,
-	}, deps)
+	}, deps, selfDigest, argDigest)
 }
 
 func DagOpContainerWrapper[A DagOpInternalArgsIface](
