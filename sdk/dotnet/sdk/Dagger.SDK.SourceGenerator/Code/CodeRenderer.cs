@@ -442,9 +442,18 @@ public class CodeRenderer : ICodeRenderer
             {
                 return $"new ListValue({argName}.Select(v => new ObjectValue(v.ToKeyValuePairs()) as Value).ToList())";
             }
+
+            if (tr.IsEnum())
+            {
+                return $"new ListValue({argName}.Select(v => new StringValue(v.ToString()) as Value).ToList())";
+            }
+
+            throw new Exception(
+                $"The type {tr.Describe_()} is not implemented as list value. This is a bug in the generator."
+            );
         }
 
-        throw new Exception($"The type {arg.Type.OfType.Kind} should not be enter here.");
+        throw new Exception($"The type {arg.Type.Describe_()} should not be enter here.");
     }
 
     private static string RenderQueryBuilder(Field field)
