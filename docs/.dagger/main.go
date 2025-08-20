@@ -42,11 +42,9 @@ const (
 	generatedAPIReferencePath     = "docs/static/api/reference/index.html"
 	generatedDaggerJSONSchemaPath = "docs/static/reference/dagger.schema.json"
 	generatedEngineJSONSchemaPath = "docs/static/reference/engine.schema.json"
-	generatedPhpReferencePath     = "docs/static/reference/php/"
 )
 
 const (
-	doctumVersion       = "5.5.4"
 	changieVersion      = "1.21.0"
 	markdownlintVersion = "0.31.1"
 )
@@ -129,7 +127,6 @@ func (d Docs) Lint(ctx context.Context) (rerr error) {
 			generatedAPIReferencePath,
 			generatedDaggerJSONSchemaPath,
 			generatedEngineJSONSchemaPath,
-			generatedPhpReferencePath,
 		})
 	})
 
@@ -179,12 +176,6 @@ func (d Docs) Generate(ctx context.Context) (*dagger.Directory, error) {
 		WithDirectory("", d.GenerateCli()).
 		WithDirectory("", d.GenerateConfigSchemas())
 
-	dirPHP, err := d.GeneratePhp(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dir = dir.WithDirectory("", dirPHP)
-
 	return dir, nil
 }
 
@@ -195,31 +186,6 @@ func (d Docs) GenerateCli() *dagger.Directory {
 		IncludeExperimental: true,
 	})
 	return dag.Directory().WithFile(generatedCliZenPath, generated)
-}
-
-// Generate the PHP SDK API reference documentation
-func (d Docs) GeneratePhp(ctx context.Context) (*dagger.Directory, error) {
-	dir := dag.PhpSDKDev().Base().
-		WithFile(
-			"/usr/bin/doctum",
-			dag.HTTP(fmt.Sprintf("https://doctum.long-term.support/releases/%s/doctum.phar", doctumVersion)),
-			dagger.ContainerWithFileOpts{Permissions: 0711},
-		).
-		WithFile("/etc/doctum-config.php", d.DoctumConfig).
-		WithExec([]string{"doctum", "update", "/etc/doctum-config.php", "-v"}).
-		Directory("/src/sdk/php/build")
-
-	// format this file, since otherwise it's on one line and makes lots of conflicts
-	search, err := formatJSONFile(ctx, dir.File("doctum-search.json"))
-	if err != nil {
-		return nil, err
-	}
-	dir = dir.WithFile("doctum-search.json", search)
-
-	// remove the renderer.index file, which seems to not be required to render the docs
-	dir = dir.WithoutFile("renderer.index")
-
-	return dag.Directory().WithDirectory(generatedPhpReferencePath, dir), nil
 }
 
 func formatJSONFile(ctx context.Context, f *dagger.File) (*dagger.File, error) {

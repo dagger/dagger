@@ -19,6 +19,9 @@ const (
 	phpSDKComposerImage = "composer:2@sha256:6d2b5386580c3ba67399c6ccfb50873146d68fcd7c31549f8802781559bed709"
 	phpSDKGeneratedDir  = "generated"
 	phpSDKVersionFile   = "src/Connection/version.php"
+
+	phpDoctumVersion       = "5.5.4"
+	phpSDKGeneratedDocsDir = "docs/static/reference/php/"
 )
 
 type PHPSDK struct {
@@ -57,6 +60,7 @@ func (t PHPSDK) Lint(ctx context.Context) error {
 		}
 		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{
 			filepath.Join(phpSDKPath, phpSDKGeneratedDir),
+			phpSDKGeneratedDocsDir,
 		})
 	})
 
@@ -76,17 +80,59 @@ func (t PHPSDK) Test(ctx context.Context) error {
 	return err
 }
 
-// Regenerate the PHP SDK API
+// Regenerate the PHP SDK API + docs
 func (t PHPSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
+	src := t.Dagger.Source.Directory(phpSDKPath)
+
+	api := t.generateAPI(src)
+
+	// NB: we need to chain the API generation into the docs generation, since
+	// doctum analyzes the php code to generate docs
+	docs, err := t.generateDocs(ctx, src.WithDirectory("", api))
+	if err != nil {
+		return nil, err
+	}
+
+	return dag.Directory().
+		WithDirectory("", api).
+		WithDirectory("", docs), nil
+}
+
+func (t PHPSDK) generateAPI(src *dagger.Directory) *dagger.Directory {
 	installer := t.Dagger.installer("sdk")
-	generated := dag.PhpSDKDev().Base().
+	generated := dag.PhpSDKDev(dagger.PhpSDKDevOpts{Source: src}).
+		Base().
 		With(installer).
 		WithoutDirectory(phpSDKGeneratedDir).
 		WithDirectory(phpSDKGeneratedDir, dag.Directory()).
 		WithExec([]string{"sh", "-c", "$_EXPERIMENTAL_DAGGER_CLI_BIN run ./scripts/codegen.php"}).
 		Directory(".")
+	return dag.Directory().WithDirectory(phpSDKPath, generated)
+}
 
-	return dag.Directory().WithDirectory(phpSDKPath, generated), nil
+func (t PHPSDK) generateDocs(ctx context.Context, src *dagger.Directory) (*dagger.Directory, error) {
+	dir := dag.PhpSDKDev(dagger.PhpSDKDevOpts{Source: src}).
+		Base().
+		WithFile(
+			"/usr/bin/doctum",
+			dag.HTTP(fmt.Sprintf("https://doctum.long-term.support/releases/%s/doctum.phar", phpDoctumVersion)),
+			dagger.ContainerWithFileOpts{Permissions: 0711},
+		).
+		WithFile("/etc/doctum-config.php", t.Dagger.Source.File("docs/doctum-config.php")).
+		WithExec([]string{"doctum", "update", "/etc/doctum-config.php", "-v"}).
+		Directory("/src/sdk/php/build")
+
+	// format this file, since otherwise it's on one line and makes lots of conflicts
+	search, err := formatJSONFile(ctx, dir.File("doctum-search.json"))
+	if err != nil {
+		return nil, err
+	}
+	dir = dir.WithFile("doctum-search.json", search)
+
+	// remove the renderer.index file, which seems to not be required to render the docs
+	dir = dir.WithoutFile("renderer.index")
+
+	return dag.Directory().WithDirectory(phpSDKGeneratedDocsDir, dir), nil
 }
 
 // Test the publishing process
