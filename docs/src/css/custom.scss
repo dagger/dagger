@@ -96,14 +96,41 @@ html[data-theme="dark"] {
   padding-top: 1.75rem !important;
   padding-bottom: 1.75rem !important;
   font-weight: 500 !important;
+  display: flex !important;
+  align-items: center !important;
+  position: relative !important;
+
+  /* Content container alignment - preserve normal text flow */
+  .announcementBarContent_xLdY {
+    flex: 1 !important;
+    text-align: center !important;
+    padding-right: 3rem !important; /* Add padding to account for button space */
+  }
 
   /* Button styling for announcement bar */
-  button {
+  button,
+  .closeButton_CVFx,
+  .announcementBarClose_gvF7 {
     color: white !important;
     font-size: 0.875rem !important; /* 14px relative */
     background-color: transparent !important;
     transition: all 0.2s ease-in-out !important;
-    margin-right: 1rem !important; /* Add margin to the right */
+    position: absolute !important;
+    right: 1rem !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 24px !important;
+    height: 24px !important;
+    padding: 0 !important;
+    margin: 0 !important; /* Reset margin */
+
+    svg {
+      width: 14px !important;
+      height: 14px !important;
+    }
   }
 }
 
@@ -125,7 +152,7 @@ html[data-theme="dark"] {
   }
 }
 
-/* Docs Sidebar Styling - Remove all borders and extend full height */
+/* Docs Sidebar Styling - Remove all borders and improve scrolling */
 .theme-doc-sidebar-container,
 div[class*="docSidebarContainer"],
 .docs-sidebar,
@@ -136,10 +163,13 @@ aside[class*="docSidebarContainer"] {
   box-shadow: none !important;
 
   @include desktop {
-    height: 100vh !important;
-    min-height: 100vh !important;
+    height: calc(
+      100vh - var(--ifm-navbar-height)
+    ) !important; /* Account for navbar height */
+    min-height: calc(100vh - var(--ifm-navbar-height)) !important;
     position: sticky !important;
-    top: 0 !important;
+    top: var(--ifm-navbar-height) !important; /* Start below navbar */
+    overflow: auto !important; /* Prevent container from scrolling */
   }
 
   @include tablet {
@@ -158,12 +188,43 @@ aside[class*="docSidebarContainer"] {
     overflow-y: auto !important;
     padding-bottom: 2rem !important;
 
-    /* Hide scrollbar but keep scroll functionality */
-    scrollbar-width: none !important; /* Firefox */
-    -ms-overflow-style: none !important; /* Internet Explorer 10+ */
+    /* Custom scrollbar styling for better UX */
+    scrollbar-width: thin !important; /* Firefox - show thin scrollbar */
+    scrollbar-color: rgba(0, 0, 0, 0.2) transparent !important; /* Firefox scrollbar colors */
 
+    /* WebKit browsers (Chrome, Safari, Edge) - show minimal scrollbar */
     &::-webkit-scrollbar {
-      display: none !important; /* WebKit browsers (Chrome, Safari, Edge) */
+      width: 6px !important;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: transparent !important;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.2) !important;
+      border-radius: 3px !important;
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+      background: rgba(0, 0, 0, 0.4) !important;
+    }
+  }
+}
+
+/* Dark mode scrollbar styling */
+html[data-theme="dark"] {
+  .menu {
+    @include desktop {
+      scrollbar-color: rgba(255, 255, 255, 0.3) transparent !important; /* Firefox dark scrollbar */
+
+      &::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.3) !important;
+      }
+
+      &::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.5) !important;
+      }
     }
   }
 }
