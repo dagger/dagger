@@ -168,14 +168,14 @@ const config: Config = {
   themes: ["@docusaurus/theme-mermaid"],
   themeConfig: {
     // (jasonmccallister) leaving this in place for future use and reference
-    // announcementBar: {
-    //   id: "agentic-ci-banner",
-    //   content:
-    //     'Engineering deep dive on Agentic CI — <a href="https://dagger.io/agentic-ci">Register Now</a>',
-    //   backgroundColor: "#131126",
-    //   textColor: "#ffffff",
-    //   isCloseable: true,
-    // },
+    announcementBar: {
+      id: "new-docs-published-2025",
+      content:
+        'We have published new documentation! To view the old documentation visit <a href="https://docs.dagger.io/2024">here</a>.',
+      backgroundColor: "#131126",
+      textColor: "#ffffff",
+      isCloseable: true,
+    },
     sidebar: {
       autoCollapseCategories: false,
       hideable: false,

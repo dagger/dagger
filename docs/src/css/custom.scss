@@ -300,7 +300,7 @@ html[data-theme="dark"] {
     color: var(--ifm-menu-color);
     background: none !important;
   }
-  margin-bottom: 2rem;
+  margin-bottom: 1.25rem;
 }
 
 .menu__list-item-collapsible {
@@ -467,19 +467,19 @@ h4 {
     /* No global filter, set per icon below */
   }
   .footer-discord-link {
-    background-image: url('/img/discord-icon.svg');
+    background-image: url("/img/discord-icon.svg");
     /* Discord icon is often black, so force it to white */
     filter: invert(1) brightness(2) drop-shadow(0 0 2px #000);
   }
   .footer-x-link {
-    background-image: url('/img/x-icon.svg');
+    background-image: url("/img/x-icon.svg");
     /* X icon should display as provided, no filter */
     filter: none;
   }
   .footer-discord-link:hover,
   .footer-x-link:hover {
     opacity: 1;
-    background-color: rgba(255,255,255,0.08);
+    background-color: rgba(255, 255, 255, 0.08);
     border-radius: 6px;
   }
 }
@@ -521,7 +521,7 @@ html[data-theme="dark"] .footer-x-link {
   }
 
   // hide on tablet and tablet large
-  @include tablet  {
+  @include tablet {
     display: none;
   }
 
@@ -578,7 +578,7 @@ html[data-theme="dark"] .DocSearch.DocSearch-Button {
   &:hover {
     background-color: lighten($inkberry-color, 5%) !important;
   }
-  
+
   @include mobile {
     background-color: #{$plum-color} !important; /* Match announcement bar color in dark mode */
   }
@@ -614,8 +614,12 @@ ul.tabs {
 // Make tab items 2px smaller than body font size with padding half of base font size (top and bottom only)
 .tabs__item {
   font-size: calc(var(--ifm-font-size-base) - 2px) !important;
-  padding-top: calc(var(--ifm-font-size-base) / 2) !important; // Half of 18px = 9px
-  padding-bottom: calc(var(--ifm-font-size-base) / 2) !important; // Half of 18px = 9px
+  padding-top: calc(
+    var(--ifm-font-size-base) / 2
+  ) !important; // Half of 18px = 9px
+  padding-bottom: calc(
+    var(--ifm-font-size-base) / 2
+  ) !important; // Half of 18px = 9px
 }
 
 html[data-theme="light"] {
