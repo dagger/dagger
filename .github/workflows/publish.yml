@@ -147,7 +147,7 @@ jobs:
         shell: bash
 
       - name: "Install Docker"
-        uses: douglascamata/setup-docker-macos-action@v1-alpha.16
+        uses: douglascamata/setup-docker-macos-action@v1.0.0
         env:
           HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
       - uses: docker/setup-qemu-action@v3
@@ -190,6 +190,10 @@ jobs:
       - name: "ALWAYS print engine logs - especially useful on failure"
         if: always()
         run: docker logs $(docker ps -q --filter name=dagger-engine)
+
+      - name: "ALWAYS print colima logs - especially useful on failure"
+        if: always()
+        run: find /
 
   # TODO: daggerize provisioning tests
   test-provision-go-linux-x86:
