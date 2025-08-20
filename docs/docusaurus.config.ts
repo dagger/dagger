@@ -265,19 +265,19 @@ const config: Config = {
           className: "navbar-blog-link",
           activeBaseRegex: "^/cookbook/?.*",
         },
-        {
-          position: "right",
-          href: "https://github.com/dagger/dagger",
-          html: '<div class="github-stars"><iframe src="https://ghbtns.com/github-btn.html?user=dagger&repo=dagger&type=star&count=true" frameborder="0" scrolling="0" width="120" height="20" title="GitHub Stars"></iframe></div>',
-          className: "navbar-github-stars",
-        },
+        // {
+        //   position: "right",
+        //   href: "https://github.com/dagger/dagger",
+        //   html: '<div class="github-stars"><iframe src="https://ghbtns.com/github-btn.html?user=dagger&repo=dagger&type=star&count=true" frameborder="0" scrolling="0" width="120" height="20" title="GitHub Stars"></iframe></div>',
+        //   className: "navbar-github-stars",
+        // },
         // add the icon and link to join discord
-        {
-          position: "right",
-          href: "https://discord.gg/dagger-io",
-          html: '<div class="discord-icon"><img src="img/discord-icon.svg" alt="Join Discord" /></div>',
-          className: "navbar-discord-link",
-        },
+        // {
+        //   position: "right",
+        //   href: "https://discord.gg/dagger-io",
+        //   html: '<div class="discord-icon"><img src="img/discord-icon.svg" alt="Join Discord" /></div>',
+        //   className: "navbar-discord-link",
+        // },
         {
           position: "right",
           label: "Try Dagger Cloud",
