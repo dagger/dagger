@@ -286,6 +286,11 @@
   status = 301
 
 [[redirects]]
+  from = "/configuration"
+  to = "/reference/"
+  status = 301
+
+[[redirects]]
   from = "/configuration/cache"
   to = "/reference/configuration/cache"
   status = 301
