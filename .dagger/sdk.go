@@ -190,7 +190,7 @@ func gitPublish(ctx context.Context, git *dagger.VersionGit, opts gitPublishOpts
 		destCommit = strings.TrimSpace(destCommit)
 
 		if !strings.Contains(history, destCommit) {
-			return fmt.Errorf("publish would rewrite history - %s not found\n%s", destCommit, history)
+			return fmt.Errorf("publish would rewrite history - %s not found", destCommit)
 		}
 		return nil
 	}
