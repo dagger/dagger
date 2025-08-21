@@ -450,6 +450,10 @@ func (container *Container) Stderr(ctx context.Context) (string, error) {
 	return container.metaFileContents(ctx, buildkit.MetaMountStderrPath)
 }
 
+func (container *Container) CombinedOutput(ctx context.Context) (string, error) {
+	return container.metaFileContents(ctx, buildkit.MetaMountCombinedOutputPath)
+}
+
 func (container *Container) ExitCode(ctx context.Context) (int, error) {
 	contents, err := container.metaFileContents(ctx, buildkit.MetaMountExitCodePath)
 	if err != nil {

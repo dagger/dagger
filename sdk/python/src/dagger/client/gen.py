@@ -930,6 +930,30 @@ class Container(Type):
         _ctx = self._select("build", _args)
         return Container(_ctx)
 
+    async def combined_output(self) -> str:
+        """The combined buffered standard output and standard error stream of the
+        last executed command
+
+        Returns an error if no command was executed
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("combinedOutput", _args)
+        return await _ctx.execute(str)
+
     async def default_args(self) -> list[str]:
         """Return the container's default arguments.
 

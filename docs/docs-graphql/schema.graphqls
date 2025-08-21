@@ -247,6 +247,13 @@ type Container {
     noInit: Boolean = false
   ): Container! @deprecated(reason: "Use `Directory.build` instead")
 
+  """
+  The combined buffered standard output and standard error stream of the last executed command
+
+  Returns an error if no command was executed
+  """
+  combinedOutput: String!
+
   """Return the container's default arguments."""
   defaultArgs: [String!]!
 

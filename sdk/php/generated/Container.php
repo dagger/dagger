@@ -101,6 +101,17 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The combined buffered standard output and standard error stream of the last executed command
+     *
+     * Returns an error if no command was executed
+     */
+    public function combinedOutput(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('combinedOutput');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'combinedOutput');
+    }
+
+    /**
      * Return the container's default arguments.
      */
     public function defaultArgs(): array

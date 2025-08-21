@@ -1,0 +1,6 @@
+kind: Added
+body: Allow to get a combined output of both standard output and standard error after a withExec on a container
+time: 2025-08-22T11:22:20.827952+02:00
+custom:
+    Author: eunomie
+    PR: "10924"
