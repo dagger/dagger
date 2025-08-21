@@ -1,0 +1,77 @@
+---
+title: "GitLab CI"
+slug: /getting-started/ci-integrations/gitlab-ci
+description: "Learn how to use Dagger with GitLab CI."
+---
+
+# GitLab CI
+
+Dagger provides a programmable container engine that allows you to replace your YAML pipeline definitions in GitLab with Dagger Functions written in a regular programming language. This allows you to execute your pipeline the same locally and in GitLab, with the additional benefit of intelligent caching.
+
+## How it works
+
+When running a CI pipeline with Dagger using GitLab CI, the general workflow looks like this:
+
+1. GitLab receives a trigger based on a repository event.
+1. GitLab begins processing the stages and jobs in the `.gitlab-ci.yml` file.
+1. GitLab downloads the Dagger CLI.
+1. GitLab executes one (or more) Dagger CLI commands, such as `dagger call ...`.
+1. The Dagger CLI attempts to find an existing Dagger Engine or spins up a new one inside the GitLab runner.
+1. The Dagger CLI calls the specified Dagger Function and sends telemetry to Dagger Cloud if the `DAGGER_CLOUD_TOKEN` environment variable is set.
+1. The pipeline completes with success or failure. Logs appear in GitLab as usual.
+
+## Prerequisites
+
+- A GitLab repository
+- Any one of the following:
+  - [GitLab-hosted runners](https://docs.gitlab.com/ee/ci/runners/index.html) using the (default) [Docker Machine executor](https://docs.gitlab.com/runner/executors/docker_machine.html)
+  - [Self-managed GitLab Runners](https://docs.gitlab.com/runner/install/index.html) using the [Docker executor](https://docs.gitlab.com/runner/executors/docker.html).
+  - [Self-managed GitLab Runners](https://docs.gitlab.com/runner/install/index.html) in a Kubernetes cluster and using the [Kubernetes executor](https://docs.gitlab.com/runner/executors/kubernetes/).
+
+## Examples
+
+### Docker executor
+
+The following example demonstrates how to call a Dagger Function in a GitLab CI/CD pipeline using the (default) [Docker Machine executor](https://docs.gitlab.com/runner/executors/docker_machine.html) or the [Docker executor](https://docs.gitlab.com/runner/executors/docker.html). In both these cases, the Dagger Engine is provisioned "just in time" using a Docker-in-Docker (`dind`) service.
+
+```yaml title=".gitlab-ci.yml" file=./snippets/gitlab-docker-hello.yml
+```
+
+The following is a more complex example demonstrating how to create a GitLab pipeline that checks out source code, calls a Dagger Function to test the project, and then calls another Dagger Function to build and publish a container image of the project. This example uses a simple [Go application](https://github.com/kpenfound/greetings-api) and assumes that you have already forked it in your own GitLab repository.
+
+```yaml title=".gitlab-ci.yml" file=./snippets/gitlab-docker-test-build.yml
+```
+
+### Kubernetes executor
+
+The following example demonstrates how to call a Dagger Function in a GitLab CI/CD pipeline using the [Kubernetes executor](https://docs.gitlab.com/runner/executors/kubernetes/).
+
+```yaml title=".gitlab-ci.yml" file=./snippets/gitlab-kubernetes-hello.yml
+```
+
+The following is a more complex example demonstrating how to create a GitLab pipeline that checks out source code, calls a Dagger Function to test the project, and then calls another Dagger Function to build and publish a container image of the project. This example uses a simple [Go application](https://github.com/kpenfound/greetings-api) and assumes that you have already forked it in your own GitLab repository.
+
+
+```yaml title=".gitlab-ci.yml" file=./snippets/gitlab-kubernetes-test-build.yml
+```
+
+In both cases, each GitLab Runner must be configured to only run on nodes with pre-provisioned instances of the Dagger Engine. This is achieved using taints and tolerations on the nodes, and pod affinity.
+
+The following code listings illustrate the configuration to be applied to each GitLab Runner, with taints, tolerations and pod affinity set via the `dagger-node` key. For an example of the corresponding node configuration, refer to the [OpenShift](../../reference/container-runtimes/openshift.mdx) integration page.
+
+To use this configuration, replace the YOUR-GITLAB-URL placeholder with the URL of your GitLab instance and replace the YOUR-GITLAB-RUNNER-TOKEN-REFERENCE placeholder with your [GitLab Runner authentication token](https://docs.gitlab.com/ee/ci/runners/runners_scope.html#create-a-shared-runner-with-a-runner-authentication-token).
+
+```yaml title="runner-config.yml" file=./snippets/gitlab-runner-config.yml
+```
+
+```yaml title="runner.yml" file=./snippets/gitlab-runner.yml
+```
+
+
+## Resources
+
+If you have any questions about additional ways to use GitLab with Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions in our [GitLab channel](https://discord.com/channels/707636530424053791/1122940615806685296).
+
+## About GitLab
+
+[GitLab](https://gitlab.com/) is a popular Web-based platform used for version control and collaboration. It allows developers to store and manage their code in repositories, track changes over time, and collaborate with other developers on projects.

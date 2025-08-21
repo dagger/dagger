@@ -1,6 +1,6 @@
 ---
-title: "Modules"
-slug: /reference/modules
+title: "Module Testing and Publishing"
+slug: /reference/best-practices/modules
 description: "Learn best practices for testing and publishing Dagger modules."
 ---
 
@@ -281,7 +281,7 @@ export class Tests {
 </TabItem>
 </Tabs>
 
-In some situations, you may need to provide specific values to your test modules, such as when authenticating against an external service. In these cases, you can rely on [module constructors](../../extending/constructors.mdx) to inject any required inputs.
+In some situations, you may need to provide specific values to your test modules, such as when authenticating against an external service. In these cases, you can rely on [module constructors](../../extending/modules/constructors.mdx) to inject any required inputs.
 
 ## "All" function pattern
 
@@ -403,6 +403,6 @@ Adopting a standard test function signature greatly simplifies both kinds of `al
 To make sure your module gets the best possible rank in the Daggerverse, follow these best practices:
 
 1. A module should have a [description](https://docs.dagger.io/reference/dagger.schema.json).
-1. Module functions should have [descriptions](../../extending/documentation.mdx).
-1. Modules versions should be tagged with [semver](../../extending/daggerverse.mdx#semantic-versioning).
-1. Modules should have hand-crafted [examples](../../extending/daggerverse.mdx#examples).
+1. Module functions should have [descriptions](../../extending/modules/documentation.mdx).
+1. Modules versions should be tagged with [semver](../../extending/modules/daggerverse.mdx#semantic-versioning).
+1. Modules should have hand-crafted [examples](../../extending/modules/daggerverse.mdx#examples).

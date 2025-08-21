@@ -1,6 +1,7 @@
 ---
 title: "Python Custom Application"
 sidebar_label: "Python"
+slug: /extending/custom-applications/python
 description: "Learn how to use the Dagger SDK to embed into Python applications."
 ---
 
@@ -34,7 +35,7 @@ cd fastapi
 
 Create a new file named `test.py` in the project directory and add the following code to it.
 
-```python file=../snippets/clients-sdk/python/test.py
+```python file=./snippets/clients-sdk/python/test.py
 ```
 
 This Python program imports the Dagger SDK and defines an asynchronous function named `test()`. This `test()` function creates a Dagger client, which provides an interface to the Dagger API. It also defines the test matrix, consisting of Python versions `3.8` to `3.11` and iterates over this matrix, downloading a Python container image for each specified version and testing the source application in that version.
