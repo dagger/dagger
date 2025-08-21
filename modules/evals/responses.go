@@ -38,11 +38,11 @@ func (e *Responses) Prompt(base *dagger.LLM) *dagger.LLM {
 			WithStringOutput("module_config_exists",
 				"Whether the module config exists (true/false).").
 			WithStringOutput("file_contents",
-				"The contents of hello_file").
+				"The contents of the file.").
 			WithStringOutput("file_size",
-				"The size of hello_file.").
+				"The size of the file.").
 			WithStringOutput("dir_entries",
-				"Line-separated list of some_dir entries.")).
+				"Line-separated list of directory entries.")).
 		WithPrompt("Provide the requested values.")
 }
 

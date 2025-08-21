@@ -328,7 +328,7 @@ func (t Directives) IsExperimental() bool {
 }
 
 func (t Directives) ExperimentalReason() string {
-	return fromJSON[string](*t.Directive("experimental").Arg("reason").Value)
+	return fromJSON[string](t.Directive("experimental").Arg("reason"))
 }
 
 type SourceMap struct {
@@ -336,9 +336,15 @@ type SourceMap struct {
 	Filename string
 	Line     int
 	Column   int
+	URL      string
 }
 
 func (sourceMap *SourceMap) Filelink() string {
+	if sourceMap.URL != "" {
+		return sourceMap.URL
+	}
+	// if no URL is provided, we can construct a reasonable fallback, assuming
+	// that it's a local file
 	return fmt.Sprintf("%s:%d:%d", sourceMap.Filename, sourceMap.Line, sourceMap.Column)
 }
 
@@ -348,10 +354,11 @@ func (t *Directives) SourceMap() *SourceMap {
 		return nil
 	}
 	return &SourceMap{
-		Module:   fromJSON[string](*d.Arg("module").Value),
-		Filename: fromJSON[string](*d.Arg("filename").Value),
-		Line:     fromJSON[int](*d.Arg("line").Value),
-		Column:   fromJSON[int](*d.Arg("column").Value),
+		Module:   fromJSON[string](d.Arg("module")),
+		Filename: fromJSON[string](d.Arg("filename")),
+		Line:     fromJSON[int](d.Arg("line")),
+		Column:   fromJSON[int](d.Arg("column")),
+		URL:      fromJSON[string](d.Arg("url")),
 	}
 }
 
@@ -360,7 +367,7 @@ func (t *Directives) EnumValue() string {
 	if d == nil {
 		return ""
 	}
-	return fromJSON[string](*d.Arg("value").Value)
+	return fromJSON[string](d.Arg("value"))
 }
 
 type Directive struct {
@@ -368,10 +375,10 @@ type Directive struct {
 	Args []*DirectiveArg `json:"args"`
 }
 
-func (t Directive) Arg(name string) *DirectiveArg {
+func (t Directive) Arg(name string) *string {
 	for _, i := range t.Args {
 		if i.Name == name {
-			return i
+			return i.Value
 		}
 	}
 	return nil
@@ -382,7 +389,10 @@ type DirectiveArg struct {
 	Value *string `json:"value"`
 }
 
-func fromJSON[T any](raw string) (t T) {
-	_ = json.Unmarshal([]byte(raw), &t)
+func fromJSON[T any](raw *string) (t T) {
+	if raw == nil {
+		return t
+	}
+	_ = json.Unmarshal([]byte(*raw), &t)
 	return t
 }

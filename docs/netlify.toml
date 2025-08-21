@@ -1,6 +1,9 @@
 [build]
   command = "yarn run docusaurus build"
 
+[build.environment]
+  NODE_VERSION = "20"
+  
 [context.production]
   ignore = "false"
 

@@ -10,7 +10,7 @@ directive @experimental(
 ) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
 
 """Indicates the source information for where a given field is defined."""
-directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
+directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!, url: String!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
 
 type Binding {
   """Retrieve the binding value, as type CacheVolume"""
@@ -36,6 +36,9 @@ type Binding {
 
   """Retrieve the binding value, as type GitRepository"""
   asGitRepository: GitRepository!
+
+  """Retrieve the binding value, as type JSONValue"""
+  asJSONValue: JSONValue!
 
   """Retrieve the binding value, as type LLM"""
   asLLM: LLM!
@@ -1789,7 +1792,7 @@ type EnumTypeDef {
   name: String!
 
   """The location of this enum declaration."""
-  sourceMap: SourceMap!
+  sourceMap: SourceMap
 
   """
   If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise.
@@ -1816,7 +1819,7 @@ type EnumValueTypeDef {
   name: String!
 
   """The location of this enum member declaration."""
-  sourceMap: SourceMap!
+  sourceMap: SourceMap
 
   """The value of the enum member"""
   value: String!
@@ -2006,6 +2009,27 @@ type Env {
   Declare a desired GitRepository output to be assigned in the environment
   """
   withGitRepositoryOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type JSONValue in the environment"""
+  withJSONValueInput(
+    """The name of the binding"""
+    name: String!
+
+    """The JSONValue value to assign to the binding"""
+    value: JSONValueID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired JSONValue output to be assigned in the environment"""
+  withJSONValueOutput(
     """The name of the binding"""
     name: String!
 
@@ -2280,7 +2304,7 @@ type FieldTypeDef {
   name: String!
 
   """The location of this field declaration."""
-  sourceMap: SourceMap!
+  sourceMap: SourceMap
 
   """The type of the field."""
   typeDef: TypeDef!
@@ -2376,7 +2400,7 @@ type Function {
   returnType: TypeDef!
 
   """The location of this function declaration."""
-  sourceMap: SourceMap!
+  sourceMap: SourceMap
 
   """Returns the function with the provided argument"""
   withArg(
@@ -2453,7 +2477,7 @@ type FunctionArg {
   name: String!
 
   """The location of this arg declaration."""
-  sourceMap: SourceMap!
+  sourceMap: SourceMap
 
   """The type of the argument."""
   typeDef: TypeDef!
@@ -2675,9 +2699,6 @@ type Host {
 
     """If true, the directory will always be reloaded from the host."""
     noCache: Boolean = false
-
-    """Don't apply .gitignore filter rules inside the directory"""
-    noGitAutoIgnore: Boolean = false
   ): Directory!
 
   """Accesses a file on the host."""
@@ -2817,7 +2838,7 @@ type InterfaceTypeDef {
   name: String!
 
   """The location of this interface declaration."""
-  sourceMap: SourceMap!
+  sourceMap: SourceMap
 
   """
   If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.
@@ -2832,6 +2853,79 @@ scalar InterfaceTypeDefID
 
 """An arbitrary JSON-encoded value."""
 scalar JSON
+
+type JSONValue {
+  """Decode an array from json"""
+  asArray: [JSONValue!]!
+
+  """Decode a boolean from json"""
+  asBoolean: Boolean!
+
+  """Decode an integer from json"""
+  asInteger: Int!
+
+  """Decode a string from json"""
+  asString: String!
+
+  """Return the value encoded as json"""
+  contents(
+    """Pretty-print"""
+    pretty: Boolean = false
+
+    """Optional line prefix"""
+    indent: String = "  "
+  ): JSON!
+
+  """Lookup the field at the given path, and return its value."""
+  field(
+    """Path of the field to lookup, encoded as an array of field names"""
+    path: [String!]!
+  ): JSONValue!
+
+  """List fields of the encoded object"""
+  fields: [String!]!
+
+  """A unique identifier for this JSONValue."""
+  id: JSONValueID!
+
+  """Encode a boolean to json"""
+  newBoolean(
+    """New boolean value"""
+    value: Boolean!
+  ): JSONValue!
+
+  """Encode an integer to json"""
+  newInteger(
+    """New integer value"""
+    value: Int!
+  ): JSONValue!
+
+  """Encode a string to json"""
+  newString(
+    """New string value"""
+    value: String!
+  ): JSONValue!
+
+  """Return a new json value, decoded from the given content"""
+  withContents(
+    """New JSON-encoded contents"""
+    contents: JSON!
+  ): JSONValue!
+
+  """Set a new field at the given path"""
+  withField(
+    """Path of the field to set, encoded as an array of field names"""
+    path: [String!]!
+
+    """The new value of the field"""
+    value: JSONValueID!
+  ): JSONValue!
+}
+
+"""
+The `JSONValueID` scalar type represents an identifier for an object of type JSONValue.
+"""
+scalar JSONValueID
 
 type LLM {
   """create a branch in the LLM's history"""
@@ -3305,7 +3399,7 @@ type ObjectTypeDef {
   name: String!
 
   """The location of this object declaration."""
-  sourceMap: SourceMap!
+  sourceMap: SourceMap
 
   """
   If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
@@ -3521,6 +3615,9 @@ type Query {
     experimentalServiceHost: ServiceID
   ): File!
 
+  """Initialize a JSON value"""
+  json: JSONValue!
+
   """Initialize a Large Language Model (LLM)"""
   llm(
     """Model to use"""
@@ -3613,6 +3710,9 @@ type Query {
 
   """Load a InterfaceTypeDef from its ID."""
   loadInterfaceTypeDefFromID(id: InterfaceTypeDefID!): InterfaceTypeDef!
+
+  """Load a JSONValue from its ID."""
+  loadJSONValueFromID(id: JSONValueID!): JSONValue!
 
   """Load a LLM from its ID."""
   loadLLMFromID(id: LLMID!): LLM!
@@ -3917,6 +4017,11 @@ type SourceMap {
 
   """The module dependency this was declared in."""
   module: String!
+
+  """
+  The URL to the file, if any. This can be used to link to the source map in the browser.
+  """
+  url: String!
 }
 
 """

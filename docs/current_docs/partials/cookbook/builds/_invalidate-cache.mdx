@@ -1,0 +1,57 @@
+### Invalidate cache
+
+The following function demonstrates how to invalidate the Dagger layer cache and force execution of subsequent workflow steps, by introducing a volatile time variable at a specific point in the Dagger workflow.
+
+:::note
+* This is a temporary workaround until cache invalidation support is officially added to Dagger.
+* Changes in mounted cache volumes or secrets do not invalidate the Dagger layer cache.
+:::
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/builds/cache/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/builds/cache/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/builds/cache/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="php" label="PHP">
+
+```php file=../../../cookbook/snippets/builds/cache/php/src/MyModule.php
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Print the date and time, invalidating the cache on each run. However, if the `CACHEBUSTER` environment variable is removed, the same value (the date and time on the first run) is printed on every run.
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c build
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+build
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call build
+```
+</TabItem>
+</Tabs>

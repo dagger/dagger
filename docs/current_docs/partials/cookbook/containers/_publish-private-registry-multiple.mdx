@@ -1,0 +1,66 @@
+### Publish a container image to a private registry with multiple tags
+
+The following Dagger Function tags a just-in-time container image multiple times and publishes it to a private registry.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/tag-publish-image/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/tag-publish-image/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/tag-publish-image/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Examples
+
+Tag and publish a just-in-time container image to Docker Hub, using the account username `user` and the password set in the `PASSWORD` environment variable:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'publish docker.io user env://PASSWORD'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+publish docker.io user env://PASSWORD
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call publish --registry=docker.io --username=user --password=env://PASSWORD
+```
+</TabItem>
+</Tabs>
+
+Tag and publish a just-in-time container image to GitHub Container Registry, using the account username `user` and the GitHub personal access token set in the `PASSWORD` environment variable:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'publish gchr.io user env://PASSWORD'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+publish gchr.io user env://PASSWORD
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call publish --registry=gchr.io --username=user --password=env://PASSWORD
+```
+</TabItem>
+</Tabs>

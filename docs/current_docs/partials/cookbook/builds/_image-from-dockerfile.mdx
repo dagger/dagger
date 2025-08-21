@@ -1,0 +1,51 @@
+### Build image from Dockerfile
+
+The following Dagger Function builds an image from a Dockerfile.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/builds/dockerfile/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/builds/dockerfile/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/builds/dockerfile/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="php" label="PHP">
+
+```php file=../../../cookbook/snippets/builds/dockerfile/php/src/MyModule.php
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+Build and publish an image from an existing Dockerfile
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'build https://github.com/dockersamples/python-flask-redis'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+build https://github.com/dockersamples/python-flask-redis
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call build --src="https://github.com/dockersamples/python-flask-redis"
+```
+</TabItem>
+</Tabs>

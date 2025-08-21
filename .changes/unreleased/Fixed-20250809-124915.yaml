@@ -1,6 +1,0 @@
-kind: Fixed
-body: 'shell: fix state mutability issue when chaining function'
-time: 2025-08-09T12:49:15.225532Z
-custom:
-    Author: helderco
-    PR: "10857"

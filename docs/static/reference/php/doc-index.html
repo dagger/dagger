@@ -87,7 +87,7 @@
                                                 <li><a href="#letterG">G</a></li>
                                                 <li><a href="#letterH">H</a></li>
                                                 <li><a href="#letterI">I</a></li>
-                                                <li class="disabled"><a href="#letterJ">J</a></li>
+                                                <li><a href="#letterJ">J</a></li>
                                                 <li><a href="#letterK">K</a></li>
                                                 <li><a href="#letterL">L</a></li>
                                                 <li><a href="#letterM">M</a></li>
@@ -124,7 +124,9 @@
 <abbr title="Dagger\Binding">Binding</abbr>::asGitRef</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
                     <dd><p>Retrieve the binding value, as type GitRef</p></dd><dt><a href="Dagger/Binding.html#method_asGitRepository">
 <abbr title="Dagger\Binding">Binding</abbr>::asGitRepository</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
-                    <dd><p>Retrieve the binding value, as type GitRepository</p></dd><dt><a href="Dagger/Binding.html#method_asLLM">
+                    <dd><p>Retrieve the binding value, as type GitRepository</p></dd><dt><a href="Dagger/Binding.html#method_asJSONValue">
+<abbr title="Dagger\Binding">Binding</abbr>::asJSONValue</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
+                    <dd><p>Retrieve the binding value, as type JSONValue</p></dd><dt><a href="Dagger/Binding.html#method_asLLM">
 <abbr title="Dagger\Binding">Binding</abbr>::asLLM</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
                     <dd><p>Retrieve the binding value, as type LLM</p></dd><dt><a href="Dagger/Binding.html#method_asModule">
 <abbr title="Dagger\Binding">Binding</abbr>::asModule</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
@@ -159,7 +161,15 @@
 <abbr title="Dagger\EngineCacheEntry">EngineCacheEntry</abbr>::activelyUsed</a>() &mdash; <em>Method in class <a href="Dagger/EngineCacheEntry.html"><abbr title="Dagger\EngineCacheEntry">EngineCacheEntry</abbr></a></em></dt>
                     <dd><p>Whether the cache entry is actively being used.</p></dd><dt><a href="Dagger/Function_.html#method_args">
 <abbr title="Dagger\Function_">Function_</abbr>::args</a>() &mdash; <em>Method in class <a href="Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a></em></dt>
-                    <dd><p>Arguments accepted by the function, if any.</p></dd><dt><a href="Dagger/LLM.html#method_attempt">
+                    <dd><p>Arguments accepted by the function, if any.</p></dd><dt><a href="Dagger/JsonValue.html#method_asArray">
+<abbr title="Dagger\JsonValue">JsonValue</abbr>::asArray</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
+                    <dd><p>Decode an array from json</p></dd><dt><a href="Dagger/JsonValue.html#method_asBoolean">
+<abbr title="Dagger\JsonValue">JsonValue</abbr>::asBoolean</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
+                    <dd><p>Decode a boolean from json</p></dd><dt><a href="Dagger/JsonValue.html#method_asInteger">
+<abbr title="Dagger\JsonValue">JsonValue</abbr>::asInteger</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
+                    <dd><p>Decode an integer from json</p></dd><dt><a href="Dagger/JsonValue.html#method_asString">
+<abbr title="Dagger\JsonValue">JsonValue</abbr>::asString</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
+                    <dd><p>Decode a string from json</p></dd><dt><a href="Dagger/LLM.html#method_attempt">
 <abbr title="Dagger\LLM">LLM</abbr>::attempt</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>create a branch in the LLM's history</p></dd><dt><a href="Dagger/ModuleSource.html#method_asModule">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::asModule</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -238,7 +248,9 @@
 <abbr title="Dagger\GitRef">GitRef</abbr>::commonAncestor</a>() &mdash; <em>Method in class <a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></em></dt>
                     <dd><p>Find the best common ancestor between this ref and another ref.</p></dd><dt><a href="Dagger/GitRepository.html#method_commit">
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::commit</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
-                    <dd><p>Returns details of a commit.</p></dd><dt><a href="Dagger/LLMTokenUsage.html#method_cachedTokenReads">
+                    <dd><p>Returns details of a commit.</p></dd><dt><a href="Dagger/JsonValue.html#method_contents">
+<abbr title="Dagger\JsonValue">JsonValue</abbr>::contents</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
+                    <dd><p>Return the value encoded as json</p></dd><dt><a href="Dagger/LLMTokenUsage.html#method_cachedTokenReads">
 <abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr>::cachedTokenReads</a>() &mdash; <em>Method in class <a href="Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/LLMTokenUsage.html#method_cachedTokenWrites">
 <abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr>::cachedTokenWrites</a>() &mdash; <em>Method in class <a href="Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a></em></dt>
@@ -432,7 +444,11 @@
 <abbr title="Dagger\InputTypeDef">InputTypeDef</abbr>::fields</a>() &mdash; <em>Method in class <a href="Dagger/InputTypeDef.html"><abbr title="Dagger\InputTypeDef">InputTypeDef</abbr></a></em></dt>
                     <dd><p>Static fields defined on this input object, if any.</p></dd><dt><a href="Dagger/InterfaceTypeDef.html#method_functions">
 <abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr>::functions</a>() &mdash; <em>Method in class <a href="Dagger/InterfaceTypeDef.html"><abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr></a></em></dt>
-                    <dd><p>Functions defined on this interface, if any.</p></dd><dt><a href="Dagger/ObjectTypeDef.html#method_fields">
+                    <dd><p>Functions defined on this interface, if any.</p></dd><dt><a href="Dagger/JsonValue.html#method_field">
+<abbr title="Dagger\JsonValue">JsonValue</abbr>::field</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
+                    <dd><p>Lookup the field at the given path, and return its value.</p></dd><dt><a href="Dagger/JsonValue.html#method_fields">
+<abbr title="Dagger\JsonValue">JsonValue</abbr>::fields</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
+                    <dd><p>List fields of the encoded object</p></dd><dt><a href="Dagger/ObjectTypeDef.html#method_fields">
 <abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr>::fields</a>() &mdash; <em>Method in class <a href="Dagger/ObjectTypeDef.html"><abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr></a></em></dt>
                     <dd><p>Static fields defined on this object, if any.</p></dd><dt><a href="Dagger/ObjectTypeDef.html#method_functions">
 <abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr>::functions</a>() &mdash; <em>Method in class <a href="Dagger/ObjectTypeDef.html"><abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr></a></em></dt>
@@ -565,7 +581,9 @@
                     <dd><p>A definition of a custom interface defined in a Module.</p></dd><dt><a href="Dagger/InterfaceTypeDef.html#method_id">
 <abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/InterfaceTypeDef.html"><abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr></a></em></dt>
                     <dd><p>A unique identifier for this InterfaceTypeDef.</p></dd><dt><a href="Dagger/InterfaceTypeDefId.html"><abbr title="Dagger\InterfaceTypeDefId">InterfaceTypeDefId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>The <code>InterfaceTypeDefID</code> scalar type represents an identifier for an object of type InterfaceTypeDef.</p></dd><dt><a href="Dagger/LLM.html#method_id">
+                    <dd><p>The <code>InterfaceTypeDefID</code> scalar type represents an identifier for an object of type InterfaceTypeDef.</p></dd><dt><a href="Dagger/JsonValue.html#method_id">
+<abbr title="Dagger\JsonValue">JsonValue</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this JSONValue.</p></dd><dt><a href="Dagger/LLM.html#method_id">
 <abbr title="Dagger\LLM">LLM</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>A unique identifier for this LLM.</p></dd><dt><a href="Dagger/LLMTokenUsage.html#method_id">
 <abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a></em></dt>
@@ -604,8 +622,12 @@
                     <dd><p>A unique identifier for this Terminal.</p></dd><dt><a href="Dagger/TypeDef.html#method_id">
 <abbr title="Dagger\TypeDef">TypeDef</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></em></dt>
                     <dd><p>A unique identifier for this TypeDef.</p></dd>        </dl><h2 id="letterJ">J</h2>
-        <dl id="indexJ"><dt><a href="Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>An arbitrary JSON-encoded value.</p></dd>        </dl><h2 id="letterK">K</h2>
+        <dl id="indexJ"><dt><a href="Dagger/Client.html#method_json">
+<abbr title="Dagger\Client">Client</abbr>::json</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>Initialize a JSON value</p></dd><dt><a href="Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>An arbitrary JSON-encoded value.</p></dd><dt><a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd></dd><dt><a href="Dagger/JsonValueId.html"><abbr title="Dagger\JsonValueId">JsonValueId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>The <code>JSONValueID</code> scalar type represents an identifier for an object of type JSONValue.</p></dd>        </dl><h2 id="letterK">K</h2>
         <dl id="indexK"><dt><a href="Dagger/EngineCache.html#method_keepBytes">
 <abbr title="Dagger\EngineCache">EngineCache</abbr>::keepBytes</a>() &mdash; <em>Method in class <a href="Dagger/EngineCache.html"><abbr title="Dagger\EngineCache">EngineCache</abbr></a></em></dt>
                     <dd><p>The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.</p></dd><dt><a href="Dagger/ModuleSource.html#method_kind">
@@ -672,7 +694,9 @@
 <abbr title="Dagger\Client">Client</abbr>::loadInputTypeDefFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a InputTypeDef from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadInterfaceTypeDefFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadInterfaceTypeDefFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Load a InterfaceTypeDef from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadLLMFromID">
+                    <dd><p>Load a InterfaceTypeDef from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadJSONValueFromID">
+<abbr title="Dagger\Client">Client</abbr>::loadJSONValueFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>Load a JSONValue from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadLLMFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadLLMFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a LLM from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadLLMTokenUsageFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadLLMTokenUsageFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -798,7 +822,13 @@
 <abbr title="Dagger\InputTypeDef">InputTypeDef</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/InputTypeDef.html"><abbr title="Dagger\InputTypeDef">InputTypeDef</abbr></a></em></dt>
                     <dd><p>The name of the input object.</p></dd><dt><a href="Dagger/InterfaceTypeDef.html#method_name">
 <abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/InterfaceTypeDef.html"><abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr></a></em></dt>
-                    <dd><p>The name of the interface.</p></dd><dt><a href="Dagger/Label.html#method_name">
+                    <dd><p>The name of the interface.</p></dd><dt><a href="Dagger/JsonValue.html#method_newBoolean">
+<abbr title="Dagger\JsonValue">JsonValue</abbr>::newBoolean</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
+                    <dd><p>Encode a boolean to json</p></dd><dt><a href="Dagger/JsonValue.html#method_newInteger">
+<abbr title="Dagger\JsonValue">JsonValue</abbr>::newInteger</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
+                    <dd><p>Encode an integer to json</p></dd><dt><a href="Dagger/JsonValue.html#method_newString">
+<abbr title="Dagger\JsonValue">JsonValue</abbr>::newString</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
+                    <dd><p>Encode a string to json</p></dd><dt><a href="Dagger/Label.html#method_name">
 <abbr title="Dagger\Label">Label</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/Label.html"><abbr title="Dagger\Label">Label</abbr></a></em></dt>
                     <dd><p>The label name.</p></dd><dt><a href="Dagger/Module.html#method_name">
 <abbr title="Dagger\Module">Module</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
@@ -1012,7 +1042,9 @@
 <abbr title="Dagger\Secret">Secret</abbr>::uri</a>() &mdash; <em>Method in class <a href="Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a></em></dt>
                     <dd><p>The URI of this secret.</p></dd><dt><a href="Dagger/Service.html#method_up">
 <abbr title="Dagger\Service">Service</abbr>::up</a>() &mdash; <em>Method in class <a href="Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a></em></dt>
-                    <dd><p>Creates a tunnel that forwards traffic from the caller's network to this service.</p></dd>        </dl><h2 id="letterV">V</h2>
+                    <dd><p>Creates a tunnel that forwards traffic from the caller's network to this service.</p></dd><dt><a href="Dagger/SourceMap.html#method_url">
+<abbr title="Dagger\SourceMap">SourceMap</abbr>::url</a>() &mdash; <em>Method in class <a href="Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a></em></dt>
+                    <dd><p>The URL to the file, if any. This can be used to link to the source map in the browser.</p></dd>        </dl><h2 id="letterV">V</h2>
         <dl id="indexV"><dt><a href="Dagger/Client.html#method_version">
 <abbr title="Dagger\Client">Client</abbr>::version</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Get the current Dagger Engine version.</p></dd><dt><a href="Dagger/EnumTypeDef.html#method_values">
@@ -1176,7 +1208,11 @@
 <abbr title="Dagger\Env">Env</abbr>::withGitRepositoryInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Create or update a binding of type GitRepository in the environment</p></dd><dt><a href="Dagger/Env.html#method_withGitRepositoryOutput">
 <abbr title="Dagger\Env">Env</abbr>::withGitRepositoryOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
-                    <dd><p>Declare a desired GitRepository output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withLLMInput">
+                    <dd><p>Declare a desired GitRepository output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withJSONValueInput">
+<abbr title="Dagger\Env">Env</abbr>::withJSONValueInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
+                    <dd><p>Create or update a binding of type JSONValue in the environment</p></dd><dt><a href="Dagger/Env.html#method_withJSONValueOutput">
+<abbr title="Dagger\Env">Env</abbr>::withJSONValueOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
+                    <dd><p>Declare a desired JSONValue output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withLLMInput">
 <abbr title="Dagger\Env">Env</abbr>::withLLMInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Create or update a binding of type LLM in the environment</p></dd><dt><a href="Dagger/Env.html#method_withLLMOutput">
 <abbr title="Dagger\Env">Env</abbr>::withLLMOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
@@ -1228,7 +1264,11 @@
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::withAuthHeader</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
                     <dd><p>Header to authenticate the remote with.</p></dd><dt><a href="Dagger/GitRepository.html#method_withAuthToken">
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::withAuthToken</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
-                    <dd><p>Token to authenticate the remote with.</p></dd><dt><a href="Dagger/LLM.html#method_withEnv">
+                    <dd><p>Token to authenticate the remote with.</p></dd><dt><a href="Dagger/JsonValue.html#method_withContents">
+<abbr title="Dagger\JsonValue">JsonValue</abbr>::withContents</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
+                    <dd><p>Return a new json value, decoded from the given content</p></dd><dt><a href="Dagger/JsonValue.html#method_withField">
+<abbr title="Dagger\JsonValue">JsonValue</abbr>::withField</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
+                    <dd><p>Set a new field at the given path</p></dd><dt><a href="Dagger/LLM.html#method_withEnv">
 <abbr title="Dagger\LLM">LLM</abbr>::withEnv</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>allow the LLM to interact with an environment via MCP</p></dd><dt><a href="Dagger/LLM.html#method_withModel">
 <abbr title="Dagger\LLM">LLM</abbr>::withModel</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>

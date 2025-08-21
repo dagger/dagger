@@ -1,6 +1,0 @@
-kind: Fixed
-body: 'codegen: fixed invalid function argument default values that contain single quotes'
-time: 2025-07-22T18:09:45.638741Z
-custom:
-    Author: helderco
-    PR: "10778"

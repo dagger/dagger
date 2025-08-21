@@ -82,10 +82,6 @@ import (
 	"github.com/dagger/dagger/engine/sources/local"
 )
 
-const (
-	daggerCacheServiceURL = "https://api.dagger.cloud/magicache"
-)
-
 type Server struct {
 	controlapi.UnimplementedControlServer
 	engineName string
@@ -489,24 +485,11 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, err
 	}
 
-	cacheServiceURL := os.Getenv("_EXPERIMENTAL_DAGGER_CACHESERVICE_URL")
-	cacheServiceToken := os.Getenv("_EXPERIMENTAL_DAGGER_CACHESERVICE_TOKEN")
-	// add DAGGER_CLOUD_TOKEN in a backwards compat way.
-	// TODO: deprecate in a future release
-	if v, ok := os.LookupEnv("DAGGER_CLOUD_TOKEN"); ok {
-		cacheServiceToken = v
-	}
-
-	if cacheServiceURL == "" {
-		cacheServiceURL = daggerCacheServiceURL
-	}
 	srv.SolverCache, err = daggercache.NewManager(ctx, daggercache.ManagerConfig{
 		KeyStore:     srv.solverCacheDB,
 		ResultStore:  bkworker.NewCacheResultStorage(baseWorkerController),
 		Worker:       srv.baseWorker,
 		MountManager: mounts.NewMountManager("dagger-cache", srv.workerCache, srv.bkSessionManager),
-		ServiceURL:   cacheServiceURL,
-		Token:        cacheServiceToken,
 		EngineID:     opts.Name,
 	})
 	if err != nil {

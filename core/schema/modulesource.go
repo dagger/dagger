@@ -6,9 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -459,7 +457,7 @@ func (s *moduleSourceSchema) localModuleSource(
 			return inst, err
 		}
 
-		// load this module source's context directory, ignore patterns, sdk and deps in parallel
+		// load this module source's context directory, sdk and deps in parallel
 		var eg errgroup.Group
 		eg.Go(func() error {
 			if err := s.loadModuleSourceContext(ctx, localSrc); err != nil {
@@ -492,7 +490,6 @@ func (s *moduleSourceSchema) localModuleSource(
 				return nil
 			})
 		}
-
 		if err := eg.Wait(); err != nil {
 			return inst, err
 		}
@@ -593,22 +590,9 @@ func (s *moduleSourceSchema) gitModuleSource(
 		gitSrc.Git.Symbolic += "/" + gitSrc.SourceRootSubpath
 	}
 
-	parsedURL, err := url.Parse(gitSrc.Git.HTMLRepoURL)
+	gitSrc.Git.HTMLURL, err = gitSrc.Git.Link(gitSrc.SourceRootSubpath, -1, -1)
 	if err != nil {
-		gitSrc.Git.HTMLURL = gitSrc.Git.HTMLRepoURL + path.Join("/src", gitSrc.Git.Commit, gitSrc.SourceRootSubpath)
-	} else {
-		switch parsedURL.Host {
-		case "github.com", "gitlab.com":
-			gitSrc.Git.HTMLURL = gitSrc.Git.HTMLRepoURL + path.Join("/tree", gitSrc.Git.Commit, gitSrc.SourceRootSubpath)
-		case "dev.azure.com":
-			if gitSrc.SourceRootSubpath != "." {
-				gitSrc.Git.HTMLURL = fmt.Sprintf("%s/commit/%s?path=/%s", gitSrc.Git.HTMLRepoURL, gitSrc.Git.Commit, gitSrc.SourceRootSubpath)
-			} else {
-				gitSrc.Git.HTMLURL = gitSrc.Git.HTMLRepoURL + path.Join("/commit", gitSrc.Git.Commit)
-			}
-		default:
-			gitSrc.Git.HTMLURL = gitSrc.Git.HTMLRepoURL + path.Join("/src", gitSrc.Git.Commit, gitSrc.SourceRootSubpath)
-		}
+		return inst, fmt.Errorf("failed to get git module source HTML URL: %w", err)
 	}
 
 	var configContents string
@@ -947,45 +931,17 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		fullIncludePaths = append(fullIncludePaths, src.SourceRootSubpath+"/**/*")
 	}
 
+	fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
+
 	switch src.Kind {
 	case core.ModuleSourceKindLocal:
-		moduleSourcePath := src.SourceSubpath
-		if moduleSourcePath == "" {
-			moduleSourcePath = src.SourceRootSubpath
-		}
-
-		// Load .gitignore patterns before loading the module so they can be used in the `Include` argument
-		// instead of Exclude so we get the right behaviour.
-		// We only include the .gitignore from the module source path and above up to the context directory.
-		ignorePatterns, err := loadDirectoryGitIgnorePatterns(ctx, src.Local.ContextDirectoryPath, filepath.Join(src.Local.ContextDirectoryPath, moduleSourcePath))
-		if err != nil {
-			return fmt.Errorf("failed to load .gitignore patterns: %w", err)
-		}
-
-		rebasedIgnorePatterns, err := rebaseGitIgnorePatterns(src.Local.ContextDirectoryPath, src.Local.ContextDirectoryPath, ignorePatterns)
-		if err != nil {
-			return fmt.Errorf("failed to rebase .gitignore patterns: %w", err)
-		}
-
-		for _, pattern := range rebasedIgnorePatterns {
-			pattern, found := strings.CutPrefix(pattern, "!")
-			if !found {
-				pattern = "!" + pattern
-			}
-
-			fullIncludePaths = append(fullIncludePaths, pattern)
-		}
-
-		fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
-
-		err = dag.Select(ctx, dag.Root(), &src.ContextDirectory,
+		err := dag.Select(ctx, dag.Root(), &src.ContextDirectory,
 			dagql.Selector{Field: "host"},
 			dagql.Selector{
 				Field: "directory",
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String(src.Local.ContextDirectoryPath)},
 					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(fullIncludePaths...))},
-					{Name: "noGitAutoIgnore", Value: dagql.NewBoolean(true)}, // Disable .gitignore applying since it's done above.
 				},
 			},
 		)
@@ -994,8 +950,6 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		}
 
 	case core.ModuleSourceKindGit:
-		fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
-
 		err := dag.Select(ctx, dag.Root(), &src.ContextDirectory,
 			dagql.Selector{Field: "directory"},
 			dagql.Selector{

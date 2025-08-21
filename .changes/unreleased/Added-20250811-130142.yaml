@@ -1,6 +1,0 @@
-kind: Added
-body: Added new `gitRef.commonAncestor` API to find the common ancestor between two references
-time: 2025-08-11T13:01:42.27738222+01:00
-custom:
-    Author: jedevc
-    PR: "10849"

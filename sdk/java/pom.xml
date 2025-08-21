@@ -6,7 +6,7 @@
 
     <groupId>io.dagger</groupId>
     <artifactId>dagger-sdk-parent</artifactId>
-    <version>0.18.14</version>
+    <version>0.18.16</version>
     <packaging>pom</packaging>
 
     <modules>
@@ -34,14 +34,9 @@
                 <version>${smallrye-graphql.version}</version>
             </dependency>
             <dependency>
-                <groupId>io.netty</groupId>
-                <artifactId>netty-common</artifactId>
-                <version>${netty-common.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.netty</groupId>
-                <artifactId>netty-handler</artifactId>
-                <version>${netty-handler.version}</version>
+                <groupId>io.vertx</groupId>
+                <artifactId>vertx-web-client</artifactId>
+                <version>${vertx-web-client.version}</version>
             </dependency>
             <dependency>
                 <groupId>jakarta.json</groupId>
@@ -289,7 +284,7 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <daggerengine.version>0.18.14</daggerengine.version>
+        <daggerengine.version>0.18.16</daggerengine.version>
         <daggerengine.schema></daggerengine.schema>
 
         <assertj-core.version>3.27.4</assertj-core.version>
@@ -321,8 +316,7 @@
         <slf4j-api.version>2.0.17</slf4j-api.version>
         <slf4j-simple.version>2.0.17</slf4j-simple.version>
         <smallrye-graphql.version>2.14.0</smallrye-graphql.version>
-        <netty-common.version>4.2.3.Final</netty-common.version>
-        <netty-handler.version>4.2.3.Final</netty-handler.version>
+        <vertx-web-client.version>4.5.18</vertx-web-client.version>
         <system-stubs-jupiter.version>2.1.8</system-stubs-jupiter.version>
         <xdg-java.version>0.1.1</xdg-java.version>
         <yasson.version>3.0.4</yasson.version>

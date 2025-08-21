@@ -150,8 +150,8 @@ func (e *ModuleEnum) TypeDefinition(view dagql.View) *ast.Definition {
 		EnumValues:  e.PossibleValues(),
 		Description: e.TypeDescription(),
 	}
-	if e.TypeDef.SourceMap != nil {
-		def.Directives = append(def.Directives, e.TypeDef.SourceMap.TypeDirective())
+	if e.TypeDef.SourceMap.Valid {
+		def.Directives = append(def.Directives, e.TypeDef.SourceMap.Value.TypeDirective())
 	}
 	return def
 }
@@ -168,8 +168,8 @@ func (e *ModuleEnum) PossibleValues() ast.EnumValueList {
 			Description: val.Description,
 			Directives:  val.EnumValueDirectives(),
 		}
-		if val.SourceMap != nil {
-			def.Directives = append(def.Directives, val.SourceMap.TypeDirective())
+		if val.SourceMap.Valid {
+			def.Directives = append(def.Directives, val.SourceMap.Value.TypeDirective())
 		}
 		values = append(values, def)
 	}

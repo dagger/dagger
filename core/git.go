@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -234,47 +233,6 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		}
 	}()
 
-	if repo.AuthToken.Self() != nil {
-		// caller-supplied username takes priority; otherwise pick a host-specific default
-		username := repo.AuthUsername
-		switch {
-		case username != "":
-			// explicit override – use as-is
-		case repo.URL.Host == "bitbucket.org":
-			// NOTE: bitbucket.org is picky, and needs *this* username
-			username = "x-token-auth"
-		default:
-			username = "x-access-token"
-		}
-
-		secretStore, err := query.Secrets(ctx)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
-		}
-		password, err := secretStore.GetSecretPlaintext(ctx, repo.AuthToken.ID().Digest())
-		if err != nil {
-			return nil, nil, err
-		}
-		authHeader := "basic " + base64.StdEncoding.EncodeToString(
-			fmt.Appendf(nil, "%s:%s", username, password),
-		)
-		opts = append(opts, gitutil.WithArgs(
-			"-c", "http."+repo.URL.Remote()+".extraheader=Authorization: "+authHeader,
-		))
-	} else if repo.AuthHeader.Self() != nil {
-		secretStore, err := query.Secrets(ctx)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
-		}
-		authHeader, err := secretStore.GetSecretPlaintext(ctx, repo.AuthHeader.ID().Digest())
-		if err != nil {
-			return nil, nil, err
-		}
-		opts = append(opts, gitutil.WithArgs(
-			"-c", "http."+repo.URL.Remote()+".extraheader=Authorization: "+string(authHeader),
-		))
-	}
-
 	if repo.SSHAuthSocket.Self() != nil {
 		socketStore, err := query.Sockets(ctx)
 		if err == nil {
@@ -304,18 +262,44 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 	if err != nil {
 		return nil, nil, err
 	}
+
+	var resolvPath string
 	if netConf != nil {
-		resolvPath, err := mountResolv(netConf)
+		var err error
+		resolvPath, err = mountResolv(netConf)
 		if err != nil {
 			return nil, nil, err
 		}
-		opts = append(opts, gitutil.WithExec(func(ctx context.Context, cmd *exec.Cmd) error {
-			return runWithStandardUmaskAndNetOverride(ctx, cmd, "", resolvPath)
-		}))
 		cleanups.Add("remove updated /etc/resolv", func() error {
 			return os.Remove(resolvPath)
 		})
 	}
+
+	if repo.AuthToken.Self() != nil {
+		secretStore, err := query.Secrets(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
+		}
+		password, err := secretStore.GetSecretPlaintext(ctx, repo.AuthToken.ID().Digest())
+		if err != nil {
+			return nil, nil, err
+		}
+		opts = append(opts, gitutil.WithHTTPTokenAuth(repo.URL, string(password), repo.AuthUsername))
+	} else if repo.AuthHeader.Self() != nil {
+		secretStore, err := query.Secrets(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
+		}
+		byteAuthHeader, err := secretStore.GetSecretPlaintext(ctx, repo.AuthHeader.ID().Digest())
+		if err != nil {
+			return nil, nil, err
+		}
+		opts = append(opts, gitutil.WithHTTPAuthorizationHeader(repo.URL, string(byteAuthHeader)))
+	}
+
+	opts = append(opts, gitutil.WithExec(func(ctx context.Context, cmd *exec.Cmd) error {
+		return runWithStandardUmaskAndNetOverride(ctx, cmd, "", resolvPath)
+	}))
 
 	return gitutil.NewGitCLI(opts...), cleanups.Run, nil
 }
@@ -788,9 +772,17 @@ func doGitCheckout(
 
 	// TODO: this feels completely out-of-sync from how we do the rest
 	// of the clone - caching will not be as great here
-	_, err = checkoutGit.Run(ctx, "submodule", "update", "--init", "--recursive", "--depth=1")
-	if err != nil {
-		return fmt.Errorf("failed to update submodules for %s: %w", remote, err)
+	subArgs := []string{"submodule", "update", "--init", "--recursive", "--depth=1"}
+	if _, err := checkoutGit.Run(ctx, subArgs...); err != nil {
+		if strings.Contains(err.Error(), "does not support shallow") {
+			subArgs = slices.DeleteFunc(subArgs, func(s string) bool {
+				return strings.HasPrefix(s, "--depth")
+			})
+			_, err = checkoutGit.Run(ctx, subArgs...)
+		}
+		if err != nil {
+			return fmt.Errorf("failed to update submodules for %s: %w", remote, err)
+		}
 	}
 
 	if discardGitDir {

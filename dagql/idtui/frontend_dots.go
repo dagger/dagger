@@ -15,6 +15,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui/multiprefixw"
+	"github.com/dagger/dagger/util/cleanups"
 	"github.com/muesli/termenv"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
@@ -69,13 +70,13 @@ func NewDots(output io.Writer) Frontend {
 	}
 }
 
-func (fe *frontendDots) Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) error) error {
+func (fe *frontendDots) Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) (cleanups.CleanupF, error)) error {
 	fe.opts = opts
-	return fe.reporter.Run(ctx, opts, func(ctx context.Context) error {
-		err := f(ctx)
+	return fe.reporter.Run(ctx, opts, func(ctx context.Context) (cleanups.CleanupF, error) {
+		cleanup, err := f(ctx)
 		fmt.Fprintln(fe.out)
 		fmt.Fprintln(fe.out)
-		return err
+		return cleanup, err
 	})
 }
 

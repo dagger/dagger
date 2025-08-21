@@ -4551,6 +4551,24 @@ func main() {
 		// create new container with default values
 		defaultBin := c.Container().Import(binctr.AsTarball())
 
+		// NOTE: when doing an Import (or container.From), the ports show up under the image config; but
+		// do not _actually_ get setup under the container -- this is similar to a Dockerfile's EXPOSE keyword
+		// which is merely a _suggestion_ rather than exposing the ports when running the container.
+		// TODO: maybe re-evaluate this choice? It's difficult to say what the expected behaviour should be.
+		// but for now we will keep it to match what Dockerfiles do with EXPOSE vs docker run --expose.
+		exposedPorts, err := defaultBin.ExposedPorts(ctx)
+		require.NoError(t, err)
+		require.Len(t, exposedPorts, 1)
+
+		port, err := exposedPorts[0].Port(ctx)
+		require.NoError(t, err)
+		require.Equal(t, port, 8080)
+
+		// as a result of the above image config vs container.Ports distinction, we must re-expose
+		// these ports in order to have a healthcheck setup; otherwise there's a race condition
+		// where the curl command might run before the server has started up.
+		defaultBin = defaultBin.WithExposedPort(8080)
+
 		output, err := curlctr.
 			WithServiceBinding("myapp", defaultBin.AsService()).
 			WithExec([]string{"sh", "-c", "curl -vXGET 'http://myapp:8080/hello'"}).
