@@ -5078,6 +5078,49 @@ export class Test {
 	}
 }`,
 		},
+		{
+			sdk: "java",
+			source: `package io.dagger.modules.test;
+
+
+import io.dagger.client.GitRef;
+import io.dagger.client.GitRepository;
+import io.dagger.client.exception.DaggerQueryException;
+import io.dagger.module.annotation.DefaultPath;
+import io.dagger.module.annotation.Function;
+import io.dagger.module.annotation.Object;
+import java.util.concurrent.ExecutionException;
+
+@Object
+public class Test {
+    @Function
+    public String testRepoLocal(@DefaultPath("./.git") GitRepository git) throws ExecutionException, DaggerQueryException, InterruptedException {
+        return this.commitAndRef(git.head());
+    }
+
+    @Function
+    public String testRepoRemote(@DefaultPath("https://github.com/dagger/dagger.git") GitRepository git) throws ExecutionException, DaggerQueryException, InterruptedException {
+        return this.commitAndRef(git.tag("v0.18.2"));
+    }
+
+    @Function
+    public String testRefLocal(@DefaultPath("./.git") GitRef git) throws ExecutionException, DaggerQueryException, InterruptedException {
+        return this.commitAndRef(git);
+    }
+
+    @Function
+    public String testRefRemote(@DefaultPath("https://github.com/dagger/dagger.git#v0.18.3") GitRef git) throws ExecutionException, DaggerQueryException, InterruptedException {
+        return this.commitAndRef(git);
+    }
+
+    private String commitAndRef(GitRef git) throws ExecutionException, DaggerQueryException, InterruptedException {
+        var commit = git.commit();
+        var reference = git.ref();
+        return "%s@%s".formatted(reference, commit);
+    }
+}
+`,
+		},
 	}
 	for _, tc := range tcs {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
@@ -6520,6 +6563,8 @@ func sdkSourceFile(sdk string) string {
 		return "src/test/__init__.py"
 	case "typescript":
 		return "src/index.ts"
+	case "java", "./sdk/java":
+		return "src/main/java/io/dagger/modules/test/Test.java"
 	default:
 		panic(fmt.Errorf("unknown sdk %q", sdk))
 	}
@@ -6543,7 +6588,18 @@ func sdkCodegenFile(t *testctx.T, sdk string) string {
 
 func modInit(t *testctx.T, c *dagger.Client, sdk, contents string) *dagger.Container {
 	t.Helper()
-	return goGitBase(t, c).With(withModInit(sdk, contents))
+	return goGitBase(t, c).
+		With(func(ctr *dagger.Container) *dagger.Container {
+			if sdk == "java" {
+				// use the local SDK so that we can test non-released changes
+				sdkSrc, err := filepath.Abs("../../sdk/java")
+				require.NoError(t, err)
+				ctr = ctr.WithMountedDirectory("sdk/java", c.Host().Directory(sdkSrc))
+				sdk = "./sdk/java"
+			}
+			return ctr
+		}).
+		With(withModInit(sdk, contents))
 }
 
 func withModInit(sdk, contents string) dagger.WithContainerFunc {
