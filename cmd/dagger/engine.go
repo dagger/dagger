@@ -132,6 +132,8 @@ func withEngine(
 		}
 		cleanup.Add("close dagger session", sess.Close)
 
+		Frontend.SetClient(sess.Dagger())
+
 		return cleanup.Run, fn(ctx, sess)
 	})
 }
