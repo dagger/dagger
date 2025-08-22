@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -68,6 +69,9 @@ func NewDots(output io.Writer) Frontend {
 		prefixW:     multiprefixw.New(out),
 		pendingLogs: make(map[dagui.SpanID][]sdklog.Record),
 	}
+}
+
+func (fe *frontendDots) SetClient(client *dagger.Client) {
 }
 
 func (fe *frontendDots) Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) (cleanups.CleanupF, error)) error {
