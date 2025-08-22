@@ -1,8 +1,6 @@
 package telemetry
 
 import (
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -469,21 +467,6 @@ func isCI() bool {
 		os.Getenv("BUILD_NUMBER") != "" || // Jenkins, TeamCity
 		os.Getenv("RUN_ID") != "" || // TaskCluster, dsari
 		os.Getenv("TF_BUILD") != "" // Azure Pipelines
-}
-
-func (labels Labels) WithAnonymousGitLabels(workdir string) Labels {
-	labels = labels.WithGitLabels(workdir)
-
-	for name, value := range labels {
-		if name == "dagger.io/git.author.email" {
-			labels[name] = fmt.Sprintf("%x", sha256.Sum256([]byte(value)))
-		}
-		if name == "dagger.io/git.remote" {
-			labels[name] = base64.StdEncoding.EncodeToString([]byte(value))
-		}
-	}
-
-	return labels
 }
 
 func fetchRef(repo *git.Repository, workdir string, remote string, target string) (*object.Commit, error) {
