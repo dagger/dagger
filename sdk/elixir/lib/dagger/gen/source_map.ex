@@ -89,6 +89,13 @@ defimpl Jason.Encoder, for: Dagger.SourceMap do
   end
 end
 
+defimpl JSON.Encoder, for: Dagger.SourceMap do
+  def encode(source_map, _encoder) do
+    {:ok, id} = Dagger.SourceMap.id(source_map)
+    id
+  end
+end
+
 defimpl Nestru.Decoder, for: Dagger.SourceMap do
   def decode_fields_hint(_struct, _context, id) do
     {:ok, Dagger.Client.load_source_map_from_id(Dagger.Global.dag(), id)}

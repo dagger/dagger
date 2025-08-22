@@ -34,6 +34,13 @@ defimpl Jason.Encoder, for: Dagger.Socket do
   end
 end
 
+defimpl JSON.Encoder, for: Dagger.Socket do
+  def encode(socket, _encoder) do
+    {:ok, id} = Dagger.Socket.id(socket)
+    id
+  end
+end
+
 defimpl Nestru.Decoder, for: Dagger.Socket do
   def decode_fields_hint(_struct, _context, id) do
     {:ok, Dagger.Client.load_socket_from_id(Dagger.Global.dag(), id)}
