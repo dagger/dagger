@@ -321,7 +321,7 @@ func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
 						}
 					} else {
 						// If the container has a working directory, sync changes to it
-						immutableRef, err := remount(
+						immutableRef, err := mcpSrv.Service.Self().runAndSnapshotChanges(
 							ctx,
 							sess.ID(), // container id
 							ctr.Config.WorkingDir,
@@ -2343,7 +2343,7 @@ var defaultBlockedMethods = map[string][]string{
 	},
 }
 
-func remount(
+func (svc *Service) runAndSnapshotChanges(
 	ctx context.Context,
 	containerID string,
 	target string,
@@ -2376,18 +2376,19 @@ func remount(
 		}
 	}()
 
+	container, err := libcontainer.Load("/run/runc", containerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load container: %w", err)
+	}
+	state, err := container.OCIState()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get OCI state for container %s: %w", containerID, err)
+	}
+
 	err = MountRef(ctx, mutableRef, nil, func(root string) (rerr error) {
 		resolvedDir, err := containerdfs.RootPath(root, source.Dir)
 		if err != nil {
 			return err
-		}
-		container, err := libcontainer.Load("/run/runc", containerID)
-		if err != nil {
-			return fmt.Errorf("failed to create libcontainer factory: %w", err)
-		}
-		state, err := container.OCIState()
-		if err != nil {
-			return fmt.Errorf("failed to get OCI state for container %s: %w", containerID, err)
 		}
 		// mount the read-write copy into the container
 		out := new(strings.Builder)
@@ -2407,6 +2408,46 @@ func remount(
 	if err != nil {
 		return nil, fmt.Errorf("failed to commit remounted ref for %s: %w", target, err)
 	}
+
+	// Create a new mutable ref to leave the service with, to prevent further
+	// changes from mutating the now-immutable ref
+	//
+	// NOTE: there's technically a race here, for sure, but we can least prevent
+	// mutation outside of the bounds of this func
+	abandonedRef, err := query.BuildkitCache().New(ctx, immutableRef, nil,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("mcp remount"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create new ref for source directory: %w", err)
+	}
+	defer func() {
+		if rerr != nil {
+			abandonedRef.Release(ctx)
+		}
+	}()
+
+	// Mount the mutable ref of their changes over the target path.
+	err = MountRef(ctx, abandonedRef, nil, func(root string) (rerr error) {
+		resolvedDir, err := containerdfs.RootPath(root, source.Dir)
+		if err != nil {
+			return err
+		}
+		// mount the read-write copy into the container
+		out := new(strings.Builder)
+		containerMount := exec.Command("container-mount", strconv.Itoa(state.Pid), resolvedDir, target)
+		containerMount.Stdout = out
+		containerMount.Stderr = out
+		if err := containerMount.Run(); err != nil {
+			return fmt.Errorf("failed to mount %s into container %s: %w\n\n%s", target, containerID, err, out.String())
+		}
+		return f()
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Keep track of this ref so we can release it when the service stops.
+	svc.Releasers = append(svc.Releasers, abandonedRef)
 
 	return immutableRef, nil
 }
