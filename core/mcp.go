@@ -1466,7 +1466,27 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 		builtins = append(builtins, returnTool)
 	}
 
-	builtins = append(builtins, m.userProvidedValues()...)
+	builtins = append(builtins, LLMTool{
+		Name:        "user_provided_values",
+		Description: "Read the inputs supplied by the user.",
+		Schema: map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{},
+			"required":             []string{},
+			"additionalProperties": false,
+		},
+		Strict: true,
+		Call: func(ctx context.Context, args any) (any, error) {
+			values, err := m.userProvidedValues()
+			if err != nil {
+				return nil, err
+			}
+			if values == "" {
+				return "No user-provided values.", nil
+			}
+			return values, nil
+		},
+	})
 
 	return builtins, nil
 }
@@ -1873,49 +1893,33 @@ func (m *MCP) validateAndNormalizeChain(ctx context.Context, self string, calls 
 	return errs
 }
 
-func (m *MCP) userProvidedValues() []LLMTool {
-	return []LLMTool{
-		{
-			Name:        "user_provided_values",
-			Description: "Read the inputs supplied by the user.",
-			Schema: map[string]any{
-				"type":                 "object",
-				"properties":           map[string]any{},
-				"required":             []string{},
-				"additionalProperties": false,
-			},
-			Strict: true,
-			Call: func(ctx context.Context, args any) (any, error) {
-				inputs := m.env.Self().Inputs()
-				if len(inputs) == 0 {
-					return "No user-provided values.", nil
-				}
-				type valueDesc struct {
-					Description string `json:"description"`
-					Value       any    `json:"value"`
-				}
-				var values []valueDesc
-				for _, input := range inputs {
-					description := input.Description
-					if description == "" {
-						description = input.Key
-					}
-					if obj, isObj := input.AsObject(); isObj {
-						values = append(values, valueDesc{
-							Value:       m.Ingest(obj, input.Description),
-							Description: description,
-						})
-					} else {
-						values = append(values, valueDesc{
-							Value:       input.Value,
-							Description: description,
-						})
-					}
-				}
-				return toolStructuredResponse(values)
-			},
-		},
+func (m *MCP) userProvidedValues() (string, error) {
+	type valueDesc struct {
+		Description string `json:"description"`
+		Value       any    `json:"value"`
 	}
+	var values []valueDesc
+	for _, input := range m.env.Self().Inputs() {
+		description := input.Description
+		if description == "" {
+			description = input.Key
+		}
+		if obj, isObj := input.AsObject(); isObj {
+			values = append(values, valueDesc{
+				Value:       m.Ingest(obj, input.Description),
+				Description: description,
+			})
+		} else {
+			values = append(values, valueDesc{
+				Value:       input.Value,
+				Description: description,
+			})
+		}
+	}
+	if len(values) == 0 {
+		return "", nil
+	}
+	return toolStructuredResponse(values)
 }
 
 func (m *MCP) IsDone() bool {
