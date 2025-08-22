@@ -24,11 +24,6 @@ type Job struct {
 	TimeoutMinutes int
 	// Run the workflow in debug mode
 	Debug bool
-	// Use a sparse git checkout, only including the given paths
-	// Example: ["src", "tests", "Dockerfile"]
-	SparseCheckout []string
-	// Enable lfs on git checkout
-	LFS bool
 	// Github secrets to inject into the workflow environment.
 	// For each secret, an env variable with the same name is created.
 	// Example: ["PROD_DEPLOY_TOKEN", "PRIVATE_SSH_KEY"]
@@ -84,13 +79,6 @@ func (gha *Gha) Job(
 	// Run the workflow in debug mode
 	// +optional
 	debug bool,
-	// Use a sparse git checkout, only including the given paths
-	// Example: ["src", "tests", "Dockerfile"]
-	// +optional
-	sparseCheckout []string,
-	// Enable lfs on git checkout
-	// +optional
-	lfs bool,
 	// Github secrets to inject into the workflow environment.
 	// For each secret, an env variable with the same name is created.
 	// Example: ["PROD_DEPLOY_TOKEN", "PRIVATE_SSH_KEY"]
@@ -127,8 +115,6 @@ func (gha *Gha) Job(
 		TeardownCommands: teardownCommands,
 		TimeoutMinutes:   timeoutMinutes,
 		Debug:            debug,
-		SparseCheckout:   sparseCheckout,
-		LFS:              lfs,
 		Secrets:          secrets,
 		Env:              env,
 		Runner:           runner,
