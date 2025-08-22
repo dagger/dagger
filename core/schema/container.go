@@ -494,6 +494,10 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 
+		dagql.Func("combinedOutput", s.combinedOutput).
+			Doc(`The combined buffered standard output and standard error stream of the last executed command`,
+				`Returns an error if no command was executed`),
+
 		dagql.Func("exitCode", s.exitCode).
 			Doc(`The exit code of the last executed command`,
 				`Returns an error if no command was executed`),
@@ -1085,6 +1089,10 @@ func (s *containerSchema) stderrLegacy(ctx context.Context, parent dagql.ObjectR
 		return ctr.Self().Stderr(ctx)
 	}
 	return out, err
+}
+
+func (s *containerSchema) combinedOutput(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
+	return parent.CombinedOutput(ctx)
 }
 
 func (s *containerSchema) exitCode(ctx context.Context, parent *core.Container, _ struct{}) (int, error) {

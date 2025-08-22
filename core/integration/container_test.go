@@ -212,6 +212,30 @@ func (ContainerSuite) TestExecStdoutStderr(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (ContainerSuite) TestExecCombinedOutput(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := c.Container().
+		From(alpineImage).
+		WithNewFile("/test.sh", `echo "out"
+echo "err" >&2
+`).
+		WithExec([]string{"sh", "/test.sh"})
+	out, err := ctr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, out, "out\n")
+
+	out, err = ctr.Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "err\n")
+
+	out, err = ctr.CombinedOutput(ctx)
+	require.NoError(t, err)
+	// order is not guarantee, but we can ensure both expected lines are present
+	require.Contains(t, out, "out\n")
+	require.Contains(t, out, "err\n")
+}
+
 func (ContainerSuite) TestExecStdin(ctx context.Context, t *testctx.T) {
 	res, err := testutil.Query[struct {
 		Container struct {

@@ -2362,6 +2362,7 @@ export class Cloud extends BaseClient {
  */
 export class Container extends BaseClient {
   private readonly _id?: ContainerID = undefined
+  private readonly _combinedOutput?: string = undefined
   private readonly _envVariable?: string = undefined
   private readonly _exists?: boolean = undefined
   private readonly _exitCode?: number = undefined
@@ -2384,6 +2385,7 @@ export class Container extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: ContainerID,
+    _combinedOutput?: string,
     _envVariable?: string,
     _exists?: boolean,
     _exitCode?: number,
@@ -2403,6 +2405,7 @@ export class Container extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._combinedOutput = _combinedOutput
     this._envVariable = _envVariable
     this._exists = _exists
     this._exitCode = _exitCode
@@ -2499,6 +2502,23 @@ export class Container extends BaseClient {
   build = (context: Directory, opts?: ContainerBuildOpts): Container => {
     const ctx = this._ctx.select("build", { context, ...opts })
     return new Container(ctx)
+  }
+
+  /**
+   * The combined buffered standard output and standard error stream of the last executed command
+   *
+   * Returns an error if no command was executed
+   */
+  combinedOutput = async (): Promise<string> => {
+    if (this._combinedOutput) {
+      return this._combinedOutput
+    }
+
+    const ctx = this._ctx.select("combinedOutput")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**

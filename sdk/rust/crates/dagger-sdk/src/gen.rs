@@ -2447,6 +2447,12 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// The combined buffered standard output and standard error stream of the last executed command
+    /// Returns an error if no command was executed
+    pub async fn combined_output(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("combinedOutput");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Return the container's default arguments.
     pub async fn default_args(&self) -> Result<Vec<String>, DaggerError> {
         let query = self.selection.select("defaultArgs");

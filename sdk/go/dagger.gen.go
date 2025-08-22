@@ -699,22 +699,23 @@ func (r *Cloud) TraceURL(ctx context.Context) (string, error) {
 type Container struct {
 	query *querybuilder.Selection
 
-	envVariable *string
-	exists      *bool
-	exitCode    *int
-	export      *string
-	exportImage *Void
-	id          *ContainerID
-	imageRef    *string
-	label       *string
-	platform    *Platform
-	publish     *string
-	stderr      *string
-	stdout      *string
-	sync        *ContainerID
-	up          *Void
-	user        *string
-	workdir     *string
+	combinedOutput *string
+	envVariable    *string
+	exists         *bool
+	exitCode       *int
+	export         *string
+	exportImage    *Void
+	id             *ContainerID
+	imageRef       *string
+	label          *string
+	platform       *Platform
+	publish        *string
+	stderr         *string
+	stdout         *string
+	sync           *ContainerID
+	up             *Void
+	user           *string
+	workdir        *string
 }
 type WithContainerFunc func(r *Container) *Container
 
@@ -884,6 +885,21 @@ func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Conta
 	return &Container{
 		query: q,
 	}
+}
+
+// The combined buffered standard output and standard error stream of the last executed command
+//
+// Returns an error if no command was executed
+func (r *Container) CombinedOutput(ctx context.Context) (string, error) {
+	if r.combinedOutput != nil {
+		return *r.combinedOutput, nil
+	}
+	q := r.query.Select("combinedOutput")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Return the container's default arguments.

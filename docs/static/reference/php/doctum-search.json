@@ -1923,6 +1923,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Container::combinedOutput",
+			"p": "Dagger/Container.html#method_combinedOutput",
+			"d": "<p>The combined buffered standard output and standard error stream of the last executed command</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Container::defaultArgs",
 			"p": "Dagger/Container.html#method_defaultArgs",
 			"d": "<p>Return the container's default arguments.</p>"
