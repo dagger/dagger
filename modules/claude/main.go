@@ -7,12 +7,10 @@ import (
 )
 
 type Claude struct {
-	Source  *dagger.Directory
 	Sandbox *dagger.Container
 }
 
 func New(
-	source *dagger.Directory,
 	// +optional
 	sandbox *dagger.Container,
 ) *Claude {
@@ -22,7 +20,6 @@ func New(
 		})
 	}
 	return &Claude{
-		Source:  source,
 		Sandbox: sandbox,
 	}
 }
@@ -40,6 +37,17 @@ func (m *Claude) Agent(
 			m.Sandbox.
 				WithExec([]string{"npm", "install", "-g", "@anthropic-ai/claude-code"}).
 				WithDefaultArgs([]string{"claude", "mcp", "serve"}).
+				WithWorkdir("/work").
 				AsService(),
-		)
+		).
+		WithSystemPrompt("Your current working directory is /work.")
+}
+
+// An entrypoint for starting Claude from the CLI with an arbitrary source
+// directory.
+func (m *Claude) Dev(source *dagger.Directory) *dagger.LLM {
+	return m.Agent(
+		dag.LLM().
+			WithEnv(dag.Env().WithHostfs(source)),
+	)
 }
