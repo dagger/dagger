@@ -10,6 +10,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -66,6 +67,26 @@ func (span *Span) Call() *callpbv1.Call {
 	}
 	span.callCache = span.db.Call(span.CallDigest)
 	return span.callCache
+}
+
+func (span *Span) CallID() (*call.ID, error) {
+	spanCall := span.Call()
+	if spanCall == nil {
+		return nil, fmt.Errorf("no call for span")
+	}
+
+	dag := &callpbv1.DAG{
+		RootDigest:    spanCall.Digest,
+		CallsByDigest: map[string]*callpbv1.Call{},
+	}
+	extractIntoDAG(dag, span.db, spanCall)
+
+	var id call.ID
+	err := id.FromProto(dag)
+	if err != nil {
+		return nil, err
+	}
+	return &id, nil
 }
 
 func (span *Span) Base() *callpbv1.Call {
