@@ -37,7 +37,7 @@ import (
 
 // Directory is a content-addressed directory.
 type Directory struct {
-	LLB    *pb.Definition
+	Def    *pb.Definition
 	Result bkcache.ImmutableRef // only valid when returned by dagop
 
 	Dir      string
@@ -69,8 +69,8 @@ var _ HasPBDefinitions = (*Directory)(nil)
 
 func (dir *Directory) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	var defs []*pb.Definition
-	if dir.LLB != nil {
-		defs = append(defs, dir.LLB)
+	if dir.Def != nil {
+		defs = append(defs, dir.Def)
 	}
 	for _, bnd := range dir.Services {
 		ctr := bnd.Service.Self().Container
@@ -86,9 +86,13 @@ func (dir *Directory) PBDefinitions(ctx context.Context) ([]*pb.Definition, erro
 	return defs, nil
 }
 
+func (dir *Directory) LLB(ctx context.Context) (*pb.Definition, error) {
+	return toDef(ctx, dir.Def, dir.Result, dir.Platform)
+}
+
 func NewDirectory(def *pb.Definition, dir string, platform Platform, services ServiceBindings) *Directory {
 	return &Directory{
-		LLB:      def,
+		Def:      def,
 		Dir:      dir,
 		Platform: platform,
 		Services: services,
@@ -125,16 +129,19 @@ func (dir *Directory) OnRelease(ctx context.Context) error {
 	return nil
 }
 
-func (dir *Directory) State() (llb.State, error) {
-	if dir.LLB == nil {
+func (dir *Directory) State(ctx context.Context) (llb.State, error) {
+	def, err := dir.LLB(ctx)
+	if err != nil {
+		return llb.State{}, fmt.Errorf("failed to get directory LLB: %w", err)
+	}
+	if def == nil {
 		return llb.Scratch(), nil
 	}
-
-	return defToState(dir.LLB)
+	return defToState(def)
 }
 
-func (dir *Directory) StateWithSourcePath() (llb.State, error) {
-	dirSt, err := dir.State()
+func (dir *Directory) StateWithSourcePath(ctx context.Context) (llb.State, error) {
+	dirSt, err := dir.State(ctx)
 	if err != nil {
 		return llb.State{}, err
 	}
@@ -160,15 +167,19 @@ func (dir *Directory) SetState(ctx context.Context, st llb.State) error {
 		return err
 	}
 
-	dir.LLB = def.ToPB()
+	dir.Def = def.ToPB()
+	dir.Result = nil
 	return nil
 }
 
 func (dir *Directory) Evaluate(ctx context.Context) (*buildkit.Result, error) {
-	if dir.LLB == nil {
+	def, err := dir.LLB(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get directory LLB: %w", err)
+	}
+	if def == nil {
 		return nil, nil
 	}
-
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -177,10 +188,9 @@ func (dir *Directory) Evaluate(ctx context.Context) (*buildkit.Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-
 	return bk.Solve(ctx, bkgw.SolveRequest{
 		Evaluate:   true,
-		Definition: dir.LLB,
+		Definition: def,
 	})
 }
 
@@ -204,8 +214,12 @@ func (dir *Directory) Digest(ctx context.Context) (string, error) {
 func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, src string) (*fstypes.Stat, error) {
 	src = path.Join(dir.Dir, src)
 
+	def, err := dir.LLB(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get directory LLB: %w", err)
+	}
 	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: dir.LLB,
+		Definition: def,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to solve: %w", err)
@@ -384,7 +398,7 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 	// be sure to create the file under the working directory
 	dest = path.Join(dir.Dir, dest)
 
-	st, err := dir.State()
+	st, err := dir.State(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -578,7 +592,7 @@ func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
 	}
 
 	return &File{
-		LLB:      dir.LLB,
+		Def:      dir.Def,
 		Result:   dir.Result,
 		File:     path.Join(dir.Dir, file),
 		Platform: dir.Platform,
@@ -594,12 +608,12 @@ type CopyFilter struct {
 func (dir *Directory) WithDirectory(ctx context.Context, destDir string, src *Directory, filter CopyFilter, owner *Ownership) (*Directory, error) {
 	dir = dir.Clone()
 
-	destSt, err := dir.State()
+	destSt, err := dir.State(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	srcSt, err := src.State()
+	srcSt, err := src.State(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -912,12 +926,12 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 		return nil, fmt.Errorf("cannot diff with different relative paths: %q != %q", dir.Dir, other.Dir)
 	}
 
-	lowerSt, err := dir.State()
+	lowerSt, err := dir.State(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	upperSt, err := other.State()
+	upperSt, err := other.State(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1028,7 +1042,7 @@ func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (
 
 	var defPB *pb.Definition
 	if dir.Dir != "" && dir.Dir != "/" {
-		src, err := dir.State()
+		src, err := dir.State(ctx)
 		if err != nil {
 			return err
 		}
@@ -1042,7 +1056,10 @@ func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (
 		}
 		defPB = def.ToPB()
 	} else {
-		defPB = dir.LLB
+		defPB, err = dir.LLB(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get directory LLB: %w", err)
+		}
 	}
 
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("export directory %s to host %s", dir.Dir, destPath))
@@ -1077,7 +1094,11 @@ func (dir *Directory) WithSymlink(ctx context.Context, srv *dagql.Server, target
 }
 
 func (dir *Directory) Mount(ctx context.Context, f func(string) error) error {
-	return mountLLB(ctx, dir.LLB, func(root string) error {
+	def, err := dir.LLB(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get directory LLB: %w", err)
+	}
+	return mountLLB(ctx, def, func(root string) error {
 		src, err := containerdfs.RootPath(root, dir.Dir)
 		if err != nil {
 			return err
