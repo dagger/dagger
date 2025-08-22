@@ -12,6 +12,13 @@ func (j *Job) warmEngineStep() api.JobStep {
 	return j.bashStep("warm-engine", nil)
 }
 
+func (j *Job) checkoutStep() api.JobStep {
+	return api.JobStep{
+		Name: "Checkout",
+		Uses: "actions/checkout@v4",
+	}
+}
+
 func (j *Job) installDaggerSteps() []api.JobStep {
 	steps := []api.JobStep{
 		j.bashStep("install-dagger", map[string]string{"DAGGER_VERSION": j.DaggerVersion}),

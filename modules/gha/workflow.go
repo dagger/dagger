@@ -403,6 +403,10 @@ func (w *Workflow) asWorkflow() api.Workflow {
 				Run:   cmd,
 			})
 		}
+		// HACK: this *isn't* required! we load the module using DAGGER_MODULE
+		// directly from git, *but* this is currently required so that we can
+		// get the right labels :(
+		steps = append(steps, job.checkoutStep())
 		callStep := job.callDaggerStep()
 		steps = append(steps, callStep)
 		if job.UploadLogs {

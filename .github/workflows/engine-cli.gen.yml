@@ -66,6 +66,8 @@ jobs:
                 dagger version
                 dagger core version
               shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -221,6 +223,8 @@ jobs:
                 dagger version
                 dagger core version
               shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -376,6 +380,8 @@ jobs:
                 dagger version
                 dagger core version
               shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -531,6 +537,8 @@ jobs:
                 dagger version
                 dagger core version
               shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -686,6 +694,8 @@ jobs:
                 dagger version
                 dagger core version
               shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -857,6 +867,8 @@ jobs:
                 dagger version
                 dagger core version
               shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -1047,6 +1059,8 @@ jobs:
                 dagger version
                 dagger core version
               shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -1237,6 +1251,8 @@ jobs:
                 dagger version
                 dagger core version
               shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -1427,6 +1443,8 @@ jobs:
                 dagger version
                 dagger core version
               shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -1617,6 +1635,8 @@ jobs:
                 dagger version
                 dagger core version
               shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -1807,6 +1827,8 @@ jobs:
                 dagger version
                 dagger core version
               shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -1997,6 +2019,8 @@ jobs:
                 dagger version
                 dagger core version
               shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -2187,6 +2211,8 @@ jobs:
                 dagger version
                 dagger core version
               shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -2377,6 +2403,8 @@ jobs:
                 dagger version
                 dagger core version
               shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -2567,6 +2595,8 @@ jobs:
                 dagger version
                 dagger core version
               shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
             - name: scripts/exec.sh
               id: exec
               run: |
