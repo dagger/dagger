@@ -2158,10 +2158,10 @@ func (s *containerSchema) asTarball(
 
 	variants := append([]*core.Container{parent.Self()}, platformVariants...)
 	for _, variant := range variants {
-		if variant.FS == nil {
+		if variant.FSDef == nil && variant.FSResult == nil {
 			continue
 		}
-		st, err := variant.FSState()
+		st, err := variant.FSState(ctx)
 		if err != nil {
 			return inst, err
 		}

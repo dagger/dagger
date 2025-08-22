@@ -27,7 +27,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 		// TODO: there's probably a way to avoid this
 		// TODO: there's probably a way to avoid this
 		// TODO: there's probably a way to avoid this
-		dagql.Func("__immutableRef", s.immutableRef).
+		dagql.NodeFunc("__immutableRef", DagOpDirectoryWrapper(srv, s.immutableRef)).
 			Args(
 				dagql.Arg("ref").Doc("Reference to a mutable ref to make immutable."),
 			),
@@ -236,19 +236,25 @@ type directoryPipelineArgs struct {
 	Labels      []dagql.InputObject[PipelineLabel] `default:"[]"`
 }
 
-func (s *directorySchema) immutableRef(ctx context.Context, parent *core.Query, args struct {
+func (s *directorySchema) immutableRef(ctx context.Context, parent dagql.ObjectResult[*core.Query], args struct {
 	Ref string
-}) (*core.Directory, error) {
-	immutable, err := parent.BuildkitCache().Get(ctx, args.Ref, nil)
+	DagOpInternalArgs
+}) (res dagql.ObjectResult[*core.Directory], _ error) {
+	query := parent.Self()
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get mutable ref %q: %w", args.Ref, err)
+		return res, err
 	}
-	dir, err := core.NewScratchDirectory(ctx, parent.Platform())
+	immutable, err := query.BuildkitCache().Get(ctx, args.Ref, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create scratch directory: %w", err)
+		return res, fmt.Errorf("failed to get mutable ref %q: %w", args.Ref, err)
+	}
+	dir, err := core.NewScratchDirectory(ctx, query.Platform())
+	if err != nil {
+		return res, fmt.Errorf("failed to create scratch directory: %w", err)
 	}
 	dir.Result = immutable
-	return dir, nil
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 func (s *directorySchema) pipeline(ctx context.Context, parent *core.Directory, args directoryPipelineArgs) (*core.Directory, error) {
