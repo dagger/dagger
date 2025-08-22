@@ -4621,9 +4621,19 @@ pub struct DirectoryWithDirectoryOpts<'a> {
     /// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
+    /// A user:group to set for the copied directory and its contents.
+    /// The user and group must be an ID (1000:1000), not a name (foo:bar).
+    /// If the group is omitted, it defaults to the same as the user.
+    #[builder(setter(into, strip_option), default)]
+    pub owner: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct DirectoryWithFileOpts {
+pub struct DirectoryWithFileOpts<'a> {
+    /// A user:group to set for the copied directory and its contents.
+    /// The user and group must be an ID (1000:1000), not a name (foo:bar).
+    /// If the group is omitted, it defaults to the same as the user.
+    #[builder(setter(into, strip_option), default)]
+    pub owner: Option<&'a str>,
     /// Permission given to the copied file (e.g., 0600).
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
@@ -4709,6 +4719,26 @@ impl Directory {
             query = query.arg("sourceRootPath", source_root_path);
         }
         ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Change the owner of the directory contents recursively.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path of the directory to change ownership of (e.g., "/").
+    /// * `owner` - A user:group to set for the mounted directory and its contents.
+    ///
+    /// The user and group must be an ID (1000:1000), not a name (foo:bar).
+    ///
+    /// If the group is omitted, it defaults to the same as the user.
+    pub fn chown(&self, path: impl Into<String>, owner: impl Into<String>) -> Directory {
+        let mut query = self.selection.select("chown");
+        query = query.arg("path", path.into());
+        query = query.arg("owner", owner.into());
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -5049,6 +5079,9 @@ impl Directory {
         if let Some(include) = opts.include {
             query = query.arg("include", include);
         }
+        if let Some(owner) = opts.owner {
+            query = query.arg("owner", owner);
+        }
         Directory {
             proc: self.proc.clone(),
             selection: query,
@@ -5085,11 +5118,11 @@ impl Directory {
     /// * `path` - Location of the copied file (e.g., "/file.txt").
     /// * `source` - Identifier of the file to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_file_opts(
+    pub fn with_file_opts<'a>(
         &self,
         path: impl Into<String>,
         source: impl IntoID<FileId>,
-        opts: DirectoryWithFileOpts,
+        opts: DirectoryWithFileOpts<'a>,
     ) -> Directory {
         let mut query = self.selection.select("withFile");
         query = query.arg("path", path.into());
@@ -5102,6 +5135,9 @@ impl Directory {
         );
         if let Some(permissions) = opts.permissions {
             query = query.arg("permissions", permissions);
+        }
+        if let Some(owner) = opts.owner {
+            query = query.arg("owner", owner);
         }
         Directory {
             proc: self.proc.clone(),
@@ -6623,6 +6659,24 @@ pub struct FileExportOpts {
     pub allow_parent_dir_path: Option<bool>,
 }
 impl File {
+    /// Change the owner of the file recursively.
+    ///
+    /// # Arguments
+    ///
+    /// * `owner` - A user:group to set for the file.
+    ///
+    /// The user and group must be an ID (1000:1000), not a name (foo:bar).
+    ///
+    /// If the group is omitted, it defaults to the same as the user.
+    pub fn chown(&self, owner: impl Into<String>) -> File {
+        let mut query = self.selection.select("chown");
+        query = query.arg("owner", owner.into());
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieves the contents of the file.
     pub async fn contents(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("contents");

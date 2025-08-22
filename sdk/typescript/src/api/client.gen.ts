@@ -869,6 +869,15 @@ export type DirectoryWithDirectoryOpts = {
    * Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    */
   include?: string[]
+
+  /**
+   * A user:group to set for the copied directory and its contents.
+   *
+   * The user and group must be an ID (1000:1000), not a name (foo:bar).
+   *
+   * If the group is omitted, it defaults to the same as the user.
+   */
+  owner?: string
 }
 
 export type DirectoryWithFileOpts = {
@@ -876,6 +885,15 @@ export type DirectoryWithFileOpts = {
    * Permission given to the copied file (e.g., 0600).
    */
   permissions?: number
+
+  /**
+   * A user:group to set for the copied directory and its contents.
+   *
+   * The user and group must be an ID (1000:1000), not a name (foo:bar).
+   *
+   * If the group is omitted, it defaults to the same as the user.
+   */
+  owner?: string
 }
 
 export type DirectoryWithFilesOpts = {
@@ -3805,6 +3823,20 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Change the owner of the directory contents recursively.
+   * @param path Path of the directory to change ownership of (e.g., "/").
+   * @param owner A user:group to set for the mounted directory and its contents.
+   *
+   * The user and group must be an ID (1000:1000), not a name (foo:bar).
+   *
+   * If the group is omitted, it defaults to the same as the user.
+   */
+  chown = (path: string, owner: string): Directory => {
+    const ctx = this._ctx.select("chown", { path, owner })
+    return new Directory(ctx)
+  }
+
+  /**
    * Return the difference between this directory and an another directory. The difference is encoded as a directory.
    * @param other The directory to compare against
    */
@@ -3991,6 +4023,11 @@ export class Directory extends BaseClient {
    * @param directory Identifier of the directory to copy.
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+   * @param opts.owner A user:group to set for the copied directory and its contents.
+   *
+   * The user and group must be an ID (1000:1000), not a name (foo:bar).
+   *
+   * If the group is omitted, it defaults to the same as the user.
    */
   withDirectory = (
     path: string,
@@ -4006,6 +4043,11 @@ export class Directory extends BaseClient {
    * @param path Location of the copied file (e.g., "/file.txt").
    * @param source Identifier of the file to copy.
    * @param opts.permissions Permission given to the copied file (e.g., 0600).
+   * @param opts.owner A user:group to set for the copied directory and its contents.
+   *
+   * The user and group must be an ID (1000:1000), not a name (foo:bar).
+   *
+   * If the group is omitted, it defaults to the same as the user.
    */
   withFile = (
     path: string,
@@ -5645,6 +5687,19 @@ export class File extends BaseClient {
     const response: Awaited<FileID> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Change the owner of the file recursively.
+   * @param owner A user:group to set for the file.
+   *
+   * The user and group must be an ID (1000:1000), not a name (foo:bar).
+   *
+   * If the group is omitted, it defaults to the same as the user.
+   */
+  chown = (owner: string): File => {
+    const ctx = this._ctx.select("chown", { owner })
+    return new File(ctx)
   }
 
   /**

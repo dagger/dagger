@@ -2989,6 +2989,26 @@ class Directory(Type):
         _ctx = self._select("asModuleSource", _args)
         return ModuleSource(_ctx)
 
+    def chown(self, path: str, owner: str) -> Self:
+        """Change the owner of the directory contents recursively.
+
+        Parameters
+        ----------
+        path:
+            Path of the directory to change ownership of (e.g., "/").
+        owner:
+            A user:group to set for the mounted directory and its contents.
+            The user and group must be an ID (1000:1000), not a name
+            (foo:bar).
+            If the group is omitted, it defaults to the same as the user.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("owner", owner),
+        ]
+        _ctx = self._select("chown", _args)
+        return Directory(_ctx)
+
     def diff(self, other: Self) -> Self:
         """Return the difference between this directory and an another directory.
         The difference is encoded as a directory.
@@ -3368,6 +3388,7 @@ class Directory(Type):
         *,
         exclude: list[str] | None = None,
         include: list[str] | None = None,
+        owner: str | None = "",
     ) -> Self:
         """Return a snapshot with a directory added
 
@@ -3383,12 +3404,18 @@ class Directory(Type):
         include:
             Include only artifacts that match the given pattern (e.g.,
             ["app/", "package.*"]).
+        owner:
+            A user:group to set for the copied directory and its contents.
+            The user and group must be an ID (1000:1000), not a name
+            (foo:bar).
+            If the group is omitted, it defaults to the same as the user.
         """
         _args = [
             Arg("path", path),
             Arg("directory", directory),
             Arg("exclude", [] if exclude is None else exclude, []),
             Arg("include", [] if include is None else include, []),
+            Arg("owner", owner, ""),
         ]
         _ctx = self._select("withDirectory", _args)
         return Directory(_ctx)
@@ -3399,6 +3426,7 @@ class Directory(Type):
         source: "File",
         *,
         permissions: int | None = None,
+        owner: str | None = "",
     ) -> Self:
         """Retrieves this directory plus the contents of the given file copied to
         the given path.
@@ -3411,11 +3439,17 @@ class Directory(Type):
             Identifier of the file to copy.
         permissions:
             Permission given to the copied file (e.g., 0600).
+        owner:
+            A user:group to set for the copied directory and its contents.
+            The user and group must be an ID (1000:1000), not a name
+            (foo:bar).
+            If the group is omitted, it defaults to the same as the user.
         """
         _args = [
             Arg("path", path),
             Arg("source", source),
             Arg("permissions", permissions, None),
+            Arg("owner", owner, ""),
         ]
         _ctx = self._select("withFile", _args)
         return Directory(_ctx)
@@ -5330,6 +5364,23 @@ class FieldTypeDef(Type):
 @typecheck
 class File(Type):
     """A file."""
+
+    def chown(self, owner: str) -> Self:
+        """Change the owner of the file recursively.
+
+        Parameters
+        ----------
+        owner:
+            A user:group to set for the file.
+            The user and group must be an ID (1000:1000), not a name
+            (foo:bar).
+            If the group is omitted, it defaults to the same as the user.
+        """
+        _args = [
+            Arg("owner", owner),
+        ]
+        _ctx = self._select("chown", _args)
+        return File(_ctx)
 
     async def contents(self) -> str:
         """Retrieves the contents of the file.

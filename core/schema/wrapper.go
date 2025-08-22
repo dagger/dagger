@@ -124,6 +124,8 @@ func DagOpDirectoryWrapper[T dagql.Typed, A DagOpInternalArgsIface](
 
 type DagOpOpts[T dagql.Typed, A any] struct {
 	pfn PathFunc[T, A]
+
+	FSDagOpInternalArgs
 }
 
 type DagOpOptsFn[T dagql.Typed, A any] func(*DagOpOpts[T, A])

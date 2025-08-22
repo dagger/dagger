@@ -66,6 +66,13 @@ func (n Optional[I]) GetOr(v I) I {
 	return n.Value
 }
 
+func (n Optional[I]) AsPtr() *I {
+	if !n.Valid {
+		return nil
+	}
+	return &n.Value
+}
+
 // NoOpt returns an empty Optional value.
 func NoOpt[I Input]() Optional[I] {
 	return Optional[I]{}
@@ -125,6 +132,29 @@ func (o Optional[I]) Deref() (Typed, bool) {
 func (o *Optional[I]) UnmarshalJSON(p []byte) error {
 	if err := json.Unmarshal(p, &o.Value); err != nil {
 		return err
+	}
+	return nil
+}
+
+var _ Setter = Optional[Input]{}
+
+func (o Optional[I]) SetField(val reflect.Value) error {
+	switch val.Kind() {
+	case reflect.Ptr:
+		if o.Valid {
+			ptr := reflect.New(val.Type().Elem())
+			if err := assign(ptr.Elem(), o.Value); err != nil {
+				return fmt.Errorf("optional pointer: %w", err)
+			}
+			val.Set(ptr)
+		}
+	default:
+		if o.Valid {
+			if err := assign(val, o.Value); err != nil {
+				return fmt.Errorf("optional: %w", err)
+			}
+			return nil
+		}
 	}
 	return nil
 }
