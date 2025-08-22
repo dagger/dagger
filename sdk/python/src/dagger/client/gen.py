@@ -10031,6 +10031,29 @@ class Service(Type):
         ]
         return await self._ctx.execute_sync(self, "stop", _args)
 
+    async def sync(self) -> Self:
+        """Forces evaluation of the pipeline in the engine.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "sync", _args)
+
+    def __await__(self):
+        return self.sync().__await__()
+
+    def terminal(self, *, cmd: list[str] | None = None) -> Self:
+        _args = [
+            Arg("cmd", [] if cmd is None else cmd, []),
+        ]
+        _ctx = self._select("terminal", _args)
+        return Service(_ctx)
+
     async def up(
         self,
         *,
