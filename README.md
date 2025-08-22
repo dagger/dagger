@@ -2,7 +2,7 @@
 
 Dagger is an open-source runtime for composable workflows. It's perfect for systems with many moving parts and a strong need for **repeatability**, **modularity**, **observability** and **cross-platform support**. This makes it a great choice for AI agents and CI/CD workflows.
 
-<p align="center"><img src="docs/static/img/current_docs/index/dagger-factory.jpg" width="75%"></p>
+<p align="center"><img src="docs/static/img/readme/dagger-factory.jpg" width="75%"></p>
 
 ## Key Features
 
@@ -14,7 +14,7 @@ Dagger is an open-source runtime for composable workflows. It's perfect for syst
 
 - **Built-in Observability:** Full visibility into operations with tracing, logs, and metrics. Debug complex workflows and know exactly what's happening.
 
-<p align="center"><img src="docs/static/img/current_docs/index/cloud-trace.gif" width="60%"></a>
+<p align="center"><img src="docs/static/img/readme/cloud-trace.gif" width="60%"></a>
 
 - **Open Platform:** Works with any compute platform and tech stack — today and tomorrow. Ship faster, experiment freely, and don’t get locked into someone else's choices.
 
@@ -22,7 +22,7 @@ Dagger is an open-source runtime for composable workflows. It's perfect for syst
 
 - **Interactive Terminal:** Directly interact with your workflow or agents in real-time through your terminal. Prototype, test, debug, and ship even faster.
 
-<p align="center"><img src="docs/static/img/current_docs/index/da-robots-white-box.svg" width="60%"></a>
+<p align="center"><img src="docs/static/img/readme/da-robots-white-box.svg" width="60%"></a>
 
 ## Getting started
 
