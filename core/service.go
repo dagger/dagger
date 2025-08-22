@@ -66,6 +66,9 @@ type Service struct {
 
 	// The sockets on the host to reverse tunnel
 	HostSockets []*Socket
+
+	// Refs to release when shutting down the service.
+	Releasers []bkcache.Ref
 }
 
 func (*Service) Type() *ast.Type {
@@ -340,6 +343,16 @@ func (svc *Service) startContainer(
 			return nil, err
 		}
 	}
+
+	// Services support having refs re-mounted at runtime, so when the service
+	// stops, we need to release them all.
+	cleanup.Add("release late-bound refs", func() error {
+		var errs error
+		for _, ref := range svc.Releasers {
+			errs = errors.Join(errs, ref.Release(context.WithoutCancel(ctx)))
+		}
+		return errs
+	})
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
