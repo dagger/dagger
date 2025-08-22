@@ -298,7 +298,6 @@ func (labels Labels) WithGitHubLabels() Labels {
 		} else if tag, ok := strings.CutPrefix(ref, "refs/tags/"); ok {
 			gitLabels["dagger.io/git.tag"] = tag
 		}
-
 	}
 
 	// git labels from GitHub take precedence over local git ones
