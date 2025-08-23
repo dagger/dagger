@@ -167,9 +167,9 @@ aside[class*="docSidebarContainer"] {
       100vh - var(--ifm-navbar-height)
     ) !important; /* Account for navbar height */
     min-height: calc(100vh - var(--ifm-navbar-height)) !important;
-    position: sticky !important;
+    // position: sticky !important;
     top: var(--ifm-navbar-height) !important; /* Start below navbar */
-    overflow: auto !important; /* Prevent container from scrolling */
+    // overflow: auto !important; /* Prevent container from scrolling */
   }
 
   @include tablet {
@@ -783,7 +783,7 @@ html[data-theme="light"] {
 
 html[data-theme="dark"] {
   .tabs__item:hover {
-    background-color: rgba(208, 224, 249, 0.15) !important;
+    background-color: rgba(208, 224, 249, 0.1) !important;
     color: var(--ifm-menu-color-active);
     border-bottom-left-radius: 0 !important;
     border-bottom-right-radius: 0 !important;

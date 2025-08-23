@@ -44,6 +44,8 @@ module.exports = {
     {
       type: "category",
       label: "Calling the Dagger API",
+      collapsible: true,
+      collapsed: true,
       items: [
         "getting-started/api/clients-cli",
         "getting-started/api/clients-sdk",
@@ -53,6 +55,8 @@ module.exports = {
     {
       type: "category",
       label: "Types",
+      collapsible: true,
+      collapsed: true,
       items: [
         "getting-started/types/index",
         "getting-started/types/container",
@@ -69,6 +73,8 @@ module.exports = {
     {
       type: "category",
       label: "Integrating with CI",
+      collapsible: true,
+      collapsed: true,
       items: [
         "getting-started/ci-integrations/argo-workflows",
         "getting-started/ci-integrations/aws-codebuild",
@@ -90,7 +96,7 @@ module.exports = {
     },
     {
       type: "category",
-      label: "Modules",
+      label: "Developing Modules",
       items: [
         "extending/modules/modules",
         "extending/modules/functions",
@@ -145,6 +151,8 @@ module.exports = {
     {
       type: "category",
       label: "Configuration",
+      collapsible: true,
+      collapsed: true,
       items: [
         "reference/configuration/cloud",
         "reference/configuration/cache",
@@ -164,6 +172,8 @@ module.exports = {
     {
       type: "category",
       label: "API and SDKs",
+      collapsible: true,
+      collapsed: true,
       items: [
         "reference/api/internals",
         {
@@ -196,6 +206,8 @@ module.exports = {
     {
       type: "category",
       label: "Container Runtimes",
+      collapsible: true,
+      collapsed: true,
       items: [
         "reference/container-runtimes/kubernetes",
         "reference/container-runtimes/podman",
