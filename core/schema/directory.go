@@ -23,14 +23,9 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("directory", s.directory).
 			Doc(`Creates an empty directory.`),
-		// TODO: there's probably a way to avoid this
-		// TODO: there's probably a way to avoid this
-		// TODO: there's probably a way to avoid this
-		// TODO: there's probably a way to avoid this
-		dagql.Func("__immutableRef", s.immutableRef).
-			Args(
-				dagql.Arg("ref").Doc("Reference to a mutable ref to make immutable."),
-			),
+		dagql.NodeFunc("__immutableRef", DagOpDirectoryWrapper(srv, s.immutableRef)).
+			Doc(`Returns a directory backed by a pre-existing immutable ref.`).
+			Args(dagql.Arg("ref").Doc("The immutable ref ID.")),
 	}.Install(srv)
 
 	core.ExistsTypes.Install(srv)
@@ -293,19 +288,25 @@ type directoryPipelineArgs struct {
 	Labels      []dagql.InputObject[PipelineLabel] `default:"[]"`
 }
 
-func (s *directorySchema) immutableRef(ctx context.Context, parent *core.Query, args struct {
+func (s *directorySchema) immutableRef(ctx context.Context, parent dagql.ObjectResult[*core.Query], args struct {
 	Ref string
-}) (*core.Directory, error) {
-	immutable, err := parent.BuildkitCache().Get(ctx, args.Ref, nil)
+	DagOpInternalArgs
+}) (res dagql.ObjectResult[*core.Directory], _ error) {
+	query := parent.Self()
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get mutable ref %q: %w", args.Ref, err)
+		return res, err
 	}
-	dir, err := core.NewScratchDirectory(ctx, parent.Platform())
+	immutable, err := query.BuildkitCache().Get(ctx, args.Ref, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create scratch directory: %w", err)
+		return res, fmt.Errorf("failed to get mutable ref %q: %w", args.Ref, err)
 	}
-	dir.Result = immutable
-	return dir, nil
+	dir, err := core.NewScratchDirectory(ctx, query.Platform())
+	if err != nil {
+		return res, fmt.Errorf("failed to create scratch directory: %w", err)
+	}
+	dir.Result = immutable.Clone() // FIXME(vito): is this Clone redundant/harmful?
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 func (s *directorySchema) pipeline(ctx context.Context, parent *core.Directory, args directoryPipelineArgs) (*core.Directory, error) {
