@@ -691,22 +691,25 @@ func (llm *LLM) LastReply(ctx context.Context) (string, error) {
 }
 
 func (llm *LLM) messagesWithSystemPrompt() []*ModelMessage {
-	var systemPrompts []*ModelMessage
+	var systemPrompt string
 	if !llm.disableDefaultSystemPrompt {
-		systemPrompts = append(systemPrompts, &ModelMessage{
-			Role:    "system",
-			Content: llm.mcp.DefaultSystemPrompt(),
-		})
+		systemPrompt = llm.mcp.DefaultSystemPrompt()
 	}
 	if !llm.mcp.staticTools {
 		if values, err := llm.mcp.userProvidedValues(); err == nil && len(values) > 0 {
-			systemPrompts = append(systemPrompts, &ModelMessage{
-				Role:    "system",
-				Content: fmt.Sprintf("The following values have been provided:\n\n%s", values),
-			})
+			if systemPrompt != "" {
+				systemPrompt += "\n\n"
+			}
+			systemPrompt += fmt.Sprintf("The following values have been provided:\n\n%s", values)
 		}
 	}
-	return append(systemPrompts, llm.messages...)
+	if systemPrompt != "" {
+		return append([]*ModelMessage{{
+			Role:    "system",
+			Content: systemPrompt,
+		}}, llm.messages...)
+	}
+	return llm.messages
 }
 
 type ModelFinishedError struct {
