@@ -23,14 +23,9 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("directory", s.directory).
 			Doc(`Creates an empty directory.`),
-		// TODO: there's probably a way to avoid this
-		// TODO: there's probably a way to avoid this
-		// TODO: there's probably a way to avoid this
-		// TODO: there's probably a way to avoid this
 		dagql.NodeFunc("__immutableRef", DagOpDirectoryWrapper(srv, s.immutableRef)).
-			Args(
-				dagql.Arg("ref").Doc("The immutable ref ID."),
-			),
+			Doc(`Returns a directory backed by a pre-existing immutable ref.`).
+			Args(dagql.Arg("ref").Doc("The immutable ref ID.")),
 	}.Install(srv)
 
 	core.ExistsTypes.Install(srv)
@@ -236,7 +231,7 @@ func (s *directorySchema) immutableRef(ctx context.Context, parent dagql.ObjectR
 	if err != nil {
 		return res, fmt.Errorf("failed to create scratch directory: %w", err)
 	}
-	dir.Result = immutable
+	dir.Result = immutable.Clone() // FIXME(vito): is this Clone redundant/harmful?
 	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
