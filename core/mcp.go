@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"os/exec"
 	"path"
 	"regexp"
 	"slices"
@@ -18,7 +17,6 @@ import (
 	"unicode/utf8"
 
 	"dagger.io/dagger/telemetry"
-	containerdfs "github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/core/prompts"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -26,11 +24,8 @@ import (
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/iancoleman/strcase"
-	bkcache "github.com/moby/buildkit/cache"
-	bkclient "github.com/moby/buildkit/client"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/opencontainers/go-digest"
-	"github.com/opencontainers/runc/libcontainer"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
@@ -2306,155 +2301,4 @@ var defaultBlockedMethods = map[string][]string{
 		"withName",
 		"withTimestamps",
 	},
-}
-
-// runAndSnapshotChanges mounts the given source directory into the given
-// container at the given target path, runs the given function, and then
-// snapshots any changes made to the directory during the function's execution.
-// It returns an immutable ref to the snapshot of the changes.
-//
-// After the function completes, a mutable copy of the snapshot is remounted
-// into the service to ensure further changes cannot be made to the
-// ImmutableRef. However there is still inherently a window of time where the
-// service may write asynchronously after the immutable ref is created and
-// before the new mutable copy is remounted.
-func (svc *Service) runAndSnapshotChanges(
-	ctx context.Context,
-	containerID string,
-	target string,
-	source *Directory,
-	f func() error,
-) (res dagql.ObjectResult[*Directory], hasChanges bool, rerr error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return res, false, err
-	}
-
-	ref, err := getRefOrEvaluate(ctx, source)
-	if err != nil {
-		return res, false, fmt.Errorf("failed to get ref for source directory: %w", err)
-	}
-
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return res, false, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
-	mutableRef, err := query.BuildkitCache().New(ctx, ref, nil,
-		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription("mcp remount"))
-	if err != nil {
-		return res, false, fmt.Errorf("failed to create new ref for source directory: %w", err)
-	}
-	defer mutableRef.Release(ctx)
-
-	container, err := libcontainer.Load("/run/runc", containerID)
-	if err != nil {
-		return res, false, fmt.Errorf("failed to load container: %w", err)
-	}
-	state, err := container.OCIState()
-	if err != nil {
-		return res, false, fmt.Errorf("failed to get OCI state for container %s: %w", containerID, err)
-	}
-
-	err = MountRef(ctx, mutableRef, nil, func(root string) (rerr error) {
-		resolvedDir, err := containerdfs.RootPath(root, source.Dir)
-		if err != nil {
-			return err
-		}
-		// mount the read-write copy into the container
-		out := new(strings.Builder)
-		containerMount := exec.Command("container-mount", strconv.Itoa(state.Pid), resolvedDir, target)
-		containerMount.Stdout = out
-		containerMount.Stderr = out
-		if err := containerMount.Run(); err != nil {
-			return fmt.Errorf("failed to mount %s into container %s: %w\n\n%s", target, containerID, err, out.String())
-		}
-		return f()
-	})
-	if err != nil {
-		return res, false, err
-	}
-
-	usage, err := bk.Worker.Snapshotter.Usage(ctx, mutableRef.ID())
-	if err != nil {
-		return res, false, fmt.Errorf("failed to check for changes: %w", err)
-	}
-	hasChanges = usage.Inodes > 1 || usage.Size > 0
-	if !hasChanges {
-		slog.Debug("mcp: no changes made to directory")
-		return res, false, nil
-	}
-
-	immutableRef, err := mutableRef.Commit(ctx)
-	if err != nil {
-		return res, false, fmt.Errorf("failed to commit remounted ref for %s: %w", target, err)
-	}
-
-	// release unconditionally here, since we Clone it using the __immutableRef
-	// API call below
-	defer immutableRef.Release(ctx)
-
-	// Create a new mutable ref to leave the service with, to prevent further
-	// changes from mutating the now-immutable ref
-	//
-	// NOTE: there's technically a race here, for sure, but we can least prevent
-	// mutation outside of the bounds of this func
-	abandonedRef, err := query.BuildkitCache().New(ctx, immutableRef, nil,
-		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription("mcp remount"))
-	if err != nil {
-		return res, false, fmt.Errorf("failed to create new ref for source directory: %w", err)
-	}
-
-	defer func() {
-		if rerr != nil {
-			// Only release this on error, otherwise leave it to be released when the
-			// service cleans up.
-			abandonedRef.Release(ctx)
-		}
-	}()
-
-	// Mount the mutable ref of their changes over the target path.
-	err = MountRef(ctx, abandonedRef, nil, func(root string) (rerr error) {
-		resolvedDir, err := containerdfs.RootPath(root, source.Dir)
-		if err != nil {
-			return err
-		}
-		// mount the read-write copy into the container
-		out := new(strings.Builder)
-		containerMount := exec.Command("container-mount", strconv.Itoa(state.Pid), resolvedDir, target)
-		containerMount.Stdout = out
-		containerMount.Stderr = out
-		if err := containerMount.Run(); err != nil {
-			return fmt.Errorf("failed to mount %s into container %s: %w\n\n%s", target, containerID, err, out.String())
-		}
-		return f()
-	})
-	if err != nil {
-		return res, false, err
-	}
-
-	// Keep track of the mutable ref so we can release it when the service stops.
-	svc.Releasers = append(svc.Releasers, abandonedRef)
-
-	srv, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return res, false, fmt.Errorf("get dagql server: %w", err)
-	}
-
-	var snapshot dagql.ObjectResult[*Directory]
-	if err := srv.Select(ctx, srv.Root(), &snapshot, dagql.Selector{
-		Field: "__immutableRef",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "ref",
-				Value: dagql.String(immutableRef.ID()),
-			},
-		},
-	}); err != nil {
-		return res, false, err
-	}
-
-	return snapshot, true, nil
 }
