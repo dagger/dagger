@@ -320,8 +320,9 @@ func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
 							return nil, fmt.Errorf("call tool %q on mcp %q: %w", tool.Name, name, err)
 						}
 					} else {
-						// If the container has a working directory, sync changes to it
-						immutableRef, err := mcpSrv.Service.Self().runAndSnapshotChanges(
+						// If the container has a working directory, sync the hostfs to it
+						// and snapshot any changes it makes
+						snapshot, hasChanges, err := mcpSrv.Service.Self().runAndSnapshotChanges(
 							ctx,
 							sess.ID(), // container id
 							ctr.Config.WorkingDir,
@@ -337,10 +338,11 @@ func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
 						if err != nil {
 							return nil, fmt.Errorf("remount hostfs for mcp %q: %w", name, err)
 						}
-
-						// If the tool modified the hostfs, update the Env.hostfs
-						if err := m.updateEnvHostfs(ctx, immutableRef); err != nil {
-							return nil, fmt.Errorf("update hostfs for mcp %q: %w", name, err)
+						if hasChanges {
+							// If the tool modified the hostfs, update the Env.hostfs
+							if err := m.updateEnvHostfs(ctx, snapshot); err != nil {
+								return nil, fmt.Errorf("update hostfs for mcp %q: %w", name, err)
+							}
 						}
 					}
 
@@ -371,51 +373,10 @@ func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
 	return tools, nil
 }
 
-func (m *MCP) updateEnvHostfs(ctx context.Context, immutableRef bkcache.ImmutableRef) error {
-	// var hasChanges bool
-	// for i, snap := range immutableRef.LayerChain() {
-	// 	mount, err := snap.Mount(ctx, true, nil)
-	// 	if err != nil {
-	// 		return nil, fmt.Errorf("failed to mount remounted ref: %w", err)
-	// 	}
-	// 	lm := snapshot.LocalMounter(mount)
-	// 	root, err := lm.Mount()
-	// 	if err != nil {
-	// 		return nil, fmt.Errorf("failed to mount remounted ref: %w", err)
-	// 	}
-	// 	ents, err := os.ReadDir(root)
-	// 	lm.Unmount()
-	// 	slog.Warn("!!! REMOUNTED LAYER READDIR", "layer", i, "ents", ents, "err", err)
-	// 	if len(ents) > 0 {
-	// 		hasChanges = true
-	// 	}
-	// }
-
-	// TODO: would be nice to avoid ever growing depth if tool didn't
-	// actually do any writes, but don't see an easy way to detect that
-	// (while also handling removed files etc)
-	hasChanges := true
-	if !hasChanges {
-		return nil
-	}
-
+func (m *MCP) updateEnvHostfs(ctx context.Context, hostfs dagql.ObjectResult[*Directory]) error {
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return fmt.Errorf("get dagql server: %w", err)
-	}
-
-	var snapshot dagql.ObjectResult[*Directory]
-	if err := srv.Select(ctx, srv.Root(), &snapshot, dagql.Selector{
-		// TODO: probably a different way to do this?
-		Field: "__immutableRef",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "ref",
-				Value: dagql.String(immutableRef.ID()),
-			},
-		},
-	}); err != nil {
-		return err
 	}
 
 	var newEnv dagql.ObjectResult[*Env]
@@ -424,7 +385,7 @@ func (m *MCP) updateEnvHostfs(ctx context.Context, immutableRef bkcache.Immutabl
 		Args: []dagql.NamedInput{
 			{
 				Name:  "hostfs",
-				Value: dagql.NewID[*Directory](snapshot.ID()),
+				Value: dagql.NewID[*Directory](hostfs.ID()),
 			},
 		},
 	}); err != nil {
@@ -2347,46 +2308,53 @@ var defaultBlockedMethods = map[string][]string{
 	},
 }
 
+// runAndSnapshotChanges mounts the given source directory into the given
+// container at the given target path, runs the given function, and then
+// snapshots any changes made to the directory during the function's execution.
+// It returns an immutable ref to the snapshot of the changes.
+//
+// After the function completes, a mutable copy of the snapshot is remounted
+// into the service to ensure further changes cannot be made to the
+// ImmutableRef. However there is still inherently a window of time where the
+// service may write asynchronously after the immutable ref is created and
+// before the new mutable copy is remounted.
 func (svc *Service) runAndSnapshotChanges(
 	ctx context.Context,
 	containerID string,
 	target string,
 	source *Directory,
 	f func() error,
-) (immutableRef bkcache.ImmutableRef, rerr error) {
+) (res dagql.ObjectResult[*Directory], hasChanges bool, rerr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return res, false, err
 	}
 
 	ref, err := getRefOrEvaluate(ctx, source)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get ref for source directory: %w", err)
+		return res, false, fmt.Errorf("failed to get ref for source directory: %w", err)
+	}
+
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return res, false, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
 	mutableRef, err := query.BuildkitCache().New(ctx, ref, nil,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("mcp remount"))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create new ref for source directory: %w", err)
+		return res, false, fmt.Errorf("failed to create new ref for source directory: %w", err)
 	}
-
-	defer func() {
-		if rerr != nil {
-			mutableRef.Release(ctx)
-			if immutableRef != nil {
-				immutableRef.Release(ctx)
-			}
-		}
-	}()
+	defer mutableRef.Release(ctx)
 
 	container, err := libcontainer.Load("/run/runc", containerID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load container: %w", err)
+		return res, false, fmt.Errorf("failed to load container: %w", err)
 	}
 	state, err := container.OCIState()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get OCI state for container %s: %w", containerID, err)
+		return res, false, fmt.Errorf("failed to get OCI state for container %s: %w", containerID, err)
 	}
 
 	err = MountRef(ctx, mutableRef, nil, func(root string) (rerr error) {
@@ -2405,13 +2373,27 @@ func (svc *Service) runAndSnapshotChanges(
 		return f()
 	})
 	if err != nil {
-		return nil, err
+		return res, false, err
 	}
 
-	immutableRef, err = mutableRef.Commit(ctx)
+	usage, err := bk.Worker.Snapshotter.Usage(ctx, mutableRef.ID())
 	if err != nil {
-		return nil, fmt.Errorf("failed to commit remounted ref for %s: %w", target, err)
+		return res, false, fmt.Errorf("failed to check for changes: %w", err)
 	}
+	hasChanges = usage.Inodes > 1 || usage.Size > 0
+	if !hasChanges {
+		slog.Debug("mcp: no changes made to directory")
+		return res, false, nil
+	}
+
+	immutableRef, err := mutableRef.Commit(ctx)
+	if err != nil {
+		return res, false, fmt.Errorf("failed to commit remounted ref for %s: %w", target, err)
+	}
+
+	// release unconditionally here, since we Clone it using the __immutableRef
+	// API call below
+	defer immutableRef.Release(ctx)
 
 	// Create a new mutable ref to leave the service with, to prevent further
 	// changes from mutating the now-immutable ref
@@ -2422,10 +2404,13 @@ func (svc *Service) runAndSnapshotChanges(
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription("mcp remount"))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create new ref for source directory: %w", err)
+		return res, false, fmt.Errorf("failed to create new ref for source directory: %w", err)
 	}
+
 	defer func() {
 		if rerr != nil {
+			// Only release this on error, otherwise leave it to be released when the
+			// service cleans up.
 			abandonedRef.Release(ctx)
 		}
 	}()
@@ -2447,11 +2432,29 @@ func (svc *Service) runAndSnapshotChanges(
 		return f()
 	})
 	if err != nil {
-		return nil, err
+		return res, false, err
 	}
 
-	// Keep track of this ref so we can release it when the service stops.
+	// Keep track of the mutable ref so we can release it when the service stops.
 	svc.Releasers = append(svc.Releasers, abandonedRef)
 
-	return immutableRef, nil
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, false, fmt.Errorf("get dagql server: %w", err)
+	}
+
+	var snapshot dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, srv.Root(), &snapshot, dagql.Selector{
+		Field: "__immutableRef",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "ref",
+				Value: dagql.String(immutableRef.ID()),
+			},
+		},
+	}); err != nil {
+		return res, false, err
+	}
+
+	return snapshot, true, nil
 }
