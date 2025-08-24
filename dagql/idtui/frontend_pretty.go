@@ -167,6 +167,8 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 }
 
 func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
 	var updated bool
 	for i, cur := range fe.sidebar {
 		if cur.Title == section.Title {
