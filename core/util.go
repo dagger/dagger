@@ -24,12 +24,10 @@ import (
 	"github.com/moby/sys/user"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/core/reffs"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
@@ -521,21 +519,8 @@ func toDef(ctx context.Context, def *pb.Definition, res bkcache.ImmutableRef, pl
 		return def, nil
 	}
 	if res != nil {
-		op, err := newDagOpLLB(ctx,
-			&ImmutableRefDagOp{
-				Ref: res.ID(),
-			},
-			// NOTE: only the name actually matters below
-			call.New().Append(
-				&ast.Type{NamedType: "Directory", NonNull: true},
-				"__immutableRef",
-				"",
-				nil,
-				0,
-				"",
-			),
-			nil, // TODO: no inputs? or, use layer chain??
-		)
+		refID := res.ID()
+		op, err := newDagOpLLB(ctx, &ImmutableRefDagOp{Ref: refID}, refID, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create file LLB: %w", err)
 		}
