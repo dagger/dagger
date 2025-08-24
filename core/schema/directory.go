@@ -57,6 +57,20 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("pattern").Doc(`Pattern to match (e.g., "*.md").`),
 			),
+		dagql.NodeFunc("search", DagOpWrapper(srv, s.search)).
+			Doc(
+				// NOTE: sync with File.search
+				`Searches for content matching the given regular expression or literal string.`,
+				`Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.`,
+			).
+			Args((func() []dagql.Argument {
+				args := []dagql.Argument{
+					dagql.Arg("paths").Doc("Directory or file paths to search"),
+					dagql.Arg("globs").Doc("Glob patterns to match (e.g., \"*.md\")"),
+				}
+				args = append(args, (core.SearchOpts{}).Args()...)
+				return args
+			})()...),
 		dagql.Func("digest", s.digest).
 			Doc(
 				`Return the directory's digest.
@@ -206,6 +220,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("linkName").Doc(`Location where the symbolic link will be created (e.g., "/new-file-link").`),
 			),
 	}.Install(srv)
+
+	dagql.Fields[*core.SearchResult]{}.Install(srv)
 }
 
 type directoryPipelineArgs struct {
@@ -372,6 +388,17 @@ type withPatchArgs struct {
 	Patch string
 
 	FSDagOpInternalArgs
+}
+
+type searchArgs struct {
+	core.SearchOpts
+	Paths []string `default:"[]"`
+	Globs []string `default:"[]"`
+	RawDagOpInternalArgs
+}
+
+func (s *directorySchema) search(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args searchArgs) (dagql.Array[*core.SearchResult], error) {
+	return parent.Self().Search(ctx, args.SearchOpts, args.Paths, args.Globs)
 }
 
 func (s *directorySchema) withPatch(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withPatchArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
@@ -628,7 +655,7 @@ func getDockerIgnoreFileContent(ctx context.Context, parent dagql.ObjectResult[*
 		return nil, err
 	}
 
-	content, err := file.Contents(ctx)
+	content, err := file.Contents(ctx, nil, nil)
 	if err != nil {
 		return nil, err
 	}

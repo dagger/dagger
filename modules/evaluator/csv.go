@@ -17,7 +17,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-func (evals *EvalsAcrossModels) CSV(
+func (result *EvalsAcrossModels) CSV(
 	// Don't include a header.
 	// +default=false
 	noHeader bool,
@@ -37,7 +37,7 @@ func (evals *EvalsAcrossModels) CSV(
 			"eval_span_id",
 		})
 	}
-	for _, modelResult := range evals.ModelResults {
+	for _, modelResult := range result.ModelResults {
 		for _, evalResult := range modelResult.EvalReports {
 			csvW.Write([]string{
 				modelResult.ModelName,
@@ -46,7 +46,7 @@ func (evals *EvalsAcrossModels) CSV(
 				fmt.Sprintf("%d", evalResult.OutputTokens),
 				fmt.Sprintf("%d", evalResult.TotalAttempts),
 				fmt.Sprintf("%0.2f", evalResult.SuccessRate),
-				evals.TraceID,
+				result.TraceID,
 				modelResult.SpanID,
 				evalResult.SpanID,
 			})

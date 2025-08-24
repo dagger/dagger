@@ -248,9 +248,12 @@ func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cac
 	}
 
 	if err != nil {
-		// append id.Display() instead of setting it as a field to avoid double
-		// quoting
-		slog.Warn("error resolving "+id.Display(), "error", err)
+		var receiver *string
+		if id.Receiver() != nil {
+			recv := id.Receiver().Type().ToAST().String()
+			receiver = &recv
+		}
+		slog.Warn("error resolving", "receiver", receiver, "field", id.Field(), "error", err)
 	}
 }
 
