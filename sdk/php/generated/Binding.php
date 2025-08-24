@@ -119,6 +119,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the binding value, as type SearchResult
+     */
+    public function asSearchResult(): SearchResult
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asSearchResult');
+        return new \Dagger\SearchResult($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type Secret
      */
     public function asSecret(): Secret
