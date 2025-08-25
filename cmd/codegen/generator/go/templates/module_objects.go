@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"dagger.io/dagger"
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
 )
 
@@ -229,6 +230,57 @@ func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 	}
 
 	return typeDefCode, nil
+}
+
+func (spec *parsedObjectType) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef, error) {
+	withObjectOpts := dagger.TypeDefWithObjectOpts{}
+	if spec.doc != "" {
+		withObjectOpts.Description = strings.TrimSpace(spec.doc)
+	}
+	if spec.sourceMap != nil {
+		withObjectOpts.SourceMap = spec.sourceMap.TypeDefObject(dag)
+	}
+	if spec.name == "" {
+		panic(spec)
+	}
+	typeDefObject := dag.TypeDef().WithObject(spec.name, withObjectOpts)
+
+	for _, m := range spec.methods {
+		fnTypeDefObject, err := m.TypeDefObjectFunc(dag)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert method %s to function def: %w", m.name, err)
+		}
+		typeDefObject = typeDefObject.WithFunction(fnTypeDefObject)
+	}
+
+	for _, field := range spec.fields {
+		if field.isPrivate {
+			continue
+		}
+
+		fieldTypeDefObject, err := field.typeSpec.TypeDefObject(dag)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert field type: %w", err)
+		}
+		withFieldOpts := dagger.TypeDefWithFieldOpts{}
+		if field.doc != "" {
+			withFieldOpts.Description = field.doc
+		}
+		if field.sourceMap != nil {
+			withFieldOpts.SourceMap = field.sourceMap.TypeDefObject(dag)
+		}
+		typeDefObject = typeDefObject.WithField(field.name, fieldTypeDefObject, withFieldOpts)
+	}
+
+	if spec.constructor != nil {
+		fnTypeDefObject, err := spec.constructor.TypeDefObjectFunc(dag)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert constructor to function def: %w", err)
+		}
+		typeDefObject = typeDefObject.WithConstructor(fnTypeDefObject)
+	}
+
+	return typeDefObject, nil
 }
 
 func (spec *parsedObjectType) GoType() types.Type {

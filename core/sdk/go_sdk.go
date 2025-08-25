@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -34,6 +35,10 @@ it with the resulting /runtime binary.
 type goSDK struct {
 	root      *core.Query
 	rawConfig map[string]any
+}
+
+func (sdk *goSDK) HasModuleTypeDefs() bool {
+	return true
 }
 
 type goSDKConfig struct {
@@ -216,6 +221,111 @@ func (sdk *goSDK) Codegen(
 	}, nil
 }
 
+func (sdk *goSDK) TypeDefs(
+	ctx context.Context,
+	deps *core.ModDeps,
+	src dagql.ObjectResult[*core.ModuleSource],
+) (inst dagql.ObjectResult[*core.Module], rerr error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: load typedefs object")
+	defer telemetry.End(span, func() error { return rerr })
+
+	dag, err := sdk.root.Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag for go module sdk codegen: %w", err)
+	}
+
+	var ctr dagql.ObjectResult[*core.Container]
+
+	modName := src.Self().ModuleOriginalName
+	contextDir := src.Self().ContextDirectory
+	srcSubpath := src.Self().SourceSubpath
+
+	ctr, err = sdk.base(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	var typeDefsID string
+	err = dag.Select(ctx, ctr, &typeDefsID,
+		dagql.Selector{
+			Field: "withMountedDirectory",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(goSDKUserModContextDirPath),
+				},
+				{
+					Name:  "source",
+					Value: dagql.NewID[*core.Directory](contextDir.ID()),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withWorkdir",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withExec",
+			Args: []dagql.NamedInput{
+				{
+					Name: "args",
+					Value: dagql.ArrayInput[dagql.String]{
+						"codegen",
+						"generate-typedefs",
+						"--module-source-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
+						"--module-name", dagql.String(modName),
+					},
+				},
+				{
+					Name:  "experimentalPrivilegedNesting",
+					Value: dagql.Boolean(true),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString("typedefs.json"),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "contents",
+		},
+	)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get type defs json during module sdk codegen: %w", err)
+	}
+
+	var modID core.ModuleID
+	if err = json.Unmarshal([]byte(typeDefsID), &modID); err != nil {
+		return inst, err
+	}
+
+	err = dag.Select(ctx, dag.Root(), &inst,
+		dagql.Selector{
+			Field: "loadModuleFromID",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "id",
+					Value: dagql.NewID[*core.Module](modID.ID()),
+				},
+			},
+		})
+	if err != nil {
+		return inst, fmt.Errorf("failed to load module from type defs json: %w", err)
+	}
+
+	return inst, nil
+}
+
 func (sdk *goSDK) Runtime(
 	ctx context.Context,
 	deps *core.ModDeps,
@@ -226,6 +336,8 @@ func (sdk *goSDK) Runtime(
 		return inst, fmt.Errorf("failed to get dag for go module sdk runtime: %w", err)
 	}
 
+	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: load runtime")
+	defer telemetry.End(span, func() error { return rerr })
 	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
 	if err != nil {
 		return inst, err

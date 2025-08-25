@@ -21,16 +21,16 @@ ENTRY_POINT_GROUP: typing.Final[str] = typing.cast(str, __package__)
 IMPORT_PKG: typing.Final[str] = os.getenv("DAGGER_DEFAULT_PYTHON_PACKAGE", "main")
 
 
-def app(mod: Module | None = None) -> int | None:
+def app(mod: Module | None = None, register: bool = False) -> int | None:
     """Entrypoint for a Python Dagger module."""
     telemetry.initialize()
     try:
-        return anyio.run(main, mod)
+        return anyio.run(main, mod, register)
     finally:
         telemetry.shutdown()
 
 
-async def main(mod: Module | None = None) -> int | None:
+async def main(mod: Module | None = None, register: bool = False) -> int | None:
     """Async entrypoint for a Dagger module."""
     # Establishing connection early on to allow returning dag.error().
     # Note: if there's a connection error dag.error() won't be sent but
@@ -39,6 +39,8 @@ async def main(mod: Module | None = None) -> int | None:
         try:
             if mod is None:
                 mod = load_module()
+            if register:
+                return await mod.register()
             return await mod.serve()
         except (ModuleError, dagger.QueryError) as e:
             await record_exception(e)

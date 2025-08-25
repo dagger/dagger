@@ -23,7 +23,7 @@ type Config struct {
 	// Generate the client in bundle mode.
 	Bundle bool
 
-	// ModuleConfig is the specific config to generate module.
+	// ModuleConfig is the specific config to generate module or typedefs.
 	ModuleConfig *ModuleGeneratorConfig
 
 	// ClientConfig is the specific config to generate standalone client.
