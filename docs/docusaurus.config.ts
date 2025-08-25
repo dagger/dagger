@@ -171,7 +171,7 @@ const config: Config = {
     announcementBar: {
       id: "new-docs-published-2025",
       content:
-        'We have a new docs website! To view the old version visit <a href="https://archive.docs.dagger.io/0.18/">here</a>.',
+        `We've launched a brand-new docs site! 🎉 Still want the previous one? You can <a href="https://archive.docs.dagger.io/0.18/">find it in our archive</a>.`,
       backgroundColor: "#131126",
       textColor: "#ffffff",
       isCloseable: true,
