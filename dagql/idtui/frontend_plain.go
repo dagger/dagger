@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
@@ -145,6 +146,9 @@ func (fe *frontendPlain) SetCloudURL(ctx context.Context, url string, msg string
 			fe.msgPreFinalRender.WriteString(fmt.Sprintf(loggedOutTraceMsg, url))
 		}
 	}
+}
+
+func (fe *frontendPlain) SetClient(client *dagger.Client) {
 }
 
 // addVirtualLog attaches a fake log row to a given span

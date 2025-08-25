@@ -372,6 +372,16 @@ func (id *ID) ToProto() (*callpbv1.DAG, error) {
 	return dagPB, nil
 }
 
+func (id *ID) FromProto(dagPB *callpbv1.DAG) error {
+	if id == nil {
+		return fmt.Errorf("cannot decode into nil ID")
+	}
+	if err := id.decode(dagPB.RootDigest, dagPB.CallsByDigest, map[string]*ID{}); err != nil {
+		return fmt.Errorf("failed to decode DAG: %w", err)
+	}
+	return nil
+}
+
 func (id *ID) gatherCalls(callsByDigest map[string]*callpbv1.Call) {
 	if id == nil {
 		return

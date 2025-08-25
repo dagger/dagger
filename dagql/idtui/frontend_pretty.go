@@ -31,6 +31,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
 
+	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
@@ -44,6 +45,8 @@ var ErrInterrupted = errors.New("interrupted")
 
 type frontendPretty struct {
 	dagui.FrontendOpts
+
+	dag *dagger.Client
 
 	// don't show live progress; just print a full report at the end
 	reportOnly bool
@@ -108,6 +111,12 @@ type frontendPretty struct {
 	// Add prompt field
 	activeBoolPrompt   *promptBool
 	activeStringPrompt *promptString
+}
+
+func (fe *frontendPretty) SetClient(client *dagger.Client) {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	fe.dag = client
 }
 
 func NewPretty(w io.Writer) Frontend {
@@ -623,6 +632,8 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		key.NewBinding(key.WithKeys("r"),
 			key.WithHelp("r", "go to error"),
 			KeyEnabled(focused != nil && focused.ErrorOrigin != nil)),
+		key.NewBinding(key.WithKeys("t"),
+			key.WithHelp("t", "start terminal")),
 	}
 }
 
@@ -1258,6 +1269,64 @@ func (fe *frontendPretty) enterInsertMode(auto bool) tea.Cmd {
 	return nil
 }
 
+func (fe *frontendPretty) terminal() {
+	if fe.dag == nil {
+		return
+	}
+
+	if !fe.FocusedSpan.IsValid() {
+		return
+	}
+
+	focused := fe.db.Spans.Map[fe.FocusedSpan]
+	if focused == nil {
+		return
+	}
+	callID, err := focused.CallID()
+	if err != nil {
+		slog.Error("failed to get call ID for focused span", "span", focused.ID, "err", err)
+		return
+	}
+	id, err := callID.Encode()
+	if err != nil {
+		slog.Error("failed to encode call ID for focused span", "span", focused.ID, "err", err)
+		return
+	}
+
+	switch callID.Type().NamedType() {
+	case "Container":
+		if focused.IsRunning() {
+			break
+		}
+		go func() {
+			_, err := fe.dag.LoadContainerFromID(dagger.ContainerID(id)).Terminal().Sync(fe.runCtx)
+			if err != nil {
+				slog.Error("failed to open terminal for focused span", err)
+				return
+			}
+		}()
+	case "Directory":
+		if focused.IsRunning() {
+			break
+		}
+		go func() {
+			_, err := fe.dag.LoadDirectoryFromID(dagger.DirectoryID(id)).Terminal().Sync(fe.runCtx)
+			if err != nil {
+				slog.Error("failed to open terminal for focused span", err)
+				return
+			}
+		}()
+	case "Service":
+		go func() {
+			_, err := fe.dag.LoadServiceFromID(dagger.ServiceID(id)).Terminal().Sync(fe.runCtx)
+			if err != nil {
+				slog.Error("failed to open terminal for focused span", err)
+				return
+			}
+		}()
+	}
+}
+
 func (fe *frontendPretty) handleEditlineKey(msg tea.KeyMsg) (cmd tea.Cmd) {
 	defer func() {
 		// update the prompt in all cases since e.g. going through history
@@ -1300,6 +1369,7 @@ func (fe *frontendPretty) handleEditlineKey(msg tea.KeyMsg) (cmd tea.Cmd) {
 	return cmd
 }
 
+//nolint:gocyclo // splitting this up doesn't feel more readable
 func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 	lastKey := fe.pressedKey
 	fe.pressedKey = msg.String()
@@ -1393,6 +1463,9 @@ func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case "tab", "i":
 		return fe.enterInsertMode(false)
+	case "t":
+		fe.terminal()
+		return nil
 	}
 
 	switch lastKey { //nolint:gocritic

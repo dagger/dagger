@@ -10,7 +10,7 @@ defmodule Dagger.Service do
   alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
-
+  @derive Dagger.Sync
   defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
@@ -118,6 +118,39 @@ defmodule Dagger.Service do
          client: service.client
        }}
     end
+  end
+
+  @doc """
+  Forces evaluation of the pipeline in the engine.
+  """
+  @spec sync(t()) :: {:ok, Dagger.Service.t()} | {:error, term()}
+  def sync(%__MODULE__{} = service) do
+    query_builder =
+      service.query_builder |> QB.select("sync")
+
+    with {:ok, id} <- Client.execute(service.client, query_builder) do
+      {:ok,
+       %Dagger.Service{
+         query_builder:
+           QB.query()
+           |> QB.select("loadServiceFromID")
+           |> QB.put_arg("id", id),
+         client: service.client
+       }}
+    end
+  end
+
+  @spec terminal(t(), [{:cmd, [String.t()]}]) :: Dagger.Service.t()
+  def terminal(%__MODULE__{} = service, optional_args \\ []) do
+    query_builder =
+      service.query_builder
+      |> QB.select("terminal")
+      |> QB.maybe_put_arg("cmd", optional_args[:cmd])
+
+    %Dagger.Service{
+      query_builder: query_builder,
+      client: service.client
+    }
   end
 
   @doc """
