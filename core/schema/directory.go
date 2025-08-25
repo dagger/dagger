@@ -323,11 +323,7 @@ func (s *directorySchema) withTimestamps(ctx context.Context, parent dagql.Objec
 
 func (s *directorySchema) name(ctx context.Context, parent *core.Directory, args struct{}) (dagql.String, error) {
 	name := path.Base(parent.Dir)
-	useSlash, err := core.SupportsDirSlash(ctx)
-	if err != nil {
-		return "", err
-	}
-	if useSlash {
+	if core.SupportsDirSlash(ctx) {
 		name = strings.TrimSuffix(name, "/") + "/"
 	}
 	return dagql.NewString(name), nil
