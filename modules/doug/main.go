@@ -38,16 +38,11 @@ func (d *Doug) Dev(
 	// +optional
 	module *dagger.Module,
 ) (*dagger.LLM, error) {
-	if module == nil {
-		module = source.AsModule()
+	env := dag.Env().WithHostfs(source)
+	if module != nil {
+		env = env.WithModule(module)
 	}
-	return d.Agent(ctx,
-		dag.LLM().WithEnv(
-			dag.Env().
-				WithHostfs(source).
-				WithModule(module),
-		),
-	)
+	return d.Agent(ctx, dag.LLM().WithEnv(env))
 }
 
 // Returns a Doug coding agent
