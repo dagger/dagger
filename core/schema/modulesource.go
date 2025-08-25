@@ -457,7 +457,7 @@ func (s *moduleSourceSchema) localModuleSource(
 			return inst, err
 		}
 
-		// load this module source's context directory, sdk and deps in parallel
+		// load this module source's context directory, ignore patterns, sdk and deps in parallel
 		var eg errgroup.Group
 		eg.Go(func() error {
 			if err := s.loadModuleSourceContext(ctx, localSrc); err != nil {
@@ -490,6 +490,7 @@ func (s *moduleSourceSchema) localModuleSource(
 				return nil
 			})
 		}
+
 		if err := eg.Wait(); err != nil {
 			return inst, err
 		}
@@ -931,11 +932,11 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		fullIncludePaths = append(fullIncludePaths, src.SourceRootSubpath+"/**/*")
 	}
 
-	fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
-
 	switch src.Kind {
 	case core.ModuleSourceKindLocal:
-		err := dag.Select(ctx, dag.Root(), &src.ContextDirectory,
+		fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
+
+		err = dag.Select(ctx, dag.Root(), &src.ContextDirectory,
 			dagql.Selector{Field: "host"},
 			dagql.Selector{
 				Field: "directory",
@@ -950,6 +951,8 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		}
 
 	case core.ModuleSourceKindGit:
+		fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
+
 		err := dag.Select(ctx, dag.Root(), &src.ContextDirectory,
 			dagql.Selector{Field: "directory"},
 			dagql.Selector{
