@@ -1,3 +1,19 @@
+// A Dagger module for evaluating and improving LLM performance across multiple models.
+//
+// The Evaluator provides a comprehensive framework for testing AI models against
+// custom evaluations, analyzing failures, and iteratively refining system prompts
+// to improve performance. It supports parallel execution across multiple models,
+// automatic prompt optimization, and detailed reporting with telemetry integration.
+//
+// Key features:
+// - Run evaluations across multiple AI models in parallel
+// - Automatically analyze failures and generate improved system prompts
+// - Export results to CSV format for further analysis
+// - Compare evaluation results between different runs
+// - Integrated with Dagger's telemetry for detailed tracing
+//
+// More info: https://dagger.io/blog/evals-as-code
+
 package main
 
 import (
@@ -14,15 +30,16 @@ import (
 )
 
 type Evaluator struct {
-	// The documentation for the tool calling scheme to generate a prompt for.
+	// The documentation that defines expected model behavior and serves as the reference for evaluations.
 	Docs *dagger.File
 
-	// A system prompt to apply to all evals.
+	// A system prompt file that will be applied to all evaluations to provide consistent guidance.
 	SystemPrompt *dagger.File
 
-	// Whether to disable the default system prompt.
+	// Whether to disable Dagger's built-in default system prompt (usually not recommended).
 	DisableDefaultSystemPrompt bool
 
+	// The AI model to use for the evaluator agent that performs analysis and prompt generation.
 	EvaluatorModel string
 
 	// +private
@@ -32,7 +49,8 @@ type Evaluator struct {
 const MinSuccessRate = 0.8
 
 func New(
-	// Model to use for the evaluator agent.
+	// The AI model name to use for the evaluator agent (e.g., "gpt-4o", "claude-sonnet-4-0").
+	// If not specified, uses the default model configured in the environment.
 	// +optional
 	model string,
 ) *Evaluator {
@@ -41,6 +59,10 @@ func New(
 	}
 }
 
+// Eval represents a single evaluation that can be run against an LLM.
+//
+// Implementations must provide a name, a prompt to test, and a check function
+// to validate the LLM's response.
 type Eval interface {
 	Name(context.Context) (string, error)
 	Prompt(base *dagger.LLM) *dagger.LLM
@@ -49,13 +71,27 @@ type Eval interface {
 	DaggerObject
 }
 
-// Set a system prompt to be provided to the evals.
-func (m *Evaluator) WithSystemPrompt(prompt string) *Evaluator {
+// Set a system prompt to be provided to all evaluations.
+//
+// The system prompt provides foundational instructions and context that will be
+// applied to every evaluation run. This helps ensure consistent behavior across
+// all models and evaluations.
+func (m *Evaluator) WithSystemPrompt(
+	// The system prompt text to use for all evaluations.
+	prompt string,
+) *Evaluator {
 	return m.WithSystemPromptFile(dag.File("prompt.md", prompt))
 }
 
-// Set a system prompt to be provided to the evals.
-func (m *Evaluator) WithSystemPromptFile(file *dagger.File) *Evaluator {
+// Set a system prompt from a file to be provided to all evaluations.
+//
+// This allows you to load a system prompt from an external file, which is useful
+// for managing longer prompts or when the prompt content is maintained separately
+// from your code.
+func (m *Evaluator) WithSystemPromptFile(
+	// The file containing the system prompt to use for all evaluations.
+	file *dagger.File,
+) *Evaluator {
 	cp := *m
 	cp.SystemPrompt = file
 	return &cp
@@ -73,19 +109,38 @@ func (m *Evaluator) WithoutDefaultSystemPrompt() *Evaluator {
 	return &cp
 }
 
-// Set the full documentation the system prompt intends to effectuate.
-func (m *Evaluator) WithDocs(prompt string) *Evaluator {
+// Set the documentation content that the system prompt should enforce.
+//
+// This documentation serves as the reference material that evaluations will test
+// against. The system prompt should guide the model to follow the principles and
+// patterns defined in this documentation.
+func (m *Evaluator) WithDocs(
+	// The documentation content as a string.
+	prompt string,
+) *Evaluator {
 	return m.WithDocsFile(dag.File("prompt.md", prompt))
 }
 
-// Set the full documentation the system prompt intends to effectuate.
-func (m *Evaluator) WithDocsFile(file *dagger.File) *Evaluator {
+// Set the documentation file that the system prompt should enforce.
+//
+// This allows you to load documentation from an external file. The documentation
+// serves as the reference material for what behavior the evaluations should test,
+// and the system prompt should guide the model to follow these principles.
+func (m *Evaluator) WithDocsFile(
+	// The file containing the documentation to reference.
+	file *dagger.File,
+) *Evaluator {
 	cp := *m
 	cp.Docs = file
 	return &cp
 }
 
-func (m *Evaluator) WithEval(ctx context.Context, eval Eval) (*Evaluator, error) {
+// WithEval adds a single evaluation to the evaluator.
+func (m *Evaluator) WithEval(
+	ctx context.Context,
+	// The evaluation to add to the list of evals to run.
+	eval Eval,
+) (*Evaluator, error) {
 	id, err := eval.(interface {
 		ID(context.Context) (EvalID, error)
 	}).ID(ctx)
@@ -101,7 +156,12 @@ func (m *Evaluator) WithEval(ctx context.Context, eval Eval) (*Evaluator, error)
 	return m, nil
 }
 
-func (m *Evaluator) WithEvals(ctx context.Context, evals []Eval) (*Evaluator, error) {
+// WithEvals adds multiple evaluations to the evaluator.
+func (m *Evaluator) WithEvals(
+	ctx context.Context,
+	// The list of evaluations to add to the evaluator.
+	evals []Eval,
+) (*Evaluator, error) {
 	for _, eval := range evals {
 		var err error
 		m, err = m.WithEval(ctx, eval)
@@ -217,6 +277,7 @@ func (m *Evaluator) EvalsAcrossModels(
 	}, nil
 }
 
+// EvalsAcrossModels represents the results of running evaluations across multiple models.
 type EvalsAcrossModels struct {
 	TraceID      string
 	ModelResults []ModelResult
@@ -225,12 +286,14 @@ type EvalsAcrossModels struct {
 	Evaluator *Evaluator
 }
 
+// ModelResult represents the evaluation results for a single model.
 type ModelResult struct {
 	ModelName   string
 	SpanID      string
 	EvalReports []EvalResult
 }
 
+// EvalResult represents the results of a single evaluation.
 type EvalResult struct {
 	Name          string
 	SpanID        string
@@ -272,6 +335,32 @@ func (evals *EvalsAcrossModels) Check() error {
 	return errs
 }
 
+// AnalyzeAndGenerateSystemPrompt performs comprehensive failure analysis and generates an improved system prompt.
+//
+// This function implements a sophisticated multi-stage analysis process:
+//
+//  1. **Report Generation**: Collects all evaluation reports from different models and
+//     organizes them for analysis, providing a comprehensive view of successes and failures.
+//
+//  2. **Initial Analysis**: Generates a summary of current understanding, grading overall
+//     results and focusing on failure patterns. Uses specific examples from reports to
+//     support the analysis.
+//
+//  3. **Cross-Reference Analysis**: Compares the analysis against the original documentation
+//     and system prompt, suggesting improvements without over-specializing for specific
+//     evaluations. Focuses on deeper, systemic issues rather than superficial fixes.
+//
+//  4. **Success Pattern Analysis**: Compares successful results with failed ones to identify
+//     what made the successful cases work. Extracts generalizable principles from the
+//     documentation and prompts that led to success.
+//
+//  5. **Prompt Generation**: Creates a new system prompt incorporating all insights,
+//     focusing on incremental improvements rather than complete rewrites unless absolutely
+//     necessary.
+//
+// The process emphasizes finding general, root-cause issues over specific evaluation
+// failures, ensuring that improvements help broadly rather than just fixing individual
+// test cases.
 func (evals *EvalsAcrossModels) AnalyzeAndGenerateSystemPrompt(ctx context.Context) (string, error) {
 	reports := dag.Directory()
 	for _, report := range evals.ModelResults {
@@ -310,6 +399,17 @@ func (evals *EvalsAcrossModels) AnalyzeAndGenerateSystemPrompt(ctx context.Conte
 		AsString(ctx)
 }
 
+// Explore evaluations across models to identify patterns and issues.
+//
+// This function uses an LLM agent to act as a quality assurance engineer,
+// automatically running evaluations across different models and identifying
+// interesting patterns. It focuses on finding evaluations that work on some
+// models but fail on others, helping to identify model-specific weaknesses
+// or strengths.
+//
+// The agent will avoid re-running evaluations that fail consistently across
+// all models, but will retry evaluations that show partial success to gather
+// more insights.
 func (m *Evaluator) Explore(ctx context.Context) ([]string, error) {
 	return m.llm().
 		WithEnv(m.env().
@@ -324,6 +424,16 @@ func (m *Evaluator) Explore(ctx context.Context) ([]string, error) {
 		Findings(ctx)
 }
 
+// Generate a new system prompt based on the provided documentation.
+//
+// This function uses an LLM to analyze the documentation and generate a system
+// prompt that captures the key rules and principles. The process involves first
+// interpreting the documentation to extract all inferable rules, then crafting
+// a focused system prompt that provides proper framing without being overly
+// verbose or turning into meaningless word salad.
+//
+// The generated prompt aims to establish foundation and context while allowing
+// the model flexibility to apply the guidelines appropriately.
 func (m *Evaluator) GenerateSystemPrompt(ctx context.Context) (string, error) {
 	return m.llm().
 		WithEnv(m.env().
@@ -360,10 +470,20 @@ func (m *Evaluator) Iterate(ctx context.Context) (string, error) {
 	}
 }
 
+// llm returns a configured LLM instance for the evaluator agent.
+//
+// This creates an LLM instance using the evaluator's configured model,
+// which is used for analysis, prompt generation, and exploration tasks.
 func (m *Evaluator) llm() *dagger.LLM {
 	return dag.LLM(dagger.LLMOpts{Model: m.EvaluatorModel})
 }
 
+// env returns a configured environment for the evaluator agent.
+//
+// This sets up the environment context that the evaluator LLM will use,
+// including the workspace for running evaluations, documentation files
+// (if provided), and any initial system prompt files. The environment
+// provides the agent with all necessary context and tools.
 func (m *Evaluator) env() *dagger.Env {
 	env := dag.Env().
 		WithWorkspaceInput("workspace", m.work(), "A space for you to work in.")
@@ -378,6 +498,12 @@ func (m *Evaluator) env() *dagger.Env {
 	return env
 }
 
+// work returns a configured workspace for running evaluations.
+//
+// This creates a workspace instance with the evaluator's configuration
+// applied, including all registered evaluations and system prompt settings.
+// The workspace is what actually executes the evaluations against different
+// models.
 func (m *Evaluator) work() *dagger.Workspace {
 	work := dag.Workspace().
 		WithEvals(m.Evals)
