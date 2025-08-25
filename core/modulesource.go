@@ -291,7 +291,8 @@ func (src *ModuleSource) LoadContext(
 	ctx context.Context,
 	dag *dagql.Server,
 	path string,
-	ignore []string,
+	include []string,
+	exclude []string,
 ) (inst dagql.ObjectResult[*Directory], err error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -300,6 +301,20 @@ func (src *ModuleSource) LoadContext(
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get buildkit api: %w", err)
+	}
+
+	filterInputs := []dagql.NamedInput{}
+	if len(include) > 0 {
+		filterInputs = append(filterInputs, dagql.NamedInput{
+			Name:  "include",
+			Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(include...)),
+		})
+	}
+	if len(exclude) > 0 {
+		filterInputs = append(filterInputs, dagql.NamedInput{
+			Name:  "exclude",
+			Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(exclude...)),
+		})
 	}
 
 	switch src.Kind {
@@ -342,11 +357,10 @@ func (src *ModuleSource) LoadContext(
 			},
 			dagql.Selector{
 				Field: "directory",
-				Args: []dagql.NamedInput{
+				Args: append([]dagql.NamedInput{
 					{Name: "path", Value: dagql.String(path)},
-					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(ignore...))},
-					{Name: "noCache", Value: dagql.NewBoolean(true)},
-				},
+					{Name: "noCache", Value: dagql.Boolean(true)},
+				}, filterInputs...),
 			},
 		)
 		if err != nil {
@@ -376,18 +390,17 @@ func (src *ModuleSource) LoadContext(
 			}
 		}
 
-		if len(ignore) > 0 {
+		if len(filterInputs) > 0 {
 			if err := dag.Select(ctx, dag.Root(), &ctxDir,
 				dagql.Selector{
 					Field: "directory",
 				},
 				dagql.Selector{
 					Field: "withDirectory",
-					Args: []dagql.NamedInput{
+					Args: append([]dagql.NamedInput{
 						{Name: "path", Value: dagql.String("/")},
 						{Name: "directory", Value: dagql.NewID[*Directory](ctxDir.ID())},
-						{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(ignore...))},
-					},
+					}, filterInputs...),
 				},
 			); err != nil {
 				return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
@@ -417,18 +430,17 @@ func (src *ModuleSource) LoadContext(
 			}
 		}
 
-		if len(ignore) > 0 {
+		if len(filterInputs) > 0 {
 			if err := dag.Select(ctx, dag.Root(), &ctxDir,
 				dagql.Selector{
 					Field: "directory",
 				},
 				dagql.Selector{
 					Field: "withDirectory",
-					Args: []dagql.NamedInput{
+					Args: append([]dagql.NamedInput{
 						{Name: "path", Value: dagql.String("/")},
 						{Name: "directory", Value: dagql.NewID[*Directory](ctxDir.ID())},
-						{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(ignore...))},
-					},
+					}, filterInputs...),
 				},
 			); err != nil {
 				return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
