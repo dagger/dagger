@@ -714,6 +714,9 @@ func (r ObjectResult[T]) call(
 	// values that have a pure content-based cache key different from the call-chain ID digest.
 	if idable, ok := val.(IDable); ok && idable != nil && !doNotCache {
 		valID := idable.ID()
+		if valID == nil {
+			return nil, fmt.Errorf("impossible: nil ID returned for value: %+v (%T)", val, val)
+		}
 
 		// only need to add a new cache key if the returned val has a different custom digest than the original
 		digestChanged := valID.Digest() != newID.Digest()
