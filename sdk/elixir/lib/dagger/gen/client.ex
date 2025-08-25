@@ -59,6 +59,17 @@ defmodule Dagger.Client do
     }
   end
 
+  @spec current_env(t()) :: Dagger.Env.t()
+  def current_env(%__MODULE__{} = client) do
+    query_builder =
+      client.query_builder |> QB.select("currentEnv")
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
   @doc """
   The FunctionCall context that the SDK caller is currently executing in.
 

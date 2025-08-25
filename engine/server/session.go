@@ -50,6 +50,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/cache/cachemanager"
+	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -1462,6 +1463,22 @@ func (srv *Server) LeaseManager() *leaseutil.Manager {
 // A shared engine-wide salt used when creating cache keys for secrets based on their plaintext
 func (srv *Server) SecretSalt() []byte {
 	return srv.secretSalt
+}
+
+// Provides access to the client's telemetry database.
+func (srv *Server) ClientTelemetry(ctx context.Context, sessID, clientID string) (*clientdb.Queries, func() error, error) {
+	client, err := srv.clientFromIDs(sessID, clientID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := client.FlushTelemetry(ctx); err != nil {
+		return nil, nil, fmt.Errorf("flush telemetry: %w", err)
+	}
+	db, err := srv.clientDBs.Open(clientID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return clientdb.New(db), db.Close, nil
 }
 
 type httpError struct {

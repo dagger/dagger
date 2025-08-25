@@ -513,3 +513,22 @@ func getRefOrEvaluate[T fileOrDirectory](ctx context.Context, t T) (bkcache.Immu
 	}
 	return cacheRef.CacheRef(ctx)
 }
+
+func toDef(ctx context.Context, def *pb.Definition, res bkcache.ImmutableRef, platform Platform) (*pb.Definition, error) {
+	if def != nil {
+		return def, nil
+	}
+	if res != nil {
+		refID := res.ID()
+		op, err := newDagOpLLB(ctx, &ImmutableRefDagOp{Ref: refID}, refID, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create file LLB: %w", err)
+		}
+		def, err := op.Marshal(ctx, llb.Platform(platform.Spec()))
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal file LLB: %w", err)
+		}
+		return def.ToPB(), nil
+	}
+	return nil, nil
+}

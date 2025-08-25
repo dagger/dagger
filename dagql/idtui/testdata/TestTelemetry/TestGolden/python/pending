@@ -31,12 +31,12 @@ Expected stderr:
 ┃   File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/sdk/src/dagger/client/_core.py", line XXX, in execute
 ┃     raise error from e
 ┃ dagger.ExecError: process "false" did not complete successfully: exit code: 1
-├─$ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
-├─● .withEnvVariable(name: "NOW", value: "20XX-XX-XX XX:XX:XX.XXXX"): Container! X.Xs
-├─● .withExec(args: ["sleep", "1"]): Container! X.Xs
-├─✘ .withExec(args: ["false"]): Container! X.Xs ERROR
-│ ! process "false" did not complete successfully: exit code: 1
-╰─○ .withExec(args: ["sleep", "1"]): Container! X.Xs
+  $ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
+  ● .withEnvVariable(name: "NOW", value: "20XX-XX-XX XX:XX:XX.XXXX"): Container! X.Xs
+  ● .withExec(args: ["sleep", "1"]): Container! X.Xs
+  ✘ .withExec(args: ["false"]): Container! X.Xs ERROR
+  ! process "false" did not complete successfully: exit code: 1
+  ○ .withExec(args: ["sleep", "1"]): Container! X.Xs
 
 Error logs:
 

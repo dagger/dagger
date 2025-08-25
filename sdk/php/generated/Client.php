@@ -46,6 +46,12 @@ class Client extends Client\AbstractClient
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
+    public function currentEnv(): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('currentEnv');
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
     /**
      * The FunctionCall context that the SDK caller is currently executing in.
      *

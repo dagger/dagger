@@ -17,7 +17,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-func (result *EvalsAcrossModels) CSV(
+func (evals *EvalsAcrossModels) CSV(
 	// Don't include a header.
 	// +default=false
 	noHeader bool,
@@ -37,7 +37,7 @@ func (result *EvalsAcrossModels) CSV(
 			"eval_span_id",
 		})
 	}
-	for _, modelResult := range result.ModelResults {
+	for _, modelResult := range evals.ModelResults {
 		for _, evalResult := range modelResult.EvalReports {
 			csvW.Write([]string{
 				modelResult.ModelName,
@@ -46,7 +46,7 @@ func (result *EvalsAcrossModels) CSV(
 				fmt.Sprintf("%d", evalResult.OutputTokens),
 				fmt.Sprintf("%d", evalResult.TotalAttempts),
 				fmt.Sprintf("%0.2f", evalResult.SuccessRate),
-				result.TraceID,
+				evals.TraceID,
 				modelResult.SpanID,
 				evalResult.SpanID,
 			})
@@ -108,7 +108,6 @@ func (m *Evaluator) Compare(
 		successRateComparison := formatComparison(
 			beforeStats.successRate*100,
 			afterStats.successRate*100,
-			true, // Higher is better for success rate
 			"%0.0f%%",
 		)
 
@@ -116,7 +115,6 @@ func (m *Evaluator) Compare(
 		attemptsComparison := formatComparison(
 			float64(beforeStats.totalAttempts),
 			float64(afterStats.totalAttempts),
-			false, // Lower is better for attempts
 			"%0.0f",
 		)
 
@@ -124,7 +122,6 @@ func (m *Evaluator) Compare(
 		inputTokensComparison := formatComparison(
 			beforeStats.inputTokensPerAttempt,
 			afterStats.inputTokensPerAttempt,
-			false, // Lower is better for tokens
 			"%.1f",
 		)
 
@@ -132,7 +129,6 @@ func (m *Evaluator) Compare(
 		outputTokensComparison := formatComparison(
 			beforeStats.outputTokensPerAttempt,
 			afterStats.outputTokensPerAttempt,
-			false, // Lower is better for tokens
 			"%.1f",
 		)
 
@@ -276,7 +272,7 @@ func aggregateData(records [][]string) map[string]aggregateStats {
 	return result
 }
 
-func formatComparison(before, after float64, higherIsBetter bool, format string) string {
+func formatComparison(before, after float64, format string) string {
 	if before == after {
 		return fmt.Sprintf(format, before)
 	}

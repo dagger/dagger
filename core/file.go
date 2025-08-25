@@ -29,7 +29,7 @@ import (
 
 // File is a content-addressed file.
 type File struct {
-	LLB    *pb.Definition
+	Def    *pb.Definition
 	Result bkcache.ImmutableRef // only valid when returned by dagop
 
 	File     string
@@ -57,12 +57,16 @@ func (file *File) setResult(ref bkcache.ImmutableRef) {
 	file.Result = ref
 }
 
+func (file *File) LLB(ctx context.Context) (*pb.Definition, error) {
+	return toDef(ctx, file.Def, file.Result, file.Platform)
+}
+
 var _ HasPBDefinitions = (*File)(nil)
 
 func (file *File) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	var defs []*pb.Definition
-	if file.LLB != nil {
-		defs = append(defs, file.LLB)
+	if file.Def != nil {
+		defs = append(defs, file.Def)
 	}
 	for _, bnd := range file.Services {
 		ctr := bnd.Service.Self().Container
@@ -89,7 +93,7 @@ func (file *File) OnRelease(ctx context.Context) error {
 
 func NewFile(def *pb.Definition, file string, platform Platform, services ServiceBindings) *File {
 	return &File{
-		LLB:      def,
+		Def:      def,
 		File:     file,
 		Platform: platform,
 		Services: services,
@@ -135,14 +139,22 @@ func (file *File) Clone() *File {
 	return &cp
 }
 
-func (file *File) State() (llb.State, error) {
-	return defToState(file.LLB)
+func (file *File) State(ctx context.Context) (llb.State, error) {
+	def, err := file.LLB(ctx)
+	if err != nil {
+		return llb.State{}, fmt.Errorf("failed to get file LLB: %w", err)
+	}
+	return defToState(def)
 }
 
 func (file *File) Evaluate(ctx context.Context) (*buildkit.Result, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
+	}
+	llb, err := file.LLB(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get file LLB: %w", err)
 	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
@@ -151,7 +163,7 @@ func (file *File) Evaluate(ctx context.Context) (*buildkit.Result, error) {
 
 	return bk.Solve(ctx, bkgw.SolveRequest{
 		Evaluate:   true,
-		Definition: file.LLB,
+		Definition: llb,
 	})
 }
 
@@ -166,7 +178,15 @@ func (file *File) Contents(ctx context.Context) ([]byte, error) {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	ref, err := bkRef(ctx, bk, file.LLB)
+	llbSt, err := file.State(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get file state: %w", err)
+	}
+	def, err := llbSt.Marshal(ctx, llb.Platform(file.Platform.Spec()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal file state: %w", err)
+	}
+	ref, err := bkRef(ctx, bk, def.ToPB())
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +271,11 @@ func (file *File) Stat(ctx context.Context) (*fstypes.Stat, error) {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	ref, err := bkRef(ctx, bk, file.LLB)
+	def, err := file.LLB(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get file LLB: %w", err)
+	}
+	ref, err := bkRef(ctx, bk, def)
 	if err != nil {
 		return nil, err
 	}
@@ -265,7 +289,7 @@ func (file *File) WithName(ctx context.Context, filename string) (*File, error) 
 	// Clone the file
 	file = file.Clone()
 
-	st, err := file.State()
+	st, err := file.State(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -278,7 +302,7 @@ func (file *File) WithName(ctx context.Context, filename string) (*File, error) 
 		return nil, err
 	}
 
-	file.LLB = def.ToPB()
+	file.Def = def.ToPB()
 	file.File = path.Base(filename)
 
 	return file, nil
@@ -310,7 +334,11 @@ func (file *File) Open(ctx context.Context) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	fs, err := reffs.OpenDef(ctx, bk, file.LLB)
+	def, err := file.LLB(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get file LLB: %w", err)
+	}
+	fs, err := reffs.OpenDef(ctx, bk, def)
 	if err != nil {
 		return nil, err
 	}
@@ -328,7 +356,7 @@ func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bo
 		return fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	src, err := file.State()
+	src, err := file.State(ctx)
 	if err != nil {
 		return err
 	}
@@ -344,7 +372,11 @@ func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bo
 }
 
 func (file *File) Mount(ctx context.Context, f func(string) error) error {
-	return mountLLB(ctx, file.LLB, func(root string) error {
+	def, err := file.LLB(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get file LLB: %w", err)
+	}
+	return mountLLB(ctx, def, func(root string) error {
 		src, err := containerdfs.RootPath(root, file.File)
 		if err != nil {
 			return err
