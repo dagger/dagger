@@ -240,11 +240,8 @@ func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, src string)
 func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error) {
 	src = path.Join(dir.Dir, src)
 	paths := []string{}
-	useSlash, err := SupportsDirSlash(ctx)
-	if err != nil {
-		return nil, err
-	}
-	_, err = execInMount(ctx, dir, func(root string) error {
+	useSlash := SupportsDirSlash(ctx)
+	_, err := execInMount(ctx, dir, func(root string) error {
 		resolvedDir, err := containerdfs.RootPath(root, src)
 		if err != nil {
 			return err
@@ -302,10 +299,7 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 	}
 	onlyPrefixIncludes := !strings.ContainsAny(patternWithoutTrailingGlob(pat), patternChars)
 
-	useSlash, err := SupportsDirSlash(ctx)
-	if err != nil {
-		return nil, err
-	}
+	useSlash := SupportsDirSlash(ctx)
 	_, err = execInMount(ctx, dir, func(root string) error {
 		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
 		if err != nil {
@@ -1167,7 +1161,7 @@ func validateFileName(file string) error {
 	return nil
 }
 
-func SupportsDirSlash(ctx context.Context) (bool, error) {
+func SupportsDirSlash(ctx context.Context) bool {
 	return Supports(ctx, "v0.17.0")
 }
 
