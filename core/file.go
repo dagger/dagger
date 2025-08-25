@@ -14,10 +14,12 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/moby/buildkit/cache"
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/snapshot"
@@ -163,6 +165,11 @@ func (file *File) Evaluate(ctx context.Context) (*buildkit.Result, error) {
 
 // Contents handles file content retrieval
 func (file *File) Contents(ctx context.Context, offset, limit *int) ([]byte, error) {
+	if limit != nil && *limit == 0 {
+		// edge case: 0 limit, possibly from maths, just don't do anything
+		return nil, nil
+	}
+
 	r, err := file.ReadCloser(ctx)
 	if err != nil {
 		return nil, err
@@ -316,6 +323,137 @@ func (file *File) Search(ctx context.Context, opts SearchOpts) ([]*SearchResult,
 		return nil, err
 	}
 	return results, nil
+}
+
+func (file *File) Replace(ctx context.Context, searchStr, replacementStr string, firstFrom *int, all bool) (*File, error) {
+	file = file.Clone()
+
+	opt, ok := buildkit.CurrentOpOpts(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit opts in context")
+	}
+	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close()
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	parentRef, err := getRefOrEvaluate(ctx, file)
+	if err != nil {
+		return nil, err
+	}
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	// reuse Search internally so we get convenient line numbers for an error if
+	// there are multiple matches
+	matches, err := file.Search(ctx, SearchOpts{
+		Pattern:   searchStr,
+		Literal:   true,
+		Multiline: strings.ContainsRune(searchStr, '\n'),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Drop any matches before *firstFrom
+	if firstFrom != nil {
+		var matchesFrom []*SearchResult
+		for _, match := range matches {
+			if match.LineNumber >= *firstFrom {
+				matchesFrom = append(matchesFrom, match)
+			}
+		}
+		matches = matchesFrom
+	}
+
+	// Check for matches
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("search string not found")
+	}
+
+	var matchedLocs []string
+	for _, match := range matches {
+		for _, sub := range match.Submatches {
+			matchedLocs = append(matchedLocs, fmt.Sprintf("line %d (%d-%d)", match.LineNumber, sub.Start, sub.End))
+		}
+	}
+
+	// Load content into memory for simple bytes.Replace
+	//
+	// This is obviously less efficient than streaming, but:
+	// 1. it is far simpler (I tried streaming text/transform and hit cryptic errors),
+	// 2. we already faced the music on that with File.contents,
+	// 3. this will mainly be used for code which is fine to hold in memory, and
+	// 4. it is far simpler.
+	var offset *int
+	if firstFrom != nil {
+		o := *firstFrom - 1
+		offset = &o
+	}
+	contents, err := file.Contents(ctx, offset, nil)
+	if err != nil {
+		return nil, err
+	}
+	search := []byte(searchStr)
+	replacement := []byte(replacementStr)
+	if all {
+		contents = bytes.ReplaceAll(contents, search, replacement)
+	} else if firstFrom != nil || len(matchedLocs) == 1 {
+		contents = bytes.Replace(contents, search, replacement, 1)
+	} else if len(matchedLocs) > 0 {
+		return nil, fmt.Errorf("search string found multiple times: %s", strings.Join(matchedLocs, ", "))
+	}
+
+	// If we replaced after a certain line, bring the content before it back
+	if offset != nil && *offset > 0 {
+		previous, err := file.Contents(ctx, nil, offset)
+		if err != nil {
+			return nil, err
+		}
+		contents = append(previous, contents...)
+	}
+
+	// Create a new layer for the replaced content
+	newRef, err := query.BuildkitCache().New(ctx, parentRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("patch"))
+	if err != nil {
+		return nil, err
+	}
+	err = MountRef(ctx, newRef, bkSessionGroup, func(root string) (rerr error) {
+		resolvedPath, err := containerdfs.RootPath(root, file.File)
+		if err != nil {
+			return err
+		}
+		// We're in a new copy-on-write layer, so truncating and rewriting in-place
+		// should be fine; we don't need to worry about atomic writes, and this way
+		// we preserve permissions and other metadata.
+		if err := os.Truncate(resolvedPath, 0); err != nil {
+			return err
+		}
+		f, err := os.OpenFile(resolvedPath, os.O_WRONLY, 0)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		_, err = f.Write(contents)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	file.Result = snap
+	return file, nil
 }
 
 func (file *File) Digest(ctx context.Context, excludeMetadata bool) (string, error) {

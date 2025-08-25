@@ -59,6 +59,22 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 				`Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.`,
 			).
 			Args((core.SearchOpts{}).Args()...),
+		dagql.NodeFunc("withReplaced",
+			DagOpFileWrapper(srv, s.withReplaced,
+				WithPathFn(keepParentFile[fileReplaceArgs]))).
+			Doc(
+				`Retrieves the file with content replaced with the given text.`,
+				`If 'all' is true, all occurrences of the pattern will be replaced.`,
+				`If 'firstAfter' is specified, only the first match starting at the specified line will be replaced.`,
+				`If neither are specified, and there are multiple matches for the pattern, this will error.`,
+				`If there are no matches for the pattern, this will error.`,
+			).
+			Args(
+				dagql.Arg("search").Doc(`The text to match.`),
+				dagql.Arg("replacement").Doc(`The text to match.`),
+				dagql.Arg("all").Doc(`Replace all occurrences of the pattern.`),
+				dagql.Arg("firstFrom").Doc(`Replace the first match starting from the specified line.`),
+			),
 		dagql.Func("export", s.export).
 			View(AllVersion).
 			DoNotCache("Writes to the local host.").
@@ -142,6 +158,29 @@ type fileExportArgs struct {
 
 func (s *fileSchema) search(ctx context.Context, parent dagql.ObjectResult[*core.File], args searchArgs) (dagql.Array[*core.SearchResult], error) {
 	return parent.Self().Search(ctx, args.SearchOpts)
+}
+
+type fileReplaceArgs struct {
+	Search      string
+	Replacement string
+	All         bool `default:"false"`
+	FirstFrom   *int
+
+	FSDagOpInternalArgs
+}
+
+func (s *fileSchema) withReplaced(ctx context.Context, parent dagql.ObjectResult[*core.File], args fileReplaceArgs) (inst dagql.ObjectResult[*core.File], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	dir, err := parent.Self().Replace(ctx, args.Search, args.Replacement, args.FirstFrom, args.All)
+	if err != nil {
+		return inst, err
+	}
+
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 func (s *fileSchema) export(ctx context.Context, parent *core.File, args fileExportArgs) (dagql.String, error) {

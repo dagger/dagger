@@ -850,3 +850,174 @@ func (FileSuite) TestSync(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "bar", contents)
 	})
 }
+
+func (FileSuite) TestWithReplaced(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("single replacement", func(ctx context.Context, t *testctx.T) {
+		file := c.Directory().
+			WithNewFile("test.txt", "Hello, World!").
+			File("test.txt")
+
+		replaced := file.WithReplaced("World", "Universe")
+
+		contents, err := replaced.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello, Universe!", contents)
+	})
+
+	t.Run("single replacement on specified line with multiple matches", func(ctx context.Context, t *testctx.T) {
+		file := c.Directory().
+			WithNewFile("test.txt", "Hello, World!\nGoodbye, World!\n").
+			File("test.txt")
+
+		// Replace only the first occurrence
+		replaced := file.WithReplaced("World", "Universe", dagger.FileWithReplacedOpts{
+			FirstFrom: 1,
+		})
+
+		contents, err := replaced.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello, Universe!\nGoodbye, World!\n", contents)
+	})
+
+	t.Run("replace all occurrences", func(ctx context.Context, t *testctx.T) {
+		file := c.Directory().
+			WithNewFile("test.txt", "Hello, World!\nGoodbye, World!\nAnother World here.").
+			File("test.txt")
+
+		// Replace all occurrences
+		replaced := file.WithReplaced("World", "Universe", dagger.FileWithReplacedOpts{
+			All: true,
+		})
+
+		contents, err := replaced.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello, Universe!\nGoodbye, Universe!\nAnother Universe here.", contents)
+	})
+
+	t.Run("replace first occurrence after specified line", func(ctx context.Context, t *testctx.T) {
+		content := "line 1: World\nline 2: text\nline 3: World\nline 4: World\nline 5: text"
+		file := c.Directory().
+			WithNewFile("test.txt", content).
+			File("test.txt")
+
+		// Replace first occurrence after line 2
+		replaced := file.WithReplaced("World", "Universe", dagger.FileWithReplacedOpts{
+			FirstFrom: 2,
+		})
+
+		contents, err := replaced.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "line 1: World\nline 2: text\nline 3: Universe\nline 4: World\nline 5: text", contents)
+	})
+
+	t.Run("multiline replacement", func(ctx context.Context, t *testctx.T) {
+		file := c.Directory().
+			WithNewFile("test.txt", "Start\nOld line 1\nOld line 2\nEnd").
+			File("test.txt")
+
+		// Replace multiline text
+		replaced := file.WithReplaced("Old line 1\nOld line 2", "New single line")
+
+		contents, err := replaced.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Start\nNew single line\nEnd", contents)
+	})
+
+	t.Run("special characters and regex patterns", func(ctx context.Context, t *testctx.T) {
+		file := c.Directory().
+			WithNewFile("test.txt", "Price: $50.99\nTotal: $100.50").
+			File("test.txt")
+
+		// Replace literal dollar signs and dots (not regex)
+		replaced := file.WithReplaced("$50.99", "$75.25")
+
+		contents, err := replaced.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Price: $75.25\nTotal: $100.50", contents)
+	})
+
+	t.Run("empty replacement", func(ctx context.Context, t *testctx.T) {
+		file := c.Directory().
+			WithNewFile("test.txt", "Remove this text and keep the rest").
+			File("test.txt")
+
+		// Remove text by replacing with empty string
+		replaced := file.WithReplaced("Remove this text and ", "")
+
+		contents, err := replaced.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "keep the rest", contents)
+	})
+
+	t.Run("error on no matches", func(ctx context.Context, t *testctx.T) {
+		file := c.Directory().
+			WithNewFile("test.txt", "Hello, World!").
+			File("test.txt")
+
+		// Should error when no matches found - error will surface on Contents() call
+		replaced := file.WithReplaced("NotFound", "Replacement")
+		_, err := replaced.Contents(ctx)
+		require.Error(t, err)
+		require.Contains(t, strings.ToLower(err.Error()), "not found")
+	})
+
+	t.Run("error on multiple matches without all flag", func(ctx context.Context, t *testctx.T) {
+		file := c.Directory().
+			WithNewFile("test.txt", "World appears here and World appears there").
+			File("test.txt")
+
+		// Should error when multiple matches exist and all=false (default) - error will surface on Contents() call
+		replaced := file.WithReplaced("World", "Universe")
+		_, err := replaced.Contents(ctx)
+		require.Error(t, err)
+		require.Contains(t, strings.ToLower(err.Error()), "multiple")
+	})
+
+	t.Run("first occurrence after non-existent line", func(ctx context.Context, t *testctx.T) {
+		file := c.Directory().
+			WithNewFile("test.txt", "line 1\nline 2").
+			File("test.txt")
+
+		// Should error when firstAfter points beyond file length - error will surface on Contents() call
+		replaced := file.WithReplaced("line", "LINE", dagger.FileWithReplacedOpts{
+			FirstFrom: 10,
+		})
+		_, err := replaced.Contents(ctx)
+		require.Error(t, err)
+	})
+
+	t.Run("preserve file attributes", func(ctx context.Context, t *testctx.T) {
+		originalFile := c.Directory().
+			WithNewFile("test.txt", "Original content").
+			File("test.txt")
+
+		// Get original file name
+		originalName, err := originalFile.Name(ctx)
+		require.NoError(t, err)
+
+		// Replace content and verify file attributes are preserved
+		replaced := originalFile.WithReplaced("Original", "Modified")
+
+		newName, err := replaced.Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, originalName, newName)
+
+		contents, err := replaced.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Modified content", contents)
+	})
+
+	t.Run("chaining with other operations", func(ctx context.Context, t *testctx.T) {
+		replaced := c.Directory().
+			WithNewFile("chain.txt", "Step 1: initial").
+			File("chain.txt").
+			WithReplaced("initial", "replaced").
+			WithReplaced("Step 1", "Step 2")
+
+		contents, err := replaced.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Step 2: replaced", contents)
+	})
+}
