@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"slices"
@@ -20,6 +21,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core/reffs"
@@ -207,6 +209,47 @@ func (file *File) Contents(ctx context.Context) ([]byte, error) {
 		offset += len(chunk)
 	}
 	return contents, nil
+}
+
+func (file *File) Search(ctx context.Context, opts SearchOpts) ([]*SearchResult, error) {
+	ref, err := getRefOrEvaluate(ctx, file)
+	if err != nil {
+		return nil, err
+	}
+	if ref == nil {
+		// empty directory, i.e. llb.Scratch()
+		return []*SearchResult{}, nil
+	}
+
+	opt, ok := buildkit.CurrentOpOpts(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit opts in context")
+	}
+
+	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	results := []*SearchResult{}
+	err = MountRef(ctx, ref, bkSessionGroup, func(root string) error {
+		resolvedDir, err := containerdfs.RootPath(root, filepath.Dir(file.File))
+		if err != nil {
+			return err
+		}
+		rgArgs := opts.RipgrepArgs()
+		rgArgs = append(rgArgs, filepath.Base(file.File))
+		rg := exec.Command("rg", rgArgs...)
+		rg.Dir = resolvedDir
+		results, err = opts.RunRipgrep(ctx, rg)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return results, nil
 }
 
 func (file *File) Digest(ctx context.Context, excludeMetadata bool) (string, error) {

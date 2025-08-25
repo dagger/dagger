@@ -48,6 +48,13 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("name").Doc(`Name to set file to.`),
 			),
+		dagql.NodeFunc("search", DagOpWrapper(srv, s.search)).
+			Doc(
+				// NOTE: sync with Directory.search
+				`Searches for content matching the given regular expression or literal string.`,
+				`Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.`,
+			).
+			Args((core.SearchOpts{}).Args()...),
 		dagql.Func("export", s.export).
 			View(AllVersion).
 			DoNotCache("Writes to the local host.").
@@ -124,6 +131,10 @@ func (s *fileSchema) withName(ctx context.Context, parent *core.File, args fileW
 type fileExportArgs struct {
 	Path               string
 	AllowParentDirPath bool `default:"false"`
+}
+
+func (s *fileSchema) search(ctx context.Context, parent dagql.ObjectResult[*core.File], args searchArgs) (dagql.Array[*core.SearchResult], error) {
+	return parent.Self().Search(ctx, args.SearchOpts)
 }
 
 func (s *fileSchema) export(ctx context.Context, parent *core.File, args fileExportArgs) (dagql.String, error) {

@@ -420,6 +420,383 @@ func (FileSuite) TestDigest(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (FileSuite) TestSearch(ctx context.Context, t *testctx.T) {
+	t.Run("literal search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		file := c.Directory().
+			WithNewFile("test.txt", "Hello, World!\nThis is a test file.\nWorld is great.\nGoodbye, World!").
+			File("test.txt")
+
+		results, err := file.Search(ctx, "World")
+		require.NoError(t, err)
+		require.Len(t, results, 3)
+
+		// Check results
+		filePath0, err := results[0].FilePath(ctx)
+		require.NoError(t, err)
+		lineNumber0, err := results[0].LineNumber(ctx)
+		require.NoError(t, err)
+		absoluteOffset0, err := results[0].AbsoluteOffset(ctx)
+		require.NoError(t, err)
+		matchedText0, err := results[0].MatchedLines(ctx)
+		require.NoError(t, err)
+		submatches0, err := results[0].Submatches(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "test.txt", filePath0)
+		require.Equal(t, 1, lineNumber0)
+		require.Contains(t, matchedText0, "Hello, World!\n")
+		require.GreaterOrEqual(t, absoluteOffset0, 0)
+		require.NotEmpty(t, submatches0)
+
+		filePath1, err := results[1].FilePath(ctx)
+		require.NoError(t, err)
+		lineNumber1, err := results[1].LineNumber(ctx)
+		require.NoError(t, err)
+		absoluteOffset1, err := results[1].AbsoluteOffset(ctx)
+		require.NoError(t, err)
+		matchedText1, err := results[1].MatchedLines(ctx)
+		require.NoError(t, err)
+		submatches1, err := results[1].Submatches(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "test.txt", filePath1)
+		require.Equal(t, 3, lineNumber1)
+		require.Contains(t, matchedText1, "World is great.\n")
+		require.GreaterOrEqual(t, absoluteOffset1, 0)
+		require.NotEmpty(t, submatches1)
+
+		filePath2, err := results[2].FilePath(ctx)
+		require.NoError(t, err)
+		lineNumber2, err := results[2].LineNumber(ctx)
+		require.NoError(t, err)
+		absoluteOffset2, err := results[2].AbsoluteOffset(ctx)
+		require.NoError(t, err)
+		matchedText2, err := results[2].MatchedLines(ctx)
+		require.NoError(t, err)
+		submatches2, err := results[2].Submatches(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "test.txt", filePath2)
+		require.Equal(t, 4, lineNumber2)
+		require.Equal(t, matchedText2, "Goodbye, World!")
+		require.GreaterOrEqual(t, absoluteOffset2, 0)
+		require.NotEmpty(t, submatches2)
+
+		// Verify submatch structure for all results
+		for i, submatches := range [][]dagger.SearchSubmatch{submatches0, submatches1, submatches2} {
+			for _, submatch := range submatches {
+				submatchText, err := submatch.Text(ctx)
+				require.NoError(t, err, "result %d submatch text", i)
+				start, err := submatch.Start(ctx)
+				require.NoError(t, err, "result %d submatch start", i)
+				end, err := submatch.End(ctx)
+				require.NoError(t, err, "result %d submatch end", i)
+
+				require.NotEmpty(t, submatchText, "result %d submatch text should not be empty", i)
+				require.GreaterOrEqual(t, start, 0, "result %d submatch start should be non-negative", i)
+				require.Greater(t, end, start, "result %d submatch end should be greater than start", i)
+				require.Contains(t, submatchText, "World", "result %d submatch should contain 'World'", i)
+			}
+		}
+	})
+
+	t.Run("regex search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		file := c.Directory().
+			WithNewFile("code.go", `package main
+
+import "fmt"
+
+func main() {
+	name := "Alice"
+	age := 30
+	fmt.Printf("Name: %s, Age: %d\n", name, age)
+}`).
+			File("code.go")
+
+		// Search for variable assignments
+		results, err := file.Search(ctx, `\w+ :=`)
+		require.NoError(t, err)
+		require.NotEmpty(t, results)
+
+		// Check that we have the expected variable assignments
+		var matches []string
+		for _, result := range results {
+			filePath, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			lineNumber, err := result.LineNumber(ctx)
+			require.NoError(t, err)
+			absoluteOffset, err := result.AbsoluteOffset(ctx)
+			require.NoError(t, err)
+			matchedText, err := result.MatchedLines(ctx)
+			require.NoError(t, err)
+			submatches, err := result.Submatches(ctx)
+			require.NoError(t, err)
+
+			// Verify AbsoluteOffset is reasonable (non-negative)
+			require.GreaterOrEqual(t, absoluteOffset, 0)
+
+			// Verify we have at least one submatch for each result
+			require.NotEmpty(t, submatches)
+
+			// Verify submatch structure for regex - should match variable assignments
+			for _, submatch := range submatches {
+				submatchText, err := submatch.Text(ctx)
+				require.NoError(t, err)
+				start, err := submatch.Start(ctx)
+				require.NoError(t, err)
+				end, err := submatch.End(ctx)
+				require.NoError(t, err)
+
+				require.NotEmpty(t, submatchText)
+				require.GreaterOrEqual(t, start, 0)
+				require.Greater(t, end, start)
+				require.Regexp(t, `\w+ :=`, submatchText)
+			}
+
+			matches = append(matches, fmt.Sprintf("%s:%d:%s", filePath, lineNumber, matchedText))
+		}
+
+		// Check for the specific assignments we expect (may have different formatting)
+		require.Contains(t, matches, "code.go:6:\tname := \"Alice\"\n")
+		require.Contains(t, matches, "code.go:7:\tage := 30\n")
+	})
+
+	t.Run("multiline search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		file := c.Directory().
+			WithNewFile("dir/code.go", `package main
+
+import "fmt"
+
+func main() {
+	name := "Alice"
+	age := 30
+	fmt.Printf("Name: %s, Age: %d\n", name, age)
+}
+
+func another() {
+	name := "Alice"
+	age := 50
+	fmt.Printf("Name: %s, Age: %d\n", name, age)
+}`).
+			File("dir/code.go")
+
+		// Search for variable assignments
+		results, err := file.Search(ctx, ":= \"Alice\"\n\tage", dagger.FileSearchOpts{
+			Multiline: true,
+			Literal:   true,
+		})
+		require.NoError(t, err)
+		require.NotEmpty(t, results)
+
+		// Check that we have the expected variable assignments
+		var matches []string
+		for _, result := range results {
+			filePath, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			lineNumber, err := result.LineNumber(ctx)
+			require.NoError(t, err)
+			absoluteOffset, err := result.AbsoluteOffset(ctx)
+			require.NoError(t, err)
+			matchedText, err := result.MatchedLines(ctx)
+			require.NoError(t, err)
+			submatches, err := result.Submatches(ctx)
+			require.NoError(t, err)
+
+			// Verify AbsoluteOffset is reasonable (non-negative)
+			require.GreaterOrEqual(t, absoluteOffset, 0)
+
+			// Verify we have at least one submatch for each result
+			require.NotEmpty(t, submatches)
+
+			// Verify submatch structure for multiline literal search
+			for _, submatch := range submatches {
+				submatchText, err := submatch.Text(ctx)
+				require.NoError(t, err)
+				start, err := submatch.Start(ctx)
+				require.NoError(t, err)
+				end, err := submatch.End(ctx)
+				require.NoError(t, err)
+
+				require.NotEmpty(t, submatchText)
+				require.GreaterOrEqual(t, start, 0)
+				require.Greater(t, end, start)
+				require.Contains(t, submatchText, ":= \"Alice\"")
+				require.Contains(t, submatchText, "age")
+			}
+
+			matches = append(matches, fmt.Sprintf("%s:%d:%s", filePath, lineNumber, matchedText))
+		}
+
+		// Check for the specific assignments we expect (may have different formatting)
+		require.Contains(t, matches, "code.go:6:\tname := \"Alice\"\n\tage := 30\n")
+		require.Contains(t, matches, "code.go:12:\tname := \"Alice\"\n\tage := 50\n")
+	})
+
+	t.Run("multiline regexp search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("dir/code.go", `package main
+
+import "fmt"
+
+func main() {
+	name := "Alice"
+	age := 30
+	fmt.Printf("Name: %s, Age: %d\n", name, age)
+}
+
+func another() {
+	name := "Alice"
+	age := 50
+	fmt.Printf("Name: %s, Age: %d\n", name, age)
+}`).
+			File("dir/code.go")
+
+		// Search for variable assignments
+		results, err := dir.Search(ctx, `:= ".*"\n\s+age`, dagger.FileSearchOpts{
+			Multiline: true,
+		})
+		require.NoError(t, err)
+		require.NotEmpty(t, results)
+
+		// Check that we have the expected variable assignments
+		var matches []string
+		for _, result := range results {
+			filePath, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			lineNumber, err := result.LineNumber(ctx)
+			require.NoError(t, err)
+			matchedText, err := result.MatchedLines(ctx)
+			require.NoError(t, err)
+			matches = append(matches, fmt.Sprintf("%s:%d:%s", filePath, lineNumber, matchedText))
+		}
+
+		// Check for the specific assignments we expect (may have different formatting)
+		require.Contains(t, matches, "code.go:6:\tname := \"Alice\"\n\tage := 30\n")
+		require.Contains(t, matches, "code.go:12:\tname := \"Alice\"\n\tage := 50\n")
+	})
+
+	t.Run("no matches", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		file := c.Directory().
+			WithNewFile("test.txt", "Hello, World!").
+			File("test.txt")
+
+		results, err := file.Search(ctx, "nonexistent")
+		require.NoError(t, err)
+		require.Empty(t, results)
+	})
+
+	t.Run("case sensitive search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		file := c.Directory().
+			WithNewFile("test.txt", "Hello\nhello\nHELLO\nHeLLo").
+			File("test.txt")
+
+		results, err := file.Search(ctx, "Hello")
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+		lineNumber0, err := results[0].LineNumber(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 1, lineNumber0)
+	})
+
+	t.Run("multiline patterns", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		file := c.Directory().
+			WithNewFile("test.py", `def hello():
+    print("Hello")
+
+def world():
+    print("World")
+
+def hello_world():
+    print("Hello, World!")`).
+			File("test.py")
+
+		// Search for function definitions
+		results, err := file.Search(ctx, `def \w+\(\):`)
+		require.NoError(t, err)
+		require.Len(t, results, 3)
+
+		lineNumber0, err := results[0].LineNumber(ctx)
+		require.NoError(t, err)
+		matchedText0, err := results[0].MatchedLines(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 1, lineNumber0)
+		require.Contains(t, matchedText0, "def hello():")
+
+		lineNumber1, err := results[1].LineNumber(ctx)
+		require.NoError(t, err)
+		matchedText1, err := results[1].MatchedLines(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 4, lineNumber1)
+		require.Contains(t, matchedText1, "def world():")
+
+		lineNumber2, err := results[2].LineNumber(ctx)
+		require.NoError(t, err)
+		matchedText2, err := results[2].MatchedLines(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 7, lineNumber2)
+		require.Contains(t, matchedText2, "def hello_world():")
+	})
+
+	t.Run("large file", func(ctx context.Context, t *testctx.T) {
+		// Create a file with many lines
+		var content strings.Builder
+		for i := 1; i <= 1000; i++ {
+			if i%100 == 0 {
+				content.WriteString(fmt.Sprintf("Line %d: Special line with MARKER\n", i))
+			} else {
+				content.WriteString(fmt.Sprintf("Line %d: Regular line\n", i))
+			}
+		}
+
+		c := connect(ctx, t)
+
+		file := c.Directory().
+			WithNewFile("large.txt", content.String()).
+			File("large.txt")
+
+		results, err := file.Search(ctx, "MARKER")
+		require.NoError(t, err)
+		require.Len(t, results, 10)
+
+		// Verify line numbers
+		for i, result := range results {
+			expectedLine := (i + 1) * 100
+			lineNumber, err := result.LineNumber(ctx)
+			require.NoError(t, err)
+			matchedText, err := result.MatchedLines(ctx)
+			require.NoError(t, err)
+			require.Equal(t, expectedLine, lineNumber)
+			require.Contains(t, matchedText, "MARKER")
+		}
+	})
+
+	t.Run("file from container", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		file := c.Container().
+			From(alpineImage).
+			File("/etc/alpine-release")
+
+		results, err := file.Search(ctx, "[0-9]+\\.[0-9]+")
+		require.NoError(t, err)
+		require.NotEmpty(t, results)
+		matchedText0, err := results[0].MatchedLines(ctx)
+		require.NoError(t, err)
+		require.Contains(t, matchedText0, distconsts.AlpineVersion)
+	})
+}
+
 func (FileSuite) TestSync(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
