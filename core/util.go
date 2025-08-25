@@ -28,7 +28,6 @@ import (
 
 	"github.com/dagger/dagger/core/reffs"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -365,7 +364,8 @@ func mountLLB(ctx context.Context, llb *pb.Definition, f func(string) error) err
 
 func Supports(ctx context.Context, minVersion string) (bool, error) {
 	id := dagql.CurrentID(ctx)
-	return engine.CheckVersionCompatibility(id.View(), minVersion), nil
+	slog.Warn("!!! SUPPORTS", "min", minVersion, "have", id.View())
+	return AfterVersion(minVersion).Contains(dagql.View(id.View())), nil
 }
 
 // AllVersion is a view that contains all versions.
