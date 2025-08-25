@@ -6,18 +6,6 @@ slug: "/use-cases"
 
 Dagger is a versatile tool with multiple applications and use cases. Some of the most common ones are described below.
 
-## Portable CI
-
-A common problem seen in software development is the "works on my machine" problem - essentially, that code runs as expected in one environment (such as a developer's laptop), but fails or works differently in other environments (such as in CI or production). This usually happens because of subtle environmental differences - differences in operating systems, environment variables, installed software versions, and so on.
-
-Dagger solves this problem by making it possible to build CI workflows that run identically, both locally and in your CI system. It does this by running each part of the workflow in an isolated container, ensuring that the execution environment remains consistent - regardless of whether the workflow runs on a local laptop, in a remote CI system, in Kubernetes, or in production.
-
-### Benefits
-
-- Platform engineers can define and validate CI workflows locally, without needing to push them to a remote CI system for testing. This significantly reduces the time required to create new CI workflows or improve existing ones.
-- Application developers can execute CI workflows on their laptops or local development environments, without needing to push code to a remote CI system first and wait for feedback. This significantly shortens the development cycle by providing near-instant feedback for tests and builds, avoiding the time-consuming "push and pray" problem seen in traditional CI.
-- Since workflows are executed in containers, they can run in any environment which has a compatible container runtime. This decouples them from specific CI systems, eliminates vendor lock-in, and makes it easy and efficient to migrate workflows from one CI provider to another.
-
 ## Agentic CI
 
 Coding agents are dramatically increasing the volume of code flowing through your software delivery pipelines. And those pipelines, typically characterized by artisanal "glue" scripts and complex YAML, starting to crack under the pressure. This presents an opportunity: organizations can leverage AI to increase throughput and maintain their software development velocity.
@@ -37,6 +25,18 @@ Dagger can be used as a runtime and programming environment for AI agents, makin
 - Dagger Shell lets you interact with any attached LLM using natural language commands. Each input builds upon previous interactions, creating a prompt chain that lets you execute complex workflows without needing to know the exact syntax of the underlying Dagger API.
 - Dagger supports a wide range of popular language models, including those from OpenAI, Anthropic and Google. Dagger can access these models either through their respective cloud-based APIs or using local providers like Docker Model Runner or Ollama.
 - Dagger provides [end-to-end tracing](features/observability.mdx) of prompts, tool calls, and even low-level system operations. All agent state changes are observable in real time.
+
+## Portable CI
+
+A common problem seen in software development is the "works on my machine" problem - essentially, that code runs as expected in one environment (such as a developer's laptop), but fails or works differently in other environments (such as in CI or production). This usually happens because of subtle environmental differences - differences in operating systems, environment variables, installed software versions, and so on.
+
+Dagger solves this problem by making it possible to build CI workflows that run identically, both locally and in your CI system. It does this by running each part of the workflow in an isolated container, ensuring that the execution environment remains consistent - regardless of whether the workflow runs on a local laptop, in a remote CI system, in Kubernetes, or in production.
+
+### Benefits
+
+- Platform engineers can define and validate CI workflows locally, without needing to push them to a remote CI system for testing. This significantly reduces the time required to create new CI workflows or improve existing ones.
+- Application developers can execute CI workflows on their laptops or local development environments, without needing to push code to a remote CI system first and wait for feedback. This significantly shortens the development cycle by providing near-instant feedback for tests and builds, avoiding the time-consuming "push and pray" problem seen in traditional CI.
+- Since workflows are executed in containers, they can run in any environment which has a compatible container runtime. This decouples them from specific CI systems, eliminates vendor lock-in, and makes it easy and efficient to migrate workflows from one CI provider to another.
 
 ## Monorepo CI
 
