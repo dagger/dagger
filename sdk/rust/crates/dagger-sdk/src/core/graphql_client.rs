@@ -7,7 +7,7 @@ use base64::Engine;
 use thiserror::Error;
 
 use crate::core::connect_params::ConnectParams;
-use crate::core::gql_client::{ClientConfig, GQLClient};
+use crate::core::gql_client::{ClientConfig, GQLClient, GraphQLExtensions};
 
 #[async_trait]
 pub trait GraphQLClient {
@@ -26,7 +26,7 @@ impl DefaultGraphQLClient {
         let token = general_purpose::URL_SAFE.encode(format!("{}:", conn.session_token));
 
         let mut headers = HashMap::new();
-        headers.insert("Authorization".to_string(), format!("Basic {}", token));
+        headers.insert("Authorization".to_string(), format!("Basic {token}"));
 
         Self {
             client: GQLClient::new_with_config(ClientConfig {
@@ -57,7 +57,38 @@ fn map_graphql_error(gql_error: crate::core::gql_client::GraphQLError) -> GraphQ
         if !json.is_empty() {
             return GraphQLError::DomainError {
                 message,
-                fields: GraphqlErrorMessages(json.into_iter().map(|e| e.message).collect()),
+                fields:
+                    GraphqlErrorMessages(
+                        json.into_iter()
+                            .map(|e| {
+                                let extensions = e.extensions.map(|e| {
+                                    match e {
+                                        GraphQLExtensions::ExecError {
+                                            cmd,
+                                            exit_code,
+                                            stderr,
+                                            stdout,
+                                        } => {
+                                            (cmd, exit_code, stderr, stdout)
+                                        }
+                                    }
+
+                                });
+
+                                match extensions {
+                                    Some((cmd, exit_code, stderr, stdout)) => {
+                                        format!(
+                                            "{}, stdout: '{}', stderr: '{}', cmd: '{}', exit_code: '{}'",
+                                            e.message, stdout.unwrap_or_default(), stderr.unwrap_or_default(), cmd.join(" "), exit_code.unwrap_or_default()
+                                        )
+                                    }
+                                    None => {
+                                        e.message.to_string()
+                                    }
+                                }
+                            })
+                            .collect(),
+                    ),
             };
         }
     }
@@ -69,7 +100,7 @@ fn map_graphql_error(gql_error: crate::core::gql_client::GraphQLError) -> GraphQ
 pub enum GraphQLError {
     #[error("http error: {0}")]
     HttpError(String),
-    #[error("domain error:\n{message}\n{fields}")]
+    #[error("domain error:\n    {message}\n    {fields}")]
     DomainError {
         message: String,
         fields: GraphqlErrorMessages,
