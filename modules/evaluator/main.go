@@ -1,5 +1,8 @@
-// Implement evals for your applications in Dagger
-
+// A Dagger module for evaluating LLM performance across different models.
+//
+// This module provides tools for running evaluations against multiple AI models,
+// analyzing failures, and iteratively improving system prompts based on results.
+//
 // More info: https://dagger.io/blog/evals-as-code
 
 package main
@@ -27,6 +30,7 @@ type Evaluator struct {
 	// Whether to disable the default system prompt.
 	DisableDefaultSystemPrompt bool
 
+	// Model to use for the evaluator agent.
 	EvaluatorModel string
 
 	// +private
@@ -45,6 +49,10 @@ func New(
 	}
 }
 
+// Eval represents a single evaluation that can be run against an LLM.
+//
+// Implementations must provide a name, a prompt to test, and a check function
+// to validate the LLM's response.
 type Eval interface {
 	Name(context.Context) (string, error)
 	Prompt(base *dagger.LLM) *dagger.LLM
@@ -58,7 +66,7 @@ func (m *Evaluator) WithSystemPrompt(prompt string) *Evaluator {
 	return m.WithSystemPromptFile(dag.File("prompt.md", prompt))
 }
 
-// Set a system prompt to be provided to the evals.
+// Set a system prompt file to be provided to the evals.
 func (m *Evaluator) WithSystemPromptFile(file *dagger.File) *Evaluator {
 	cp := *m
 	cp.SystemPrompt = file
@@ -77,19 +85,24 @@ func (m *Evaluator) WithoutDefaultSystemPrompt() *Evaluator {
 	return &cp
 }
 
-// Set the full documentation the system prompt intends to effectuate.
+// Set the documentation content that the system prompt intends to effectuate.
 func (m *Evaluator) WithDocs(prompt string) *Evaluator {
 	return m.WithDocsFile(dag.File("prompt.md", prompt))
 }
 
-// Set the full documentation the system prompt intends to effectuate.
+// Set the documentation file that the system prompt intends to effectuate.
 func (m *Evaluator) WithDocsFile(file *dagger.File) *Evaluator {
 	cp := *m
 	cp.Docs = file
 	return &cp
 }
 
-func (m *Evaluator) WithEval(ctx context.Context, eval Eval) (*Evaluator, error) {
+// WithEval adds a single evaluation to the evaluator.
+func (m *Evaluator) WithEval(
+	ctx context.Context,
+	// The evaluation to add to the list of evals to run.
+	eval Eval,
+) (*Evaluator, error) {
 	id, err := eval.(interface {
 		ID(context.Context) (EvalID, error)
 	}).ID(ctx)
@@ -105,7 +118,12 @@ func (m *Evaluator) WithEval(ctx context.Context, eval Eval) (*Evaluator, error)
 	return m, nil
 }
 
-func (m *Evaluator) WithEvals(ctx context.Context, evals []Eval) (*Evaluator, error) {
+// WithEvals adds multiple evaluations to the evaluator.
+func (m *Evaluator) WithEvals(
+	ctx context.Context,
+	// The list of evaluations to add to the evaluator.
+	evals []Eval,
+) (*Evaluator, error) {
 	for _, eval := range evals {
 		var err error
 		m, err = m.WithEval(ctx, eval)
@@ -221,6 +239,7 @@ func (m *Evaluator) EvalsAcrossModels(
 	}, nil
 }
 
+// EvalsAcrossModels represents the results of running evaluations across multiple models.
 type EvalsAcrossModels struct {
 	TraceID      string
 	ModelResults []ModelResult
@@ -229,12 +248,14 @@ type EvalsAcrossModels struct {
 	Evaluator *Evaluator
 }
 
+// ModelResult represents the evaluation results for a single model.
 type ModelResult struct {
 	ModelName   string
 	SpanID      string
 	EvalReports []EvalResult
 }
 
+// EvalResult represents the results of a single evaluation.
 type EvalResult struct {
 	Name          string
 	SpanID        string
