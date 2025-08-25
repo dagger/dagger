@@ -198,6 +198,34 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type SearchResult
+  """
+  @spec as_search_result(t()) :: Dagger.SearchResult.t()
+  def as_search_result(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asSearchResult")
+
+    %Dagger.SearchResult{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type SearchSubmatch
+  """
+  @spec as_search_submatch(t()) :: Dagger.SearchSubmatch.t()
+  def as_search_submatch(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asSearchSubmatch")
+
+    %Dagger.SearchSubmatch{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Retrieve the binding value, as type Secret
   """
   @spec as_secret(t()) :: Dagger.Secret.t()

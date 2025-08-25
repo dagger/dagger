@@ -221,6 +221,16 @@ class ScalarTypeDefID(Scalar):
     object of type ScalarTypeDef."""
 
 
+class SearchResultID(Scalar):
+    """The `SearchResultID` scalar type represents an identifier for an
+    object of type SearchResult."""
+
+
+class SearchSubmatchID(Scalar):
+    """The `SearchSubmatchID` scalar type represents an identifier for an
+    object of type SearchSubmatch."""
+
+
 class SecretID(Scalar):
     """The `SecretID` scalar type represents an identifier for an object
     of type Secret."""
@@ -549,6 +559,18 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asModuleSource", _args)
         return ModuleSource(_ctx)
+
+    def as_search_result(self) -> "SearchResult":
+        """Retrieve the binding value, as type SearchResult"""
+        _args: list[Arg] = []
+        _ctx = self._select("asSearchResult", _args)
+        return SearchResult(_ctx)
+
+    def as_search_submatch(self) -> "SearchSubmatch":
+        """Retrieve the binding value, as type SearchSubmatch"""
+        _args: list[Arg] = []
+        _ctx = self._select("asSearchSubmatch", _args)
+        return SearchSubmatch(_ctx)
 
     def as_secret(self) -> "Secret":
         """Retrieve the binding value, as type Secret"""
@@ -3307,6 +3329,69 @@ class Directory(Type):
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
 
+    async def search(
+        self,
+        pattern: str,
+        *,
+        paths: list[str] | None = None,
+        globs: list[str] | None = None,
+        literal: bool | None = False,
+        multiline: bool | None = False,
+        dotall: bool | None = False,
+        insensitive: bool | None = False,
+        skip_ignored: bool | None = False,
+        skip_hidden: bool | None = False,
+        files_only: bool | None = False,
+        limit: int | None = None,
+    ) -> list["SearchResult"]:
+        """Searches for content matching the given regular expression or literal
+        string.
+
+        Uses Rust regex syntax; escape literal ., [, ], {, }, | with
+        backslashes.
+
+        Parameters
+        ----------
+        pattern:
+            The text to match.
+        paths:
+            Directory or file paths to search
+        globs:
+            Glob patterns to match (e.g., "*.md")
+        literal:
+            Interpret the pattern as a literal string instead of a regular
+            expression.
+        multiline:
+            Enable searching across multiple lines.
+        dotall:
+            Allow the . pattern to match newlines in multiline mode.
+        insensitive:
+            Enable case-insensitive matching.
+        skip_ignored:
+            Honor .gitignore, .ignore, and .rgignore files.
+        skip_hidden:
+            Skip hidden files (files starting with .).
+        files_only:
+            Only return matching files, not lines and content
+        limit:
+            Limit the number of results to return
+        """
+        _args = [
+            Arg("pattern", pattern),
+            Arg("paths", [] if paths is None else paths, []),
+            Arg("globs", [] if globs is None else globs, []),
+            Arg("literal", literal, False),
+            Arg("multiline", multiline, False),
+            Arg("dotall", dotall, False),
+            Arg("insensitive", insensitive, False),
+            Arg("skipIgnored", skip_ignored, False),
+            Arg("skipHidden", skip_hidden, False),
+            Arg("filesOnly", files_only, False),
+            Arg("limit", limit, None),
+        ]
+        _ctx = self._select("search", _args)
+        return await _ctx.execute_object_list(SearchResult)
+
     async def sync(self) -> Self:
         """Force evaluation in the engine.
 
@@ -4849,6 +4934,92 @@ class Env(Type):
         _ctx = self._select("withModuleSourceOutput", _args)
         return Env(_ctx)
 
+    def with_search_result_input(
+        self,
+        name: str,
+        value: "SearchResult",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type SearchResult in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The SearchResult value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withSearchResultInput", _args)
+        return Env(_ctx)
+
+    def with_search_result_output(self, name: str, description: str) -> Self:
+        """Declare a desired SearchResult output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withSearchResultOutput", _args)
+        return Env(_ctx)
+
+    def with_search_submatch_input(
+        self,
+        name: str,
+        value: "SearchSubmatch",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type SearchSubmatch in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The SearchSubmatch value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withSearchSubmatchInput", _args)
+        return Env(_ctx)
+
+    def with_search_submatch_output(self, name: str, description: str) -> Self:
+        """Declare a desired SearchSubmatch output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withSearchSubmatchOutput", _args)
+        return Env(_ctx)
+
     def with_secret_input(
         self,
         name: str,
@@ -5331,8 +5502,20 @@ class FieldTypeDef(Type):
 class File(Type):
     """A file."""
 
-    async def contents(self) -> str:
+    async def contents(
+        self,
+        *,
+        offset: int | None = None,
+        limit: int | None = None,
+    ) -> str:
         """Retrieves the contents of the file.
+
+        Parameters
+        ----------
+        offset:
+            Start reading after this line
+        limit:
+            Maximum number of lines to read
 
         Returns
         -------
@@ -5348,7 +5531,10 @@ class File(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("offset", offset, None),
+            Arg("limit", limit, None),
+        ]
         _ctx = self._select("contents", _args)
         return await _ctx.execute(str)
 
@@ -5469,6 +5655,67 @@ class File(Type):
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
 
+    async def search(
+        self,
+        pattern: str,
+        *,
+        literal: bool | None = False,
+        multiline: bool | None = False,
+        dotall: bool | None = False,
+        insensitive: bool | None = False,
+        skip_ignored: bool | None = False,
+        skip_hidden: bool | None = False,
+        files_only: bool | None = False,
+        limit: int | None = None,
+        paths: list[str] | None = None,
+        globs: list[str] | None = None,
+    ) -> list["SearchResult"]:
+        """Searches for content matching the given regular expression or literal
+        string.
+
+        Uses Rust regex syntax; escape literal ., [, ], {, }, | with
+        backslashes.
+
+        Parameters
+        ----------
+        pattern:
+            The text to match.
+        literal:
+            Interpret the pattern as a literal string instead of a regular
+            expression.
+        multiline:
+            Enable searching across multiple lines.
+        dotall:
+            Allow the . pattern to match newlines in multiline mode.
+        insensitive:
+            Enable case-insensitive matching.
+        skip_ignored:
+            Honor .gitignore, .ignore, and .rgignore files.
+        skip_hidden:
+            Skip hidden files (files starting with .).
+        files_only:
+            Only return matching files, not lines and content
+        limit:
+            Limit the number of results to return
+        paths:
+        globs:
+        """
+        _args = [
+            Arg("pattern", pattern),
+            Arg("literal", literal, False),
+            Arg("multiline", multiline, False),
+            Arg("dotall", dotall, False),
+            Arg("insensitive", insensitive, False),
+            Arg("skipIgnored", skip_ignored, False),
+            Arg("skipHidden", skip_hidden, False),
+            Arg("filesOnly", files_only, False),
+            Arg("limit", limit, None),
+            Arg("paths", [] if paths is None else paths, []),
+            Arg("globs", [] if globs is None else globs, []),
+        ]
+        _ctx = self._select("search", _args)
+        return await _ctx.execute_object_list(SearchResult)
+
     async def size(self) -> int:
         """Retrieves the size of the file, in bytes.
 
@@ -5518,6 +5765,46 @@ class File(Type):
             Arg("name", name),
         ]
         _ctx = self._select("withName", _args)
+        return File(_ctx)
+
+    def with_replaced(
+        self,
+        search: str,
+        replacement: str,
+        *,
+        all: bool | None = False,
+        first_from: int | None = None,
+    ) -> Self:
+        """Retrieves the file with content replaced with the given text.
+
+        If 'all' is true, all occurrences of the pattern will be replaced.
+
+        If 'firstAfter' is specified, only the first match starting at the
+        specified line will be replaced.
+
+        If neither are specified, and there are multiple matches for the
+        pattern, this will error.
+
+        If there are no matches for the pattern, this will error.
+
+        Parameters
+        ----------
+        search:
+            The text to match.
+        replacement:
+            The text to match.
+        all:
+            Replace all occurrences of the pattern.
+        first_from:
+            Replace the first match starting from the specified line.
+        """
+        _args = [
+            Arg("search", search),
+            Arg("replacement", replacement),
+            Arg("all", all, False),
+            Arg("firstFrom", first_from, None),
+        ]
+        _ctx = self._select("withReplaced", _args)
         return File(_ctx)
 
     def with_timestamps(self, timestamp: int) -> Self:
@@ -9480,6 +9767,22 @@ class Client(Root):
         _ctx = self._select("loadScalarTypeDefFromID", _args)
         return ScalarTypeDef(_ctx)
 
+    def load_search_result_from_id(self, id: SearchResultID) -> "SearchResult":
+        """Load a SearchResult from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadSearchResultFromID", _args)
+        return SearchResult(_ctx)
+
+    def load_search_submatch_from_id(self, id: SearchSubmatchID) -> "SearchSubmatch":
+        """Load a SearchSubmatch from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadSearchSubmatchFromID", _args)
+        return SearchSubmatch(_ctx)
+
     def load_secret_from_id(self, id: SecretID) -> "Secret":
         """Load a Secret from its ID."""
         _args = [
@@ -9816,6 +10119,213 @@ class ScalarTypeDef(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("sourceModuleName", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
+class SearchResult(Type):
+    async def absolute_offset(self) -> int:
+        """The byte offset of this line within the file.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("absoluteOffset", _args)
+        return await _ctx.execute(int)
+
+    async def file_path(self) -> str:
+        """The path to the file that matched.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("filePath", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> SearchResultID:
+        """A unique identifier for this SearchResult.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        SearchResultID
+            The `SearchResultID` scalar type represents an identifier for an
+            object of type SearchResult.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(SearchResultID)
+
+    async def line_number(self) -> int:
+        """The first line that matched.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("lineNumber", _args)
+        return await _ctx.execute(int)
+
+    async def matched_lines(self) -> str:
+        """The line content that matched.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("matchedLines", _args)
+        return await _ctx.execute(str)
+
+    async def submatches(self) -> list["SearchSubmatch"]:
+        """Sub-match positions and content within the matched lines."""
+        _args: list[Arg] = []
+        _ctx = self._select("submatches", _args)
+        return await _ctx.execute_object_list(SearchSubmatch)
+
+
+@typecheck
+class SearchSubmatch(Type):
+    async def end(self) -> int:
+        """The match's end offset within the matched lines.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("end", _args)
+        return await _ctx.execute(int)
+
+    async def id(self) -> SearchSubmatchID:
+        """A unique identifier for this SearchSubmatch.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        SearchSubmatchID
+            The `SearchSubmatchID` scalar type represents an identifier for an
+            object of type SearchSubmatch.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(SearchSubmatchID)
+
+    async def start(self) -> int:
+        """The match's start offset within the matched lines.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("start", _args)
+        return await _ctx.execute(int)
+
+    async def text(self) -> str:
+        """The matched text.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("text", _args)
         return await _ctx.execute(str)
 
 
@@ -10783,6 +11293,10 @@ __all__ = [
     "SDKConfigID",
     "ScalarTypeDef",
     "ScalarTypeDefID",
+    "SearchResult",
+    "SearchResultID",
+    "SearchSubmatch",
+    "SearchSubmatchID",
     "Secret",
     "SecretID",
     "Service",

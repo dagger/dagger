@@ -909,6 +909,35 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Load a SearchResult from its ID.
+  """
+  @spec load_search_result_from_id(t(), Dagger.SearchResultID.t()) :: Dagger.SearchResult.t()
+  def load_search_result_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadSearchResultFromID") |> QB.put_arg("id", id)
+
+    %Dagger.SearchResult{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a SearchSubmatch from its ID.
+  """
+  @spec load_search_submatch_from_id(t(), Dagger.SearchSubmatchID.t()) ::
+          Dagger.SearchSubmatch.t()
+  def load_search_submatch_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadSearchSubmatchFromID") |> QB.put_arg("id", id)
+
+    %Dagger.SearchSubmatch{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Load a Secret from its ID.
   """
   @spec load_secret_from_id(t(), Dagger.SecretID.t()) :: Dagger.Secret.t()
