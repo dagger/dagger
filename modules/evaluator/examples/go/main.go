@@ -26,7 +26,7 @@ func New(
 }
 
 // Run the Dagger evals across the major model providers.
-func (dev *Examples) Evals(
+func (dev *Examples) Evaluator_RunMyEvals(
 	ctx context.Context,
 	// Run particular evals, or all evals if unspecified.
 	// +optional
@@ -35,16 +35,7 @@ func (dev *Examples) Evals(
 	// +optional
 	models []string,
 ) error {
-	return dev.evaluator().
-		EvalsAcrossModels(dagger.EvaluatorEvalsAcrossModelsOpts{
-			Evals:  evals,
-			Models: models,
-		}).
-		Check(ctx)
-}
-
-func (dev *Examples) evaluator() *dagger.Evaluator {
-	return dag.Evaluator().
+	myEvaluator := dag.Evaluator().
 		WithDocsFile(dev.Source.File("core/llm_docs.md")).
 		WithoutDefaultSystemPrompt().
 		WithSystemPromptFile(dev.Source.File("core/llm_dagger_prompt.md")).
@@ -62,4 +53,10 @@ func (dev *Examples) evaluator() *dagger.Evaluator {
 			dag.Evals().ModuleDependencies().AsEvaluatorEval(),
 			dag.Evals().Responses().AsEvaluatorEval(),
 		})
+	return myEvaluator.
+		EvalsAcrossModels(dagger.EvaluatorEvalsAcrossModelsOpts{
+			Evals:  evals,
+			Models: models,
+		}).
+		Check(ctx)
 }
