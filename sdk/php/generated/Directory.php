@@ -47,6 +47,18 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return a virtual comparison between this directory and an older snapshot that can be applied to another filesystem.
+     *
+     * Returns an error if the other directory is not an ancestor of this directory.
+     */
+    public function changes(DirectoryId|Directory $older): Changes
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changes');
+        $innerQueryBuilder->setArgument('older', $older);
+        return new \Dagger\Changes($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return the difference between this directory and an another directory. The difference is encoded as a directory.
      */
     public function diff(DirectoryId|Directory $other): Directory
@@ -286,6 +298,16 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         if (null !== $insecureRootCapabilities) {
         $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
         }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return a directory with changes from another directory applied to it.
+     */
+    public function withChanges(ChangesId|Changes $changes): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChanges');
+        $innerQueryBuilder->setArgument('changes', $changes);
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
