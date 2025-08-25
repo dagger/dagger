@@ -267,6 +267,13 @@ div[class*="docSidebarMenu"],
   margin-right: 3px;
 }
 
+/* Hide specific navbar navigation links on mobile - keep hamburger, logo, search, theme toggle */
+@include mobile {
+  .navbar__item.navbar__link {
+    display: none !important;
+  }
+}
+
 // Navbar hover underline effect (matches TOC opacity)
 html[data-theme="light"] {
   .navbar__items
@@ -447,6 +454,10 @@ body {
 
   // Hide on tablet resolutions
   @include tablet {
+    display: none !important;
+  }
+
+  @include mobile {
     display: none !important;
   }
 }
