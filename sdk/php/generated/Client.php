@@ -282,6 +282,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a Changes from its ID.
+     */
+    public function loadChangesFromID(ChangesId|Changes $id): Changes
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadChangesFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Changes($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Cloud from its ID.
      */
     public function loadCloudFromID(CloudId|Cloud $id): Cloud

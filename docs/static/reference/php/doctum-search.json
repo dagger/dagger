@@ -138,6 +138,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Changes",
+			"p": "Dagger/Changes.html",
+			"d": "<p>A comparison between two directories representing changes that can be applied.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\ChangesId",
+			"p": "Dagger/ChangesId.html",
+			"d": "<p>The <code>ChangesID</code> scalar type represents an identifier for an object of type Changes.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Client",
 			"p": "Dagger/Client.html",
 			"d": "<p>The root of the DAG.</p>",
@@ -1215,6 +1235,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Binding::asChanges",
+			"p": "Dagger/Binding.html#method_asChanges",
+			"d": "<p>Retrieve the binding value, as type Changes</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Binding::asCloud",
 			"p": "Dagger/Binding.html#method_asCloud",
 			"d": "<p>Retrieve the binding value, as type Cloud</p>"
@@ -1353,6 +1379,42 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Changes::addedPaths",
+			"p": "Dagger/Changes.html#method_addedPaths",
+			"d": "<p>Files and directories that were added in the newer directory.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Changes::after",
+			"p": "Dagger/Changes.html#method_after",
+			"d": "<p>The newer/upper snapshot.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Changes::before",
+			"p": "Dagger/Changes.html#method_before",
+			"d": "<p>The older/lower snapshot to compare against.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Changes::changedPaths",
+			"p": "Dagger/Changes.html#method_changedPaths",
+			"d": "<p>Files and directories that existed before and were updated in the newer directory.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Changes::id",
+			"p": "Dagger/Changes.html#method_id",
+			"d": "<p>A unique identifier for this Changes.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Changes::removedPaths",
+			"p": "Dagger/Changes.html#method_removedPaths",
+			"d": "<p>Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::cacheVolume",
 			"p": "Dagger/Client.html#method_cacheVolume",
 			"d": "<p>Constructs a cache volume for a given cache key.</p>"
@@ -1476,6 +1538,12 @@
 			"n": "Dagger\\Client::loadCacheVolumeFromID",
 			"p": "Dagger/Client.html#method_loadCacheVolumeFromID",
 			"d": "<p>Load a CacheVolume from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadChangesFromID",
+			"p": "Dagger/Client.html#method_loadChangesFromID",
+			"d": "<p>Load a Changes from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -2403,6 +2471,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Directory::changes",
+			"p": "Dagger/Directory.html#method_changes",
+			"d": "<p>Return a virtual comparison between this directory and an older snapshot that can be applied to another filesystem.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Directory::diff",
 			"p": "Dagger/Directory.html#method_diff",
 			"d": "<p>Return the difference between this directory and an another directory. The difference is encoded as a directory.</p>"
@@ -2484,6 +2558,12 @@
 			"n": "Dagger\\Directory::terminal",
 			"p": "Dagger/Directory.html#method_terminal",
 			"d": "<p>Opens an interactive terminal in new container with this directory mounted inside.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Directory::withChanges",
+			"p": "Dagger/Directory.html#method_withChanges",
+			"d": "<p>Return a directory with changes from another directory applied to it.</p>"
 		},
 		{
 			"t": "M",
@@ -2784,6 +2864,18 @@
 			"n": "Dagger\\Env::withCacheVolumeOutput",
 			"p": "Dagger/Env.html#method_withCacheVolumeOutput",
 			"d": "<p>Declare a desired CacheVolume output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withChangesInput",
+			"p": "Dagger/Env.html#method_withChangesInput",
+			"d": "<p>Create or update a binding of type Changes in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withChangesOutput",
+			"p": "Dagger/Env.html#method_withChangesOutput",
+			"d": "<p>Declare a desired Changes output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",

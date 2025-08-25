@@ -371,6 +371,20 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Load a Changes from its ID.
+  """
+  @spec load_changes_from_id(t(), Dagger.ChangesID.t()) :: Dagger.Changes.t()
+  def load_changes_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadChangesFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Changes{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Load a Cloud from its ID.
   """
   @spec load_cloud_from_id(t(), Dagger.CloudID.t()) :: Dagger.Cloud.t()
