@@ -30,6 +30,20 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type Changes
+  """
+  @spec as_changes(t()) :: Dagger.Changes.t()
+  def as_changes(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asChanges")
+
+    %Dagger.Changes{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Retrieve the binding value, as type Cloud
   """
   @spec as_cloud(t()) :: Dagger.Cloud.t()

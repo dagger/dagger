@@ -62,6 +62,22 @@ defmodule Dagger.Directory do
   end
 
   @doc """
+  Return a virtual comparison between this directory and an older snapshot that can be applied to another filesystem.
+
+  Returns an error if the other directory is not an ancestor of this directory.
+  """
+  @spec changes(t(), Dagger.Directory.t()) :: Dagger.Changes.t()
+  def changes(%__MODULE__{} = directory, older) do
+    query_builder =
+      directory.query_builder |> QB.select("changes") |> QB.put_arg("older", Dagger.ID.id!(older))
+
+    %Dagger.Changes{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc """
   Return the difference between this directory and an another directory. The difference is encoded as a directory.
   """
   @spec diff(t(), Dagger.Directory.t()) :: Dagger.Directory.t()
@@ -332,6 +348,22 @@ defmodule Dagger.Directory do
         optional_args[:experimental_privileged_nesting]
       )
       |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc """
+  Return a directory with changes from another directory applied to it.
+  """
+  @spec with_changes(t(), Dagger.Changes.t()) :: Dagger.Directory.t()
+  def with_changes(%__MODULE__{} = directory, changes) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("withChanges")
+      |> QB.put_arg("changes", Dagger.ID.id!(changes))
 
     %Dagger.Directory{
       query_builder: query_builder,
