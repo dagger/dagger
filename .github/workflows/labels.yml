@@ -1,0 +1,41 @@
+name: dump-labels
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - labeled
+      - unlabeled
+
+jobs:
+  labels-with-checkout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Build
+        run: |
+          go build -o ./dump-labels ./cmd/dump-labels
+
+      - name: Get labels (all)
+        run: |
+          ./dump-labels
+
+      - name: Get labels (checkout)
+        run: |
+          mv $GITHUB_EVENT_PATH /tmp/GITHUB_EVENT_PATH
+          ./dump-labels
+          mv /tmp/GITHUB_EVENT_PATH $GITHUB_EVENT_PATH 
+
+      - name: Get labels (event)
+        run: |
+          mv .git/ .git.bak/
+          ./dump-labels
+          mv .git.bak/ .git/
+
