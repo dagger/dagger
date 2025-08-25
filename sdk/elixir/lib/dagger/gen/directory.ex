@@ -62,6 +62,22 @@ defmodule Dagger.Directory do
   end
 
   @doc """
+  Return the difference between this directory and another directory, typically an older snapshot.
+
+  The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
+  """
+  @spec changes(t(), Dagger.Directory.t()) :: Dagger.Changeset.t()
+  def changes(%__MODULE__{} = directory, from) do
+    query_builder =
+      directory.query_builder |> QB.select("changes") |> QB.put_arg("from", Dagger.ID.id!(from))
+
+    %Dagger.Changeset{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc """
   Change the owner of the directory contents recursively.
   """
   @spec chown(t(), String.t(), String.t()) :: Dagger.Directory.t()
@@ -363,6 +379,22 @@ defmodule Dagger.Directory do
         optional_args[:experimental_privileged_nesting]
       )
       |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc """
+  Return a directory with changes from another directory applied to it.
+  """
+  @spec with_changes(t(), Dagger.Changeset.t()) :: Dagger.Directory.t()
+  def with_changes(%__MODULE__{} = directory, changes) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("withChanges")
+      |> QB.put_arg("changes", Dagger.ID.id!(changes))
 
     %Dagger.Directory{
       query_builder: query_builder,

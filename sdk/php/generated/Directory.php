@@ -47,6 +47,18 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return the difference between this directory and another directory, typically an older snapshot.
+     *
+     * The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
+     */
+    public function changes(DirectoryId|Directory $from): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changes');
+        $innerQueryBuilder->setArgument('from', $from);
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Change the owner of the directory contents recursively.
      */
     public function chown(string $path, string $owner): Directory
@@ -308,6 +320,16 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         if (null !== $insecureRootCapabilities) {
         $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
         }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Return a directory with changes from another directory applied to it.
+     */
+    public function withChanges(ChangesetId|Changeset $changes): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChanges');
+        $innerQueryBuilder->setArgument('changes', $changes);
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
