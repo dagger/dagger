@@ -362,10 +362,10 @@ func mountLLB(ctx context.Context, llb *pb.Definition, f func(string) error) err
 	return ref.Mount(ctx, f)
 }
 
-func Supports(ctx context.Context, minVersion string) (bool, error) {
-	id := dagql.CurrentID(ctx)
-	slog.Warn("!!! SUPPORTS", "min", minVersion, "have", id.View())
-	return AfterVersion(minVersion).Contains(dagql.View(id.View())), nil
+func Supports(ctx context.Context, minVersion string) bool {
+	return AfterVersion(minVersion).Contains(
+		dagql.View(dagql.CurrentID(ctx).View()),
+	)
 }
 
 // AllVersion is a view that contains all versions.
