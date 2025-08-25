@@ -152,7 +152,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("other").Doc(`The directory to compare against`),
 			),
-		dagql.Func("changes", s.changes).
+		dagql.NodeFunc("changes", s.changes).
 			Doc(
 				`Return a virtual comparison between this directory and an older snapshot that can be applied to another filesystem.`,
 				`Returns an error if the other directory is not an ancestor of this directory.`,
@@ -228,15 +228,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.SearchResult]{}.Install(srv)
 	dagql.Fields[*core.SearchSubmatch]{}.Install(srv)
-
-	dagql.Fields[*core.Changes]{
-		dagql.Func("upper", s.changesUpper).
-			Doc(`The newer directory snapshot.`),
-		dagql.Func("lower", s.changesLower).
-			Doc(`The older directory snapshot.`),
-		dagql.NodeFunc("removedPaths", DagOpWrapper(srv, s.changesRemovedPaths)).
-			Doc(`List of file paths that were removed. Removed directories have a trailing slash.`),
-	}.Install(srv)
+	dagql.Fields[*core.Changes]{}.Install(srv)
 }
 
 type directoryPipelineArgs struct {
@@ -593,18 +585,18 @@ func (s *directorySchema) diff(ctx context.Context, parent *core.Directory, args
 	return parent.Diff(ctx, dir.Self())
 }
 
-func (s *directorySchema) changes(ctx context.Context, parent *core.Directory, args struct {
+func (s *directorySchema) changes(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args struct {
 	Older core.DirectoryID
-}) (*core.Changes, error) {
+}) (res *core.Changes, _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 	dir, err := args.Older.Load(ctx, srv)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
-	return parent.Changes(ctx, dir.Self())
+	return core.NewChanges(ctx, dir, parent)
 }
 
 type dirExportArgs struct {
@@ -823,22 +815,4 @@ func (s *directorySchema) withSymlink(ctx context.Context, parent dagql.ObjectRe
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
-}
-
-func (s *directorySchema) changesUpper(ctx context.Context, parent *core.Changes, args struct{}) (*core.Directory, error) {
-	return parent.Upper, nil
-}
-
-func (s *directorySchema) changesLower(ctx context.Context, parent *core.Changes, args struct{}) (*core.Directory, error) {
-	return parent.Lower, nil
-}
-
-func (s *directorySchema) changesRemovedPaths(ctx context.Context, parent dagql.ObjectResult[*core.Changes], args struct {
-	DagOpInternalArgs
-}) (dagql.Array[dagql.String], error) {
-	paths, err := parent.Self().RemovedPaths(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return dagql.NewStringArray(paths...), nil
 }
