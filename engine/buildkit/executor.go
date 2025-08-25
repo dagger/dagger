@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -614,9 +615,18 @@ func runcProcessHandle(ctx context.Context, killer procKiller) (*procHandle, con
 				killCtx, timeout := context.WithCancelCause(context.Background())
 				killCtx, _ = context.WithTimeoutCause(killCtx, 7*time.Second, context.DeadlineExceeded)
 				if err := p.killer.Kill(killCtx); err != nil {
+					// If kill fails with "container not running", the container is already dead
+					// Short-circuit to prevent infinite loop
+					if strings.Contains(err.Error(), "container not running") {
+						bklog.G(ctx).Debug("container already dead, stopping kill loop")
+						cancel(context.Cause(ctx))
+						timeout(context.Canceled)
+						return
+					}
 					select {
 					case <-killCtx.Done():
 						cancel(context.Cause(ctx))
+						timeout(context.Canceled)
 						return
 					default:
 					}
