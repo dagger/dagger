@@ -1,3 +1,7 @@
+// Implement evals for your applications in Dagger
+
+// More info: https://dagger.io/blog/evals-as-code
+
 package main
 
 import (

@@ -1,0 +1,17 @@
+{
+  "name": "examples",
+  "engineVersion": "v0.18.16",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "evaluator",
+      "source": "../.."
+    },
+    {
+      "name": "evals",
+      "source": "../../../evals"
+    }
+  ]
+}
