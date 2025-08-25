@@ -17,6 +17,23 @@ class BaseClient {
   constructor(protected _ctx: Context = new Context()) {}
 }
 
+export type AddressDirectoryOpts = {
+  exclude?: string[]
+  include?: string[]
+  noCache?: boolean
+}
+
+export type AddressFileOpts = {
+  exclude?: string[]
+  include?: string[]
+  noCache?: boolean
+}
+
+/**
+ * The `AddressID` scalar type represents an identifier for an object of type Address.
+ */
+export type AddressID = string & { __AddressID: never }
+
 /**
  * The `BindingID` scalar type represents an identifier for an object of type Binding.
  */
@@ -2029,6 +2046,110 @@ export type __TypeInputFieldsOpts = {
   includeDeprecated?: boolean
 }
 
+/**
+ * A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.
+ */
+export class Address extends BaseClient {
+  private readonly _id?: AddressID = undefined
+  private readonly _value?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: AddressID, _value?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._value = _value
+  }
+
+  /**
+   * A unique identifier for this Address.
+   */
+  id = async (): Promise<AddressID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<AddressID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Load a container from the address.
+   */
+  container = (): Container => {
+    const ctx = this._ctx.select("container")
+    return new Container(ctx)
+  }
+
+  /**
+   * Load a directory from the address.
+   */
+  directory = (opts?: AddressDirectoryOpts): Directory => {
+    const ctx = this._ctx.select("directory", { ...opts })
+    return new Directory(ctx)
+  }
+
+  /**
+   * Load a file from the address.
+   */
+  file = (opts?: AddressFileOpts): File => {
+    const ctx = this._ctx.select("file", { ...opts })
+    return new File(ctx)
+  }
+
+  /**
+   * Load a git ref (branch, tag or commit) from the address.
+   */
+  gitRef = (): GitRef => {
+    const ctx = this._ctx.select("gitRef")
+    return new GitRef(ctx)
+  }
+
+  /**
+   * Load a git repository from the address.
+   */
+  gitRepository = (): GitRepository => {
+    const ctx = this._ctx.select("gitRepository")
+    return new GitRepository(ctx)
+  }
+
+  /**
+   * Load a secret from the address.
+   */
+  secret = (): Secret => {
+    const ctx = this._ctx.select("secret")
+    return new Secret(ctx)
+  }
+
+  /**
+   * Load a service from the address.
+   */
+  service = (): Service => {
+    const ctx = this._ctx.select("service")
+    return new Service(ctx)
+  }
+
+  /**
+   * The address value
+   */
+  value = async (): Promise<string> => {
+    if (this._value) {
+      return this._value
+    }
+
+    const ctx = this._ctx.select("value")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
 export class Binding extends BaseClient {
   private readonly _id?: BindingID = undefined
   private readonly _asString?: string = undefined
@@ -2072,6 +2193,14 @@ export class Binding extends BaseClient {
     const response: Awaited<BindingID> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Retrieve the binding value, as type Address
+   */
+  asAddress = (): Address => {
+    const ctx = this._ctx.select("asAddress")
+    return new Address(ctx)
   }
 
   /**
@@ -2845,6 +2974,14 @@ export class Container extends BaseClient {
     const response: Awaited<string[]> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * The address this container was originally loaded from, if any
+   */
+  originalAddress = (): Address => {
+    const ctx = this._ctx.select("originalAddress")
+    return new Address(ctx)
   }
 
   /**
@@ -3963,6 +4100,14 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * The address this directory was originally loaded from, if any
+   */
+  originalAddress = (): Address => {
+    const ctx = this._ctx.select("originalAddress")
+    return new Address(ctx)
+  }
+
+  /**
    * Force evaluation in the engine.
    */
   sync = async (): Promise<Directory> => {
@@ -4824,6 +4969,35 @@ export class Env extends BaseClient {
     const response: Awaited<outputs[]> = await ctx.execute()
 
     return response.map((r) => new Client(ctx.copy()).loadBindingFromID(r.id))
+  }
+
+  /**
+   * Create or update a binding of type Address in the environment
+   * @param name The name of the binding
+   * @param value The Address value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withAddressInput = (
+    name: string,
+    value: Address,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withAddressInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Address output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withAddressOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withAddressOutput", { name, description })
+    return new Env(ctx)
   }
 
   /**
@@ -5711,6 +5885,14 @@ export class File extends BaseClient {
   }
 
   /**
+   * The address this directory was originally loaded from, if any
+   */
+  originalAddress = (): Address => {
+    const ctx = this._ctx.select("originalAddress")
+    return new Address(ctx)
+  }
+
+  /**
    * Retrieves the size of the file, in bytes.
    */
   size = async (): Promise<number> => {
@@ -6406,6 +6588,14 @@ export class GitRef extends BaseClient {
   }
 
   /**
+   * The address this git ref was originally loaded from, if any
+   */
+  originalAddress = (): Address => {
+    const ctx = this._ctx.select("originalAddress")
+    return new Address(ctx)
+  }
+
+  /**
    * The resolved ref name at this ref.
    */
   ref = async (): Promise<string> => {
@@ -6514,6 +6704,14 @@ export class GitRepository extends BaseClient {
   latestVersion = (): GitRef => {
     const ctx = this._ctx.select("latestVersion")
     return new GitRef(ctx)
+  }
+
+  /**
+   * The address this git repository was originally loaded from, if any
+   */
+  originalAddress = (): Address => {
+    const ctx = this._ctx.select("originalAddress")
+    return new Address(ctx)
   }
 
   /**
@@ -8668,6 +8866,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * initialize an address to load directories, containers, secrets or other object types.
+   */
+  address = (value: string): Address => {
+    const ctx = this._ctx.select("address", { value })
+    return new Address(ctx)
+  }
+
+  /**
    * Constructs a cache volume for a given cache key.
    * @param key A string identifier to target this cache volume (e.g., "modules-cache").
    */
@@ -8862,6 +9068,14 @@ export class Client extends BaseClient {
   llm = (opts?: ClientLlmOpts): LLM => {
     const ctx = this._ctx.select("llm", { ...opts })
     return new LLM(ctx)
+  }
+
+  /**
+   * Load a Address from its ID.
+   */
+  loadAddressFromID = (id: AddressID): Address => {
+    const ctx = this._ctx.select("loadAddressFromID", { id })
+    return new Address(ctx)
   }
 
   /**
@@ -9524,6 +9738,14 @@ export class Secret extends BaseClient {
   }
 
   /**
+   * The address this directory was originally loaded from, if any
+   */
+  originalAddress = (): Address => {
+    const ctx = this._ctx.select("originalAddress")
+    return new Address(ctx)
+  }
+
+  /**
    * The value of this secret.
    */
   plaintext = async (): Promise<string> => {
@@ -9636,6 +9858,14 @@ export class Service extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * The address this service was originally loaded from, if any
+   */
+  originalAddress = (): Address => {
+    const ctx = this._ctx.select("originalAddress")
+    return new Address(ctx)
   }
 
   /**

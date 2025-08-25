@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"path"
-	"strings"
 
 	"github.com/containerd/platforms"
 	bkcache "github.com/moby/buildkit/cache"
@@ -78,9 +77,6 @@ func (c *Client) ExportContainerImage(
 	defer cancel(errors.New("export container image done"))
 
 	destPath = path.Clean(destPath)
-	if destPath == ".." || strings.HasPrefix(destPath, "../") {
-		return nil, fmt.Errorf("path %q escapes workdir; use an absolute path instead", destPath)
-	}
 
 	combinedResult, err := c.getContainerResult(ctx, inputByPlatform)
 	if err != nil {

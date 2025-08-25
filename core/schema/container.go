@@ -652,6 +652,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 		dagql.Func("imageRef", s.imageRef).
 			Doc(`The unique image reference which can only be retrieved immediately after the 'Container.From' call.`),
 
+		dagql.Func("originalAddress", s.originalAddress).
+			Doc(`The address this container was originally loaded from, if any`),
+
 		dagql.Func("withExposedPort", s.withExposedPort).
 			Doc(`Expose a network port. Like EXPOSE in Dockerfile (but with healthcheck support)`,
 				`Exposed ports serve two purposes:`,
@@ -806,7 +809,10 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		if err != nil {
 			return inst, err
 		}
-
+		// FIXME: store the full resolved address in another field
+		ctr.OriginalAddress = &core.Address{
+			Value: args.Address,
+		}
 		return dagql.NewResultForCurrentID(ctx, ctr)
 	}
 
@@ -2482,6 +2488,13 @@ func (s *containerSchema) withoutRegistryAuth(ctx context.Context, parent *core.
 
 func (s *containerSchema) imageRef(ctx context.Context, parent *core.Container, args struct{}) (string, error) {
 	return parent.ImageRefOrErr(ctx)
+}
+
+func (s *containerSchema) originalAddress(ctx context.Context, parent *core.Container, args struct{}) (*core.Address, error) {
+	if parent.OriginalAddress == nil {
+		return nil, fmt.Errorf("container was not loaded from a dagger object address")
+	}
+	return parent.OriginalAddress, nil
 }
 
 type containerWithServiceBindingArgs struct {

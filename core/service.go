@@ -66,6 +66,8 @@ type Service struct {
 
 	// The sockets on the host to reverse tunnel
 	HostSockets []*Socket
+
+	OriginalAddress *Address
 }
 
 func (*Service) Type() *ast.Type {
