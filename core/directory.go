@@ -240,11 +240,8 @@ func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, src string)
 func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error) {
 	src = path.Join(dir.Dir, src)
 	paths := []string{}
-	useSlash, err := SupportsDirSlash(ctx)
-	if err != nil {
-		return nil, err
-	}
-	_, err = execInMount(ctx, dir, func(root string) error {
+	useSlash := SupportsDirSlash(ctx)
+	_, err := execInMount(ctx, dir, func(root string) error {
 		resolvedDir, err := containerdfs.RootPath(root, src)
 		if err != nil {
 			return err
@@ -302,10 +299,7 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 	}
 	onlyPrefixIncludes := !strings.ContainsAny(patternWithoutTrailingGlob(pat), patternChars)
 
-	useSlash, err := SupportsDirSlash(ctx)
-	if err != nil {
-		return nil, err
-	}
+	useSlash := SupportsDirSlash(ctx)
 	_, err = execInMount(ctx, dir, func(root string) error {
 		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
 		if err != nil {
@@ -930,6 +924,189 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 	return dir, nil
 }
 
+// NewChanges creates a Changes object with all fields computed upfront
+func NewChanges(ctx context.Context, before, after dagql.ObjectResult[*Directory]) (*Changes, error) {
+	changes := &Changes{
+		Before: before,
+		After:  after,
+	}
+
+	// Compute all the changes once
+	if err := changes.computeChanges(ctx); err != nil {
+		return nil, err
+	}
+
+	return changes, nil
+}
+
+// computeChanges calculates added, changed, and removed files/paths
+func (ch *Changes) computeChanges(ctx context.Context) error {
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Get all paths from before and after directories
+	var beforePaths, afterPaths, diffPaths []string
+	if err := srv.Select(ctx, ch.Before, &beforePaths, dagql.Selector{
+		Field: "glob",
+		Args:  []dagql.NamedInput{{Name: "pattern", Value: dagql.String("**")}},
+	}); err != nil {
+		return fmt.Errorf("failed to get paths from before directory: %w", err)
+	}
+	if err := srv.Select(ctx, ch.After, &afterPaths, dagql.Selector{
+		Field: "glob",
+		Args:  []dagql.NamedInput{{Name: "pattern", Value: dagql.String("**")}},
+	}); err != nil {
+		return fmt.Errorf("failed to get paths from after directory: %w", err)
+	}
+	// Get diff paths (changed + added files)
+	if err := srv.Select(ctx, ch.Before, &diffPaths, dagql.Selector{
+		Field: "diff",
+		Args: []dagql.NamedInput{
+			{Name: "other", Value: dagql.NewID[*Directory](ch.After.ID())},
+		},
+	}, dagql.Selector{
+		Field: "glob",
+		Args:  []dagql.NamedInput{{Name: "pattern", Value: dagql.String("**")}},
+	}); err != nil {
+		return fmt.Errorf("failed to get paths from diff directory: %w", err)
+	}
+
+	// Create sets for efficient lookups
+	beforePathSet := make(map[string]bool, len(beforePaths))
+	for _, path := range beforePaths {
+		beforePathSet[path] = true
+	}
+
+	afterPathSet := make(map[string]bool, len(afterPaths))
+	for _, path := range afterPaths {
+		afterPathSet[path] = true
+	}
+
+	diffPathSet := make(map[string]bool, len(diffPaths))
+	for _, path := range diffPaths {
+		diffPathSet[path] = true
+	}
+
+	// Compute added files (in after but not in before, and files only)
+	for _, path := range afterPaths {
+		if !beforePathSet[path] {
+			ch.AddedPaths = append(ch.AddedPaths, path)
+		}
+	}
+
+	// Create set of added files for efficient lookup
+	addedFileSet := make(map[string]bool, len(ch.AddedPaths))
+	for _, path := range ch.AddedPaths {
+		addedFileSet[path] = true
+	}
+
+	// Compute changed files (in diff but not added, and files only)
+	for _, path := range diffPaths {
+		// FIXME: we shouldn't skip if the _only_ thing changed was the directory,
+		// i.e. it's not listed here because children were modified, but because the
+		// directory itself was chmodded or something
+		if !strings.HasSuffix(path, "/") && !addedFileSet[path] {
+			ch.ChangedPaths = append(ch.ChangedPaths, path)
+		}
+	}
+
+	// Compute removed paths (in before but not in after)
+	var allRemovedPaths []string
+	for _, path := range beforePaths {
+		if !afterPathSet[path] {
+			allRemovedPaths = append(allRemovedPaths, path)
+		}
+	}
+
+	// Filter out children of removed directories to avoid redundancy
+	dirs := make(map[string]bool)
+
+removed:
+	for _, fp := range allRemovedPaths {
+		// Check if this path is a child of an already removed directory
+		for dir := range dirs {
+			if strings.HasPrefix(fp, dir) {
+				// don't show removed files in directories that were already removed
+				continue removed
+			}
+		}
+		// if the path ends with a slash, it's a directory
+		if strings.HasSuffix(fp, "/") {
+			dirs[fp] = true
+		}
+		ch.RemovedPaths = append(ch.RemovedPaths, fp)
+	}
+
+	return nil
+}
+
+type Changes struct {
+	Before dagql.ObjectResult[*Directory] `field:"true" doc:"The older/lower snapshot to compare against."`
+	After  dagql.ObjectResult[*Directory] `field:"true" doc:"The newer/upper snapshot."`
+
+	AddedPaths   []string `field:"true" doc:"Files and directories that were added in the newer directory."`
+	ChangedPaths []string `field:"true" doc:"Files and directories that existed before and were updated in the newer directory."`
+	RemovedPaths []string `field:"true" doc:"Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included."`
+}
+
+func (*Changes) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Changes",
+		NonNull:   true,
+	}
+}
+
+func (*Changes) TypeDescription() string {
+	return "A comparison between two directories representing changes that can be applied."
+}
+
+var _ HasPBDefinitions = (*Changes)(nil)
+
+func (ch *Changes) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
+	beforeDefs, err := ch.Before.Self().PBDefinitions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	afterDefs, err := ch.After.Self().PBDefinitions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return append(beforeDefs, afterDefs...), nil
+}
+
+func (dir *Directory) WithChanges(ctx context.Context, changes *Changes) (*Directory, error) {
+	dir = dir.Clone()
+
+	// First, get the diff directory from Changes.before.diff(Changes.after)
+	diffDir, err := changes.Before.Self().Diff(ctx, changes.After.Self())
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute diff between before and after directories: %w", err)
+	}
+
+	// Apply the diff (added + changed files) using WithDirectory
+	dir, err = dir.WithDirectory(ctx, "/", diffDir, CopyFilter{}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to apply diff directory: %w", err)
+	}
+
+	// Remove all the paths in Changes.removedPaths using Without
+	if len(changes.RemovedPaths) > 0 {
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get dagql server: %w", err)
+		}
+
+		dir, err = dir.Without(ctx, srv, changes.RemovedPaths...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to remove paths: %w", err)
+		}
+	}
+
+	return dir, nil
+}
+
 func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...string) (*Directory, error) {
 	dir = dir.Clone()
 	return execInMount(ctx, dir, func(root string) error {
@@ -1094,7 +1271,7 @@ func validateFileName(file string) error {
 	return nil
 }
 
-func SupportsDirSlash(ctx context.Context) (bool, error) {
+func SupportsDirSlash(ctx context.Context) bool {
 	return Supports(ctx, "v0.17.0")
 }
 

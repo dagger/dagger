@@ -134,6 +134,9 @@ type BindingID string
 // The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
 type CacheVolumeID string
 
+// The `ChangesID` scalar type represents an identifier for an object of type Changes.
+type ChangesID string
+
 // The `CloudID` scalar type represents an identifier for an object of type Cloud.
 type CloudID string
 
@@ -331,6 +334,15 @@ func (r *Binding) AsCacheVolume() *CacheVolume {
 	q := r.query.Select("asCacheVolume")
 
 	return &CacheVolume{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Changes
+func (r *Binding) AsChanges() *Changes {
+	q := r.query.Select("asChanges")
+
+	return &Changes{
 		query: q,
 	}
 }
@@ -626,6 +638,107 @@ func (r *CacheVolume) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// A comparison between two directories representing changes that can be applied.
+type Changes struct {
+	query *querybuilder.Selection
+
+	id *ChangesID
+}
+
+func (r *Changes) WithGraphQLQuery(q *querybuilder.Selection) *Changes {
+	return &Changes{
+		query: q,
+	}
+}
+
+// Files and directories that were added in the newer directory.
+func (r *Changes) AddedPaths(ctx context.Context) ([]string, error) {
+	q := r.query.Select("addedPaths")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The newer/upper snapshot.
+func (r *Changes) After() *Directory {
+	q := r.query.Select("after")
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// The older/lower snapshot to compare against.
+func (r *Changes) Before() *Directory {
+	q := r.query.Select("before")
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Files and directories that existed before and were updated in the newer directory.
+func (r *Changes) ChangedPaths(ctx context.Context) ([]string, error) {
+	q := r.query.Select("changedPaths")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Changes.
+func (r *Changes) ID(ctx context.Context) (ChangesID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ChangesID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Changes) XXX_GraphQLType() string {
+	return "Changes"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Changes) XXX_GraphQLIDType() string {
+	return "ChangesID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Changes) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Changes) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.
+func (r *Changes) RemovedPaths(ctx context.Context) ([]string, error) {
+	q := r.query.Select("removedPaths")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Dagger Cloud configuration and state
@@ -2775,6 +2888,19 @@ func (r *Directory) AsModuleSource(opts ...DirectoryAsModuleSourceOpts) *ModuleS
 	}
 }
 
+// Return a virtual comparison between this directory and an older snapshot that can be applied to another filesystem.
+//
+// Returns an error if the other directory is not an ancestor of this directory.
+func (r *Directory) Changes(older *Directory) *Changes {
+	assertNotNil("older", older)
+	q := r.query.Select("changes")
+	q = q.Arg("older", older)
+
+	return &Changes{
+		query: q,
+	}
+}
+
 // Return the difference between this directory and an another directory. The difference is encoded as a directory.
 func (r *Directory) Diff(other *Directory) *Directory {
 	assertNotNil("other", other)
@@ -3093,6 +3219,17 @@ func (r *Directory) Terminal(opts ...DirectoryTerminalOpts) *Directory {
 			q = q.Arg("insecureRootCapabilities", opts[i].InsecureRootCapabilities)
 		}
 	}
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Return a directory with changes from another directory applied to it.
+func (r *Directory) WithChanges(changes *Changes) *Directory {
+	assertNotNil("changes", changes)
+	q := r.query.Select("withChanges")
+	q = q.Arg("changes", changes)
 
 	return &Directory{
 		query: q,
@@ -4191,6 +4328,30 @@ func (r *Env) WithCacheVolumeInput(name string, value *CacheVolume, description 
 // Declare a desired CacheVolume output to be assigned in the environment
 func (r *Env) WithCacheVolumeOutput(name string, description string) *Env {
 	q := r.query.Select("withCacheVolumeOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Changes in the environment
+func (r *Env) WithChangesInput(name string, value *Changes, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withChangesInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Changes output to be assigned in the environment
+func (r *Env) WithChangesOutput(name string, description string) *Env {
+	q := r.query.Select("withChangesOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -9028,6 +9189,16 @@ func (r *Client) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
 	q = q.Arg("id", id)
 
 	return &CacheVolume{
+		query: q,
+	}
+}
+
+// Load a Changes from its ID.
+func (r *Client) LoadChangesFromID(id ChangesID) *Changes {
+	q := r.query.Select("loadChangesFromID")
+	q = q.Arg("id", id)
+
+	return &Changes{
 		query: q,
 	}
 }

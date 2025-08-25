@@ -93,6 +93,11 @@ function CacheSharingModeNameToValue(name: string): CacheSharingMode {
 export type CacheVolumeID = string & { __CacheVolumeID: never }
 
 /**
+ * The `ChangesID` scalar type represents an identifier for an object of type Changes.
+ */
+export type ChangesID = string & { __ChangesID: never }
+
+/**
  * The `CloudID` scalar type represents an identifier for an object of type Cloud.
  */
 export type CloudID = string & { __CloudID: never }
@@ -2083,6 +2088,14 @@ export class Binding extends BaseClient {
   }
 
   /**
+   * Retrieve the binding value, as type Changes
+   */
+  asChanges = (): Changes => {
+    const ctx = this._ctx.select("asChanges")
+    return new Changes(ctx)
+  }
+
+  /**
    * Retrieve the binding value, as type Cloud
    */
   asCloud = (): Cloud => {
@@ -2304,6 +2317,86 @@ export class CacheVolume extends BaseClient {
     const ctx = this._ctx.select("id")
 
     const response: Awaited<CacheVolumeID> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * A comparison between two directories representing changes that can be applied.
+ */
+export class Changes extends BaseClient {
+  private readonly _id?: ChangesID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ChangesID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this Changes.
+   */
+  id = async (): Promise<ChangesID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ChangesID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Files and directories that were added in the newer directory.
+   */
+  addedPaths = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("addedPaths")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The newer/upper snapshot.
+   */
+  after = (): Directory => {
+    const ctx = this._ctx.select("after")
+    return new Directory(ctx)
+  }
+
+  /**
+   * The older/lower snapshot to compare against.
+   */
+  before = (): Directory => {
+    const ctx = this._ctx.select("before")
+    return new Directory(ctx)
+  }
+
+  /**
+   * Files and directories that existed before and were updated in the newer directory.
+   */
+  changedPaths = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("changedPaths")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.
+   */
+  removedPaths = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("removedPaths")
+
+    const response: Awaited<string[]> = await ctx.execute()
 
     return response
   }
@@ -3805,6 +3898,17 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Return a virtual comparison between this directory and an older snapshot that can be applied to another filesystem.
+   *
+   * Returns an error if the other directory is not an ancestor of this directory.
+   * @param older The older directory snapshot to compare against
+   */
+  changes = (older: Directory): Changes => {
+    const ctx = this._ctx.select("changes", { older })
+    return new Changes(ctx)
+  }
+
+  /**
    * Return the difference between this directory and an another directory. The difference is encoded as a directory.
    * @param other The directory to compare against
    */
@@ -3982,6 +4086,15 @@ export class Directory extends BaseClient {
    */
   terminal = (opts?: DirectoryTerminalOpts): Directory => {
     const ctx = this._ctx.select("terminal", { ...opts })
+    return new Directory(ctx)
+  }
+
+  /**
+   * Return a directory with changes from another directory applied to it.
+   * @param changes Changes to apply to the directory
+   */
+  withChanges = (changes: Changes): Directory => {
+    const ctx = this._ctx.select("withChanges", { changes })
     return new Directory(ctx)
   }
 
@@ -4852,6 +4965,35 @@ export class Env extends BaseClient {
    */
   withCacheVolumeOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withCacheVolumeOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Changes in the environment
+   * @param name The name of the binding
+   * @param value The Changes value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withChangesInput = (
+    name: string,
+    value: Changes,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withChangesInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Changes output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withChangesOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withChangesOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -8878,6 +9020,14 @@ export class Client extends BaseClient {
   loadCacheVolumeFromID = (id: CacheVolumeID): CacheVolume => {
     const ctx = this._ctx.select("loadCacheVolumeFromID", { id })
     return new CacheVolume(ctx)
+  }
+
+  /**
+   * Load a Changes from its ID.
+   */
+  loadChangesFromID = (id: ChangesID): Changes => {
+    const ctx = this._ctx.select("loadChangesFromID", { id })
+    return new Changes(ctx)
   }
 
   /**

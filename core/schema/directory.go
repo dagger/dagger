@@ -138,6 +138,19 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("other").Doc(`The directory to compare against`),
 			),
+		dagql.NodeFunc("changes", s.changes).
+			Doc(
+				`Return a virtual comparison between this directory and an older snapshot that can be applied to another filesystem.`,
+				`Returns an error if the other directory is not an ancestor of this directory.`,
+			).
+			Args(
+				dagql.Arg("older").Doc(`The older directory snapshot to compare against`),
+			),
+		dagql.NodeFunc("withChanges", DagOpDirectoryWrapper(srv, s.withChanges, WithPathFn(keepParentDir[withChangesArgs]))).
+			Doc(`Return a directory with changes from another directory applied to it.`).
+			Args(
+				dagql.Arg("changes").Doc(`Changes to apply to the directory`),
+			),
 		dagql.Func("export", s.export).
 			View(AllVersion).
 			DoNotCache("Writes to the local host.").
@@ -203,6 +216,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("linkName").Doc(`Location where the symbolic link will be created (e.g., "/new-file-link").`),
 			),
 	}.Install(srv)
+
+	dagql.Fields[*core.Changes]{}.Install(srv)
 }
 
 type directoryPipelineArgs struct {
@@ -306,11 +321,7 @@ func (s *directorySchema) withTimestamps(ctx context.Context, parent dagql.Objec
 
 func (s *directorySchema) name(ctx context.Context, parent *core.Directory, args struct{}) (dagql.String, error) {
 	name := path.Base(parent.Dir)
-	useSlash, err := core.SupportsDirSlash(ctx)
-	if err != nil {
-		return "", err
-	}
-	if useSlash {
+	if core.SupportsDirSlash(ctx) {
 		name = strings.TrimSuffix(name, "/") + "/"
 	}
 	return dagql.NewString(name), nil
@@ -550,6 +561,41 @@ func (s *directorySchema) diff(ctx context.Context, parent *core.Directory, args
 		return nil, err
 	}
 	return parent.Diff(ctx, dir.Self())
+}
+
+func (s *directorySchema) changes(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args struct {
+	Older core.DirectoryID
+}) (res *core.Changes, _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	dir, err := args.Older.Load(ctx, srv)
+	if err != nil {
+		return res, err
+	}
+	return core.NewChanges(ctx, dir, parent)
+}
+
+type withChangesArgs struct {
+	Changes dagql.ID[*core.Changes]
+	FSDagOpInternalArgs
+}
+
+func (s *directorySchema) withChanges(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withChangesArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	changes, err := args.Changes.Load(ctx, srv)
+	if err != nil {
+		return res, err
+	}
+	with, err := parent.Self().WithChanges(ctx, changes.Self())
+	if err != nil {
+		return res, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, with)
 }
 
 type dirExportArgs struct {

@@ -16,6 +16,9 @@ type Binding {
   """Retrieve the binding value, as type CacheVolume"""
   asCacheVolume: CacheVolume!
 
+  """Retrieve the binding value, as type Changes"""
+  asChanges: Changes!
+
   """Retrieve the binding value, as type Cloud"""
   asCloud: Cloud!
 
@@ -118,6 +121,39 @@ type CacheVolume {
 The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
 """
 scalar CacheVolumeID
+
+"""
+A comparison between two directories representing changes that can be applied.
+"""
+type Changes {
+  """Files and directories that were added in the newer directory."""
+  addedPaths: [String!]!
+
+  """The newer/upper snapshot."""
+  after: Directory!
+
+  """The older/lower snapshot to compare against."""
+  before: Directory!
+
+  """
+  Files and directories that existed before and were updated in the newer directory.
+  """
+  changedPaths: [String!]!
+
+  """A unique identifier for this Changes."""
+  id: ChangesID!
+
+  """
+  Files and directories that were removed. Directories are indicated by a
+  trailing slash, and their child paths are not included.
+  """
+  removedPaths: [String!]!
+}
+
+"""
+The `ChangesID` scalar type represents an identifier for an object of type Changes.
+"""
+scalar ChangesID
 
 """Dagger Cloud configuration and state"""
 type Cloud {
@@ -1395,6 +1431,16 @@ type Directory {
   ): ModuleSource!
 
   """
+  Return a virtual comparison between this directory and an older snapshot that can be applied to another filesystem.
+
+  Returns an error if the other directory is not an ancestor of this directory.
+  """
+  changes(
+    """The older directory snapshot to compare against"""
+    older: DirectoryID!
+  ): Changes!
+
+  """
   Return the difference between this directory and an another directory. The difference is encoded as a directory.
   """
   diff(
@@ -1548,6 +1594,12 @@ type Directory {
     trusted commands.
     """
     insecureRootCapabilities: Boolean = false
+  ): Directory!
+
+  """Return a directory with changes from another directory applied to it."""
+  withChanges(
+    """Changes to apply to the directory"""
+    changes: ChangesID!
   ): Directory!
 
   """Return a snapshot with a directory added"""
@@ -1867,6 +1919,27 @@ type Env {
 
   """Declare a desired CacheVolume output to be assigned in the environment"""
   withCacheVolumeOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type Changes in the environment"""
+  withChangesInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Changes value to assign to the binding"""
+    value: ChangesID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Changes output to be assigned in the environment"""
+  withChangesOutput(
     """The name of the binding"""
     name: String!
 
@@ -3639,6 +3712,9 @@ type Query {
 
   """Load a CacheVolume from its ID."""
   loadCacheVolumeFromID(id: CacheVolumeID!): CacheVolume!
+
+  """Load a Changes from its ID."""
+  loadChangesFromID(id: ChangesID!): Changes!
 
   """Load a Cloud from its ID."""
   loadCloudFromID(id: CloudID!): Cloud!

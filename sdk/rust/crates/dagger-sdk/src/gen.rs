@@ -78,6 +78,39 @@ impl CacheVolumeId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct ChangesId(pub String);
+impl From<&str> for ChangesId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for ChangesId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<ChangesId> for Changes {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<ChangesId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<ChangesId> for ChangesId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<ChangesId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<ChangesId, DaggerError>(self) })
+    }
+}
+impl ChangesId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct CloudId(pub String);
 impl From<&str> for CloudId {
     fn from(value: &str) -> Self {
@@ -1666,6 +1699,15 @@ impl Binding {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Retrieve the binding value, as type Changes
+    pub fn as_changes(&self) -> Changes {
+        let query = self.selection.select("asChanges");
+        Changes {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieve the binding value, as type Cloud
     pub fn as_cloud(&self) -> Cloud {
         let query = self.selection.select("asCloud");
@@ -1842,6 +1884,52 @@ impl CacheVolume {
     /// A unique identifier for this CacheVolume.
     pub async fn id(&self) -> Result<CacheVolumeId, DaggerError> {
         let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
+pub struct Changes {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl Changes {
+    /// Files and directories that were added in the newer directory.
+    pub async fn added_paths(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("addedPaths");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The newer/upper snapshot.
+    pub fn after(&self) -> Directory {
+        let query = self.selection.select("after");
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The older/lower snapshot to compare against.
+    pub fn before(&self) -> Directory {
+        let query = self.selection.select("before");
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Files and directories that existed before and were updated in the newer directory.
+    pub async fn changed_paths(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("changedPaths");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this Changes.
+    pub async fn id(&self) -> Result<ChangesId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.
+    pub async fn removed_paths(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("removedPaths");
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -4714,6 +4802,27 @@ impl Directory {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return a virtual comparison between this directory and an older snapshot that can be applied to another filesystem.
+    /// Returns an error if the other directory is not an ancestor of this directory.
+    ///
+    /// # Arguments
+    ///
+    /// * `older` - The older directory snapshot to compare against
+    pub fn changes(&self, older: impl IntoID<DirectoryId>) -> Changes {
+        let mut query = self.selection.select("changes");
+        query = query.arg_lazy(
+            "older",
+            Box::new(move || {
+                let older = older.clone();
+                Box::pin(async move { older.into_id().await.unwrap().quote() })
+            }),
+        );
+        Changes {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return the difference between this directory and an another directory. The difference is encoded as a directory.
     ///
     /// # Arguments
@@ -4988,6 +5097,26 @@ impl Directory {
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
         }
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return a directory with changes from another directory applied to it.
+    ///
+    /// # Arguments
+    ///
+    /// * `changes` - Changes to apply to the directory
+    pub fn with_changes(&self, changes: impl IntoID<ChangesId>) -> Directory {
+        let mut query = self.selection.select("withChanges");
+        query = query.arg_lazy(
+            "changes",
+            Box::new(move || {
+                let changes = changes.clone();
+                Box::pin(async move { changes.into_id().await.unwrap().quote() })
+            }),
+        );
         Directory {
             proc: self.proc.clone(),
             selection: query,
@@ -5699,6 +5828,55 @@ impl Env {
         description: impl Into<String>,
     ) -> Env {
         let mut query = self.selection.select("withCacheVolumeOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type Changes in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The Changes value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_changes_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<ChangesId>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withChangesInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired Changes output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_changes_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withChangesOutput");
         query = query.arg("name", name.into());
         query = query.arg("description", description.into());
         Env {
@@ -9337,6 +9515,22 @@ impl Query {
             }),
         );
         CacheVolume {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a Changes from its ID.
+    pub fn load_changes_from_id(&self, id: impl IntoID<ChangesId>) -> Changes {
+        let mut query = self.selection.select("loadChangesFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        Changes {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

@@ -21,6 +21,11 @@ class CacheVolumeID(Scalar):
     object of type CacheVolume."""
 
 
+class ChangesID(Scalar):
+    """The `ChangesID` scalar type represents an identifier for an object
+    of type Changes."""
+
+
 class CloudID(Scalar):
     """The `CloudID` scalar type represents an identifier for an object of
     type Cloud."""
@@ -478,6 +483,12 @@ class Binding(Type):
         _ctx = self._select("asCacheVolume", _args)
         return CacheVolume(_ctx)
 
+    def as_changes(self) -> "Changes":
+        """Retrieve the binding value, as type Changes"""
+        _args: list[Arg] = []
+        _ctx = self._select("asChanges", _args)
+        return Changes(_ctx)
+
     def as_cloud(self) -> "Cloud":
         """Retrieve the binding value, as type Cloud"""
         _args: list[Arg] = []
@@ -723,6 +734,113 @@ class CacheVolume(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(CacheVolumeID)
+
+
+@typecheck
+class Changes(Type):
+    """A comparison between two directories representing changes that can
+    be applied."""
+
+    async def added_paths(self) -> list[str]:
+        """Files and directories that were added in the newer directory.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("addedPaths", _args)
+        return await _ctx.execute(list[str])
+
+    def after(self) -> "Directory":
+        """The newer/upper snapshot."""
+        _args: list[Arg] = []
+        _ctx = self._select("after", _args)
+        return Directory(_ctx)
+
+    def before(self) -> "Directory":
+        """The older/lower snapshot to compare against."""
+        _args: list[Arg] = []
+        _ctx = self._select("before", _args)
+        return Directory(_ctx)
+
+    async def changed_paths(self) -> list[str]:
+        """Files and directories that existed before and were updated in the
+        newer directory.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("changedPaths", _args)
+        return await _ctx.execute(list[str])
+
+    async def id(self) -> ChangesID:
+        """A unique identifier for this Changes.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        ChangesID
+            The `ChangesID` scalar type represents an identifier for an object
+            of type Changes.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(ChangesID)
+
+    async def removed_paths(self) -> list[str]:
+        """Files and directories that were removed. Directories are indicated by
+        a trailing slash, and their child paths are not included.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("removedPaths", _args)
+        return await _ctx.execute(list[str])
 
 
 @typecheck
@@ -2989,6 +3107,24 @@ class Directory(Type):
         _ctx = self._select("asModuleSource", _args)
         return ModuleSource(_ctx)
 
+    def changes(self, older: Self) -> Changes:
+        """Return a virtual comparison between this directory and an older
+        snapshot that can be applied to another filesystem.
+
+        Returns an error if the other directory is not an ancestor of this
+        directory.
+
+        Parameters
+        ----------
+        older:
+            The older directory snapshot to compare against
+        """
+        _args = [
+            Arg("older", older),
+        ]
+        _ctx = self._select("changes", _args)
+        return Changes(_ctx)
+
     def diff(self, other: Self) -> Self:
         """Return the difference between this directory and an another directory.
         The difference is encoded as a directory.
@@ -3359,6 +3495,20 @@ class Directory(Type):
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
         ]
         _ctx = self._select("terminal", _args)
+        return Directory(_ctx)
+
+    def with_changes(self, changes: Changes) -> Self:
+        """Return a directory with changes from another directory applied to it.
+
+        Parameters
+        ----------
+        changes:
+            Changes to apply to the directory
+        """
+        _args = [
+            Arg("changes", changes),
+        ]
+        _ctx = self._select("withChanges", _args)
         return Directory(_ctx)
 
     def with_directory(
@@ -4339,6 +4489,48 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withCacheVolumeOutput", _args)
+        return Env(_ctx)
+
+    def with_changes_input(
+        self,
+        name: str,
+        value: Changes,
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type Changes in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The Changes value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withChangesInput", _args)
+        return Env(_ctx)
+
+    def with_changes_output(self, name: str, description: str) -> Self:
+        """Declare a desired Changes output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withChangesOutput", _args)
         return Env(_ctx)
 
     def with_cloud_input(
@@ -9150,6 +9342,14 @@ class Client(Root):
         _ctx = self._select("loadCacheVolumeFromID", _args)
         return CacheVolume(_ctx)
 
+    def load_changes_from_id(self, id: ChangesID) -> Changes:
+        """Load a Changes from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadChangesFromID", _args)
+        return Changes(_ctx)
+
     def load_cloud_from_id(self, id: CloudID) -> Cloud:
         """Load a Cloud from its ID."""
         _args = [
@@ -10662,6 +10862,8 @@ __all__ = [
     "CacheSharingMode",
     "CacheVolume",
     "CacheVolumeID",
+    "Changes",
+    "ChangesID",
     "Client",
     "Cloud",
     "CloudID",
