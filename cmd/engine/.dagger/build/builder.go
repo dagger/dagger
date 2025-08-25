@@ -284,16 +284,7 @@ func (build *Builder) dialstdioBinary() *dagger.File {
 }
 
 func (build *Builder) containerMountBinary() *dagger.File {
-	return dag.
-		Wolfi().
-		Container(dagger.WolfiContainerOpts{
-			Packages: []string{"build-base"},
-			Arch:     build.platformSpec.Architecture,
-		}).
-		WithWorkdir("/src").
-		WithMountedDirectory(".", build.source).
-		WithExec([]string{"gcc", "-static", "-o", "container-mount", "./cmd/container-mount/main.c"}).
-		File("container-mount")
+	return build.binary("./cmd/container-mount", false, false)
 }
 
 func (build *Builder) binary(pkg string, version bool, race bool) *dagger.File {
