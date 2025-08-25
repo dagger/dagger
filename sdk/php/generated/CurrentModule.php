@@ -14,6 +14,15 @@ namespace Dagger;
 class CurrentModule extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * The git repository containing the module's source code, if any.
+     */
+    public function git(): GitRepository
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('git');
+        return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * A unique identifier for this CurrentModule.
      */
     public function id(): CurrentModuleId

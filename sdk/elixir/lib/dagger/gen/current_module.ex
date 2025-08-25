@@ -16,6 +16,20 @@ defmodule Dagger.CurrentModule do
   @type t() :: %__MODULE__{}
 
   @doc """
+  The git repository containing the module's source code, if any.
+  """
+  @spec git(t()) :: Dagger.GitRepository.t()
+  def git(%__MODULE__{} = current_module) do
+    query_builder =
+      current_module.query_builder |> QB.select("git")
+
+    %Dagger.GitRepository{
+      query_builder: query_builder,
+      client: current_module.client
+    }
+  end
+
+  @doc """
   A unique identifier for this CurrentModule.
   """
   @spec id(t()) :: {:ok, Dagger.CurrentModuleID.t()} | {:error, term()}

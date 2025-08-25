@@ -148,7 +148,8 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 }
 
 type gitArgs struct {
-	URL                     string
+	URL string
+
 	KeepGitDir              dagql.Optional[dagql.Boolean] `default:"false"`
 	ExperimentalServiceHost dagql.Optional[core.ServiceID]
 
@@ -158,6 +159,10 @@ type gitArgs struct {
 	HTTPAuthUsername string                        `name:"httpAuthUsername" default:""`
 	HTTPAuthToken    dagql.Optional[core.SecretID] `name:"httpAuthToken"`
 	HTTPAuthHeader   dagql.Optional[core.SecretID] `name:"httpAuthHeader"`
+
+	// internal args that can override the HEAD ref+commit
+	Commit string `default:"" internal:"true"`
+	Ref    string `default:"" internal:"true"`
 }
 
 //nolint:gocyclo
@@ -246,6 +251,18 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 					Name:  "sshAuthSocket",
 					Value: dagql.Opt(dagql.NewID[*core.Socket](sockInst.ID())),
 				},
+			}
+			if args.Commit != "" {
+				selectArgs = append(selectArgs, dagql.NamedInput{
+					Name:  "commit",
+					Value: dagql.NewString(args.Commit),
+				})
+			}
+			if args.Ref != "" {
+				selectArgs = append(selectArgs, dagql.NamedInput{
+					Name:  "ref",
+					Value: dagql.NewString(args.Ref),
+				})
 			}
 			if args.KeepGitDir.Valid {
 				selectArgs = append(selectArgs, dagql.NamedInput{
@@ -384,6 +401,18 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 					Value: dagql.Opt(args.KeepGitDir.Value),
 				})
 			}
+			if args.Commit != "" {
+				selectArgs = append(selectArgs, dagql.NamedInput{
+					Name:  "commit",
+					Value: dagql.NewString(args.Commit),
+				})
+			}
+			if args.Ref != "" {
+				selectArgs = append(selectArgs, dagql.NamedInput{
+					Name:  "ref",
+					Value: dagql.NewString(args.Ref),
+				})
+			}
 			if args.ExperimentalServiceHost.Valid {
 				selectArgs = append(selectArgs, dagql.NamedInput{
 					Name:  "experimentalServiceHost",
@@ -408,6 +437,8 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 	inst, err = dagql.NewResultForCurrentID(ctx, &core.GitRepository{
 		Backend: &core.RemoteGitRepository{
 			URL:           remote,
+			HeadCommit:    args.Commit,
+			HeadRef:       args.Ref,
 			SSHKnownHosts: args.SSHKnownHosts,
 			SSHAuthSocket: sshAuthSock,
 			AuthUsername:  args.HTTPAuthUsername,

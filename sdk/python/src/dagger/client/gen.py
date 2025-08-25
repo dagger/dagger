@@ -2835,6 +2835,12 @@ class Container(Type):
 class CurrentModule(Type):
     """Reflective module API provided to functions at runtime."""
 
+    def git(self) -> "GitRepository":
+        """The git repository containing the module's source code, if any."""
+        _args: list[Arg] = []
+        _ctx = self._select("git", _args)
+        return GitRepository(_ctx)
+
     async def id(self) -> CurrentModuleID:
         """A unique identifier for this CurrentModule.
 
