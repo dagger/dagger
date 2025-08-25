@@ -845,6 +845,143 @@ func (DirectorySuite) TestChanges(ctx context.Context, t *testctx.T) {
 		require.NotContains(t, removedPaths, "keep-dir/")
 		require.NotContains(t, removedPaths, "keep-dir/file.txt")
 	})
+
+	t.Run("addedFiles basic", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create initial directory with some files
+		oldDir := c.Directory().
+			WithNewFile("existing.txt", "content1").
+			WithNewFile("dir/existing2.txt", "content2")
+
+		// Create new directory with additional files
+		newDir := c.Directory().
+			WithNewFile("existing.txt", "content1").
+			WithNewFile("dir/existing2.txt", "content2").
+			WithNewFile("added.txt", "new content").
+			WithNewFile("dir/added2.txt", "new content2").
+			WithNewFile("new-dir/added3.txt", "new content3")
+
+		changes := newDir.Changes(oldDir)
+
+		addedFiles, err := changes.AddedPaths(ctx)
+		require.NoError(t, err)
+
+		// Should include added files
+		require.Contains(t, addedFiles, "added.txt")
+		require.Contains(t, addedFiles, "dir/added2.txt")
+		require.Contains(t, addedFiles, "new-dir/added3.txt")
+
+		// Should not include existing files
+		require.NotContains(t, addedFiles, "existing.txt")
+		require.NotContains(t, addedFiles, "dir/existing2.txt")
+	})
+
+	t.Run("addedFiles excludes directories", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		oldDir := c.Directory().
+			WithNewFile("keep.txt", "keep").
+			WithNewFile("old-dir/file.txt", "new")
+
+		newDir := c.Directory().
+			WithNewFile("keep.txt", "keep").
+			WithNewFile("old-dir/new-file.txt", "new").
+			WithNewFile("new-dir/file.txt", "new").
+			WithNewDirectory("empty-dir")
+
+		changes := newDir.Changes(oldDir)
+
+		addedFiles, err := changes.AddedPaths(ctx)
+		require.NoError(t, err)
+
+		// Should include added files only
+		require.Contains(t, addedFiles, "new-dir/file.txt")
+
+		// Should only include NEW directories
+		require.NotContains(t, addedFiles, "old-dir/")
+		require.Contains(t, addedFiles, "new-dir/")
+		require.Contains(t, addedFiles, "empty-dir/")
+
+		// Should not include existing files
+		require.NotContains(t, addedFiles, "keep.txt")
+	})
+
+	t.Run("changedFiles basic", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create initial directory
+		oldDir := c.Directory().
+			WithNewFile("unchanged.txt", "same content").
+			WithNewFile("changed.txt", "original content").
+			WithNewFile("dir/changed2.txt", "original content2").
+			WithNewFile("will-be-removed.txt", "remove me")
+
+		// Create new directory with changes
+		newDir := c.Directory().
+			WithNewFile("unchanged.txt", "same content").
+			WithNewFile("changed.txt", "modified content").
+			WithNewFile("dir/changed2.txt", "modified content2").
+			WithNewFile("added.txt", "new file")
+
+		changes := newDir.Changes(oldDir)
+
+		changedFiles, err := changes.ChangedPaths(ctx)
+		require.NoError(t, err)
+
+		// Should include changed files
+		require.Contains(t, changedFiles, "changed.txt")
+		require.Contains(t, changedFiles, "dir/changed2.txt")
+
+		// Should not include unchanged files
+		require.NotContains(t, changedFiles, "unchanged.txt")
+
+		// Should not include added files
+		require.NotContains(t, changedFiles, "added.txt")
+
+		// Should not include removed files
+		require.NotContains(t, changedFiles, "will-be-removed.txt")
+	})
+
+	t.Run("changedFiles with empty changes", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create identical directories
+		dir := c.Directory().
+			WithNewFile("file1.txt", "content1").
+			WithNewFile("dir/file2.txt", "content2")
+
+		changes := dir.Changes(dir)
+
+		changedFiles, err := changes.ChangedPaths(ctx)
+		require.NoError(t, err)
+
+		// Should be empty when no changes
+		require.Empty(t, changedFiles)
+	})
+
+	t.Run("changedFiles excludes directories", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		oldDir := c.Directory().
+			WithNewFile("dir/file.txt", "old content")
+
+		newDir := c.Directory().
+			WithNewFile("dir/file.txt", "new content").
+			WithNewFile("dir/added.txt", "added content")
+
+		changes := newDir.Changes(oldDir)
+
+		changedFiles, err := changes.ChangedPaths(ctx)
+		require.NoError(t, err)
+
+		// Should include changed files only
+		require.Contains(t, changedFiles, "dir/file.txt")
+
+		// Should NOT include directories or added files
+		require.NotContains(t, changedFiles, "dir/")
+		require.NotContains(t, changedFiles, "dir/added.txt")
+	})
 }
 
 func (DirectorySuite) TestExport(ctx context.Context, t *testctx.T) {
