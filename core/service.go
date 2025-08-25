@@ -1098,13 +1098,10 @@ func (svc *Service) runAndSnapshotChanges(
 		containerMount := exec.Command("container-mount", strconv.Itoa(state.Pid), resolvedDir, target)
 		containerMount.Stdout = out
 		containerMount.Stderr = out
-		if err := containerMount.Run(); err != nil {
-			return fmt.Errorf("failed to mount %s into container %s: %w\n\n%s", target, containerID, err, out.String())
-		}
-		return f()
+		return containerMount.Run()
 	})
 	if err != nil {
-		return res, false, err
+		return res, false, fmt.Errorf("failed to remount mutable copy: %w", err)
 	}
 
 	// Keep track of the mutable ref so we can release it when the service stops.
