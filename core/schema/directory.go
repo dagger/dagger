@@ -632,7 +632,7 @@ func getDockerIgnoreFileContent(ctx context.Context, parent dagql.ObjectResult[*
 		return nil, err
 	}
 
-	content, err := file.Contents(ctx)
+	content, err := file.Contents(ctx, nil, nil)
 	if err != nil {
 		return nil, err
 	}

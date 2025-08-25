@@ -1,8 +1,11 @@
 package core
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -17,6 +20,7 @@ import (
 	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	fstypes "github.com/tonistiigi/fsutil/types"
@@ -158,57 +162,119 @@ func (file *File) Evaluate(ctx context.Context) (*buildkit.Result, error) {
 }
 
 // Contents handles file content retrieval
-func (file *File) Contents(ctx context.Context) ([]byte, error) {
-	query, err := CurrentQuery(ctx)
+func (file *File) Contents(ctx context.Context, offset, limit *int) ([]byte, error) {
+	r, err := file.ReadCloser(ctx)
 	if err != nil {
 		return nil, err
 	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	defer r.Close()
+
+	var buf bytes.Buffer
+	w := &limitedWriter{
+		Limit:  buildkit.MaxFileContentsSize,
+		Writer: &buf,
 	}
 
-	ref, err := bkRef(ctx, bk, file.LLB)
-	if err != nil {
-		return nil, err
-	}
+	if offset != nil || limit != nil {
+		br := bufio.NewReader(r)
+		lineNum := 1
+		readLines := 0
+		for {
+			line, err := br.ReadBytes('\n')
+			if err != nil && err != io.EOF {
+				return nil, err
+			}
 
-	// Stat the file and preallocate file contents buffer:
-	st, err := file.Stat(ctx)
-	if err != nil {
-		return nil, err
-	}
+			if offset == nil || lineNum > *offset {
+				w.Write(line)
+				readLines++
+				if limit != nil && readLines == *limit {
+					break
+				}
+			}
 
-	// Error on files that exceed MaxFileContentsSize:
-	fileSize := int(st.GetSize_())
-	if fileSize > buildkit.MaxFileContentsSize {
-		// TODO: move to proper error structure
-		return nil, fmt.Errorf("file size %d exceeds limit %d", fileSize, buildkit.MaxFileContentsSize)
-	}
+			if err == io.EOF {
+				break
+			}
 
-	// Allocate buffer with the given file size:
-	contents := make([]byte, fileSize)
-
-	// Use a chunked reader to overcome issues when
-	// the input file exceeds MaxFileContentsChunkSize:
-	var offset int
-	for offset < fileSize {
-		chunk, err := ref.ReadFile(ctx, bkgw.ReadRequest{
-			Filename: file.File,
-			Range: &bkgw.FileRange{
-				Offset: offset,
-				Length: buildkit.MaxFileContentsChunkSize,
-			},
-		})
+			lineNum++
+		}
+	} else {
+		_, err := io.Copy(w, r)
 		if err != nil {
 			return nil, err
 		}
-
-		// Copy the chunk and increment offset for subsequent reads:
-		copy(contents[offset:], chunk)
-		offset += len(chunk)
 	}
-	return contents, nil
+
+	return buf.Bytes(), nil
+}
+
+type limitedWriter struct {
+	Limit int
+	io.Writer
+	wrote int
+}
+
+func (cw *limitedWriter) Write(p []byte) (int, error) {
+	if cw.wrote+len(p) > cw.Limit {
+		return 0, fmt.Errorf("file size %d exceeds limit %d", cw.wrote+len(p), buildkit.MaxFileContentsSize)
+	}
+	n, err := cw.Writer.Write(p)
+	if err != nil {
+		return n, err
+	}
+	cw.wrote += n
+	return n, nil
+}
+
+// Reader returns an io.Reader for the file contents
+func (file *File) ReadCloser(ctx context.Context) (io.ReadCloser, error) {
+	ref, err := getRefOrEvaluate(ctx, file)
+	if err != nil {
+		return nil, err
+	}
+
+	mountable, err := ref.Mount(ctx, true, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get mountable reference: %w", err)
+	}
+
+	lm := snapshot.LocalMounter(mountable)
+	defer lm.Unmount()
+
+	dir, err := lm.Mount()
+	if err != nil {
+		return nil, err
+	}
+
+	resolvedPath, err := containerdfs.RootPath(dir, file.File)
+	if err != nil {
+		return nil, err
+	}
+	f, err := os.Open(resolvedPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file %q: %w", file.File, err)
+	}
+	return &fileReader{
+		mount: lm,
+		f:     f,
+	}, nil
+}
+
+type fileReader struct {
+	mount snapshot.Mounter
+	f     *os.File
+}
+
+func (r *fileReader) Read(p []byte) (n int, err error) {
+	return r.f.Read(p)
+}
+
+func (r *fileReader) Close() error {
+	return errors.Join(
+		r.f.Close(),
+		r.mount.Unmount(),
+	)
 }
 
 func (file *File) Search(ctx context.Context, opts SearchOpts) ([]*SearchResult, error) {

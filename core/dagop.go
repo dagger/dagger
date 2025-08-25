@@ -197,7 +197,7 @@ func NewRawDagOp[T dagql.Typed](
 	if err != nil {
 		return t, err
 	}
-	dt, err := f.Contents(ctx)
+	dt, err := f.Contents(ctx, nil, nil)
 	if err != nil {
 		return t, err
 	}

@@ -42,6 +42,37 @@ func (FileSuite) TestFile(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "some-content", contents)
 }
 
+func (FileSuite) TestContentsLines(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	file := c.Directory().
+		WithNewFile("some-file", "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n").
+		File("some-file")
+
+	id, err := file.ID(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, id)
+
+	contents, err := file.Contents(ctx, dagger.FileContentsOpts{
+		Offset: 5,
+		Limit:  5,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "6\n7\n8\n9\n10\n", contents)
+
+	contents, err = file.Contents(ctx, dagger.FileContentsOpts{
+		Offset: 5,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "6\n7\n8\n9\n10\n11\n12\n", contents)
+
+	contents, err = file.Contents(ctx, dagger.FileContentsOpts{
+		Limit: 10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n", contents)
+}
+
 func (FileSuite) TestNewFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

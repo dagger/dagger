@@ -29,7 +29,11 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 		Syncer[*core.File]().
 			Doc(`Force evaluation in the engine.`),
 		dagql.Func("contents", s.contents).
-			Doc(`Retrieves the contents of the file.`),
+			Doc(`Retrieves the contents of the file.`).
+			Args(
+				dagql.Arg("offset").Doc(`Start reading after this line`),
+				dagql.Arg("limit").Doc(`Maximum number of lines to read`),
+			),
 		dagql.Func("size", s.size).
 			Doc(`Retrieves the size of the file, in bytes.`),
 		dagql.Func("name", s.name).
@@ -85,8 +89,11 @@ func (s *fileSchema) file(ctx context.Context, parent *core.Query, args struct {
 	return core.NewFileWithContents(ctx, args.Name, []byte(args.Contents), fs.FileMode(args.Permissions), nil, parent.Platform())
 }
 
-func (s *fileSchema) contents(ctx context.Context, file *core.File, args struct{}) (dagql.String, error) {
-	content, err := file.Contents(ctx)
+func (s *fileSchema) contents(ctx context.Context, file *core.File, args struct {
+	Offset *int
+	Limit  *int
+}) (dagql.String, error) {
+	content, err := file.Contents(ctx, args.Offset, args.Limit)
 	if err != nil {
 		return "", err
 	}
