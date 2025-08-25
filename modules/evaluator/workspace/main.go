@@ -85,9 +85,7 @@ func (w *Workspace) WithEval(eval Eval) *Workspace {
 
 // Register evals to perform.
 func (w *Workspace) WithEvals(evals []Eval) *Workspace {
-	for _, eval := range evals {
-		w.Evals = append(w.Evals, eval)
-	}
+	w.Evals = append(w.Evals, evals...)
 	return w
 }
 

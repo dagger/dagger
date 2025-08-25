@@ -123,6 +123,8 @@ func NewPlain(w io.Writer) Frontend {
 	}
 }
 
+func (fe *frontendPlain) SetSidebarContent(SidebarSection) {}
+
 func (fe *frontendPlain) Shell(ctx context.Context, handler ShellHandler) {
 	fmt.Fprintln(fe.output.Writer(), "Shell not supported in plain mode")
 }

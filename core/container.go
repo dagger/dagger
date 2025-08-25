@@ -62,7 +62,7 @@ type ContainerAnnotation struct {
 // Container is a content-addressed container.
 type Container struct {
 	// The container's root filesystem.
-	FS       *pb.Definition
+	FSDef    *pb.Definition
 	FSResult bkcache.ImmutableRef // only valid when returned by dagop
 
 	// Image configuration (env, workdir, etc)
@@ -128,8 +128,8 @@ func (container *Container) PBDefinitions(ctx context.Context) ([]*pb.Definition
 		return nil, nil
 	}
 	var defs []*pb.Definition
-	if container.FS != nil {
-		defs = append(defs, container.FS)
+	if container.FSDef != nil {
+		defs = append(defs, container.FSDef)
 	}
 	for _, mnt := range container.Mounts {
 		if mnt.Source != nil {
@@ -148,6 +148,10 @@ func (container *Container) PBDefinitions(ctx context.Context) ([]*pb.Definition
 		defs = append(defs, ctrDefs...)
 	}
 	return defs, nil
+}
+
+func (container *Container) FS(ctx context.Context) (*pb.Definition, error) {
+	return toDef(ctx, container.FSDef, container.FSResult, container.Platform)
 }
 
 func NewContainer(platform Platform) (*Container, error) {
@@ -181,8 +185,7 @@ func (container *Container) Clone() *Container {
 func (container *Container) WithoutInputs() *Container {
 	container = container.Clone()
 
-	container.FS = nil
-	container.FSResult = nil
+	container.SetFS(nil, nil)
 
 	container.Meta = nil
 	container.MetaResult = nil
@@ -257,12 +260,20 @@ type ContainerSocket struct {
 
 // FSState returns the container's root filesystem mount state. If there is
 // none (as with an empty container ID), it returns scratch.
-func (container *Container) FSState() (llb.State, error) {
-	if container.FS == nil {
+func (container *Container) FSState(ctx context.Context) (llb.State, error) {
+	def, err := container.FS(ctx)
+	if err != nil {
+		return llb.State{}, err
+	}
+	if def == nil {
 		return llb.Scratch(), nil
 	}
+	return defToState(def)
+}
 
-	return defToState(container.FS)
+func (container *Container) SetFS(def *pb.Definition, ref bkcache.ImmutableRef) {
+	container.FSDef = def
+	container.FSResult = ref
 }
 
 // MetaState returns the container's metadata mount state. If the container has
@@ -450,7 +461,7 @@ func (container *Container) FromCanonicalRef(
 		return nil, err
 	}
 
-	container.FS = def.ToPB()
+	container.SetFS(def.ToPB(), nil)
 
 	container.Config = mergeImageConfig(container.Config, imgSpec.Config)
 	container.ImageRef = refStr
@@ -521,9 +532,17 @@ func (container *Container) Build(
 		opts["build-arg:"+buildArg.Name] = buildArg.Value
 	}
 
+	contextDef, err := contextDir.LLB(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get LLB for context directory: %w", err)
+	}
+	dockerfileDef, err := dockerfileDir.LLB(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get LLB for dockerfile directory: %w", err)
+	}
 	inputs := map[string]*pb.Definition{
-		dockerui.DefaultLocalNameContext:    contextDir.LLB,
-		dockerui.DefaultLocalNameDockerfile: dockerfileDir.LLB,
+		dockerui.DefaultLocalNameContext:    contextDef,
+		dockerui.DefaultLocalNameDockerfile: dockerfileDef,
 	}
 
 	// FIXME: this is a terrible way to pass this around
@@ -611,10 +630,10 @@ func (container *Container) Build(
 	if err != nil {
 		return nil, err
 	}
-	container.FS = newDef
-	if container.FS != nil {
-		container.FS.Source = nil
+	if newDef != nil {
+		newDef.Source = nil
 	}
+	container.SetFS(newDef, nil)
 
 	cfgBytes, found := res.Metadata[exptypes.ExporterImageConfigKey]
 	if found {
@@ -631,7 +650,8 @@ func (container *Container) Build(
 
 func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
 	return &Directory{
-		LLB:      container.FS,
+		Def:      container.FSDef,
+		Result:   container.FSResult, // TODO: test?
 		Dir:      "/",
 		Platform: container.Platform,
 		Services: container.Services,
@@ -644,7 +664,7 @@ func (container *Container) WithRootFS(ctx context.Context, dir *Directory) (*Co
 	if dir.Result != nil {
 		container.FSResult = dir.Result
 	} else {
-		dirSt, err := dir.StateWithSourcePath()
+		dirSt, err := dir.StateWithSourcePath(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -654,7 +674,7 @@ func (container *Container) WithRootFS(ctx context.Context, dir *Directory) (*Co
 			return nil, err
 		}
 
-		container.FS = def.ToPB()
+		container.SetFS(def.ToPB(), nil)
 	}
 
 	// set image ref to empty string
@@ -742,14 +762,20 @@ func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, 
 
 func (container *Container) WithMountedDirectory(ctx context.Context, target string, dir *Directory, owner string, readonly bool) (*Container, error) {
 	container = container.Clone()
-
-	return container.withMounted(ctx, target, dir.LLB, dir.Result, dir.Dir, owner, readonly)
+	def, err := dir.LLB(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get LLB for directory: %w", err)
+	}
+	return container.withMounted(ctx, target, def, dir.Result, dir.Dir, owner, readonly)
 }
 
 func (container *Container) WithMountedFile(ctx context.Context, target string, file *File, owner string, readonly bool) (*Container, error) {
 	container = container.Clone()
-
-	return container.withMounted(ctx, target, file.LLB, file.Result, file.File, owner, readonly)
+	def, err := file.LLB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return container.withMounted(ctx, target, def, file.Result, file.File, owner, readonly)
 }
 
 var SeenCacheKeys = new(sync.Map)
@@ -770,7 +796,11 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 	}
 
 	if source != nil {
-		mount.Source = source.LLB
+		def, err := source.LLB(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get LLB for source directory: %w", err)
+		}
+		mount.Source = def
 		mount.SourcePath = source.Dir
 	}
 
@@ -966,7 +996,7 @@ func (container *Container) WithoutSecretVariable(ctx context.Context, name stri
 }
 
 func (container *Container) Directory(ctx context.Context, dirPath string) (*Directory, error) {
-	dir, _, err := locatePath(container, dirPath, NewDirectory)
+	dir, _, err := locatePath(ctx, container, dirPath, NewDirectory)
 	if err != nil {
 		return nil, err
 	}
@@ -995,7 +1025,7 @@ func (container *Container) Directory(ctx context.Context, dirPath string) (*Dir
 }
 
 func (container *Container) File(ctx context.Context, filePath string) (*File, error) {
-	file, _, err := locatePath(container, filePath, NewFile)
+	file, _, err := locatePath(ctx, container, filePath, NewFile)
 	if err != nil {
 		return nil, err
 	}
@@ -1015,6 +1045,7 @@ func (container *Container) File(ctx context.Context, filePath string) (*File, e
 }
 
 func locatePath[T *File | *Directory](
+	ctx context.Context,
 	container *Container,
 	containerPath string,
 	init func(*pb.Definition, string, Platform, ServiceBindings) T,
@@ -1043,8 +1074,12 @@ func locatePath[T *File | *Directory](
 				}
 			}
 
+			def, err := toDef(ctx, mnt.Source, mnt.Result, container.Platform)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to get mount definition: %w", err)
+			}
 			return init(
-				mnt.Source,
+				def,
 				sub,
 				container.Platform,
 				container.Services,
@@ -1053,8 +1088,12 @@ func locatePath[T *File | *Directory](
 	}
 
 	// Not found in a mount
+	def, err := container.FS(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get root filesystem definition: %w", err)
+	}
 	return init(
-		container.FS,
+		def,
 		containerPath,
 		container.Platform,
 		container.Services,
@@ -1217,7 +1256,7 @@ func (container *Container) chown(
 }
 
 func (container *Container) writeToPath(ctx context.Context, subdir string, fn func(dir *Directory) (*Directory, error)) (*Container, error) {
-	dir, mount, err := locatePath(container, subdir, NewDirectory)
+	dir, mount, err := locatePath(ctx, container, subdir, NewDirectory)
 	if err != nil {
 		return nil, err
 	}
@@ -1243,11 +1282,15 @@ func (container *Container) writeToPath(ctx context.Context, subdir string, fn f
 		return container.WithRootFS(ctx, root)
 	}
 
-	return container.replaceMount(ctx, mount.Target, dir.LLB, dir.Result, mount.SourcePath, "", false)
+	def, err := dir.LLB(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get LLB for directory %s: %w", subdir, err)
+	}
+	return container.replaceMount(ctx, mount.Target, def, dir.Result, mount.SourcePath, "", false)
 }
 
-func (container *Container) runUnderPath(subdir string, fn func(dir *Directory) error) error {
-	dir, _, err := locatePath(container, subdir, NewDirectory)
+func (container *Container) runUnderPath(ctx context.Context, subdir string, fn func(dir *Directory) error) error {
+	dir, _, err := locatePath(ctx, container, subdir, NewDirectory)
 	if err != nil {
 		return err
 	}
@@ -1278,7 +1321,7 @@ func (container *Container) Evaluate(ctx context.Context) (*buildkit.Result, err
 	if container == nil {
 		return nil, nil
 	}
-	if container.FS == nil {
+	if container.FSDef == nil && container.FSResult == nil {
 		return nil, nil
 	}
 
@@ -1287,7 +1330,7 @@ func (container *Container) Evaluate(ctx context.Context) (*buildkit.Result, err
 		return nil, err
 	}
 
-	st, err := container.FSState()
+	st, err := container.FSState(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1310,7 +1353,7 @@ func (container *Container) Evaluate(ctx context.Context) (*buildkit.Result, err
 func (container *Container) Exists(ctx context.Context, srv *dagql.Server, targetPath string, targetType ExistsType, doNotFollowSymlinks bool) (bool, error) {
 	dir, targetPath := filepath.Split(filepath.Clean(targetPath))
 	exists := false
-	err := container.runUnderPath(dir, func(dir *Directory) error {
+	err := container.runUnderPath(ctx, dir, func(dir *Directory) error {
 		var err error
 		exists, err = dir.Exists(ctx, srv, targetPath, targetType, doNotFollowSymlinks)
 		return err
@@ -1377,10 +1420,10 @@ func (container *Container) Publish(
 
 	variants := append([]*Container{container}, platformVariants...)
 	for _, variant := range variants {
-		if variant.FS == nil {
+		if variant.FSDef == nil && variant.FSResult == nil {
 			continue
 		}
-		st, err := variant.FSState()
+		st, err := variant.FSState(ctx)
 		if err != nil {
 			return "", err
 		}
@@ -1505,10 +1548,10 @@ func (container *Container) Export(
 
 	variants := append([]*Container{container}, opts.PlatformVariants...)
 	for _, variant := range variants {
-		if variant.FS == nil {
+		if variant.FSDef == nil && variant.FSResult == nil {
 			continue
 		}
-		st, err := variant.FSState()
+		st, err := variant.FSState(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -1632,12 +1675,12 @@ func (container *Container) Import(
 		return nil, fmt.Errorf("marshal root: %w", err)
 	}
 
-	container.FS = execDef.ToPB()
+	container.SetFS(execDef.ToPB(), nil)
 
 	if release != nil {
 		// eagerly evaluate the OCI reference so Buildkit sets up a long-term lease
 		_, err = bk.Solve(ctx, bkgw.SolveRequest{
-			Definition: container.FS,
+			Definition: container.FSDef,
 			Evaluate:   true,
 		})
 		if err != nil {
@@ -1826,7 +1869,7 @@ func (container *Container) ownership(ctx context.Context, owner string) (*Owner
 		return nil, nil
 	}
 
-	fsSt, err := container.FSState()
+	fsSt, err := container.FSState(ctx)
 	if err != nil {
 		return nil, err
 	}

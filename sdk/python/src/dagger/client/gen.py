@@ -221,6 +221,11 @@ class ScalarTypeDefID(Scalar):
     object of type ScalarTypeDef."""
 
 
+class SearchResultID(Scalar):
+    """The `SearchResultID` scalar type represents an identifier for an
+    object of type SearchResult."""
+
+
 class SecretID(Scalar):
     """The `SecretID` scalar type represents an identifier for an object
     of type Secret."""
@@ -526,12 +531,6 @@ class Binding(Type):
         _ctx = self._select("asJSONValue", _args)
         return JSONValue(_ctx)
 
-    def as_llm(self) -> "LLM":
-        """Retrieve the binding value, as type LLM"""
-        _args: list[Arg] = []
-        _ctx = self._select("asLLM", _args)
-        return LLM(_ctx)
-
     def as_module(self) -> "Module":
         """Retrieve the binding value, as type Module"""
         _args: list[Arg] = []
@@ -549,6 +548,12 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asModuleSource", _args)
         return ModuleSource(_ctx)
+
+    def as_search_result(self) -> "SearchResult":
+        """Retrieve the binding value, as type SearchResult"""
+        _args: list[Arg] = []
+        _ctx = self._select("asSearchResult", _args)
+        return SearchResult(_ctx)
 
     def as_secret(self) -> "Secret":
         """Retrieve the binding value, as type Secret"""
@@ -2859,6 +2864,12 @@ class CurrentModule(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(CurrentModuleID)
 
+    def meta(self) -> "Module":
+        """The fully instantiated module implementing the current function call."""
+        _args: list[Arg] = []
+        _ctx = self._select("meta", _args)
+        return Module(_ctx)
+
     async def name(self) -> str:
         """The name of the module being executed in
 
@@ -3306,6 +3317,61 @@ class Directory(Type):
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
+
+    async def search(
+        self,
+        pattern: str,
+        *,
+        paths: list[str] | None = None,
+        globs: list[str] | None = None,
+        literal: bool | None = False,
+        multiline: bool | None = False,
+        dotall: bool | None = False,
+        ignore_case: bool | None = False,
+        files_only: bool | None = False,
+        limit: int | None = None,
+    ) -> list["SearchResult"]:
+        """Searches for content matching the given regular expression or literal
+        string.
+
+        Uses Rust regex syntax; escape literal ., [, ], {, }, | with
+        backslashes.
+
+        Parameters
+        ----------
+        pattern:
+            The text to match.
+        paths:
+            Directory or file paths to search
+        globs:
+            Glob patterns to match (e.g., "*.md")
+        literal:
+            Interpret the pattern as a literal string instead of a regular
+            expression.
+        multiline:
+            Enable searching across multiple lines.
+        dotall:
+            Allow the . pattern to match newlines in multiline mode.
+        ignore_case:
+            Enable case-insensitive matching.
+        files_only:
+            Only return matching files, not lines and content
+        limit:
+            Limit the number of results to return
+        """
+        _args = [
+            Arg("pattern", pattern),
+            Arg("paths", [] if paths is None else paths, []),
+            Arg("globs", [] if globs is None else globs, []),
+            Arg("literal", literal, False),
+            Arg("multiline", multiline, False),
+            Arg("dotall", dotall, False),
+            Arg("ignoreCase", ignore_case, False),
+            Arg("filesOnly", files_only, False),
+            Arg("limit", limit, None),
+        ]
+        _ctx = self._select("search", _args)
+        return await _ctx.execute_object_list(SearchResult)
 
     async def sync(self) -> Self:
         """Force evaluation in the engine.
@@ -4247,6 +4313,11 @@ class EnumValueTypeDef(Type):
 
 @typecheck
 class Env(Type):
+    def hostfs(self) -> Directory:
+        _args: list[Arg] = []
+        _ctx = self._select("hostfs", _args)
+        return Directory(_ctx)
+
     async def id(self) -> EnvID:
         """A unique identifier for this Env.
 
@@ -4636,6 +4707,20 @@ class Env(Type):
         _ctx = self._select("withGitRepositoryOutput", _args)
         return Env(_ctx)
 
+    def with_hostfs(self, hostfs: Directory) -> Self:
+        """Return a new environment with a new host filesystem
+
+        Parameters
+        ----------
+        hostfs:
+            The directory to set as the host filesystem
+        """
+        _args = [
+            Arg("hostfs", hostfs),
+        ]
+        _ctx = self._select("withHostfs", _args)
+        return Env(_ctx)
+
     def with_json_value_input(
         self,
         name: str,
@@ -4678,46 +4763,12 @@ class Env(Type):
         _ctx = self._select("withJSONValueOutput", _args)
         return Env(_ctx)
 
-    def with_llm_input(
-        self,
-        name: str,
-        value: "LLM",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type LLM in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The LLM value to assign to the binding
-        description:
-            The purpose of the input
-        """
+    def with_module(self, module: "Module") -> Self:
+        """load a module and expose its functions to the model"""
         _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
+            Arg("module", module),
         ]
-        _ctx = self._select("withLLMInput", _args)
-        return Env(_ctx)
-
-    def with_llm_output(self, name: str, description: str) -> Self:
-        """Declare a desired LLM output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withLLMOutput", _args)
+        _ctx = self._select("withModule", _args)
         return Env(_ctx)
 
     def with_module_config_client_input(
@@ -4847,6 +4898,49 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withModuleSourceOutput", _args)
+        return Env(_ctx)
+
+    def with_search_result_input(
+        self,
+        name: str,
+        value: "SearchResult",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type SearchResult in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The SearchResult value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withSearchResultInput", _args)
+        return Env(_ctx)
+
+    def with_search_result_output(self, name: str, description: str) -> Self:
+        """Declare a desired SearchResult output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withSearchResultOutput", _args)
         return Env(_ctx)
 
     def with_secret_input(
@@ -5015,6 +5109,12 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withStringOutput", _args)
+        return Env(_ctx)
+
+    def without_outputs(self) -> Self:
+        """Return a new environment without any outputs"""
+        _args: list[Arg] = []
+        _ctx = self._select("withoutOutputs", _args)
         return Env(_ctx)
 
     def with_(self, cb: Callable[["Env"], "Env"]) -> "Env":
@@ -5331,8 +5431,20 @@ class FieldTypeDef(Type):
 class File(Type):
     """A file."""
 
-    async def contents(self) -> str:
+    async def contents(
+        self,
+        *,
+        offset: int | None = None,
+        limit: int | None = None,
+    ) -> str:
         """Retrieves the contents of the file.
+
+        Parameters
+        ----------
+        offset:
+            Start reading after this line
+        limit:
+            Maximum number of lines to read
 
         Returns
         -------
@@ -5348,7 +5460,10 @@ class File(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("offset", offset, None),
+            Arg("limit", limit, None),
+        ]
         _ctx = self._select("contents", _args)
         return await _ctx.execute(str)
 
@@ -5469,6 +5584,59 @@ class File(Type):
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
 
+    async def search(
+        self,
+        pattern: str,
+        *,
+        literal: bool | None = False,
+        multiline: bool | None = False,
+        dotall: bool | None = False,
+        ignore_case: bool | None = False,
+        files_only: bool | None = False,
+        limit: int | None = None,
+        paths: list[str] | None = None,
+        globs: list[str] | None = None,
+    ) -> list["SearchResult"]:
+        """Searches for content matching the given regular expression or literal
+        string.
+
+        Uses Rust regex syntax; escape literal ., [, ], {, }, | with
+        backslashes.
+
+        Parameters
+        ----------
+        pattern:
+            The text to match.
+        literal:
+            Interpret the pattern as a literal string instead of a regular
+            expression.
+        multiline:
+            Enable searching across multiple lines.
+        dotall:
+            Allow the . pattern to match newlines in multiline mode.
+        ignore_case:
+            Enable case-insensitive matching.
+        files_only:
+            Only return matching files, not lines and content
+        limit:
+            Limit the number of results to return
+        paths:
+        globs:
+        """
+        _args = [
+            Arg("pattern", pattern),
+            Arg("literal", literal, False),
+            Arg("multiline", multiline, False),
+            Arg("dotall", dotall, False),
+            Arg("ignoreCase", ignore_case, False),
+            Arg("filesOnly", files_only, False),
+            Arg("limit", limit, None),
+            Arg("paths", [] if paths is None else paths, []),
+            Arg("globs", [] if globs is None else globs, []),
+        ]
+        _ctx = self._select("search", _args)
+        return await _ctx.execute_object_list(SearchResult)
+
     async def size(self) -> int:
         """Retrieves the size of the file, in bytes.
 
@@ -5518,6 +5686,46 @@ class File(Type):
             Arg("name", name),
         ]
         _ctx = self._select("withName", _args)
+        return File(_ctx)
+
+    def with_replaced(
+        self,
+        search: str,
+        replacement: str,
+        *,
+        all: bool | None = False,
+        first_after: int | None = None,
+    ) -> Self:
+        """Retrieves the file with content replaced with the given text.
+
+        If 'all' is true, all occurrences of the pattern will be replaced.
+
+        If 'firstAfter' is specified, only the first match starting at the
+        specified line will be replaced.
+
+        If neither are specified, and there are multiple matches for the
+        pattern, this will error.
+
+        If there are no matches for the pattern, this will error.
+
+        Parameters
+        ----------
+        search:
+            The text to match.
+        replacement:
+            The text to match.
+        all:
+            Replace all occurrences of the pattern.
+        first_after:
+            Replace the first match after the specified line.
+        """
+        _args = [
+            Arg("search", search),
+            Arg("replacement", replacement),
+            Arg("all", all, False),
+            Arg("firstAfter", first_after, None),
+        ]
+        _ctx = self._select("withReplaced", _args)
         return File(_ctx)
 
     def with_timestamps(self, timestamp: int) -> Self:
@@ -7139,6 +7347,25 @@ class LLM(Type):
         _ctx = self._select("env", _args)
         return Env(_ctx)
 
+    async def has_prompt(self) -> bool:
+        """Indicates that the LLM can be synced or stepped
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("hasPrompt", _args)
+        return await _ctx.execute(bool)
+
     async def history(self) -> list[str]:
         """return the llm message history
 
@@ -7225,7 +7452,7 @@ class LLM(Type):
         return await _ctx.execute(str)
 
     def loop(self) -> Self:
-        """synchronize LLM state"""
+        """Loop completing tool calls until the LLM ends its turn"""
         _args: list[Arg] = []
         _ctx = self._select("loop", _args)
         return LLM(_ctx)
@@ -7272,6 +7499,12 @@ class LLM(Type):
         _ctx = self._select("provider", _args)
         return await _ctx.execute(str)
 
+    def step(self) -> Self:
+        """Returns an LLM that will only sync one step instead of looping"""
+        _args: list[Arg] = []
+        _ctx = self._select("step", _args)
+        return LLM(_ctx)
+
     async def sync(self) -> Self:
         """synchronize LLM state
 
@@ -7315,12 +7548,64 @@ class LLM(Type):
         _ctx = self._select("tools", _args)
         return await _ctx.execute(str)
 
+    def with_blocked_function(self, type_name: str, field_name: str) -> Self:
+        """Return a new LLM with the specified tool disabled
+
+        Parameters
+        ----------
+        type_name:
+            The type name whose field will be disabled
+        field_name:
+            The field name to disable
+        """
+        _args = [
+            Arg("typeName", type_name),
+            Arg("fieldName", field_name),
+        ]
+        _ctx = self._select("withBlockedFunction", _args)
+        return LLM(_ctx)
+
+    def with_caller(self, name: str, description: str) -> Self:
+        """Provide the calling object as an input to the LLM environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            The description of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withCaller", _args)
+        return LLM(_ctx)
+
     def with_env(self, env: Env) -> Self:
         """allow the LLM to interact with an environment via MCP"""
         _args = [
             Arg("env", env),
         ]
         _ctx = self._select("withEnv", _args)
+        return LLM(_ctx)
+
+    def with_mcp_server(self, name: str, service: "Service") -> Self:
+        """Add an external MCP server to the LLM
+
+        Parameters
+        ----------
+        name:
+            The name of the MCP server
+        service:
+            The MCP service to run. If the service exposes a port, HTTP+SSE
+            will be used to communicate.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("service", service),
+        ]
+        _ctx = self._select("withMCPServer", _args)
         return LLM(_ctx)
 
     def with_model(self, model: str) -> Self:
@@ -7363,6 +7648,14 @@ class LLM(Type):
             Arg("file", file),
         ]
         _ctx = self._select("withPromptFile", _args)
+        return LLM(_ctx)
+
+    def with_static_tools(self) -> Self:
+        """Use a static set of tools for method calls, e.g. for MCP clients that
+        do not support dynamic tool registration
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withStaticTools", _args)
         return LLM(_ctx)
 
     def with_system_prompt(self, prompt: str) -> Self:
@@ -8859,6 +9152,11 @@ class Client(Root):
         _ctx = self._select("container", _args)
         return Container(_ctx)
 
+    def current_env(self) -> Env:
+        _args: list[Arg] = []
+        _ctx = self._select("currentEnv", _args)
+        return Env(_ctx)
+
     def current_function_call(self) -> FunctionCall:
         """The FunctionCall context that the SDK caller is currently executing
         in.
@@ -9466,6 +9764,14 @@ class Client(Root):
         _ctx = self._select("loadScalarTypeDefFromID", _args)
         return ScalarTypeDef(_ctx)
 
+    def load_search_result_from_id(self, id: SearchResultID) -> "SearchResult":
+        """Load a SearchResult from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadSearchResultFromID", _args)
+        return SearchResult(_ctx)
+
     def load_secret_from_id(self, id: SecretID) -> "Secret":
         """Load a Secret from its ID."""
         _args = [
@@ -9802,6 +10108,90 @@ class ScalarTypeDef(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("sourceModuleName", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
+class SearchResult(Type):
+    async def file_path(self) -> str:
+        """Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("filePath", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> SearchResultID:
+        """A unique identifier for this SearchResult.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        SearchResultID
+            The `SearchResultID` scalar type represents an identifier for an
+            object of type SearchResult.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(SearchResultID)
+
+    async def line_number(self) -> int:
+        """Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("lineNumber", _args)
+        return await _ctx.execute(int)
+
+    async def matched_lines(self) -> str:
+        """Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("matchedLines", _args)
         return await _ctx.execute(str)
 
 
@@ -10746,6 +11136,8 @@ __all__ = [
     "SDKConfigID",
     "ScalarTypeDef",
     "ScalarTypeDefID",
+    "SearchResult",
+    "SearchResultID",
     "Secret",
     "SecretID",
     "Service",

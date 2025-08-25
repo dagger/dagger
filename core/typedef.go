@@ -117,6 +117,9 @@ func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec
 		if arg.SourceMap.Valid {
 			argSpec.Directives = append(argSpec.Directives, arg.SourceMap.Value.TypeDirective())
 		}
+		if defaultPath := arg.DefaultPathDirective(); defaultPath != nil {
+			argSpec.Directives = append(argSpec.Directives, defaultPath)
+		}
 
 		spec.Args.Add(argSpec)
 	}
@@ -252,6 +255,43 @@ func (*FunctionArg) TypeDescription() string {
 		`An argument accepted by a function.`,
 		`This is a specification for an argument at function definition time, not
 		an argument passed at function call time.`)
+}
+
+func (arg FunctionArg) DefaultPathDirective() *ast.Directive {
+	if arg.DefaultPath == "" {
+		return nil
+	}
+	args := ast.ArgumentList{
+		{
+			Name: "path",
+			Value: &ast.Value{
+				Kind: ast.StringValue,
+				Raw:  arg.DefaultPath,
+			},
+		},
+	}
+	if len(arg.Ignore) > 0 {
+		var children ast.ChildValueList
+		for _, ignore := range arg.Ignore {
+			children = append(children, &ast.ChildValue{
+				Value: &ast.Value{
+					Kind: ast.StringValue,
+					Raw:  ignore,
+				},
+			})
+		}
+		args = append(args, &ast.Argument{
+			Name: "ignore",
+			Value: &ast.Value{
+				Kind:     ast.ListValue,
+				Children: children,
+			},
+		})
+	}
+	return &ast.Directive{
+		Name:      "defaultPath",
+		Arguments: args,
+	}
 }
 
 type DynamicID struct {
@@ -1218,6 +1258,9 @@ type FunctionCall struct {
 	ParentName string                  `field:"true" doc:"The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module."`
 	Parent     JSON                    `field:"true" doc:"The value of the parent object of the function being called. If the function is top-level to the module, this is always an empty object."`
 	InputArgs  []*FunctionCallArgValue `field:"true" doc:"The argument values the function is being invoked with."`
+
+	ParentID *call.ID
+	EnvID    *call.ID
 }
 
 func (*FunctionCall) Type() *ast.Type {

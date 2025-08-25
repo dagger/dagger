@@ -66,6 +66,11 @@ func Container(opts ...dagger.ContainerOpts) *dagger.Container {
 	return client.Container(opts...)
 }
 
+func CurrentEnv() *dagger.Env {
+	client := initClient()
+	return client.CurrentEnv()
+}
+
 // The FunctionCall context that the SDK caller is currently executing in.
 //
 // If the caller is not currently executing in a function, this will return an error.
@@ -406,6 +411,12 @@ func LoadSDKConfigFromID(id dagger.SDKConfigID) *dagger.SDKConfig {
 func LoadScalarTypeDefFromID(id dagger.ScalarTypeDefID) *dagger.ScalarTypeDef {
 	client := initClient()
 	return client.LoadScalarTypeDefFromID(id)
+}
+
+// Load a SearchResult from its ID.
+func LoadSearchResultFromID(id dagger.SearchResultID) *dagger.SearchResult {
+	client := initClient()
+	return client.LoadSearchResultFromID(id)
 }
 
 // Load a Secret from its ID.

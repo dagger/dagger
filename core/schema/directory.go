@@ -23,6 +23,9 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("directory", s.directory).
 			Doc(`Creates an empty directory.`),
+		dagql.NodeFunc("__immutableRef", DagOpDirectoryWrapper(srv, s.immutableRef)).
+			Doc(`Returns a directory backed by a pre-existing immutable ref.`).
+			Args(dagql.Arg("ref").Doc("The immutable ref ID.")),
 	}.Install(srv)
 
 	core.ExistsTypes.Install(srv)
@@ -54,6 +57,20 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("pattern").Doc(`Pattern to match (e.g., "*.md").`),
 			),
+		dagql.NodeFunc("search", DagOpWrapper(srv, s.search)).
+			Doc(
+				// NOTE: sync with File.search
+				`Searches for content matching the given regular expression or literal string.`,
+				`Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.`,
+			).
+			Args((func() []dagql.Argument {
+				args := []dagql.Argument{
+					dagql.Arg("paths").Doc("Directory or file paths to search"),
+					dagql.Arg("globs").Doc("Glob patterns to match (e.g., \"*.md\")"),
+				}
+				args = append(args, (core.SearchOpts{}).Args()...)
+				return args
+			})()...),
 		dagql.Func("digest", s.digest).
 			Doc(
 				`Return the directory's digest.
@@ -203,12 +220,35 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("linkName").Doc(`Location where the symbolic link will be created (e.g., "/new-file-link").`),
 			),
 	}.Install(srv)
+
+	dagql.Fields[*core.SearchResult]{}.Install(srv)
 }
 
 type directoryPipelineArgs struct {
 	Name        string
 	Description string                             `default:""`
 	Labels      []dagql.InputObject[PipelineLabel] `default:"[]"`
+}
+
+func (s *directorySchema) immutableRef(ctx context.Context, parent dagql.ObjectResult[*core.Query], args struct {
+	Ref string
+	DagOpInternalArgs
+}) (res dagql.ObjectResult[*core.Directory], _ error) {
+	query := parent.Self()
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	immutable, err := query.BuildkitCache().Get(ctx, args.Ref, nil)
+	if err != nil {
+		return res, fmt.Errorf("failed to get mutable ref %q: %w", args.Ref, err)
+	}
+	dir, err := core.NewScratchDirectory(ctx, query.Platform())
+	if err != nil {
+		return res, fmt.Errorf("failed to create scratch directory: %w", err)
+	}
+	dir.Result = immutable.Clone() // FIXME(vito): is this Clone redundant/harmful?
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 func (s *directorySchema) pipeline(ctx context.Context, parent *core.Directory, args directoryPipelineArgs) (*core.Directory, error) {
@@ -348,6 +388,17 @@ type withPatchArgs struct {
 	Patch string
 
 	FSDagOpInternalArgs
+}
+
+type searchArgs struct {
+	core.SearchOpts
+	Paths []string `default:"[]"`
+	Globs []string `default:"[]"`
+	RawDagOpInternalArgs
+}
+
+func (s *directorySchema) search(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args searchArgs) (dagql.Array[*core.SearchResult], error) {
+	return parent.Self().Search(ctx, args.SearchOpts, args.Paths, args.Globs)
 }
 
 func (s *directorySchema) withPatch(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withPatchArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
@@ -604,7 +655,7 @@ func getDockerIgnoreFileContent(ctx context.Context, parent dagql.ObjectResult[*
 		return nil, err
 	}
 
-	content, err := file.Contents(ctx)
+	content, err := file.Contents(ctx, nil, nil)
 	if err != nil {
 		return nil, err
 	}

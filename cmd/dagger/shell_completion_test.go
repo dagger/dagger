@@ -129,7 +129,7 @@ func (DaggerCMDSuite) TestShellAutocomplete(ctx context.Context, t *testctx.T) {
 
 	handler := &shellCallHandler{
 		dag:   client,
-		debug: debug,
+		debug: debugFlag,
 	}
 	require.NoError(t, handler.RunAll(ctx, nil))
 	autoComplete := shellAutoComplete{handler}

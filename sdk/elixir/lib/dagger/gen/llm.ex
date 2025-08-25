@@ -58,6 +58,17 @@ defmodule Dagger.LLM do
   end
 
   @doc """
+  Indicates that the LLM can be synced or stepped
+  """
+  @spec has_prompt(t()) :: {:ok, boolean()} | {:error, term()}
+  def has_prompt(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("hasPrompt")
+
+    Client.execute(llm.client, query_builder)
+  end
+
+  @doc """
   return the llm message history
   """
   @spec history(t()) :: {:ok, [String.t()]} | {:error, term()}
@@ -102,7 +113,7 @@ defmodule Dagger.LLM do
   end
 
   @doc """
-  synchronize LLM state
+  Loop completing tool calls until the LLM ends its turn
   """
   @spec loop(t()) :: Dagger.LLM.t()
   def loop(%__MODULE__{} = llm) do
@@ -135,6 +146,20 @@ defmodule Dagger.LLM do
       llm.query_builder |> QB.select("provider")
 
     Client.execute(llm.client, query_builder)
+  end
+
+  @doc """
+  Returns an LLM that will only sync one step instead of looping
+  """
+  @spec step(t()) :: Dagger.LLM.t()
+  def step(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("step")
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
   end
 
   @doc """
@@ -183,12 +208,63 @@ defmodule Dagger.LLM do
   end
 
   @doc """
+  Return a new LLM with the specified tool disabled
+  """
+  @spec with_blocked_function(t(), String.t(), String.t()) :: Dagger.LLM.t()
+  def with_blocked_function(%__MODULE__{} = llm, type_name, field_name) do
+    query_builder =
+      llm.query_builder
+      |> QB.select("withBlockedFunction")
+      |> QB.put_arg("typeName", type_name)
+      |> QB.put_arg("fieldName", field_name)
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
+  Provide the calling object as an input to the LLM environment
+  """
+  @spec with_caller(t(), String.t(), String.t()) :: Dagger.LLM.t()
+  def with_caller(%__MODULE__{} = llm, name, description) do
+    query_builder =
+      llm.query_builder
+      |> QB.select("withCaller")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
   allow the LLM to interact with an environment via MCP
   """
   @spec with_env(t(), Dagger.Env.t()) :: Dagger.LLM.t()
   def with_env(%__MODULE__{} = llm, env) do
     query_builder =
       llm.query_builder |> QB.select("withEnv") |> QB.put_arg("env", Dagger.ID.id!(env))
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
+  Add an external MCP server to the LLM
+  """
+  @spec with_mcp_server(t(), String.t(), Dagger.Service.t()) :: Dagger.LLM.t()
+  def with_mcp_server(%__MODULE__{} = llm, name, service) do
+    query_builder =
+      llm.query_builder
+      |> QB.select("withMCPServer")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("service", Dagger.ID.id!(service))
 
     %Dagger.LLM{
       query_builder: query_builder,
@@ -231,6 +307,20 @@ defmodule Dagger.LLM do
   def with_prompt_file(%__MODULE__{} = llm, file) do
     query_builder =
       llm.query_builder |> QB.select("withPromptFile") |> QB.put_arg("file", Dagger.ID.id!(file))
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
+  Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
+  """
+  @spec with_static_tools(t()) :: Dagger.LLM.t()
+  def with_static_tools(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("withStaticTools")
 
     %Dagger.LLM{
       query_builder: query_builder,

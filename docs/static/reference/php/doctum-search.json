@@ -1038,6 +1038,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\SearchResult",
+			"p": "Dagger/SearchResult.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\SearchResultId",
+			"p": "Dagger/SearchResultId.html",
+			"d": "<p>The <code>SearchResultID</code> scalar type represents an identifier for an object of type SearchResult.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Secret",
 			"p": "Dagger/Secret.html",
 			"d": "<p>A reference to a secret value, which can be handled more safely than the value itself.</p>",
@@ -1263,12 +1283,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Binding::asLLM",
-			"p": "Dagger/Binding.html#method_asLLM",
-			"d": "<p>Retrieve the binding value, as type LLM</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Binding::asModule",
 			"p": "Dagger/Binding.html#method_asModule",
 			"d": "<p>Retrieve the binding value, as type Module</p>"
@@ -1284,6 +1298,12 @@
 			"n": "Dagger\\Binding::asModuleSource",
 			"p": "Dagger/Binding.html#method_asModuleSource",
 			"d": "<p>Retrieve the binding value, as type ModuleSource</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asSearchResult",
+			"p": "Dagger/Binding.html#method_asSearchResult",
+			"d": "<p>Retrieve the binding value, as type SearchResult</p>"
 		},
 		{
 			"t": "M",
@@ -1368,6 +1388,12 @@
 			"n": "Dagger\\Client::container",
 			"p": "Dagger/Client.html#method_container",
 			"d": "<p>Creates a scratch container, with no image or metadata.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::currentEnv",
+			"p": "Dagger/Client.html#method_currentEnv",
+			"d": null
 		},
 		{
 			"t": "M",
@@ -1704,6 +1730,12 @@
 			"n": "Dagger\\Client::loadScalarTypeDefFromID",
 			"p": "Dagger/Client.html#method_loadScalarTypeDefFromID",
 			"d": "<p>Load a ScalarTypeDef from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadSearchResultFromID",
+			"p": "Dagger/Client.html#method_loadSearchResultFromID",
+			"d": "<p>Load a SearchResult from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -2355,6 +2387,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\CurrentModule::meta",
+			"p": "Dagger/CurrentModule.html#method_meta",
+			"d": "<p>The fully instantiated module implementing the current function call.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\CurrentModule::name",
 			"p": "Dagger/CurrentModule.html#method_name",
 			"d": "<p>The name of the module being executed in</p>"
@@ -2478,6 +2516,12 @@
 			"n": "Dagger\\Directory::name",
 			"p": "Dagger/Directory.html#method_name",
 			"d": "<p>Returns the name of the directory.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Directory::search",
+			"p": "Dagger/Directory.html#method_search",
+			"d": "<p>Searches for content matching the given regular expression or literal string.</p>"
 		},
 		{
 			"t": "M",
@@ -2751,6 +2795,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::hostfs",
+			"p": "Dagger/Env.html#method_hostfs",
+			"d": null
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::id",
 			"p": "Dagger/Env.html#method_id",
 			"d": "<p>A unique identifier for this Env.</p>"
@@ -2877,6 +2927,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withHostfs",
+			"p": "Dagger/Env.html#method_withHostfs",
+			"d": "<p>Return a new environment with a new host filesystem</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withJSONValueInput",
 			"p": "Dagger/Env.html#method_withJSONValueInput",
 			"d": "<p>Create or update a binding of type JSONValue in the environment</p>"
@@ -2889,15 +2945,9 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Env::withLLMInput",
-			"p": "Dagger/Env.html#method_withLLMInput",
-			"d": "<p>Create or update a binding of type LLM in the environment</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Env::withLLMOutput",
-			"p": "Dagger/Env.html#method_withLLMOutput",
-			"d": "<p>Declare a desired LLM output to be assigned in the environment</p>"
+			"n": "Dagger\\Env::withModule",
+			"p": "Dagger/Env.html#method_withModule",
+			"d": "<p>load a module and expose its functions to the model</p>"
 		},
 		{
 			"t": "M",
@@ -2934,6 +2984,18 @@
 			"n": "Dagger\\Env::withModuleSourceOutput",
 			"p": "Dagger/Env.html#method_withModuleSourceOutput",
 			"d": "<p>Declare a desired ModuleSource output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withSearchResultInput",
+			"p": "Dagger/Env.html#method_withSearchResultInput",
+			"d": "<p>Create or update a binding of type SearchResult in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withSearchResultOutput",
+			"p": "Dagger/Env.html#method_withSearchResultOutput",
+			"d": "<p>Declare a desired SearchResult output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",
@@ -2982,6 +3044,12 @@
 			"n": "Dagger\\Env::withStringOutput",
 			"p": "Dagger/Env.html#method_withStringOutput",
 			"d": "<p>Create or update an input value of type string</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withoutOutputs",
+			"p": "Dagger/Env.html#method_withoutOutputs",
+			"d": "<p>Return a new environment without any outputs</p>"
 		},
 		{
 			"t": "M",
@@ -3105,6 +3173,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\File::search",
+			"p": "Dagger/File.html#method_search",
+			"d": "<p>Searches for content matching the given regular expression or literal string.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\File::size",
 			"p": "Dagger/File.html#method_size",
 			"d": "<p>Retrieves the size of the file, in bytes.</p>"
@@ -3120,6 +3194,12 @@
 			"n": "Dagger\\File::withName",
 			"p": "Dagger/File.html#method_withName",
 			"d": "<p>Retrieves this file with its name set to the given name.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\File::withReplaced",
+			"p": "Dagger/File.html#method_withReplaced",
+			"d": "<p>Retrieves the file with content replaced with the given text.</p>"
 		},
 		{
 			"t": "M",
@@ -3615,6 +3695,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\LLM::hasPrompt",
+			"p": "Dagger/LLM.html#method_hasPrompt",
+			"d": "<p>Indicates that the LLM can be synced or stepped</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\LLM::history",
 			"p": "Dagger/LLM.html#method_history",
 			"d": "<p>return the llm message history</p>"
@@ -3641,7 +3727,7 @@
 			"t": "M",
 			"n": "Dagger\\LLM::loop",
 			"p": "Dagger/LLM.html#method_loop",
-			"d": "<p>synchronize LLM state</p>"
+			"d": "<p>Loop completing tool calls until the LLM ends its turn</p>"
 		},
 		{
 			"t": "M",
@@ -3654,6 +3740,12 @@
 			"n": "Dagger\\LLM::provider",
 			"p": "Dagger/LLM.html#method_provider",
 			"d": "<p>return the provider used by the llm</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::step",
+			"p": "Dagger/LLM.html#method_step",
+			"d": "<p>Returns an LLM that will only sync one step instead of looping</p>"
 		},
 		{
 			"t": "M",
@@ -3675,9 +3767,27 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\LLM::withBlockedFunction",
+			"p": "Dagger/LLM.html#method_withBlockedFunction",
+			"d": "<p>Return a new LLM with the specified tool disabled</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::withCaller",
+			"p": "Dagger/LLM.html#method_withCaller",
+			"d": "<p>Provide the calling object as an input to the LLM environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\LLM::withEnv",
 			"p": "Dagger/LLM.html#method_withEnv",
 			"d": "<p>allow the LLM to interact with an environment via MCP</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::withMCPServer",
+			"p": "Dagger/LLM.html#method_withMCPServer",
+			"d": "<p>Add an external MCP server to the LLM</p>"
 		},
 		{
 			"t": "M",
@@ -3696,6 +3806,12 @@
 			"n": "Dagger\\LLM::withPromptFile",
 			"p": "Dagger/LLM.html#method_withPromptFile",
 			"d": "<p>append the contents of a file to the llm context</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::withStaticTools",
+			"p": "Dagger/LLM.html#method_withStaticTools",
+			"d": "<p>Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration</p>"
 		},
 		{
 			"t": "M",
@@ -4266,6 +4382,30 @@
 			"n": "Dagger\\ScalarTypeDef::sourceModuleName",
 			"p": "Dagger/ScalarTypeDef.html#method_sourceModuleName",
 			"d": "<p>If this ScalarTypeDef is associated with a Module, the name of the module. Unset otherwise.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\SearchResult::filePath",
+			"p": "Dagger/SearchResult.html#method_filePath",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\SearchResult::id",
+			"p": "Dagger/SearchResult.html#method_id",
+			"d": "<p>A unique identifier for this SearchResult.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\SearchResult::lineNumber",
+			"p": "Dagger/SearchResult.html#method_lineNumber",
+			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\SearchResult::matchedLines",
+			"p": "Dagger/SearchResult.html#method_matchedLines",
+			"d": null
 		},
 		{
 			"t": "M",

@@ -53,20 +53,15 @@ func (c *OpenAIClient) IsRetryable(err error) bool {
 }
 
 func (c *OpenAIClient) SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
-	ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
-		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-		attribute.String(telemetry.UIMessageAttr, "received"),
-	))
-	defer telemetry.End(span, func() error { return rerr })
-
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
 		log.String(telemetry.ContentTypeAttr, "text/markdown"))
 	defer stdio.Close()
 
 	m := telemetry.Meter(ctx, InstrumentationLibrary)
+	spanCtx := trace.SpanContextFromContext(ctx)
 	attrs := []attribute.KeyValue{
-		attribute.String(telemetry.MetricsTraceIDAttr, span.SpanContext().TraceID().String()),
-		attribute.String(telemetry.MetricsSpanIDAttr, span.SpanContext().SpanID().String()),
+		attribute.String(telemetry.MetricsTraceIDAttr, spanCtx.TraceID().String()),
+		attribute.String(telemetry.MetricsSpanIDAttr, spanCtx.SpanID().String()),
 		attribute.String("model", c.endpoint.Model),
 		attribute.String("provider", string(c.endpoint.Provider)),
 	}
@@ -131,9 +126,6 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*ModelMessage, t
 	}
 
 	if len(tools) > 0 {
-		// OpenAI is picky about this being set if no tools are specified
-		params.ParallelToolCalls = openai.Opt(false)
-
 		var toolParams []openai.ChatCompletionToolParam
 		for _, tool := range tools {
 			toolParams = append(toolParams, openai.ChatCompletionToolParam{

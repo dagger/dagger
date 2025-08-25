@@ -837,6 +837,53 @@ export type DirectoryFilterOpts = {
   include?: string[]
 }
 
+export type DirectorySearchOpts = {
+  /**
+   * Directory or file paths to search
+   */
+  paths?: string[]
+
+  /**
+   * Glob patterns to match (e.g., "*.md")
+   */
+  globs?: string[]
+
+  /**
+   * The text to match.
+   */
+  pattern: string
+
+  /**
+   * Interpret the pattern as a literal string instead of a regular expression.
+   */
+  literal?: boolean
+
+  /**
+   * Enable searching across multiple lines.
+   */
+  multiline?: boolean
+
+  /**
+   * Allow the . pattern to match newlines in multiline mode.
+   */
+  dotall?: boolean
+
+  /**
+   * Enable case-insensitive matching.
+   */
+  ignoreCase?: boolean
+
+  /**
+   * Only return matching files, not lines and content
+   */
+  filesOnly?: boolean
+
+  /**
+   * Limit the number of results to return
+   */
+  limit?: number
+}
+
 export type DirectoryTerminalOpts = {
   /**
    * If set, override the default container used for the terminal.
@@ -1023,6 +1070,18 @@ function ExistsTypeNameToValue(name: string): ExistsType {
  */
 export type FieldTypeDefID = string & { __FieldTypeDefID: never }
 
+export type FileContentsOpts = {
+  /**
+   * Start reading after this line
+   */
+  offset?: number
+
+  /**
+   * Maximum number of lines to read
+   */
+  limit?: number
+}
+
 export type FileDigestOpts = {
   /**
    * If true, exclude metadata from the digest.
@@ -1035,6 +1094,52 @@ export type FileExportOpts = {
    * If allowParentDirPath is true, the path argument can be a directory path, in which case the file will be created in that directory.
    */
   allowParentDirPath?: boolean
+}
+
+export type FileSearchOpts = {
+  /**
+   * Interpret the pattern as a literal string instead of a regular expression.
+   */
+  literal?: boolean
+
+  /**
+   * Enable searching across multiple lines.
+   */
+  multiline?: boolean
+
+  /**
+   * Allow the . pattern to match newlines in multiline mode.
+   */
+  dotall?: boolean
+
+  /**
+   * Enable case-insensitive matching.
+   */
+  ignoreCase?: boolean
+
+  /**
+   * Only return matching files, not lines and content
+   */
+  filesOnly?: boolean
+
+  /**
+   * Limit the number of results to return
+   */
+  limit?: number
+  paths?: string[]
+  globs?: string[]
+}
+
+export type FileWithReplacedOpts = {
+  /**
+   * Replace all occurrences of the pattern.
+   */
+  all?: boolean
+
+  /**
+   * Replace the first match after the specified line.
+   */
+  firstAfter?: number
 }
 
 /**
@@ -1673,6 +1778,11 @@ export type SDKConfigID = string & { __SDKConfigID: never }
 export type ScalarTypeDefID = string & { __ScalarTypeDefID: never }
 
 /**
+ * The `SearchResultID` scalar type represents an identifier for an object of type SearchResult.
+ */
+export type SearchResultID = string & { __SearchResultID: never }
+
+/**
  * The `SecretID` scalar type represents an identifier for an object of type Secret.
  */
 export type SecretID = string & { __SecretID: never }
@@ -2147,14 +2257,6 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * Retrieve the binding value, as type LLM
-   */
-  asLLM = (): LLM => {
-    const ctx = this._ctx.select("asLLM")
-    return new LLM(ctx)
-  }
-
-  /**
    * Retrieve the binding value, as type Module
    */
   asModule = (): Module_ => {
@@ -2176,6 +2278,14 @@ export class Binding extends BaseClient {
   asModuleSource = (): ModuleSource => {
     const ctx = this._ctx.select("asModuleSource")
     return new ModuleSource(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type SearchResult
+   */
+  asSearchResult = (): SearchResult => {
+    const ctx = this._ctx.select("asSearchResult")
+    return new SearchResult(ctx)
   }
 
   /**
@@ -3683,6 +3793,14 @@ export class CurrentModule extends BaseClient {
   }
 
   /**
+   * The fully instantiated module implementing the current function call.
+   */
+  meta = (): Module_ => {
+    const ctx = this._ctx.select("meta")
+    return new Module_(ctx)
+  }
+
+  /**
    * The name of the module being executed in
    */
   name = async (): Promise<string> => {
@@ -3960,6 +4078,34 @@ export class Directory extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Searches for content matching the given regular expression or literal string.
+   *
+   * Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+   * @param opts.paths Directory or file paths to search
+   * @param opts.globs Glob patterns to match (e.g., "*.md")
+   * @param opts.pattern The text to match.
+   * @param opts.literal Interpret the pattern as a literal string instead of a regular expression.
+   * @param opts.multiline Enable searching across multiple lines.
+   * @param opts.dotall Allow the . pattern to match newlines in multiline mode.
+   * @param opts.ignoreCase Enable case-insensitive matching.
+   * @param opts.filesOnly Only return matching files, not lines and content
+   * @param opts.limit Limit the number of results to return
+   */
+  search = async (opts?: DirectorySearchOpts): Promise<SearchResult[]> => {
+    type search = {
+      id: SearchResultID
+    }
+
+    const ctx = this._ctx.select("search", { ...opts }).select("id")
+
+    const response: Awaited<search[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadSearchResultFromID(r.id),
+    )
   }
 
   /**
@@ -4779,6 +4925,10 @@ export class Env extends BaseClient {
 
     return response
   }
+  hostfs = (): Directory => {
+    const ctx = this._ctx.select("hostfs")
+    return new Directory(ctx)
+  }
 
   /**
    * retrieve an input value by name
@@ -5034,6 +5184,15 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Return a new environment with a new host filesystem
+   * @param hostfs The directory to set as the host filesystem
+   */
+  withHostfs = (hostfs: Directory): Env => {
+    const ctx = this._ctx.select("withHostfs", { hostfs })
+    return new Env(ctx)
+  }
+
+  /**
    * Create or update a binding of type JSONValue in the environment
    * @param name The name of the binding
    * @param value The JSONValue value to assign to the binding
@@ -5063,23 +5222,12 @@ export class Env extends BaseClient {
   }
 
   /**
-   * Create or update a binding of type LLM in the environment
-   * @param name The name of the binding
-   * @param value The LLM value to assign to the binding
-   * @param description The purpose of the input
+   * load a module and expose its functions to the model
    */
-  withLLMInput = (name: string, value: LLM, description: string): Env => {
-    const ctx = this._ctx.select("withLLMInput", { name, value, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired LLM output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withLLMOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withLLMOutput", { name, description })
+  withModule = (module_: Module_): Env => {
+    const ctx = this._ctx.select("withModule", {
+      module: module_,
+    })
     return new Env(ctx)
   }
 
@@ -5170,6 +5318,38 @@ export class Env extends BaseClient {
    */
   withModuleSourceOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withModuleSourceOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type SearchResult in the environment
+   * @param name The name of the binding
+   * @param value The SearchResult value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withSearchResultInput = (
+    name: string,
+    value: SearchResult,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withSearchResultInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired SearchResult output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withSearchResultOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withSearchResultOutput", {
       name,
       description,
     })
@@ -5277,6 +5457,14 @@ export class Env extends BaseClient {
    */
   withStringOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withStringOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Return a new environment without any outputs
+   */
+  withoutOutputs = (): Env => {
+    const ctx = this._ctx.select("withoutOutputs")
     return new Env(ctx)
   }
 
@@ -5649,13 +5837,15 @@ export class File extends BaseClient {
 
   /**
    * Retrieves the contents of the file.
+   * @param opts.offset Start reading after this line
+   * @param opts.limit Maximum number of lines to read
    */
-  contents = async (): Promise<string> => {
+  contents = async (opts?: FileContentsOpts): Promise<string> => {
     if (this._contents) {
       return this._contents
     }
 
-    const ctx = this._ctx.select("contents")
+    const ctx = this._ctx.select("contents", { ...opts })
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -5711,6 +5901,35 @@ export class File extends BaseClient {
   }
 
   /**
+   * Searches for content matching the given regular expression or literal string.
+   *
+   * Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+   * @param pattern The text to match.
+   * @param opts.literal Interpret the pattern as a literal string instead of a regular expression.
+   * @param opts.multiline Enable searching across multiple lines.
+   * @param opts.dotall Allow the . pattern to match newlines in multiline mode.
+   * @param opts.ignoreCase Enable case-insensitive matching.
+   * @param opts.filesOnly Only return matching files, not lines and content
+   * @param opts.limit Limit the number of results to return
+   */
+  search = async (
+    pattern: string,
+    opts?: FileSearchOpts,
+  ): Promise<SearchResult[]> => {
+    type search = {
+      id: SearchResultID
+    }
+
+    const ctx = this._ctx.select("search", { pattern, ...opts }).select("id")
+
+    const response: Awaited<search[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadSearchResultFromID(r.id),
+    )
+  }
+
+  /**
    * Retrieves the size of the file, in bytes.
    */
   size = async (): Promise<number> => {
@@ -5742,6 +5961,34 @@ export class File extends BaseClient {
    */
   withName = (name: string): File => {
     const ctx = this._ctx.select("withName", { name })
+    return new File(ctx)
+  }
+
+  /**
+   * Retrieves the file with content replaced with the given text.
+   *
+   * If 'all' is true, all occurrences of the pattern will be replaced.
+   *
+   * If 'firstAfter' is specified, only the first match starting at the specified line will be replaced.
+   *
+   * If neither are specified, and there are multiple matches for the pattern, this will error.
+   *
+   * If there are no matches for the pattern, this will error.
+   * @param search The text to match.
+   * @param replacement The text to match.
+   * @param opts.all Replace all occurrences of the pattern.
+   * @param opts.firstAfter Replace the first match after the specified line.
+   */
+  withReplaced = (
+    search: string,
+    replacement: string,
+    opts?: FileWithReplacedOpts,
+  ): File => {
+    const ctx = this._ctx.select("withReplaced", {
+      search,
+      replacement,
+      ...opts,
+    })
     return new File(ctx)
   }
 
@@ -7060,6 +7307,7 @@ export class JSONValue extends BaseClient {
 
 export class LLM extends BaseClient {
   private readonly _id?: LLMID = undefined
+  private readonly _hasPrompt?: boolean = undefined
   private readonly _historyJSON?: JSON = undefined
   private readonly _lastReply?: string = undefined
   private readonly _model?: string = undefined
@@ -7073,6 +7321,7 @@ export class LLM extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: LLMID,
+    _hasPrompt?: boolean,
     _historyJSON?: JSON,
     _lastReply?: string,
     _model?: string,
@@ -7083,6 +7332,7 @@ export class LLM extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._hasPrompt = _hasPrompt
     this._historyJSON = _historyJSON
     this._lastReply = _lastReply
     this._model = _model
@@ -7133,6 +7383,21 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Indicates that the LLM can be synced or stepped
+   */
+  hasPrompt = async (): Promise<boolean> => {
+    if (this._hasPrompt) {
+      return this._hasPrompt
+    }
+
+    const ctx = this._ctx.select("hasPrompt")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * return the llm message history
    */
   history = async (): Promise<string[]> => {
@@ -7174,7 +7439,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * synchronize LLM state
+   * Loop completing tool calls until the LLM ends its turn
    */
   loop = (): LLM => {
     const ctx = this._ctx.select("loop")
@@ -7212,6 +7477,14 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Returns an LLM that will only sync one step instead of looping
+   */
+  step = (): LLM => {
+    const ctx = this._ctx.select("step")
+    return new LLM(ctx)
+  }
+
+  /**
    * synchronize LLM state
    */
   sync = async (): Promise<LLM> => {
@@ -7246,10 +7519,40 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Return a new LLM with the specified tool disabled
+   * @param typeName The type name whose field will be disabled
+   * @param fieldName The field name to disable
+   */
+  withBlockedFunction = (typeName: string, fieldName: string): LLM => {
+    const ctx = this._ctx.select("withBlockedFunction", { typeName, fieldName })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Provide the calling object as an input to the LLM environment
+   * @param name The name of the binding
+   * @param description The description of the input
+   */
+  withCaller = (name: string, description: string): LLM => {
+    const ctx = this._ctx.select("withCaller", { name, description })
+    return new LLM(ctx)
+  }
+
+  /**
    * allow the LLM to interact with an environment via MCP
    */
   withEnv = (env: Env): LLM => {
     const ctx = this._ctx.select("withEnv", { env })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Add an external MCP server to the LLM
+   * @param name The name of the MCP server
+   * @param service The MCP service to run. If the service exposes a port, HTTP+SSE will be used to communicate.
+   */
+  withMCPServer = (name: string, service: Service): LLM => {
+    const ctx = this._ctx.select("withMCPServer", { name, service })
     return new LLM(ctx)
   }
 
@@ -7277,6 +7580,14 @@ export class LLM extends BaseClient {
    */
   withPromptFile = (file: File): LLM => {
     const ctx = this._ctx.select("withPromptFile", { file })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
+   */
+  withStaticTools = (): LLM => {
+    const ctx = this._ctx.select("withStaticTools")
     return new LLM(ctx)
   }
 
@@ -8694,6 +9005,10 @@ export class Client extends BaseClient {
     const ctx = this._ctx.select("container", { ...opts })
     return new Container(ctx)
   }
+  currentEnv = (): Env => {
+    const ctx = this._ctx.select("currentEnv")
+    return new Env(ctx)
+  }
 
   /**
    * The FunctionCall context that the SDK caller is currently executing in.
@@ -9191,6 +9506,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a SearchResult from its ID.
+   */
+  loadSearchResultFromID = (id: SearchResultID): SearchResult => {
+    const ctx = this._ctx.select("loadSearchResultFromID", { id })
+    return new SearchResult(ctx)
+  }
+
+  /**
    * Load a Secret from its ID.
    */
   loadSecretFromID = (id: SecretID): Secret => {
@@ -9459,6 +9782,79 @@ export class ScalarTypeDef extends BaseClient {
     }
 
     const ctx = this._ctx.select("sourceModuleName")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+export class SearchResult extends BaseClient {
+  private readonly _id?: SearchResultID = undefined
+  private readonly _filePath?: string = undefined
+  private readonly _lineNumber?: number = undefined
+  private readonly _matchedLines?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: SearchResultID,
+    _filePath?: string,
+    _lineNumber?: number,
+    _matchedLines?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._filePath = _filePath
+    this._lineNumber = _lineNumber
+    this._matchedLines = _matchedLines
+  }
+
+  /**
+   * A unique identifier for this SearchResult.
+   */
+  id = async (): Promise<SearchResultID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<SearchResultID> = await ctx.execute()
+
+    return response
+  }
+  filePath = async (): Promise<string> => {
+    if (this._filePath) {
+      return this._filePath
+    }
+
+    const ctx = this._ctx.select("filePath")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+  lineNumber = async (): Promise<number> => {
+    if (this._lineNumber) {
+      return this._lineNumber
+    }
+
+    const ctx = this._ctx.select("lineNumber")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+  matchedLines = async (): Promise<string> => {
+    if (this._matchedLines) {
+      return this._matchedLines
+    }
+
+    const ctx = this._ctx.select("matchedLines")
 
     const response: Awaited<string> = await ctx.execute()
 

@@ -59,6 +59,17 @@ defmodule Dagger.Client do
     }
   end
 
+  @spec current_env(t()) :: Dagger.Env.t()
+  def current_env(%__MODULE__{} = client) do
+    query_builder =
+      client.query_builder |> QB.select("currentEnv")
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
   @doc """
   The FunctionCall context that the SDK caller is currently executing in.
 
@@ -903,6 +914,20 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("loadScalarTypeDefFromID") |> QB.put_arg("id", id)
 
     %Dagger.ScalarTypeDef{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a SearchResult from its ID.
+  """
+  @spec load_search_result_from_id(t(), Dagger.SearchResultID.t()) :: Dagger.SearchResult.t()
+  def load_search_result_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadSearchResultFromID") |> QB.put_arg("id", id)
+
+    %Dagger.SearchResult{
       query_builder: query_builder,
       client: client.client
     }

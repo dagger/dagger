@@ -1,3 +1,6 @@
+"""Indicates that the argument defaults to a contextual path."""
+directive @defaultPath(path: String!, ignore: [String!]!) on ARGUMENT_DEFINITION
+
 """Indicates the underlying value of an enum member."""
 directive @enumValue(value: String!) on ENUM_VALUE
 
@@ -40,9 +43,6 @@ type Binding {
   """Retrieve the binding value, as type JSONValue"""
   asJSONValue: JSONValue!
 
-  """Retrieve the binding value, as type LLM"""
-  asLLM: LLM!
-
   """Retrieve the binding value, as type Module"""
   asModule: Module!
 
@@ -51,6 +51,9 @@ type Binding {
 
   """Retrieve the binding value, as type ModuleSource"""
   asModuleSource: ModuleSource!
+
+  """Retrieve the binding value, as type SearchResult"""
+  asSearchResult: SearchResult!
 
   """Retrieve the binding value, as type Secret"""
   asSecret: Secret!
@@ -1324,6 +1327,9 @@ type CurrentModule {
   """A unique identifier for this CurrentModule."""
   id: CurrentModuleID!
 
+  """The fully instantiated module implementing the current function call."""
+  meta: Module!
+
   """The name of the module being executed in"""
   name: String!
 
@@ -1521,6 +1527,42 @@ type Directory {
 
   """Returns the name of the directory."""
   name: String!
+
+  """
+  Searches for content matching the given regular expression or literal string.
+
+  Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+  """
+  search(
+    """Directory or file paths to search"""
+    paths: [String!] = []
+
+    """Glob patterns to match (e.g., "*.md")"""
+    globs: [String!] = []
+
+    """The text to match."""
+    pattern: String!
+
+    """
+    Interpret the pattern as a literal string instead of a regular expression.
+    """
+    literal: Boolean = false
+
+    """Enable searching across multiple lines."""
+    multiline: Boolean = false
+
+    """Allow the . pattern to match newlines in multiline mode."""
+    dotall: Boolean = false
+
+    """Enable case-insensitive matching."""
+    ignoreCase: Boolean = false
+
+    """Only return matching files, not lines and content"""
+    filesOnly: Boolean = false
+
+    """Limit the number of results to return"""
+    limit: Int
+  ): [SearchResult!]!
 
   """Force evaluation in the engine."""
   sync: DirectoryID!
@@ -1838,6 +1880,8 @@ The `EnumValueTypeDefID` scalar type represents an identifier for an object of t
 scalar EnumValueTypeDefID
 
 type Env {
+  hostfs: Directory!
+
   """A unique identifier for this Env."""
   id: EnvID!
 
@@ -2023,6 +2067,12 @@ type Env {
     description: String!
   ): Env!
 
+  """Return a new environment with a new host filesystem"""
+  withHostfs(
+    """The directory to set as the host filesystem"""
+    hostfs: DirectoryID!
+  ): Env!
+
   """Create or update a binding of type JSONValue in the environment"""
   withJSONValueInput(
     """The name of the binding"""
@@ -2044,26 +2094,8 @@ type Env {
     description: String!
   ): Env!
 
-  """Create or update a binding of type LLM in the environment"""
-  withLLMInput(
-    """The name of the binding"""
-    name: String!
-
-    """The LLM value to assign to the binding"""
-    value: LLMID!
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired LLM output to be assigned in the environment"""
-  withLLMOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
+  """load a module and expose its functions to the model"""
+  withModule(module: ModuleID!): Env!
 
   """
   Create or update a binding of type ModuleConfigClient in the environment
@@ -2127,6 +2159,29 @@ type Env {
   Declare a desired ModuleSource output to be assigned in the environment
   """
   withModuleSourceOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type SearchResult in the environment"""
+  withSearchResultInput(
+    """The name of the binding"""
+    name: String!
+
+    """The SearchResult value to assign to the binding"""
+    value: SearchResultID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired SearchResult output to be assigned in the environment
+  """
+  withSearchResultOutput(
     """The name of the binding"""
     name: String!
 
@@ -2217,6 +2272,9 @@ type Env {
     """The description of the output"""
     description: String!
   ): Env!
+
+  """Return a new environment without any outputs"""
+  withoutOutputs: Env!
 }
 
 """
@@ -2325,7 +2383,13 @@ scalar FieldTypeDefID
 """A file."""
 type File {
   """Retrieves the contents of the file."""
-  contents: String!
+  contents(
+    """Start reading after this line"""
+    offset: Int
+
+    """Maximum number of lines to read"""
+    limit: Int
+  ): String!
 
   """
   Return the file's digest. The format of the digest is not guaranteed to be
@@ -2355,6 +2419,40 @@ type File {
   """Retrieves the name of the file."""
   name: String!
 
+  """
+  Searches for content matching the given regular expression or literal string.
+
+  Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+  """
+  search(
+    """The text to match."""
+    pattern: String!
+
+    """
+    Interpret the pattern as a literal string instead of a regular expression.
+    """
+    literal: Boolean = false
+
+    """Enable searching across multiple lines."""
+    multiline: Boolean = false
+
+    """Allow the . pattern to match newlines in multiline mode."""
+    dotall: Boolean = false
+
+    """Enable case-insensitive matching."""
+    ignoreCase: Boolean = false
+
+    """Only return matching files, not lines and content"""
+    filesOnly: Boolean = false
+
+    """Limit the number of results to return"""
+    limit: Int
+
+    paths: [String!] = []
+
+    globs: [String!] = []
+  ): [SearchResult!]!
+
   """Retrieves the size of the file, in bytes."""
   size: Int!
 
@@ -2365,6 +2463,31 @@ type File {
   withName(
     """Name to set file to."""
     name: String!
+  ): File!
+
+  """
+  Retrieves the file with content replaced with the given text.
+
+  If 'all' is true, all occurrences of the pattern will be replaced.
+
+  If 'firstAfter' is specified, only the first match starting at the specified line will be replaced.
+
+  If neither are specified, and there are multiple matches for the pattern, this will error.
+
+  If there are no matches for the pattern, this will error.
+  """
+  withReplaced(
+    """The text to match."""
+    search: String!
+
+    """The text to match."""
+    replacement: String!
+
+    """Replace all occurrences of the pattern."""
+    all: Boolean = false
+
+    """Replace the first match after the specified line."""
+    firstAfter: Int
   ): File!
 
   """
@@ -2944,6 +3067,9 @@ type LLM {
   """return the LLM's current environment"""
   env: Env!
 
+  """Indicates that the LLM can be synced or stepped"""
+  hasPrompt: Boolean!
+
   """return the llm message history"""
   history: [String!]!
 
@@ -2956,7 +3082,7 @@ type LLM {
   """return the last llm reply from the history"""
   lastReply: String!
 
-  """synchronize LLM state"""
+  """Loop completing tool calls until the LLM ends its turn"""
   loop: LLM!
 
   """return the model used by the llm"""
@@ -2964,6 +3090,9 @@ type LLM {
 
   """return the provider used by the llm"""
   provider: String!
+
+  """Returns an LLM that will only sync one step instead of looping"""
+  step: LLM!
 
   """synchronize LLM state"""
   sync: LLMID!
@@ -2974,8 +3103,37 @@ type LLM {
   """print documentation for available tools"""
   tools: String!
 
+  """Return a new LLM with the specified tool disabled"""
+  withBlockedFunction(
+    """The type name whose field will be disabled"""
+    typeName: String!
+
+    """The field name to disable"""
+    fieldName: String!
+  ): LLM!
+
+  """Provide the calling object as an input to the LLM environment"""
+  withCaller(
+    """The name of the binding"""
+    name: String!
+
+    """The description of the input"""
+    description: String!
+  ): LLM!
+
   """allow the LLM to interact with an environment via MCP"""
   withEnv(env: EnvID!): LLM!
+
+  """Add an external MCP server to the LLM"""
+  withMCPServer(
+    """The name of the MCP server"""
+    name: String!
+
+    """
+    The MCP service to run. If the service exposes a port, HTTP+SSE will be used to communicate.
+    """
+    service: ServiceID!
+  ): LLM!
 
   """swap out the llm model"""
   withModel(
@@ -2994,6 +3152,11 @@ type LLM {
     """The file to read the prompt from"""
     file: FileID!
   ): LLM!
+
+  """
+  Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
+  """
+  withStaticTools: LLM!
 
   """Add a system prompt to the LLM's environment"""
   withSystemPrompt(
@@ -3495,6 +3658,8 @@ type Query {
     platform: Platform
   ): Container!
 
+  currentEnv: Env!
+
   """
   The FunctionCall context that the SDK caller is currently executing in.
 
@@ -3754,6 +3919,9 @@ type Query {
   """Load a ScalarTypeDef from its ID."""
   loadScalarTypeDefFromID(id: ScalarTypeDefID!): ScalarTypeDef!
 
+  """Load a SearchResult from its ID."""
+  loadSearchResultFromID(id: SearchResultID!): SearchResult!
+
   """Load a Secret from its ID."""
   loadSecretFromID(id: SecretID!): Secret!
 
@@ -3904,6 +4072,22 @@ type ScalarTypeDef {
 The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
 """
 scalar ScalarTypeDefID
+
+type SearchResult {
+  filePath: String!
+
+  """A unique identifier for this SearchResult."""
+  id: SearchResultID!
+
+  lineNumber: Int!
+
+  matchedLines: String!
+}
+
+"""
+The `SearchResultID` scalar type represents an identifier for an object of type SearchResult.
+"""
+scalar SearchResultID
 
 """
 A reference to a secret value, which can be handled more safely than the value itself.

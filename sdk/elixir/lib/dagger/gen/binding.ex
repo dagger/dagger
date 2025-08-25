@@ -142,20 +142,6 @@ defmodule Dagger.Binding do
   end
 
   @doc """
-  Retrieve the binding value, as type LLM
-  """
-  @spec as_llm(t()) :: Dagger.LLM.t()
-  def as_llm(%__MODULE__{} = binding) do
-    query_builder =
-      binding.query_builder |> QB.select("asLLM")
-
-    %Dagger.LLM{
-      query_builder: query_builder,
-      client: binding.client
-    }
-  end
-
-  @doc """
   Retrieve the binding value, as type Module
   """
   @spec as_module(t()) :: Dagger.Module.t()
@@ -192,6 +178,20 @@ defmodule Dagger.Binding do
       binding.query_builder |> QB.select("asModuleSource")
 
     %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type SearchResult
+  """
+  @spec as_search_result(t()) :: Dagger.SearchResult.t()
+  def as_search_result(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asSearchResult")
+
+    %Dagger.SearchResult{
       query_builder: query_builder,
       client: binding.client
     }
