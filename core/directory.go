@@ -1158,6 +1158,37 @@ func (ch *Changes) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) 
 	return append(beforeDefs, afterDefs...), nil
 }
 
+func (dir *Directory) WithChanges(ctx context.Context, changes *Changes) (*Directory, error) {
+	dir = dir.Clone()
+
+	// First, get the diff directory from Changes.before.diff(Changes.after)
+	diffDir, err := changes.Before.Self().Diff(ctx, changes.After.Self())
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute diff between before and after directories: %w", err)
+	}
+
+	// Apply the diff (added + changed files) using WithDirectory
+	dir, err = dir.WithDirectory(ctx, "/", diffDir, CopyFilter{}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to apply diff directory: %w", err)
+	}
+
+	// Remove all the paths in Changes.removedPaths using Without
+	if len(changes.RemovedPaths) > 0 {
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get dagql server: %w", err)
+		}
+
+		dir, err = dir.Without(ctx, srv, changes.RemovedPaths...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to remove paths: %w", err)
+		}
+	}
+
+	return dir, nil
+}
+
 func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...string) (*Directory, error) {
 	dir = dir.Clone()
 	return execInMount(ctx, dir, func(root string) error {

@@ -160,6 +160,11 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("older").Doc(`The older directory snapshot to compare against`),
 			),
+		dagql.NodeFunc("withChanges", DagOpDirectoryWrapper(srv, s.withChanges, WithPathFn(keepParentDir[withChangesArgs]))).
+			Doc(`Return a directory with changes from another directory applied to it.`).
+			Args(
+				dagql.Arg("changes").Doc(`Changes to apply to the directory`),
+			),
 		dagql.Func("export", s.export).
 			View(AllVersion).
 			DoNotCache("Writes to the local host.").
@@ -597,6 +602,27 @@ func (s *directorySchema) changes(ctx context.Context, parent dagql.ObjectResult
 		return res, err
 	}
 	return core.NewChanges(ctx, dir, parent)
+}
+
+type withChangesArgs struct {
+	Changes dagql.ID[*core.Changes]
+	FSDagOpInternalArgs
+}
+
+func (s *directorySchema) withChanges(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withChangesArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	changes, err := args.Changes.Load(ctx, srv)
+	if err != nil {
+		return res, err
+	}
+	with, err := parent.Self().WithChanges(ctx, changes.Self())
+	if err != nil {
+		return res, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, with)
 }
 
 type dirExportArgs struct {
