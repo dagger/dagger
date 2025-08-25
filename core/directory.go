@@ -1006,6 +1006,109 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 	return dir, nil
 }
 
+type Changes struct {
+	Upper, Lower *Directory
+}
+
+func (*Changes) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Changes",
+		NonNull:   true,
+	}
+}
+
+func (*Changes) TypeDescription() string {
+	return "A comparison between two directories representing changes that can be applied."
+}
+
+func (ch *Changes) RemovedPaths(ctx context.Context) ([]string, error) {
+	// Get all paths from the lower (older) directory
+	lowerPaths, err := ch.Lower.Glob(ctx, "**")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get paths from lower directory: %w", err)
+	}
+
+	// Get all paths from the upper (newer) directory
+	upperPaths, err := ch.Upper.Glob(ctx, "**")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get paths from upper directory: %w", err)
+	}
+
+	// Create a set from upper paths for efficient lookup
+	upperPathSet := make(map[string]bool, len(upperPaths))
+	for _, path := range upperPaths {
+		upperPathSet[path] = true
+	}
+
+	// Find paths that exist in lower but not in upper (removed paths)
+	var allRemovedPaths []string
+	for _, path := range lowerPaths {
+		if !upperPathSet[path] {
+			allRemovedPaths = append(allRemovedPaths, path)
+		}
+	}
+
+	// Filter out children of removed directories to avoid redundancy
+	dirs := make(map[string]bool)
+	var filteredRemovedPaths []string
+
+removed:
+	for _, fp := range allRemovedPaths {
+		// Check if this path is a child of an already removed directory
+		for dir := range dirs {
+			if strings.HasPrefix(fp, dir) {
+				// don't show removed files in directories that were already removed
+				continue removed
+			}
+		}
+		// if the path ends with a slash, it's a directory
+		if strings.HasSuffix(fp, "/") {
+			dirs[fp] = true
+		}
+		filteredRemovedPaths = append(filteredRemovedPaths, fp)
+	}
+
+	return filteredRemovedPaths, nil
+}
+
+func (dir *Directory) Changes(ctx context.Context, other *Directory) (*Changes, error) {
+	dir = dir.Clone()
+
+	thisDirPath := dir.Dir
+	if thisDirPath == "" {
+		thisDirPath = "/"
+	}
+	otherDirPath := other.Dir
+	if otherDirPath == "" {
+		otherDirPath = "/"
+	}
+	if thisDirPath != otherDirPath {
+		// TODO(vito): work around with llb.Copy shenanigans?
+		return nil, fmt.Errorf("cannot diff with different relative paths: %q != %q", dir.Dir, other.Dir)
+	}
+
+	lowerSt, err := other.State(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	upperSt, err := dir.State(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	diffDir := dir.Clone()
+	err = diffDir.SetState(ctx, llb.Diff(lowerSt, upperSt))
+	if err != nil {
+		return nil, err
+	}
+
+	return &Changes{
+		Upper: dir,
+		Lower: other,
+	}, nil
+}
+
 func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...string) (*Directory, error) {
 	dir = dir.Clone()
 	return execInMount(ctx, dir, func(root string) error {

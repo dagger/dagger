@@ -755,6 +755,98 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 	*/
 }
 
+func (DirectorySuite) TestChanges(ctx context.Context, t *testctx.T) {
+	t.Run("removedPaths basic", func(ctx context.Context, t *testctx.T) {
+		// Create a directory with files
+		c := connect(ctx, t)
+
+		// Create initial directory with multiple files
+		oldDir := c.Directory().
+			WithNewFile("file1.txt", "content1").
+			WithNewFile("dir/file2.txt", "content2").
+			WithNewFile("removed.txt", "to be removed")
+
+		// Create new directory without one of the files
+		newDir := c.Directory().
+			WithNewFile("file1.txt", "content1").
+			WithNewFile("dir/file2.txt", "content2")
+
+		changes := newDir.Changes(oldDir)
+
+		removedPaths, err := changes.RemovedPaths(ctx)
+		require.NoError(t, err)
+
+		require.Contains(t, removedPaths, "removed.txt")
+		require.NotContains(t, removedPaths, "file1.txt")
+		require.NotContains(t, removedPaths, "dir/file2.txt")
+	})
+
+	t.Run("removedPaths with directories", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create initial directory with subdirectories and nested files
+		oldDir := c.Directory().
+			WithNewFile("keep.txt", "keep").
+			WithNewFile("remove-dir/file.txt", "remove").
+			WithNewFile("remove-dir/subdir/nested.txt", "nested").
+			WithNewDirectory("empty-dir")
+
+		// Create new directory without the subdirectories
+		newDir := c.Directory().
+			WithNewFile("keep.txt", "keep")
+
+		changes := newDir.Changes(oldDir)
+
+		removedPaths, err := changes.RemovedPaths(ctx)
+		require.NoError(t, err)
+
+		// Should include the directories with trailing slash
+		require.Contains(t, removedPaths, "remove-dir/")
+		require.Contains(t, removedPaths, "empty-dir/")
+
+		// Should NOT include individual files in the removed directory
+		require.NotContains(t, removedPaths, "remove-dir/file.txt")
+		require.NotContains(t, removedPaths, "remove-dir/subdir/")
+		require.NotContains(t, removedPaths, "remove-dir/subdir/nested.txt")
+
+		// Should not include files that weren't removed
+		require.NotContains(t, removedPaths, "keep.txt")
+	})
+
+	t.Run("removedPaths mixed files and directories", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create initial directory with mix of files and directories
+		oldDir := c.Directory().
+			WithNewFile("keep.txt", "keep").
+			WithNewFile("remove-file.txt", "remove me").
+			WithNewFile("remove-dir/file.txt", "in dir").
+			WithNewFile("keep-dir/file.txt", "keep dir")
+
+		// Create new directory keeping some files and directories
+		newDir := c.Directory().
+			WithNewFile("keep.txt", "keep").
+			WithNewFile("keep-dir/file.txt", "keep dir")
+
+		changes := newDir.Changes(oldDir)
+
+		removedPaths, err := changes.RemovedPaths(ctx)
+		require.NoError(t, err)
+
+		// Should include individual removed files
+		require.Contains(t, removedPaths, "remove-file.txt")
+
+		// Should include removed directory but not its contents
+		require.Contains(t, removedPaths, "remove-dir/")
+		require.NotContains(t, removedPaths, "remove-dir/file.txt")
+
+		// Should not include kept items
+		require.NotContains(t, removedPaths, "keep.txt")
+		require.NotContains(t, removedPaths, "keep-dir/")
+		require.NotContains(t, removedPaths, "keep-dir/file.txt")
+	})
+}
+
 func (DirectorySuite) TestExport(ctx context.Context, t *testctx.T) {
 	wd := t.TempDir()
 	dest := t.TempDir()
