@@ -984,6 +984,409 @@ func (DirectorySuite) TestChanges(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (DirectorySuite) TestWithChanges(ctx context.Context, t *testctx.T) {
+	t.Run("basic usage with added, changed, and removed files", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create base directory
+		baseDir := c.Directory().
+			WithNewFile("keep.txt", "unchanged").
+			WithNewFile("change.txt", "original").
+			WithNewFile("remove.txt", "will be removed").
+			WithNewFile("subdir/nested.txt", "nested original")
+
+		// Create before directory (same as base)
+		beforeDir := baseDir
+
+		// Create after directory with changes
+		afterDir := c.Directory().
+			WithNewFile("keep.txt", "unchanged").           // unchanged
+			WithNewFile("change.txt", "modified").          // changed
+			WithNewFile("add.txt", "newly added").          // added
+			WithNewFile("subdir/nested.txt", "nested mod"). // changed in subdir
+			WithNewFile("subdir/new.txt", "new in subdir")  // added in subdir
+		// Note: remove.txt is not included (removed)
+
+		// Create changes
+		changes := afterDir.Changes(beforeDir)
+
+		// Apply changes to the base directory
+		resultDir := baseDir.WithChanges(changes)
+
+		// Verify the result
+		entries, err := resultDir.Entries(ctx)
+		require.NoError(t, err)
+
+		// Should have: keep.txt, change.txt (modified), add.txt (new), subdir/ (with changes)
+		// Should NOT have: remove.txt (removed)
+		require.Contains(t, entries, "keep.txt")
+		require.Contains(t, entries, "change.txt")
+		require.Contains(t, entries, "add.txt")
+		require.Contains(t, entries, "subdir/")
+		require.NotContains(t, entries, "remove.txt")
+
+		// Verify file contents
+		keepContent, err := resultDir.File("keep.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "unchanged", keepContent)
+
+		changeContent, err := resultDir.File("change.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "modified", changeContent)
+
+		addContent, err := resultDir.File("add.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "newly added", addContent)
+
+		// Verify subdirectory entries
+		subdirEntries, err := resultDir.Directory("subdir").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, subdirEntries, "nested.txt")
+		require.Contains(t, subdirEntries, "new.txt")
+
+		// Verify subdirectory file contents
+		nestedContent, err := resultDir.File("subdir/nested.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "nested mod", nestedContent)
+
+		newInSubdirContent, err := resultDir.File("subdir/new.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "new in subdir", newInSubdirContent)
+	})
+
+	t.Run("only added files", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create base directory with some files
+		baseDir := c.Directory().
+			WithNewFile("existing.txt", "existing content")
+
+		// Create before directory (same as base)
+		beforeDir := baseDir
+
+		// Create after directory with additional files
+		afterDir := baseDir.
+			WithNewFile("new1.txt", "new content 1").
+			WithNewFile("dir/new2.txt", "new content 2")
+
+		// Create changes
+		changes := afterDir.Changes(beforeDir)
+
+		// Apply changes to the base directory
+		resultDir := baseDir.WithChanges(changes)
+
+		// Verify the result
+		entries, err := resultDir.Entries(ctx)
+		require.NoError(t, err)
+
+		require.Contains(t, entries, "existing.txt")
+		require.Contains(t, entries, "new1.txt")
+		require.Contains(t, entries, "dir/")
+
+		// Verify content
+		existingContent, err := resultDir.File("existing.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "existing content", existingContent)
+
+		new1Content, err := resultDir.File("new1.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "new content 1", new1Content)
+
+		new2Content, err := resultDir.File("dir/new2.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "new content 2", new2Content)
+	})
+
+	t.Run("only changed files", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create base directory
+		baseDir := c.Directory().
+			WithNewFile("file1.txt", "original 1").
+			WithNewFile("dir/file2.txt", "original 2")
+
+		// Create before directory (same as base)
+		beforeDir := baseDir
+
+		// Create after directory with modifications
+		afterDir := c.Directory().
+			WithNewFile("file1.txt", "modified 1").
+			WithNewFile("dir/file2.txt", "modified 2")
+
+		// Create changes
+		changes := afterDir.Changes(beforeDir)
+
+		// Apply changes to the base directory
+		resultDir := baseDir.WithChanges(changes)
+
+		// Verify the result
+		file1Content, err := resultDir.File("file1.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "modified 1", file1Content)
+
+		file2Content, err := resultDir.File("dir/file2.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "modified 2", file2Content)
+	})
+
+	t.Run("only removed files", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create base directory
+		baseDir := c.Directory().
+			WithNewFile("keep.txt", "keep this").
+			WithNewFile("remove1.txt", "remove this").
+			WithNewFile("dir/remove2.txt", "remove this too")
+
+		// Create before directory (same as base)
+		beforeDir := baseDir
+
+		// Create after directory with files removed
+		afterDir := c.Directory().
+			WithNewFile("keep.txt", "keep this")
+		// Note: remove1.txt and dir/remove2.txt are not included
+
+		// Create changes
+		changes := afterDir.Changes(beforeDir)
+
+		// Apply changes to the base directory
+		resultDir := baseDir.WithChanges(changes)
+
+		// Verify the result
+		entries, err := resultDir.Entries(ctx)
+		require.NoError(t, err)
+
+		require.Contains(t, entries, "keep.txt")
+		require.NotContains(t, entries, "remove1.txt")
+		require.NotContains(t, entries, "dir/")
+
+		// Verify content of kept file
+		keepContent, err := resultDir.File("keep.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "keep this", keepContent)
+	})
+
+	t.Run("removed entire directories", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create base directory with nested structure
+		baseDir := c.Directory().
+			WithNewFile("keep.txt", "keep this").
+			WithNewFile("removedir/file1.txt", "remove me").
+			WithNewFile("removedir/subdir/file2.txt", "remove me too").
+			WithNewDirectory("emptydir")
+
+		// Create before directory (same as base)
+		beforeDir := baseDir
+
+		// Create after directory without the directories
+		afterDir := c.Directory().
+			WithNewFile("keep.txt", "keep this")
+
+		// Create changes
+		changes := afterDir.Changes(beforeDir)
+
+		// Apply changes to the base directory
+		resultDir := baseDir.WithChanges(changes)
+
+		// Verify the result
+		entries, err := resultDir.Entries(ctx)
+		require.NoError(t, err)
+
+		require.Contains(t, entries, "keep.txt")
+		require.NotContains(t, entries, "removedir/")
+		require.NotContains(t, entries, "emptydir/")
+
+		// Verify we can't access removed files
+		_, err = resultDir.File("removedir/file1.txt").Contents(ctx)
+		require.Error(t, err)
+	})
+
+	t.Run("no changes", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create base directory
+		baseDir := c.Directory().
+			WithNewFile("file1.txt", "content1").
+			WithNewFile("dir/file2.txt", "content2")
+
+		// Create identical before and after directories
+		beforeDir := baseDir
+		afterDir := baseDir
+
+		// Create changes (should be empty)
+		changes := afterDir.Changes(beforeDir)
+
+		// Apply changes to the base directory
+		resultDir := baseDir.WithChanges(changes)
+
+		// Verify the result is identical to the original
+		entries, err := resultDir.Entries(ctx)
+		require.NoError(t, err)
+
+		originalEntries, err := baseDir.Entries(ctx)
+		require.NoError(t, err)
+
+		require.ElementsMatch(t, originalEntries, entries)
+
+		// Verify file contents are unchanged
+		file1Content, err := resultDir.File("file1.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "content1", file1Content)
+
+		file2Content, err := resultDir.File("dir/file2.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "content2", file2Content)
+	})
+
+	t.Run("applying changes to different base directory", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create before directory
+		beforeDir := c.Directory().
+			WithNewFile("common.txt", "before").
+			WithNewFile("only-in-before.txt", "before only")
+
+		// Create after directory with changes
+		afterDir := c.Directory().
+			WithNewFile("common.txt", "after").
+			WithNewFile("only-in-after.txt", "after only")
+		// Note: only-in-before.txt is removed
+
+		// Create changes
+		changes := afterDir.Changes(beforeDir)
+
+		// Apply changes to a different base directory
+		differentBaseDir := c.Directory().
+			WithNewFile("common.txt", "base version").
+			WithNewFile("only-in-before.txt", "base has this too").
+			WithNewFile("base-specific.txt", "only in base")
+
+		resultDir := differentBaseDir.WithChanges(changes)
+
+		// Verify the result
+		entries, err := resultDir.Entries(ctx)
+		require.NoError(t, err)
+
+		require.Contains(t, entries, "common.txt")
+		require.Contains(t, entries, "only-in-after.txt")
+		require.Contains(t, entries, "base-specific.txt")
+		require.NotContains(t, entries, "only-in-before.txt") // Should be removed
+
+		// Verify contents
+		commonContent, err := resultDir.File("common.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "after", commonContent) // Should be the "after" version
+
+		afterOnlyContent, err := resultDir.File("only-in-after.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "after only", afterOnlyContent)
+
+		baseSpecificContent, err := resultDir.File("base-specific.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "only in base", baseSpecificContent) // Should be preserved
+	})
+
+	t.Run("complex nested structure changes", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create complex base directory
+		baseDir := c.Directory().
+			WithNewFile("root.txt", "root content").
+			WithNewFile("level1/file1.txt", "level1 content").
+			WithNewFile("level1/level2/file2.txt", "level2 content").
+			WithNewFile("level1/level2/level3/file3.txt", "level3 content").
+			WithNewFile("another/path/file.txt", "another content")
+
+		beforeDir := baseDir
+
+		// Create after directory with complex changes
+		afterDir := c.Directory().
+			WithNewFile("root.txt", "modified root").                        // changed
+			WithNewFile("level1/file1.txt", "level1 content").               // unchanged
+			WithNewFile("level1/level2/file2.txt", "modified l2").           // changed
+			WithNewFile("level1/level2/newfile.txt", "new file").            // added
+			WithNewFile("level1/level2/level3/file3.txt", "level3 content"). // unchanged
+			WithNewFile("new/deep/path/newfile.txt", "deep new").            // added deep
+			WithNewFile("another/different.txt", "different")                // added, another/path/ removed
+
+		changes := afterDir.Changes(beforeDir)
+		resultDir := baseDir.WithChanges(changes)
+
+		// Verify structure
+		entries, err := resultDir.Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, entries, "root.txt")
+		require.Contains(t, entries, "level1/")
+		require.Contains(t, entries, "new/")
+		require.Contains(t, entries, "another/")
+
+		// Verify changed content
+		rootContent, err := resultDir.File("root.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "modified root", rootContent)
+
+		l2Content, err := resultDir.File("level1/level2/file2.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "modified l2", l2Content)
+
+		// Verify added files
+		newFileContent, err := resultDir.File("level1/level2/newfile.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "new file", newFileContent)
+
+		deepNewContent, err := resultDir.File("new/deep/path/newfile.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "deep new", deepNewContent)
+
+		// Verify another/path/ was removed but another/different.txt was added
+		differentContent, err := resultDir.File("another/different.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "different", differentContent)
+
+		_, err = resultDir.File("another/path/file.txt").Contents(ctx)
+		require.Error(t, err) // Should be removed
+	})
+
+	t.Run("empty directories handling", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create base directory with empty directories
+		baseDir := c.Directory().
+			WithNewFile("file.txt", "content").
+			WithNewDirectory("empty1").
+			WithNewDirectory("empty2")
+
+		beforeDir := baseDir
+
+		// Create after directory removing one empty dir and adding another
+		afterDir := c.Directory().
+			WithNewFile("file.txt", "content").
+			WithNewDirectory("empty2").
+			WithNewDirectory("new-empty")
+
+		changes := afterDir.Changes(beforeDir)
+		resultDir := baseDir.WithChanges(changes)
+
+		entries, err := resultDir.Entries(ctx)
+		require.NoError(t, err)
+
+		require.Contains(t, entries, "file.txt")
+		require.Contains(t, entries, "empty2/")
+		require.Contains(t, entries, "new-empty/")
+		require.NotContains(t, entries, "empty1/")
+
+		// Verify directories are actually directories
+		exists, err := resultDir.Directory("empty2").Entries(ctx)
+		require.NoError(t, err)
+		require.Empty(t, exists) // Should be empty
+
+		exists2, err := resultDir.Directory("new-empty").Entries(ctx)
+		require.NoError(t, err)
+		require.Empty(t, exists2) // Should be empty
+	})
+}
+
 func (DirectorySuite) TestExport(ctx context.Context, t *testctx.T) {
 	wd := t.TempDir()
 	dest := t.TempDir()
