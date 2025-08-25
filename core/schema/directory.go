@@ -299,7 +299,7 @@ func (s *directorySchema) immutableRef(ctx context.Context, parent dagql.ObjectR
 	}
 	immutable, err := query.BuildkitCache().Get(ctx, args.Ref, nil)
 	if err != nil {
-		return res, fmt.Errorf("failed to get mutable ref %q: %w", args.Ref, err)
+		return res, fmt.Errorf("failed to get immutable ref %q: %w", args.Ref, err)
 	}
 	dir, err := core.NewScratchDirectory(ctx, query.Platform())
 	if err != nil {
