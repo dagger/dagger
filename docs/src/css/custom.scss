@@ -1,4 +1,5 @@
 @use "sass:meta";
+@use "sass:color";
 $mobile-width: 480px;
 $tablet-width: 1180px;
 $desktop-width: 1200px;
@@ -254,11 +255,11 @@ div[class*="docSidebarMenu"],
   height: 36px !important; /* Set consistent height */
   display: flex !important;
   align-items: center !important;
+  transition: border-bottom-color 0.2s;
   // make sure the ipad width of 1180 has the same padding as mobile
   @include tablet {
     padding: 0.5rem 0.5rem !important;
   }
-  transition: border-bottom-color 0.2s;
 }
 
 /* Add margin to navbar items except the last one */
@@ -661,7 +662,7 @@ html[data-theme="light"] .DocSearch.DocSearch-Button {
   padding: 0 0.75rem !important; /* Adjusted padding for consistent height */
 
   &:hover {
-    background-color: darken(#fff, 3%) !important;
+    background-color: #f7f7f7 !important;
   }
 }
 
@@ -673,7 +674,7 @@ html[data-theme="dark"] .DocSearch.DocSearch-Button {
   padding: 0 0.75rem !important; /* Adjusted padding for consistent height */
 
   &:hover {
-    background-color: lighten($inkberry-color, 5%) !important;
+    background-color: color.adjust($inkberry-color, $lightness: 5%) !important;
   }
 
   @include mobile {
