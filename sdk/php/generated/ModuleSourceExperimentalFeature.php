@@ -14,8 +14,5 @@ namespace Dagger;
 enum ModuleSourceExperimentalFeature: string
 {
     /** Self calls */
-    case SELF_CALLS_FEATURE = 'SELF_CALLS_FEATURE';
-
-    /** Self calls */
     case SELF_CALLS = 'SELF_CALLS';
 }
