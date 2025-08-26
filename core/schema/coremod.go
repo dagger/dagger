@@ -63,6 +63,7 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
 		&cloudSchema{},
 		&llmSchema{dag},
 		&jsonvalueSchema{},
+		&envfileSchema{},
 	} {
 		schema.Install(dag)
 	}

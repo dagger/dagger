@@ -769,7 +769,7 @@ func (ContainerSuite) TestVariables(ctx context.Context, t *testctx.T) {
 	res, err := testutil.Query[struct {
 		Container struct {
 			From struct {
-				EnvVariables []schema.EnvVariable
+				EnvVariables []core.EnvVariable
 				WithExec     struct {
 					Stdout string
 				}
@@ -790,7 +790,7 @@ func (ContainerSuite) TestVariables(ctx context.Context, t *testctx.T) {
 			}
 		}`, nil)
 	require.NoError(t, err)
-	require.Equal(t, []schema.EnvVariable{
+	require.Equal(t, []core.EnvVariable{
 		{Name: "PATH", Value: "/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"},
 		{Name: "GOLANG_VERSION", Value: "1.18.2"},
 		{Name: "GOPATH", Value: "/go"},
@@ -841,7 +841,7 @@ func (ContainerSuite) TestWithoutVariable(ctx context.Context, t *testctx.T) {
 		Container struct {
 			From struct {
 				WithoutEnvVariable struct {
-					EnvVariables []schema.EnvVariable
+					EnvVariables []core.EnvVariable
 					WithExec     struct {
 						Stdout string
 					}
@@ -865,7 +865,7 @@ func (ContainerSuite) TestWithoutVariable(ctx context.Context, t *testctx.T) {
 			}
 		}`, nil)
 	require.NoError(t, err)
-	require.Equal(t, res.Container.From.WithoutEnvVariable.EnvVariables, []schema.EnvVariable{
+	require.Equal(t, res.Container.From.WithoutEnvVariable.EnvVariables, []core.EnvVariable{
 		{Name: "PATH", Value: "/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"},
 		{Name: "GOPATH", Value: "/go"},
 	})
@@ -877,7 +877,7 @@ func (ContainerSuite) TestEnvVariablesReplace(ctx context.Context, t *testctx.T)
 		Container struct {
 			From struct {
 				WithEnvVariable struct {
-					EnvVariables []schema.EnvVariable
+					EnvVariables []core.EnvVariable
 					WithExec     struct {
 						Stdout string
 					}
@@ -901,7 +901,7 @@ func (ContainerSuite) TestEnvVariablesReplace(ctx context.Context, t *testctx.T)
 			}
 		}`, nil)
 	require.NoError(t, err)
-	require.Equal(t, res.Container.From.WithEnvVariable.EnvVariables, []schema.EnvVariable{
+	require.Equal(t, res.Container.From.WithEnvVariable.EnvVariables, []core.EnvVariable{
 		{Name: "PATH", Value: "/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"},
 		{Name: "GOLANG_VERSION", Value: "1.18.2"},
 		{Name: "GOPATH", Value: "/gone"},

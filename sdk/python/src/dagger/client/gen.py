@@ -71,6 +71,11 @@ class EnumValueTypeDefID(Scalar):
     an object of type EnumValueTypeDef."""
 
 
+class EnvFileID(Scalar):
+    """The `EnvFileID` scalar type represents an identifier for an object
+    of type EnvFile."""
+
+
 class EnvID(Scalar):
     """The `EnvID` scalar type represents an identifier for an object of
     type Env."""
@@ -511,6 +516,12 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asEnv", _args)
         return Env(_ctx)
+
+    def as_env_file(self) -> "EnvFile":
+        """Retrieve the binding value, as type EnvFile"""
+        _args: list[Arg] = []
+        _ctx = self._select("asEnvFile", _args)
+        return EnvFile(_ctx)
 
     def as_file(self) -> "File":
         """Retrieve the binding value, as type File"""
@@ -4552,6 +4563,48 @@ class Env(Type):
         _ctx = self._select("withDirectoryOutput", _args)
         return Env(_ctx)
 
+    def with_env_file_input(
+        self,
+        name: str,
+        value: "EnvFile",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type EnvFile in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The EnvFile value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withEnvFileInput", _args)
+        return Env(_ctx)
+
+    def with_env_file_output(self, name: str, description: str) -> Self:
+        """Declare a desired EnvFile output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withEnvFileOutput", _args)
+        return Env(_ctx)
+
     def with_env_input(
         self,
         name: str,
@@ -5197,6 +5250,113 @@ class Env(Type):
 
 
 @typecheck
+class EnvFile(Type):
+    """A collection of environment variables."""
+
+    def file(self) -> "File":
+        """Return the contents as a file"""
+        _args: list[Arg] = []
+        _ctx = self._select("file", _args)
+        return File(_ctx)
+
+    async def id(self) -> EnvFileID:
+        """A unique identifier for this EnvFile.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        EnvFileID
+            The `EnvFileID` scalar type represents an identifier for an object
+            of type EnvFile.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(EnvFileID)
+
+    async def variable(self, name: str) -> str | None:
+        """Lookup a variable by name (last occurrence wins)
+
+        Parameters
+        ----------
+        name:
+            Variable name to lookup
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("variable", _args)
+        return await _ctx.execute(str | None)
+
+    async def variables(self) -> list["EnvVariable"]:
+        """Return all variables"""
+        _args: list[Arg] = []
+        _ctx = self._select("variables", _args)
+        return await _ctx.execute_object_list(EnvVariable)
+
+    def with_variable(self, name: str, value: str) -> Self:
+        """Add a variable
+
+        Parameters
+        ----------
+        name:
+            Variable name
+        value:
+            Variable value
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+        ]
+        _ctx = self._select("withVariable", _args)
+        return EnvFile(_ctx)
+
+    def without_variable(self, name: str) -> Self:
+        """Remove all occurrences of the named variable
+
+        Parameters
+        ----------
+        name:
+            Variable name to remove
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withoutVariable", _args)
+        return EnvFile(_ctx)
+
+    def with_(self, cb: Callable[["EnvFile"], "EnvFile"]) -> "EnvFile":
+        """Call the provided callable with current EnvFile.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
+@typecheck
 class EnvVariable(Type):
     """An environment variable name and value."""
 
@@ -5501,6 +5661,12 @@ class FieldTypeDef(Type):
 @typecheck
 class File(Type):
     """A file."""
+
+    def as_env_file(self) -> EnvFile:
+        """Parse as an env file"""
+        _args: list[Arg] = []
+        _ctx = self._select("asEnvFile", _args)
+        return EnvFile(_ctx)
 
     async def contents(
         self,
@@ -9269,6 +9435,12 @@ class Client(Root):
         _ctx = self._select("env", _args)
         return Env(_ctx)
 
+    def env_file(self) -> EnvFile:
+        """Initialize an environment file"""
+        _args: list[Arg] = []
+        _ctx = self._select("envFile", _args)
+        return EnvFile(_ctx)
+
     def error(self, message: str) -> Error:
         """Create a new error.
 
@@ -9561,6 +9733,14 @@ class Client(Root):
         ]
         _ctx = self._select("loadEnumValueTypeDefFromID", _args)
         return EnumValueTypeDef(_ctx)
+
+    def load_env_file_from_id(self, id: EnvFileID) -> EnvFile:
+        """Load a EnvFile from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadEnvFileFromID", _args)
+        return EnvFile(_ctx)
 
     def load_env_from_id(self, id: EnvID) -> Env:
         """Load a Env from its ID."""
@@ -11256,6 +11436,8 @@ __all__ = [
     "EnumValueTypeDef",
     "EnumValueTypeDefID",
     "Env",
+    "EnvFile",
+    "EnvFileID",
     "EnvID",
     "EnvVariable",
     "EnvVariableID",

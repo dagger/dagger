@@ -424,6 +424,39 @@ impl EnumValueTypeDefId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct EnvFileId(pub String);
+impl From<&str> for EnvFileId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for EnvFileId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<EnvFileId> for EnvFile {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<EnvFileId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<EnvFileId> for EnvFileId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<EnvFileId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<EnvFileId, DaggerError>(self) })
+    }
+}
+impl EnvFileId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct EnvId(pub String);
 impl From<&str> for EnvId {
     fn from(value: &str) -> Self {
@@ -1767,6 +1800,15 @@ impl Binding {
     pub fn as_env(&self) -> Env {
         let query = self.selection.select("asEnv");
         Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type EnvFile
+    pub fn as_env_file(&self) -> EnvFile {
+        let query = self.selection.select("asEnvFile");
+        EnvFile {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -6041,6 +6083,55 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Create or update a binding of type EnvFile in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The EnvFile value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_env_file_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<EnvFileId>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withEnvFileInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired EnvFile output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_env_file_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withEnvFileOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create or update a binding of type Env in the environment
     ///
     /// # Arguments
@@ -6760,6 +6851,77 @@ impl Env {
     }
 }
 #[derive(Clone)]
+pub struct EnvFile {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl EnvFile {
+    /// Return the contents as a file
+    pub fn file(&self) -> File {
+        let query = self.selection.select("file");
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// A unique identifier for this EnvFile.
+    pub async fn id(&self) -> Result<EnvFileId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Lookup a variable by name (last occurrence wins)
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Variable name to lookup
+    pub async fn variable(&self, name: impl Into<String>) -> Result<String, DaggerError> {
+        let mut query = self.selection.select("variable");
+        query = query.arg("name", name.into());
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Return all variables
+    pub fn variables(&self) -> Vec<EnvVariable> {
+        let query = self.selection.select("variables");
+        vec![EnvVariable {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }]
+    }
+    /// Add a variable
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Variable name
+    /// * `value` - Variable value
+    pub fn with_variable(&self, name: impl Into<String>, value: impl Into<String>) -> EnvFile {
+        let mut query = self.selection.select("withVariable");
+        query = query.arg("name", name.into());
+        query = query.arg("value", value.into());
+        EnvFile {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Remove all occurrences of the named variable
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Variable name to remove
+    pub fn without_variable(&self, name: impl Into<String>) -> EnvFile {
+        let mut query = self.selection.select("withoutVariable");
+        query = query.arg("name", name.into());
+        EnvFile {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+#[derive(Clone)]
 pub struct EnvVariable {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -6957,6 +7119,15 @@ pub struct FileWithReplacedOpts {
     pub first_from: Option<isize>,
 }
 impl File {
+    /// Parse as an env file
+    pub fn as_env_file(&self) -> EnvFile {
+        let query = self.selection.select("asEnvFile");
+        EnvFile {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieves the contents of the file.
     ///
     /// # Arguments
@@ -9558,6 +9729,15 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Initialize an environment file
+    pub fn env_file(&self) -> EnvFile {
+        let query = self.selection.select("envFile");
+        EnvFile {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create a new error.
     ///
     /// # Arguments
@@ -10003,6 +10183,22 @@ impl Query {
             }),
         );
         EnumValueTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a EnvFile from its ID.
+    pub fn load_env_file_from_id(&self, id: impl IntoID<EnvFileId>) -> EnvFile {
+        let mut query = self.selection.select("loadEnvFileFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        EnvFile {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

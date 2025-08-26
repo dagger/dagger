@@ -1003,6 +1003,11 @@ export type EnumTypeDefID = string & { __EnumTypeDefID: never }
 export type EnumValueTypeDefID = string & { __EnumValueTypeDefID: never }
 
 /**
+ * The `EnvFileID` scalar type represents an identifier for an object of type EnvFile.
+ */
+export type EnvFileID = string & { __EnvFileID: never }
+
+/**
  * The `EnvID` scalar type represents an identifier for an object of type Env.
  */
 export type EnvID = string & { __EnvID: never }
@@ -2256,6 +2261,14 @@ export class Binding extends BaseClient {
   asEnv = (): Env => {
     const ctx = this._ctx.select("asEnv")
     return new Env(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type EnvFile
+   */
+  asEnvFile = (): EnvFile => {
+    const ctx = this._ctx.select("asEnvFile")
+    return new EnvFile(ctx)
   }
 
   /**
@@ -5125,6 +5138,35 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Create or update a binding of type EnvFile in the environment
+   * @param name The name of the binding
+   * @param value The EnvFile value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withEnvFileInput = (
+    name: string,
+    value: EnvFile,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withEnvFileInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired EnvFile output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withEnvFileOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withEnvFileOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
    * Create or update a binding of type Env in the environment
    * @param name The name of the binding
    * @param value The Env value to assign to the binding
@@ -5545,6 +5587,108 @@ export class Env extends BaseClient {
 }
 
 /**
+ * A collection of environment variables.
+ */
+export class EnvFile extends BaseClient {
+  private readonly _id?: EnvFileID = undefined
+  private readonly _variable?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: EnvFileID, _variable?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._variable = _variable
+  }
+
+  /**
+   * A unique identifier for this EnvFile.
+   */
+  id = async (): Promise<EnvFileID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<EnvFileID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return the contents as a file
+   */
+  file = (): File => {
+    const ctx = this._ctx.select("file")
+    return new File(ctx)
+  }
+
+  /**
+   * Lookup a variable by name (last occurrence wins)
+   * @param name Variable name to lookup
+   */
+  variable = async (name: string): Promise<string> => {
+    if (this._variable) {
+      return this._variable
+    }
+
+    const ctx = this._ctx.select("variable", { name })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return all variables
+   */
+  variables = async (): Promise<EnvVariable[]> => {
+    type variables = {
+      id: EnvVariableID
+    }
+
+    const ctx = this._ctx.select("variables").select("id")
+
+    const response: Awaited<variables[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadEnvVariableFromID(r.id),
+    )
+  }
+
+  /**
+   * Add a variable
+   * @param name Variable name
+   * @param value Variable value
+   */
+  withVariable = (name: string, value: string): EnvFile => {
+    const ctx = this._ctx.select("withVariable", { name, value })
+    return new EnvFile(ctx)
+  }
+
+  /**
+   * Remove all occurrences of the named variable
+   * @param name Variable name to remove
+   */
+  withoutVariable = (name: string): EnvFile => {
+    const ctx = this._ctx.select("withoutVariable", { name })
+    return new EnvFile(ctx)
+  }
+
+  /**
+   * Call the provided function with current EnvFile.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: EnvFile) => EnvFile) => {
+    return arg(this)
+  }
+}
+
+/**
  * An environment variable name and value.
  */
 export class EnvVariable extends BaseClient {
@@ -5899,6 +6043,14 @@ export class File extends BaseClient {
     const response: Awaited<FileID> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Parse as an env file
+   */
+  asEnvFile = (): EnvFile => {
+    const ctx = this._ctx.select("asEnvFile")
+    return new EnvFile(ctx)
   }
 
   /**
@@ -9109,6 +9261,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Initialize an environment file
+   */
+  envFile = (): EnvFile => {
+    const ctx = this._ctx.select("envFile")
+    return new EnvFile(ctx)
+  }
+
+  /**
    * Create a new error.
    * @param message A brief description of the error.
    */
@@ -9302,6 +9462,14 @@ export class Client extends BaseClient {
   loadEnumValueTypeDefFromID = (id: EnumValueTypeDefID): EnumValueTypeDef => {
     const ctx = this._ctx.select("loadEnumValueTypeDefFromID", { id })
     return new EnumValueTypeDef(ctx)
+  }
+
+  /**
+   * Load a EnvFile from its ID.
+   */
+  loadEnvFileFromID = (id: EnvFileID): EnvFile => {
+    const ctx = this._ctx.select("loadEnvFileFromID", { id })
+    return new EnvFile(ctx)
   }
 
   /**
