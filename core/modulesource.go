@@ -1228,8 +1228,7 @@ func (f ModuleSourceExperimentalFeature) String() string { return string(f) }
 var ModuleSourceExperimentalFeatures = dagql.NewEnum[ModuleSourceExperimentalFeature]()
 
 var (
-	ModuleSourceExperimentalFeatureSelfCalls = ModuleSourceExperimentalFeatures.Register("SELF_CALLS_FEATURE", "Self calls")
-	_                                        = ModuleSourceExperimentalFeatures.AliasView("SELF_CALLS", "SELF_CALLS_FEATURE", enumView)
+	ModuleSourceExperimentalFeatureSelfCalls = ModuleSourceExperimentalFeatures.Register("SELF_CALLS", "Self calls")
 )
 
 func (f ModuleSourceExperimentalFeature) Type() *ast.Type {

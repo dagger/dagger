@@ -3884,9 +3884,6 @@ type ModuleSource {
 """Experimental features of a module"""
 enum ModuleSourceExperimentalFeature {
   """Self calls"""
-  SELF_CALLS_FEATURE
-
-  """Self calls"""
   SELF_CALLS
 }
 
