@@ -105,11 +105,12 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, she
 }
 
 func (s *LLMSession) reset(ctx context.Context) {
-	s.updateLLMAndAgentVar(ctx, s.dag.LLM(dagger.LLMOpts{Model: s.model}).
-		WithEnv(s.dag.Env(dagger.EnvOpts{
-			Privileged: true,
-			Writable:   true,
-		})))
+	s.updateLLMAndAgentVar(ctx,
+		s.dag.LLM(dagger.LLMOpts{Model: s.model}).
+			WithEnv(s.dag.Env(dagger.EnvOpts{
+				Privileged: true,
+				Writable:   true,
+			})))
 }
 
 func (s *LLMSession) Fork() *LLMSession {
@@ -139,16 +140,14 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 	prompted := s.llm.WithPrompt(input)
 
 	for {
+		// update the sidebar after every step, not after the entire loop
 		prompted = prompted.Step()
+
 		s.updateLLMAndAgentVar(ctx, prompted)
 
-		prompted, err := s.llm.Sync(ctx)
-		if err != nil {
+		if err := s.syncAndUpdateSidebar(ctx); err != nil {
 			return s, err
 		}
-		// NB: this is currently redundant since Sync updates LLM state in-place, but
-		// safest option is to respect the return value anyway in case it changes
-		s.updateLLMAndAgentVar(ctx, prompted)
 
 		s.afterFS = prompted.Env().Hostfs()
 
@@ -303,6 +302,22 @@ func (s *LLMSession) updateLLMAndAgentVar(ctx context.Context, llm *dagger.LLM) 
 	}
 	s.model = model
 
+	if err := s.assignShell(ctx, agentVar, s.llm); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *LLMSession) syncAndUpdateSidebar(ctx context.Context) error {
+	llm, err := s.llm.Sync(ctx)
+	if err != nil {
+		return err
+	}
+
+	// NB: this doesn't really do anything, since sync updates in-place, but might
+	// as well respect the return value
+	s.llm = llm
+
 	inputTokens, err := llm.TokenUsage().InputTokens(ctx)
 	if err != nil {
 		return err
@@ -381,10 +396,8 @@ func (s *LLMSession) updateLLMAndAgentVar(ctx context.Context, llm *dagger.LLM) 
 		Title:   "LLM",
 		Content: strings.Join(lines, "\n"),
 	})
-	if err := s.assignShell(ctx, agentVar, s.llm); err != nil {
-		return err
-	}
-	return nil
+
+	return err
 }
 
 func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
