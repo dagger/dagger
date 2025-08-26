@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
@@ -28,9 +27,7 @@ func TypeDefs(ctx context.Context, cfg generator.Config, typedefFunc TypeDefFunc
 		generator.SetSchemaParents(introspectionSchema)
 	}
 
-	logsW := os.Stdout
-
-	_, _ = fmt.Fprintf(logsW, "generating %s typedefs\n", cfg.Lang)
+	slog.Info("generating %s typedefs\n", cfg.Lang)
 
 	for ctx.Err() == nil {
 		generated, err := typedefFunc(ctx, introspectionSchema, introspectionSchemaVersion)
