@@ -149,7 +149,7 @@ func (ls *localSourceHandler) CacheKey(ctx context.Context, g session.Group, ind
 		return "", "", nil, false, err
 	}
 	digestString := digest.FromBytes(dt).String()
-	return "session:" + ls.src.Name + ":" + digestString, digestString, nil, true, nil
+	return ls.src.Name + ":" + digestString, digestString, nil, true, nil
 }
 
 func (ls *localSourceHandler) Snapshot(ctx context.Context, g session.Group) (bkcache.ImmutableRef, error) {
