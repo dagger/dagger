@@ -146,65 +146,68 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 
 	err := funcs.visitTypes(
 		true,
-		func(pkgDoc string) error {
-			if pkgDoc != "" {
-				createMod = dotLine(createMod, "WithDescription").Call(Lit(pkgDoc))
-			}
-			return nil
+		&visitorFuncs{
+			RootVisitor: func(pkgDoc string) error {
+				if pkgDoc != "" {
+					createMod = dotLine(createMod, "WithDescription").Call(Lit(pkgDoc))
+				}
+				return nil
+			},
+			StructVisitor: func(ps *parseState, named *types.Named, obj *types.TypeName, objTypeSpec *parsedObjectType, strct *types.Struct) error {
+				if err := ps.fillObjectFunctionCases(named, objFunctionCases); err != nil {
+					// errors indicate an internal problem rather than something w/ user code, so error instead
+					return fmt.Errorf("failed to generate function cases for %s: %w", obj.Name(), err)
+				}
+
+				// Add the object to the module
+				objTypeDefCode, err := objTypeSpec.TypeDefCode()
+				if err != nil {
+					return fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
+				}
+				createMod = dotLine(createMod, "WithObject").Call(Add(Line(), objTypeDefCode))
+
+				implCode, err := objTypeSpec.ImplementationCode()
+				if err != nil {
+					return fmt.Errorf("failed to generate json method code for %s: %w", obj.Name(), err)
+				}
+				implementationCode.Add(implCode).Line()
+
+				return nil
+			},
+			IfaceVisitor: func(ps *parseState, named *types.Named, obj *types.TypeName, ifaceTypeSpec *parsedIfaceType, iface *types.Interface) error {
+				// Add the iface to the module
+				ifaceTypeDefCode, err := ifaceTypeSpec.TypeDefCode()
+				if err != nil {
+					return fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
+				}
+				createMod = dotLine(createMod, "WithInterface").Call(Add(Line(), ifaceTypeDefCode))
+
+				implCode, err := ifaceTypeSpec.ImplementationCode()
+				if err != nil {
+					return fmt.Errorf("failed to generate concrete struct code for %s: %w", obj.Name(), err)
+				}
+				implementationCode.Add(implCode).Line()
+
+				return nil
+			},
+			EnumVisitor: func(ps *parseState, named *types.Named, obj *types.TypeName, enumTypeSpec *parsedEnumType, enum *types.Basic) error {
+				// Add the enum to the module
+				enumTypeDefCode, err := enumTypeSpec.TypeDefCode()
+				if err != nil {
+					return fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
+				}
+				createMod = dotLine(createMod, "WithEnum").Call(Add(Line(), enumTypeDefCode))
+
+				implCode, err := enumTypeSpec.ImplementationCode()
+				if err != nil {
+					return fmt.Errorf("failed to generate enum code for %s: %w", obj.Name(), err)
+				}
+				implementationCode.Add(implCode).Line()
+
+				return nil
+			},
 		},
-		func(ps *parseState, named *types.Named, obj *types.TypeName, objTypeSpec *parsedObjectType, strct *types.Struct) error {
-			if err := ps.fillObjectFunctionCases(named, objFunctionCases); err != nil {
-				// errors indicate an internal problem rather than something w/ user code, so error instead
-				return fmt.Errorf("failed to generate function cases for %s: %w", obj.Name(), err)
-			}
-
-			// Add the object to the module
-			objTypeDefCode, err := objTypeSpec.TypeDefCode()
-			if err != nil {
-				return fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
-			}
-			createMod = dotLine(createMod, "WithObject").Call(Add(Line(), objTypeDefCode))
-
-			implCode, err := objTypeSpec.ImplementationCode()
-			if err != nil {
-				return fmt.Errorf("failed to generate json method code for %s: %w", obj.Name(), err)
-			}
-			implementationCode.Add(implCode).Line()
-
-			return nil
-		},
-		func(ps *parseState, named *types.Named, obj *types.TypeName, ifaceTypeSpec *parsedIfaceType, iface *types.Interface) error {
-			// Add the iface to the module
-			ifaceTypeDefCode, err := ifaceTypeSpec.TypeDefCode()
-			if err != nil {
-				return fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
-			}
-			createMod = dotLine(createMod, "WithInterface").Call(Add(Line(), ifaceTypeDefCode))
-
-			implCode, err := ifaceTypeSpec.ImplementationCode()
-			if err != nil {
-				return fmt.Errorf("failed to generate concrete struct code for %s: %w", obj.Name(), err)
-			}
-			implementationCode.Add(implCode).Line()
-
-			return nil
-		},
-		func(ps *parseState, named *types.Named, obj *types.TypeName, enumTypeSpec *parsedEnumType, enum *types.Basic) error {
-			// Add the enum to the module
-			enumTypeDefCode, err := enumTypeSpec.TypeDefCode()
-			if err != nil {
-				return fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
-			}
-			createMod = dotLine(createMod, "WithEnum").Call(Add(Line(), enumTypeDefCode))
-
-			implCode, err := enumTypeSpec.ImplementationCode()
-			if err != nil {
-				return fmt.Errorf("failed to generate enum code for %s: %w", obj.Name(), err)
-			}
-			implementationCode.Add(implCode).Line()
-
-			return nil
-		})
+	)
 	if err != nil {
 		if errors.Is(err, errEmptyCode) {
 			return `func main() { panic("no code yet") }`, nil
