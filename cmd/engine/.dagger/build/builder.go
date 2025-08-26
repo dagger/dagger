@@ -226,7 +226,6 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		{path: consts.EngineServerPath, file: build.engineBinary(build.race)},
 		{path: "/usr/bin/dial-stdio", file: build.dialstdioBinary()},
 		{path: "/opt/cni/bin/dnsname", file: build.dnsnameBinary()},
-		{path: "/usr/bin/container-mount", file: build.containerMountBinary()},
 		{path: consts.RuncPath, file: build.runcBin()},
 		{path: consts.DaggerInitPath, file: build.daggerInit()},
 	}
@@ -281,10 +280,6 @@ func (build *Builder) dnsnameBinary() *dagger.File {
 
 func (build *Builder) dialstdioBinary() *dagger.File {
 	return build.binary("./cmd/dialstdio", false, false)
-}
-
-func (build *Builder) containerMountBinary() *dagger.File {
-	return build.binary("./cmd/container-mount", false, false)
 }
 
 func (build *Builder) binary(pkg string, version bool, race bool) *dagger.File {
