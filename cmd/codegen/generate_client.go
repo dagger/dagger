@@ -33,7 +33,7 @@ func GenerateClient(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	ctx = telemetry.InitEmbedded(ctx, nil)
 
-	cfg, err := getGlobalConfig(ctx)
+	cfg, err := getGlobalConfig(ctx, false)
 	if err != nil {
 		return fmt.Errorf("failed to get global configuration: %w", err)
 	}
