@@ -241,7 +241,7 @@ func (spec *parsedObjectType) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef
 		withObjectOpts.SourceMap = spec.sourceMap.TypeDefObject(dag)
 	}
 	if spec.name == "" {
-		panic(spec)
+		return nil, fmt.Errorf("object name is empty")
 	}
 	typeDefObject := dag.TypeDef().WithObject(spec.name, withObjectOpts)
 
