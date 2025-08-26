@@ -1910,6 +1910,198 @@ func main() {
 			require.NotContains(t, filePaths, "build/output.bin")
 		})
 	})
+
+	t.Run("globs option", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("main.go", "package main\nfunc main() { fmt.Println(\"hello\") }").
+			WithNewFile("test.go", "package main\nfunc TestSomething() { /* test code */ }").
+			WithNewFile("README.md", "# Project\nThis is a documentation file").
+			WithNewFile("config.yaml", "version: 1\nname: test-project").
+			WithNewFile("lib/helper.go", "package lib\nfunc Helper() string { return \"help\" }")
+
+		t.Run("single glob pattern", func(ctx context.Context, t *testctx.T) {
+			// Search for "func" only in .go files
+			results, err := dir.Search(ctx, "func", dagger.DirectorySearchOpts{
+				Globs: []string{"*.go"},
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 3) // main(), TestSomething(), Helper()
+
+			// Verify all results are from .go files
+			for _, result := range results {
+				filePath, err := result.FilePath(ctx)
+				require.NoError(t, err)
+				require.True(t, strings.HasSuffix(filePath, ".go"), "Expected .go file, got: %s", filePath)
+			}
+		})
+
+		t.Run("multiple glob patterns", func(ctx context.Context, t *testctx.T) {
+			// Search for "test" in both .go and .md files
+			results, err := dir.Search(ctx, "test", dagger.DirectorySearchOpts{
+				Globs: []string{"*.go", "*.md"},
+			})
+			require.NoError(t, err)
+			// Only test.go contains "test" (TestSomething function) - README.md doesn't contain "test"
+			require.Len(t, results, 1)
+
+			result := results[0]
+			filePath, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "test.go", filePath)
+		})
+
+		t.Run("glob with subdirectories", func(ctx context.Context, t *testctx.T) {
+			// Search for "func" in all .go files, including subdirectories
+			results, err := dir.Search(ctx, "func", dagger.DirectorySearchOpts{
+				Globs: []string{"**/*.go"},
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 3) // main(), TestSomething(), Helper()
+
+			var filePaths []string
+			for _, result := range results {
+				filePath, err := result.FilePath(ctx)
+				require.NoError(t, err)
+				filePaths = append(filePaths, filePath)
+			}
+			require.Contains(t, filePaths, "main.go")
+			require.Contains(t, filePaths, "test.go")
+			require.Contains(t, filePaths, "lib/helper.go")
+		})
+
+		t.Run("glob with no matches", func(ctx context.Context, t *testctx.T) {
+			// Search for a pattern that exists in files but not in the files matching the glob
+			results, err := dir.Search(ctx, "main", dagger.DirectorySearchOpts{
+				Globs: []string{"*.md", "*.yaml"}, // Only search in markdown and yaml files where "main" doesn't appear
+			})
+			require.NoError(t, err)
+			require.Empty(t, results)
+		})
+	})
+
+	t.Run("paths option", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("src/main.go", "package main\nfunc main() { fmt.Println(\"hello world\") }").
+			WithNewFile("src/helper.go", "package main\nfunc Helper() { return \"world peace\" }").
+			WithNewFile("tests/main_test.go", "package main\nfunc TestMain() { /* world testing */ }").
+			WithNewFile("docs/README.md", "# Project\nHello world documentation").
+			WithNewFile("config/app.yaml", "name: world-app\nversion: 1.0")
+
+		t.Run("single path", func(ctx context.Context, t *testctx.T) {
+			// Search for "world" only in src directory
+			results, err := dir.Search(ctx, "world", dagger.DirectorySearchOpts{
+				Paths: []string{"src"},
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 2) // "hello world" and "world peace"
+
+			// Verify all results are from src directory
+			for _, result := range results {
+				filePath, err := result.FilePath(ctx)
+				require.NoError(t, err)
+				require.True(t, strings.HasPrefix(filePath, "src/"), "Expected src/ path, got: %s", filePath)
+			}
+		})
+
+		t.Run("multiple paths", func(ctx context.Context, t *testctx.T) {
+			// Search for "world" in both src and docs directories
+			results, err := dir.Search(ctx, "world", dagger.DirectorySearchOpts{
+				Paths: []string{"src", "docs"},
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 3) // src/main.go, src/helper.go, docs/README.md
+
+			var filePaths []string
+			for _, result := range results {
+				filePath, err := result.FilePath(ctx)
+				require.NoError(t, err)
+				filePaths = append(filePaths, filePath)
+				// Should be in src or docs directory
+				require.True(t,
+					strings.HasPrefix(filePath, "src/") || strings.HasPrefix(filePath, "docs/"),
+					"Expected src/ or docs/ path, got: %s", filePath)
+			}
+			// config/ and tests/ should be excluded
+			for _, path := range filePaths {
+				require.False(t, strings.HasPrefix(path, "config/"))
+				require.False(t, strings.HasPrefix(path, "tests/"))
+			}
+		})
+
+		t.Run("specific file path", func(ctx context.Context, t *testctx.T) {
+			// Search for "main" in a specific file
+			results, err := dir.Search(ctx, "main", dagger.DirectorySearchOpts{
+				Paths: []string{"src/main.go"},
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 2) // "package main" and "func main"
+
+			// Verify all results are from the specific file
+			for _, result := range results {
+				filePath, err := result.FilePath(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "src/main.go", filePath)
+			}
+		})
+
+		t.Run("path with no matches", func(ctx context.Context, t *testctx.T) {
+			// Search for non-existent pattern in existing directory
+			results, err := dir.Search(ctx, "nonexistent-pattern", dagger.DirectorySearchOpts{
+				Paths: []string{"src"},
+			})
+			require.NoError(t, err)
+			require.Empty(t, results)
+		})
+	})
+
+	t.Run("combined globs and paths", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("src/main.go", "package main\nfunc main() { fmt.Println(\"hello\") }").
+			WithNewFile("src/helper.js", "function helper() { console.log('hello'); }").
+			WithNewFile("tests/main_test.go", "package main\nfunc TestMain() { /* hello testing */ }").
+			WithNewFile("tests/helper_test.js", "function testHelper() { console.log('hello'); }")
+
+		t.Run("globs and paths together", func(ctx context.Context, t *testctx.T) {
+			// Search for "hello" in .go files within src directory only
+			results, err := dir.Search(ctx, "hello", dagger.DirectorySearchOpts{
+				Globs: []string{"*.go"},
+				Paths: []string{"src"},
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 1) // Only src/main.go should match
+
+			result := results[0]
+			filePath, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "src/main.go", filePath)
+		})
+
+		t.Run("globs and paths with multiple patterns", func(ctx context.Context, t *testctx.T) {
+			// Search for "hello" in both .go and .js files within tests directory
+			results, err := dir.Search(ctx, "hello", dagger.DirectorySearchOpts{
+				Globs: []string{"*.go", "*.js"},
+				Paths: []string{"tests"},
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 2) // tests/main_test.go and tests/helper_test.js
+
+			var filePaths []string
+			for _, result := range results {
+				filePath, err := result.FilePath(ctx)
+				require.NoError(t, err)
+				filePaths = append(filePaths, filePath)
+				require.True(t, strings.HasPrefix(filePath, "tests/"))
+			}
+			require.Contains(t, filePaths, "tests/main_test.go")
+			require.Contains(t, filePaths, "tests/helper_test.js")
+		})
+	})
 }
 
 func (DirectorySuite) TestSymlink(ctx context.Context, t *testctx.T) {

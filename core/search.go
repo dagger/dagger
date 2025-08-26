@@ -99,7 +99,7 @@ func (opts SearchOpts) RipgrepArgs() []string {
 	}
 	// NOTE: opts.Limit is handled while parsing results; there isn't a flag to
 	// limit total results, only to limit results per file
-	args = append(args, "--", opts.Pattern)
+	args = append(args, "--regexp="+opts.Pattern)
 	return args
 }
 
