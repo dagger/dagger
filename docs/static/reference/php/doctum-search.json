@@ -448,6 +448,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\EnvFile",
+			"p": "Dagger/EnvFile.html",
+			"d": "<p>A collection of environment variables.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\EnvFileId",
+			"p": "Dagger/EnvFileId.html",
+			"d": "<p>The <code>EnvFileID</code> scalar type represents an identifier for an object of type EnvFile.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\EnvId",
 			"p": "Dagger/EnvId.html",
 			"d": "<p>The <code>EnvID</code> scalar type represents an identifier for an object of type Env.</p>",
@@ -1279,6 +1299,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Binding::asEnvFile",
+			"p": "Dagger/Binding.html#method_asEnvFile",
+			"d": "<p>Retrieve the binding value, as type EnvFile</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Binding::asFile",
 			"p": "Dagger/Binding.html#method_asFile",
 			"d": "<p>Retrieve the binding value, as type File</p>"
@@ -1465,6 +1491,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::envFile",
+			"p": "Dagger/Client.html#method_envFile",
+			"d": "<p>Initialize an environment file</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::error",
 			"p": "Dagger/Client.html#method_error",
 			"d": "<p>Create a new error.</p>"
@@ -1588,6 +1620,12 @@
 			"n": "Dagger\\Client::loadEnumValueTypeDefFromID",
 			"p": "Dagger/Client.html#method_loadEnumValueTypeDefFromID",
 			"d": "<p>Load a EnumValueTypeDef from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadEnvFileFromID",
+			"p": "Dagger/Client.html#method_loadEnvFileFromID",
+			"d": "<p>Load a EnvFile from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -2899,6 +2937,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withEnvFileInput",
+			"p": "Dagger/Env.html#method_withEnvFileInput",
+			"d": "<p>Create or update a binding of type EnvFile in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withEnvFileOutput",
+			"p": "Dagger/Env.html#method_withEnvFileOutput",
+			"d": "<p>Declare a desired EnvFile output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withEnvInput",
 			"p": "Dagger/Env.html#method_withEnvInput",
 			"d": "<p>Create or update a binding of type Env in the environment</p>"
@@ -3079,6 +3129,48 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\EnvFile::asFile",
+			"p": "Dagger/EnvFile.html#method_asFile",
+			"d": "<p>Return as a file</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\EnvFile::exists",
+			"p": "Dagger/EnvFile.html#method_exists",
+			"d": "<p>Check if a variable exists</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\EnvFile::get",
+			"p": "Dagger/EnvFile.html#method_get",
+			"d": "<p>Lookup a variable (last occurrence wins) and return its value, or an empty string</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\EnvFile::id",
+			"p": "Dagger/EnvFile.html#method_id",
+			"d": "<p>A unique identifier for this EnvFile.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\EnvFile::variables",
+			"p": "Dagger/EnvFile.html#method_variables",
+			"d": "<p>Return all variables</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\EnvFile::withVariable",
+			"p": "Dagger/EnvFile.html#method_withVariable",
+			"d": "<p>Add a variable</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\EnvFile::withoutVariable",
+			"p": "Dagger/EnvFile.html#method_withoutVariable",
+			"d": "<p>Remove all occurrences of the named variable</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\EnvVariable::id",
 			"p": "Dagger/EnvVariable.html#method_id",
 			"d": "<p>A unique identifier for this EnvVariable.</p>"
@@ -3166,6 +3258,12 @@
 			"n": "Dagger\\FieldTypeDef::typeDef",
 			"p": "Dagger/FieldTypeDef.html#method_typeDef",
 			"d": "<p>The type of the field.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\File::asEnvFile",
+			"p": "Dagger/File.html#method_asEnvFile",
+			"d": "<p>Parse as an env file</p>"
 		},
 		{
 			"t": "M",

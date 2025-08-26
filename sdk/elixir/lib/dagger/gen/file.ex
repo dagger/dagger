@@ -16,6 +16,22 @@ defmodule Dagger.File do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Parse as an env file
+  """
+  @spec as_env_file(t(), [{:expand, boolean() | nil}]) :: Dagger.EnvFile.t()
+  def as_env_file(%__MODULE__{} = file, optional_args \\ []) do
+    query_builder =
+      file.query_builder
+      |> QB.select("asEnvFile")
+      |> QB.maybe_put_arg("expand", optional_args[:expand])
+
+    %Dagger.EnvFile{
+      query_builder: query_builder,
+      client: file.client
+    }
+  end
+
+  @doc """
   Retrieves the contents of the file.
   """
   @spec contents(t(), [{:offset_lines, integer() | nil}, {:limit_lines, integer() | nil}]) ::

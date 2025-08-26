@@ -1329,36 +1329,16 @@ func (s *containerSchema) withoutEnvVariable(ctx context.Context, parent *core.C
 	})
 }
 
-type EnvVariable struct {
-	Name  string `field:"true" doc:"The environment variable name."`
-	Value string `field:"true" doc:"The environment variable value."`
-}
-
-func (EnvVariable) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: "EnvVariable",
-		NonNull:   true,
-	}
-}
-
-func (EnvVariable) TypeDescription() string {
-	return "An environment variable name and value."
-}
-
-func (EnvVariable) Description() string {
-	return "A simple key value object that represents an environment variable."
-}
-
-func (s *containerSchema) envVariables(ctx context.Context, parent *core.Container, args struct{}) (dagql.Array[EnvVariable], error) {
+func (s *containerSchema) envVariables(ctx context.Context, parent *core.Container, args struct{}) (dagql.Array[core.EnvVariable], error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	vars := make([]EnvVariable, 0, len(cfg.Env))
+	vars := make([]core.EnvVariable, 0, len(cfg.Env))
 
 	core.WalkEnv(cfg.Env, func(k, v, _ string) {
-		vars = append(vars, EnvVariable{Name: k, Value: v})
+		vars = append(vars, core.EnvVariable{Name: k, Value: v})
 	})
 
 	return vars, nil
