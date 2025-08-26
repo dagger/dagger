@@ -11700,8 +11700,6 @@ pub enum ImageMediaTypes {
 pub enum ModuleSourceExperimentalFeature {
     #[serde(rename = "SELF_CALLS")]
     SelfCalls,
-    #[serde(rename = "SELF_CALLS_FEATURE")]
-    SelfCallsFeature,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ModuleSourceKind {
