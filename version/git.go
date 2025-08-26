@@ -75,8 +75,6 @@ func git(ctx context.Context, gitDir *dagger.Directory, dir *dagger.Directory) (
 				// can determine which tags are in it later
 				"--depth=" + strconv.Itoa(maxDepth),
 				"origin",
-				// update HEAD
-				"HEAD",
 				// update main
 				"refs/heads/main:refs/heads/main",
 			}).

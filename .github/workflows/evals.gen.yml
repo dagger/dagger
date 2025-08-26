@@ -53,7 +53,9 @@ jobs:
                 #!/bin/bash --noprofile --norc -e -o pipefail
 
                 cd $(mktemp -d)
-                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree | export ."
+
+                # HACK: with contextual git we won't need --depth=0 anymore
+                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
 
                 ./hack/build
 
@@ -81,7 +83,9 @@ jobs:
                 dagger core version
               shell: bash
             - name: Checkout
-              uses: actions/checkout@v4
+              run: dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
+              env:
+                DAGGER_REF: ${{ github.ref }}
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -185,7 +189,7 @@ jobs:
               env:
                 COMMAND: dagger call evals
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                DAGGER_MODULE: .
                 DOTENV: |-
                     ANTHROPIC_API_KEY=op://RelEng/ANTHROPIC/API_KEY
                     GEMINI_API_KEY=op://RelEng/GEMINI/API_KEY
