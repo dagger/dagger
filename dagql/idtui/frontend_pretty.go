@@ -1031,7 +1031,7 @@ func (fe *frontendPretty) View() string {
 
 	var mainView string
 	if fe.editline != nil {
-		if fe.scrollback.Len() > 0 {
+		if fe.scrollback.Len() > 0 && fe.editlineFocused {
 			mainView += fe.scrollback.String()
 			// mainView += "> " + strings.ReplaceAll(
 			// 	strings.TrimSuffix(fe.scrollback.String(), "\n"),
@@ -1377,6 +1377,7 @@ func (fe *frontendPretty) enterNavMode(auto bool) {
 	fe.autoModeSwitch = auto
 	fe.editlineFocused = false
 	fe.editline.Blur()
+	fe.renderLocked()
 }
 
 func (fe *frontendPretty) enterInsertMode(auto bool) tea.Cmd {
@@ -1384,6 +1385,7 @@ func (fe *frontendPretty) enterInsertMode(auto bool) tea.Cmd {
 	if fe.editline != nil {
 		fe.editlineFocused = true
 		fe.updatePrompt()
+		fe.renderLocked()
 		return fe.editline.Focus()
 	}
 	return nil
