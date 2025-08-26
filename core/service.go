@@ -7,7 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"os/exec"
+	"os"
 	"runtime"
 	"slices"
 	"strconv"
@@ -28,10 +28,11 @@ import (
 	bkmounts "github.com/moby/buildkit/solver/llbsolver/mounts"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/worker"
-	"github.com/opencontainers/runc/libcontainer"
+	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sys/unix"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
@@ -1020,27 +1021,13 @@ func (svc *Service) runAndSnapshotChanges(
 	}
 	defer mutableRef.Release(ctx)
 
-	container, err := libcontainer.Load("/run/runc", containerID)
-	if err != nil {
-		return res, false, fmt.Errorf("failed to load container: %w", err)
-	}
-	state, err := container.OCIState()
-	if err != nil {
-		return res, false, fmt.Errorf("failed to get OCI state for container %s: %w", containerID, err)
-	}
-
 	err = MountRef(ctx, mutableRef, nil, func(root string) (rerr error) {
 		resolvedDir, err := containerdfs.RootPath(root, source.Dir)
 		if err != nil {
 			return err
 		}
-		// mount the read-write copy into the container
-		out := new(strings.Builder)
-		containerMount := exec.Command("container-mount", strconv.Itoa(state.Pid), resolvedDir, target)
-		containerMount.Stdout = out
-		containerMount.Stderr = out
-		if err := containerMount.Run(); err != nil {
-			return fmt.Errorf("failed to mount %s into container %s: %w\n\n%s", target, containerID, err, out.String())
+		if err := mountIntoContainer(ctx, containerID, resolvedDir, target); err != nil {
+			return fmt.Errorf("remount container: %w", err)
 		}
 		return f()
 	})
@@ -1093,12 +1080,7 @@ func (svc *Service) runAndSnapshotChanges(
 		if err != nil {
 			return err
 		}
-		// mount the read-write copy into the container
-		out := new(strings.Builder)
-		containerMount := exec.Command("container-mount", strconv.Itoa(state.Pid), resolvedDir, target)
-		containerMount.Stdout = out
-		containerMount.Stderr = out
-		return containerMount.Run()
+		return mountIntoContainer(ctx, containerID, resolvedDir, target)
 	})
 	if err != nil {
 		return res, false, fmt.Errorf("failed to remount mutable copy: %w", err)
@@ -1131,6 +1113,38 @@ func (svc *Service) runAndSnapshotChanges(
 	}
 
 	return snapshot, true, nil
+}
+
+func mountIntoContainer(ctx context.Context, containerID, sourcePath, targetPath string) error {
+	fdMnt, err := unix.OpenTree(unix.AT_FDCWD, sourcePath, unix.OPEN_TREE_CLONE|unix.OPEN_TREE_CLOEXEC)
+	if err != nil {
+		return fmt.Errorf("open tree %s: %w", sourcePath, err)
+	}
+	defer unix.Close(fdMnt)
+	return buildkit.GetGlobalNamespaceWorkerPool().RunInNamespaces(ctx, containerID, []specs.LinuxNamespace{
+		{Type: specs.MountNamespace},
+	}, func() error {
+		// Create target directory if it doesn't exist
+		if _, err := os.Stat(targetPath); os.IsNotExist(err) {
+			if err := os.MkdirAll(targetPath, 0755); err != nil && !os.IsExist(err) {
+				return fmt.Errorf("mkdir %s: %w", targetPath, err)
+			}
+		}
+
+		// Unmount any existing mount at the target path
+		err = unix.Unmount(targetPath, unix.MNT_DETACH)
+		if err != nil && err != unix.EINVAL && err != unix.ENOENT {
+			slog.Warn("unmount failed during container remount", "path", targetPath, "error", err)
+			// Continue anyway, might not be mounted
+		}
+
+		err = unix.MoveMount(fdMnt, "", unix.AT_FDCWD, targetPath, unix.MOVE_MOUNT_F_EMPTY_PATH)
+		if err != nil {
+			return fmt.Errorf("move mount to %s: %w", targetPath, err)
+		}
+
+		return nil
+	})
 }
 
 type ServiceBindings []ServiceBinding
