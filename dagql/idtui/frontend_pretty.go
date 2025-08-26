@@ -2135,9 +2135,10 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 	}
 	toggler = toggler.Foreground(statusColor(span))
 	if span.Message != "" {
-		if span.LLMRole == telemetry.LLMRoleUser {
+		switch span.LLMRole {
+		case telemetry.LLMRoleUser:
 			toggler = out.String(Block).Foreground(termenv.ANSIMagenta)
-		} else if span.LLMRole == telemetry.LLMRoleAssistant {
+		case telemetry.LLMRoleAssistant:
 			toggler = out.String(VertBoldBar).Foreground(termenv.ANSIMagenta)
 		}
 	}
