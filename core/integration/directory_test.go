@@ -1754,6 +1754,28 @@ func another() {
 		require.Equal(t, 1, lineNumber0)
 	})
 
+	t.Run("case insensitive search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("file.txt", "Hello\nhello\nHELLO")
+
+		results, err := dir.Search(ctx, "hello", dagger.DirectorySearchOpts{
+			Insensitive: true,
+		})
+		require.NoError(t, err)
+		require.Len(t, results, 3)
+
+		// Collect all line numbers to verify we got all matches
+		var lineNumbers []int
+		for _, result := range results {
+			lineNumber, err := result.LineNumber(ctx)
+			require.NoError(t, err)
+			lineNumbers = append(lineNumbers, lineNumber)
+		}
+		require.ElementsMatch(t, []int{1, 2, 3}, lineNumbers)
+	})
+
 	t.Run("multiple matches in one file", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -1800,6 +1822,93 @@ func main() {
 			files = append(files, filePath)
 		}
 		require.Equal(t, []string{"text.txt"}, files)
+	})
+
+	t.Run("skip hidden files", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("visible.txt", "content with target").
+			WithNewFile(".hidden.txt", "content with target").
+			WithNewFile("subdir/.hidden2.txt", "content with target")
+
+		t.Run("default behavior includes hidden files", func(ctx context.Context, t *testctx.T) {
+			results, err := dir.Search(ctx, "target")
+			require.NoError(t, err)
+
+			var filePaths []string
+			for _, result := range results {
+				path, err := result.FilePath(ctx)
+				require.NoError(t, err)
+				filePaths = append(filePaths, path)
+			}
+			// Default should include hidden files
+			require.Contains(t, filePaths, "visible.txt")
+			require.Contains(t, filePaths, ".hidden.txt")
+			require.Contains(t, filePaths, "subdir/.hidden2.txt")
+		})
+
+		t.Run("skipHidden excludes hidden files", func(ctx context.Context, t *testctx.T) {
+			results, err := dir.Search(ctx, "target", dagger.DirectorySearchOpts{
+				SkipHidden: true,
+			})
+			require.NoError(t, err)
+
+			var filePaths []string
+			for _, result := range results {
+				path, err := result.FilePath(ctx)
+				require.NoError(t, err)
+				filePaths = append(filePaths, path)
+			}
+			// Should only include visible files
+			require.Contains(t, filePaths, "visible.txt")
+			require.NotContains(t, filePaths, ".hidden.txt")
+			require.NotContains(t, filePaths, "subdir/.hidden2.txt")
+		})
+	})
+
+	t.Run("skip ignored files", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("tracked.txt", "content with target").
+			WithNewFile("ignored.log", "content with target").
+			WithNewFile("build/output.bin", "content with target").
+			WithNewFile(".rgignore", "*.log\nbuild/")
+
+		t.Run("default behavior includes ignored files", func(ctx context.Context, t *testctx.T) {
+			results, err := dir.Search(ctx, "target")
+			require.NoError(t, err)
+
+			var filePaths []string
+			for _, result := range results {
+				path, err := result.FilePath(ctx)
+				require.NoError(t, err)
+				filePaths = append(filePaths, path)
+			}
+			// Default should include ignored files
+			require.Contains(t, filePaths, "tracked.txt")
+			require.Contains(t, filePaths, "ignored.log")
+			require.Contains(t, filePaths, "build/output.bin")
+		})
+
+		t.Run("skipIgnored respects rgignore", func(ctx context.Context, t *testctx.T) {
+			results, err := dir.Search(ctx, "target", dagger.DirectorySearchOpts{
+				SkipIgnored: true,
+			})
+			require.NoError(t, err)
+
+			var filePaths []string
+			for _, result := range results {
+				path, err := result.FilePath(ctx)
+				require.NoError(t, err)
+				filePaths = append(filePaths, path)
+			}
+			// Should only include tracked files
+			require.Contains(t, filePaths, "tracked.txt")
+			require.NotContains(t, filePaths, "ignored.log")
+			require.NotContains(t, filePaths, "build/output.bin")
+		})
 	})
 }
 

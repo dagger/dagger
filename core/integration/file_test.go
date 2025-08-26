@@ -738,6 +738,29 @@ func another() {
 		require.Equal(t, 1, lineNumber0)
 	})
 
+	t.Run("case insensitive search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		file := c.Directory().
+			WithNewFile("test.txt", "Hello\nhello\nHELLO\nHeLLo").
+			File("test.txt")
+
+		results, err := file.Search(ctx, "hello", dagger.FileSearchOpts{
+			Insensitive: true,
+		})
+		require.NoError(t, err)
+		require.Len(t, results, 4)
+
+		// Collect all line numbers to verify we got all matches
+		var lineNumbers []int
+		for _, result := range results {
+			lineNumber, err := result.LineNumber(ctx)
+			require.NoError(t, err)
+			lineNumbers = append(lineNumbers, lineNumber)
+		}
+		require.ElementsMatch(t, []int{1, 2, 3, 4}, lineNumbers)
+	})
+
 	t.Run("multiline patterns", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 

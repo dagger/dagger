@@ -47,13 +47,15 @@ func (*SearchSubmatch) Type() *ast.Type {
 }
 
 type SearchOpts struct {
-	Pattern    string
-	Literal    bool `default:"false"`
-	Multiline  bool `default:"false"`
-	Dotall     bool `default:"false"`
-	IgnoreCase bool `default:"false"`
-	FilesOnly  bool `default:"false"`
-	Limit      *int
+	Pattern     string
+	Literal     bool `default:"false"`
+	Multiline   bool `default:"false"`
+	Dotall      bool `default:"false"`
+	Insensitive bool `default:"false"`
+	SkipIgnored bool `default:"false"`
+	SkipHidden  bool `default:"false"`
+	FilesOnly   bool `default:"false"`
+	Limit       *int
 }
 
 func (opts SearchOpts) Args() []dagql.Argument {
@@ -62,7 +64,9 @@ func (opts SearchOpts) Args() []dagql.Argument {
 		dagql.Arg("literal").Doc(`Interpret the pattern as a literal string instead of a regular expression.`),
 		dagql.Arg("multiline").Doc(`Enable searching across multiple lines.`),
 		dagql.Arg("dotall").Doc(`Allow the . pattern to match newlines in multiline mode.`),
-		dagql.Arg("ignoreCase").Doc(`Enable case-insensitive matching.`),
+		dagql.Arg("insensitive").Doc(`Enable case-insensitive matching.`),
+		dagql.Arg("skipIgnored").Doc(`Honor .gitignore, .ignore, and .rgignore files.`),
+		dagql.Arg("skipHidden").Doc(`Skip hidden files (files starting with .).`),
 		dagql.Arg("filesOnly").Doc(`Only return matching files, not lines and content`),
 		dagql.Arg("limit").Doc(`Limit the number of results to return`),
 	}
@@ -79,8 +83,14 @@ func (opts SearchOpts) RipgrepArgs() []string {
 	if opts.Dotall {
 		args = append(args, "--multiline-dotall")
 	}
-	if opts.IgnoreCase {
+	if opts.Insensitive {
 		args = append(args, "--ignore-case")
+	}
+	if !opts.SkipIgnored {
+		args = append(args, "--no-ignore")
+	}
+	if !opts.SkipHidden {
+		args = append(args, "--hidden")
 	}
 	if opts.FilesOnly {
 		args = append(args, "--files-with-matches")
