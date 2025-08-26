@@ -1148,6 +1148,10 @@ func toolErrorMessage(err error) string {
 		// TODO: return a structured error object instead?
 		var exts []string
 		for k, v := range extErr.Extensions() {
+			if k == "traceparent" {
+				// silence this one
+				continue
+			}
 			var ext strings.Builder
 			fmt.Fprintf(&ext, "<%s>\n", k)
 
