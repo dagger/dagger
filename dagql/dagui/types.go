@@ -78,7 +78,11 @@ func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 	}
 	var spans iter.Seq[*Span]
 	if view.Zoomed != nil {
-		spans = view.Zoomed.ChildSpans.Iter()
+		if len(view.Zoomed.RevealedSpans.Order) > 0 && view.Zoomed.Passthrough {
+			spans = view.Zoomed.RevealedSpans.Iter()
+		} else {
+			spans = view.Zoomed.ChildSpans.Iter()
+		}
 	} else {
 		spans = db.AllSpans()
 	}
