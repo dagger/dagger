@@ -341,37 +341,21 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		return nil
 	}
 
-	// Create a new span for this command
-	spanName := line
-	if h.mode == modePrompt {
-		spanName = ""
-	}
-	var span trace.Span
-	ctx, span = Tracer().Start(ctx, spanName,
-		trace.WithAttributes(
-			attribute.String(telemetry.ContentTypeAttr, h.mode.ContentType()),
-			attribute.Bool(telemetry.CanceledAttr, line == ""),
-		),
-	)
-	defer telemetry.End(span, func() error {
-		if errors.Is(rerr, context.Canceled) {
-			span.SetAttributes(attribute.Bool(telemetry.CanceledAttr, true))
-			return nil
-		}
-		return rerr
-	})
-
-	// redirect stdio to the current span
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	defer stdio.Close() // ensure we send EOF this regardless so TUI can flush
-
 	// Empty input
 	if line == "" {
+		// add an immediately-canceled blank span, to emulate submitting blank shell
+		// commands to space things apart
+		_, span := Tracer().Start(ctx, "",
+			trace.WithAttributes(attribute.Bool(telemetry.CanceledAttr, true)))
+		span.End()
 		return nil
 	}
 
 	// Handle based on mode
 	if h.mode == modePrompt {
+		// NB: no span in this case, just let the LLM APIs create the user/assistant
+		// message spans
+
 		llm, err := h.llm(ctx)
 		if err != nil {
 			return err
@@ -384,6 +368,22 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		h.llmModel = newLLM.model
 		return nil
 	}
+
+	// Create a new span for this command
+	var span trace.Span
+	ctx, span = Tracer().Start(ctx, line, trace.WithAttributes(
+		attribute.String(telemetry.ContentTypeAttr, h.mode.ContentType())))
+	defer telemetry.End(span, func() error {
+		if errors.Is(rerr, context.Canceled) {
+			span.SetAttributes(attribute.Bool(telemetry.CanceledAttr, true))
+			return nil
+		}
+		return rerr
+	})
+
+	// redirect stdio to the current span
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close() // ensure we send EOF this regardless so TUI can flush
 
 	stdoutW := newTerminalWriter(stdio.Stdout.Write)
 	// handle shell state
