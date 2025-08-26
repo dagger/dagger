@@ -12553,8 +12553,8 @@ func (ModuleSourceExperimentalFeature) IsEnum() {}
 
 func (v ModuleSourceExperimentalFeature) Name() string {
 	switch v {
-	case ModuleSourceExperimentalFeatureSelfCallsFeature:
-		return "SELF_CALLS_FEATURE"
+	case ModuleSourceExperimentalFeatureSelfCalls:
+		return "SELF_CALLS"
 	default:
 		return ""
 	}
@@ -12585,8 +12585,6 @@ func (v *ModuleSourceExperimentalFeature) UnmarshalJSON(dt []byte) error {
 		*v = ""
 	case "SELF_CALLS":
 		*v = ModuleSourceExperimentalFeatureSelfCalls
-	case "SELF_CALLS_FEATURE":
-		*v = ModuleSourceExperimentalFeatureSelfCallsFeature
 	default:
 		return fmt.Errorf("invalid enum value %q", s)
 	}
@@ -12595,9 +12593,7 @@ func (v *ModuleSourceExperimentalFeature) UnmarshalJSON(dt []byte) error {
 
 const (
 	// Self calls
-	ModuleSourceExperimentalFeatureSelfCallsFeature ModuleSourceExperimentalFeature = "SELF_CALLS_FEATURE"
-	// Self calls
-	ModuleSourceExperimentalFeatureSelfCalls ModuleSourceExperimentalFeature = ModuleSourceExperimentalFeatureSelfCallsFeature
+	ModuleSourceExperimentalFeatureSelfCalls ModuleSourceExperimentalFeature = "SELF_CALLS"
 )
 
 // The kind of module source.
