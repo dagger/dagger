@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="robots" content="index, follow, all" />
-    <title>Dagger\File | API</title>
+    <title>Dagger\EnvFile | API</title>
 
             <link rel="stylesheet" type="text/css" href="../css/bootstrap.min.css">
         <link rel="stylesheet" type="text/css" href="../css/bootstrap-theme.min.css">
@@ -19,7 +19,7 @@
 
     </head>
 
-    <body id="class" data-name="class:Dagger_File" data-root-path="../" data-search-index-url="../doctum-search.json">
+    <body id="class" data-name="class:Dagger_EnvFile" data-root-path="../" data-search-index-url="../doctum-search.json">
             <div id="content">
         <div id="left-column">
                 <div id="control-panel">
@@ -75,18 +75,18 @@
                         <div class="namespace-breadcrumbs">
             <ol class="breadcrumb">
                 <li><span class="label label-default">class</span></li>
-                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>File</li>
+                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>EnvFile</li>
             </ol>
         </div>
                 <div id="page-content">
     <div class="page-header">
-        <h1>File    
+        <h1>EnvFile    
             </h1>
     </div>
 
     
     <p>        class
-    <strong>File</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
+    <strong>EnvFile</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
 </p>
 
         
@@ -94,7 +94,7 @@
         
 
             <div class="description">
-            <p><p>A file.</p></p>                    </div>
+            <p><p>A collection of environment variables.</p></p>                    </div>
             
         
     
@@ -143,12 +143,22 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
+                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_asEnvFile">asEnvFile</a>(bool|null $expand = null)
+                    <a href="#method_asFile">asFile</a>()
         
-                                            <p><p>Parse as an env file</p></p>                </div>
+                                            <p><p>Return as a file</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    bool
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_exists">exists</a>(string $name)
+        
+                                            <p><p>Check if a variable exists</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -156,29 +166,9 @@
                     string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_contents">contents</a>(int|null $offsetLines = null, int|null $limitLines = null)
+                    <a href="#method_get">get</a>(string $name)
         
-                                            <p><p>Retrieves the contents of the file.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    string
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_digest">digest</a>(bool|null $excludeMetadata = false)
-        
-                                            <p><p>Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    string
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_export">export</a>(string $path, bool|null $allowParentDirPath = false)
-        
-                                            <p><p>Writes the file to a file path on the host.</p></p>                </div>
+                                            <p><p>Lookup a variable (last occurrence wins) and return its value, or an empty string</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -188,17 +178,7 @@
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
         
-                                            <p><p>A unique identifier for this File.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    string
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_name">name</a>()
-        
-                                            <p><p>Retrieves the name of the file.</p></p>                </div>
+                                            <p><p>A unique identifier for this EnvFile.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -206,59 +186,29 @@
                     array
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_search">search</a>(string $pattern, bool|null $literal = false, bool|null $multiline = false, bool|null $dotall = false, bool|null $insensitive = false, bool|null $skipIgnored = false, bool|null $skipHidden = false, bool|null $filesOnly = false, int|null $limit = null, array|null $paths = null, array|null $globs = null)
+                    <a href="#method_variables">variables</a>()
         
-                                            <p><p>Searches for content matching the given regular expression or literal string.</p></p>                </div>
+                                            <p><p>Return all variables</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    int
+                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_size">size</a>()
+                    <a href="#method_withVariable">withVariable</a>(string $name, string $value)
         
-                                            <p><p>Retrieves the size of the file, in bytes.</p></p>                </div>
+                                            <p><p>Add a variable</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/FileId.html"><abbr title="Dagger\FileId">FileId</abbr></a>
+                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_sync">sync</a>()
+                    <a href="#method_withoutVariable">withoutVariable</a>(string $name)
         
-                                            <p><p>Force evaluation in the engine.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_withName">withName</a>(string $name)
-        
-                                            <p><p>Retrieves this file with its name set to the given name.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_withReplaced">withReplaced</a>(string $search, string $replacement, bool|null $all = false, int|null $firstFrom = null)
-        
-                                            <p><p>Retrieves the file with content replaced with the given text.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_withTimestamps">withTimestamps</a>(int $timestamp)
-        
-                                            <p><p>Retrieves this file with its created/modified timestamps set to the given time.</p></p>                </div>
+                                            <p><p>Remove all occurrences of the named variable</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -357,10 +307,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_asEnvFile">
+                    <h3 id="method_asFile">
         <div class="location">at line 19</div>
-        <code>                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
-    <strong>asEnvFile</strong>(bool|null $expand = null)
+        <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
+    <strong>asFile</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -368,25 +318,15 @@
             
 
         <div class="method-description">
-                            <p><p>Parse as an env file</p></p>                        
+                            <p><p>Return as a file</p></p>                        
         </div>
         <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>bool|null</td>
-                <td>$expand</td>
-                <td></td>
-            </tr>
-            </table>
-
             
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a></td>
+            <td><a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -399,10 +339,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_contents">
-        <div class="location">at line 31</div>
-        <code>                    string
-    <strong>contents</strong>(int|null $offsetLines = null, int|null $limitLines = null)
+                    <h3 id="method_exists">
+        <div class="location">at line 28</div>
+        <code>                    bool
+    <strong>exists</strong>(string $name)
         </code>
     </h3>
     <div class="details">    
@@ -410,96 +350,7 @@
             
 
         <div class="method-description">
-                            <p><p>Retrieves the contents of the file.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>int|null</td>
-                <td>$offsetLines</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>int|null</td>
-                <td>$limitLines</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_digest">
-        <div class="location">at line 46</div>
-        <code>                    string
-    <strong>digest</strong>(bool|null $excludeMetadata = false)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>bool|null</td>
-                <td>$excludeMetadata</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_export">
-        <div class="location">at line 58</div>
-        <code>                    string
-    <strong>export</strong>(string $path, bool|null $allowParentDirPath = false)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Writes the file to a file path on the host.</p></p>                        
+                            <p><p>Check if a variable exists</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -507,12 +358,49 @@
                     <table class="table table-condensed">
                     <tr>
                 <td>string</td>
-                <td>$path</td>
+                <td>$name</td>
                 <td></td>
             </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>bool</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_get">
+        <div class="location">at line 38</div>
+        <code>                    string
+    <strong>get</strong>(string $name)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Lookup a variable (last occurrence wins) and return its value, or an empty string</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
                     <tr>
-                <td>bool|null</td>
-                <td>$allowParentDirPath</td>
+                <td>string</td>
+                <td>$name</td>
                 <td></td>
             </tr>
             </table>
@@ -536,7 +424,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 71</div>
+        <div class="location">at line 48</div>
         <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
     <strong>id</strong>()
         </code>
@@ -546,7 +434,7 @@
             
 
         <div class="method-description">
-                            <p><p>A unique identifier for this File.</p></p>                        
+                            <p><p>A unique identifier for this EnvFile.</p></p>                        
         </div>
         <div class="tags">
             
@@ -567,42 +455,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_name">
-        <div class="location">at line 80</div>
-        <code>                    string
-    <strong>name</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Retrieves the name of the file.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_search">
-        <div class="location">at line 91</div>
+                    <h3 id="method_variables">
+        <div class="location">at line 57</div>
         <code>                    array
-    <strong>search</strong>(string $pattern, bool|null $literal = false, bool|null $multiline = false, bool|null $dotall = false, bool|null $insensitive = false, bool|null $skipIgnored = false, bool|null $skipHidden = false, bool|null $filesOnly = false, int|null $limit = null, array|null $paths = null, array|null $globs = null)
+    <strong>variables</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -610,69 +466,9 @@
             
 
         <div class="method-description">
-                            <p><p>Searches for content matching the given regular expression or literal string.</p></p>                <p><p>Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.</p></p>        
+                            <p><p>Return all variables</p></p>                        
         </div>
         <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$pattern</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>bool|null</td>
-                <td>$literal</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>bool|null</td>
-                <td>$multiline</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>bool|null</td>
-                <td>$dotall</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>bool|null</td>
-                <td>$insensitive</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>bool|null</td>
-                <td>$skipIgnored</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>bool|null</td>
-                <td>$skipHidden</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>bool|null</td>
-                <td>$filesOnly</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>int|null</td>
-                <td>$limit</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>array|null</td>
-                <td>$paths</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>array|null</td>
-                <td>$globs</td>
-                <td></td>
-            </tr>
-            </table>
-
             
                             <h4>Return Value</h4>
 
@@ -691,10 +487,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_size">
-        <div class="location">at line 142</div>
-        <code>                    int
-    <strong>size</strong>()
+                    <h3 id="method_withVariable">
+        <div class="location">at line 66</div>
+        <code>                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
+    <strong>withVariable</strong>(string $name, string $value)
         </code>
     </h3>
     <div class="details">    
@@ -702,15 +498,30 @@
             
 
         <div class="method-description">
-                            <p><p>Retrieves the size of the file, in bytes.</p></p>                        
+                            <p><p>Add a variable</p></p>                        
         </div>
         <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string</td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
             
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
         <tr>
-            <td>int</td>
+            <td><a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -723,10 +534,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_sync">
-        <div class="location">at line 151</div>
-        <code>                    <a href="../Dagger/FileId.html"><abbr title="Dagger\FileId">FileId</abbr></a>
-    <strong>sync</strong>()
+                    <h3 id="method_withoutVariable">
+        <div class="location">at line 77</div>
+        <code>                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
+    <strong>withoutVariable</strong>(string $name)
         </code>
     </h3>
     <div class="details">    
@@ -734,39 +545,7 @@
             
 
         <div class="method-description">
-                            <p><p>Force evaluation in the engine.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/FileId.html"><abbr title="Dagger\FileId">FileId</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_withName">
-        <div class="location">at line 160</div>
-        <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
-    <strong>withName</strong>(string $name)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Retrieves this file with its name set to the given name.</p></p>                        
+                            <p><p>Remove all occurrences of the named variable</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -784,109 +563,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_withReplaced">
-        <div class="location">at line 178</div>
-        <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
-    <strong>withReplaced</strong>(string $search, string $replacement, bool|null $all = false, int|null $firstFrom = null)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Retrieves the file with content replaced with the given text.</p></p>                <p><p>If 'all' is true, all occurrences of the pattern will be replaced.</p>
-<p>If 'firstAfter' is specified, only the first match starting at the specified line will be replaced.</p>
-<p>If neither are specified, and there are multiple matches for the pattern, this will error.</p>
-<p>If there are no matches for the pattern, this will error.</p></p>        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$search</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>string</td>
-                <td>$replacement</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>bool|null</td>
-                <td>$all</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>int|null</td>
-                <td>$firstFrom</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_withTimestamps">
-        <div class="location">at line 199</div>
-        <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
-    <strong>withTimestamps</strong>(int $timestamp)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Retrieves this file with its created/modified timestamps set to the given time.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>int</td>
-                <td>$timestamp</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></td>
+            <td><a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a></td>
             <td></td>
         </tr>
     </table>

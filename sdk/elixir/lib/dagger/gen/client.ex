@@ -172,6 +172,22 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Initialize an environment file
+  """
+  @spec env_file(t(), [{:expand, boolean() | nil}]) :: Dagger.EnvFile.t()
+  def env_file(%__MODULE__{} = client, optional_args \\ []) do
+    query_builder =
+      client.query_builder
+      |> QB.select("envFile")
+      |> QB.maybe_put_arg("expand", optional_args[:expand])
+
+    %Dagger.EnvFile{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Create a new error.
   """
   @spec error(t(), String.t()) :: Dagger.Error.t()
@@ -508,6 +524,20 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("loadEnumValueTypeDefFromID") |> QB.put_arg("id", id)
 
     %Dagger.EnumValueTypeDef{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a EnvFile from its ID.
+  """
+  @spec load_env_file_from_id(t(), Dagger.EnvFileID.t()) :: Dagger.EnvFile.t()
+  def load_env_file_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadEnvFileFromID") |> QB.put_arg("id", id)
+
+    %Dagger.EnvFile{
       query_builder: query_builder,
       client: client.client
     }

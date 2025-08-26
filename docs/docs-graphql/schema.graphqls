@@ -28,6 +28,9 @@ type Binding {
   """Retrieve the binding value, as type Env"""
   asEnv: Env!
 
+  """Retrieve the binding value, as type EnvFile"""
+  asEnvFile: EnvFile!
+
   """Retrieve the binding value, as type File"""
   asFile: File!
 
@@ -1985,6 +1988,27 @@ type Env {
     description: String!
   ): Env!
 
+  """Create or update a binding of type EnvFile in the environment"""
+  withEnvFileInput(
+    """The name of the binding"""
+    name: String!
+
+    """The EnvFile value to assign to the binding"""
+    value: EnvFileID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired EnvFile output to be assigned in the environment"""
+  withEnvFileOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Create or update a binding of type Env in the environment"""
   withEnvInput(
     """The name of the binding"""
@@ -2313,6 +2337,52 @@ type Env {
   ): Env!
 }
 
+"""A collection of environment variables."""
+type EnvFile {
+  """Return as a file"""
+  asFile: File!
+
+  """Check if a variable exists"""
+  exists(
+    """Variable name"""
+    name: String!
+  ): Boolean!
+
+  """
+  Lookup a variable (last occurrence wins) and return its value, or an empty string
+  """
+  get(
+    """Variable name"""
+    name: String!
+  ): String!
+
+  """A unique identifier for this EnvFile."""
+  id: EnvFileID!
+
+  """Return all variables"""
+  variables: [EnvVariable!]!
+
+  """Add a variable"""
+  withVariable(
+    """Variable name"""
+    name: String!
+
+    """Variable value"""
+    value: String!
+  ): EnvFile!
+
+  """Remove all occurrences of the named variable"""
+  withoutVariable(
+    """Variable name"""
+    name: String!
+  ): EnvFile!
+}
+
+"""
+The `EnvFileID` scalar type represents an identifier for an object of type EnvFile.
+"""
+scalar EnvFileID
+
 """
 The `EnvID` scalar type represents an identifier for an object of type Env.
 """
@@ -2418,6 +2488,12 @@ scalar FieldTypeDefID
 
 """A file."""
 type File {
+  """Parse as an env file"""
+  asEnvFile(
+    """Replace "${VAR}" or "$VAR" with the value of other vars"""
+    expand: Boolean
+  ): EnvFile!
+
   """Retrieves the contents of the file."""
   contents(
     """Start reading after this line"""
@@ -3707,6 +3783,12 @@ type Query {
     writable: Boolean = false
   ): Env! @experimental(reason: "Environments are not yet stabilized")
 
+  """Initialize an environment file"""
+  envFile(
+    """Replace "${VAR}" or "$VAR" with the value of other vars"""
+    expand: Boolean
+  ): EnvFile!
+
   """Create a new error."""
   error(
     """A brief description of the error."""
@@ -3846,6 +3928,9 @@ type Query {
 
   """Load a EnumValueTypeDef from its ID."""
   loadEnumValueTypeDefFromID(id: EnumValueTypeDefID!): EnumValueTypeDef!
+
+  """Load a EnvFile from its ID."""
+  loadEnvFileFromID(id: EnvFileID!): EnvFile!
 
   """Load a Env from its ID."""
   loadEnvFromID(id: EnvID!): Env!

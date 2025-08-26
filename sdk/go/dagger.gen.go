@@ -164,6 +164,9 @@ type EnumTypeDefID string
 // The `EnumValueTypeDefID` scalar type represents an identifier for an object of type EnumValueTypeDef.
 type EnumValueTypeDefID string
 
+// The `EnvFileID` scalar type represents an identifier for an object of type EnvFile.
+type EnvFileID string
+
 // The `EnvID` scalar type represents an identifier for an object of type Env.
 type EnvID string
 
@@ -373,6 +376,15 @@ func (r *Binding) AsEnv() *Env {
 	q := r.query.Select("asEnv")
 
 	return &Env{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type EnvFile
+func (r *Binding) AsEnvFile() *EnvFile {
+	q := r.query.Select("asEnvFile")
+
+	return &EnvFile{
 		query: q,
 	}
 }
@@ -4397,6 +4409,30 @@ func (r *Env) WithDirectoryOutput(name string, description string) *Env {
 	}
 }
 
+// Create or update a binding of type EnvFile in the environment
+func (r *Env) WithEnvFileInput(name string, value *EnvFile, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withEnvFileInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired EnvFile output to be assigned in the environment
+func (r *Env) WithEnvFileOutput(name string, description string) *Env {
+	q := r.query.Select("withEnvFileOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create or update a binding of type Env in the environment
 func (r *Env) WithEnvInput(name string, value *Env, description string) *Env {
 	assertNotNil("value", value)
@@ -4752,6 +4788,160 @@ func (r *Env) WithStringOutput(name string, description string) *Env {
 	q = q.Arg("description", description)
 
 	return &Env{
+		query: q,
+	}
+}
+
+// A collection of environment variables.
+type EnvFile struct {
+	query *querybuilder.Selection
+
+	exists *bool
+	get    *string
+	id     *EnvFileID
+}
+type WithEnvFileFunc func(r *EnvFile) *EnvFile
+
+// With calls the provided function with current EnvFile.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *EnvFile) With(f WithEnvFileFunc) *EnvFile {
+	return f(r)
+}
+
+func (r *EnvFile) WithGraphQLQuery(q *querybuilder.Selection) *EnvFile {
+	return &EnvFile{
+		query: q,
+	}
+}
+
+// Return as a file
+func (r *EnvFile) AsFile() *File {
+	q := r.query.Select("asFile")
+
+	return &File{
+		query: q,
+	}
+}
+
+// Check if a variable exists
+func (r *EnvFile) Exists(ctx context.Context, name string) (bool, error) {
+	if r.exists != nil {
+		return *r.exists, nil
+	}
+	q := r.query.Select("exists")
+	q = q.Arg("name", name)
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Lookup a variable (last occurrence wins) and return its value, or an empty string
+func (r *EnvFile) Get(ctx context.Context, name string) (string, error) {
+	if r.get != nil {
+		return *r.get, nil
+	}
+	q := r.query.Select("get")
+	q = q.Arg("name", name)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this EnvFile.
+func (r *EnvFile) ID(ctx context.Context) (EnvFileID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response EnvFileID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EnvFile) XXX_GraphQLType() string {
+	return "EnvFile"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EnvFile) XXX_GraphQLIDType() string {
+	return "EnvFileID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EnvFile) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *EnvFile) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Return all variables
+func (r *EnvFile) Variables(ctx context.Context) ([]EnvVariable, error) {
+	q := r.query.Select("variables")
+
+	q = q.Select("id")
+
+	type variables struct {
+		Id EnvVariableID
+	}
+
+	convert := func(fields []variables) []EnvVariable {
+		out := []EnvVariable{}
+
+		for i := range fields {
+			val := EnvVariable{id: &fields[i].Id}
+			val.query = q.Root().Select("loadEnvVariableFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []variables
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Add a variable
+func (r *EnvFile) WithVariable(name string, value string) *EnvFile {
+	q := r.query.Select("withVariable")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &EnvFile{
+		query: q,
+	}
+}
+
+// Remove all occurrences of the named variable
+func (r *EnvFile) WithoutVariable(name string) *EnvFile {
+	q := r.query.Select("withoutVariable")
+	q = q.Arg("name", name)
+
+	return &EnvFile{
 		query: q,
 	}
 }
@@ -5159,6 +5349,27 @@ func (r *File) With(f WithFileFunc) *File {
 
 func (r *File) WithGraphQLQuery(q *querybuilder.Selection) *File {
 	return &File{
+		query: q,
+	}
+}
+
+// FileAsEnvFileOpts contains options for File.AsEnvFile
+type FileAsEnvFileOpts struct {
+	// Replace "${VAR}" or "$VAR" with the value of other vars
+	Expand bool
+}
+
+// Parse as an env file
+func (r *File) AsEnvFile(opts ...FileAsEnvFileOpts) *EnvFile {
+	q := r.query.Select("asEnvFile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `expand` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Expand) {
+			q = q.Arg("expand", opts[i].Expand)
+		}
+	}
+
+	return &EnvFile{
 		query: q,
 	}
 }
@@ -9168,6 +9379,27 @@ func (r *Client) Env(opts ...EnvOpts) *Env {
 	}
 }
 
+// EnvFileOpts contains options for Client.EnvFile
+type EnvFileOpts struct {
+	// Replace "${VAR}" or "$VAR" with the value of other vars
+	Expand bool
+}
+
+// Initialize an environment file
+func (r *Client) EnvFile(opts ...EnvFileOpts) *EnvFile {
+	q := r.query.Select("envFile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `expand` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Expand) {
+			q = q.Arg("expand", opts[i].Expand)
+		}
+	}
+
+	return &EnvFile{
+		query: q,
+	}
+}
+
 // Create a new error.
 func (r *Client) Error(message string) *Error {
 	q := r.query.Select("error")
@@ -9489,6 +9721,16 @@ func (r *Client) LoadEnumValueTypeDefFromID(id EnumValueTypeDefID) *EnumValueTyp
 	q = q.Arg("id", id)
 
 	return &EnumValueTypeDef{
+		query: q,
+	}
+}
+
+// Load a EnvFile from its ID.
+func (r *Client) LoadEnvFileFromID(id EnvFileID) *EnvFile {
+	q := r.query.Select("loadEnvFileFromID")
+	q = q.Arg("id", id)
+
+	return &EnvFile{
 		query: q,
 	}
 }

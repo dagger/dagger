@@ -38,6 +38,7 @@
               <li><a href="#query-directory">directory</a></li>
               <li><a href="#query-engine">engine</a></li>
               <li><a href="#query-env">env</a></li>
+              <li><a href="#query-envFile">envFile</a></li>
               <li><a href="#query-error">error</a></li>
               <li><a href="#query-file">file</a></li>
               <li><a href="#query-function">function</a></li>
@@ -59,6 +60,7 @@
               <li><a href="#query-loadEngineFromID">loadEngineFromID</a></li>
               <li><a href="#query-loadEnumTypeDefFromID">loadEnumTypeDefFromID</a></li>
               <li><a href="#query-loadEnumValueTypeDefFromID">loadEnumValueTypeDefFromID</a></li>
+              <li><a href="#query-loadEnvFileFromID">loadEnvFileFromID</a></li>
               <li><a href="#query-loadEnvFromID">loadEnvFromID</a></li>
               <li><a href="#query-loadEnvVariableFromID">loadEnvVariableFromID</a></li>
               <li><a href="#query-loadErrorFromID">loadErrorFromID</a></li>
@@ -135,6 +137,8 @@
               <li><a href="#definition-EnumValueTypeDef">EnumValueTypeDef</a></li>
               <li><a href="#definition-EnumValueTypeDefID">EnumValueTypeDefID</a></li>
               <li><a href="#definition-Env">Env</a></li>
+              <li><a href="#definition-EnvFile">EnvFile</a></li>
+              <li><a href="#definition-EnvFileID">EnvFileID</a></li>
               <li><a href="#definition-EnvID">EnvID</a></li>
               <li><a href="#definition-EnvVariable">EnvVariable</a></li>
               <li><a href="#definition-EnvVariableID">EnvVariableID</a></li>
@@ -653,6 +657,58 @@
                           <span class="property-name"><code>writable</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span>
                         </td>
                         <td> Allow new outputs to be declared and saved in the environment. Default = <code>false</code> </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-envFile" class="operation operation-query" data-traverse-target="query-envFile">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>envFile</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Initialize an environment file</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-EnvFile"><code>EnvFile!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span>
+                        </td>
+                        <td> Replace "${VAR}" or "$VAR" with the value of other vars </td>
                       </tr>
                     </tbody>
                   </table>
@@ -1858,6 +1914,59 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-EnumValueTypeDefID"><code>EnumValueTypeDefID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadEnvFileFromID" class="operation operation-query" data-traverse-target="query-loadEnvFileFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadEnvFileFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a EnvFile from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-EnvFile"><code>EnvFile!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-EnvFileID"><code>EnvFileID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -4183,6 +4292,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asEnv" href="#Binding-asEnv"><code>asEnv</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Retrieve the binding value, as type Env </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asEnvFile" href="#Binding-asEnvFile"><code>asEnvFile</code></a> - <span class="property-type"><a href="#definition-EnvFile"><code>EnvFile!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type EnvFile </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asFile" href="#Binding-asFile"><code>asFile</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
@@ -7405,6 +7518,52 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withEnvFileInput" href="#Env-withEnvFileInput"><code>withEnvFileInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type EnvFile in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-EnvFileID"><code>EnvFileID!</code></a></span></h6>
+                                <p>The EnvFile value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withEnvFileOutput" href="#Env-withEnvFileOutput"><code>withEnvFileOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired EnvFile output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withEnvInput" href="#Env-withEnvInput"><code>withEnvInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Create or update a binding of type Env in the environment </td>
                       </tr>
@@ -8100,6 +8259,131 @@
               </div>
             </div>
           </section>
+          <section id="definition-EnvFile" class="definition definition-object" data-traverse-target="definition-EnvFile">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">EnvFile</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A collection of environment variables.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EnvFile-asFile" href="#EnvFile-asFile"><code>asFile</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
+                        <td> Return as a file </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="EnvFile-exists" href="#EnvFile-exists"><code>exists</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> Check if a variable exists </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Variable name</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="EnvFile-get" href="#EnvFile-get"><code>get</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Lookup a variable (last occurrence wins) and return its value, or an empty string </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Variable name</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EnvFile-id" href="#EnvFile-id"><code>id</code></a> - <span class="property-type"><a href="#definition-EnvFileID"><code>EnvFileID!</code></a></span> </td>
+                        <td> A unique identifier for this EnvFile. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EnvFile-variables" href="#EnvFile-variables"><code>variables</code></a> - <span class="property-type"><a href="#definition-EnvVariable"><code>[EnvVariable!]!</code></a></span> </td>
+                        <td> Return all variables </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="EnvFile-withVariable" href="#EnvFile-withVariable"><code>withVariable</code></a> - <span class="property-type"><a href="#definition-EnvFile"><code>EnvFile!</code></a></span> </td>
+                        <td> Add a variable </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Variable name</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Variable value</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="EnvFile-withoutVariable" href="#EnvFile-withoutVariable"><code>withoutVariable</code></a> - <span class="property-type"><a href="#definition-EnvFile"><code>EnvFile!</code></a></span> </td>
+                        <td> Remove all occurrences of the named variable </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Variable name</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-EnvFileID" class="definition definition-scalar" data-traverse-target="definition-EnvFileID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">EnvFileID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>EnvFileID</code> scalar type represents an identifier for an object of type EnvFile.</p>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="definition-EnvID" class="definition definition-scalar" data-traverse-target="definition-EnvID">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -8421,6 +8705,23 @@
                       </tr>
                     </thead>
                     <tbody>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="File-asEnvFile" href="#File-asEnvFile"><code>asEnvFile</code></a> - <span class="property-type"><a href="#definition-EnvFile"><code>EnvFile!</code></a></span> </td>
+                        <td> Parse as an env file </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Replace &quot;${VAR}&quot; or &quot;$VAR&quot; with the value of other vars</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="File-contents" href="#File-contents"><code>contents</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> Retrieves the contents of the file. </td>

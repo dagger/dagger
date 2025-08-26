@@ -118,6 +118,18 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Initialize an environment file
+     */
+    public function envFile(?bool $expand = null): EnvFile
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('envFile');
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\EnvFile($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Create a new error.
      */
     public function error(string $message): Error
@@ -379,6 +391,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEnumValueTypeDefFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\EnumValueTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a EnvFile from its ID.
+     */
+    public function loadEnvFileFromID(EnvFileId|EnvFile $id): EnvFile
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEnvFileFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\EnvFile($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

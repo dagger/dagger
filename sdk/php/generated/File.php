@@ -14,6 +14,18 @@ namespace Dagger;
 class File extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * Parse as an env file
+     */
+    public function asEnvFile(?bool $expand = null): EnvFile
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asEnvFile');
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\EnvFile($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieves the contents of the file.
      */
     public function contents(?int $offsetLines = null, ?int $limitLines = null): string
