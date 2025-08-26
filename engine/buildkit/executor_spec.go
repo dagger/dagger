@@ -112,8 +112,6 @@ type execState struct {
 
 	doneErr error
 	done    chan struct{}
-
-	netNSJobs chan func()
 }
 
 func newExecState(
@@ -132,7 +130,6 @@ func newExecState(
 		startedOnce: &sync.Once{},
 		startedCh:   startedCh,
 		done:        make(chan struct{}),
-		netNSJobs:   make(chan func()),
 	}
 }
 
@@ -158,13 +155,6 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 	}
 	state.cleanups.Add("close network namespace", networkNamespace.Close)
 	state.networkNamespace = networkNamespace
-
-	if state.procInfo.Meta.NetMode == pb.NetMode_UNSET {
-		// only run namespace workers for default CNI mode
-		if err := w.runNetNSWorkers(ctx, state); err != nil {
-			return fmt.Errorf("failed to handle namespace jobs: %w", err)
-		}
-	}
 
 	state.resolvConfPath, err = oci.GetResolvConf(ctx, w.executorRoot, w.idmap, w.dns, state.procInfo.Meta.NetMode)
 	if err != nil {
@@ -1040,8 +1030,6 @@ func (w *Worker) installCACerts(ctx context.Context, state *execState) error {
 			startedCh:   make(chan struct{}),
 
 			done: make(chan struct{}),
-
-			netNSJobs: state.netNSJobs,
 		}
 
 		// copy the spec by doing a json ser/deser round (this could be more efficient, but
