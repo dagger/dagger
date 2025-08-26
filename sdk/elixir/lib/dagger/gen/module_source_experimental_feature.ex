@@ -6,13 +6,7 @@ defmodule Dagger.ModuleSourceExperimentalFeature do
 
   use Dagger.Core.Base, kind: :enum, name: "ModuleSourceExperimentalFeature"
 
-  @type t() :: :SELF_CALLS_FEATURE | :SELF_CALLS
-
-  @doc """
-  Self calls
-  """
-  @spec self_calls_feature() :: :SELF_CALLS_FEATURE
-  def self_calls_feature(), do: :SELF_CALLS_FEATURE
+  @type t() :: :SELF_CALLS
 
   @doc """
   Self calls
@@ -24,6 +18,5 @@ defmodule Dagger.ModuleSourceExperimentalFeature do
   @spec from_string(String.t()) :: t()
   def from_string(string)
 
-  def from_string("SELF_CALLS_FEATURE"), do: :SELF_CALLS_FEATURE
   def from_string("SELF_CALLS"), do: :SELF_CALLS
 end

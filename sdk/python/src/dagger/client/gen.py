@@ -336,9 +336,7 @@ class ImageMediaTypes(Enum):
 class ModuleSourceExperimentalFeature(Enum):
     """Experimental features of a module"""
 
-    SELF_CALLS_FEATURE = "SELF_CALLS_FEATURE"
-    """Self calls"""
-    SELF_CALLS = "SELF_CALLS_FEATURE"
+    SELF_CALLS = "SELF_CALLS"
     """Self calls"""
 
 
