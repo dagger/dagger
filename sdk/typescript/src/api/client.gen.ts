@@ -1353,12 +1353,7 @@ export enum ModuleSourceExperimentalFeature {
   /**
    * Self calls
    */
-  SelfCalls = "SELF_CALLS_FEATURE",
-
-  /**
-   * Self calls
-   */
-  SelfCallsFeature = ModuleSourceExperimentalFeature.SelfCalls,
+  SelfCalls = "SELF_CALLS",
 }
 
 /**
