@@ -39,10 +39,12 @@ jobs:
       - name: ${{ inputs.function }}
         uses: ./.github/actions/call-ci-alt-runner
         with:
+          module: github.com/${{ github.repository }}@${{ github.sha }}
           function: ${{ inputs.function }}
           dev-engine: ${{ inputs.dev }}
       - name: ${{ inputs.function }} (CACHE TEST)
         uses: ./.github/actions/call-ci-alt-runner
         with:
+          module: github.com/${{ github.repository }}@${{ github.sha }}
           function: ${{ inputs.function }}
           dev-engine: ${{ inputs.dev }}

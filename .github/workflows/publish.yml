@@ -25,7 +25,7 @@ jobs:
       - name: "Publish"
         uses: ./.github/actions/call
         with:
-          module: ./releaser
+          module: github.com/${{ github.repository }}/releaser@${{ github.sha }}
           function: |-
             publish \
             --tag="${{ github.ref_name }}" --commit="${{ github.sha }}" \
