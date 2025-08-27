@@ -168,16 +168,28 @@ type Runtime interface {
 		// Current instance of the module source.
 		dagql.ObjectResult[*ModuleSource],
 	) (dagql.ObjectResult[*Container], error)
+}
 
+/*
+TypeDefs is an interface that a SDK may implement to expose types of a module
+to let the module call itself.
+
+This interface MUST be implemented to support self calls.
+*/
+type TypeDefs interface {
 	/*
-		HasModuleTypeDefs checks if the module exposes a `moduleTypeDefs` function
-		to be called by `TypeDefs`.
+		TypeDefs returns a module instance representing the types
+		exposed by the module code.
 
-		This doesn't rely on a function exposed by the SDK, but on the list of functions
-		exposed.
+		SDK must implement the `TypeDefs` function with the following signature:
+
+		```gql
+		  moduleTypeDefs(
+		    modSource: ModuleSource!
+		    introspectionJSON: File!
+		  ): Module!
+		```
 	*/
-	HasModuleTypeDefs() bool
-
 	TypeDefs(
 		context.Context,
 
@@ -201,6 +213,9 @@ type Runtime interface {
 type SDK interface {
 	// Transform the SDK into a Runtime if it implements it.
 	AsRuntime() (Runtime, bool)
+
+	// Transform the SDK into a TypeDefs if it implements it.
+	AsTypeDefs() (TypeDefs, bool)
 
 	// Transform the SDK into a CodeGenerator if it implements it.
 	AsCodeGenerator() (CodeGenerator, bool)
