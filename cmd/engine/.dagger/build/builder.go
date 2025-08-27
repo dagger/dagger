@@ -35,15 +35,25 @@ type Builder struct {
 	race bool
 }
 
-func NewBuilder(ctx context.Context, source *dagger.Directory) (*Builder, error) {
-	v := dag.Version()
-	version, err := v.Version(ctx)
-	if err != nil {
-		return nil, err
+func NewBuilder(
+	ctx context.Context,
+	source *dagger.Directory,
+	version, tag string,
+) (*Builder, error) {
+	if version == "" {
+		v := dag.Version()
+		var err error
+		version, err = v.Version(ctx)
+		if err != nil {
+			return nil, err
+		}
+		tag, err = v.ImageTag(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
-	tag, err := v.ImageTag(ctx)
-	if err != nil {
-		return nil, err
+	if tag == "" {
+		tag = version
 	}
 	return &Builder{
 		source:       source,
