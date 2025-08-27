@@ -1043,4 +1043,23 @@ func (FileSuite) TestWithReplaced(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "Step 2: replaced", contents)
 	})
+
+	t.Run("all=true with no matches is no-op", func(ctx context.Context, t *testctx.T) {
+		file := c.Directory().
+			WithNewFile("test.txt", "Hello, World!").
+			File("test.txt")
+
+		// Should not error when no matches found with all=true (should be a no-op)
+		replaced := file.WithReplaced("NotFound", "Replacement", dagger.FileWithReplacedOpts{
+			All: true,
+		})
+
+		// The file should be returned unchanged
+		_, err := replaced.ID(ctx)
+		require.NoError(t, err)
+
+		contents, err := replaced.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello, World!", contents) // Content should be unchanged
+	})
 }

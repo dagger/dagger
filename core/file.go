@@ -274,8 +274,6 @@ func (file *File) Search(ctx context.Context, opts SearchOpts) ([]*SearchResult,
 }
 
 func (file *File) WithReplaced(ctx context.Context, searchStr, replacementStr string, firstFrom *int, all bool) (*File, error) {
-	file = file.Clone()
-
 	opt, ok := buildkit.CurrentOpOpts(ctx)
 	if !ok {
 		return nil, fmt.Errorf("no buildkit opts in context")
@@ -323,6 +321,11 @@ func (file *File) WithReplaced(ctx context.Context, searchStr, replacementStr st
 
 	// Check for matches
 	if len(matches) == 0 {
+		if all {
+			// If we're replacing all, it's not an error if there are no matches
+			// (just a no-op)
+			return file, nil
+		}
 		return nil, fmt.Errorf("search string not found")
 	}
 
@@ -400,6 +403,8 @@ func (file *File) WithReplaced(ctx context.Context, searchStr, replacementStr st
 	if err != nil {
 		return nil, err
 	}
+	file = file.Clone()
+	file.LLB = nil
 	file.Result = snap
 	return file, nil
 }

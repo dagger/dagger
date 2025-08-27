@@ -175,12 +175,12 @@ func (s *fileSchema) withReplaced(ctx context.Context, parent dagql.ObjectResult
 		return inst, err
 	}
 
-	dir, err := parent.Self().WithReplaced(ctx, args.Search, args.Replacement, args.FirstFrom, args.All)
+	file, err := parent.Self().WithReplaced(ctx, args.Search, args.Replacement, args.FirstFrom, args.All)
 	if err != nil {
 		return inst, err
 	}
 
-	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+	return dagql.NewObjectResultForCurrentID(ctx, srv, file)
 }
 
 func (s *fileSchema) export(ctx context.Context, parent *core.File, args fileExportArgs) (dagql.String, error) {
