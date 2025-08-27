@@ -24,9 +24,13 @@ func ExecOutput(ctx context.Context, cmd *exec.Cmd, opts ...trace.SpanStartOptio
 	stdio := telemetry.SpanStdio(ctx, "")
 	defer stdio.Close()
 	outBuf := new(bytes.Buffer)
+	if cmd.Stdout == nil {
+		cmd.Stdout = io.MultiWriter(stdio.Stdout, outBuf)
+	}
 	errBuf := new(bytes.Buffer)
-	cmd.Stdout = io.MultiWriter(stdio.Stdout, outBuf)
-	cmd.Stderr = io.MultiWriter(stdio.Stderr, errBuf)
+	if cmd.Stderr == nil {
+		cmd.Stderr = io.MultiWriter(stdio.Stderr, errBuf)
+	}
 
 	err := cmd.Run()
 	stdout = strings.TrimSpace(outBuf.String())

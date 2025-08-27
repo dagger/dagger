@@ -10,13 +10,19 @@ import (
 	"github.com/containerd/containerd/leases"
 )
 
-type TarballLoader func(ctx context.Context, name string, tarball io.Reader) error
+type TarballWriter func(ctx context.Context, name string, tarball io.Reader) error
+type TarballReader func(ctx context.Context, name string, tarball io.Writer) error
 
 type Loader struct {
 	ID string
 
-	TarballLoader TarballLoader
+	// TarballWriter and TarballReader allow the backend to write and read tarballs
+	// to and from the content store.
+	TarballWriter TarballWriter
+	TarballReader TarballReader
 
+	// Stores are used to directly access a containerd backend (when available).
+	// These are *significantly* faster when available.
 	ContentStore content.Store
 	ImagesStore  images.Store
 	LeaseManager leases.Manager

@@ -14,6 +14,16 @@ namespace Dagger;
 class Host extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * Accesses a container image on the host.
+     */
+    public function containerImage(string $name): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('containerImage');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Accesses a directory on the host.
      */
     public function directory(

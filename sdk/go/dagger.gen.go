@@ -6177,6 +6177,16 @@ func (r *Host) WithGraphQLQuery(q *querybuilder.Selection) *Host {
 	}
 }
 
+// Accesses a container image on the host.
+func (r *Host) ContainerImage(name string) *Container {
+	q := r.query.Select("containerImage")
+	q = q.Arg("name", name)
+
+	return &Container{
+		query: q,
+	}
+}
+
 // HostDirectoryOpts contains options for Host.Directory
 type HostDirectoryOpts struct {
 	// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
