@@ -168,6 +168,8 @@ func (p Go) Env(
 	platform dagger.Platform,
 ) *dagger.Container {
 	return p.Base.
+		// TODO: test, shouldn't be hardcoded here
+		WithEnvVariable("GOEXPERIMENT", "jsonv2").
 		// Configure CGO
 		WithEnvVariable("CGO_ENABLED", func() string {
 			if p.Cgo {

@@ -1,6 +1,6 @@
 module github.com/dagger/dagger/dev/alpine
 
-go 1.23.1
+go 1.25.0
 
 require (
 	chainguard.dev/apko v0.19.2

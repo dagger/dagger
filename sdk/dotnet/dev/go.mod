@@ -1,6 +1,6 @@
 module github.com/dagger/dagger/sdk/dotnet/dev
 
-go 1.23.0
+go 1.25.0
 
 toolchain go1.23.6
 

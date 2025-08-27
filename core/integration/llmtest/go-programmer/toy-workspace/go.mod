@@ -1,6 +1,6 @@
 module dagger/toy-workspace
 
-go 1.23.6
+go 1.25.0
 
 require (
 	github.com/99designs/gqlgen v0.17.66

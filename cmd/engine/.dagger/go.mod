@@ -1,6 +1,6 @@
 module github.com/dagger/dagger/cmd/engine/.dagger
 
-go 1.23.8
+go 1.25.0
 
 require (
 	github.com/dagger/dagger/engine/distconsts v0.18.5

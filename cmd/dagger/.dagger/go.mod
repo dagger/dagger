@@ -1,6 +1,6 @@
 module github.com/dagger/dagger/cmd/dagger/.dagger
 
-go 1.23.0
+go 1.25.0
 
 replace github.com/dagger/dagger/engine/distconsts => ../../../engine/distconsts
 
