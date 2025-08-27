@@ -145,8 +145,6 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Host]{
-		// NOTE: (for near future) we can support force reloading by adding a new arg to this function and providing
-		// a custom cache key function that uses a random value when that arg is true.
 		dagql.NodeFuncWithCacheKey("directory", s.directory, dagql.CacheAsRequested).
 			Doc(`Accesses a directory on the host.`).
 			Args(

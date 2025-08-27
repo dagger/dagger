@@ -436,11 +436,15 @@ func (op ContainerDagOp) Digest() (digest.Digest, error) {
 
 func (op ContainerDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
 	// TODO: explain
+	cm.Digest = op.CacheKey
+
 	for i, mount := range op.Mounts {
 		if mount.Input == pb.Empty {
 			// No inputs, so no content-caching to apply.
 			continue
 		}
+		cm.Deps[mount.Input].PreprocessFunc = nil
+
 		if dgst := op.Digests[i]; dgst != "" {
 			cm.Deps[mount.Input].ComputeDigestFunc = func(
 				context.Context,
@@ -524,13 +528,17 @@ func getAllContainerMounts(ctx context.Context, container *Container) (
 				mount.Selector = dirMnt.Self().Dir
 				llb = dirMnt.Self().LLB
 				res = dirMnt.Self().Result
-				dgst = dirMnt.ID().Digest()
+				if dirMnt.ID().HasCustomDigest() {
+					dgst = dirMnt.ID().Digest()
+				}
 			},
 			func(fileMnt *dagql.ObjectResult[*File]) {
 				mount.Selector = fileMnt.Self().File
 				llb = fileMnt.Self().LLB
 				res = fileMnt.Self().Result
-				dgst = fileMnt.ID().Digest()
+				if fileMnt.ID().HasCustomDigest() {
+					dgst = fileMnt.ID().Digest()
+				}
 			},
 			func(cache *CacheMountSource) {
 				mount.Selector = cache.BasePath
