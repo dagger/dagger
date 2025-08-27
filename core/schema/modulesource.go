@@ -1972,11 +1972,8 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 	return modCfg, nil
 }
 
-func canSelfCalls(src dagql.ObjectResult[*core.ModuleSource]) bool {
-	sdkImpl, ok := src.Self().SDKImpl.AsRuntime()
-	return ok &&
-		sdkImpl.HasModuleTypeDefs() &&
-		src.Self().SDK.ExperimentalFeatureEnabled(core.ModuleSourceExperimentalFeatureSelfCalls)
+func isSelfCallsEnabled(src dagql.ObjectResult[*core.ModuleSource]) bool {
+	return src.Self().SDK.ExperimentalFeatureEnabled(core.ModuleSourceExperimentalFeatureSelfCalls)
 }
 
 func (s *moduleSourceSchema) runCodegen(
@@ -2018,7 +2015,7 @@ func (s *moduleSourceSchema) runCodegen(
 	if srcInst.Self().SDK != nil {
 		// Only if the SDK implements a specific `moduleTypeDefs` function.
 		// If not, we will have circular dependency issues.
-		if canSelfCalls(srcInst) {
+		if _, ok := srcInst.Self().SDKImpl.AsTypeDefs(); ok && isSelfCallsEnabled(srcInst) {
 			var mod dagql.ObjectResult[*core.Module]
 			err = dag.Select(ctx, srcInst, &mod, dagql.Selector{
 				Field: "asModule",
@@ -2344,9 +2341,11 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 
 	modName := src.Self().ModuleName
 
-	if canSelfCalls(src) {
+	typeDefsImpl, typeDefsEnabled := src.Self().SDKImpl.AsTypeDefs()
+	typeDefsEnabled = typeDefsEnabled && isSelfCallsEnabled(srcInstContentHashed)
+	if typeDefsEnabled {
 		var resultInst dagql.ObjectResult[*core.Module]
-		resultInst, err = runtimeImpl.TypeDefs(ctx, mod.Deps, srcInstContentHashed)
+		resultInst, err = typeDefsImpl.TypeDefs(ctx, mod.Deps, srcInstContentHashed)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize module: %w", err)
 		}
@@ -2435,7 +2434,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		return nil, fmt.Errorf("failed to patch module %q: %w", modName, err)
 	}
 
-	if canSelfCalls(src) {
+	if typeDefsEnabled {
 		// append module types to the module itself so self calls are possible
 		mod.Deps = mod.Deps.Append(mod)
 	}
@@ -2536,7 +2535,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 			return inst, err
 		}
 
-		if canSelfCalls(src) {
+		if _, ok := src.Self().SDKImpl.AsTypeDefs(); ok && isSelfCallsEnabled(src) {
 			mod.Deps = mod.Deps.Append(mod)
 		}
 
