@@ -261,7 +261,7 @@ func (file *File) Search(ctx context.Context, opts SearchOpts) ([]*SearchResult,
 			return err
 		}
 		rgArgs := opts.RipgrepArgs()
-		rgArgs = append(rgArgs, filepath.Base(file.File))
+		rgArgs = append(rgArgs, "--", filepath.Base(file.File))
 		rg := exec.Command("rg", rgArgs...)
 		rg.Dir = resolvedDir
 		results, err = opts.RunRipgrep(ctx, rg)
