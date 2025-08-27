@@ -175,7 +175,7 @@ func (s *fileSchema) withReplaced(ctx context.Context, parent dagql.ObjectResult
 		return inst, err
 	}
 
-	dir, err := parent.Self().Replace(ctx, args.Search, args.Replacement, args.FirstFrom, args.All)
+	dir, err := parent.Self().WithReplaced(ctx, args.Search, args.Replacement, args.FirstFrom, args.All)
 	if err != nil {
 		return inst, err
 	}

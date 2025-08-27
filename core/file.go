@@ -273,7 +273,7 @@ func (file *File) Search(ctx context.Context, opts SearchOpts) ([]*SearchResult,
 	return results, nil
 }
 
-func (file *File) Replace(ctx context.Context, searchStr, replacementStr string, firstFrom *int, all bool) (*File, error) {
+func (file *File) WithReplaced(ctx context.Context, searchStr, replacementStr string, firstFrom *int, all bool) (*File, error) {
 	file = file.Clone()
 
 	opt, ok := buildkit.CurrentOpOpts(ctx)
