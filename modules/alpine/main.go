@@ -126,9 +126,9 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 			// This resolves itself usually within an hour, but to avoid fundamental breakage of
 			// builds we are currently pinning these packages for now.
 			"busybox",
-			"glibc=2.41-r51",
-			"ld-linux=2.41-r51",
-			"libcrypt1=2.41-r51",
+			"glibc=2.42-r0",
+			"ld-linux=2.42-r0",
+			"libcrypt1=2.42-r0",
 		}
 	default:
 		return nil, fmt.Errorf("unknown distro %q", m.Distro)
