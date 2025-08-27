@@ -54,20 +54,20 @@ func (FileSuite) TestContentsLines(ctx context.Context, t *testctx.T) {
 	require.NotEmpty(t, id)
 
 	contents, err := file.Contents(ctx, dagger.FileContentsOpts{
-		Offset: 5,
-		Limit:  5,
+		OffsetLines: 5,
+		LimitLines:  5,
 	})
 	require.NoError(t, err)
 	require.Equal(t, "6\n7\n8\n9\n10\n", contents)
 
 	contents, err = file.Contents(ctx, dagger.FileContentsOpts{
-		Offset: 5,
+		OffsetLines: 5,
 	})
 	require.NoError(t, err)
 	require.Equal(t, "6\n7\n8\n9\n10\n11\n12\n", contents)
 
 	contents, err = file.Contents(ctx, dagger.FileContentsOpts{
-		Limit: 10,
+		LimitLines: 10,
 	})
 	require.NoError(t, err)
 	require.Equal(t, "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n", contents)

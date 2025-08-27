@@ -5166,9 +5166,9 @@ func (r *File) WithGraphQLQuery(q *querybuilder.Selection) *File {
 // FileContentsOpts contains options for File.Contents
 type FileContentsOpts struct {
 	// Start reading after this line
-	Offset int
+	OffsetLines int
 	// Maximum number of lines to read
-	Limit int
+	LimitLines int
 }
 
 // Retrieves the contents of the file.
@@ -5178,13 +5178,13 @@ func (r *File) Contents(ctx context.Context, opts ...FileContentsOpts) (string, 
 	}
 	q := r.query.Select("contents")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `offset` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Offset) {
-			q = q.Arg("offset", opts[i].Offset)
+		// `offsetLines` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OffsetLines) {
+			q = q.Arg("offsetLines", opts[i].OffsetLines)
 		}
-		// `limit` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Limit) {
-			q = q.Arg("limit", opts[i].Limit)
+		// `limitLines` optional argument
+		if !querybuilder.IsZeroValue(opts[i].LimitLines) {
+			q = q.Arg("limitLines", opts[i].LimitLines)
 		}
 	}
 

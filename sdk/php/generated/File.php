@@ -16,14 +16,14 @@ class File extends Client\AbstractObject implements Client\IdAble
     /**
      * Retrieves the contents of the file.
      */
-    public function contents(?int $offset = null, ?int $limit = null): string
+    public function contents(?int $offsetLines = null, ?int $limitLines = null): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('contents');
-        if (null !== $offset) {
-        $leafQueryBuilder->setArgument('offset', $offset);
+        if (null !== $offsetLines) {
+        $leafQueryBuilder->setArgument('offsetLines', $offsetLines);
         }
-        if (null !== $limit) {
-        $leafQueryBuilder->setArgument('limit', $limit);
+        if (null !== $limitLines) {
+        $leafQueryBuilder->setArgument('limitLines', $limitLines);
         }
         return (string)$this->queryLeaf($leafQueryBuilder, 'contents');
     }

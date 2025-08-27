@@ -6899,10 +6899,10 @@ pub struct File {
 pub struct FileContentsOpts {
     /// Maximum number of lines to read
     #[builder(setter(into, strip_option), default)]
-    pub limit: Option<isize>,
+    pub limit_lines: Option<isize>,
     /// Start reading after this line
     #[builder(setter(into, strip_option), default)]
-    pub offset: Option<isize>,
+    pub offset_lines: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct FileDigestOpts {
@@ -6973,11 +6973,11 @@ impl File {
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn contents_opts(&self, opts: FileContentsOpts) -> Result<String, DaggerError> {
         let mut query = self.selection.select("contents");
-        if let Some(offset) = opts.offset {
-            query = query.arg("offset", offset);
+        if let Some(offset_lines) = opts.offset_lines {
+            query = query.arg("offsetLines", offset_lines);
         }
-        if let Some(limit) = opts.limit {
-            query = query.arg("limit", limit);
+        if let Some(limit_lines) = opts.limit_lines {
+            query = query.arg("limitLines", limit_lines);
         }
         query.execute(self.graphql_client.clone()).await
     }

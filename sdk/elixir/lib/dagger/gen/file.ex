@@ -18,14 +18,14 @@ defmodule Dagger.File do
   @doc """
   Retrieves the contents of the file.
   """
-  @spec contents(t(), [{:offset, integer() | nil}, {:limit, integer() | nil}]) ::
+  @spec contents(t(), [{:offset_lines, integer() | nil}, {:limit_lines, integer() | nil}]) ::
           {:ok, String.t()} | {:error, term()}
   def contents(%__MODULE__{} = file, optional_args \\ []) do
     query_builder =
       file.query_builder
       |> QB.select("contents")
-      |> QB.maybe_put_arg("offset", optional_args[:offset])
-      |> QB.maybe_put_arg("limit", optional_args[:limit])
+      |> QB.maybe_put_arg("offsetLines", optional_args[:offset_lines])
+      |> QB.maybe_put_arg("limitLines", optional_args[:limit_lines])
 
     Client.execute(file.client, query_builder)
   end

@@ -31,8 +31,8 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 		dagql.Func("contents", s.contents).
 			Doc(`Retrieves the contents of the file.`).
 			Args(
-				dagql.Arg("offset").Doc(`Start reading after this line`),
-				dagql.Arg("limit").Doc(`Maximum number of lines to read`),
+				dagql.Arg("offsetLines").Doc(`Start reading after this line`),
+				dagql.Arg("limitLines").Doc(`Maximum number of lines to read`),
 			),
 		dagql.Func("size", s.size).
 			Doc(`Retrieves the size of the file, in bytes.`),
@@ -106,10 +106,10 @@ func (s *fileSchema) file(ctx context.Context, parent *core.Query, args struct {
 }
 
 func (s *fileSchema) contents(ctx context.Context, file *core.File, args struct {
-	Offset *int
-	Limit  *int
+	OffsetLines *int
+	LimitLines  *int
 }) (dagql.String, error) {
-	content, err := file.Contents(ctx, args.Offset, args.Limit)
+	content, err := file.Contents(ctx, args.OffsetLines, args.LimitLines)
 	if err != nil {
 		return "", err
 	}

@@ -5505,16 +5505,16 @@ class File(Type):
     async def contents(
         self,
         *,
-        offset: int | None = None,
-        limit: int | None = None,
+        offset_lines: int | None = None,
+        limit_lines: int | None = None,
     ) -> str:
         """Retrieves the contents of the file.
 
         Parameters
         ----------
-        offset:
+        offset_lines:
             Start reading after this line
-        limit:
+        limit_lines:
             Maximum number of lines to read
 
         Returns
@@ -5532,8 +5532,8 @@ class File(Type):
             If the API returns an error.
         """
         _args = [
-            Arg("offset", offset, None),
-            Arg("limit", limit, None),
+            Arg("offsetLines", offset_lines, None),
+            Arg("limitLines", limit_lines, None),
         ]
         _ctx = self._select("contents", _args)
         return await _ctx.execute(str)

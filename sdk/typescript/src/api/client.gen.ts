@@ -1084,12 +1084,12 @@ export type FileContentsOpts = {
   /**
    * Start reading after this line
    */
-  offset?: number
+  offsetLines?: number
 
   /**
    * Maximum number of lines to read
    */
-  limit?: number
+  limitLines?: number
 }
 
 export type FileDigestOpts = {
@@ -5898,8 +5898,8 @@ export class File extends BaseClient {
 
   /**
    * Retrieves the contents of the file.
-   * @param opts.offset Start reading after this line
-   * @param opts.limit Maximum number of lines to read
+   * @param opts.offsetLines Start reading after this line
+   * @param opts.limitLines Maximum number of lines to read
    */
   contents = async (opts?: FileContentsOpts): Promise<string> => {
     if (this._contents) {

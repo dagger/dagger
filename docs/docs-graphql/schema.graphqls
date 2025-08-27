@@ -2421,10 +2421,10 @@ type File {
   """Retrieves the contents of the file."""
   contents(
     """Start reading after this line"""
-    offset: Int
+    offsetLines: Int
 
     """Maximum number of lines to read"""
-    limit: Int
+    limitLines: Int
   ): String!
 
   """
