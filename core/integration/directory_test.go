@@ -1989,7 +1989,9 @@ func main() {
 			WithNewFile("src/helper.go", "package main\nfunc Helper() { return \"world peace\" }").
 			WithNewFile("tests/main_test.go", "package main\nfunc TestMain() { /* world testing */ }").
 			WithNewFile("docs/README.md", "# Project\nHello world documentation").
-			WithNewFile("config/app.yaml", "name: world-app\nversion: 1.0")
+			WithNewFile("config/app.yaml", "name: world-app\nversion: 1.0").
+			WithNewFile("etc/passwd", "root:world passwd").
+			WithSymlink("/etc", "symlink")
 
 		t.Run("single path", func(ctx context.Context, t *testctx.T) {
 			// Search for "world" only in src directory
@@ -2055,6 +2057,72 @@ func main() {
 			})
 			require.NoError(t, err)
 			require.Empty(t, results)
+		})
+
+		t.Run("normalizes absolute paths", func(ctx context.Context, t *testctx.T) {
+			// Test that absolute paths are treated as relative to the directory
+			results, err := dir.Search(ctx, "world", dagger.DirectorySearchOpts{
+				Paths: []string{"/src"},
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 2) // Should find results in src directory
+
+			// Verify all results are from src directory
+			for _, result := range results {
+				filePath, err := result.FilePath(ctx)
+				require.NoError(t, err)
+				require.True(t, strings.HasPrefix(filePath, "src/"), "Expected src/ path, got: %s", filePath)
+			}
+		})
+
+		t.Run("keeps symlinks within the directory", func(ctx context.Context, t *testctx.T) {
+			// Test that symlinks are resolved within the directory
+			results, err := dir.Search(ctx, "root", dagger.DirectorySearchOpts{
+				Paths: []string{"symlink"},
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 1)
+			matched, err := results[0].MatchedLines(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "root:world passwd", matched)
+
+			// Test that we don't allow naively evaluating symlinks by following them
+			// first (e.g. symlink/passwd => /etc/passwd)
+			results, err = dir.Search(ctx, "root", dagger.DirectorySearchOpts{
+				Paths: []string{"symlink/passwd"},
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 1)
+			matched, err = results[0].MatchedLines(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "root:world passwd", matched)
+		})
+
+		t.Run("rejects paths that escape directory", func(ctx context.Context, t *testctx.T) {
+			// Test that paths trying to escape via .. are rejected
+			_, err := dir.Search(ctx, "world", dagger.DirectorySearchOpts{
+				Paths: []string{"../../etc/passwd"},
+			})
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "path cannot escape directory")
+		})
+
+		t.Run("rejects nested directory escape attempts", func(ctx context.Context, t *testctx.T) {
+			// Test that paths containing ".." anywhere that would escape are rejected
+			_, err := dir.Search(ctx, "world", dagger.DirectorySearchOpts{
+				Paths: []string{"some/../../etc/passwd"},
+			})
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "path cannot escape directory")
+		})
+
+		t.Run("allows valid relative paths with double dots", func(ctx context.Context, t *testctx.T) {
+			// Test that valid relative paths that don't escape still work
+			results, err := dir.Search(ctx, "package main", dagger.DirectorySearchOpts{
+				Paths: []string{"/src/../"},
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 3)
 		})
 	})
 

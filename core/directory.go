@@ -524,6 +524,22 @@ func (dir *Directory) WithPatch(ctx context.Context, patch string) (*Directory, 
 }
 
 func (dir *Directory) Search(ctx context.Context, opts SearchOpts, paths []string, globs []string) ([]*SearchResult, error) {
+	// Validate and normalize paths to prevent directory traversal attacks
+	for i, p := range paths {
+		// If absolute, make it relative to the directory
+		if filepath.IsAbs(p) {
+			paths[i] = strings.TrimPrefix(p, "/")
+		}
+
+		// Clean the path (e.g., remove ../, ./, etc.)
+		paths[i] = filepath.Clean(paths[i])
+
+		// Check if the normalized path would escape the directory
+		if !filepath.IsLocal(paths[i]) {
+			return nil, fmt.Errorf("path cannot escape directory: %s", p)
+		}
+	}
+
 	ref, err := getRefOrEvaluate(ctx, dir)
 	if err != nil {
 		return nil, err
@@ -556,7 +572,18 @@ func (dir *Directory) Search(ctx context.Context, opts SearchOpts, paths []strin
 		}
 		if len(paths) > 0 {
 			rgArgs = append(rgArgs, "--")
-			rgArgs = append(rgArgs, paths...)
+			for _, p := range paths {
+				resolved, err := containerdfs.RootPath(root, p)
+				if err != nil {
+					return err
+				}
+				// make it relative, now that it's safe, just for less obtuse errors
+				resolved, err = filepath.Rel(root, resolved)
+				if err != nil {
+					return err
+				}
+				rgArgs = append(rgArgs, resolved)
+			}
 		}
 		rg := exec.Command("rg", rgArgs...)
 		rg.Dir = resolvedDir
