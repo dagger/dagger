@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -22,7 +21,6 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	fstypes "github.com/tonistiigi/fsutil/types"
@@ -170,7 +168,7 @@ func (file *File) Contents(ctx context.Context, offset, limit *int) ([]byte, err
 		return nil, nil
 	}
 
-	r, err := file.ReadCloser(ctx)
+	r, err := file.Open(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -232,56 +230,6 @@ func (cw *limitedWriter) Write(p []byte) (int, error) {
 	}
 	cw.wrote += n
 	return n, nil
-}
-
-// Reader returns an io.Reader for the file contents
-func (file *File) ReadCloser(ctx context.Context) (io.ReadCloser, error) {
-	ref, err := getRefOrEvaluate(ctx, file)
-	if err != nil {
-		return nil, err
-	}
-
-	mountable, err := ref.Mount(ctx, true, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get mountable reference: %w", err)
-	}
-
-	lm := snapshot.LocalMounter(mountable)
-	defer lm.Unmount()
-
-	dir, err := lm.Mount()
-	if err != nil {
-		return nil, err
-	}
-
-	resolvedPath, err := containerdfs.RootPath(dir, file.File)
-	if err != nil {
-		return nil, err
-	}
-	f, err := os.Open(resolvedPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open file %q: %w", file.File, err)
-	}
-	return &fileReader{
-		mount: lm,
-		f:     f,
-	}, nil
-}
-
-type fileReader struct {
-	mount snapshot.Mounter
-	f     *os.File
-}
-
-func (r *fileReader) Read(p []byte) (n int, err error) {
-	return r.f.Read(p)
-}
-
-func (r *fileReader) Close() error {
-	return errors.Join(
-		r.f.Close(),
-		r.mount.Unmount(),
-	)
 }
 
 func (file *File) Search(ctx context.Context, opts SearchOpts) ([]*SearchResult, error) {
