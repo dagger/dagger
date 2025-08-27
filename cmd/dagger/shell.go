@@ -346,6 +346,7 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		// add an immediately-canceled blank span, to emulate submitting blank shell
 		// commands to space things apart
 		_, span := Tracer().Start(ctx, "",
+			telemetry.Reveal(),
 			trace.WithAttributes(attribute.Bool(telemetry.CanceledAttr, true)))
 		span.End()
 		return nil
@@ -371,8 +372,11 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 
 	// Create a new span for this command
 	var span trace.Span
-	ctx, span = Tracer().Start(ctx, line, trace.WithAttributes(
-		attribute.String(telemetry.ContentTypeAttr, h.mode.ContentType())))
+	ctx, span = Tracer().Start(ctx, line,
+		telemetry.Reveal(),
+		trace.WithAttributes(
+			attribute.String(telemetry.ContentTypeAttr, h.mode.ContentType()),
+		))
 	defer telemetry.End(span, func() error {
 		if errors.Is(rerr, context.Canceled) {
 			span.SetAttributes(attribute.Bool(telemetry.CanceledAttr, true))
