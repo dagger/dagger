@@ -37,15 +37,15 @@ type goSDK struct {
 	rawConfig map[string]any
 }
 
-func (sdk *goSDK) HasModuleTypeDefs() bool {
-	return true
-}
-
 type goSDKConfig struct {
 	GoPrivate string `json:"goprivate,omitempty"`
 }
 
 func (sdk *goSDK) AsRuntime() (core.Runtime, bool) {
+	return sdk, true
+}
+
+func (sdk *goSDK) AsTypeDefs() (core.TypeDefs, bool) {
 	return sdk, true
 }
 
