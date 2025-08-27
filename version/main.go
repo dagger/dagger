@@ -45,14 +45,15 @@ func New(
 	// NOTE: .git/config is excluded, since *some* tools (GitHub actions)
 	// produce weird configs with custom headers set
 
-	git, err := git(ctx, gitDir, inputs)
+	git, helper, err := git(ctx, gitDir, inputs)
 	if err != nil {
 		return nil, err
 	}
 	return &Version{
-		Git:     git,
-		Inputs:  inputs,
-		Changes: changes,
+		Git:       git,
+		GitHelper: helper,
+		Inputs:    inputs,
+		Changes:   changes,
 	}, nil
 }
 
@@ -63,22 +64,20 @@ var ignores = []string{
 }
 
 type Version struct {
-	Git *Git
+	Git       *dagger.GitRepository
+	GitHelper *GitHelper // +private
 
-	// +private
-	Inputs *dagger.Directory
-
-	// +private
-	Changes *dagger.Directory
+	Inputs  *dagger.Directory // +private
+	Changes *dagger.Directory // +private
 }
 
 // Generate a version string from the current context
 func (v Version) Version(ctx context.Context) (string, error) {
-	dirty, err := v.Git.Dirty(ctx)
+	dirty, err := v.GitHelper.Dirty(ctx)
 	if err != nil {
 		return "", err
 	}
-	head, err := v.Git.Head(ctx)
+	head, err := v.GitHelper.Head(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -100,7 +99,7 @@ func (v Version) Version(ctx context.Context) (string, error) {
 		return fmt.Sprintf("%s-%s-dev-%s", next, pseudoversionTimestamp(time.Time{}), digest[:12]), nil
 	}
 
-	versionTag, err := v.Git.VersionTagLatest(ctx, "", head.Commit)
+	versionTag, err := v.GitHelper.VersionTagLatest(ctx, "", head.Commit)
 	if err != nil {
 		return "", err
 	}
@@ -130,7 +129,7 @@ func pseudoversionTimestamp(t time.Time) string {
 
 // Return the tag to use when auto-downloading the engine image from the CLI
 func (v Version) ImageTag(ctx context.Context) (string, error) {
-	head, err := v.Git.Head(ctx)
+	head, err := v.GitHelper.Head(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -140,21 +139,21 @@ func (v Version) ImageTag(ctx context.Context) (string, error) {
 		return "", nil
 	}
 
-	dirty, err := v.Git.Dirty(ctx)
+	dirty, err := v.GitHelper.Dirty(ctx)
 	if err != nil {
 		return "", err
 	}
 	if dirty {
 		// this is a dev version - get the last commit from main on this branch
 		// (<commit>)
-		mergeBase, err := v.Git.MergeBase(ctx, "main", head.Commit)
+		mergeBase, err := v.GitHelper.MergeBase(ctx, "refs/remotes/origin/main", head.Commit)
 		if err != nil {
 			return "", err
 		}
 		return mergeBase.Commit, nil
 	}
 
-	versionTag, err := v.Git.VersionTagLatest(ctx, "", head.Commit)
+	versionTag, err := v.GitHelper.VersionTagLatest(ctx, "", head.Commit)
 	if err != nil {
 		return "", err
 	}
@@ -166,7 +165,7 @@ func (v Version) ImageTag(ctx context.Context) (string, error) {
 
 	// this is an untagged release - get the last commit from main on this branch
 	// <commit>
-	mergeBase, err := v.Git.MergeBase(ctx, "main", head.Commit)
+	mergeBase, err := v.GitHelper.MergeBase(ctx, "refs/remotes/origin/main", head.Commit)
 	if err != nil {
 		return "", err
 	}
@@ -175,7 +174,7 @@ func (v Version) ImageTag(ctx context.Context) (string, error) {
 
 // Determine the last released version.
 func (v Version) LastReleaseVersion(ctx context.Context) (string, error) {
-	tag, err := v.Git.VersionTagLatest(ctx, "", "")
+	tag, err := v.GitHelper.VersionTagLatest(ctx, "", "")
 	if err != nil {
 		return "", err
 	}
@@ -194,7 +193,7 @@ func (v Version) NextReleaseVersion(ctx context.Context) (string, error) {
 	var nextVersion string
 
 	// if there's a defined next version, try and use that
-	content, err := v.Git.FileAt(ctx, ".changes/.next", "HEAD")
+	content, err := v.GitHelper.FileAt(ctx, ".changes/.next", "HEAD")
 	if err != nil {
 		return "", err
 	}
@@ -202,7 +201,7 @@ func (v Version) NextReleaseVersion(ctx context.Context) (string, error) {
 
 	// also try and determine what the last version from git was, so we can
 	// auto-determine a next version from that
-	lastVersion, err := v.Git.VersionTagLatest(ctx, "", "")
+	lastVersion, err := v.GitHelper.VersionTagLatest(ctx, "", "")
 	if err != nil {
 		return "", err
 	}
@@ -235,6 +234,14 @@ func (v Version) NextReleaseVersion(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("could not determine next version")
 	}
 	return nextVersion, nil
+}
+
+func (v Version) Dirty(ctx context.Context) (bool, error) {
+	dirty, err := v.GitHelper.Dirty(ctx)
+	if err != nil {
+		return false, err
+	}
+	return dirty, nil
 }
 
 func bumpVersion(version string) string {
