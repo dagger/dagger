@@ -287,7 +287,8 @@ func (row *TraceTree) IsExpanded(opts FrontendOpts) bool {
 	}
 
 	autoExpand := row.Depth() < 2 &&
-		(row.RevealedChildren || row.IsRunningOrChildRunning)
+		(row.RevealedChildren || row.IsRunningOrChildRunning) &&
+		row.Span.LLMTool == "" // never expand tool calls by default
 
 	alwaysExpand := row.Span.IsFailedOrCausedFailure() ||
 		row.Span.IsCanceled() ||

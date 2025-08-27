@@ -1946,32 +1946,14 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 		return false
 	}
 	if fe.shell != nil {
-		if row.NextVisual == nil {
-			defer func() {
-				root := row.Root()
-				if logs := fe.logs.Logs[root.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
-					if fe.Verbosity < dagui.ExpandCompletedVerbosity {
-						cp := *row
-						cp.Depth = -1
-						row = &cp
-					}
-					fe.renderLogs(out, r, row, logs, logs.UsedHeight(), prefix)
-				}
-				fe.renderStepError(out, r, root, prefix)
-			}()
-		}
 		if row.Depth == 0 {
 			// navigating history and there's a previous row
 			if (!fe.editlineFocused && row.Previous != nil) ||
 				(row.Previous != nil && !fe.flushed[row.Previous.Span.ID]) {
 				fmt.Fprintln(out, out.String(prefix))
 			}
-			fe.renderStep(out, r, row, prefix)
-			fe.renderDebug(out, row.Span, prefix+Block25+" ", false)
-			return true
 		}
-	}
-	if row.PreviousVisual != nil &&
+	} else if row.PreviousVisual != nil &&
 		row.PreviousVisual.Depth >= row.Depth &&
 		!row.Chained &&
 		( // ensure gaps after last nested child
@@ -1996,6 +1978,20 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 	}
 	fe.renderStepError(out, r, row, prefix)
 	fe.renderDebug(out, row.Span, prefix+Block25+" ", false)
+	if fe.shell != nil {
+		if row.NextVisual == nil && row.Parent != nil {
+			root := row.Root()
+			if logs := fe.logs.Logs[root.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
+				if fe.Verbosity < dagui.ExpandCompletedVerbosity {
+					cp := *row
+					cp.Depth = -1
+					row = &cp
+				}
+				fe.renderLogs(out, r, row, logs, logs.UsedHeight(), prefix)
+			}
+			fe.renderStepError(out, r, root, prefix)
+		}
+	}
 	return true
 }
 
@@ -2037,7 +2033,7 @@ const llmLogsLastLines = 8
 
 func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) bool {
 	limit := fe.window.Height / 3
-	if row.Span.LLMTool != "" {
+	if row.Span.LLMTool != "" && !row.Expanded {
 		limit = llmLogsLastLines
 	}
 	if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
@@ -2160,6 +2156,12 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 		// span name relates to the message in all cases; is it the
 		// subject? or author? better to be explicit with attributes.
 		if fe.renderStepLogs(out, r, row, prefix) {
+			if span.LLMRole == telemetry.LLMRoleUser {
+				// Bail early if we printed a user message span; these don't have any
+				// further information to show. Duration is always 0, metrics are empty,
+				// status is always OK.
+				return nil
+			}
 			r.fancyIndent(out, row, false, false)
 			fmt.Fprint(out, out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack))
 		} else {
