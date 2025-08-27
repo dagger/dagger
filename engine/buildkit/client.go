@@ -36,6 +36,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/session/git"
@@ -779,10 +780,10 @@ func (c *Client) OpenPipe(
 	return &pipe.PipeIO{GRPC: pipeIOClient}, nil
 }
 
-func (c *Client) LoadImage(
+func (c *Client) WriteImage(
 	ctx context.Context,
 	name string,
-) (*Loader, error) {
+) (*ImageWriter, error) {
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -793,7 +794,7 @@ func (c *Client) LoadImage(
 	}
 
 	if callerSupports(caller, &contentapi.Content_ServiceDesc) {
-		return &Loader{
+		return &ImageWriter{
 			ContentStore: contentproxy.NewContentStore(contentapi.NewContentClient(caller.Conn())),
 			ImagesStore:  containerd.NewImageStoreFromClient(imagesapi.NewImagesClient(caller.Conn())),
 			LeaseManager: leasesproxy.NewLeaseManager(leasesapi.NewLeasesClient(caller.Conn())),
@@ -802,13 +803,58 @@ func (c *Client) LoadImage(
 
 	if callerSupports(caller, &store.BasicStore_serviceDesc) {
 		loadClient := store.NewBasicStoreClient(caller.Conn())
-		ctx = metadata.AppendToOutgoingContext(ctx, store.ImageLoadTag, name)
-		tarballLoader, err := loadClient.LoadTarball(ctx)
+		ctx = metadata.AppendToOutgoingContext(ctx, store.ImageTagKey, name)
+		tarballWriter, err := loadClient.LoadTarball(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open tarball pipe: %w", err)
 		}
-		return &Loader{
-			Tarball: &store.TarballWriter{GRPC: tarballLoader},
+		return &ImageWriter{
+			Tarball: &store.TarballWriter{
+				SendF: tarballWriter.Send,
+				CloseF: func() error {
+					_, err := tarballWriter.CloseAndRecv()
+					return err
+				},
+			},
+		}, nil
+	}
+
+	return nil, fmt.Errorf("client has no supported api for loading image")
+}
+
+func (c *Client) ReadImage(
+	ctx context.Context,
+	name string,
+) (*ImageReader, error) {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	caller, err := c.GetClientCaller(md.ClientID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client caller: %w", err)
+	}
+
+	if callerSupports(caller, &contentapi.Content_ServiceDesc) {
+		return &ImageReader{
+			ContentStore: contentproxy.NewContentStore(contentapi.NewContentClient(caller.Conn())),
+			ImagesStore:  containerd.NewImageStoreFromClient(imagesapi.NewImagesClient(caller.Conn())),
+			LeaseManager: leasesproxy.NewLeaseManager(leasesapi.NewLeasesClient(caller.Conn())),
+		}, nil
+	}
+
+	if callerSupports(caller, &store.BasicStore_serviceDesc) {
+		loadClient := store.NewBasicStoreClient(caller.Conn())
+		ctx = metadata.AppendToOutgoingContext(ctx, store.ImageTagKey, name)
+		tarballReader, err := loadClient.ReadTarball(ctx, &emptypb.Empty{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to open tarball pipe: %w", err)
+		}
+		return &ImageReader{
+			Tarball: &store.TarballReader{
+				ReadF:  tarballReader.Recv,
+				CloseF: tarballReader.CloseSend,
+			},
 		}, nil
 	}
 
@@ -829,8 +875,16 @@ func callerSupports(caller bksession.Caller, desc *grpc.ServiceDesc) bool {
 	return true
 }
 
-type Loader struct {
+type ImageWriter struct {
 	Tarball io.WriteCloser
+
+	ContentStore content.Store
+	ImagesStore  images.Store
+	LeaseManager leases.Manager
+}
+
+type ImageReader struct {
+	Tarball io.ReadCloser
 
 	ContentStore content.Store
 	ImagesStore  images.Store

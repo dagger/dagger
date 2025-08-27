@@ -2263,6 +2263,7 @@ func (s *containerSchema) exportImage(
 	if err != nil {
 		return core.Void{}, fmt.Errorf("failed to parse image address %s: %w", args.Name, err)
 	}
+	refName = reference.TagNameOnly(refName)
 
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
@@ -2277,12 +2278,12 @@ func (s *containerSchema) exportImage(
 		return core.Void{}, fmt.Errorf("failed to get server: %w", err)
 	}
 
-	loader, err := bk.LoadImage(ctx, refName.String())
+	imageWriter, err := bk.WriteImage(ctx, refName.String())
 	if err != nil {
 		return core.Void{}, err
 	}
 
-	if loader.ContentStore != nil {
+	if imageWriter.ContentStore != nil {
 		platformVariants, err := dagql.LoadIDs(ctx, srv, args.PlatformVariants)
 		if err != nil {
 			return core.Void{}, err
@@ -2290,7 +2291,7 @@ func (s *containerSchema) exportImage(
 
 		// create and use a lease to write to our content store, prevents
 		// content being cleaned up while we're writing
-		leaseCtx, leaseDone, err := leaseutil.WithLease(ctx, loader.LeaseManager, leaseutil.MakeTemporary)
+		leaseCtx, leaseDone, err := leaseutil.WithLease(ctx, imageWriter.LeaseManager, leaseutil.MakeTemporary)
 		if err != nil {
 			return core.Void{}, err
 		}
@@ -2309,8 +2310,8 @@ func (s *containerSchema) exportImage(
 		}
 
 		// update the written content with gc labels (buildkit doesn't write them itself)
-		handler := images.ChildrenHandler(loader.ContentStore)
-		handler = images.SetChildrenMappedLabels(loader.ContentStore, handler, images.ChildGCLabels)
+		handler := images.ChildrenHandler(imageWriter.ContentStore)
+		handler = images.SetChildrenMappedLabels(imageWriter.ContentStore, handler, images.ChildGCLabels)
 		if err := images.WalkNotEmpty(ctx, handler, *desc); err != nil {
 			return core.Void{}, err
 		}
@@ -2320,19 +2321,19 @@ func (s *containerSchema) exportImage(
 			Name:   refName.String(),
 			Target: *desc,
 		}
-		if _, err := loader.ImagesStore.Update(ctx, img); err != nil {
+		if _, err := imageWriter.ImagesStore.Update(ctx, img); err != nil {
 			if !errors.Is(err, cerrdefs.ErrNotFound) {
 				return core.Void{}, err
 			}
 
-			if _, err = loader.ImagesStore.Create(ctx, img); err != nil {
+			if _, err = imageWriter.ImagesStore.Create(ctx, img); err != nil {
 				return core.Void{}, err
 			}
 		}
 		return core.Void{}, nil
 	}
 
-	if dest := loader.Tarball; dest != nil {
+	if dest := imageWriter.Tarball; dest != nil {
 		defer func() {
 			// close dest if it wasn't already closed and set to nil
 			if dest != nil {
@@ -2412,11 +2413,14 @@ func (s *containerSchema) import_(ctx context.Context, parent *core.Container, a
 	if err != nil {
 		return nil, err
 	}
-	return parent.Import(
-		ctx,
-		source.Self(),
-		args.Tag,
-	)
+
+	r, err := source.Self().Open(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+
+	return parent.Import(ctx, r, args.Tag)
 }
 
 type containerWithRegistryAuthArgs struct {
