@@ -13,7 +13,7 @@ module.exports = {
         "introduction/features/reusability",
         "introduction/features/caching",
         "introduction/features/observability",
-        "introduction/features/security",
+        "introduction/features/sandbox",
         "introduction/features/secrets",
         "introduction/features/llm",
         "introduction/features/shell",

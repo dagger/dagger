@@ -186,6 +186,11 @@
   status = 301
 
 [[redirects]]
+  from = "/features/security"
+  to = "/features/sandbox"
+  status = 301
+
+[[redirects]]
   from = "/api/types"
   to = "/getting-started/types"
   status = 301
