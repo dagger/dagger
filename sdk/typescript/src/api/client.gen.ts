@@ -1286,6 +1286,18 @@ export type HostFileOpts = {
   noCache?: boolean
 }
 
+export type HostFindupOpts = {
+  noCache?: boolean
+}
+
+export type HostFindupDirectoryOpts = {
+  noCache?: boolean
+}
+
+export type HostFindupFileOpts = {
+  noCache?: boolean
+}
+
 export type HostServiceOpts = {
   /**
    * Upstream host to forward traffic to.
@@ -3894,6 +3906,7 @@ export class Directory extends BaseClient {
   private readonly _digest?: string = undefined
   private readonly _exists?: boolean = undefined
   private readonly _export?: string = undefined
+  private readonly _findup?: string = undefined
   private readonly _name?: string = undefined
   private readonly _sync?: DirectoryID = undefined
 
@@ -3906,6 +3919,7 @@ export class Directory extends BaseClient {
     _digest?: string,
     _exists?: boolean,
     _export?: string,
+    _findup?: string,
     _name?: string,
     _sync?: DirectoryID,
   ) {
@@ -3915,6 +3929,7 @@ export class Directory extends BaseClient {
     this._digest = _digest
     this._exists = _exists
     this._export = _export
+    this._findup = _findup
     this._name = _name
     this._sync = _sync
   }
@@ -4093,6 +4108,43 @@ export class Directory extends BaseClient {
   filter = (opts?: DirectoryFilterOpts): Directory => {
     const ctx = this._ctx.select("filter", { ...opts })
     return new Directory(ctx)
+  }
+
+  /**
+   * Search up the directory tree for a file or directory, and return its path
+   * @param name The name of the file or directory to search for
+   * @param start The path to start the search from
+   */
+  findup = async (name: string, start: string): Promise<string> => {
+    if (this._findup) {
+      return this._findup
+    }
+
+    const ctx = this._ctx.select("findup", { name, start })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Search up the directory tree for a directory, and return it
+   * @param name The name of the directory to search for
+   * @param start The path to start the search from
+   */
+  findupDirectory = (name: string, start: string): Directory => {
+    const ctx = this._ctx.select("findupDirectory", { name, start })
+    return new Directory(ctx)
+  }
+
+  /**
+   * Search up the directory tree for a file, and return it
+   * @param name The name of the file to search for
+   * @param start The path to start the search from
+   */
+  findupFile = (name: string, start: string): File => {
+    const ctx = this._ctx.select("findupFile", { name, start })
+    return new File(ctx)
   }
 
   /**
@@ -6913,14 +6965,16 @@ export class GitRepository extends BaseClient {
  */
 export class Host extends BaseClient {
   private readonly _id?: HostID = undefined
+  private readonly _findup?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: HostID) {
+  constructor(ctx?: Context, _id?: HostID, _findup?: string) {
     super(ctx)
 
     this._id = _id
+    this._findup = _findup
   }
 
   /**
@@ -6967,6 +7021,43 @@ export class Host extends BaseClient {
    */
   file = (path: string, opts?: HostFileOpts): File => {
     const ctx = this._ctx.select("file", { path, ...opts })
+    return new File(ctx)
+  }
+
+  /**
+   * Search for a file or directory by walking up the tree from system workdir. Return its relative path
+   * @param name name of the file or directory to search for
+   */
+  findup = async (name: string, opts?: HostFindupOpts): Promise<string> => {
+    if (this._findup) {
+      return this._findup
+    }
+
+    const ctx = this._ctx.select("findup", { name, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Search for a directory by walking up the tree from system workdir
+   * @param name name of the directory to search for
+   */
+  findupDirectory = (
+    name: string,
+    opts?: HostFindupDirectoryOpts,
+  ): Directory => {
+    const ctx = this._ctx.select("findupDirectory", { name, ...opts })
+    return new Directory(ctx)
+  }
+
+  /**
+   * Search for a file by walking up the tree from system workdir
+   * @param name name of the file or directory to search for
+   */
+  findupFile = (name: string, opts?: HostFindupFileOpts): File => {
+    const ctx = this._ctx.select("findupFile", { name, ...opts })
     return new File(ctx)
   }
 
