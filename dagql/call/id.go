@@ -3,6 +3,7 @@ package call
 import (
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"sync"
@@ -483,17 +484,28 @@ func (id *ID) calcDigest() (string, error) {
 		return "", fmt.Errorf("call digest already set")
 	}
 
-	buf := *(marshalBufPool.Get().(*[]byte))
+	bufPtr := marshalBufPool.Get().(*[]byte)
+	buf := *bufPtr
 	buf = buf[:0]
-	defer marshalBufPool.Put(&buf)
 	pbBytes, err := proto.MarshalOptions{Deterministic: true}.MarshalAppend(buf, id.pb)
 	if err != nil {
+		*bufPtr = buf[:0]
+		marshalBufPool.Put(bufPtr)
 		return "", fmt.Errorf("failed to marshal Call proto: %w", err)
 	}
 	h := xxh3.New()
 	if _, err := h.Write(pbBytes); err != nil {
+		*bufPtr = buf[:0]
+		marshalBufPool.Put(bufPtr)
 		return "", fmt.Errorf("failed to write Call proto to hash: %w", err)
 	}
 
-	return fmt.Sprintf("xxh3:%x", h.Sum(nil)), nil
+	*bufPtr = buf[:0]
+	marshalBufPool.Put(bufPtr)
+
+	var hashBuf [8]byte
+	binary.BigEndian.PutUint64(hashBuf[:], h.Sum64())
+	hexStr := make([]byte, 16)
+	hex.Encode(hexStr, hashBuf[:])
+	return "xxh3:" + string(hexStr), nil
 }

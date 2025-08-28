@@ -18,9 +18,7 @@ type Response struct {
 }
 
 type Schema struct {
-	QueryType struct {
-		Name string `json:"name,omitempty"`
-	} `json:"queryType,omitempty"`
+	QueryType    QueryType `json:"queryType,omitempty"`
 	MutationType *struct {
 		Name string `json:"name,omitempty"`
 	} `json:"mutationType,omitempty"`
@@ -30,6 +28,10 @@ type Schema struct {
 
 	Types      Types           `json:"types"`
 	Directives []*DirectiveDef `json:"directives"`
+}
+
+type QueryType struct {
+	Name string `json:"name,omitempty"`
 }
 
 func (s *Schema) Query() *Type {
