@@ -3287,6 +3287,38 @@ class Directory(Type):
         _ctx = self._select("filter", _args)
         return Directory(_ctx)
 
+    async def find_up(self, name: str, start: str) -> str | None:
+        """Search up the directory tree for a file or directory, and return its
+        path. If no match, return null
+
+        Parameters
+        ----------
+        name:
+            The name of the file or directory to search for
+        start:
+            The path to start the search from
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("start", start),
+        ]
+        _ctx = self._select("findUp", _args)
+        return await _ctx.execute(str | None)
+
     async def glob(self, pattern: str) -> list[str]:
         """Returns a list of files and directories that matche the given pattern.
 
@@ -7154,6 +7186,42 @@ class Host(Type):
         ]
         _ctx = self._select("file", _args)
         return File(_ctx)
+
+    async def find_up(
+        self,
+        name: str,
+        *,
+        no_cache: bool | None = False,
+    ) -> str | None:
+        """Search for a file or directory by walking up the tree from system
+        workdir. Return its relative path. If no match, return null
+
+        Parameters
+        ----------
+        name:
+            name of the file or directory to search for
+        no_cache:
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("noCache", no_cache, False),
+        ]
+        _ctx = self._select("findUp", _args)
+        return await _ctx.execute(str | None)
 
     async def id(self) -> HostID:
         """A unique identifier for this Host.

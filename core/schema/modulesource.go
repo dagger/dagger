@@ -314,7 +314,7 @@ func (s *moduleSourceSchema) localModuleSource(
 		if err != nil {
 			return inst, fmt.Errorf("failed to get cwd: %w", err)
 		}
-		defaultFindUpSourceRootDir, defaultFindUpExists, err := findUp(ctx, core.NewCallerStatFS(bk), cwd, modules.Filename)
+		defaultFindUpSourceRootDir, defaultFindUpExists, err := core.Host{}.FindUp(ctx, core.NewCallerStatFS(bk), cwd, modules.Filename)
 		if err != nil {
 			return inst, fmt.Errorf("failed to find up root: %w", err)
 		}
@@ -370,7 +370,7 @@ func (s *moduleSourceSchema) localModuleSource(
 
 	// We always find-up the context dir. When doFindUp is true, we also try a find-up for the source root.
 	const dotGit = ".git"
-	foundPaths, err := findUpAll(ctx, core.NewCallerStatFS(bk), localAbsPath, map[string]struct{}{
+	foundPaths, err := core.Host{}.FindUpAll(ctx, core.NewCallerStatFS(bk), localAbsPath, map[string]struct{}{
 		modules.Filename: {}, // dagger.json, the directory containing this is the source root
 		dotGit:           {}, // the context dir is the git repo root, if it exists
 	})
@@ -570,7 +570,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 			return inst, fmt.Errorf("failed to stat git module source: %w", err)
 		}
 
-		configDir, found, err := findUp(ctx, statFS,
+		configDir, found, err := core.Host{}.FindUp(ctx, statFS,
 			filepath.Join("/", gitSrc.SourceRootSubpath),
 			modules.Filename,
 		)
@@ -2537,63 +2537,6 @@ func (s *moduleSourceSchema) moduleSourceWithoutClient(
 	src.Digest = src.CalcDigest().String()
 
 	return src, nil
-}
-
-// find-up a given soughtName in curDirPath and its parent directories, return the dir
-// it was found in, if any
-func findUp(
-	ctx context.Context,
-	statFS core.StatFS,
-	curDirPath string,
-	soughtName string,
-) (string, bool, error) {
-	found, err := findUpAll(ctx, statFS, curDirPath, map[string]struct{}{soughtName: {}})
-	if err != nil {
-		return "", false, err
-	}
-	p, ok := found[soughtName]
-	return p, ok, nil
-}
-
-// find-up a set of soughtNames in curDirPath and its parent directories return what
-// was found (name -> absolute path of dir containing it)
-func findUpAll(
-	ctx context.Context,
-	statFS core.StatFS,
-	curDirPath string,
-	soughtNames map[string]struct{},
-) (map[string]string, error) {
-	found := make(map[string]string, len(soughtNames))
-	for {
-		for soughtName := range soughtNames {
-			stat, err := statFS.Stat(ctx, filepath.Join(curDirPath, soughtName))
-			if err == nil {
-				delete(soughtNames, soughtName)
-				// NOTE: important that we use stat.Path here rather than curDirPath since the stat also
-				// does some normalization of paths when the client is using case-insensitive filesystems
-				// and we are stat'ing caller host filesystems
-				found[soughtName] = filepath.Dir(stat.Path)
-				continue
-			}
-			if !errors.Is(err, os.ErrNotExist) {
-				return nil, fmt.Errorf("failed to lstat %s: %w", soughtName, err)
-			}
-		}
-
-		if len(soughtNames) == 0 {
-			// found everything
-			break
-		}
-
-		nextDirPath := filepath.Dir(curDirPath)
-		if curDirPath == nextDirPath {
-			// hit root, nowhere else to look
-			break
-		}
-		curDirPath = nextDirPath
-	}
-
-	return found, nil
 }
 
 func rebasePatterns(patterns []string, base string) ([]string, error) {

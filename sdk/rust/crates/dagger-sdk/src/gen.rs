@@ -5121,6 +5121,22 @@ impl Directory {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Search up the directory tree for a file or directory, and return its path. If no match, return null
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the file or directory to search for
+    /// * `start` - The path to start the search from
+    pub async fn find_up(
+        &self,
+        name: impl Into<String>,
+        start: impl Into<String>,
+    ) -> Result<String, DaggerError> {
+        let mut query = self.selection.select("findUp");
+        query = query.arg("name", name.into());
+        query = query.arg("start", start.into());
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Returns a list of files and directories that matche the given pattern.
     ///
     /// # Arguments
@@ -8134,6 +8150,11 @@ pub struct HostFileOpts {
     pub no_cache: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct HostFindUpOpts {
+    #[builder(setter(into, strip_option), default)]
+    pub no_cache: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct HostServiceOpts<'a> {
     /// Upstream host to forward traffic to.
     #[builder(setter(into, strip_option), default)]
@@ -8245,6 +8266,35 @@ impl Host {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+    /// Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - name of the file or directory to search for
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn find_up(&self, name: impl Into<String>) -> Result<String, DaggerError> {
+        let mut query = self.selection.select("findUp");
+        query = query.arg("name", name.into());
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - name of the file or directory to search for
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn find_up_opts(
+        &self,
+        name: impl Into<String>,
+        opts: HostFindUpOpts,
+    ) -> Result<String, DaggerError> {
+        let mut query = self.selection.select("findUp");
+        query = query.arg("name", name.into());
+        if let Some(no_cache) = opts.no_cache {
+            query = query.arg("noCache", no_cache);
+        }
+        query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this Host.
     pub async fn id(&self) -> Result<HostId, DaggerError> {

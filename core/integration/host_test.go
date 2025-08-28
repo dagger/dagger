@@ -525,6 +525,87 @@ func (HostSuite) TestDirectoryCacheBehavior(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func findupTestDir(t *testctx.T) string {
+	dir := t.TempDir()
+
+	// /
+	// ├── target.txt
+	// ├── root.txt
+	// └── a/
+	//     ├── target.txt
+	//     ├── somedir/
+	//     │   └── hi.txt
+	//     └── b/
+	//         ├── other.txt
+	//         └── c/
+	//             └── leaf.txt
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "a", "b", "c"), 0o755))
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "target.txt"), []byte("target.txt"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "root.txt"), []byte("this is root.txt"), 0o600))
+
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "a", "somedir"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a", "somedir", "hi.txt"), []byte("this is a/somedir/hi.txt"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a", "target.txt"), []byte("this is a/target.txt"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a", "b", "other.txt"), []byte("this is a/b/other.txt"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a", "b", "c", "leaf.txt"), []byte("leaf"), 0o600))
+
+	return dir
+}
+
+func (HostSuite) TestFindUp(ctx context.Context, t *testctx.T) {
+	dir := findupTestDir(t)
+	c := connect(ctx, t, dagger.WithWorkdir(filepath.Join(dir, "a", "b")))
+
+	t.Run("find file in current directory", func(ctx context.Context, t *testctx.T) {
+		found, err := c.Host().FindUp(ctx, "other.txt")
+		require.NoError(t, err)
+		require.Equal(t, "other.txt", found)
+		content, err := c.Host().File(found).Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "this is a/b/other.txt", content)
+	})
+
+	t.Run("find file in parent directory", func(ctx context.Context, t *testctx.T) {
+		found, err := c.Host().FindUp(ctx, "target.txt")
+		require.NoError(t, err)
+		require.Equal(t, "../target.txt", found)
+		content, err := c.Host().File(found).Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "this is a/target.txt", content)
+	})
+
+	t.Run("find file in root", func(ctx context.Context, t *testctx.T) {
+		found, err := c.Host().FindUp(ctx, "root.txt")
+		require.NoError(t, err)
+		require.Equal(t, "../../root.txt", found)
+		content, err := c.Host().File(found).Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "this is root.txt", content)
+	})
+
+	t.Run("find directory in parent directory", func(ctx context.Context, t *testctx.T) {
+		found, err := c.Host().FindUp(ctx, "somedir")
+		require.NoError(t, err)
+		require.Equal(t, "../somedir", found)
+		entries, err := c.Host().Directory(found).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"hi.txt"}, entries)
+	})
+
+	t.Run("DO NOT find file in child directory", func(ctx context.Context, t *testctx.T) {
+		found, err := c.Host().FindUp(ctx, "leaf.txt")
+		require.NoError(t, err)
+		require.Equal(t, "", found)
+	})
+
+	t.Run("DO NOT find non-existent file", func(ctx context.Context, t *testctx.T) {
+		found, err := c.Host().FindUp(ctx, "nonexistent.txt")
+		require.NoError(t, err)
+		require.Equal(t, "", found)
+	})
+}
+
 func (HostSuite) TestFile(ctx context.Context, t *testctx.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("1"), 0o600))

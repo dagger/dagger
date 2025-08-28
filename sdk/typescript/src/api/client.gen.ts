@@ -1316,6 +1316,10 @@ export type HostFileOpts = {
   noCache?: boolean
 }
 
+export type HostFindUpOpts = {
+  noCache?: boolean
+}
+
 export type HostServiceOpts = {
   /**
    * Upstream host to forward traffic to.
@@ -3939,6 +3943,7 @@ export class Directory extends BaseClient {
   private readonly _digest?: string = undefined
   private readonly _exists?: boolean = undefined
   private readonly _export?: string = undefined
+  private readonly _findUp?: string = undefined
   private readonly _name?: string = undefined
   private readonly _sync?: DirectoryID = undefined
 
@@ -3951,6 +3956,7 @@ export class Directory extends BaseClient {
     _digest?: string,
     _exists?: boolean,
     _export?: string,
+    _findUp?: string,
     _name?: string,
     _sync?: DirectoryID,
   ) {
@@ -3960,6 +3966,7 @@ export class Directory extends BaseClient {
     this._digest = _digest
     this._exists = _exists
     this._export = _export
+    this._findUp = _findUp
     this._name = _name
     this._sync = _sync
   }
@@ -4152,6 +4159,23 @@ export class Directory extends BaseClient {
   filter = (opts?: DirectoryFilterOpts): Directory => {
     const ctx = this._ctx.select("filter", { ...opts })
     return new Directory(ctx)
+  }
+
+  /**
+   * Search up the directory tree for a file or directory, and return its path. If no match, return null
+   * @param name The name of the file or directory to search for
+   * @param start The path to start the search from
+   */
+  findUp = async (name: string, start: string): Promise<string> => {
+    if (this._findUp) {
+      return this._findUp
+    }
+
+    const ctx = this._ctx.select("findUp", { name, start })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -7158,14 +7182,16 @@ export class GitRepository extends BaseClient {
  */
 export class Host extends BaseClient {
   private readonly _id?: HostID = undefined
+  private readonly _findUp?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: HostID) {
+  constructor(ctx?: Context, _id?: HostID, _findUp?: string) {
     super(ctx)
 
     this._id = _id
+    this._findUp = _findUp
   }
 
   /**
@@ -7213,6 +7239,22 @@ export class Host extends BaseClient {
   file = (path: string, opts?: HostFileOpts): File => {
     const ctx = this._ctx.select("file", { path, ...opts })
     return new File(ctx)
+  }
+
+  /**
+   * Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null
+   * @param name name of the file or directory to search for
+   */
+  findUp = async (name: string, opts?: HostFindUpOpts): Promise<string> => {
+    if (this._findUp) {
+      return this._findUp
+    }
+
+    const ctx = this._ctx.select("findUp", { name, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**

@@ -158,6 +158,12 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("other").Doc(`The directory to compare against`),
 			),
+		dagql.Func("findUp", s.findUp).
+			Doc(`Search up the directory tree for a file or directory, and return its path. If no match, return null`).
+			Args(
+				dagql.Arg("name").Doc(`The name of the file or directory to search for`),
+				dagql.Arg("start").Doc(`The path to start the search from`),
+			),
 		dagql.Func("export", s.export).
 			View(AllVersion).
 			DoNotCache("Writes to the local host.").
@@ -617,6 +623,23 @@ func (s *directorySchema) diff(ctx context.Context, parent *core.Directory, args
 		return nil, err
 	}
 	return parent.Diff(ctx, dir.Self())
+}
+
+type findUpArgs struct {
+	Name  string
+	Start string
+}
+
+func (s *directorySchema) findUp(ctx context.Context, parent *core.Directory, args findUpArgs) (dagql.Nullable[dagql.String], error) {
+	none := dagql.Null[dagql.String]()
+	path, err := parent.FindUp(ctx, args.Name, args.Start)
+	if err != nil {
+		return none, err
+	}
+	if path == "" {
+		return none, nil
+	}
+	return dagql.NonNull(dagql.NewString(path)), nil
 }
 
 type dirExportArgs struct {

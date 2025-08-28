@@ -1534,6 +1534,17 @@ type Directory {
     include: [String!] = []
   ): Directory!
 
+  """
+  Search up the directory tree for a file or directory, and return its path. If no match, return null
+  """
+  findUp(
+    """The name of the file or directory to search for"""
+    name: String!
+
+    """The path to start the search from"""
+    start: String!
+  ): String
+
   """Returns a list of files and directories that matche the given pattern."""
   glob(
     """Pattern to match (e.g., "*.md")."""
@@ -3014,6 +3025,17 @@ type Host {
     """If true, the file will always be reloaded from the host."""
     noCache: Boolean = false
   ): File!
+
+  """
+  Search for a file or directory by walking up the tree from system workdir.
+  Return its relative path. If no match, return null
+  """
+  findUp(
+    """name of the file or directory to search for"""
+    name: String!
+
+    noCache: Boolean = false
+  ): String
 
   """A unique identifier for this Host."""
   id: HostID!

@@ -72,6 +72,21 @@ defmodule Dagger.Host do
   end
 
   @doc """
+  Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null
+  """
+  @spec find_up(t(), String.t(), [{:no_cache, boolean() | nil}]) ::
+          {:ok, String.t() | nil} | {:error, term()}
+  def find_up(%__MODULE__{} = host, name, optional_args \\ []) do
+    query_builder =
+      host.query_builder
+      |> QB.select("findUp")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg("noCache", optional_args[:no_cache])
+
+    Client.execute(host.client, query_builder)
+  end
+
+  @doc """
   A unique identifier for this Host.
   """
   @spec id(t()) :: {:ok, Dagger.HostID.t()} | {:error, term()}

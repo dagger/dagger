@@ -162,6 +162,12 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 				dagql.Arg("noCache").Doc(`If true, the file will always be reloaded from the host.`),
 			),
 
+		dagql.NodeFuncWithCacheKey("findUp", s.findUp, dagql.CacheAsRequested).
+			Doc(`Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null`).
+			Args(
+				dagql.Arg("name").Doc(`name of the file or directory to search for`),
+			),
+
 		dagql.NodeFuncWithCacheKey("unixSocket", s.socket, s.socketCacheKey).
 			Doc(`Accesses a Unix socket on the host.`).
 			Args(
@@ -292,7 +298,7 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 				return inst, fmt.Errorf("failed to get absolute path from git ignore root %s: %w", hostPath, err)
 			}
 		} else {
-			dotGitPath, found, err := findUp(ctx, core.NewCallerStatFS(bk), hostPath, ".git")
+			dotGitPath, found, err := host.Self().FindUp(ctx, core.NewCallerStatFS(bk), hostPath, ".git")
 			if err != nil {
 				return inst, fmt.Errorf("failed to find up .git: %w", err)
 			}
@@ -501,6 +507,39 @@ func (s *hostSchema) file(ctx context.Context, host dagql.ObjectResult[*core.Hos
 		return i, err
 	}
 	return i, nil
+}
+
+type hostFindUpArgs struct {
+	Name string
+	HostDirCacheConfig
+}
+
+func (s *hostSchema) findUp(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostFindUpArgs) (i dagql.Nullable[dagql.String], err error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return i, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return i, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	cwd, err := bk.AbsPath(ctx, ".")
+	if err != nil {
+		return i, fmt.Errorf("failed to get cwd: %w", err)
+	}
+	foundPath, found, err := host.Self().FindUp(ctx, core.NewCallerStatFS(bk), cwd, args.Name)
+	if err != nil {
+		return i, fmt.Errorf("failed to find %s: %w", args.Name, err)
+	}
+	if !found {
+		return dagql.Null[dagql.String](), nil
+	}
+	foundPath = path.Join(foundPath, args.Name)
+	relPath, err := filepath.Rel(cwd, foundPath)
+	if err != nil {
+		return i, fmt.Errorf("failed to make path relative to cwd: %w", err)
+	}
+	return dagql.NonNull(dagql.NewString(relPath)), nil
 }
 
 type hostTunnelArgs struct {
