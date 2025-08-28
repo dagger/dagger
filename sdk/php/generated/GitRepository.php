@@ -105,6 +105,15 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The URL of the git repository.
+     */
+    public function url(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('url');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'url');
+    }
+
+    /**
      * Header to authenticate the remote with.
      */
     public function withAuthHeader(SecretId|Secret $header): GitRepository

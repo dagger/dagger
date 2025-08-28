@@ -6464,6 +6464,27 @@ class GitRepository(Type):
         _ctx = self._select("tags", _args)
         return await _ctx.execute(list[str])
 
+    async def url(self) -> str | None:
+        """The URL of the git repository.
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("url", _args)
+        return await _ctx.execute(str | None)
+
     def with_auth_header(self, header: "Secret") -> Self:
         """Header to authenticate the remote with.
 
