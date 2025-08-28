@@ -324,13 +324,13 @@ The runtime container is currently hardcoded to run in Go 1.21  (although this m
 </TabItem>
 <TabItem value="python" label="Python">
 
-The runtime container is based on the [python:3.12-slim](https://hub.docker.com/_/python/tags?name=3.12-slim) base image by default, but it can be overridden by setting [`requires-python`](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#python-requires), or pinned with a `.python-version` file next to your `pyproject.toml`:
+The runtime container is based on the [python:3.13-slim](https://hub.docker.com/_/python/tags?name=3.13-slim) base image by default, but it can be overridden by setting [`requires-python`](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#python-requires), or pinned with a `.python-version` file next to your `pyproject.toml`:
 
 ```shell
-echo "3.11" > .python-version
+echo "3.12" > .python-version
 ```
 
-This will instruct Dagger to use the `python:3.11-slim` base image instead.
+This will instruct Dagger to use the `python:3.12-slim` base image instead.
 
 Pinning the interpreter version can be useful to prevent an automatic upgrade from a future version of Dagger, or to select a newer version.
 
@@ -339,7 +339,7 @@ For more advanced needs, a different base image can be used by adding the follow
 
 ```toml
 [tool.dagger]
-base-image = "acme/python:3.11"
+base-image = "acme/python:3.12"
 ```
 
 This can be useful to add a few requirements to the module's execution environment such as system packages like `git`, or to add necessary environment variables, for example. However, don't deviate from the default base image too much or it may break in a future version of Dagger.
