@@ -2571,6 +2571,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Directory::findUp",
+			"p": "Dagger/Directory.html#method_findUp",
+			"d": "<p>Search up the directory tree for a file or directory, and return its path. If no match, return null</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Directory::glob",
 			"p": "Dagger/Directory.html#method_glob",
 			"d": "<p>Returns a list of files and directories that matche the given pattern.</p>"
@@ -3660,6 +3666,12 @@
 			"n": "Dagger\\Host::file",
 			"p": "Dagger/Host.html#method_file",
 			"d": "<p>Accesses a file on the host.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Host::findUp",
+			"p": "Dagger/Host.html#method_findUp",
+			"d": "<p>Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null</p>"
 		},
 		{
 			"t": "M",

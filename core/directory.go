@@ -1051,6 +1051,50 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 	return dir, nil
 }
 
+func (dir *Directory) FindUp(ctx context.Context, name string, start string) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("name cannot be empty")
+	}
+
+	// Start from the given path or current directory
+	searchPath := start
+	if searchPath == "" {
+		searchPath = "."
+	}
+
+	// Clean the search path
+	searchPath = path.Clean(searchPath)
+	if strings.HasPrefix(searchPath, "../") {
+		return "", fmt.Errorf("cannot search outside parent: %s", searchPath)
+	}
+
+	currentPath := searchPath
+
+	for {
+		currentDir, err := dir.Directory(ctx, currentPath)
+		if err != nil {
+			return "", err
+		}
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return "", err
+		}
+		exists, err := currentDir.Exists(ctx, srv, name, "", true)
+		if err != nil {
+			return "", err
+		}
+		if exists {
+			return path.Clean(path.Join(currentPath, name)), nil
+		}
+		parentPath := path.Dir(currentPath)
+		if parentPath == currentPath {
+			break
+		}
+		currentPath = parentPath
+	}
+	return "", nil
+}
+
 func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...string) (*Directory, error) {
 	dir = dir.Clone()
 	return execInMount(ctx, dir, func(root string) error {

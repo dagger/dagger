@@ -173,6 +173,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_findUp">findUp</a>(string $name, bool|null $noCache = false)
+        
+                                            <p><p>Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -468,8 +478,55 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_id">
+                    <h3 id="method_findUp">
         <div class="location">at line 69</div>
+        <code>                    string
+    <strong>findUp</strong>(string $name, bool|null $noCache = false)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>bool|null</td>
+                <td>$noCache</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_id">
+        <div class="location">at line 82</div>
         <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
     <strong>id</strong>()
         </code>
@@ -501,7 +558,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_service">
-        <div class="location">at line 78</div>
+        <div class="location">at line 91</div>
         <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
     <strong>service</strong>(array $ports, string|null $host = &#039;localhost&#039;)
         </code>
@@ -548,7 +605,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_setSecretFile">
-        <div class="location">at line 93</div>
+        <div class="location">at line 106</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>setSecretFile</strong>(string $name, string $path)
         </code>
@@ -595,7 +652,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_tunnel">
-        <div class="location">at line 104</div>
+        <div class="location">at line 117</div>
         <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
     <strong>tunnel</strong>(<abbr title="Dagger\ServiceId|Dagger\Service">Service</abbr> $service, bool|null $native = false, array|null $ports = null)
         </code>
@@ -647,7 +704,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_unixSocket">
-        <div class="location">at line 120</div>
+        <div class="location">at line 133</div>
         <code>                    <a href="../Dagger/Socket.html"><abbr title="Dagger\Socket">Socket</abbr></a>
     <strong>unixSocket</strong>(string $path)
         </code>

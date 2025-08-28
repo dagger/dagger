@@ -229,6 +229,20 @@ defmodule Dagger.Directory do
   end
 
   @doc """
+  Search up the directory tree for a file or directory, and return its path. If no match, return null
+  """
+  @spec find_up(t(), String.t(), String.t()) :: {:ok, String.t() | nil} | {:error, term()}
+  def find_up(%__MODULE__{} = directory, name, start) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("findUp")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("start", start)
+
+    Client.execute(directory.client, query_builder)
+  end
+
+  @doc """
   Returns a list of files and directories that matche the given pattern.
   """
   @spec glob(t(), String.t()) :: {:ok, [String.t()]} | {:error, term()}

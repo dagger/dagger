@@ -6524,6 +6524,27 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Directory-findUp" href="#Directory-findUp"><code>findUp</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
+                        <td> Search up the directory tree for a file or directory, and return its path. If no match, return null </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the file or directory to search for</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>start</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The path to start the search from</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Directory-glob" href="#Directory-glob"><code>glob</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
                         <td> Returns a list of files and directories that matche the given pattern. </td>
                       </tr>
@@ -9824,6 +9845,26 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>noCache</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>If true, the file will always be reloaded from the host.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Host-findUp" href="#Host-findUp"><code>findUp</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
+                        <td> Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>name of the file or directory to search for</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>noCache</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                               </div>
                             </div>
                           </div>

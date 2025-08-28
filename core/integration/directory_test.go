@@ -40,6 +40,63 @@ func (DirectorySuite) TestEmpty(ctx context.Context, t *testctx.T) {
 	require.Empty(t, res.Directory.Entries)
 }
 
+func (DirectorySuite) TestFindUp(ctx context.Context, t *testctx.T) {
+	// Reuse the same utility used to test Host.findUp()
+	// It creates a directory on the host, but we just load it as a Directory
+	dirPath := findupTestDir(t)
+	c := connect(ctx, t)
+	dir := c.Host().Directory(dirPath)
+	start := "a/b"
+
+	t.Run("find file in current directory", func(ctx context.Context, t *testctx.T) {
+		found, err := dir.FindUp(ctx, "other.txt", start)
+		require.NoError(t, err)
+		require.Equal(t, "a/b/other.txt", found)
+		content, err := dir.File(found).Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "this is a/b/other.txt", content)
+	})
+
+	t.Run("find file in parent directory", func(ctx context.Context, t *testctx.T) {
+		found, err := dir.FindUp(ctx, "target.txt", start)
+		require.NoError(t, err)
+		require.Equal(t, "a/target.txt", found)
+		content, err := dir.File(found).Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "this is a/target.txt", content)
+	})
+
+	t.Run("find file in root", func(ctx context.Context, t *testctx.T) {
+		found, err := dir.FindUp(ctx, "root.txt", start)
+		require.NoError(t, err)
+		require.Equal(t, "root.txt", found)
+		content, err := dir.File(found).Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "this is root.txt", content)
+	})
+
+	t.Run("find directory in parent directory", func(ctx context.Context, t *testctx.T) {
+		found, err := dir.FindUp(ctx, "somedir", start)
+		require.NoError(t, err)
+		require.Equal(t, "a/somedir", found)
+		entries, err := dir.Directory(found).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"hi.txt"}, entries)
+	})
+
+	t.Run("DO NOT find file in child directory", func(ctx context.Context, t *testctx.T) {
+		found, err := dir.FindUp(ctx, "leaf.txt", start)
+		require.NoError(t, err)
+		require.Equal(t, "", found)
+	})
+
+	t.Run("DO NOT find non-existent file", func(ctx context.Context, t *testctx.T) {
+		found, err := dir.FindUp(ctx, "nonexistent.txt", start)
+		require.NoError(t, err)
+		require.Equal(t, "", found)
+	})
+}
+
 func (DirectorySuite) TestScratch(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

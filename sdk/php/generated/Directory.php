@@ -186,6 +186,17 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Search up the directory tree for a file or directory, and return its path. If no match, return null
+     */
+    public function findUp(string $name, string $start): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('findUp');
+        $leafQueryBuilder->setArgument('name', $name);
+        $leafQueryBuilder->setArgument('start', $start);
+        return (string)$this->queryLeaf($leafQueryBuilder, 'findUp');
+    }
+
+    /**
      * Returns a list of files and directories that matche the given pattern.
      */
     public function glob(string $pattern): array
