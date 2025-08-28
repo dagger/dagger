@@ -78,6 +78,20 @@ defmodule Dagger.File do
   end
 
   @doc """
+  The address this directory was originally loaded from, if any
+  """
+  @spec original_address(t()) :: Dagger.Address.t()
+  def original_address(%__MODULE__{} = file) do
+    query_builder =
+      file.query_builder |> QB.select("originalAddress")
+
+    %Dagger.Address{
+      query_builder: query_builder,
+      client: file.client
+    }
+  end
+
+  @doc """
   Retrieves the size of the file, in bytes.
   """
   @spec size(t()) :: {:ok, integer()} | {:error, term()}

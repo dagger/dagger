@@ -365,6 +365,15 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The address this container was originally loaded from, if any
+     */
+    public function originalAddress(): Address
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('originalAddress');
+        return new \Dagger\Address($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The platform this container executes and publishes as.
      */
     public function platform(): Platform

@@ -66,6 +66,15 @@ class File extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The address this directory was originally loaded from, if any
+     */
+    public function originalAddress(): Address
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('originalAddress');
+        return new \Dagger\Address($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieves the size of the file, in bytes.
      */
     public function size(): int
