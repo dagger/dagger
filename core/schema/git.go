@@ -13,6 +13,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
@@ -169,7 +170,44 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 
 	remote, err := gitutil.ParseURL(args.URL)
 	if errors.Is(err, gitutil.ErrUnknownProtocol) {
-		remote, err = gitutil.ParseURL("https://" + args.URL)
+		id := dagql.CurrentID(ctx)
+		try := []*call.ID{
+			id.WithArgument(call.NewArgument("url", call.NewLiteralString("https://"+args.URL), false)),
+			id.WithArgument(call.NewArgument("url", call.NewLiteralString("ssh://"+args.URL), false)),
+			// NOTE: no http! it's valid, but sending credentials unencrypted
+			// is very bad, so if users *really* want that, we need them to be explicit
+		}
+
+		var first *dagql.Result[*core.GitRepository]
+		for _, id := range try {
+			res, err := srv.Load(ctx, id)
+			if err != nil {
+				if errors.Is(err, gitutil.ErrGitAuthFailed) {
+					continue
+				}
+				return inst, err
+			}
+
+			repo := res.(dagql.ObjectResult[*core.GitRepository]).Result
+			first = &repo
+			remote := repo.Self().Backend.(*core.RemoteGitRepository)
+			err = remote.CheckAuth(ctx)
+			if err != nil {
+				if errors.Is(err, gitutil.ErrGitAuthFailed) {
+					continue
+				}
+				return inst, err
+			}
+
+			return repo, nil
+		}
+
+		if first == nil {
+			return inst, fmt.Errorf("failed to determine Git URL protocol")
+		}
+		// couldn't verify auth, but at least return the first parsed URL
+		// this handles the case where we might do git(<github.com/org/private-repo>).withAuthToken(token)
+		return *first, nil
 	}
 	if err != nil {
 		return inst, fmt.Errorf("failed to parse Git URL: %w", err)
@@ -272,7 +310,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 			})
 			return inst, err
 		} else {
-			return inst, fmt.Errorf("SSH URLs are not supported without an SSH socket")
+			return inst, fmt.Errorf("%w: SSH URLs are not supported without an SSH socket", gitutil.ErrGitAuthFailed)
 		}
 	case gitutil.HTTPProtocol, gitutil.HTTPSProtocol:
 		if args.HTTPAuthToken.Valid {
@@ -441,6 +479,10 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 
 		inst = inst.ResultWithPostCall(postCall)
 	}
+
+	// TODO: it would be really nice if we could check backend.Accessible here
+	// (and take a snapshot of all the remote refs), but withAuthToken and
+	// withAuthHeader might be used to add auth later, so we *currently* can't :(
 
 	return inst, nil
 }

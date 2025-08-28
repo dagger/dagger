@@ -49,8 +49,11 @@ type GitRepository struct {
 type GitRepositoryBackend interface {
 	HasPBDefinitions
 
+	// Ref returns a reference to a specific git ref (branch, tag, or commit).
 	Ref(ctx context.Context, ref string) (GitRefBackend, error)
+	// Tags lists tags in the repository matching the given patterns.
 	Tags(ctx context.Context, patterns []string, sort string) (tags []string, err error)
+	// Branches lists branches in the repository matching the given patterns.
 	Branches(ctx context.Context, patterns []string, sort string) (branches []string, err error)
 
 	mount(ctx context.Context, depth int, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error
@@ -146,6 +149,11 @@ var _ GitRepositoryBackend = (*RemoteGitRepository)(nil)
 
 func (repo *RemoteGitRepository) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	return nil, nil
+}
+
+func (repo *RemoteGitRepository) CheckAuth(ctx context.Context) error {
+	_, err := repo.lsRemote(ctx, []string{}, nil, "")
+	return err
 }
 
 func (repo *RemoteGitRepository) Ref(ctx context.Context, refstr string) (GitRefBackend, error) {
