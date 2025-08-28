@@ -125,7 +125,7 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 			// ld-linux, specifies a dependency on an exact version that is not present.
 			// This resolves itself usually within an hour, but to avoid fundamental breakage of
 			// builds we are currently pinning these packages for now.
-			"busybox",
+			"busybox=1.37.0-r49",
 			"glibc=2.42-r0",
 			"ld-linux=2.42-r0",
 			"libcrypt1=2.42-r0",
