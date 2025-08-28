@@ -114,6 +114,13 @@ func (op FSDagOp) Digest() (digest.Digest, error) {
 }
 
 func (op FSDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
+	// disable all content-hashing
+	for i, dep := range cm.Deps {
+		dep.PreprocessFunc = nil
+		dep.ComputeDigestFunc = nil
+		cm.Deps[i] = dep
+	}
+
 	cm.Digest = digest.FromString(strings.Join([]string{
 		engine.BaseVersion(engine.Version),
 		op.ID.Digest().String(),
@@ -226,6 +233,13 @@ func (op RawDagOp) Digest() (digest.Digest, error) {
 }
 
 func (op RawDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
+	// disable all content-hashing
+	for i, dep := range cm.Deps {
+		dep.PreprocessFunc = nil
+		dep.ComputeDigestFunc = nil
+		cm.Deps[i] = dep
+	}
+
 	cm.Digest = digest.FromString(strings.Join([]string{
 		engine.BaseVersion(engine.Version),
 		op.ID.Digest().String(),
