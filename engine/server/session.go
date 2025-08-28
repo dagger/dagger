@@ -1214,6 +1214,45 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	return nil
 }
 
+// FIXME: POC of loading .env.dagger.json
+func (srv *Server) loadEnvConfig(ctx context.Context, mod *core.Module) (map[string]string, error) {
+	dag, err := srv.Server(ctx)
+	if err != nil {
+		return nil, err
+	}
+	envConfigDir, err := mod.GetSource().LoadContext(ctx, dag, ".", []string{
+		"*", ".*", "!.env.dagger.json",
+	})
+	if err != nil {
+		return nil, err
+	}
+	var (
+		envConfigContents string
+		envConfig         = map[string]string{}
+	)
+	if err := dag.Select(ctx, envConfigDir, &envConfigContents,
+		dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(".env.dagger.json"),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "contents",
+		},
+	); err != nil {
+		// FIXME: gracefully handle non-existent file, without dropping legit errors
+		return envConfig, nil
+	}
+	if err := json.Unmarshal([]byte(envConfigContents), &envConfig); err != nil {
+		return nil, err
+	}
+	return envConfig, nil
+}
+
 // Stitch in the given module to the list being served to the current client
 func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDependencies bool) error {
 	client, err := srv.clientFromContext(ctx)
@@ -1224,6 +1263,15 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
 
+	// FIXME: POC for injecting env-specific argument overrides, only in the top-level
+	envConfig, err := srv.loadEnvConfig(ctx, mod)
+	if err != nil {
+		return err
+	}
+	slog.Info("Loaded .env.dagger.json", "num_entries", len(envConfig), "config", envConfig, "module.Name", mod.Name(), "module.OriginalName", mod.OriginalName)
+	if err := mod.OverrideArgs(ctx, envConfig); err != nil {
+		return err
+	}
 	err = srv.serveModule(client, mod)
 	if err != nil {
 		return err
@@ -1237,6 +1285,34 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 		}
 	}
 	return nil
+}
+
+func injectDefaultSecret(ctx context.Context, srv *dagql.Server, fn *core.Function, argName, argValue string) error {
+	slog.Info("injecting secret construvtor arg %s with default value %s", argName, argValue)
+	for _, arg := range fn.Args {
+		if arg.OriginalName == argName {
+			var secretID core.SecretID
+			if err := srv.Select(ctx, srv.Root(), &secretID,
+				dagql.Selector{
+					Field: "secret",
+					Args:  []dagql.NamedInput{{Name: "uri", Value: dagql.NewString(argValue)}},
+				},
+				dagql.Selector{
+					Field: "id",
+				},
+			); err != nil {
+				return err
+			}
+			secretIDJSON, err := json.Marshal(secretID)
+			if err != nil {
+				return err
+			}
+			arg.DefaultValue = secretIDJSON
+			slog.Info("injection complete. Default argument = %s", secretIDJSON)
+			return nil
+		}
+	}
+	return fmt.Errorf("Inject default secret: no such argument: %s", argName)
 }
 
 // not threadsafe, client.stateMu must be held when calling
