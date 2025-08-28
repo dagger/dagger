@@ -334,6 +334,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 			// Description: "TODO", // XXX(vito)
 			Type:   obj,
 			Module: obj.Module.IDModule(),
+			Args:   dagql.NewInputSpecs(),
 		}
 
 		if objDef.SourceMap.Valid {
@@ -428,6 +429,7 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 		Description: field.Description,
 		Type:        field.TypeDef.ToTyped(),
 		Module:      mod.IDModule(),
+		Args:        dagql.NewInputSpecs(),
 	}
 	spec.Directives = append(spec.Directives, &ast.Directive{
 		Name: trivialFieldDirectiveName,

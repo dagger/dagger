@@ -1356,7 +1356,8 @@ func (e *EnumValueName) MarshalJSON() ([]byte, error) {
 
 func MustInputSpec(val Type) InputObjectSpec {
 	spec := InputObjectSpec{
-		Name: val.TypeName(),
+		Name:   val.TypeName(),
+		Fields: NewInputSpecs(),
 	}
 	if desc, ok := val.(Descriptive); ok {
 		spec.Description = desc.TypeDescription()
@@ -1372,7 +1373,7 @@ func MustInputSpec(val Type) InputObjectSpec {
 type InputObjectSpec struct {
 	Name        string
 	Description string
-	Fields      InputSpecs
+	Fields      *InputSpecs
 }
 
 func (spec InputObjectSpec) Install(srv *Server) {

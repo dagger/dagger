@@ -78,6 +78,7 @@ func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec
 		Name:        fn.Name,
 		Description: formatGqlDescription(fn.Description),
 		Type:        fn.ReturnType.ToTyped(),
+		Args:        dagql.NewInputSpecs(),
 	}
 	if fn.SourceMap.Valid {
 		spec.Directives = append(spec.Directives, fn.SourceMap.Value.TypeDirective())
@@ -991,7 +992,8 @@ func (typeDef InputTypeDef) Clone() *InputTypeDef {
 
 func (typeDef *InputTypeDef) ToInputObjectSpec() dagql.InputObjectSpec {
 	spec := dagql.InputObjectSpec{
-		Name: typeDef.Name,
+		Name:   typeDef.Name,
+		Fields: dagql.NewInputSpecs(),
 	}
 	for _, field := range typeDef.Fields {
 		spec.Fields.Add(dagql.InputSpec{

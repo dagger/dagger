@@ -9,7 +9,7 @@ import (
 type DirectiveSpec struct {
 	Name         string              `field:"true"`
 	Description  string              `field:"true"`
-	Args         InputSpecs          `field:"true"`
+	Args         *InputSpecs         `field:"true"`
 	Locations    []DirectiveLocation `field:"true"`
 	IsRepeatable bool                `field:"true"`
 }

@@ -480,7 +480,7 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 			Name:        "as" + typeName,
 			Description: fmt.Sprintf("Retrieve the binding value, as type %s", typeName),
 			Type:        targetType.Typed(),
-			Args:        dagql.InputSpecs{},
+			Args:        dagql.NewInputSpecs(),
 		},
 		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
 			binding := self.(dagql.ObjectResult[*Binding]).Self()

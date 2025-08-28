@@ -113,6 +113,12 @@ func (sdk *module) withConfig(
 		return nil, err
 	}
 
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// slog.Debug("module.withConfig", "field", fieldspec.Name)
+
 	inputs := fieldspec.Args.Inputs(sdk.serverSchema.View())
 
 	// check if there are any unknown config keys provided
