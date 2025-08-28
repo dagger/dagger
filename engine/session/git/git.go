@@ -69,6 +69,32 @@ func (s GitAttachable) GetCredential(ctx context.Context, req *GitCredentialRequ
 		return newGitCredentialErrorResponse(INVALID_REQUEST, "Host and protocol are required"), nil
 	}
 
+	methods := []func(context.Context, *GitCredentialRequest) (*GitCredentialResponse, error){
+		s.getCredentialFromHelper,
+		s.getCredentialFromGH,
+	}
+
+	var firstResp *GitCredentialResponse
+	for _, method := range methods {
+		resp, err := method(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+
+		if firstResp == nil {
+			firstResp = resp
+		}
+		if respErr, ok := resp.Result.(*GitCredentialResponse_Error); ok {
+			if respErr.Error.Type == CREDENTIAL_RETRIEVAL_FAILED {
+				continue
+			}
+		}
+		return resp, nil
+	}
+	return firstResp, nil
+}
+
+func (s GitAttachable) getCredentialFromHelper(ctx context.Context, req *GitCredentialRequest) (*GitCredentialResponse, error) {
 	// Check if git is installed
 	if _, err := exec.LookPath("git"); err != nil {
 		return newGitCredentialErrorResponse(NO_GIT, "Git is not installed or not in PATH"), nil
@@ -111,7 +137,40 @@ func (s GitAttachable) GetCredential(ctx context.Context, req *GitCredentialRequ
 	if err != nil {
 		return newGitCredentialErrorResponse(CREDENTIAL_RETRIEVAL_FAILED, fmt.Sprintf("Failed to retrieve credentials: %v", err)), nil
 	}
+	return &GitCredentialResponse{
+		Result: &GitCredentialResponse_Credential{
+			Credential: cred,
+		},
+	}, nil
+}
 
+func (s GitAttachable) getCredentialFromGH(ctx context.Context, req *GitCredentialRequest) (*GitCredentialResponse, error) {
+	if req.Protocol != "https" && req.Protocol != "http" {
+		return newGitCredentialErrorResponse(INVALID_REQUEST, "gh only supports https and http protocols"), nil
+	}
+
+	if _, err := exec.LookPath("gh"); err != nil {
+		return newGitCredentialErrorResponse(NO_GIT, "gh is not installed or not in PATH"), nil
+	}
+
+	// Prepare the git credential fill command
+	cmd := exec.CommandContext(ctx, "gh", "auth", "token", "--hostname", req.Host)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return newGitCredentialErrorResponse(TIMEOUT, "Git credential command timed out"), nil
+		}
+		return newGitCredentialErrorResponse(CREDENTIAL_RETRIEVAL_FAILED, fmt.Sprintf("Failed to retrieve credentials: %v", err)), nil
+	}
+
+	cred := &CredentialInfo{
+		Protocol: "https",
+		Host:     req.Host,
+		Username: "",
+		Password: strings.TrimSpace(stdout.String()),
+	}
 	return &GitCredentialResponse{
 		Result: &GitCredentialResponse_Credential{
 			Credential: cred,
