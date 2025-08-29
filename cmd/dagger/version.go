@@ -96,7 +96,7 @@ func latestVersion(ctx context.Context) (v string, rerr error) {
 		// The default auth keychain parses the same docker credentials as used by the buildkit
 		// session attachable.
 		remote.WithAuthFromKeychain(authn.DefaultKeychain),
-		remote.WithUserAgent(enginetel.Labels{}.WithCILabels().WithAnonymousGitLabels(workdir).UserAgent()),
+		remote.WithUserAgent(enginetel.Labels{}.WithCILabels().UserAgent()),
 	)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to resolve image")
