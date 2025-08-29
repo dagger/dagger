@@ -66,6 +66,7 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 					Name:        "id",
 					Description: fmt.Sprintf("A unique identifier for this %s.", class.TypeName()),
 					Type:        ID[T]{inner: opts.Typed},
+					Args:        NewInputSpecs(),
 				},
 				Func: func(ctx context.Context, self ObjectResult[T], args map[string]Input, view View) (AnyResult, error) {
 					id := NewDynamicID[T](self.ID(), opts.Typed)
@@ -464,6 +465,12 @@ type preselectResult struct {
 
 // sortArgsToSchema sorts the arguments to match the schema definition order.
 func (r ObjectResult[T]) sortArgsToSchema(fieldSpec *FieldSpec, view View, idArgs []*call.Argument) {
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// slog.Debug("sortArgsToSchema.Inputs", "field", fieldSpec.Name)
+
 	inputs := fieldSpec.Args.Inputs(view)
 	sort.Slice(idArgs, func(i, j int) bool {
 		iIdx := slices.IndexFunc(inputs, func(input InputSpec) bool {
@@ -490,6 +497,13 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 
 	idArgs := make([]*call.Argument, 0, len(sel.Args))
 	inputArgs := make(map[string]Input, len(sel.Args))
+
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// slog.Debug("preselect.Inputs", "field", field.Spec.Name)
+
 	for _, argSpec := range field.Spec.Args.Inputs(view) {
 		// just be n^2 since the overhead of a map is likely more expensive
 		// for the expected low value of n
@@ -610,7 +624,7 @@ func (r ObjectResult[T]) Call(ctx context.Context, s *Server, newID *call.ID) (A
 	return r.call(ctx, s, newID, inputArgs, doNotCache)
 }
 
-func ExtractIDArgs(specs InputSpecs, id *call.ID) (map[string]Input, error) {
+func ExtractIDArgs(specs *InputSpecs, id *call.ID) (map[string]Input, error) {
 	idArgs := id.Args()
 	view := View(id.View())
 
@@ -898,7 +912,7 @@ type FieldSpec struct {
 	// Description is the description of the field.
 	Description string
 	// Args is the list of arguments that the field accepts.
-	Args InputSpecs
+	Args *InputSpecs
 	// Type is the type of the field's result.
 	Type Typed
 	// Sensitive indicates that the value returned by this field is sensitive and
@@ -1065,10 +1079,13 @@ type InputSpecs struct {
 	// It should not be accessed directly (hence private), but should instead
 	// be accessed through a specific dagql view.
 	raw []InputSpec
+
+	mu         sync.Mutex
+	inputCache map[View][]InputSpec
 }
 
-func NewInputSpecs(specs ...InputSpec) InputSpecs {
-	return InputSpecs{
+func NewInputSpecs(specs ...InputSpec) *InputSpecs {
+	return &InputSpecs{
 		raw: specs,
 	}
 }
@@ -1077,7 +1094,10 @@ func (specs *InputSpecs) Add(target ...InputSpec) {
 	specs.raw = append(specs.raw, target...)
 }
 
-func (specs InputSpecs) Input(name string, view View) (InputSpec, bool) {
+func (specs *InputSpecs) Input(name string, view View) (InputSpec, bool) {
+	if specs == nil {
+		return InputSpec{}, false
+	}
 	for i := len(specs.raw) - 1; i >= 0; i-- {
 		// iterate backwards to allow last-defined spec to have precedence
 		spec := specs.raw[i]
@@ -1092,26 +1112,62 @@ func (specs InputSpecs) Input(name string, view View) (InputSpec, bool) {
 	return InputSpec{}, false
 }
 
-func (specs InputSpecs) Inputs(view View) (args []InputSpec) {
-	seen := make(map[string]bool, len(specs.raw))
+func (specs *InputSpecs) Inputs(view View) (args []InputSpec) {
+	if specs == nil {
+		return nil
+	}
+
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// slog.Debug("InputSpecs.Inputs", "len(specs.raw)", len(specs.raw), "view", view)
+
+	if len(specs.raw) == 0 {
+		return nil
+	}
+
+	specs.mu.Lock()
+	defer specs.mu.Unlock()
+	if specs.inputCache == nil {
+		specs.inputCache = make(map[View][]InputSpec)
+	}
+	cached, ok := specs.inputCache[view]
+	if ok {
+		return cached
+	}
+
 	for i := len(specs.raw) - 1; i >= 0; i-- {
 		// iterate backwards to allow last-defined spec to have precedence
 		spec := specs.raw[i]
 
-		if seen[spec.Name] {
+		var alreadyExists bool
+		for _, arg := range args {
+			if arg.Name == spec.Name {
+				alreadyExists = true
+				break
+			}
+		}
+		if alreadyExists {
 			continue
 		}
+
 		if spec.ViewFilter != nil && !spec.ViewFilter.Contains(view) {
 			continue
 		}
-		seen[spec.Name] = true
 		args = append(args, spec)
 	}
 	slices.Reverse(args)
+
+	specs.inputCache[view] = args
 	return args
 }
 
-func (specs InputSpecs) ArgumentDefinitions(view View) []*ast.ArgumentDefinition {
+func (specs *InputSpecs) ArgumentDefinitions(view View) []*ast.ArgumentDefinition {
+	if specs == nil {
+		return nil
+	}
+
 	args := specs.Inputs(view)
 	defs := make([]*ast.ArgumentDefinition, 0, len(args))
 
@@ -1141,7 +1197,11 @@ func (specs InputSpecs) ArgumentDefinitions(view View) []*ast.ArgumentDefinition
 	return defs
 }
 
-func (specs InputSpecs) FieldDefinitions(view View) (defs []*ast.FieldDefinition) {
+func (specs *InputSpecs) FieldDefinitions(view View) (defs []*ast.FieldDefinition) {
+	if specs == nil {
+		return nil
+	}
+
 	for _, argDef := range specs.ArgumentDefinitions(view) {
 		fieldDef := argDefToFieldDef(argDef)
 		defs = append(defs, fieldDef)
@@ -1194,6 +1254,7 @@ func (fields Fields[T]) Install(server *Server) {
 				Description:        field.Field.Tag.Get("doc"),
 				DeprecatedReason:   field.Field.Tag.Get("deprecated"),
 				ExperimentalReason: field.Field.Tag.Get("experimental"),
+				Args:               NewInputSpecs(),
 			},
 			Func: func(ctx context.Context, self ObjectResult[T], args map[string]Input, view View) (AnyResult, error) {
 				t, found, err := getField(ctx, self.Self(), false, name)
@@ -1303,7 +1364,7 @@ func (field Field[T]) Args(args ...Argument) Field[T] {
 		newArgs = append(newArgs, origArg)
 	}
 
-	field.Spec.Args = InputSpecs{newArgs}
+	field.Spec.Args = &InputSpecs{raw: newArgs}
 	return field
 }
 
@@ -1363,10 +1424,10 @@ type reflectField[T any] struct {
 	Field reflect.StructField
 }
 
-func InputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
+func InputSpecsForType(obj any, optIn bool) (*InputSpecs, error) {
 	fields, err := reflectFieldsForType(obj, optIn, builtinOrInput)
 	if err != nil {
-		return InputSpecs{}, err
+		return nil, err
 	}
 	specs := make([]InputSpec, len(fields))
 	for i, field := range fields {
@@ -1378,7 +1439,7 @@ func InputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 			var err error
 			inputDef, err = input.Decoder().DecodeInput(inputDefStr)
 			if err != nil {
-				return InputSpecs{}, fmt.Errorf("convert default value %q for arg %q: %w", inputDefStr, name, err)
+				return nil, fmt.Errorf("convert default value %q for arg %q: %w", inputDefStr, name, err)
 			}
 			if input.Type().NonNull {
 				input = DynamicOptional{
@@ -1404,7 +1465,7 @@ func InputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 		}
 		specs[i] = spec
 	}
-	return InputSpecs{specs}, nil
+	return &InputSpecs{raw: specs}, nil
 }
 
 func deprecationDescription(reason string) string {
@@ -1543,7 +1604,7 @@ func getField(
 	return nil, false, nil
 }
 
-func (specs InputSpecs) Decode(inputs map[string]Input, dest any, view View) error {
+func (specs *InputSpecs) Decode(inputs map[string]Input, dest any, view View) error {
 	destT := reflect.TypeOf(dest).Elem()
 	destV := reflect.ValueOf(dest).Elem()
 	if destT == nil {

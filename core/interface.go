@@ -232,6 +232,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			Description: formatGqlDescription(fnTypeDef.Description),
 			Type:        fnTypeDef.ReturnType.ToTyped(),
 			Module:      iface.mod.IDModule(),
+			Args:        dagql.NewInputSpecs(),
 		}
 		if fnTypeDef.SourceMap.Valid {
 			fieldDef.Directives = append(fieldDef.Directives, fnTypeDef.SourceMap.Value.TypeDirective())

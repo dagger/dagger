@@ -62,6 +62,23 @@ defmodule Dagger.Directory do
   end
 
   @doc """
+  Change the owner of the directory contents recursively.
+  """
+  @spec chown(t(), String.t(), String.t()) :: Dagger.Directory.t()
+  def chown(%__MODULE__{} = directory, path, owner) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("chown")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("owner", owner)
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc """
   Return the difference between this directory and an another directory. The difference is encoded as a directory.
   """
   @spec diff(t(), Dagger.Directory.t()) :: Dagger.Directory.t()
@@ -296,7 +313,8 @@ defmodule Dagger.Directory do
   """
   @spec with_directory(t(), String.t(), Dagger.Directory.t(), [
           {:exclude, [String.t()]},
-          {:include, [String.t()]}
+          {:include, [String.t()]},
+          {:owner, String.t() | nil}
         ]) :: Dagger.Directory.t()
   def with_directory(%__MODULE__{} = directory_, path, directory, optional_args \\ []) do
     query_builder =
@@ -306,6 +324,7 @@ defmodule Dagger.Directory do
       |> QB.put_arg("directory", Dagger.ID.id!(directory))
       |> QB.maybe_put_arg("exclude", optional_args[:exclude])
       |> QB.maybe_put_arg("include", optional_args[:include])
+      |> QB.maybe_put_arg("owner", optional_args[:owner])
 
     %Dagger.Directory{
       query_builder: query_builder,
@@ -316,8 +335,10 @@ defmodule Dagger.Directory do
   @doc """
   Retrieves this directory plus the contents of the given file copied to the given path.
   """
-  @spec with_file(t(), String.t(), Dagger.File.t(), [{:permissions, integer() | nil}]) ::
-          Dagger.Directory.t()
+  @spec with_file(t(), String.t(), Dagger.File.t(), [
+          {:permissions, integer() | nil},
+          {:owner, String.t() | nil}
+        ]) :: Dagger.Directory.t()
   def with_file(%__MODULE__{} = directory, path, source, optional_args \\ []) do
     query_builder =
       directory.query_builder
@@ -325,6 +346,7 @@ defmodule Dagger.Directory do
       |> QB.put_arg("path", path)
       |> QB.put_arg("source", Dagger.ID.id!(source))
       |> QB.maybe_put_arg("permissions", optional_args[:permissions])
+      |> QB.maybe_put_arg("owner", optional_args[:owner])
 
     %Dagger.Directory{
       query_builder: query_builder,

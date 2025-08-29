@@ -2409,6 +2409,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Directory::chown",
+			"p": "Dagger/Directory.html#method_chown",
+			"d": "<p>Change the owner of the directory contents recursively.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Directory::diff",
 			"p": "Dagger/Directory.html#method_diff",
 			"d": "<p>Return the difference between this directory and an another directory. The difference is encoded as a directory.</p>"
@@ -3072,6 +3078,12 @@
 			"n": "Dagger\\FieldTypeDef::typeDef",
 			"p": "Dagger/FieldTypeDef.html#method_typeDef",
 			"d": "<p>The type of the field.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\File::chown",
+			"p": "Dagger/File.html#method_chown",
+			"d": "<p>Change the owner of the file recursively.</p>"
 		},
 		{
 			"t": "M",

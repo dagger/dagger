@@ -16,6 +16,20 @@ defmodule Dagger.File do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Change the owner of the file recursively.
+  """
+  @spec chown(t(), String.t()) :: Dagger.File.t()
+  def chown(%__MODULE__{} = file, owner) do
+    query_builder =
+      file.query_builder |> QB.select("chown") |> QB.put_arg("owner", owner)
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: file.client
+    }
+  end
+
+  @doc """
   Retrieves the contents of the file.
   """
   @spec contents(t()) :: {:ok, String.t()} | {:error, term()}

@@ -137,6 +137,7 @@ func (dir *Directory) Terminal(
 	svcID *call.ID,
 	ctr *Container,
 	args *TerminalArgs,
+	parent dagql.ObjectResult[*Directory],
 ) error {
 	var err error
 
@@ -150,7 +151,7 @@ func (dir *Directory) Terminal(
 
 	ctr = ctr.Clone()
 	ctr.Config.WorkingDir = "/src"
-	ctr, err = ctr.WithMountedDirectory(ctx, "/src", dir, "", true)
+	ctr, err = ctr.WithMountedDirectory(ctx, "/src", parent, "", true)
 	if err != nil {
 		return fmt.Errorf("failed to create terminal container: %w", err)
 	}

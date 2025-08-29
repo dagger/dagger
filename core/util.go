@@ -513,3 +513,11 @@ func getRefOrEvaluate[T fileOrDirectory](ctx context.Context, t T) (bkcache.Immu
 	}
 	return cacheRef.CacheRef(ctx)
 }
+
+func asArrayInput[T any, I dagql.Input](ts []T, conv func(T) I) dagql.ArrayInput[I] {
+	ins := make(dagql.ArrayInput[I], len(ts))
+	for i, v := range ts {
+		ins[i] = conv(v)
+	}
+	return ins
+}

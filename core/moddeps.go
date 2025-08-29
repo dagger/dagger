@@ -183,6 +183,7 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
 					Description: fmt.Sprintf("Converts this %s to a %s.", obj.Name, iface.Name),
 					Type:        &InterfaceAnnotatedValue{TypeDef: iface},
 					Module:      ifaceType.mod.IDModule(),
+					Args:        dagql.NewInputSpecs(),
 				},
 				func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
 					inst, ok := dagql.UnwrapAs[*ModuleObject](self)
