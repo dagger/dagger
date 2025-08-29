@@ -67,7 +67,9 @@ jobs:
                 dagger core version
               shell: bash
             - name: Checkout
-              uses: actions/checkout@v4
+              run: dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
+              env:
+                DAGGER_REF: ${{ github.ref }}
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -171,7 +173,7 @@ jobs:
               env:
                 COMMAND: dagger call test-publish
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                DAGGER_MODULE: github.com/${{ github.repository }}/cmd/dagger@${{ github.sha }}
+                DAGGER_MODULE: cmd/dagger
               shell: bash
         timeout-minutes: 20
     engine-test-publish:
@@ -224,7 +226,9 @@ jobs:
                 dagger core version
               shell: bash
             - name: Checkout
-              uses: actions/checkout@v4
+              run: dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
+              env:
+                DAGGER_REF: ${{ github.ref }}
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -328,7 +332,7 @@ jobs:
               env:
                 COMMAND: dagger call publish --image=dagger-engine.dev --tag=main --dry-run
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                DAGGER_MODULE: github.com/${{ github.repository }}/cmd/engine@${{ github.sha }}
+                DAGGER_MODULE: cmd/engine
               shell: bash
         timeout-minutes: 20
     lint:
@@ -381,7 +385,9 @@ jobs:
                 dagger core version
               shell: bash
             - name: Checkout
-              uses: actions/checkout@v4
+              run: dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
+              env:
+                DAGGER_REF: ${{ github.ref }}
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -485,7 +491,7 @@ jobs:
               env:
                 COMMAND: dagger call lint
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                DAGGER_MODULE: .
               shell: bash
         timeout-minutes: 20
     scan-engine:
@@ -538,7 +544,9 @@ jobs:
                 dagger core version
               shell: bash
             - name: Checkout
-              uses: actions/checkout@v4
+              run: dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
+              env:
+                DAGGER_REF: ${{ github.ref }}
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -642,7 +650,7 @@ jobs:
               env:
                 COMMAND: dagger call scan
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                DAGGER_MODULE: .
               shell: bash
         timeout-minutes: 20
     scripts:
@@ -695,7 +703,9 @@ jobs:
                 dagger core version
               shell: bash
             - name: Checkout
-              uses: actions/checkout@v4
+              run: dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
+              env:
+                DAGGER_REF: ${{ github.ref }}
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -799,7 +809,7 @@ jobs:
               env:
                 COMMAND: dagger call check --targets=scripts
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                DAGGER_MODULE: .
               shell: bash
         timeout-minutes: 20
     testdev-call-and-shell:
@@ -840,7 +850,9 @@ jobs:
                 #!/bin/bash --noprofile --norc -e -o pipefail
 
                 cd $(mktemp -d)
-                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree | export ."
+
+                # HACK: with contextual git we won't need --depth=0 anymore
+                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
 
                 ./hack/build
 
@@ -868,7 +880,9 @@ jobs:
                 dagger core version
               shell: bash
             - name: Checkout
-              uses: actions/checkout@v4
+              run: dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
+              env:
+                DAGGER_REF: ${{ github.ref }}
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -972,7 +986,7 @@ jobs:
               env:
                 COMMAND: dagger call test specific --race=true --parallel=16 --run='TestCall|TestShell|TestDaggerCMD'
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                DAGGER_MODULE: .
                 NO_OUTPUT: "true"
               shell: bash
             - name: Upload call logs
@@ -1032,7 +1046,9 @@ jobs:
                 #!/bin/bash --noprofile --norc -e -o pipefail
 
                 cd $(mktemp -d)
-                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree | export ."
+
+                # HACK: with contextual git we won't need --depth=0 anymore
+                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
 
                 ./hack/build
 
@@ -1060,7 +1076,9 @@ jobs:
                 dagger core version
               shell: bash
             - name: Checkout
-              uses: actions/checkout@v4
+              run: dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
+              env:
+                DAGGER_REF: ${{ github.ref }}
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -1164,7 +1182,7 @@ jobs:
               env:
                 COMMAND: dagger call test specific --race=true --parallel=16 --run='TestProvision|TestTelemetry'
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                DAGGER_MODULE: .
                 NO_OUTPUT: "true"
               shell: bash
             - name: Upload call logs
@@ -1224,7 +1242,9 @@ jobs:
                 #!/bin/bash --noprofile --norc -e -o pipefail
 
                 cd $(mktemp -d)
-                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree | export ."
+
+                # HACK: with contextual git we won't need --depth=0 anymore
+                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
 
                 ./hack/build
 
@@ -1252,7 +1272,9 @@ jobs:
                 dagger core version
               shell: bash
             - name: Checkout
-              uses: actions/checkout@v4
+              run: dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
+              env:
+                DAGGER_REF: ${{ github.ref }}
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -1356,7 +1378,7 @@ jobs:
               env:
                 COMMAND: dagger call test specific --race=true --parallel=16 --run='TestCLI|TestEngine'
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                DAGGER_MODULE: .
                 NO_OUTPUT: "true"
               shell: bash
             - name: Upload call logs
@@ -1416,7 +1438,9 @@ jobs:
                 #!/bin/bash --noprofile --norc -e -o pipefail
 
                 cd $(mktemp -d)
-                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree | export ."
+
+                # HACK: with contextual git we won't need --depth=0 anymore
+                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
 
                 ./hack/build
 
@@ -1444,7 +1468,9 @@ jobs:
                 dagger core version
               shell: bash
             - name: Checkout
-              uses: actions/checkout@v4
+              run: dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
+              env:
+                DAGGER_REF: ${{ github.ref }}
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -1548,7 +1574,7 @@ jobs:
               env:
                 COMMAND: dagger call test specific --race=true --parallel=16 --run='TestClientGenerator'
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                DAGGER_MODULE: .
                 NO_OUTPUT: "true"
               shell: bash
             - name: Upload call logs
@@ -1608,7 +1634,9 @@ jobs:
                 #!/bin/bash --noprofile --norc -e -o pipefail
 
                 cd $(mktemp -d)
-                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree | export ."
+
+                # HACK: with contextual git we won't need --depth=0 anymore
+                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
 
                 ./hack/build
 
@@ -1636,7 +1664,9 @@ jobs:
                 dagger core version
               shell: bash
             - name: Checkout
-              uses: actions/checkout@v4
+              run: dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
+              env:
+                DAGGER_REF: ${{ github.ref }}
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -1740,7 +1770,7 @@ jobs:
               env:
                 COMMAND: dagger call test specific --race=true --parallel=16 --run='TestContainer|TestDockerfile'
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                DAGGER_MODULE: .
                 NO_OUTPUT: "true"
               shell: bash
             - name: Upload call logs
@@ -1800,7 +1830,9 @@ jobs:
                 #!/bin/bash --noprofile --norc -e -o pipefail
 
                 cd $(mktemp -d)
-                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree | export ."
+
+                # HACK: with contextual git we won't need --depth=0 anymore
+                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
 
                 ./hack/build
 
@@ -1828,7 +1860,9 @@ jobs:
                 dagger core version
               shell: bash
             - name: Checkout
-              uses: actions/checkout@v4
+              run: dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
+              env:
+                DAGGER_REF: ${{ github.ref }}
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -1932,7 +1966,7 @@ jobs:
               env:
                 COMMAND: dagger call test specific --race=true --parallel=16 --skip='TestProvision|TestTelemetry|TestModule|TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestJava|TestContainer|TestDockerfile|TestLLM|TestCLI|TestEngine|TestClientGenerator|TestInterface|TestCall|TestShell|TestDaggerCMD'
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                DAGGER_MODULE: .
                 NO_OUTPUT: "true"
               shell: bash
             - name: Upload call logs
@@ -1992,7 +2026,9 @@ jobs:
                 #!/bin/bash --noprofile --norc -e -o pipefail
 
                 cd $(mktemp -d)
-                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree | export ."
+
+                # HACK: with contextual git we won't need --depth=0 anymore
+                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
 
                 ./hack/build
 
@@ -2020,7 +2056,9 @@ jobs:
                 dagger core version
               shell: bash
             - name: Checkout
-              uses: actions/checkout@v4
+              run: dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
+              env:
+                DAGGER_REF: ${{ github.ref }}
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -2124,7 +2162,7 @@ jobs:
               env:
                 COMMAND: dagger call test specific --race=true --parallel=16 --run='TestInterface'
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                DAGGER_MODULE: .
                 NO_OUTPUT: "true"
               shell: bash
             - name: Upload call logs
@@ -2184,7 +2222,9 @@ jobs:
                 #!/bin/bash --noprofile --norc -e -o pipefail
 
                 cd $(mktemp -d)
-                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree | export ."
+
+                # HACK: with contextual git we won't need --depth=0 anymore
+                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
 
                 ./hack/build
 
@@ -2212,7 +2252,9 @@ jobs:
                 dagger core version
               shell: bash
             - name: Checkout
-              uses: actions/checkout@v4
+              run: dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
+              env:
+                DAGGER_REF: ${{ github.ref }}
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -2316,7 +2358,7 @@ jobs:
               env:
                 COMMAND: dagger call test specific --race=true --parallel=16 --run='TestLLM'
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                DAGGER_MODULE: .
                 NO_OUTPUT: "true"
               shell: bash
             - name: Upload call logs
@@ -2376,7 +2418,9 @@ jobs:
                 #!/bin/bash --noprofile --norc -e -o pipefail
 
                 cd $(mktemp -d)
-                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree | export ."
+
+                # HACK: with contextual git we won't need --depth=0 anymore
+                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
 
                 ./hack/build
 
@@ -2404,7 +2448,9 @@ jobs:
                 dagger core version
               shell: bash
             - name: Checkout
-              uses: actions/checkout@v4
+              run: dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
+              env:
+                DAGGER_REF: ${{ github.ref }}
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -2508,7 +2554,7 @@ jobs:
               env:
                 COMMAND: dagger call test specific --race=true --parallel=16 --run='TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestJava'
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                DAGGER_MODULE: .
                 NO_OUTPUT: "true"
               shell: bash
             - name: Upload call logs
@@ -2568,7 +2614,9 @@ jobs:
                 #!/bin/bash --noprofile --norc -e -o pipefail
 
                 cd $(mktemp -d)
-                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree | export ."
+
+                # HACK: with contextual git we won't need --depth=0 anymore
+                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
 
                 ./hack/build
 
@@ -2596,7 +2644,9 @@ jobs:
                 dagger core version
               shell: bash
             - name: Checkout
-              uses: actions/checkout@v4
+              run: dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
+              env:
+                DAGGER_REF: ${{ github.ref }}
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -2700,7 +2750,7 @@ jobs:
               env:
                 COMMAND: dagger call test specific --race=true --parallel=16 --run='TestModule'
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                DAGGER_MODULE: .
                 NO_OUTPUT: "true"
               shell: bash
             - name: Upload call logs
