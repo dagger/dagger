@@ -13,20 +13,17 @@ type Examples struct {
 }
 
 func New(
-	ctx context.Context,
 	// +optional
 	// +defaultPath="/"
 	source *dagger.Directory,
-
-) (*Examples, error) {
-	dev := &Examples{
+) *Examples {
+	return &Examples{
 		Source: source,
 	}
-	return dev, nil
 }
 
 // Run the Dagger evals across the major model providers.
-func (dev *Examples) Evaluator_RunMyEvals(
+func (dev *Examples) Evaluator_RunMyEvals( //nolint:stylecheck
 	ctx context.Context,
 	// Run particular evals, or all evals if unspecified.
 	// +optional

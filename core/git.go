@@ -925,7 +925,11 @@ func (repo *LocalGitRepository) mount(ctx context.Context, depth int, refs []Git
 	}
 	defer detach()
 
-	return mountLLB(ctx, repo.Directory.Self().LLB, func(root string) error {
+	def, err := repo.Directory.Self().LLB(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get LLB: %w", err)
+	}
+	return mountLLB(ctx, def, func(root string) error {
 		src, err := fs.RootPath(root, repo.Directory.Self().Dir)
 		if err != nil {
 			return err

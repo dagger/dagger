@@ -33,6 +33,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/propagation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -50,6 +51,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/cache/cachemanager"
+	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -917,14 +919,21 @@ const InstrumentationLibrary = "dagger.io/engine.server"
 
 func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opts *ClientInitOpts) (rerr error) {
 	ctx := r.Context()
+
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(fmt.Errorf("http request done for client %q", opts.ClientID))
 
 	clientMetadata := opts.ClientMetadata
 	ctx = engine.ContextWithClientMetadata(ctx, clientMetadata)
 
-	// propagate span context from the client
+	// propagate span context and baggage from the client
 	ctx = telemetry.Propagator.Extract(ctx, propagation.HeaderCarrier(r.Header))
+
+	// Check if repeated telemetry is requested via baggage
+	baggage := baggage.FromContext(ctx)
+	if member := baggage.Member("repeat-telemetry"); member.Value() != "" {
+		ctx = dagql.WithRepeatedTelemetry(ctx)
+	}
 
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).
 		WithField("client_id", clientMetadata.ClientID).
@@ -1462,6 +1471,22 @@ func (srv *Server) LeaseManager() *leaseutil.Manager {
 // A shared engine-wide salt used when creating cache keys for secrets based on their plaintext
 func (srv *Server) SecretSalt() []byte {
 	return srv.secretSalt
+}
+
+// Provides access to the client's telemetry database.
+func (srv *Server) ClientTelemetry(ctx context.Context, sessID, clientID string) (*clientdb.Queries, func() error, error) {
+	client, err := srv.clientFromIDs(sessID, clientID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := client.FlushTelemetry(ctx); err != nil {
+		return nil, nil, fmt.Errorf("flush telemetry: %w", err)
+	}
+	db, err := srv.clientDBs.Open(clientID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return clientdb.New(db), db.Close, nil
 }
 
 type httpError struct {

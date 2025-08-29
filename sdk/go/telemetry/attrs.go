@@ -51,7 +51,9 @@ const (
 	// The value indicates whether the message is being sent or received.
 	//
 	// Example: "sent", "received"
-	UIMessageAttr = "dagger.io/ui.message"
+	UIMessageAttr     = "dagger.io/ui.message"
+	UIMessageSent     = "sent"
+	UIMessageReceived = "received"
 
 	// Hide child spans by default.
 	//
@@ -108,6 +110,20 @@ const (
 
 	// Indicates the units for the progress numbers.
 	ProgressUnitsAttr = "dagger.io/progress.units"
+
+	// Which role this LLM message is from (user or assistant).
+	LLMRoleAttr      = "dagger.io/llm.role"
+	LLMRoleUser      = "user"
+	LLMRoleAssistant = "assistant"
+
+	// The name of an LLM tool that this span is calling.
+	LLMToolAttr = "dagger.io/llm.tool"
+	// The name of an MCP server providing the tool.
+	LLMToolServerAttr = "dagger.io/llm.tool.server"
+
+	// The list of LLM tool arguments to show to the user.
+	LLMToolArgNamesAttr  = "dagger.io/llm.tool.args.names"
+	LLMToolArgValuesAttr = "dagger.io/llm.tool.args.values"
 
 	// The stdio stream a log corresponds to (1 for stdout, 2 for stderr).
 	StdioStreamAttr = "stdio.stream"

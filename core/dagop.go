@@ -27,6 +27,7 @@ import (
 
 func init() {
 	buildkit.RegisterCustomOp(FSDagOp{})
+	buildkit.RegisterCustomOp(ImmutableRefDagOp{})
 	buildkit.RegisterCustomOp(RawDagOp{})
 	buildkit.RegisterCustomOp(ContainerDagOp{})
 }
@@ -86,7 +87,7 @@ func newFSDagOp[T dagql.Typed](
 		return llb.State{}, fmt.Errorf("expected %s to be selected, instead got %s", requiredType, dagop.ID.Type().NamedType())
 	}
 
-	return newDagOpLLB(ctx, dagop, dagop.ID, inputs)
+	return newDagOpLLB(ctx, dagop, dagop.ID.Name(), inputs)
 }
 
 type FSDagOp struct {
@@ -173,6 +174,47 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 	}
 }
 
+type ImmutableRefDagOp struct {
+	Ref string
+}
+
+func (op ImmutableRefDagOp) Name() string {
+	return "dagop.ref"
+}
+
+func (op ImmutableRefDagOp) Backend() buildkit.CustomOpBackend {
+	return &op
+}
+
+func (op ImmutableRefDagOp) Digest() (digest.Digest, error) {
+	return digest.FromString(strings.Join([]string{
+		engine.BaseVersion(engine.Version),
+		op.Ref,
+	}, "\x00")), nil
+}
+
+func (op ImmutableRefDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
+	cm.Digest = digest.FromString(strings.Join([]string{
+		engine.BaseVersion(engine.Version),
+		op.Ref,
+	}, "\x00"))
+	return cm, nil
+}
+
+func (op ImmutableRefDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, err error) {
+	query, ok := opt.Server.Root().Unwrap().(*Query)
+	if !ok {
+		return nil, fmt.Errorf("server root was %T", opt.Server.Root())
+	}
+	ctx = ContextWithQuery(ctx, query)
+	immutable, err := query.BuildkitCache().Get(ctx, op.Ref, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ref %q: %w", op.Ref, err)
+	}
+	ref := worker.NewWorkerRefResult(immutable.Clone(), opt.Worker)
+	return []solver.Result{ref}, nil
+}
+
 // NewRawDagOp takes a target ID for any JSON-serializable dagql type, and returns
 // it, computing the actual dagql query inside a buildkit operation, which
 // allows for efficiently caching the result.
@@ -189,7 +231,7 @@ func NewRawDagOp[T dagql.Typed](
 		return t, fmt.Errorf("dagop filename is empty")
 	}
 
-	st, err := newDagOpLLB(ctx, dagop, dagop.ID, inputs)
+	st, err := newDagOpLLB(ctx, dagop, dagop.ID.Name(), inputs)
 	if err != nil {
 		return t, err
 	}
@@ -241,7 +283,8 @@ func (op RawDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.
 	if !ok {
 		return nil, fmt.Errorf("server root was %T", opt.Server.Root())
 	}
-	result, err := opt.Server.LoadType(ContextWithQuery(ctx, query), op.ID)
+	ctx = ContextWithQuery(ctx, query)
+	result, err := opt.Server.LoadType(ctx, op.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -379,7 +422,7 @@ func newContainerDagOp(
 		return llb.State{}, fmt.Errorf("expected %s to be selected, instead got %s", requiredType, dagop.ID.Type().NamedType())
 	}
 
-	return newDagOpLLB(ctx, dagop, dagop.ID, inputs)
+	return newDagOpLLB(ctx, dagop, dagop.ID.Name(), inputs)
 }
 
 type ContainerDagOp struct {
@@ -641,7 +684,7 @@ func getAllContainerMounts(container *Container) (mounts []*pb.Mount, states []l
 	}
 
 	// handle our normal mounts
-	if err := addMount(ContainerMount{Source: container.FS, Result: container.FSResult, Target: "/"}); err != nil {
+	if err := addMount(ContainerMount{Source: container.FSDef, Result: container.FSResult, Target: "/"}); err != nil {
 		return nil, nil, nil, 0, err
 	}
 	if err := addMount(ContainerMount{Source: container.Meta, Result: container.MetaResult, Target: buildkit.MetaMountDestPath}); err != nil {
@@ -719,7 +762,7 @@ func (op *ContainerDagOp) setAllContainerMounts(ctx context.Context, container *
 
 		switch mountIdx {
 		case 0:
-			container.FS = def.ToPB()
+			container.SetFS(def.ToPB(), nil)
 		case 1:
 			container.Meta = def.ToPB()
 		default:
@@ -765,7 +808,7 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 		var err error
 		switch mountIdx {
 		case 0:
-			ref, err = getResult(container.FS, container.FSResult)
+			ref, err = getResult(container.FSDef, container.FSResult)
 		case 1:
 			ref, err = getResult(container.Meta, container.MetaResult)
 		default:
@@ -790,9 +833,9 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 	return outputs, nil
 }
 
-func newDagOpLLB(ctx context.Context, dagOp buildkit.CustomOp, id *call.ID, inputs []llb.State) (llb.State, error) {
+func newDagOpLLB(ctx context.Context, dagOp buildkit.CustomOp, name string, inputs []llb.State) (llb.State, error) {
 	return buildkit.NewCustomLLB(ctx, dagOp, inputs,
-		llb.WithCustomNamef("%s %s", dagOp.Name(), id.Name()),
+		llb.WithCustomNamef("%s %s", dagOp.Name(), name),
 		buildkit.WithTracePropagation(ctx),
 		buildkit.WithPassthrough(),
 	)

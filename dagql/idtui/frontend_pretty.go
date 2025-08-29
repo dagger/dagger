@@ -48,6 +48,9 @@ type frontendPretty struct {
 
 	dag *dagger.Client
 
+	// used for animations
+	now time.Time
+
 	// don't show live progress; just print a full report at the end
 	reportOnly bool
 
@@ -71,7 +74,8 @@ type frontendPretty struct {
 	editlineFocused bool
 	autoModeSwitch  bool
 	flushed         map[dagui.SpanID]bool
-	scrollback      *strings.Builder
+	offscreen       map[dagui.SpanID]bool
+	scrollback      scrollbackRows
 	shellRunning    bool
 	shellLock       sync.Mutex
 
@@ -92,15 +96,21 @@ type frontendPretty struct {
 	cloudURL string
 
 	// TUI state/config
-	fps         float64 // frames per second
-	profile     termenv.Profile
-	window      tea.WindowSizeMsg // set by BubbleTea
-	view        *strings.Builder  // rendered async
-	viewOut     *termenv.Output
-	browserBuf  *strings.Builder // logs if browser fails
-	finalRender bool             // whether we're doing the final render
-	stdin       io.Reader        // used by backgroundMsg for running terminal
-	writer      io.Writer
+	fps          float64 // frames per second
+	profile      termenv.Profile
+	window       tea.WindowSizeMsg // set by BubbleTea
+	contentWidth int
+	sidebarWidth int
+	view         *strings.Builder // rendered async
+	viewOut      *termenv.Output
+	browserBuf   *strings.Builder // logs if browser fails
+	finalRender  bool             // whether we're doing the final render
+	stdin        io.Reader        // used by backgroundMsg for running terminal
+	writer       io.Writer
+
+	// content to show in the sidebar
+	sidebar    []SidebarSection
+	sidebarBuf *strings.Builder // logs if sidebar fails
 
 	// held to synchronize tea.Model with updates
 	mu sync.Mutex
@@ -134,7 +144,7 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 	view := new(strings.Builder)
 	return &frontendPretty{
 		db:        db,
-		logs:      newPrettyLogs(profile),
+		logs:      newPrettyLogs(profile, db),
 		autoFocus: true,
 
 		// set empty initial row state to avoid nil checks
@@ -142,8 +152,8 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 		rows:     &dagui.Rows{BySpan: map[dagui.SpanID]*dagui.TraceRow{}},
 
 		// shell state
-		flushed:    map[dagui.SpanID]bool{},
-		scrollback: new(strings.Builder),
+		flushed:   map[dagui.SpanID]bool{},
+		offscreen: map[dagui.SpanID]bool{},
 
 		// initial TUI state
 		window:     tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
@@ -152,7 +162,95 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 		view:       view,
 		viewOut:    NewOutput(view, termenv.WithProfile(profile)),
 		browserBuf: new(strings.Builder),
+		sidebarBuf: new(strings.Builder),
 		writer:     w,
+	}
+}
+
+func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	var updated bool
+	for i, cur := range fe.sidebar {
+		if cur.Title == section.Title {
+			fe.sidebar[i] = section
+			updated = true
+			break
+		}
+	}
+	if !updated {
+		if section.Title == "" {
+			fe.sidebar = append([]SidebarSection{section}, fe.sidebar...)
+		} else {
+			fe.sidebar = append(fe.sidebar, section)
+		}
+	}
+	fe.renderSidebar()
+}
+
+func (fe *frontendPretty) viewSidebar() string {
+	fe.renderSidebar()
+	return fe.sidebarBuf.String()
+}
+
+var sidebarBG lipgloss.TerminalColor
+
+func init() {
+	// delegate sidebar background to editline background
+	focusedStyle, _ := editline.DefaultStyles()
+	editlineStyle := focusedStyle.Editor.CursorLine
+	sidebarBG = editlineStyle.GetBackground()
+}
+
+func (fe *frontendPretty) renderSidebar() {
+	fe.setWindowSizeLocked(fe.window)
+	if fe.sidebarWidth == 0 {
+		// sidebar not displayed; don't bother
+		return
+	}
+
+	fe.sidebarBuf.Reset()
+
+	for i, section := range fe.sidebar {
+		if section.Content == "" {
+			// Section became empty (e.g. changes synced); don't show it
+			continue
+		}
+
+		if i > 0 {
+			fe.sidebarBuf.WriteString("\n")
+			fe.sidebarBuf.WriteString("\n")
+		}
+
+		keymap := new(strings.Builder)
+		if section.Title != "" {
+			fe.sidebarBuf.WriteString(fe.viewOut.String(section.Title).
+				Foreground(termenv.ANSIBrightBlack).String())
+		}
+
+		filler := fe.sidebarWidth - len(section.Title)
+		filler -= 4 // border, space on each side, and between title and bar
+		if len(section.KeyMap) > 0 {
+			filler -= fe.renderKeymap(keymap,
+				KeymapStyle.Background(sidebarBG),
+				section.KeyMap)
+			filler -= 1 // space between bar and keymap
+		}
+
+		if filler > 0 {
+			horizBar := fe.viewOut.String(strings.Repeat(HorizBar, filler)).String()
+			fe.sidebarBuf.WriteString(
+				lipgloss.NewStyle().
+					Foreground(ANSIBrightBlack).
+					Background(sidebarBG).
+					Render(" " + horizBar + " "),
+			)
+		}
+
+		fe.sidebarBuf.WriteString(keymap.String())
+		fe.sidebarBuf.WriteString("\n\n")
+
+		fe.sidebarBuf.WriteString(strings.TrimRight(section.Content, "\n"))
 	}
 }
 
@@ -389,9 +487,6 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	// (so don't show key hints etc.)
 	fe.finalRender = true
 
-	// Print the scrollback.
-	fmt.Fprint(w, fe.scrollback.String())
-
 	// Render the full trace.
 	fe.ZoomedSpan = fe.db.PrimarySpan
 	fe.recalculateViewLocked()
@@ -399,7 +494,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	// Unfocus for the final render.
 	fe.FocusedSpan = dagui.SpanID{}
 
-	r := newRenderer(fe.db, fe.window.Width/2, fe.FrontendOpts)
+	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts)
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
 
@@ -544,11 +639,11 @@ var KeymapStyle = lipgloss.NewStyle().
 
 const keypressDuration = 500 * time.Millisecond
 
-func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style) int {
+func (fe *frontendPretty) renderKeymap(out io.Writer, style lipgloss.Style, keys []key.Binding) int {
 	w := new(strings.Builder)
 	var showedKey bool
 	// Blank line prior to keymap
-	for _, key := range fe.keys(out) {
+	for _, key := range keys {
 		mainKey := key.Keys()[0]
 		var pressed bool
 		if time.Since(fe.pressedKeyAt) < keypressDuration {
@@ -652,7 +747,7 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 		progHeight -= lipgloss.Height(fe.editlineView())
 	}
 
-	r := newRenderer(fe.db, fe.window.Width/2, fe.FrontendOpts)
+	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts)
 
 	var progPrefix string
 	if fe.rowsView != nil && fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
@@ -761,9 +856,9 @@ func (fe *frontendPretty) viewKeymap() string {
 	out := NewOutput(outBuf, termenv.WithProfile(fe.profile))
 	fmt.Fprint(out, KeymapStyle.Render(strings.Repeat(HorizBar, 1)))
 	fmt.Fprint(out, KeymapStyle.Render(" "))
-	fe.renderKeymap(out, KeymapStyle)
+	fe.renderKeymap(out, KeymapStyle, fe.keys(out))
 	fmt.Fprint(out, KeymapStyle.Render(" "))
-	if rest := fe.window.Width - lipgloss.Width(outBuf.String()); rest > 0 {
+	if rest := fe.contentWidth - lipgloss.Width(outBuf.String()); rest > 0 {
 		fmt.Fprint(out, KeymapStyle.Render(strings.Repeat(HorizBar, rest)))
 	}
 	return outBuf.String()
@@ -964,16 +1059,12 @@ func (fe *frontendPretty) View() string {
 		// print nothing; make way for the pristine output in the final render
 		return ""
 	}
+
+	// Get sidebar content
+	sidebarContent := fe.viewSidebar()
+
 	if fe.editline != nil {
 		prog := ""
-		if fe.scrollback.Len() > 0 {
-			prog += fe.scrollback.String()
-			// prog += "> " + strings.ReplaceAll(
-			// 	strings.TrimSuffix(fe.scrollback.String(), "\n"),
-			// 	"\n",
-			// 	"\n> ",
-			// ) + "\n"
-		}
 		prog += "\n"
 		if view := strings.TrimSpace(fe.view.String()); view != "" {
 			prog += view
@@ -982,9 +1073,73 @@ func (fe *frontendPretty) View() string {
 				prog += "\n"
 			}
 		}
-		return prog + fe.editlineView()
+		mainContent := prog + fe.editlineView()
+
+		// If we have sidebar content, create a two-pane layout
+		if sidebarContent != "" {
+			return fe.renderWithSidebar(mainContent, sidebarContent)
+		}
+		return mainContent
 	}
-	return fe.view.String()
+
+	mainContent := fe.view.String()
+
+	// If we have sidebar content, create a two-pane layout
+	if sidebarContent != "" {
+		return fe.renderWithSidebar(mainContent, sidebarContent)
+	}
+	return mainContent
+}
+
+func haircut(s string, maxHeight int) (string, int) {
+	s = strings.TrimRight(s, "\n")
+	lines := strings.Split(s, "\n")
+	height := len(lines) + 1
+	if height <= maxHeight {
+		return s, height - 1
+	}
+	remove := height - maxHeight - 1
+	return strings.Join(lines[remove:], "\n"), maxHeight
+}
+
+// renderWithSidebar creates a two-pane layout with main content on the left and sidebar on the right
+func (fe *frontendPretty) renderWithSidebar(mainContent, sidebarContent string) string {
+	if fe.sidebarWidth == 0 {
+		// If window is too narrow for sidebar, just show main content
+		return mainContent
+	}
+
+	contentView, contentHeight := haircut(mainContent, fe.window.Height)
+
+	// Style the sidebar with a left border
+	sidebarStyle := lipgloss.NewStyle().
+		Width(fe.sidebarWidth).
+		MaxHeight(fe.window.Height-1).
+		Height(contentHeight-1).
+		Background(sidebarBG).
+		Border(lipgloss.NormalBorder(), false, false, false, true).
+		BorderForeground(ANSIBrightBlack).
+		Padding(1, 1)
+
+	styledSidebar := lipgloss.JoinVertical(lipgloss.Left,
+		sidebarStyle.Render(sidebarContent),
+		lipgloss.JoinHorizontal(
+			lipgloss.Bottom,
+			lipgloss.NewStyle().
+				Foreground(ANSIBrightBlack).
+				Render("┤"),
+			lipgloss.NewStyle().
+				Background(sidebarBG).
+				Render(strings.Repeat(" ", fe.sidebarWidth))))
+
+	styledContent := lipgloss.NewStyle().
+		MaxWidth(fe.contentWidth).
+		MaxHeight(fe.window.Height).
+		MaxHeight(fe.window.Height).
+		Render(contentView)
+
+	// Join horizontally
+	return lipgloss.JoinHorizontal(lipgloss.Bottom, styledContent, styledSidebar)
 }
 
 func (fe *frontendPretty) editlineView() string {
@@ -1201,6 +1356,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		return fe, nil
 
 	case frameMsg:
+		fe.now = time.Time(msg)
 		fe.renderLocked()
 		fe, flushCmd := fe.flushScrollback()
 		// NB: take care not to forward Frame downstream, since that will result
@@ -1259,6 +1415,7 @@ func (fe *frontendPretty) enterNavMode(auto bool) {
 	fe.autoModeSwitch = auto
 	fe.editlineFocused = false
 	fe.editline.Blur()
+	fe.renderLocked()
 }
 
 func (fe *frontendPretty) enterInsertMode(auto bool) tea.Cmd {
@@ -1266,6 +1423,7 @@ func (fe *frontendPretty) enterInsertMode(auto bool) tea.Cmd {
 	if fe.editline != nil {
 		fe.editlineFocused = true
 		fe.updatePrompt()
+		fe.renderLocked()
 		return fe.editline.Focus()
 	}
 	return nil
@@ -1362,6 +1520,8 @@ func (fe *frontendPretty) handleEditlineKey(msg tea.KeyMsg) (cmd tea.Cmd) {
 		// can change it
 		cmd = tea.Sequence(cmd, fe.updatePrompt())
 	}()
+	fe.pressedKey = msg.String()
+	fe.pressedKeyAt = time.Now()
 	switch msg.String() {
 	case "ctrl+d":
 		if fe.editline.Value() == "" {
@@ -1398,7 +1558,6 @@ func (fe *frontendPretty) handleEditlineKey(msg tea.KeyMsg) (cmd tea.Cmd) {
 	return cmd
 }
 
-//nolint:gocyclo // splitting this up doesn't feel more readable
 func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 	lastKey := fe.pressedKey
 	fe.pressedKey = msg.String()
@@ -1495,6 +1654,13 @@ func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 	case "t":
 		fe.terminal()
 		return nil
+	default:
+		if fe.shell != nil {
+			cmd := fe.shell.ReactToInput(fe.runCtx, msg)
+			if cmd != nil {
+				return cmd
+			}
+		}
 	}
 
 	switch lastKey { //nolint:gocritic
@@ -1513,7 +1679,7 @@ func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 
 func (fe *frontendPretty) initEditline() {
 	// create the editline
-	fe.editline = editline.New(fe.window.Width, fe.window.Height)
+	fe.editline = editline.New(fe.contentWidth, fe.window.Height)
 	fe.editline.HideKeyMap = true
 	fe.editlineFocused = true
 	// HACK: for some reason editline's first paint is broken (only shows
@@ -1535,12 +1701,36 @@ type promptString struct {
 	result  chan string
 }
 
+type scrollbackRow struct {
+	row *dagui.TraceRow
+	buf strings.Builder
+}
+
+type scrollbackRows []*scrollbackRow
+
+func (sr scrollbackRows) String() string {
+	var buf strings.Builder
+	for _, r := range sr {
+		buf.WriteString(r.buf.String())
+	}
+	return buf.String()
+}
+
+func (sr scrollbackRows) Len() int {
+	return len(sr)
+}
+
+func (sr *scrollbackRows) Reset() {
+	*sr = nil
+}
+
 func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 	if fe.shell == nil {
 		return fe, nil
 	}
-	if fe.shellRunning {
-		// there won't be anything to flush so long as the shell is running
+	if fe.shellRunning || !fe.editlineFocused {
+		// there won't be anything to flush so long as the shell is running or the
+		// user is in nav mode
 		return fe, nil
 	}
 
@@ -1550,9 +1740,7 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 		visibleHeight -= lipgloss.Height(fe.editlineView())
 	}
 
-	// Create buffer for flushing
-	out := NewOutput(fe.scrollback, termenv.WithProfile(fe.profile))
-	r := newRenderer(fe.db, fe.window.Width/2, fe.FrontendOpts)
+	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts)
 
 	var anyFlushed bool
 	for _, row := range fe.rows.Order {
@@ -1563,13 +1751,10 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 		if row.IsRunningOrChildRunning || !fe.logsDone(row.Span.ID, row.Depth == 0) || row.Span.IsPending() {
 			break
 		}
-		if row.Depth == 0 {
-			// NOTE: better to do this above a root span than after its last child,
-			// since we sometimes will have a child show up late if a tree finishes
-			// quickly.
-			fmt.Fprintln(out)
-		}
+		sb := &scrollbackRow{row: row}
+		out := NewOutput(&sb.buf, termenv.WithProfile(fe.profile))
 		fe.renderRow(out, r, row, "")
+		fe.scrollback = append(fe.scrollback, sb)
 		fe.flushed[row.Span.ID] = true
 		anyFlushed = true
 	}
@@ -1596,31 +1781,21 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 		visibleHeight,
 		scrollbackHeight)
 
-	// Split into lines, being careful to preserve empty lines
-	lines := strings.Split(fe.scrollback.String(), "\n")
-
 	// Build new buffers
-	offscreen := new(strings.Builder)
-	screen := new(strings.Builder)
-
-	// Write lines to appropriate buffers
-	for i, line := range lines {
+	var onscreen scrollbackRows
+	var offscreen strings.Builder
+	for _, sb := range fe.scrollback {
 		if offscreenHeight > 0 {
-			fmt.Fprint(offscreen, line)
-			if i < len(lines)-1 {
-				fmt.Fprintln(offscreen)
-			}
-			offscreenHeight--
+			fmt.Fprint(&offscreen, sb.buf.String())
+			offscreenHeight -= lipgloss.Height(sb.buf.String())
+			fe.offscreen[sb.row.Span.ID] = true
 		} else {
-			fmt.Fprint(screen, line)
-			if i < len(lines)-1 {
-				fmt.Fprintln(screen)
-			}
+			onscreen = append(onscreen, sb)
 		}
 	}
 
 	// Replace scrollback with remaining visible lines
-	fe.scrollback = screen
+	fe.scrollback = onscreen
 
 	// Return command to print offscreen lines
 	msg := strings.TrimSuffix(offscreen.String(), "\n")
@@ -1794,17 +1969,31 @@ func (fe *frontendPretty) goErrorOrigin() {
 	fe.recalculateViewLocked()
 }
 
+const sidebarMinWidth = 30
+const sidebarMaxWidth = 50
+
 func (fe *frontendPretty) setWindowSizeLocked(msg tea.WindowSizeMsg) {
 	fe.window = msg
-	fe.logs.SetWidth(msg.Width)
+	if len(fe.sidebar) > 0 {
+		fe.sidebarWidth = max(sidebarMinWidth, min(sidebarMaxWidth, fe.window.Width/3))
+	} else {
+		fe.sidebarWidth = 0
+	}
+	fe.contentWidth = msg.Width - fe.sidebarWidth
+	if fe.contentWidth < 0 {
+		fe.contentWidth = msg.Width
+		fe.sidebarWidth = 0
+	}
+	fe.logs.SetWidth(fe.contentWidth)
 	if fe.editline != nil {
-		fe.editline.SetSize(msg.Width, msg.Height)
+		fe.editline.SetSize(fe.contentWidth, msg.Height)
+		fe.editline.Update(nil) // bleh
 	}
 	if fe.activeBoolPrompt != nil {
-		fe.activeBoolPrompt.message.Width = msg.Width
+		fe.activeBoolPrompt.message.Width = fe.contentWidth
 	}
 	if fe.activeStringPrompt != nil {
-		fe.activeStringPrompt.message.Width = msg.Width
+		fe.activeStringPrompt.message.Width = fe.contentWidth
 	}
 }
 
@@ -1822,36 +2011,18 @@ func (fe *frontendPretty) renderLocked() {
 }
 
 func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) bool {
-	if fe.flushed[row.Span.ID] && fe.editlineFocused {
+	if fe.offscreen[row.Span.ID] && fe.editlineFocused {
 		return false
 	}
 	if fe.shell != nil {
-		if row.NextVisual == nil {
-			defer func() {
-				root := row.Root()
-				if logs := fe.logs.Logs[root.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
-					if fe.Verbosity < dagui.ExpandCompletedVerbosity {
-						cp := *row
-						cp.Depth = -1
-						row = &cp
-					}
-					fe.renderLogs(out, r, row, logs, logs.UsedHeight(), prefix)
-				}
-				fe.renderStepError(out, r, root, prefix)
-			}()
-		}
 		if row.Depth == 0 {
 			// navigating history and there's a previous row
 			if (!fe.editlineFocused && row.Previous != nil) ||
-				(row.Previous != nil && !fe.flushed[row.Previous.Span.ID]) {
+				(row.Previous != nil && !fe.offscreen[row.Previous.Span.ID]) {
 				fmt.Fprintln(out, out.String(prefix))
 			}
-			fe.renderStep(out, r, row, prefix)
-			fe.renderDebug(out, row.Span, prefix+Block25+" ", false)
-			return true
 		}
-	}
-	if row.PreviousVisual != nil &&
+	} else if row.PreviousVisual != nil &&
 		row.PreviousVisual.Depth >= row.Depth &&
 		!row.Chained &&
 		( // ensure gaps after last nested child
@@ -1866,16 +2037,31 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 			(row.PreviousVisual.Span.Message == "" && row.Span.Message != "")) {
 		fmt.Fprint(out, prefix)
 		r.fancyIndent(out, row.PreviousVisual, false, false)
-		fmt.Fprintln(out, "")
+		fmt.Fprintln(out)
 	}
 	span := row.Span
 	fe.renderStep(out, r, row, prefix)
 	if span.Message == "" && // messages are displayed in renderStep
-		row.Expanded {
-		fe.renderStepLogs(out, r, row, prefix)
+		(row.Expanded || row.Span.LLMTool != "") {
+		isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused
+		fe.renderStepLogs(out, r, row, prefix, isFocused)
 	}
 	fe.renderStepError(out, r, row, prefix)
 	fe.renderDebug(out, row.Span, prefix+Block25+" ", false)
+	if fe.shell != nil {
+		if row.NextVisual == nil {
+			root := row.Root()
+			if logs := fe.logs.Logs[root.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
+				if fe.Verbosity < dagui.ExpandCompletedVerbosity {
+					cp := *row
+					cp.Depth = -1
+					row = &cp
+				}
+				fe.renderLogs(out, r, row, logs, logs.UsedHeight(), prefix, false)
+			}
+			fe.renderStepError(out, r, root, prefix)
+		}
+	}
 	return true
 }
 
@@ -1911,9 +2097,17 @@ func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix s
 	fmt.Fprint(out, prefix+vt.View())
 }
 
-func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) bool {
+// sync this with core.llmLogsLastLines to ensure user and LLM sees the same
+// thing
+const llmLogsLastLines = 8
+
+func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, focused bool) bool {
+	limit := fe.window.Height / 3
+	if row.Span.LLMTool != "" && !row.Expanded {
+		limit = llmLogsLastLines
+	}
 	if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
-		return fe.renderLogs(out, r, row, logs, fe.window.Height/3, prefix)
+		return fe.renderLogs(out, r, row, logs, limit, prefix, focused)
 	}
 	return false
 }
@@ -1949,7 +2143,7 @@ func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagu
 		prefixWidth := lipgloss.Width(prefix)
 		indentWidth := row.Depth * 2 // Assuming indent is 2 spaces per depth level
 		markerWidth := 2             // "! " prefix
-		availableWidth := fe.window.Width - prefixWidth - indentWidth - markerWidth
+		availableWidth := fe.contentWidth - prefixWidth - indentWidth - markerWidth
 		if availableWidth > 0 {
 			errText = cellbuf.Wrap(errText, availableWidth, "")
 		}
@@ -1985,64 +2179,44 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 	fmt.Fprint(out, prefix)
 	r.fancyIndent(out, row, false, true)
 
-	var toggler termenv.Style
-	if row.HasChildren || row.Span.HasLogs {
-		if row.Expanded {
-			toggler = out.String(CaretDownFilled)
-		} else {
-			toggler = out.String(CaretRightFilled)
-		}
-	} else if span.IsRunningOrEffectsRunning() {
-		toggler = out.String(DotHalf)
-	} else if span.IsCached() {
-		toggler = out.String(IconCached)
-	} else if span.IsCanceled() {
-		toggler = out.String(IconSkipped)
-	} else if span.IsFailedOrCausedFailure() {
-		toggler = out.String(IconFailure)
-	} else if span.IsPending() {
-		toggler = out.String(DotEmpty)
-	} else {
-		toggler = out.String(DotFilled)
-	}
-	if span.ActorEmoji != "" && span.Message != "" {
-		toggler = out.String(span.ActorEmoji)
-	}
-	toggler = toggler.Foreground(statusColor(span))
-	if isFocused {
-		// TODO: light/dark
-		toggler = toggler.Foreground(termenv.ANSIWhite).Reverse()
-	}
-
-	if span.ActorEmoji != "" && span.Message != "" {
-		// make room for the emoji, since they're 2 cells wide
-		fmt.Fprint(out, "\b")
-	}
-
-	fmt.Fprint(out, toggler.String()+" ")
+	fe.renderToggler(out, row, isFocused)
+	fmt.Fprint(out, " ")
 
 	if r.Debug {
-		fmt.Fprintf(out, out.String(" %s").Foreground(termenv.ANSIBrightBlack).String(), span.ID)
+		fmt.Fprintf(out, out.String("%s ").Foreground(termenv.ANSIBrightBlack).String(), span.ID)
 	}
 
+	var empty bool
 	if span.Message != "" {
 		// when a span represents a message, we don't need to print its name
 		//
 		// NOTE: arguably this should be opt-in, but it's not clear how the
 		// span name relates to the message in all cases; is it the
 		// subject? or author? better to be explicit with attributes.
-		if fe.renderStepLogs(out, r, row, prefix) {
+		if fe.renderStepLogs(out, r, row, prefix, isFocused) {
+			if span.LLMRole == telemetry.LLMRoleUser {
+				// Bail early if we printed a user message span; these don't have any
+				// further information to show. Duration is always 0, metrics are empty,
+				// status is always OK.
+				return nil
+			}
 			r.fancyIndent(out, row, false, false)
-			fmt.Fprint(out, out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack))
+			bar := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
+			if isFocused {
+				bar = hl(bar)
+			}
+			fmt.Fprint(out, bar)
 		} else {
-			// no logs were printed, so snug the duration up against the emoji
-			fmt.Fprint(out, "\b")
+			empty = true
 		}
 	} else if call := span.Call(); call != nil {
 		if err := r.renderCall(out, span, call, prefix, chained, depth, span.Internal, row); err != nil {
 			return err
 		}
 	} else if span != nil {
+		if span.Name == "" {
+			empty = true
+		}
 		if err := r.renderSpan(out, span, span.Name); err != nil {
 			return err
 		}
@@ -2051,7 +2225,7 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 	if span != nil {
 		// TODO: when a span has child spans that have progress, do 2-d progress
 		// fe.renderVertexTasks(out, span, depth)
-		r.renderDuration(out, span)
+		r.renderDuration(out, span, !empty)
 		r.renderMetrics(out, span)
 		fe.renderStatus(out, span)
 	}
@@ -2059,6 +2233,44 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 	fmt.Fprintln(out)
 
 	return nil
+}
+
+func (fe *frontendPretty) renderToggler(out TermOutput, row *dagui.TraceRow, isFocused bool) {
+	var toggler termenv.Style
+	if row.HasChildren || row.Span.HasLogs {
+		if row.Expanded {
+			toggler = out.String(CaretDownFilled)
+		} else {
+			toggler = out.String(CaretRightFilled)
+		}
+	} else if row.Span.IsRunningOrEffectsRunning() {
+		toggler = out.String(DotHalf)
+	} else if row.Span.IsCached() {
+		toggler = out.String(IconCached)
+	} else if row.Span.IsCanceled() {
+		toggler = out.String(IconSkipped)
+	} else if row.Span.IsFailedOrCausedFailure() {
+		toggler = out.String(IconFailure)
+	} else if row.Span.IsPending() {
+		toggler = out.String(DotEmpty)
+	} else {
+		toggler = out.String(DotFilled)
+	}
+	toggler = toggler.Foreground(statusColor(row.Span))
+	if row.Span.Message != "" {
+		switch row.Span.LLMRole {
+		case telemetry.LLMRoleUser:
+			toggler = out.String(Block).Foreground(termenv.ANSIMagenta)
+		case telemetry.LLMRoleAssistant:
+			toggler = out.String(VertBoldBar).Foreground(termenv.ANSIMagenta)
+		}
+	}
+
+	if isFocused {
+		toggler = hl(toggler)
+	}
+
+	fmt.Fprint(out, toggler.String())
 }
 
 func (fe *frontendPretty) renderStatus(out TermOutput, span *dagui.Span) {
@@ -2081,27 +2293,43 @@ func (fe *frontendPretty) renderStatus(out TermOutput, span *dagui.Span) {
 	}
 }
 
-func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.TraceRow, logs *Vterm, height int, prefix string) bool {
+func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.TraceRow, logs *Vterm, height int, prefix string, focused bool) bool {
 	span := row.Span
 	depth := row.Depth
-	pipe := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
+
+	Pipe := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
+	Dashed := out.String(VertBoldDash3).Foreground(restrainedStatusColor(span))
+	if focused {
+		Pipe = hl(Pipe)
+		Dashed = hl(Dashed)
+	}
+
 	if depth == -1 {
 		// clear prefix when zoomed
 		logs.SetPrefix(prefix)
 	} else {
-		buf := new(strings.Builder)
-		fmt.Fprint(buf, prefix)
-		indentOut := NewOutput(buf, termenv.WithProfile(fe.profile))
+		pipeBuf := new(strings.Builder)
+		fmt.Fprint(pipeBuf, prefix)
+		indentOut := NewOutput(pipeBuf, termenv.WithProfile(fe.profile))
 		r.fancyIndent(indentOut, row, false, false)
-		fmt.Fprint(indentOut, pipe)
+		fmt.Fprint(indentOut, Pipe)
 		fmt.Fprint(indentOut, out.String(" "))
-		logs.SetPrefix(buf.String())
+		logs.SetPrefix(pipeBuf.String())
 	}
 	if height <= 0 {
-		logs.SetHeight(logs.UsedHeight())
-	} else {
-		logs.SetHeight(height)
+		height = logs.UsedHeight()
 	}
+	trimmed := logs.UsedHeight() - height
+	if trimmed > 0 {
+		fmt.Fprint(out, prefix)
+		r.fancyIndent(out, row, false, false)
+		fmt.Fprint(out, Dashed)
+		fmt.Fprint(out, out.String(" "))
+		fmt.Fprint(out, out.String("...").Foreground(termenv.ANSIBrightBlack))
+		fmt.Fprintf(out, out.String("%d").Foreground(termenv.ANSIBrightBlack).Bold().String(), trimmed)
+		fmt.Fprintln(out, out.String(" lines hidden...").Foreground(termenv.ANSIBrightBlack))
+	}
+	logs.SetHeight(height)
 	view := logs.View()
 	if view == "" {
 		return false
@@ -2123,14 +2351,16 @@ func (fe *frontendPretty) logsDone(id dagui.SpanID, waitForLogs bool) bool {
 }
 
 type prettyLogs struct {
+	DB       *dagui.DB
 	Logs     map[dagui.SpanID]*Vterm
 	LogWidth int
 	SawEOF   map[dagui.SpanID]bool
 	Profile  termenv.Profile
 }
 
-func newPrettyLogs(profile termenv.Profile) *prettyLogs {
+func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
 	return &prettyLogs{
+		DB:       db,
 		Logs:     make(map[dagui.SpanID]*Vterm),
 		LogWidth: -1,
 		Profile:  profile,
@@ -2157,7 +2387,9 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 			continue
 		}
 
-		vterm := l.spanLogs(log.SpanID())
+		targetID := log.SpanID()
+
+		vterm := l.spanLogs(targetID)
 
 		if contentType == "text/markdown" {
 			_, _ = vterm.WriteMarkdown([]byte(log.Body().AsString()))
@@ -2244,7 +2476,7 @@ func (fe *frontendPretty) handlePromptBool(ctx context.Context, message string, 
 	fe.program.Send(tea.Msg(promptBool{
 		message: &Markdown{
 			Content: message,
-			Width:   min(max(fe.window.Width/2, 50), 80),
+			Width:   min(max(fe.contentWidth/2, 50), 80),
 		},
 		result:  result,
 		yessing: *dest,
@@ -2265,7 +2497,7 @@ func (fe *frontendPretty) handlePromptString(ctx context.Context, message string
 	fe.program.Send(tea.Msg(promptString{
 		message: &Markdown{
 			Content: message,
-			Width:   fe.window.Width,
+			Width:   fe.contentWidth,
 		},
 		result: result,
 	}))

@@ -47,7 +47,7 @@ func GetContentHashFromDirectory(
 		return "", fmt.Errorf("directory instance is nil")
 	}
 
-	st, err := dirInst.Self().State()
+	st, err := dirInst.Self().State(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get state: %w", err)
 	}

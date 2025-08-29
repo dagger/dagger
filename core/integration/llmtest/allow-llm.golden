@@ -5,65 +5,13 @@
   },
   {
     "role": "assistant",
-    "content": "I'll help you with a greeting! Let me first explore what tools and methods are available to see how I can best assist you.",
-    "tool_calls": [
-      {
-        "id": "toolu_01EZ4Ac2TJqKkSryYwsfWFTm",
-        "function": {
-          "name": "list_objects",
-          "arguments": {}
-        },
-        "type": "function"
-      }
-    ],
+    "content": "Hello! How can I assist you today?",
     "token_usage": {
-      "input_tokens": 848,
-      "output_tokens": 64,
+      "input_tokens": 414,
+      "output_tokens": 10,
       "cached_token_reads": 0,
       "cached_token_writes": 0,
-      "total_tokens": 912
-    }
-  },
-  {
-    "role": "user",
-    "content": "null\n",
-    "tool_call_id": "toolu_01EZ4Ac2TJqKkSryYwsfWFTm"
-  },
-  {
-    "role": "assistant",
-    "content": "",
-    "tool_calls": [
-      {
-        "id": "toolu_015nZP3tn6krykY5wJ6zQWDB",
-        "function": {
-          "name": "list_methods",
-          "arguments": {}
-        },
-        "type": "function"
-      }
-    ],
-    "token_usage": {
-      "input_tokens": 926,
-      "output_tokens": 36,
-      "cached_token_reads": 0,
-      "cached_token_writes": 0,
-      "total_tokens": 962
-    }
-  },
-  {
-    "role": "user",
-    "content": "null\n",
-    "tool_call_id": "toolu_015nZP3tn6krykY5wJ6zQWDB"
-  },
-  {
-    "role": "assistant",
-    "content": "It appears that there are no specific objects or methods available in the current Dagger environment for creating a greeting. However, I can certainly greet you directly!\n\nHello! 👋 It's great to meet you! I'm here to help you with any tasks you might have. Feel free to ask me anything or let me know what you'd like to work on today.\n\nIs there something specific you'd like me to help you with using the available tools and methods?",
-    "token_usage": {
-      "input_tokens": 978,
-      "output_tokens": 102,
-      "cached_token_reads": 0,
-      "cached_token_writes": 0,
-      "total_tokens": 1080
+      "total_tokens": 424
     }
   }
 ]
