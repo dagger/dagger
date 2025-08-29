@@ -255,6 +255,14 @@ func currentIDForRawDagOp(
 ) *call.ID {
 	currentID := dagql.CurrentID(ctx)
 
+	// we want to honor any custom digest on the currentID, but also need to modify it to
+	// indicate this is a dagOp.
+	dgst := dagql.HashFrom(
+		currentID.Digest().String(),
+		filename,
+		"isDagOp=true", // TODO: lil ugly, also nul separators
+	)
+
 	return currentID.
 		WithArgument(call.NewArgument(
 			IsDagOpArgName,
@@ -265,7 +273,8 @@ func currentIDForRawDagOp(
 			RawDagOpFilenameArgName,
 			call.NewLiteralString(filename),
 			false,
-		))
+		)).
+		WithDigest(dgst)
 }
 
 const (
@@ -284,6 +293,14 @@ func currentIDForFSDagOp(
 ) *call.ID {
 	currentID := dagql.CurrentID(ctx)
 
+	// we want to honor any custom digest on the currentID, but also need to modify it to
+	// indicate this is a dagOp.
+	dgst := dagql.HashFrom(
+		currentID.Digest().String(),
+		path,
+		"isDagOp=true", // TODO: lil ugly, also nul separators
+	)
+
 	return currentID.
 		WithArgument(call.NewArgument(
 			IsDagOpArgName,
@@ -294,12 +311,9 @@ func currentIDForFSDagOp(
 			FSDagOpPathArgName,
 			call.NewLiteralString(path),
 			false,
-		))
+		)).
+		WithDigest(dgst)
 }
-
-const (
-	ContainerDagOpOutputCountArgName = "dagOpOutputCount"
-)
 
 type ContainerDagOpInternalArgs struct {
 	DagOpInternalArgs
@@ -310,12 +324,20 @@ func currentIDForContainerDagOp(
 ) *call.ID {
 	currentID := dagql.CurrentID(ctx)
 
+	// we want to honor any custom digest on the currentID, but also need to modify it to
+	// indicate this is a dagOp.
+	dgst := dagql.HashFrom(
+		currentID.Digest().String(),
+		"isDagOp=true", // TODO: lil ugly, also nul separators
+	)
+
 	return currentID.
 		WithArgument(call.NewArgument(
 			IsDagOpArgName,
 			call.NewLiteralBool(true),
 			false,
-		))
+		)).
+		WithDigest(dgst)
 }
 
 func extractLLBDependencies(ctx context.Context, val any) ([]llb.State, error) {

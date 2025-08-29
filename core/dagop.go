@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -452,6 +453,12 @@ func (op ContainerDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*so
 	// TODO: explain
 	cm.Digest = op.CacheKey
 
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	slog.Debug("ContainerDagOp.CacheMap", "id", op.ID.Display(), "cacheKey", op.CacheKey.String())
+
 	for i, mount := range op.Mounts {
 		if mount.Input == pb.Empty {
 			// No inputs, so no content-caching to apply.
@@ -542,17 +549,19 @@ func getAllContainerMounts(ctx context.Context, container *Container) (
 				mount.Selector = dirMnt.Self().Dir
 				llb = dirMnt.Self().LLB
 				res = dirMnt.Self().Result
-				if dirMnt.ID().HasCustomDigest() {
-					dgst = dirMnt.ID().Digest()
-				}
+				// TODO:
+				// if dirMnt.ID().HasCustomDigest() {
+				dgst = dirMnt.ID().Digest()
+				// }
 			},
 			func(fileMnt *dagql.ObjectResult[*File]) {
 				mount.Selector = fileMnt.Self().File
 				llb = fileMnt.Self().LLB
 				res = fileMnt.Self().Result
-				if fileMnt.ID().HasCustomDigest() {
-					dgst = fileMnt.ID().Digest()
-				}
+				// TODO:
+				// if fileMnt.ID().HasCustomDigest() {
+				dgst = fileMnt.ID().Digest()
+				// }
 			},
 			func(cache *CacheMountSource) {
 				mount.Selector = cache.BasePath
