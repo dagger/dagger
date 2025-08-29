@@ -75,7 +75,8 @@ type frontendPretty struct {
 	editlineFocused bool
 	autoModeSwitch  bool
 	flushed         map[dagui.SpanID]bool
-	scrollback      *strings.Builder
+	offscreen       map[dagui.SpanID]bool
+	scrollback      scrollbackRows
 	shellRunning    bool
 	shellLock       sync.Mutex
 
@@ -151,8 +152,8 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 		rows:     &dagui.Rows{BySpan: map[dagui.SpanID]*dagui.TraceRow{}},
 
 		// shell state
-		flushed:    map[dagui.SpanID]bool{},
-		scrollback: new(strings.Builder),
+		flushed:   map[dagui.SpanID]bool{},
+		offscreen: map[dagui.SpanID]bool{},
 
 		// initial TUI state
 		window:     tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
@@ -503,9 +504,6 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	// Hint for future rendering that this is the final, non-interactive render
 	// (so don't show key hints etc.)
 	fe.finalRender = true
-
-	// Print the scrollback.
-	fmt.Fprint(w, fe.scrollback.String())
 
 	// Render the full trace.
 	fe.ZoomedSpan = fe.db.PrimarySpan
@@ -1025,15 +1023,6 @@ func (fe *frontendPretty) View() string {
 
 	var mainView string
 	if fe.editline != nil {
-		if fe.scrollback.Len() > 0 && fe.editlineFocused {
-			mainView += fe.scrollback.String()
-			// mainView += "> " + strings.ReplaceAll(
-			// 	strings.TrimSuffix(fe.scrollback.String(), "\n"),
-			// 	"\n",
-			// 	"\n> ",
-			// ) + "\n"
-		}
-		mainView += "\n"
 		mainView += fe.view.String()
 		mainView += fe.editlineView()
 	} else {
@@ -1647,12 +1636,36 @@ func (fe *frontendPretty) initEditline() {
 
 type UpdatePromptMsg struct{}
 
+type scrollbackRow struct {
+	row *dagui.TraceRow
+	buf strings.Builder
+}
+
+type scrollbackRows []*scrollbackRow
+
+func (sr scrollbackRows) String() string {
+	var buf strings.Builder
+	for _, r := range sr {
+		buf.WriteString(r.buf.String())
+	}
+	return buf.String()
+}
+
+func (sr scrollbackRows) Len() int {
+	return len(sr)
+}
+
+func (sr *scrollbackRows) Reset() {
+	*sr = nil
+}
+
 func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 	if fe.shell == nil {
 		return fe, nil
 	}
-	if fe.shellRunning {
-		// there won't be anything to flush so long as the shell is running
+	if fe.shellRunning || !fe.editlineFocused {
+		// there won't be anything to flush so long as the shell is running or the
+		// user is in nav mode
 		return fe, nil
 	}
 
@@ -1662,8 +1675,6 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 		visibleHeight -= lipgloss.Height(fe.editlineView())
 	}
 
-	// Create buffer for flushing
-	out := NewOutput(fe.scrollback, termenv.WithProfile(fe.profile))
 	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts)
 
 	var anyFlushed bool
@@ -1675,13 +1686,10 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 		if row.IsRunningOrChildRunning || !fe.logsDone(row.Span.ID, row.Depth == 0) || row.Span.IsPending() {
 			break
 		}
-		if row.Depth == 0 {
-			// NOTE: better to do this above a root span than after its last child,
-			// since we sometimes will have a child show up late if a tree finishes
-			// quickly.
-			fmt.Fprintln(out)
-		}
+		sb := &scrollbackRow{row: row}
+		out := NewOutput(&sb.buf, termenv.WithProfile(fe.profile))
 		fe.renderRow(out, r, row, "")
+		fe.scrollback = append(fe.scrollback, sb)
 		fe.flushed[row.Span.ID] = true
 		anyFlushed = true
 	}
@@ -1708,31 +1716,21 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 		visibleHeight,
 		scrollbackHeight)
 
-	// Split into lines, being careful to preserve empty lines
-	lines := strings.Split(fe.scrollback.String(), "\n")
-
 	// Build new buffers
-	offscreen := new(strings.Builder)
-	screen := new(strings.Builder)
-
-	// Write lines to appropriate buffers
-	for i, line := range lines {
+	var onscreen scrollbackRows
+	var offscreen strings.Builder
+	for _, sb := range fe.scrollback {
 		if offscreenHeight > 0 {
-			fmt.Fprint(offscreen, line)
-			if i < len(lines)-1 {
-				fmt.Fprintln(offscreen)
-			}
-			offscreenHeight--
+			fmt.Fprint(&offscreen, sb.buf.String())
+			offscreenHeight -= lipgloss.Height(sb.buf.String())
+			fe.offscreen[sb.row.Span.ID] = true
 		} else {
-			fmt.Fprint(screen, line)
-			if i < len(lines)-1 {
-				fmt.Fprintln(screen)
-			}
+			onscreen = append(onscreen, sb)
 		}
 	}
 
 	// Replace scrollback with remaining visible lines
-	fe.scrollback = screen
+	fe.scrollback = onscreen
 
 	// Return command to print offscreen lines
 	msg := strings.TrimSuffix(offscreen.String(), "\n")
@@ -1942,14 +1940,14 @@ func (fe *frontendPretty) renderLocked() {
 }
 
 func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) bool {
-	if fe.flushed[row.Span.ID] && fe.editlineFocused {
+	if fe.offscreen[row.Span.ID] && fe.editlineFocused {
 		return false
 	}
 	if fe.shell != nil {
 		if row.Depth == 0 {
 			// navigating history and there's a previous row
 			if (!fe.editlineFocused && row.Previous != nil) ||
-				(row.Previous != nil && !fe.flushed[row.Previous.Span.ID]) {
+				(row.Previous != nil && !fe.offscreen[row.Previous.Span.ID]) {
 				fmt.Fprintln(out, out.String(prefix))
 			}
 		}
@@ -1968,7 +1966,7 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 			(row.PreviousVisual.Span.Message == "" && row.Span.Message != "")) {
 		fmt.Fprint(out, prefix)
 		r.fancyIndent(out, row.PreviousVisual, false, false)
-		fmt.Fprintln(out, "")
+		fmt.Fprintln(out)
 	}
 	span := row.Span
 	fe.renderStep(out, r, row, prefix)
@@ -1979,7 +1977,7 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 	fe.renderStepError(out, r, row, prefix)
 	fe.renderDebug(out, row.Span, prefix+Block25+" ", false)
 	if fe.shell != nil {
-		if row.NextVisual == nil && row.Parent != nil {
+		if row.NextVisual == nil {
 			root := row.Root()
 			if logs := fe.logs.Logs[root.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
 				if fe.Verbosity < dagui.ExpandCompletedVerbosity {
