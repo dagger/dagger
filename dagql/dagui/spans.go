@@ -361,6 +361,18 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 	}
 }
 
+func (span *Span) ChildOrRevealedSpans(opts FrontendOpts) (SpanSet, bool) {
+	verbosity := opts.Verbosity
+	if v, ok := opts.SpanVerbosity[span.ID]; ok {
+		verbosity = v
+	}
+	if len(span.RevealedSpans.Order) > 0 && !opts.RevealNoisySpans && verbosity < ShowSpammyVerbosity {
+		return span.RevealedSpans, true
+	} else {
+		return span.ChildSpans, false
+	}
+}
+
 func (span *Span) IsOK() bool {
 	return span.Status.Code == codes.Ok
 }
