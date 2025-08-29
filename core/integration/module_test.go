@@ -6167,6 +6167,49 @@ class Test:
 	}
 }
 
+func (ModuleSuite) TestEnumWithSelfCalls(ctx context.Context, t *testctx.T) {
+	tcs := []struct {
+		sdk    string
+		source string
+	}{
+		{
+			sdk: "go",
+			source: `package main
+
+type Test struct {
+}
+
+type Severity string
+
+const (
+	SeverityLow    Severity = "Low"
+	SeverityMedium Severity = "Medium"
+	SeverityHigh   Severity = "High"
+)
+
+func (t *Test) Print(s Severity) string {
+	return string(s)
+}
+`,
+		},
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			modGen := modInit(t, c, tc.sdk, tc.source, "--with-self-calls")
+
+			t.Run("can print enum", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.
+					With(daggerCall("print", "--s=low")).
+					Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, `Low`, out)
+			})
+		})
+	}
+}
+
 func (ModuleSuite) TestLoadWhenNoModule(ctx context.Context, t *testctx.T) {
 	// verify that if a module is loaded from a directory w/ no module we don't
 	// load extra files
