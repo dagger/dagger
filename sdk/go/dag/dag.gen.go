@@ -180,6 +180,12 @@ func LoadCacheVolumeFromID(id dagger.CacheVolumeID) *dagger.CacheVolume {
 	return client.LoadCacheVolumeFromID(id)
 }
 
+// Load a Changes from its ID.
+func LoadChangesFromID(id dagger.ChangesID) *dagger.Changes {
+	client := initClient()
+	return client.LoadChangesFromID(id)
+}
+
 // Load a Cloud from its ID.
 func LoadCloudFromID(id dagger.CloudID) *dagger.Cloud {
 	client := initClient()

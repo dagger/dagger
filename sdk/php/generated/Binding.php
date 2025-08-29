@@ -20,6 +20,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the binding value, as type Changes
+     */
+    public function asChanges(): Changes
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asChanges');
+        return new \Dagger\Changes($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type Cloud
      */
     public function asCloud(): Cloud
