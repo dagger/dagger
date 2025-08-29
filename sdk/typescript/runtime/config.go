@@ -87,6 +87,10 @@ type moduleConfig struct {
 
 	// Location of the SDK library
 	sdkLibOrigin SDKLibOrigin
+
+	// Current engine version
+	isDev         bool
+	engineVersion string
 }
 
 // analyzeModuleConfig analyzes the module config and populates the moduleConfig field.
@@ -188,6 +192,14 @@ func analyzeModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) (c
 		return nil, fmt.Errorf("failed to detect sdk lib origin: %w", err)
 	}
 
+	cfg.engineVersion, err = dag.Version(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to detect engine version: %w", err)
+	}
+
+	// Dev version always have a dash in the version (e.g., v0.0.1-123.123)
+	cfg.isDev = strings.Contains(cfg.engineVersion, "-")
+
 	return cfg, nil
 }
 
@@ -230,6 +242,13 @@ func (c *moduleConfig) detectSDKLibOrigin() (SDKLibOrigin, error) {
 
 		if slices.Contains(c.denoJSONConfig.Workspace, "./sdk") {
 			return Local, nil
+		}
+
+		// @dagger.io/core is an alias to @dagger.io/dagger in case the user configure
+		// the remote SDK
+		_, exist := c.denoJSONConfig.Imports["@dagger.io/core"]
+		if exist {
+			return Remote, nil
 		}
 
 		daggerDep, exist := c.denoJSONConfig.Imports["@dagger.io/dagger"]

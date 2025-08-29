@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"typescript-sdk/internal/dagger"
 	"typescript-sdk/tsdistconsts"
 
@@ -189,6 +190,34 @@ func (m *moduleRuntimeContainer) withSetupPackageManager() *moduleRuntimeContain
 			WithExec([]string{"npm", "install", "-g", fmt.Sprintf("npm@%s", version)})
 	}
 
+	// If the engine is a dev version, we let the owner pin the SDK version since it's
+	// most likely for testing purpose.
+	// If the engine is a released version, we pin the SDK version to the engine version.
+	if !m.cfg.isDev && m.cfg.sdkLibOrigin == Remote {
+		m = m.withPinnedSDKLibraryVersion()
+	}
+
+	return m
+}
+
+func (m *moduleRuntimeContainer) withPinnedSDKLibraryVersion() *moduleRuntimeContainer {
+	packageManager := m.cfg.packageManager
+	engineVersion := m.cfg.engineVersion
+	pinnedSDKPackage := fmt.Sprintf("@dagger.io/dagger@%s", strings.TrimPrefix(engineVersion, "v"))
+
+	switch packageManager {
+	case Yarn:
+		m.ctr = m.ctr.WithExec([]string{"yarn", "add", pinnedSDKPackage})
+	case Pnpm:
+		m.ctr = m.ctr.WithExec([]string{"pnpm", "add", pinnedSDKPackage})
+	case Npm:
+		m.ctr = m.ctr.WithExec([]string{"npm", "install", pinnedSDKPackage})
+	case BunManager:
+		m.ctr = m.ctr.WithExec([]string{"bun", "install", pinnedSDKPackage})
+	case DenoManager:
+		m.ctr = m.ctr.WithExec([]string{"deno", "install", pinnedSDKPackage})
+	}
+
 	return m
 }
 
@@ -290,8 +319,8 @@ func (m *moduleRuntimeContainer) withGeneratedSDK(introspectionJSON *dagger.File
 			WithoutDirectory("src/provisioning").
 			WithFile("src/api/client.gen.ts", m.generateClient(introspectionJSON))
 	case Remote:
-		// TODO: Add support for remote SDK in module
-		panic("remote sdk not supported yet in module")
+		sdkDir = remoteStaticDirectoryForModule().
+			WithFile("client.gen.ts", m.generateClient(introspectionJSON))
 	}
 
 	m.ctr = m.ctr.
@@ -314,6 +343,10 @@ func (m *moduleRuntimeContainer) generateClient(introspectionJSON *dagger.File) 
 
 	if m.cfg.sdkLibOrigin == Bundle {
 		codegenArgs = append(codegenArgs, "--bundle")
+	}
+
+	if m.cfg.sdkLibOrigin == Remote {
+		codegenArgs = append(codegenArgs, "--remote")
 	}
 
 	return m.ctr.
