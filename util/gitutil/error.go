@@ -7,8 +7,9 @@ import (
 )
 
 var (
-	ErrGitAuthFailed = errors.New("git authentication failed")
-	ErrGitNoRepo     = errors.New("not a git repository")
+	ErrGitAuthFailed       = errors.New("git authentication failed")
+	ErrGitNoRepo           = errors.New("not a git repository")
+	ErrShallowNotSupported = errors.New("shallow clone not supported")
 )
 
 func translateError(err error, stderr string) error {
@@ -33,6 +34,9 @@ func translateError(err error, stderr string) error {
 	}
 	if strings.Contains(stderr, "not a git repository") {
 		return ErrGitNoRepo
+	}
+	if strings.Contains(stderr, "does not support shallow") {
+		return ErrShallowNotSupported
 	}
 
 	return err
