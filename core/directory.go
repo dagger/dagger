@@ -116,6 +116,15 @@ func (dir *Directory) Clone() *Directory {
 	return &cp
 }
 
+func (dir *Directory) WithoutInputs() *Directory {
+	dir = dir.Clone()
+
+	dir.LLB = nil
+	dir.Result = nil
+
+	return dir
+}
+
 var _ dagql.OnReleaser = (*Directory)(nil)
 
 func (dir *Directory) OnRelease(ctx context.Context) error {
