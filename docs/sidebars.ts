@@ -165,7 +165,7 @@ module.exports = {
         {
           type: "link",
           label: "Engine Configuration Schema",
-          href: "https://docs.dagger.io/engine.schema.json",
+          href: "https://docs.dagger.io/reference/engine.schema.json",
         },
       ],
     },
