@@ -78,7 +78,18 @@ func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 	}
 	var spans iter.Seq[*Span]
 	if view.Zoomed != nil {
-		if len(view.Zoomed.RevealedSpans.Order) > 0 && view.Zoomed.Passthrough {
+		if len(view.Zoomed.RevealedSpans.Order) > 0 &&
+			// Revealed spans bubble up all the way to the root span. By default, we
+			// want to preserve the top-level context (i.e. spans immediately beneath
+			// root). So, we only prioritize revealed spans if the zoomed span is also
+			// marked Passthrough. That's how shell mode is able to take over the
+			// top-level UI: it creates a `shell` span with `passthrough: true` and
+			// zooms it.
+			//
+			// We could consider making this default later even for the root span.
+			// Maybe it's slick to see only the intentionally revealed stuff? But you
+			// probably wouldn't that for Errored spans which are auto-revealed.
+			view.Zoomed.Passthrough {
 			spans = view.Zoomed.RevealedSpans.Iter()
 		} else {
 			spans = view.Zoomed.ChildSpans.Iter()
@@ -122,7 +133,8 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 			// can happen if we're within a larger trace - we'll allocate our parent,
 			// but not actually see it, so just move along to its children.
 			!span.Received {
-			for _, child := range span.ChildSpans.Order {
+			spans, _ := span.ChildOrRevealedSpans(opts)
+			for _, child := range spans.Order {
 				walk(child, parent)
 			}
 			return
@@ -141,7 +153,8 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 				if lastTree != nil {
 					lastTree.Final = true
 				}
-				for _, child := range span.ChildSpans.Order {
+				spans, _ := span.ChildOrRevealedSpans(opts)
+				for _, child := range spans.Order {
 					walk(child, parent)
 				}
 				return
@@ -174,36 +187,12 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 			lastCall = tree
 		}
 
-		verbosity := opts.Verbosity
-		if v, ok := opts.SpanVerbosity[span.ID]; ok {
-			verbosity = v
-		}
+		children, revealed := span.ChildOrRevealedSpans(opts)
 
-		if verbosity < ShowSpammyVerbosity && !opts.RevealNoisySpans {
-			// Process revealed spans before normal children
-			for _, revealed := range span.RevealedSpans.Order {
-				if revealed.Passthrough && !opts.Debug {
-					for _, child := range revealed.ChildSpans.Order {
-						// HACK: it's hacky to mutate the span snapshot directly here, the intent
-						// is for ShouldShow to pick it up.
-						child.Reveal = true
-						if child.ActorEmoji == "" && revealed.ActorEmoji != "" {
-							child.ActorEmoji = revealed.ActorEmoji
-						}
-						walk(child, tree)
-					}
-				} else {
-					walk(revealed, tree)
-				}
-				tree.RevealedChildren = true
-			}
-		}
+		tree.RevealedChildren = revealed
 
-		// Only process children if we didn't use revealed spans
-		if !tree.RevealedChildren {
-			for _, child := range span.ChildSpans.Order {
-				walk(child, tree)
-			}
+		for _, child := range children.Order {
+			walk(child, tree)
 		}
 
 		if lastTree != nil {
