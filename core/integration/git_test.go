@@ -531,7 +531,7 @@ func (GitSuite) TestAuthProviders(ctx context.Context, t *testctx.T) {
 			Contents(ctx)
 		require.Error(t, err)
 		requireErrOut(t, err, "git error")
-		requireErrOut(t, err, "Authentication failed for 'https://bitbucket.org/dagger-modules/private-modules-test.git/'")
+		requireErrOut(t, err, "authentication failed")
 	})
 }
 
@@ -546,7 +546,7 @@ func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
 			File("README.md").
 			Contents(ctx)
 		requireErrOut(t, err, "git error")
-		requireErrOut(t, err, "Authentication failed")
+		requireErrOut(t, err, "authentication failed")
 	})
 
 	t.Run("incorrect auth", func(ctx context.Context, t *testctx.T) {
@@ -559,7 +559,7 @@ func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
 			File("README.md").
 			Contents(ctx)
 		requireErrOut(t, err, "git error")
-		requireErrOut(t, err, "Authentication failed")
+		requireErrOut(t, err, "authentication failed")
 	})
 
 	t.Run("token auth", func(ctx context.Context, t *testctx.T) {
@@ -625,7 +625,7 @@ func (GitSuite) TestAuthUsername(ctx context.Context, t *testctx.T) {
 			File("README.md").
 			Contents(ctx)
 		requireErrOut(t, err, "git error")
-		requireErrOut(t, err, "Authentication failed")
+		requireErrOut(t, err, "authentication failed")
 	})
 
 	gitDaemonDefault, repoURLDefault := gitServiceHTTPWithBranch(ctx, t, c, "",
@@ -704,7 +704,7 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 			File("README.md").
 			Contents(ctx)
 		requireErrOut(t, err, "git error")
-		requireErrOut(t, err, "Authentication failed")
+		requireErrOut(t, err, "authentication failed")
 	})
 
 	t.Run("incorrect password fails", func(ctx context.Context, t *testctx.T) {
@@ -731,7 +731,7 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 			File("README.md").
 			Contents(ctx)
 		requireErrOut(t, err, "git error")
-		requireErrOut(t, err, "Authentication failed")
+		requireErrOut(t, err, "authentication failed")
 	})
 }
 
@@ -842,7 +842,7 @@ git --git-dir=/srv/parent.git    update-server-info
 			}).Branch("main").Tree().File("parent.txt").Contents(ctx)
 			require.Error(t, err)
 			requireErrOut(t, err, "git error")
-			requireErrOut(t, err, "Authentication failed")
+			requireErrOut(t, err, "authentication failed")
 		})
 	})
 
@@ -871,7 +871,7 @@ git --git-dir=/srv/parent.git    update-server-info
 			}).Branch("main").Tree().File("parent.txt").Contents(ctx)
 			require.Error(t, err)
 			requireErrOut(t, err, "git error")
-			requireErrOut(t, err, "Authentication failed")
+			requireErrOut(t, err, "authentication failed")
 		})
 	})
 }
