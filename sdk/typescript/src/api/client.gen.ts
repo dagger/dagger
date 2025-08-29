@@ -1696,6 +1696,10 @@ export type ServiceStopOpts = {
   kill?: boolean
 }
 
+export type ServiceTerminalOpts = {
+  cmd?: string[]
+}
+
 export type ServiceUpOpts = {
   /**
    * List of frontend/backend port mappings to forward.
@@ -9572,6 +9576,7 @@ export class Service extends BaseClient {
   private readonly _hostname?: string = undefined
   private readonly _start?: ServiceID = undefined
   private readonly _stop?: ServiceID = undefined
+  private readonly _sync?: ServiceID = undefined
   private readonly _up?: Void = undefined
 
   /**
@@ -9584,6 +9589,7 @@ export class Service extends BaseClient {
     _hostname?: string,
     _start?: ServiceID,
     _stop?: ServiceID,
+    _sync?: ServiceID,
     _up?: Void,
   ) {
     super(ctx)
@@ -9593,6 +9599,7 @@ export class Service extends BaseClient {
     this._hostname = _hostname
     this._start = _start
     this._stop = _stop
+    this._sync = _sync
     this._up = _up
   }
 
@@ -9685,6 +9692,21 @@ export class Service extends BaseClient {
     const response: Awaited<ServiceID> = await ctx.execute()
 
     return new Client(ctx.copy()).loadServiceFromID(response)
+  }
+
+  /**
+   * Forces evaluation of the pipeline in the engine.
+   */
+  sync = async (): Promise<Service> => {
+    const ctx = this._ctx.select("sync")
+
+    const response: Awaited<ServiceID> = await ctx.execute()
+
+    return new Client(ctx.copy()).loadServiceFromID(response)
+  }
+  terminal = (opts?: ServiceTerminalOpts): Service => {
+    const ctx = this._ctx.select("terminal", { ...opts })
+    return new Service(ctx)
   }
 
   /**

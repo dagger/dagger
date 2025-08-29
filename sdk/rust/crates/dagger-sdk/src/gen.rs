@@ -10312,6 +10312,11 @@ pub struct ServiceStopOpts {
     pub kill: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ServiceTerminalOpts<'a> {
+    #[builder(setter(into, strip_option), default)]
+    pub cmd: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ServiceUpOpts {
     /// List of frontend/backend port mappings to forward.
     /// Frontend is the port accepting traffic on the host, backend is the service port.
@@ -10398,6 +10403,38 @@ impl Service {
             query = query.arg("kill", kill);
         }
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Forces evaluation of the pipeline in the engine.
+    pub async fn sync(&self) -> Result<ServiceId, DaggerError> {
+        let query = self.selection.select("sync");
+        query.execute(self.graphql_client.clone()).await
+    }
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn terminal(&self) -> Service {
+        let query = self.selection.select("terminal");
+        Service {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn terminal_opts<'a>(&self, opts: ServiceTerminalOpts<'a>) -> Service {
+        let mut query = self.selection.select("terminal");
+        if let Some(cmd) = opts.cmd {
+            query = query.arg("cmd", cmd);
+        }
+        Service {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Creates a tunnel that forwards traffic from the caller's network to this service.
     ///

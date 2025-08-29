@@ -3974,6 +3974,11 @@ type Service {
     kill: Boolean = false
   ): ServiceID!
 
+  """Forces evaluation of the pipeline in the engine."""
+  sync: ServiceID!
+
+  terminal(cmd: [String!] = []): Service!
+
   """
   Creates a tunnel that forwards traffic from the caller's network to this service.
   """

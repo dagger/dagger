@@ -92,6 +92,10 @@ func (svc *Service) Clone() *Service {
 	return &cp
 }
 
+func (svc *Service) Evaluate(ctx context.Context) (*buildkit.Result, error) {
+	return nil, nil
+}
+
 func (svc *Service) WithHostname(hostname string) *Service {
 	svc = svc.Clone()
 	svc.CustomHostname = hostname
@@ -249,10 +253,11 @@ func (svc *Service) Stop(ctx context.Context, id *call.ID, kill bool) error {
 }
 
 type ServiceIO struct {
-	Stdin    io.ReadCloser
-	Stdout   io.WriteCloser
-	Stderr   io.WriteCloser
-	ResizeCh chan bkgw.WinSize
+	Stdin       io.ReadCloser
+	Stdout      io.WriteCloser
+	Stderr      io.WriteCloser
+	ResizeCh    chan bkgw.WinSize
+	Interactive bool
 }
 
 func (io *ServiceIO) Close() error {
@@ -282,12 +287,11 @@ func (io *ServiceIO) Close() error {
 func (svc *Service) Start(
 	ctx context.Context,
 	id *call.ID,
-	interactive bool,
 	sio *ServiceIO,
 ) (running *RunningService, err error) {
 	switch {
 	case svc.Container != nil:
-		return svc.startContainer(ctx, id, interactive, sio)
+		return svc.startContainer(ctx, id, sio)
 	case svc.TunnelUpstream.Self() != nil:
 		return svc.startTunnel(ctx)
 	case len(svc.HostSockets) > 0:
@@ -301,7 +305,6 @@ func (svc *Service) Start(
 func (svc *Service) startContainer(
 	ctx context.Context,
 	id *call.ID,
-	interactive bool,
 	sio *ServiceIO,
 ) (running *RunningService, rerr error) {
 	var cleanup cleanups.Cleanups
@@ -459,7 +462,7 @@ func (svc *Service) startContainer(
 		}
 		meta.Hostname = fullHost
 	}
-	if interactive {
+	if sio != nil && sio.Interactive {
 		meta.Tty = true
 		meta.Env = addDefaultEnvvar(meta.Env, "TERM", "xterm")
 	}
@@ -471,6 +474,7 @@ func (svc *Service) startContainer(
 		fmt.Sprintf("exec %s", strings.Join(svc.Args, " ")),
 		// This span continues the original withExec, by linking to it.
 		telemetry.Resume(trace.ContextWithSpanContext(ctx, svc.Creator)),
+		// telemetry.WithServiceID(svcID),
 		// Hide this span so the user can just focus on the withExec.
 		telemetry.Internal(),
 	)
@@ -509,22 +513,9 @@ func (svc *Service) startContainer(
 	started := make(chan struct{})
 
 	signal := make(chan syscall.Signal)
-	resize := make(chan executor.WinSize)
-	if sio != nil && sio.ResizeCh != nil {
-		go func() {
-			defer close(resize)
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case winSize := <-sio.ResizeCh:
-					resize <- executor.WinSize{
-						Rows: winSize.Rows,
-						Cols: winSize.Cols,
-					}
-				}
-			}
-		}()
+	var resize <-chan executor.WinSize
+	if sio != nil {
+		resize = convertResizeChannel(ctx, sio.ResizeCh)
 	}
 
 	secretEnv, err := loadSecretEnv(ctx, bksession.NewGroup(bk.ID()), bk.SessionManager, ctr.secretEnvs())
@@ -548,7 +539,6 @@ func (svc *Service) startContainer(
 		}, started)
 		runErr <- err
 	}()
-	// TODO: allow getting things from service (using prev id)
 	select {
 	case <-ctx.Done():
 		return nil, context.Cause(ctx)
@@ -627,6 +617,35 @@ func (svc *Service) startContainer(
 		}
 	}
 
+	execSvc := func(ctx context.Context, cmd []string, env []string, sio *ServiceIO) error {
+		meta := *meta
+		meta.Args = cmd
+		meta.Env = append(meta.Env, env...)
+		if sio != nil && sio.Interactive {
+			meta.Tty = true
+			meta.Env = addDefaultEnvvar(meta.Env, "TERM", "xterm")
+		}
+
+		var stdinReader io.ReadCloser
+		var stdoutWriter io.WriteCloser
+		var stderrWriter io.WriteCloser
+		var resizeCh <-chan executor.WinSize
+		if sio != nil {
+			stdinReader = sio.Stdin
+			stdoutWriter = sio.Stdout
+			stderrWriter = sio.Stderr
+			resizeCh = convertResizeChannel(ctx, sio.ResizeCh)
+		}
+		err = exec.Exec(ctx, svcID, executor.ProcessInfo{
+			Meta:   meta,
+			Stdin:  stdinReader,
+			Stdout: stdoutWriter,
+			Stderr: stderrWriter,
+			Resize: resizeCh,
+		})
+		return err
+	}
+
 	select {
 	case err := <-checked:
 		if err != nil {
@@ -639,6 +658,7 @@ func (svc *Service) startContainer(
 			Ports:   ctr.Ports,
 			Stop:    stopSvc,
 			Wait:    waitSvc,
+			Exec:    execSvc,
 		}, nil
 	case <-exited:
 		if exitErr != nil {
@@ -658,6 +678,28 @@ func (svc *Service) startContainer(
 		}
 		return nil, fmt.Errorf("service exited before healthcheck")
 	}
+}
+
+func convertResizeChannel(ctx context.Context, in <-chan bkgw.WinSize) <-chan executor.WinSize {
+	if in == nil {
+		return nil
+	}
+	out := make(chan executor.WinSize)
+	go func() {
+		defer close(out)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case winSize := <-in:
+				out <- executor.WinSize{
+					Rows: winSize.Rows,
+					Cols: winSize.Cols,
+				}
+			}
+		}
+	}()
+	return out
 }
 
 func discardOnClose(w io.Writer) io.WriteCloser {

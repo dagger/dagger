@@ -303,7 +303,7 @@ func (f *fakeStartable) ID() *call.ID {
 	return id
 }
 
-func (f *fakeStartable) Start(context.Context, *call.ID, bool, *core.ServiceIO) (*core.RunningService, error) {
+func (f *fakeStartable) Start(context.Context, *call.ID, *core.ServiceIO) (*core.RunningService, error) {
 	atomic.AddInt32(&f.starts, 1)
 	res := <-f.startResults
 	return res.Started, res.Failed

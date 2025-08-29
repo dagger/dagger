@@ -31,6 +31,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
 
+	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
@@ -44,6 +45,8 @@ var ErrInterrupted = errors.New("interrupted")
 
 type frontendPretty struct {
 	dagui.FrontendOpts
+
+	dag *dagger.Client
 
 	// don't show live progress; just print a full report at the end
 	reportOnly bool
@@ -108,6 +111,12 @@ type frontendPretty struct {
 	// Add prompt field
 	activeBoolPrompt   *promptBool
 	activeStringPrompt *promptString
+}
+
+func (fe *frontendPretty) SetClient(client *dagger.Client) {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	fe.dag = client
 }
 
 func NewPretty(w io.Writer) Frontend {
@@ -623,6 +632,10 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		key.NewBinding(key.WithKeys("r"),
 			key.WithHelp("r", "go to error"),
 			KeyEnabled(focused != nil && focused.ErrorOrigin != nil)),
+		key.NewBinding(key.WithKeys("t"),
+			key.WithHelp("t", "start terminal"),
+			KeyEnabled(focused != nil && fe.terminalCallback(focused) != nil),
+		),
 	}
 }
 
@@ -1258,6 +1271,91 @@ func (fe *frontendPretty) enterInsertMode(auto bool) tea.Cmd {
 	return nil
 }
 
+func (fe *frontendPretty) terminal() {
+	if !fe.FocusedSpan.IsValid() {
+		return
+	}
+	focused := fe.db.Spans.Map[fe.FocusedSpan]
+	if focused == nil {
+		return
+	}
+
+	callback := fe.terminalCallback(focused)
+	if callback != nil {
+		go func() {
+			err := callback()
+			if err != nil {
+				slog.Error("failed to open terminal for span", err)
+			}
+		}()
+	}
+}
+
+func (fe *frontendPretty) terminalCallback(span *dagui.Span) func() error {
+	if fe.dag == nil {
+		// we haven't got a dag client, so can't open a terminal
+		return nil
+	}
+
+	// NOTE: this func is in the hot-path, so just use the call info to
+	// determine if we can create a callback - the actual callback can do the
+	// expensive id reconstruction
+	call := span.Call()
+	if call == nil {
+		return nil
+	}
+
+	switch call.Type.NamedType {
+	case "Container":
+		if span.IsRunning() {
+			break
+		}
+		return func() error {
+			id := loadIDFromSpan(span)
+			if id == "" {
+				return nil
+			}
+			_, err := fe.dag.LoadContainerFromID(dagger.ContainerID(id)).Terminal().Sync(fe.runCtx)
+			return err
+		}
+	case "Directory":
+		if span.IsRunning() {
+			break
+		}
+		return func() error {
+			id := loadIDFromSpan(span)
+			if id == "" {
+				return nil
+			}
+			_, err := fe.dag.LoadDirectoryFromID(dagger.DirectoryID(id)).Terminal().Sync(fe.runCtx)
+			return err
+		}
+	case "Service":
+		return func() error {
+			id := loadIDFromSpan(span)
+			if id == "" {
+				return nil
+			}
+			_, err := fe.dag.LoadServiceFromID(dagger.ServiceID(id)).Terminal().Sync(fe.runCtx)
+			return err
+		}
+	}
+
+	return nil
+}
+
+func loadIDFromSpan(span *dagui.Span) string {
+	callID, err := span.CallID()
+	if err != nil {
+		return ""
+	}
+	id, err := callID.Encode()
+	if err != nil {
+		return ""
+	}
+	return id
+}
+
 func (fe *frontendPretty) handleEditlineKey(msg tea.KeyMsg) (cmd tea.Cmd) {
 	defer func() {
 		// update the prompt in all cases since e.g. going through history
@@ -1300,6 +1398,7 @@ func (fe *frontendPretty) handleEditlineKey(msg tea.KeyMsg) (cmd tea.Cmd) {
 	return cmd
 }
 
+//nolint:gocyclo // splitting this up doesn't feel more readable
 func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 	lastKey := fe.pressedKey
 	fe.pressedKey = msg.String()
@@ -1393,6 +1492,9 @@ func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case "tab", "i":
 		return fe.enterInsertMode(false)
+	case "t":
+		fe.terminal()
+		return nil
 	}
 
 	switch lastKey { //nolint:gocritic
