@@ -676,7 +676,7 @@ func (svc *Service) startContainer(
 			Ports:       ctr.Ports,
 			Stop:        stopSvc,
 			Wait:        waitSvc,
-			Exec:    execSvc,
+			Exec:        execSvc,
 			ContainerID: svcID,
 		}, nil
 	case <-exited:

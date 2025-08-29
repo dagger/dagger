@@ -47,7 +47,7 @@ type frontendPretty struct {
 	dagui.FrontendOpts
 
 	dag *dagger.Client
-	
+
 	// used for animations
 	now time.Time
 
@@ -1558,7 +1558,6 @@ func (fe *frontendPretty) handleEditlineKey(msg tea.KeyMsg) (cmd tea.Cmd) {
 	return cmd
 }
 
-//nolint:gocyclo // splitting this up doesn't feel more readable
 func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 	lastKey := fe.pressedKey
 	fe.pressedKey = msg.String()
