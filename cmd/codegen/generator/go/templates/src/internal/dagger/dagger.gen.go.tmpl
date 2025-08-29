@@ -5,3 +5,9 @@ package dagger
 
 {{ template "_dagger.gen.go/defs.go.tmpl" . }}
 {{ end }}
+
+// Object is an interface that matches all Dagger object types
+type Object interface {
+    XXX_GraphQLType() string
+    XXX_GraphQLID(context.Context) (string, error)
+}
