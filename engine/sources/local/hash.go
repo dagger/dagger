@@ -47,11 +47,11 @@ func (h *statHash) Reset() {
 	buf := *(statHashBufPool.Get().(*[]byte))
 	buf = buf[:0]
 
-	binary.LittleEndian.AppendUint32(buf, h.stat.Mode)
-	binary.LittleEndian.AppendUint32(buf, h.stat.Uid)
-	binary.LittleEndian.AppendUint32(buf, h.stat.Gid)
-	binary.LittleEndian.AppendUint64(buf, uint64(h.stat.Devmajor))
-	binary.LittleEndian.AppendUint64(buf, uint64(h.stat.Devminor))
+	buf = binary.LittleEndian.AppendUint32(buf, h.stat.Mode)
+	buf = binary.LittleEndian.AppendUint32(buf, h.stat.Uid)
+	buf = binary.LittleEndian.AppendUint32(buf, h.stat.Gid)
+	buf = binary.LittleEndian.AppendUint64(buf, uint64(h.stat.Devmajor))
+	buf = binary.LittleEndian.AppendUint64(buf, uint64(h.stat.Devminor))
 	buf = append(buf, []byte("\x00"+h.stat.Linkname+"\x00")...)
 
 	xattrs := make([]string, 0, len(h.stat.Xattrs))
