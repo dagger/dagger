@@ -33,6 +33,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/propagation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -918,14 +919,21 @@ const InstrumentationLibrary = "dagger.io/engine.server"
 
 func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opts *ClientInitOpts) (rerr error) {
 	ctx := r.Context()
+
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(fmt.Errorf("http request done for client %q", opts.ClientID))
 
 	clientMetadata := opts.ClientMetadata
 	ctx = engine.ContextWithClientMetadata(ctx, clientMetadata)
 
-	// propagate span context from the client
+	// propagate span context and baggage from the client
 	ctx = telemetry.Propagator.Extract(ctx, propagation.HeaderCarrier(r.Header))
+
+	// Check if repeated telemetry is requested via baggage
+	baggage := baggage.FromContext(ctx)
+	if member := baggage.Member("repeat-telemetry"); member.Value() != "" {
+		ctx = dagql.WithRepeatedTelemetry(ctx)
+	}
 
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).
 		WithField("client_id", clientMetadata.ClientID).
