@@ -127,6 +127,13 @@
         },
         "config": {
           "type": "object"
+        },
+        "experimental": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "type": "object",
+          "description": "The experimental features enabled for this module."
         }
       },
       "additionalProperties": false,

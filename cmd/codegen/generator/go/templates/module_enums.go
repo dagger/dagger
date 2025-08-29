@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"dagger.io/dagger"
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
 )
 
@@ -37,6 +38,10 @@ func (spec *parsedEnumTypeReference) lookup(key string) *parsedEnumMember {
 
 func (spec *parsedEnumTypeReference) TypeDefCode() (*Statement, error) {
 	return Qual("dag", "TypeDef").Call().Dot("WithEnum").Call(Lit(spec.name)), nil
+}
+
+func (spec *parsedEnumTypeReference) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef, error) {
+	return dag.TypeDef().WithEnum(spec.name), nil
 }
 
 func (spec *parsedEnumTypeReference) GoType() types.Type {
@@ -234,6 +239,32 @@ func (spec *parsedEnumType) TypeDefCode() (*Statement, error) {
 	}
 
 	return typeDefCode, nil
+}
+
+func (spec *parsedEnumType) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef, error) {
+	withEnumOpts := dagger.TypeDefWithEnumOpts{}
+	if spec.doc != "" {
+		withEnumOpts.Description = strings.TrimSpace(spec.doc)
+	}
+	if spec.sourceMap != nil {
+		withEnumOpts.SourceMap = spec.sourceMap.TypeDefObject(dag)
+	}
+	typeDefObject := dag.TypeDef().WithEnum(spec.name, withEnumOpts)
+
+	for _, val := range spec.values {
+		memberOpts := dagger.TypeDefWithEnumMemberOpts{}
+		if val.value != "" {
+			memberOpts.Value = val.value
+		}
+		if val.doc != "" {
+			memberOpts.Description = strings.TrimSpace(val.doc)
+		}
+		if val.sourceMap != nil {
+			memberOpts.SourceMap = val.sourceMap.TypeDefObject(dag)
+		}
+		typeDefObject = typeDefObject.WithEnumMember(val.name, memberOpts)
+	}
+	return typeDefObject, nil
 }
 
 func (spec *parsedEnumType) GoType() types.Type {
