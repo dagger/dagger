@@ -23,6 +23,7 @@ import (
 	"github.com/vito/bubbline/computil"
 	"github.com/vito/bubbline/editline"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/trace"
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
@@ -350,6 +351,12 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 			trace.WithAttributes(attribute.Bool(telemetry.CanceledAttr, true)))
 		span.End()
 		return nil
+	}
+
+	// Ensure we always see new telemetry for shell commands, rather than
+	// "resurrecting" the same telemetry from previous commands
+	if bag, err := baggage.Parse("repeat-telemetry=true"); err == nil {
+		ctx = baggage.ContextWithBaggage(ctx, bag)
 	}
 
 	// Handle based on mode
