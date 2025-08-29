@@ -73,7 +73,7 @@ func NewDots(output io.Writer) Frontend {
 	}
 }
 
-func (fe *frontendDots) SetClient(client *dagger.Client) { }
+func (fe *frontendDots) SetClient(client *dagger.Client) {}
 
 func (fe *frontendDots) SetSidebarContent(SidebarSection) {}
 

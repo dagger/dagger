@@ -69,7 +69,7 @@ type RunningService struct {
 	// Exec runs a command in the service. It is only supported for services
 	// with a backing container.
 	Exec func(ctx context.Context, cmd []string, env []string, io *ServiceIO) error
-	
+
 	// The runc container ID, if any
 	ContainerID string
 }
