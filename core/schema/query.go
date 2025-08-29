@@ -50,7 +50,7 @@ func (s *querySchema) Install(srv *dagql.Server) {
 	dagql.MustInputSpec(core.PortForward{}).Install(srv)
 	dagql.MustInputSpec(core.BuildArg{}).Install(srv)
 
-	dagql.Fields[EnvVariable]{}.Install(srv)
+	dagql.Fields[core.EnvVariable]{}.Install(srv)
 
 	dagql.Fields[core.Port]{}.Install(srv)
 
