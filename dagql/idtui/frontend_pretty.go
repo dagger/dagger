@@ -1972,7 +1972,8 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 	fe.renderStep(out, r, row, prefix)
 	if span.Message == "" && // messages are displayed in renderStep
 		(row.Expanded || row.Span.LLMTool != "") {
-		fe.renderStepLogs(out, r, row, prefix)
+		isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused
+		fe.renderStepLogs(out, r, row, prefix, isFocused)
 	}
 	fe.renderStepError(out, r, row, prefix)
 	fe.renderDebug(out, row.Span, prefix+Block25+" ", false)
@@ -1985,7 +1986,7 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 					cp.Depth = -1
 					row = &cp
 				}
-				fe.renderLogs(out, r, row, logs, logs.UsedHeight(), prefix)
+				fe.renderLogs(out, r, row, logs, logs.UsedHeight(), prefix, false)
 			}
 			fe.renderStepError(out, r, root, prefix)
 		}
@@ -2029,13 +2030,13 @@ func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix s
 // thing
 const llmLogsLastLines = 8
 
-func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) bool {
+func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, focused bool) bool {
 	limit := fe.window.Height / 3
 	if row.Span.LLMTool != "" && !row.Expanded {
 		limit = llmLogsLastLines
 	}
 	if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
-		return fe.renderLogs(out, r, row, logs, limit, prefix)
+		return fe.renderLogs(out, r, row, logs, limit, prefix, focused)
 	}
 	return false
 }
@@ -2107,40 +2108,8 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 	fmt.Fprint(out, prefix)
 	r.fancyIndent(out, row, false, true)
 
-	var toggler termenv.Style
-	if row.HasChildren || row.Span.HasLogs {
-		if row.Expanded {
-			toggler = out.String(CaretDownFilled)
-		} else {
-			toggler = out.String(CaretRightFilled)
-		}
-	} else if span.IsRunningOrEffectsRunning() {
-		toggler = out.String(DotHalf)
-	} else if span.IsCached() {
-		toggler = out.String(IconCached)
-	} else if span.IsCanceled() {
-		toggler = out.String(IconSkipped)
-	} else if span.IsFailedOrCausedFailure() {
-		toggler = out.String(IconFailure)
-	} else if span.IsPending() {
-		toggler = out.String(DotEmpty)
-	} else {
-		toggler = out.String(DotFilled)
-	}
-	toggler = toggler.Foreground(statusColor(span))
-	if span.Message != "" {
-		switch span.LLMRole {
-		case telemetry.LLMRoleUser:
-			toggler = out.String(Block).Foreground(termenv.ANSIMagenta)
-		case telemetry.LLMRoleAssistant:
-			toggler = out.String(VertBoldBar).Foreground(termenv.ANSIMagenta)
-		}
-	}
-	if isFocused {
-		toggler = toggler.Reverse()
-	}
-
-	fmt.Fprint(out, toggler.String()+" ")
+	fe.renderToggler(out, row, isFocused)
+	fmt.Fprint(out, " ")
 
 	if r.Debug {
 		fmt.Fprintf(out, out.String("%s ").Foreground(termenv.ANSIBrightBlack).String(), span.ID)
@@ -2153,7 +2122,7 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 		// NOTE: arguably this should be opt-in, but it's not clear how the
 		// span name relates to the message in all cases; is it the
 		// subject? or author? better to be explicit with attributes.
-		if fe.renderStepLogs(out, r, row, prefix) {
+		if fe.renderStepLogs(out, r, row, prefix, isFocused) {
 			if span.LLMRole == telemetry.LLMRoleUser {
 				// Bail early if we printed a user message span; these don't have any
 				// further information to show. Duration is always 0, metrics are empty,
@@ -2161,7 +2130,11 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 				return nil
 			}
 			r.fancyIndent(out, row, false, false)
-			fmt.Fprint(out, out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack))
+			bar := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
+			if isFocused {
+				bar = hl(bar)
+			}
+			fmt.Fprint(out, bar)
 		} else {
 			empty = true
 		}
@@ -2191,6 +2164,44 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 	return nil
 }
 
+func (fe *frontendPretty) renderToggler(out TermOutput, row *dagui.TraceRow, isFocused bool) {
+	var toggler termenv.Style
+	if row.HasChildren || row.Span.HasLogs {
+		if row.Expanded {
+			toggler = out.String(CaretDownFilled)
+		} else {
+			toggler = out.String(CaretRightFilled)
+		}
+	} else if row.Span.IsRunningOrEffectsRunning() {
+		toggler = out.String(DotHalf)
+	} else if row.Span.IsCached() {
+		toggler = out.String(IconCached)
+	} else if row.Span.IsCanceled() {
+		toggler = out.String(IconSkipped)
+	} else if row.Span.IsFailedOrCausedFailure() {
+		toggler = out.String(IconFailure)
+	} else if row.Span.IsPending() {
+		toggler = out.String(DotEmpty)
+	} else {
+		toggler = out.String(DotFilled)
+	}
+	toggler = toggler.Foreground(statusColor(row.Span))
+	if row.Span.Message != "" {
+		switch row.Span.LLMRole {
+		case telemetry.LLMRoleUser:
+			toggler = out.String(Block).Foreground(termenv.ANSIMagenta)
+		case telemetry.LLMRoleAssistant:
+			toggler = out.String(VertBoldBar).Foreground(termenv.ANSIMagenta)
+		}
+	}
+
+	if isFocused {
+		toggler = hl(toggler)
+	}
+
+	fmt.Fprint(out, toggler.String())
+}
+
 func (fe *frontendPretty) renderStatus(out TermOutput, span *dagui.Span) {
 	if span.IsFailedOrCausedFailure() && !span.IsCanceled() {
 		fmt.Fprint(out, out.String(" "))
@@ -2211,12 +2222,16 @@ func (fe *frontendPretty) renderStatus(out TermOutput, span *dagui.Span) {
 	}
 }
 
-func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.TraceRow, logs *Vterm, height int, prefix string) bool {
+func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, row *dagui.TraceRow, logs *Vterm, height int, prefix string, focused bool) bool {
 	span := row.Span
 	depth := row.Depth
 
 	Pipe := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
 	Dashed := out.String(VertBoldDash3).Foreground(restrainedStatusColor(span))
+	if focused {
+		Pipe = hl(Pipe)
+		Dashed = hl(Dashed)
+	}
 
 	if depth == -1 {
 		// clear prefix when zoomed
