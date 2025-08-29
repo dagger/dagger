@@ -573,12 +573,12 @@ func (dir *Directory) Search(ctx context.Context, opts SearchOpts, paths []strin
 		if len(paths) > 0 {
 			rgArgs = append(rgArgs, "--")
 			for _, p := range paths {
-				resolved, err := containerdfs.RootPath(root, p)
+				resolved, err := containerdfs.RootPath(resolvedDir, p)
 				if err != nil {
 					return err
 				}
 				// make it relative, now that it's safe, just for less obtuse errors
-				resolved, err = filepath.Rel(root, resolved)
+				resolved, err = filepath.Rel(resolvedDir, resolved)
 				if err != nil {
 					return err
 				}

@@ -2098,6 +2098,24 @@ func main() {
 			require.Equal(t, "root:world passwd", matched)
 		})
 
+		t.Run("resolves symlinks within a scoped dir", func(ctx context.Context, t *testctx.T) {
+			dir := c.Directory().
+				WithNewFile("symlink", "im innocent").
+				WithNewFile("subdir/etc/passwd", "root:world passwd").
+				WithSymlink("/etc/passwd", "subdir/symlink")
+
+			results, err := dir.Directory("subdir").Search(ctx, "root", dagger.DirectorySearchOpts{
+				Paths: []string{"symlink"},
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 1)
+			matched, err := results[0].MatchedLines(ctx)
+			require.NoError(t, err)
+			// make sure we correctly resolve the path WITHIN the directory - in the
+			// failure case this will have content from `/etc/passwd` on the host!
+			require.Equal(t, "root:world passwd", matched)
+		})
+
 		t.Run("rejects paths that escape directory", func(ctx context.Context, t *testctx.T) {
 			// Test that paths trying to escape via .. are rejected
 			_, err := dir.Search(ctx, "world", dagger.DirectorySearchOpts{
