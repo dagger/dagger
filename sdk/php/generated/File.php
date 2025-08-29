@@ -16,9 +16,15 @@ class File extends Client\AbstractObject implements Client\IdAble
     /**
      * Retrieves the contents of the file.
      */
-    public function contents(): string
+    public function contents(?int $offsetLines = null, ?int $limitLines = null): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('contents');
+        if (null !== $offsetLines) {
+        $leafQueryBuilder->setArgument('offsetLines', $offsetLines);
+        }
+        if (null !== $limitLines) {
+        $leafQueryBuilder->setArgument('limitLines', $limitLines);
+        }
         return (string)$this->queryLeaf($leafQueryBuilder, 'contents');
     }
 
@@ -66,6 +72,59 @@ class File extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Searches for content matching the given regular expression or literal string.
+     *
+     * Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+     */
+    public function search(
+        string $pattern,
+        ?bool $literal = false,
+        ?bool $multiline = false,
+        ?bool $dotall = false,
+        ?bool $insensitive = false,
+        ?bool $skipIgnored = false,
+        ?bool $skipHidden = false,
+        ?bool $filesOnly = false,
+        ?int $limit = null,
+        ?array $paths = null,
+        ?array $globs = null,
+    ): array {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('search');
+        $leafQueryBuilder->setArgument('pattern', $pattern);
+        if (null !== $literal) {
+        $leafQueryBuilder->setArgument('literal', $literal);
+        }
+        if (null !== $multiline) {
+        $leafQueryBuilder->setArgument('multiline', $multiline);
+        }
+        if (null !== $dotall) {
+        $leafQueryBuilder->setArgument('dotall', $dotall);
+        }
+        if (null !== $insensitive) {
+        $leafQueryBuilder->setArgument('insensitive', $insensitive);
+        }
+        if (null !== $skipIgnored) {
+        $leafQueryBuilder->setArgument('skipIgnored', $skipIgnored);
+        }
+        if (null !== $skipHidden) {
+        $leafQueryBuilder->setArgument('skipHidden', $skipHidden);
+        }
+        if (null !== $filesOnly) {
+        $leafQueryBuilder->setArgument('filesOnly', $filesOnly);
+        }
+        if (null !== $limit) {
+        $leafQueryBuilder->setArgument('limit', $limit);
+        }
+        if (null !== $paths) {
+        $leafQueryBuilder->setArgument('paths', $paths);
+        }
+        if (null !== $globs) {
+        $leafQueryBuilder->setArgument('globs', $globs);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'search');
+    }
+
+    /**
      * Retrieves the size of the file, in bytes.
      */
     public function size(): int
@@ -90,6 +149,35 @@ class File extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withName');
         $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves the file with content replaced with the given text.
+     *
+     * If 'all' is true, all occurrences of the pattern will be replaced.
+     *
+     * If 'firstAfter' is specified, only the first match starting at the specified line will be replaced.
+     *
+     * If neither are specified, and there are multiple matches for the pattern, this will error.
+     *
+     * If there are no matches for the pattern, this will error.
+     */
+    public function withReplaced(
+        string $search,
+        string $replacement,
+        ?bool $all = false,
+        ?int $firstFrom = null,
+    ): File {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withReplaced');
+        $innerQueryBuilder->setArgument('search', $search);
+        $innerQueryBuilder->setArgument('replacement', $replacement);
+        if (null !== $all) {
+        $innerQueryBuilder->setArgument('all', $all);
+        }
+        if (null !== $firstFrom) {
+        $innerQueryBuilder->setArgument('firstFrom', $firstFrom);
+        }
         return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

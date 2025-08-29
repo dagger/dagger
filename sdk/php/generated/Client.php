@@ -663,6 +663,26 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a SearchResult from its ID.
+     */
+    public function loadSearchResultFromID(SearchResultId|SearchResult $id): SearchResult
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadSearchResultFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\SearchResult($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a SearchSubmatch from its ID.
+     */
+    public function loadSearchSubmatchFromID(SearchSubmatchId|SearchSubmatch $id): SearchSubmatch
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadSearchSubmatchFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\SearchSubmatch($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Secret from its ID.
      */
     public function loadSecretFromID(SecretId|Secret $id): Secret

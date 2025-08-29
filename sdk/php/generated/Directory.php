@@ -203,6 +203,59 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Searches for content matching the given regular expression or literal string.
+     *
+     * Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+     */
+    public function search(
+        ?array $paths = null,
+        ?array $globs = null,
+        string $pattern,
+        ?bool $literal = false,
+        ?bool $multiline = false,
+        ?bool $dotall = false,
+        ?bool $insensitive = false,
+        ?bool $skipIgnored = false,
+        ?bool $skipHidden = false,
+        ?bool $filesOnly = false,
+        ?int $limit = null,
+    ): array {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('search');
+        if (null !== $paths) {
+        $leafQueryBuilder->setArgument('paths', $paths);
+        }
+        if (null !== $globs) {
+        $leafQueryBuilder->setArgument('globs', $globs);
+        }
+        $leafQueryBuilder->setArgument('pattern', $pattern);
+        if (null !== $literal) {
+        $leafQueryBuilder->setArgument('literal', $literal);
+        }
+        if (null !== $multiline) {
+        $leafQueryBuilder->setArgument('multiline', $multiline);
+        }
+        if (null !== $dotall) {
+        $leafQueryBuilder->setArgument('dotall', $dotall);
+        }
+        if (null !== $insensitive) {
+        $leafQueryBuilder->setArgument('insensitive', $insensitive);
+        }
+        if (null !== $skipIgnored) {
+        $leafQueryBuilder->setArgument('skipIgnored', $skipIgnored);
+        }
+        if (null !== $skipHidden) {
+        $leafQueryBuilder->setArgument('skipHidden', $skipHidden);
+        }
+        if (null !== $filesOnly) {
+        $leafQueryBuilder->setArgument('filesOnly', $filesOnly);
+        }
+        if (null !== $limit) {
+        $leafQueryBuilder->setArgument('limit', $limit);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'search');
+    }
+
+    /**
      * Force evaluation in the engine.
      */
     public function sync(): DirectoryId

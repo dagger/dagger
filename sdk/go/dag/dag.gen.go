@@ -408,6 +408,18 @@ func LoadScalarTypeDefFromID(id dagger.ScalarTypeDefID) *dagger.ScalarTypeDef {
 	return client.LoadScalarTypeDefFromID(id)
 }
 
+// Load a SearchResult from its ID.
+func LoadSearchResultFromID(id dagger.SearchResultID) *dagger.SearchResult {
+	client := initClient()
+	return client.LoadSearchResultFromID(id)
+}
+
+// Load a SearchSubmatch from its ID.
+func LoadSearchSubmatchFromID(id dagger.SearchSubmatchID) *dagger.SearchSubmatch {
+	client := initClient()
+	return client.LoadSearchSubmatchFromID(id)
+}
+
 // Load a Secret from its ID.
 func LoadSecretFromID(id dagger.SecretID) *dagger.Secret {
 	client := initClient()

@@ -245,6 +245,54 @@ defmodule Dagger.Directory do
   end
 
   @doc """
+  Searches for content matching the given regular expression or literal string.
+
+  Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+  """
+  @spec search(t(), String.t(), [
+          {:paths, [String.t()]},
+          {:globs, [String.t()]},
+          {:literal, boolean() | nil},
+          {:multiline, boolean() | nil},
+          {:dotall, boolean() | nil},
+          {:insensitive, boolean() | nil},
+          {:skip_ignored, boolean() | nil},
+          {:skip_hidden, boolean() | nil},
+          {:files_only, boolean() | nil},
+          {:limit, integer() | nil}
+        ]) :: {:ok, [Dagger.SearchResult.t()]} | {:error, term()}
+  def search(%__MODULE__{} = directory, pattern, optional_args \\ []) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("search")
+      |> QB.put_arg("pattern", pattern)
+      |> QB.maybe_put_arg("paths", optional_args[:paths])
+      |> QB.maybe_put_arg("globs", optional_args[:globs])
+      |> QB.maybe_put_arg("literal", optional_args[:literal])
+      |> QB.maybe_put_arg("multiline", optional_args[:multiline])
+      |> QB.maybe_put_arg("dotall", optional_args[:dotall])
+      |> QB.maybe_put_arg("insensitive", optional_args[:insensitive])
+      |> QB.maybe_put_arg("skipIgnored", optional_args[:skip_ignored])
+      |> QB.maybe_put_arg("skipHidden", optional_args[:skip_hidden])
+      |> QB.maybe_put_arg("filesOnly", optional_args[:files_only])
+      |> QB.maybe_put_arg("limit", optional_args[:limit])
+      |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(directory.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.SearchResult{
+           query_builder:
+             QB.query()
+             |> QB.select("loadSearchResultFromID")
+             |> QB.put_arg("id", id),
+           client: directory.client
+         }
+       end}
+    end
+  end
+
+  @doc """
   Force evaluation in the engine.
   """
   @spec sync(t()) :: {:ok, Dagger.Directory.t()} | {:error, term()}

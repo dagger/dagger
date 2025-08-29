@@ -35,15 +35,25 @@ type Builder struct {
 	race bool
 }
 
-func NewBuilder(ctx context.Context, source *dagger.Directory) (*Builder, error) {
-	v := dag.Version()
-	version, err := v.Version(ctx)
-	if err != nil {
-		return nil, err
+func NewBuilder(
+	ctx context.Context,
+	source *dagger.Directory,
+	version, tag string,
+) (*Builder, error) {
+	if version == "" {
+		v := dag.Version()
+		var err error
+		version, err = v.Version(ctx)
+		if err != nil {
+			return nil, err
+		}
+		tag, err = v.ImageTag(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
-	tag, err := v.ImageTag(ctx)
-	if err != nil {
-		return nil, err
+	if tag == "" {
+		tag = version
 	}
 	return &Builder{
 		source:       source,
@@ -136,6 +146,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 					"dnsmasq", "iptables", "ip6tables", "iptables-legacy",
 					// for Kata Containers integration
 					"e2fsprogs",
+					// for Directory.search
+					"ripgrep",
 				},
 				Arch: build.platformSpec.Architecture,
 			}).
@@ -160,6 +172,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 				"iptables", "git", "dnsmasq-base", "network-manager",
 				"gpg", "curl",
 				"e2fsprogs",
+				// for Directory.search
+				"ripgrep",
 			}).
 			WithExec([]string{
 				"update-alternatives",
@@ -184,6 +198,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 			"iptables", "ip6tables", "dnsmasq",
 			// for Kata Containers integration
 			"e2fsprogs",
+			// for Directory.search
+			"ripgrep",
 		}
 		if build.gpuSupport {
 			pkgs = append(pkgs, "nvidia-driver", "nvidia-tools")

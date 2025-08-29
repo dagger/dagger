@@ -128,7 +128,8 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 	if !ok {
 		return nil, fmt.Errorf("server root was %T", opt.Server.Root())
 	}
-	obj, err := opt.Server.LoadType(ContextWithQuery(ctx, query), op.ID)
+	ctx = ContextWithQuery(ctx, query)
+	obj, err := opt.Server.LoadType(ctx, op.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +198,7 @@ func NewRawDagOp[T dagql.Typed](
 	if err != nil {
 		return t, err
 	}
-	dt, err := f.Contents(ctx)
+	dt, err := f.Contents(ctx, nil, nil)
 	if err != nil {
 		return t, err
 	}

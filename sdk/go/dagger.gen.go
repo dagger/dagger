@@ -256,6 +256,12 @@ type SDKConfigID string
 // The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
 type ScalarTypeDefID string
 
+// The `SearchResultID` scalar type represents an identifier for an object of type SearchResult.
+type SearchResultID string
+
+// The `SearchSubmatchID` scalar type represents an identifier for an object of type SearchSubmatch.
+type SearchSubmatchID string
+
 // The `SecretID` scalar type represents an identifier for an object of type Secret.
 type SecretID string
 
@@ -439,6 +445,24 @@ func (r *Binding) AsModuleSource() *ModuleSource {
 	q := r.query.Select("asModuleSource")
 
 	return &ModuleSource{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type SearchResult
+func (r *Binding) AsSearchResult() *SearchResult {
+	q := r.query.Select("asSearchResult")
+
+	return &SearchResult{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type SearchSubmatch
+func (r *Binding) AsSearchSubmatch() *SearchSubmatch {
+	q := r.query.Select("asSearchSubmatch")
+
+	return &SearchSubmatch{
 		query: q,
 	}
 }
@@ -3047,6 +3071,108 @@ func (r *Directory) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// DirectorySearchOpts contains options for Directory.Search
+type DirectorySearchOpts struct {
+	// Directory or file paths to search
+	Paths []string
+	// Glob patterns to match (e.g., "*.md")
+	Globs []string
+	// Interpret the pattern as a literal string instead of a regular expression.
+	Literal bool
+	// Enable searching across multiple lines.
+	Multiline bool
+	// Allow the . pattern to match newlines in multiline mode.
+	Dotall bool
+	// Enable case-insensitive matching.
+	Insensitive bool
+	// Honor .gitignore, .ignore, and .rgignore files.
+	SkipIgnored bool
+	// Skip hidden files (files starting with .).
+	SkipHidden bool
+	// Only return matching files, not lines and content
+	FilesOnly bool
+	// Limit the number of results to return
+	Limit int
+}
+
+// Searches for content matching the given regular expression or literal string.
+//
+// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+func (r *Directory) Search(ctx context.Context, pattern string, opts ...DirectorySearchOpts) ([]SearchResult, error) {
+	q := r.query.Select("search")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `paths` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Paths) {
+			q = q.Arg("paths", opts[i].Paths)
+		}
+		// `globs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Globs) {
+			q = q.Arg("globs", opts[i].Globs)
+		}
+		// `literal` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Literal) {
+			q = q.Arg("literal", opts[i].Literal)
+		}
+		// `multiline` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Multiline) {
+			q = q.Arg("multiline", opts[i].Multiline)
+		}
+		// `dotall` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Dotall) {
+			q = q.Arg("dotall", opts[i].Dotall)
+		}
+		// `insensitive` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Insensitive) {
+			q = q.Arg("insensitive", opts[i].Insensitive)
+		}
+		// `skipIgnored` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SkipIgnored) {
+			q = q.Arg("skipIgnored", opts[i].SkipIgnored)
+		}
+		// `skipHidden` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SkipHidden) {
+			q = q.Arg("skipHidden", opts[i].SkipHidden)
+		}
+		// `filesOnly` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FilesOnly) {
+			q = q.Arg("filesOnly", opts[i].FilesOnly)
+		}
+		// `limit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Limit) {
+			q = q.Arg("limit", opts[i].Limit)
+		}
+	}
+	q = q.Arg("pattern", pattern)
+
+	q = q.Select("id")
+
+	type search struct {
+		Id SearchResultID
+	}
+
+	convert := func(fields []search) []SearchResult {
+		out := []SearchResult{}
+
+		for i := range fields {
+			val := SearchResult{id: &fields[i].Id}
+			val.query = q.Root().Select("loadSearchResultFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []search
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // Force evaluation in the engine.
 func (r *Directory) Sync(ctx context.Context) (*Directory, error) {
 	q := r.query.Select("sync")
@@ -4487,6 +4613,54 @@ func (r *Env) WithModuleSourceOutput(name string, description string) *Env {
 	}
 }
 
+// Create or update a binding of type SearchResult in the environment
+func (r *Env) WithSearchResultInput(name string, value *SearchResult, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withSearchResultInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired SearchResult output to be assigned in the environment
+func (r *Env) WithSearchResultOutput(name string, description string) *Env {
+	q := r.query.Select("withSearchResultOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type SearchSubmatch in the environment
+func (r *Env) WithSearchSubmatchInput(name string, value *SearchSubmatch, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withSearchSubmatchInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired SearchSubmatch output to be assigned in the environment
+func (r *Env) WithSearchSubmatchOutput(name string, description string) *Env {
+	q := r.query.Select("withSearchSubmatchOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create or update a binding of type Secret in the environment
 func (r *Env) WithSecretInput(name string, value *Secret, description string) *Env {
 	assertNotNil("value", value)
@@ -4989,12 +5163,30 @@ func (r *File) WithGraphQLQuery(q *querybuilder.Selection) *File {
 	}
 }
 
+// FileContentsOpts contains options for File.Contents
+type FileContentsOpts struct {
+	// Start reading after this line
+	OffsetLines int
+	// Maximum number of lines to read
+	LimitLines int
+}
+
 // Retrieves the contents of the file.
-func (r *File) Contents(ctx context.Context) (string, error) {
+func (r *File) Contents(ctx context.Context, opts ...FileContentsOpts) (string, error) {
 	if r.contents != nil {
 		return *r.contents, nil
 	}
 	q := r.query.Select("contents")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `offsetLines` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OffsetLines) {
+			q = q.Arg("offsetLines", opts[i].OffsetLines)
+		}
+		// `limitLines` optional argument
+		if !querybuilder.IsZeroValue(opts[i].LimitLines) {
+			q = q.Arg("limitLines", opts[i].LimitLines)
+		}
+	}
 
 	var response string
 
@@ -5106,6 +5298,108 @@ func (r *File) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// FileSearchOpts contains options for File.Search
+type FileSearchOpts struct {
+	// Interpret the pattern as a literal string instead of a regular expression.
+	Literal bool
+	// Enable searching across multiple lines.
+	Multiline bool
+	// Allow the . pattern to match newlines in multiline mode.
+	Dotall bool
+	// Enable case-insensitive matching.
+	Insensitive bool
+	// Honor .gitignore, .ignore, and .rgignore files.
+	SkipIgnored bool
+	// Skip hidden files (files starting with .).
+	SkipHidden bool
+	// Only return matching files, not lines and content
+	FilesOnly bool
+	// Limit the number of results to return
+	Limit int
+
+	Paths []string
+
+	Globs []string
+}
+
+// Searches for content matching the given regular expression or literal string.
+//
+// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+func (r *File) Search(ctx context.Context, pattern string, opts ...FileSearchOpts) ([]SearchResult, error) {
+	q := r.query.Select("search")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `literal` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Literal) {
+			q = q.Arg("literal", opts[i].Literal)
+		}
+		// `multiline` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Multiline) {
+			q = q.Arg("multiline", opts[i].Multiline)
+		}
+		// `dotall` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Dotall) {
+			q = q.Arg("dotall", opts[i].Dotall)
+		}
+		// `insensitive` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Insensitive) {
+			q = q.Arg("insensitive", opts[i].Insensitive)
+		}
+		// `skipIgnored` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SkipIgnored) {
+			q = q.Arg("skipIgnored", opts[i].SkipIgnored)
+		}
+		// `skipHidden` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SkipHidden) {
+			q = q.Arg("skipHidden", opts[i].SkipHidden)
+		}
+		// `filesOnly` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FilesOnly) {
+			q = q.Arg("filesOnly", opts[i].FilesOnly)
+		}
+		// `limit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Limit) {
+			q = q.Arg("limit", opts[i].Limit)
+		}
+		// `paths` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Paths) {
+			q = q.Arg("paths", opts[i].Paths)
+		}
+		// `globs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Globs) {
+			q = q.Arg("globs", opts[i].Globs)
+		}
+	}
+	q = q.Arg("pattern", pattern)
+
+	q = q.Select("id")
+
+	type search struct {
+		Id SearchResultID
+	}
+
+	convert := func(fields []search) []SearchResult {
+		out := []SearchResult{}
+
+		for i := range fields {
+			val := SearchResult{id: &fields[i].Id}
+			val.query = q.Root().Select("loadSearchResultFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []search
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // Retrieves the size of the file, in bytes.
 func (r *File) Size(ctx context.Context) (int, error) {
 	if r.size != nil {
@@ -5136,6 +5430,43 @@ func (r *File) Sync(ctx context.Context) (*File, error) {
 func (r *File) WithName(name string) *File {
 	q := r.query.Select("withName")
 	q = q.Arg("name", name)
+
+	return &File{
+		query: q,
+	}
+}
+
+// FileWithReplacedOpts contains options for File.WithReplaced
+type FileWithReplacedOpts struct {
+	// Replace all occurrences of the pattern.
+	All bool
+	// Replace the first match starting from the specified line.
+	FirstFrom int
+}
+
+// Retrieves the file with content replaced with the given text.
+//
+// If 'all' is true, all occurrences of the pattern will be replaced.
+//
+// If 'firstAfter' is specified, only the first match starting at the specified line will be replaced.
+//
+// If neither are specified, and there are multiple matches for the pattern, this will error.
+//
+// If there are no matches for the pattern, this will error.
+func (r *File) WithReplaced(search string, replacement string, opts ...FileWithReplacedOpts) *File {
+	q := r.query.Select("withReplaced")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `all` optional argument
+		if !querybuilder.IsZeroValue(opts[i].All) {
+			q = q.Arg("all", opts[i].All)
+		}
+		// `firstFrom` optional argument
+		if !querybuilder.IsZeroValue(opts[i].FirstFrom) {
+			q = q.Arg("firstFrom", opts[i].FirstFrom)
+		}
+	}
+	q = q.Arg("search", search)
+	q = q.Arg("replacement", replacement)
 
 	return &File{
 		query: q,
@@ -9422,6 +9753,26 @@ func (r *Client) LoadScalarTypeDefFromID(id ScalarTypeDefID) *ScalarTypeDef {
 	}
 }
 
+// Load a SearchResult from its ID.
+func (r *Client) LoadSearchResultFromID(id SearchResultID) *SearchResult {
+	q := r.query.Select("loadSearchResultFromID")
+	q = q.Arg("id", id)
+
+	return &SearchResult{
+		query: q,
+	}
+}
+
+// Load a SearchSubmatch from its ID.
+func (r *Client) LoadSearchSubmatchFromID(id SearchSubmatchID) *SearchSubmatch {
+	q := r.query.Select("loadSearchSubmatchFromID")
+	q = q.Arg("id", id)
+
+	return &SearchSubmatch{
+		query: q,
+	}
+}
+
 // Load a Secret from its ID.
 func (r *Client) LoadSecretFromID(id SecretID) *Secret {
 	q := r.query.Select("loadSecretFromID")
@@ -9756,6 +10107,241 @@ func (r *ScalarTypeDef) SourceModuleName(ctx context.Context) (string, error) {
 		return *r.sourceModuleName, nil
 	}
 	q := r.query.Select("sourceModuleName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+type SearchResult struct {
+	query *querybuilder.Selection
+
+	absoluteOffset *int
+	filePath       *string
+	id             *SearchResultID
+	lineNumber     *int
+	matchedLines   *string
+}
+
+func (r *SearchResult) WithGraphQLQuery(q *querybuilder.Selection) *SearchResult {
+	return &SearchResult{
+		query: q,
+	}
+}
+
+// The byte offset of this line within the file.
+func (r *SearchResult) AbsoluteOffset(ctx context.Context) (int, error) {
+	if r.absoluteOffset != nil {
+		return *r.absoluteOffset, nil
+	}
+	q := r.query.Select("absoluteOffset")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The path to the file that matched.
+func (r *SearchResult) FilePath(ctx context.Context) (string, error) {
+	if r.filePath != nil {
+		return *r.filePath, nil
+	}
+	q := r.query.Select("filePath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this SearchResult.
+func (r *SearchResult) ID(ctx context.Context) (SearchResultID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response SearchResultID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *SearchResult) XXX_GraphQLType() string {
+	return "SearchResult"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *SearchResult) XXX_GraphQLIDType() string {
+	return "SearchResultID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *SearchResult) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *SearchResult) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The first line that matched.
+func (r *SearchResult) LineNumber(ctx context.Context) (int, error) {
+	if r.lineNumber != nil {
+		return *r.lineNumber, nil
+	}
+	q := r.query.Select("lineNumber")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The line content that matched.
+func (r *SearchResult) MatchedLines(ctx context.Context) (string, error) {
+	if r.matchedLines != nil {
+		return *r.matchedLines, nil
+	}
+	q := r.query.Select("matchedLines")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Sub-match positions and content within the matched lines.
+func (r *SearchResult) Submatches(ctx context.Context) ([]SearchSubmatch, error) {
+	q := r.query.Select("submatches")
+
+	q = q.Select("id")
+
+	type submatches struct {
+		Id SearchSubmatchID
+	}
+
+	convert := func(fields []submatches) []SearchSubmatch {
+		out := []SearchSubmatch{}
+
+		for i := range fields {
+			val := SearchSubmatch{id: &fields[i].Id}
+			val.query = q.Root().Select("loadSearchSubmatchFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []submatches
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+type SearchSubmatch struct {
+	query *querybuilder.Selection
+
+	end   *int
+	id    *SearchSubmatchID
+	start *int
+	text  *string
+}
+
+func (r *SearchSubmatch) WithGraphQLQuery(q *querybuilder.Selection) *SearchSubmatch {
+	return &SearchSubmatch{
+		query: q,
+	}
+}
+
+// The match's end offset within the matched lines.
+func (r *SearchSubmatch) End(ctx context.Context) (int, error) {
+	if r.end != nil {
+		return *r.end, nil
+	}
+	q := r.query.Select("end")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this SearchSubmatch.
+func (r *SearchSubmatch) ID(ctx context.Context) (SearchSubmatchID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response SearchSubmatchID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *SearchSubmatch) XXX_GraphQLType() string {
+	return "SearchSubmatch"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *SearchSubmatch) XXX_GraphQLIDType() string {
+	return "SearchSubmatchID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *SearchSubmatch) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *SearchSubmatch) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The match's start offset within the matched lines.
+func (r *SearchSubmatch) Start(ctx context.Context) (int, error) {
+	if r.start != nil {
+		return *r.start, nil
+	}
+	q := r.query.Select("start")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The matched text.
+func (r *SearchSubmatch) Text(ctx context.Context) (string, error) {
+	if r.text != nil {
+		return *r.text, nil
+	}
+	q := r.query.Select("text")
 
 	var response string
 
