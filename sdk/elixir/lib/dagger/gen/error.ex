@@ -84,6 +84,13 @@ defimpl Jason.Encoder, for: Dagger.Error do
   end
 end
 
+defimpl JSON.Encoder, for: Dagger.Error do
+  def encode(error, _encoder) do
+    {:ok, id} = Dagger.Error.id(error)
+    id
+  end
+end
+
 defimpl Nestru.Decoder, for: Dagger.Error do
   def decode_fields_hint(_struct, _context, id) do
     {:ok, Dagger.Client.load_error_from_id(Dagger.Global.dag(), id)}

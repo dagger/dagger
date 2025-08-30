@@ -578,6 +578,13 @@ defimpl Jason.Encoder, for: Dagger.ModuleSource do
   end
 end
 
+defimpl JSON.Encoder, for: Dagger.ModuleSource do
+  def encode(module_source, _encoder) do
+    {:ok, id} = Dagger.ModuleSource.id(module_source)
+    id
+  end
+end
+
 defimpl Nestru.Decoder, for: Dagger.ModuleSource do
   def decode_fields_hint(_struct, _context, id) do
     {:ok, Dagger.Client.load_module_source_from_id(Dagger.Global.dag(), id)}
