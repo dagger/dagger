@@ -4,10 +4,6 @@
   "sdk": {
     "source": "python"
   },
-  "include": [
-    "!.venv",
-    "!sdk"
-  ],
   "dependencies": [
     {
       "name": "python-sdk",

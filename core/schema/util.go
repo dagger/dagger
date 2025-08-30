@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -73,3 +76,41 @@ var AllVersion = core.AllVersion
 
 type BeforeVersion = core.BeforeVersion
 type AfterVersion = core.AfterVersion
+
+// Return a list of paths to include .gitignore files rebased on parentPath from hostPath
+//
+// Example:
+//
+//   - parentPath = "/foo/bar"
+//   - hostPath = "/foo/bar/baz"
+//   - .gitignore files will be loaded from the following paths: [.gitignore, baz/**.gitignore]
+//
+// ---
+//   - parentPath = "/"
+//   - hostPath = "/foo/bar"
+//   - .gitignore files will be loaded from the following paths: [.gitignore, foo/.gitignore, foo/bar/**.gitignore]
+//
+// We assume the hostPath is always a child of the parentPath and always absolute.
+func getGitIgnoreIncludePaths(parentPath string, hostPath string) ([]string, error) {
+	hostRelPathFromParent, err := filepath.Rel(parentPath, hostPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get relative path from parent: %w", err)
+	}
+
+	if hostRelPathFromParent == "." {
+		return []string{"**/.gitignore"}, nil
+	}
+
+	pathParts := strings.Split(hostRelPathFromParent, string(os.PathSeparator))
+
+	var paths []string
+	for i := range pathParts {
+		relativePath := filepath.Join(pathParts[:i]...)
+		paths = append(paths, filepath.Join(relativePath, ".gitignore"))
+	}
+
+	recursivePattern := filepath.Join(hostRelPathFromParent, "**", ".gitignore")
+	paths = append(paths, recursivePattern)
+
+	return paths, nil
+}

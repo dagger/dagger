@@ -1,0 +1,13 @@
+kind: Breaking
+body: |-
+  Automatically apply .gitignore patterns on directory loading for module call.
+  
+  - Apply .gitignore patterns when loading contextual directory argument.
+  - Apply .gitignore pattenrs when a directory is sent as an argument to a module function.
+  - Apply .gitignore patterns when a local module is loaded.
+
+  Add `NoGitAutoIgnore` argument to `Host.Directory` to disable this behavior.
+time: 2025-07-23T18:40:41.664219+02:00
+custom:
+  Author: TomChv,jedevc
+  PR: "10883"
