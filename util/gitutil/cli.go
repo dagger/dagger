@@ -300,7 +300,7 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, rerr erro
 			}
 		default:
 		}
-		return buf.Bytes(), fmt.Errorf("git error: %w\nstderr:\n%s", err, errbuf.String())
+		return buf.Bytes(), fmt.Errorf("git error: %w", translateError(err, errbuf.String()))
 	}
 	return buf.Bytes(), nil
 }
