@@ -6310,7 +6310,8 @@ func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
 type GitRepository struct {
 	query *querybuilder.Selection
 
-	id *GitRepositoryID
+	id  *GitRepositoryID
+	url *string
 }
 type WithGitRepositoryFunc func(r *GitRepository) *GitRepository
 
@@ -6464,6 +6465,19 @@ func (r *GitRepository) Tags(ctx context.Context, opts ...GitRepositoryTagsOpts)
 	}
 
 	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The URL of the git repository.
+func (r *GitRepository) URL(ctx context.Context) (string, error) {
+	if r.url != nil {
+		return *r.url, nil
+	}
+	q := r.query.Select("url")
+
+	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)

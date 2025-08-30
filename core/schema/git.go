@@ -406,6 +406,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 	}
 
 	inst, err = dagql.NewResultForCurrentID(ctx, &core.GitRepository{
+		URL: dagql.NonNull(dagql.NewString(remote.String())),
 		Backend: &core.RemoteGitRepository{
 			URL:           remote,
 			SSHKnownHosts: args.SSHKnownHosts,

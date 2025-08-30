@@ -7799,6 +7799,11 @@ impl GitRepository {
         }
         query.execute(self.graphql_client.clone()).await
     }
+    /// The URL of the git repository.
+    pub async fn url(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("url");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Header to authenticate the remote with.
     ///
     /// # Arguments
