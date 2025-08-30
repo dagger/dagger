@@ -17,7 +17,7 @@ defmodule Dagger.Mod.Object.Meta do
   defp validate({:doc, doc}) when is_binary(doc) or is_nil(doc), do: :ok
 
   defp validate({:default, default})
-       when is_binary(default) or is_number(default) or is_nil(default),
+       when is_binary(default) or is_number(default) or is_nil(default) or is_boolean(default),
        do: :ok
 
   defp validate({:default_path, path}) when is_binary(path) or is_nil(path), do: :ok
