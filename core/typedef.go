@@ -254,6 +254,10 @@ func (*FunctionArg) TypeDescription() string {
 		an argument passed at function call time.`)
 }
 
+func (arg *FunctionArg) isContextual() bool {
+	return arg.DefaultPath != ""
+}
+
 type DynamicID struct {
 	typeName string
 	id       *call.ID

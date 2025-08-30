@@ -20,6 +20,11 @@ export class Commands {
   }
 
   @func()
+  format(): Container {
+    return this.run(["fmt"])
+  }
+
+  @func()
   test(): Container {
     return this.run(["test"])
   }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/sdk"
@@ -107,6 +108,9 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 
 		dagql.NodeFunc("source", s.currentModuleSource).
 			Doc(`The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).`),
+
+		dagql.NodeFunc("git", s.currentModuleGit).
+			Doc(`The git repository containing the module's source code, if any.`),
 
 		dagql.NodeFuncWithCacheKey("workdir", s.currentModuleWorkdir, dagql.CachePerClient).
 			Doc(`Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.`).
@@ -494,20 +498,40 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 	}
 
 	// Check if both values are used, return an error if so.
-	if args.DefaultValue != nil && args.DefaultPath != "" {
-		return nil, fmt.Errorf("cannot set both default value and default path from context")
+	defaultSet := []bool{
+		args.DefaultValue != nil,
+		args.DefaultPath != "",
+	}
+	defaultCount := 0
+	for _, v := range defaultSet {
+		if v {
+			defaultCount++
+		}
+	}
+	if defaultCount > 1 {
+		return nil, fmt.Errorf("cannot set more than one default value")
 	}
 
-	// Check if default path from context is set for non-directory or non-file type
-	if argType.Self().Kind == core.TypeDefKindObject && args.DefaultPath != "" &&
-		(argType.Self().AsObject.Value.Name != "Directory" && argType.Self().AsObject.Value.Name != "File") {
-		return nil, fmt.Errorf("can only set default path for Directory or File type, not %s", argType.Self().AsObject.Value.Name)
+	// Check if default path from context is set for supported type
+	if args.DefaultPath != "" {
+		if argType.Self().Kind != core.TypeDefKindObject {
+			return nil, fmt.Errorf("can only set default path for Object, not %s", argType.Self().Kind)
+		}
+		name := argType.Self().AsObject.Value.Name
+		if !slices.Contains([]string{"Directory", "File", "GitRepository", "GitRef"}, name) {
+			return nil, fmt.Errorf("cannot set default path for %s", name)
+		}
 	}
 
 	// Check if ignore is set for non-directory type
-	if argType.Self().Kind == core.TypeDefKindObject &&
-		len(args.Ignore) > 0 && argType.Self().AsObject.Value.Name != "Directory" {
-		return nil, fmt.Errorf("can only set ignore for Directory type, not %s", argType.Self().AsObject.Value.Name)
+	if len(args.Ignore) > 0 {
+		if argType.Self().Kind != core.TypeDefKindObject {
+			return nil, fmt.Errorf("can only set ignore for Object type, not %s", argType.Self().Kind)
+		}
+		name := argType.Self().AsObject.Value.Name
+		if name != "Directory" {
+			return nil, fmt.Errorf("can only set ignore for Directory type, not %s", name)
+		}
 	}
 
 	// When using a default path SDKs can't set a default value and the argument
@@ -738,6 +762,24 @@ func (s *moduleSchema) currentModuleSource(
 	}
 
 	return inst, err
+}
+
+func (s *moduleSchema) currentModuleGit(
+	ctx context.Context,
+	curMod dagql.ObjectResult[*core.CurrentModule],
+	args struct{},
+) (inst dagql.ObjectResult[*core.GitRepository], err error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	curSrc := curMod.Self().Module.Source.Value
+	if curSrc.Self() == nil {
+		return inst, errors.New("invalid unset current module source")
+	}
+
+	return curSrc.Self().LoadContextGit(ctx, dag)
 }
 
 func (s *moduleSchema) currentModuleWorkdir(
