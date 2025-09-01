@@ -227,9 +227,6 @@ func (sdk *goSDK) TypeDefs(
 	deps *core.ModDeps,
 	src dagql.ObjectResult[*core.ModuleSource],
 ) (inst dagql.ObjectResult[*core.Module], rerr error) {
-	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: load typedefs object")
-	defer telemetry.End(span, func() error { return rerr })
-
 	dag, err := sdk.root.Server.Server(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag for go module sdk codegen: %w", err)
@@ -357,8 +354,6 @@ func (sdk *goSDK) Runtime(
 		return inst, fmt.Errorf("failed to get dag for go module sdk runtime: %w", err)
 	}
 
-	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: load runtime")
-	defer telemetry.End(span, func() error { return rerr })
 	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
 	if err != nil {
 		return inst, err
