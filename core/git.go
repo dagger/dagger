@@ -40,6 +40,7 @@ import (
 )
 
 type GitRepository struct {
+	URL     dagql.Nullable[dagql.String] `field:"true" doc:"The URL of the git repository."`
 	Backend GitRepositoryBackend
 
 	DiscardGitDir bool

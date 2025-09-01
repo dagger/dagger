@@ -231,6 +231,25 @@ func (GitSuite) TestGit(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (GitSuite) TestGitURL(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	input := "https://github.com/dagger/dagger.git"
+	url, err := c.Git(input).URL(ctx)
+	require.NoError(t, err)
+	require.Equal(t, input, url)
+
+	input = "github.com/dagger/dagger.git"
+	url, err = c.Git(input).URL(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "https://"+input, url)
+
+	input = "https://github.com/dagger/dagger.git"
+	url, err = c.Git(input).Head().Tree().AsGit().URL(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "", url)
+}
+
 func (GitSuite) TestDiscardGitDir(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

@@ -2834,6 +2834,9 @@ type GitRepository {
     patterns: [String!]
   ): [String!]!
 
+  """The URL of the git repository."""
+  url: String
+
   """Header to authenticate the remote with."""
   withAuthHeader(
     """Secret used to populate the Authorization HTTP header"""

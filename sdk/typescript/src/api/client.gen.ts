@@ -6755,14 +6755,16 @@ export class GitRef extends BaseClient {
  */
 export class GitRepository extends BaseClient {
   private readonly _id?: GitRepositoryID = undefined
+  private readonly _url?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: GitRepositoryID) {
+  constructor(ctx?: Context, _id?: GitRepositoryID, _url?: string) {
     super(ctx)
 
     this._id = _id
+    this._url = _url
   }
 
   /**
@@ -6852,6 +6854,21 @@ export class GitRepository extends BaseClient {
     const ctx = this._ctx.select("tags", { ...opts })
 
     const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The URL of the git repository.
+   */
+  url = async (): Promise<string> => {
+    if (this._url) {
+      return this._url
+    }
+
+    const ctx = this._ctx.select("url")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
