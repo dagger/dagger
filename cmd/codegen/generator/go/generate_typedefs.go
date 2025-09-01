@@ -17,11 +17,6 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-const (
-	// TypeDefsFile is the path to write the type definitions for the module
-	TypeDefsFile = "typedefs.json"
-)
-
 func (g *GoGenerator) GenerateTypeDefs(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
 	if g.Config.ModuleConfig == nil {
 		return nil, fmt.Errorf("generateTypeDefs is called but no typedef config is set")
@@ -111,5 +106,5 @@ func generateTypeDefs(ctx context.Context, cfg generator.Config, mfs *memfs.FS, 
 		return err
 	}
 
-	return mfs.WriteFile(TypeDefsFile, []byte(t), 0600)
+	return mfs.WriteFile(cfg.TypeDefsPath, []byte(t), 0600)
 }
