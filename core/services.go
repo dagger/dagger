@@ -194,7 +194,7 @@ dance:
 
 	svcCtx, stop := context.WithCancelCause(context.WithoutCancel(ctx))
 
-	running, err := svc.Start(svcCtx, id, nil)
+	running, err := svc.Start(svcCtx, id, sio)
 	if err != nil {
 		stop(err)
 		ss.l.Lock()
