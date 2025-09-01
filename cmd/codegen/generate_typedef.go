@@ -9,6 +9,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	outputFile string
+)
+
 var generateTypeDefsCmd = &cobra.Command{
 	Use:  "generate-typedefs",
 	RunE: GenerateTypeDefs,
@@ -41,6 +45,7 @@ func GenerateTypeDefs(cmd *cobra.Command, args []string) error {
 	moduleConfig.ModuleParentPath = moduleParentPath
 
 	cfg.ModuleConfig = moduleConfig
+	cfg.TypeDefsPath = outputFile
 
 	generator, err := getGenerator(cfg)
 	if err != nil {
@@ -56,6 +61,7 @@ func init() {
 	// Specific typedefs generation flags
 	generateTypeDefsCmd.Flags().StringVar(&modulePath, "module-source-path", "", "path to source subpath of the module")
 	generateTypeDefsCmd.Flags().StringVar(&moduleName, "module-name", "", "name of module to generate code for")
-	generateTypeDefsCmd.MarkFlagRequired("module-name")
-	generateTypeDefsCmd.MarkFlagRequired("module-source-path")
+	_ = generateTypeDefsCmd.MarkFlagRequired("module-name")
+	_ = generateTypeDefsCmd.MarkFlagRequired("module-source-path")
+	generateTypeDefsCmd.Flags().StringVar(&outputFile, "output", "", "path to output file")
 }
