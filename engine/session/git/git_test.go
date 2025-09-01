@@ -168,7 +168,7 @@ sleep 31
 
 	// Create base container with all dependencies
 	baseContainer := client.Container().
-		From("golang:1.21").
+		From("golang:1.25").
 		WithExec([]string{"apt-get", "update"}).
 		WithExec([]string{"apt-get", "install", "-y", "git"}).
 		WithExec([]string{"mkdir", "-p", "/app/git"}).
@@ -183,11 +183,11 @@ require (
     github.com/gogo/protobuf v1.3.2
     google.golang.org/grpc v1.59.0
 )
+
+replace github.com/dagger/dagger => .
 `).
 		// Mount git implementation as the session pkg
-		WithMountedFile("/app/git/git.pb.go", client.Host().File("./git.pb.go")).
-		WithMountedFile("/app/git/git.go", client.Host().File("./git.go")).
-		WithNewFile("/app/git/package.go", `package git`).
+		WithMountedDirectory("./git/", client.Host().Directory(".")).
 
 		// Create test harness that:
 		// 1. Reads request from JSON file
