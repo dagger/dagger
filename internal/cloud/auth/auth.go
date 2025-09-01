@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -283,11 +284,21 @@ func getOIDCToken(ctx context.Context) (*oidcTokenResponse, error) {
 
 		providerToken := response["value"]
 
-		r, err = http.NewRequestWithContext(ctx, http.MethodGet, apiURL+"/v1/oidc?provider=github", nil)
+		payload := map[string]string{
+			"github_job": os.Getenv("GITHUB_JOB"),
+			"github_sha": os.Getenv("GITHUB_SHA"),
+			"github_ref": os.Getenv("GITHUB_REF"),
+		}
+		b := bytes.NewBuffer([]byte{})
+		if err := json.NewEncoder(b).Encode(payload); err != nil {
+			return nil, fmt.Errorf("failed to encode OIDC payload: %w", err)
+		}
+		r, err = http.NewRequestWithContext(ctx, http.MethodPost, apiURL+"/v1/oidc?provider=github", b)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create request for fetching OIDC token: %w", err)
 		}
 		r.Header.Set("Authorization", "Bearer "+providerToken)
+		r.Header.Set("Content-Type", "application/json")
 
 		loginRes, err := http.DefaultClient.Do(r)
 		if err != nil {
