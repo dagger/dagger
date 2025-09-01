@@ -7,8 +7,11 @@ import (
 	fmt "fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	strings "strings"
 	"time"
+
+	"github.com/dagger/dagger/util/netrc"
 )
 
 // GetCredential retrieves Git credentials for the given request using the local Git credential system.
@@ -31,6 +34,7 @@ func (s GitAttachable) GetCredential(ctx context.Context, req *GitCredentialRequ
 
 	methods := []func(context.Context, *GitCredentialRequest) (*GitCredentialResponse, error){
 		s.getCredentialFromHelper,
+		s.getCredentialFromNetrc,
 	}
 
 	var firstResp *GitCredentialResponse
@@ -99,6 +103,44 @@ func (s GitAttachable) getCredentialFromHelper(ctx context.Context, req *GitCred
 			Credential: cred,
 		},
 	}, nil
+}
+
+func (s GitAttachable) getCredentialFromNetrc(ctx context.Context, req *GitCredentialRequest) (*GitCredentialResponse, error) {
+	if req.Protocol != "http" && req.Protocol != "https" {
+		return newGitCredentialErrorResponse(INVALID_REQUEST, "netrc only supports http and https protocols"), nil
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return newGitCredentialErrorResponse(NOT_FOUND, "Failed to determine user home directory"), nil
+	}
+	file, err := os.Open(filepath.Join(homeDir, ".netrc"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return newGitCredentialErrorResponse(NOT_FOUND, ".netrc file not found"), nil
+		}
+		return newGitCredentialErrorResponse(CREDENTIAL_RETRIEVAL_FAILED, "Failed to open .netrc file"), nil
+	}
+	defer file.Close()
+
+	entries := netrc.NetrcEntries(file)
+	for entry := range entries {
+		if entry.Machine == "" || entry.Machine == req.Host {
+			cred := &CredentialInfo{
+				Protocol: req.Protocol,
+				Host:     req.Host,
+				Username: entry.Login,
+				Password: entry.Password,
+			}
+			return &GitCredentialResponse{
+				Result: &GitCredentialResponse_Credential{
+					Credential: cred,
+				},
+			}, nil
+		}
+	}
+
+	return newGitCredentialErrorResponse(CREDENTIAL_RETRIEVAL_FAILED, "No matching credentials found in .netrc"), nil
 }
 
 func parseGitCredentialOutput(output []byte) (*CredentialInfo, error) {

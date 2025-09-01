@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"dagger.io/dagger"
@@ -158,6 +159,26 @@ sleep 31
 			expectedError:  TIMEOUT,
 			expectedReason: "Git credential command timed out",
 		},
+		{
+			name: "netrc",
+			setup: func(c *dagger.Container) *dagger.Container {
+				return c.WithNewFile("/root/.netrc", `
+machine github.com
+login netrcuser
+password netrcpass
+`)
+			},
+			request: &GitCredentialRequest{
+				Protocol: "https",
+				Host:     "github.com",
+			},
+			expectedResponse: &CredentialInfo{
+				Protocol: "https",
+				Host:     "github.com",
+				Username: "netrcuser",
+				Password: "netrcpass",
+			},
+		},
 	}
 
 	// setup dagger
@@ -165,6 +186,9 @@ sleep 31
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
 	require.NoError(t, err)
 	defer client.Close()
+
+	wd, err := os.Getwd()
+	require.NoError(t, err)
 
 	// Create base container with all dependencies
 	baseContainer := client.Container().
@@ -188,6 +212,7 @@ replace github.com/dagger/dagger => .
 `).
 		// Mount git implementation as the session pkg
 		WithMountedDirectory("./git/", client.Host().Directory(".")).
+		WithMountedDirectory("./util/netrc/", client.Host().Directory(filepath.Join(wd, "../../../util/netrc"))).
 
 		// Create test harness that:
 		// 1. Reads request from JSON file
