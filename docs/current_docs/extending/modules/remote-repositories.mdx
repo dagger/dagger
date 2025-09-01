@@ -8,8 +8,6 @@ description: Learn how to use remote repositories with Dagger, including authent
 
 Dagger supports the use of HTTP and SSH protocols for accessing directories, files, and Dagger modules in remote repositories. This feature is compatible with all major Git hosting platforms such as GitHub, GitLab, BitBucket, Azure DevOps, Codeberg, and Sourcehut. Dagger supports authentication via both HTTPS (using Git credential managers) and SSH (using a unified authentication approach).
 
-<Tabs>
-<TabItem value="Remote directories and files">
 Dagger supports the following reference schemes for directory and file arguments:
 
 | Protocol | Scheme     | Authentication | Example |
@@ -26,28 +24,6 @@ Dagger provides additional flexibility in referencing file and directory argumen
 
 - **Version specification**: Add `#version` to target a particular version of the repository. This can be a tag, branch name, or full commit hash. If omitted, the default branch is used.
 - **Monorepo support**: Append `:subpath` after the version specification to access a specific subdirectory within the repository. Note that specifying a version is mandatory when including a subpath.
-
-:::important
-When referencing a specific subdirectory (subpath) within a repository, you must always include a version specification. The format is always `#version:subpath`.
-:::
-</TabItem>
-<TabItem value="Remote modules">
-Dagger supports various reference schemes for Dagger modules, as below:
-
-| Protocol | Scheme            | Authentication | Example |
-|----------|-------------------|----------------|---------|
-| HTTP(S)  | Go-like ref style | Git credential manager | `github.com/username/repo[/subdir][@version]`  |
-| HTTP(S)  | Git HTTP style    | Git credential manager | `https://github.com/username/repo.git[/subdir][@version]` |
-| SSH      | SCP-like          | SSH keys | `git@github.com:username/repo.git[/subdir][@version]`     |
-| SSH      | Explicit SSH      | SSH keys | `ssh://git@github.com/username/repo.git[/subdir][@version]` |
-
-Dagger provides additional flexibility in referencing modules through the following options:
-
-- **Optional extension**: The `.git` extension is optional for HTTP refs or explicit SSH refs, except for [GitLab, when referencing modules stored on a private repo or private subgroup](https://gitlab.com/gitlab-org/gitlab-foss/-/blob/master/lib/gitlab/middleware/go.rb#L229-237).
-- **Monorepo support**: Append `/subpath` to access a specific subdirectory within the repository.
-- **Version specification**: Add `@version` to target a particular version of the module. This can be a tag, branch name, or full commit hash. If omitted, the default branch is used.
-</TabItem>
-</Tabs>
 
 ## Common SSH cloning patterns
 

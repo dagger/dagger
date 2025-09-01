@@ -5,6 +5,21 @@ description: "Learn how to manage module dependencies in Dagger"
 
 # Module Dependencies
 
+A module reference follows the format: `[proto://]host/repo[/subpath][@version]`, where:
+- `host` is the domain name of the Git hosting service, e.g. `github.com`.
+- `repo` is the repository path, typically in the format `owner/name`.
+- `proto://` is optional and can be either `ssh://` or `https://` if you want to be explicit about the protocol. If omitted, Dagger will automatically choose the protocol based on available authentication methods.
+- `/subpath` is optional and specifies a subdirectory within the repository, useful for monorepos.
+- `@version` can be a tag, branch, or commit. If omitted, the default branch is used.
+
+For example, in the reference `github.com/shykes/daggerverse/hello@v0.3.0`:
+- `github.com` is the host
+- `shykes/daggerverse` is the repository
+- `hello` is the subpath within the repository
+- `v0.3.0` is the version tag
+
+The `.git` extension for the repository is optional for HTTP refs or explicit SSH refs, except for [GitLab, when referencing modules stored on a private repo or private subgroup](https://gitlab.com/gitlab-org/gitlab-foss/-/blob/master/lib/gitlab/middleware/go.rb#L229-237).
+
 ## Installation
 
 You can call Dagger Functions from any other Dagger module in your own Dagger module simply by adding it as a module dependency with `dagger install`, as in the following example:
@@ -151,6 +166,18 @@ dagger install ./path/to/module
 :::note
 Installing a module using a local path (relative or absolute) is only possible if your module is within the repository root (for Git repositories) or the directory containing the `dagger.json` file (for all other cases).
 :::
+
+### Private modules
+
+You can also install private modules from remote repositories, as long as you have access to them. Dagger supports authentication via both HTTPS (using Git credential managers) and SSH (using `SSH_AUTH_SOCK`). For more information, see [Remote Repositories](/extending/remote-repositories).
+
+When installing a private module, you can use either the normal ref style (preferred if possible, since it allows any available auth method to be used) or be explicit, and specify the protocol. For example, the following commands install the same private module:
+
+```shell
+dagger install github.com/username/private-repo/module
+dagger install https://github.com/username/private-repo/module
+dagger install ssh://git@github.com/username/private-repo/module
+```
 
 ## Uninstallation
 
