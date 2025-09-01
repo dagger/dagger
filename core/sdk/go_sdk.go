@@ -21,6 +21,7 @@ const (
 	goSDKRuntimePath            = "/runtime"
 	goSDKIntrospectionJSONPath  = "/schema.json"
 	goSDKDependenciesConfigPath = "/dependencies.json"
+	GoSDKModuleIDPath           = "typedefs.json"
 )
 
 /*
@@ -298,6 +299,7 @@ func (sdk *goSDK) TypeDefs(
 						"--module-source-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
 						"--module-name", dagql.String(modName),
 						"--introspection-json-path", goSDKIntrospectionJSONPath,
+						"--output", GoSDKModuleIDPath,
 					},
 				},
 				{
@@ -311,7 +313,7 @@ func (sdk *goSDK) TypeDefs(
 			Args: []dagql.NamedInput{
 				{
 					Name:  "path",
-					Value: dagql.NewString("typedefs.json"),
+					Value: dagql.NewString(GoSDKModuleIDPath),
 				},
 			},
 		},
