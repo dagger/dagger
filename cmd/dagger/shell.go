@@ -353,12 +353,6 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		return nil
 	}
 
-	// Ensure we always see new telemetry for shell commands, rather than
-	// "resurrecting" the same telemetry from previous commands
-	if bag, err := baggage.Parse("repeat-telemetry=true"); err == nil {
-		ctx = baggage.ContextWithBaggage(ctx, bag)
-	}
-
 	// Handle based on mode
 	if h.mode == modePrompt {
 		// NB: no span in this case, just let the LLM APIs create the user/assistant
@@ -375,6 +369,12 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		h.llmSession = newLLM
 		h.llmModel = newLLM.model
 		return nil
+	}
+
+	// Ensure we always see new telemetry for shell commands, rather than
+	// "resurrecting" the same telemetry from previous commands
+	if bag, err := baggage.Parse("repeat-telemetry=true"); err == nil {
+		ctx = baggage.ContextWithBaggage(ctx, bag)
 	}
 
 	// Create a new span for this command

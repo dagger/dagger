@@ -21,6 +21,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
+	"go.opentelemetry.io/otel/trace"
 	"mvdan.cc/sh/v3/syntax"
 )
 
@@ -67,6 +68,9 @@ type LLMSession struct {
 	shell      *shellCallHandler
 	beforeFS   *dagger.Directory
 	afterFS    *dagger.Directory
+
+	plumbingCtx  context.Context
+	plumbingSpan trace.Span
 }
 
 func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, shellHandler *shellCallHandler) (*LLMSession, error) {
@@ -87,6 +91,10 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, she
 		shell: shellHandler,
 	}
 
+	// Allocate a span to tuck all the internal plumbing into, so it doesn't
+	// clutter the top-level prior to receiving the Revealed spans
+	s.plumbingCtx, s.plumbingSpan = Tracer().Start(ctx, "LLM plumbing", telemetry.Internal())
+
 	// TODO: cache this
 	models, err := openrouter.FetchModels(ctx)
 	if err != nil {
@@ -99,13 +107,13 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, she
 		s.skipEnv[k] = true
 	}
 
-	s.reset(ctx)
+	s.reset()
 
 	return s, nil
 }
 
-func (s *LLMSession) reset(ctx context.Context) {
-	s.updateLLMAndAgentVar(ctx,
+func (s *LLMSession) reset() {
+	s.updateLLMAndAgentVar(
 		s.dag.LLM(dagger.LLMOpts{Model: s.model}).
 			WithEnv(s.dag.Env(dagger.EnvOpts{
 				Privileged: true,
@@ -127,11 +135,11 @@ func (s *LLMSession) Fork() *LLMSession {
 func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession, error) {
 	s = s.Fork()
 
-	if err := s.syncVarsToLLM(ctx); err != nil {
+	if err := s.syncVarsToLLM(); err != nil {
 		return s, err
 	}
 
-	resolvedModel, err := s.llm.Model(ctx)
+	resolvedModel, err := s.llm.Model(s.plumbingCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +151,7 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 		// update the sidebar after every step, not after the entire loop
 		prompted = prompted.Step()
 
-		s.updateLLMAndAgentVar(ctx, prompted)
+		s.updateLLMAndAgentVar(prompted)
 
 		if err := s.syncAndUpdateSidebar(ctx); err != nil {
 			return s, err
@@ -151,7 +159,7 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 
 		s.afterFS = prompted.Env().Hostfs()
 
-		dirDiff, err := dirDiff(ctx, s.beforeFS, s.afterFS)
+		dirDiff, err := dirDiff(s.plumbingCtx, s.beforeFS, s.afterFS)
 		if err != nil {
 			return s, err
 		}
@@ -188,7 +196,7 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 			})
 		}
 
-		hasMore, err := prompted.HasPrompt(ctx)
+		hasMore, err := prompted.HasPrompt(s.plumbingCtx)
 		if err != nil {
 			return s, err
 		}
@@ -197,7 +205,7 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 		}
 	}
 
-	if err := s.syncVarsFromLLM(ctx); err != nil {
+	if err := s.syncVarsFromLLM(); err != nil {
 		return s, err
 	}
 
@@ -292,8 +300,10 @@ const (
 	lastValueVar = "_"
 )
 
-func (s *LLMSession) updateLLMAndAgentVar(ctx context.Context, llm *dagger.LLM) error {
+func (s *LLMSession) updateLLMAndAgentVar(llm *dagger.LLM) error {
 	s.llm = llm
+
+	ctx := s.plumbingCtx
 
 	// figure out what the model resolved to
 	model, err := s.llm.Model(ctx)
@@ -318,19 +328,19 @@ func (s *LLMSession) syncAndUpdateSidebar(ctx context.Context) error {
 	// as well respect the return value
 	s.llm = llm
 
-	inputTokens, err := llm.TokenUsage().InputTokens(ctx)
+	inputTokens, err := llm.TokenUsage().InputTokens(s.plumbingCtx)
 	if err != nil {
 		return err
 	}
-	outputTokens, err := llm.TokenUsage().OutputTokens(ctx)
+	outputTokens, err := llm.TokenUsage().OutputTokens(s.plumbingCtx)
 	if err != nil {
 		return err
 	}
-	cacheReads, err := llm.TokenUsage().CachedTokenReads(ctx)
+	cacheReads, err := llm.TokenUsage().CachedTokenReads(s.plumbingCtx)
 	if err != nil {
 		return err
 	}
-	cacheWrites, err := llm.TokenUsage().CachedTokenWrites(ctx)
+	cacheWrites, err := llm.TokenUsage().CachedTokenWrites(s.plumbingCtx)
 	if err != nil {
 		return err
 	}
@@ -400,7 +410,9 @@ func (s *LLMSession) syncAndUpdateSidebar(ctx context.Context) error {
 	return err
 }
 
-func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
+func (s *LLMSession) syncVarsToLLM() error {
+	ctx := s.plumbingCtx
+
 	// TODO: overlay? bad scaling characteristics. maybe overkill anyway
 	oldVars := s.syncedVars
 	s.syncedVars = make(map[string]digest.Digest)
@@ -492,11 +504,13 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 	if err := syncedEnvQ.Select("id").Bind(&envID).Execute(ctx); err != nil {
 		return err
 	}
-	s.updateLLMAndAgentVar(ctx, s.llm.WithEnv(s.dag.LoadEnvFromID(envID)))
+	s.updateLLMAndAgentVar(s.llm.WithEnv(s.dag.LoadEnvFromID(envID)))
 	return nil
 }
 
-func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
+func (s *LLMSession) syncVarsFromLLM() error {
+	ctx := s.plumbingCtx
+
 	outputs, err := s.llm.Env().Outputs(ctx)
 	if err != nil {
 		return err
@@ -621,7 +635,7 @@ func (s *LLMSession) toShell(ctx context.Context, idable dagqlObject) (string, e
 
 func (s *LLMSession) Clear(ctx context.Context) *LLMSession {
 	s = s.Fork()
-	s.reset(ctx)
+	s.reset()
 	return s
 }
 
@@ -670,7 +684,7 @@ func (s *LLMSession) Compact(ctx context.Context) (_ *LLMSession, rerr error) {
 		return s, err
 	}
 	s = s.Fork()
-	s.updateLLMAndAgentVar(ctx, compacted)
+	s.updateLLMAndAgentVar(compacted)
 	return s, nil
 }
 
@@ -688,8 +702,8 @@ func (s *LLMSession) History(ctx context.Context) (*LLMSession, error) {
 
 func (s *LLMSession) Model(ctx context.Context, model string) (*LLMSession, error) {
 	s = s.Fork()
-	s.updateLLMAndAgentVar(ctx, s.llm.WithModel(model))
-	model, err := s.llm.Model(ctx)
+	s.updateLLMAndAgentVar(s.llm.WithModel(model))
+	model, err := s.llm.Model(s.plumbingCtx)
 	if err != nil {
 		return nil, err
 	}
