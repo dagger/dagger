@@ -1,0 +1,19 @@
+#!/usr/bin/env -S dagger shell --no-mod
+
+# hack/build builds the engine and cli from local code and pushes the container
+# image to the specified registry
+
+# HACK: strip "build" from the script path to get the parent module
+.cd ${0%/build}/..
+
+cli |\
+    dev-binaries --platform=current |\
+    export ./bin &
+cli_pid=$!
+
+.deps | dagger-engine |\
+    container ${_EXPERIMENTAL_DAGGER_GPU_SUPPORT:+--gpu-support} |\
+	publish ${DAGGER_ENGINE_IMAGE_FULL_ADDR:-} &
+engine_pid=$!
+
+.wait $cli_pid $engine_pid

@@ -75,21 +75,21 @@ func (d *daggerCloudDriver) Available(ctx context.Context) (bool, error) {
 	return true, nil // assume always available
 }
 
-func (d *daggerCloudDriver) Provision(ctx context.Context, _ *url.URL, opts *DriverOpts) (Connector, error) {
+func (d *daggerCloudDriver) Provision(ctx context.Context, u *url.URL, opts *DriverOpts) (Connector, error) {
 	client, err := cloud.NewClient(ctx)
 	if err != nil {
 		return nil, errors.New("please run `dagger login <org>` first or configure a DAGGER_CLOUD_TOKEN")
 	}
 
-	return d.create(ctx, client)
+	return d.create(ctx, client, u)
 }
 
 func (d *daggerCloudDriver) ImageLoader(ctx context.Context) imageload.Backend {
 	return nil
 }
 
-func (d *daggerCloudDriver) create(ctx context.Context, client *cloud.Client) (*daggerCloudConnector, error) {
-	engineSpec, err := client.Engine(ctx)
+func (d *daggerCloudDriver) create(ctx context.Context, client *cloud.Client, u *url.URL) (*daggerCloudConnector, error) {
+	engineSpec, err := client.Engine(ctx, u.Query().Get("image"))
 	if err != nil {
 		if errors.Is(err, cloud.ErrNoOrg) {
 			return nil, errors.New("please associate this Engine with an org by running `dagger login <org>")
