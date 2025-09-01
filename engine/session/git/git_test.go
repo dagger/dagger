@@ -65,7 +65,7 @@ echo "password=testpass"
 			// Test case 3: Environment check - Git not available
 			// Verifies that the service properly handles cases where Git is not
 			// installed or not in PATH
-			name: "NO_GIT",
+			name: "NOT_FOUND",
 			setup: func(c *dagger.Container) *dagger.Container {
 				return c.WithExec([]string{"mv", "/usr/bin/git", "/usr/bin/git_temp"})
 			},
@@ -73,7 +73,7 @@ echo "password=testpass"
 				Protocol: "https",
 				Host:     "github.com",
 			},
-			expectedError:  NO_GIT,
+			expectedError:  NOT_FOUND,
 			expectedReason: "Git is not installed or not in PATH",
 		},
 		{

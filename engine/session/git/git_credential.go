@@ -18,7 +18,7 @@ import (
 // - If Git can't find or execute a helper: CREDENTIAL_RETRIEVAL_FAILED
 // - If a helper returns invalid format or no credentials: Git handles it as a failure (CREDENTIAL_RETRIEVAL_FAILED)
 // - If the command times out: TIMEOUT
-// - If Git is not installed: NO_GIT
+// - If Git is not installed: NOT_FOUND
 // - If the request is invalid: INVALID_REQUEST
 func (s GitAttachable) GetCredential(ctx context.Context, req *GitCredentialRequest) (*GitCredentialResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -31,7 +31,7 @@ func (s GitAttachable) GetCredential(ctx context.Context, req *GitCredentialRequ
 
 	// Check if git is installed
 	if _, err := exec.LookPath("git"); err != nil {
-		return newGitCredentialErrorResponse(NO_GIT, "Git is not installed or not in PATH"), nil
+		return newGitCredentialErrorResponse(NOT_FOUND, "Git is not installed or not in PATH"), nil
 	}
 
 	// Ensure no parallel execution of the git CLI happens

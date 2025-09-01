@@ -36,7 +36,7 @@ func matchesURLInsteadOf(input string) bool {
 // It follows Git's config protocol and error handling:
 // - If Git fails to list config: CONFIG_RETRIEVAL_FAILED
 // - If the command times out: TIMEOUT
-// - If Git is not installed: NO_GIT
+// - If Git is not installed: NOT_FOUND
 // - If the request is invalid: INVALID_REQUEST
 func (s GitAttachable) GetConfig(ctx context.Context, req *GitConfigRequest) (*GitConfigResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -44,7 +44,7 @@ func (s GitAttachable) GetConfig(ctx context.Context, req *GitConfigRequest) (*G
 
 	// Check if git is installed
 	if _, err := exec.LookPath("git"); err != nil {
-		return newGitConfigErrorResponse(NO_GIT, "git is not installed or not in PATH"), nil
+		return newGitConfigErrorResponse(NOT_FOUND, "git is not installed or not in PATH"), nil
 	}
 
 	// Ensure no parallel execution of the git CLI happens
