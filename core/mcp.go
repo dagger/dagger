@@ -93,7 +93,9 @@ type MCPServerConfig struct {
 	Service dagql.ObjectResult[*Service]
 }
 
-func (srv *MCPServerConfig) Dial(ctx context.Context) (*mcp.ClientSession, error) {
+func (srv *MCPServerConfig) Dial(ctx context.Context) (_ *mcp.ClientSession, rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "start mcp server: "+srv.Name, telemetry.Reveal())
+	defer telemetry.End(span, func() error { return rerr })
 	return mcp.NewClient(&mcp.Implementation{
 		Title:   "Dagger",
 		Version: engine.Version,
