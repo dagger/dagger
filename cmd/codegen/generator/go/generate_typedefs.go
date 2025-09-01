@@ -22,7 +22,7 @@ const (
 	TypeDefsFile = "typedefs.json"
 )
 
-func (g *GoGenerator) GenerateTypeDefs(ctx context.Context, schema *introspection.Schema, _ string) (*generator.GeneratedState, error) {
+func (g *GoGenerator) GenerateTypeDefs(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
 	if g.Config.ModuleConfig == nil {
 		return nil, fmt.Errorf("generateTypeDefs is called but no typedef config is set")
 	}
@@ -96,15 +96,15 @@ func (g *GoGenerator) GenerateTypeDefs(ctx context.Context, schema *introspectio
 		return nil, fmt.Errorf("load package %q: %w", outDir, err)
 	}
 
-	if err = generateTypeDefs(ctx, g.Config, mfs, pkg, fset); err != nil {
+	if err = generateTypeDefs(ctx, g.Config, mfs, pkg, fset, schema, schemaVersion); err != nil {
 		return nil, fmt.Errorf("generate type defs: %w", err)
 	}
 
 	return res, nil
 }
 
-func generateTypeDefs(ctx context.Context, cfg generator.Config, mfs *memfs.FS, pkg *packages.Package, fset *token.FileSet) error {
-	gen := templates.GoTypeDefsGenerator(ctx, nil, "", cfg, pkg, fset, 0)
+func generateTypeDefs(ctx context.Context, cfg generator.Config, mfs *memfs.FS, pkg *packages.Package, fset *token.FileSet, schema *introspection.Schema, schemaVersion string) error {
+	gen := templates.GoTypeDefsGenerator(ctx, schema, schemaVersion, cfg, pkg, fset, 0)
 
 	t, err := gen.TypeDefs()
 	if err != nil {
