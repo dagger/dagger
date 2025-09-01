@@ -23,12 +23,12 @@ type ParsedType interface {
 	GoSubTypes() []types.Type
 
 	// TypeDef representation of the type
-	TypeDefObject(*dagger.Client) (*dagger.TypeDef, error)
+	TypeDef(*dagger.Client) (*dagger.TypeDef, error)
 }
 
 type FuncParsedType interface {
 	ParsedType
-	TypeDefObjectFunc(*dagger.Client) (*dagger.Function, error)
+	TypeDefFunc(*dagger.Client) (*dagger.Function, error)
 }
 
 type NamedParsedType interface {
@@ -198,7 +198,7 @@ func (spec *parsedPrimitiveType) TypeDefCode() (*Statement, error) {
 	return def, nil
 }
 
-func (spec *parsedPrimitiveType) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef, error) {
+func (spec *parsedPrimitiveType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
 	var kind dagger.TypeDefKind
 	if spec.goType.Kind() == types.Invalid {
 		// NOTE: this is odd, but it doesn't matter, because the module won't
@@ -259,8 +259,8 @@ func (spec *parsedSliceType) TypeDefCode() (*Statement, error) {
 	return Qual("dag", "TypeDef").Call().Dot("WithListOf").Call(underlyingCode), nil
 }
 
-func (spec *parsedSliceType) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef, error) {
-	underlyingTypeDef, err := spec.underlying.TypeDefObject(dag)
+func (spec *parsedSliceType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
+	underlyingTypeDef, err := spec.underlying.TypeDef(dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate underlying typedef: %w", err)
 	}
@@ -293,7 +293,7 @@ func (spec *parsedObjectTypeReference) TypeDefCode() (*Statement, error) {
 	), nil
 }
 
-func (spec *parsedObjectTypeReference) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef, error) {
+func (spec *parsedObjectTypeReference) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
 	return dag.TypeDef().WithObject(spec.name), nil
 }
 
@@ -330,7 +330,7 @@ func (spec *parsedIfaceTypeReference) TypeDefCode() (*Statement, error) {
 	), nil
 }
 
-func (spec *parsedIfaceTypeReference) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef, error) {
+func (spec *parsedIfaceTypeReference) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
 	return dag.TypeDef().WithInterface(spec.name), nil
 }
 
@@ -377,6 +377,6 @@ func (spec *sourceMap) TypeDefCode() *Statement {
 	return Qual("dag", "SourceMap").Call(Lit(spec.filename), Lit(spec.line), Lit(spec.column))
 }
 
-func (spec *sourceMap) TypeDefObject(dag *dagger.Client) *dagger.SourceMap {
+func (spec *sourceMap) TypeDef(dag *dagger.Client) *dagger.SourceMap {
 	return dag.SourceMap(spec.filename, spec.line, spec.column)
 }
