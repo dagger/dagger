@@ -1,0 +1,6 @@
+kind: Breaking
+body: Removed deprecated Argument attribute, use Doc instead.
+time: 2025-09-01T08:29:44.430837556Z
+custom:
+    Author: charjr
+    PR: "10968"
