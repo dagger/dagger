@@ -1110,8 +1110,6 @@ func (GitSuite) TestGitCommonAncestor(ctx context.Context, t *testctx.T) {
 func (GitSuite) TestGitSchemeless(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	// TODO: check resolved GitRepository.URL once https://github.com/dagger/dagger/pull/10959 is merged
-
 	checkAccess := func(ctx context.Context, repo *dagger.GitRepository) error {
 		_, err := repo.
 			Branch("main").
@@ -1124,6 +1122,10 @@ func (GitSuite) TestGitSchemeless(ctx context.Context, t *testctx.T) {
 	t.Run("public https", func(ctx context.Context, t *testctx.T) {
 		repo := c.Git("github.com/dagger/dagger")
 		require.NoError(t, checkAccess(ctx, repo))
+
+		url, err := repo.URL(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "https://github.com/dagger/dagger", url)
 	})
 
 	t.Run("private https", func(ctx context.Context, t *testctx.T) {
@@ -1135,6 +1137,10 @@ func (GitSuite) TestGitSchemeless(ctx context.Context, t *testctx.T) {
 			HTTPAuthToken: c.SetSecret("github_pat", token),
 		})
 		require.NoError(t, checkAccess(ctx, repo))
+
+		url, err := repo.URL(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "https://github.com/grouville/daggerverse-private.git", url)
 	})
 
 	t.Run("private ssh", func(ctx context.Context, t *testctx.T) {
@@ -1145,6 +1151,10 @@ func (GitSuite) TestGitSchemeless(ctx context.Context, t *testctx.T) {
 			SSHAuthSocket: c.Host().UnixSocket(sockPath),
 		})
 		require.NoError(t, checkAccess(ctx, repo))
+
+		url, err := repo.URL(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "ssh://git@gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git", url)
 	})
 
 	t.Run("private no auth fails", func(ctx context.Context, t *testctx.T) {
@@ -1153,6 +1163,10 @@ func (GitSuite) TestGitSchemeless(ctx context.Context, t *testctx.T) {
 		err := checkAccess(ctx, repo)
 		require.Error(t, err)
 		requireErrOut(t, err, "authentication failed")
+
+		url, err := repo.URL(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "https://github.com/grouville/daggerverse-private.git", url)
 	})
 }
 
