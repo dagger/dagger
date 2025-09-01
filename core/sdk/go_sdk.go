@@ -234,6 +234,11 @@ func (sdk *goSDK) TypeDefs(
 		return inst, fmt.Errorf("failed to get dag for go module sdk codegen: %w", err)
 	}
 
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{})
+	if err != nil {
+		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
+	}
+
 	var ctr dagql.ObjectResult[*core.Container]
 
 	modName := src.Self().ModuleOriginalName
@@ -247,6 +252,19 @@ func (sdk *goSDK) TypeDefs(
 
 	var typeDefsID string
 	err = dag.Select(ctx, ctr, &typeDefsID,
+		dagql.Selector{
+			Field: "withMountedFile",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(goSDKIntrospectionJSONPath),
+				},
+				{
+					Name:  "source",
+					Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
+				},
+			},
+		},
 		dagql.Selector{
 			Field: "withMountedDirectory",
 			Args: []dagql.NamedInput{
@@ -279,6 +297,7 @@ func (sdk *goSDK) TypeDefs(
 						"generate-typedefs",
 						"--module-source-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
 						"--module-name", dagql.String(modName),
+						"--introspection-json-path", goSDKIntrospectionJSONPath,
 					},
 				},
 				{
