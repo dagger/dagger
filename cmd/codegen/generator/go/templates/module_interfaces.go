@@ -127,18 +127,18 @@ func (spec *parsedIfaceType) TypeDefCode() (*Statement, error) {
 	return typeDefCode, nil
 }
 
-func (spec *parsedIfaceType) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef, error) {
+func (spec *parsedIfaceType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
 	opts := dagger.TypeDefWithInterfaceOpts{}
 	if spec.doc != "" {
 		opts.Description = strings.TrimSpace(spec.doc)
 	}
 	if spec.sourceMap != nil {
-		opts.SourceMap = spec.sourceMap.TypeDefObject(dag)
+		opts.SourceMap = spec.sourceMap.TypeDef(dag)
 	}
 	typeDefObject := dag.TypeDef().WithInterface(spec.name, opts)
 
 	for _, m := range spec.methods {
-		fnTypeDefObj, err := m.TypeDefObjectFunc(dag)
+		fnTypeDefObj, err := m.TypeDefFunc(dag)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert method %s to function def: %w", m.name, err)
 		}

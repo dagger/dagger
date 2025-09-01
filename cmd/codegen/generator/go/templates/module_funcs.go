@@ -185,29 +185,29 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 	return fnTypeDefCode, nil
 }
 
-func (spec *funcTypeSpec) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef, error) {
+func (spec *funcTypeSpec) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
 	return nil, nil
 }
 
-func (spec *funcTypeSpec) TypeDefObjectFunc(dag *dagger.Client) (*dagger.Function, error) {
+func (spec *funcTypeSpec) TypeDefFunc(dag *dagger.Client) (*dagger.Function, error) {
 	var fnReturnTypeDef *dagger.TypeDef
 	if spec.returnSpec == nil {
 		fnReturnTypeDef = dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)
 	} else {
 		var err error
-		fnReturnTypeDef, err = spec.returnSpec.TypeDefObject(dag)
+		fnReturnTypeDef, err = spec.returnSpec.TypeDef(dag)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate return type object: %w", err)
 		}
 	}
 
-	fnTypeDefObject := dag.Function(spec.name, fnReturnTypeDef)
+	fnTypeDef := dag.Function(spec.name, fnReturnTypeDef)
 
 	if spec.doc != "" {
-		fnTypeDefObject = fnTypeDefObject.WithDescription(strings.TrimSpace(spec.doc))
+		fnTypeDef = fnTypeDef.WithDescription(strings.TrimSpace(spec.doc))
 	}
 	if spec.sourceMap != nil {
-		fnTypeDefObject.WithSourceMap(spec.sourceMap.TypeDefObject(dag))
+		fnTypeDef.WithSourceMap(spec.sourceMap.TypeDef(dag))
 	}
 
 	for _, argSpec := range spec.argSpecs {
@@ -216,12 +216,12 @@ func (spec *funcTypeSpec) TypeDefObjectFunc(dag *dagger.Client) (*dagger.Functio
 			continue
 		}
 
-		argTypeDefObject, err := argSpec.typeSpec.TypeDefObject(dag)
+		argTypeDef, err := argSpec.typeSpec.TypeDef(dag)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate arg type object: %w", err)
 		}
 		if argSpec.optional {
-			argTypeDefObject = argTypeDefObject.WithOptional(true)
+			argTypeDef = argTypeDef.WithOptional(true)
 		}
 
 		argOpts := dagger.FunctionWithArgOpts{}
@@ -229,7 +229,7 @@ func (spec *funcTypeSpec) TypeDefObjectFunc(dag *dagger.Client) (*dagger.Functio
 			argOpts.Description = strings.TrimSpace(argSpec.description)
 		}
 		if argSpec.sourceMap != nil {
-			argOpts.SourceMap = argSpec.sourceMap.TypeDefObject(dag)
+			argOpts.SourceMap = argSpec.sourceMap.TypeDef(dag)
 		}
 		if argSpec.hasDefaultValue {
 			var defaultValue string
@@ -261,10 +261,10 @@ func (spec *funcTypeSpec) TypeDefObjectFunc(dag *dagger.Client) (*dagger.Functio
 			argOpts.Ignore = argSpec.ignore
 		}
 
-		fnTypeDefObject = fnTypeDefObject.WithArg(argSpec.name, argTypeDefObject, argOpts)
+		fnTypeDef = fnTypeDef.WithArg(argSpec.name, argTypeDef, argOpts)
 	}
 
-	return fnTypeDefObject, nil
+	return fnTypeDef, nil
 }
 
 func (spec *funcTypeSpec) GoType() types.Type {

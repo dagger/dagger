@@ -232,13 +232,13 @@ func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 	return typeDefCode, nil
 }
 
-func (spec *parsedObjectType) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef, error) {
+func (spec *parsedObjectType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
 	withObjectOpts := dagger.TypeDefWithObjectOpts{}
 	if spec.doc != "" {
 		withObjectOpts.Description = strings.TrimSpace(spec.doc)
 	}
 	if spec.sourceMap != nil {
-		withObjectOpts.SourceMap = spec.sourceMap.TypeDefObject(dag)
+		withObjectOpts.SourceMap = spec.sourceMap.TypeDef(dag)
 	}
 	if spec.name == "" {
 		return nil, fmt.Errorf("object name is empty")
@@ -246,11 +246,11 @@ func (spec *parsedObjectType) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef
 	typeDefObject := dag.TypeDef().WithObject(spec.name, withObjectOpts)
 
 	for _, m := range spec.methods {
-		fnTypeDefObject, err := m.TypeDefObjectFunc(dag)
+		fnTypeDef, err := m.TypeDefFunc(dag)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert method %s to function def: %w", m.name, err)
 		}
-		typeDefObject = typeDefObject.WithFunction(fnTypeDefObject)
+		typeDefObject = typeDefObject.WithFunction(fnTypeDef)
 	}
 
 	for _, field := range spec.fields {
@@ -258,7 +258,7 @@ func (spec *parsedObjectType) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef
 			continue
 		}
 
-		fieldTypeDefObject, err := field.typeSpec.TypeDefObject(dag)
+		fieldTypeDef, err := field.typeSpec.TypeDef(dag)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert field type: %w", err)
 		}
@@ -267,17 +267,17 @@ func (spec *parsedObjectType) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef
 			withFieldOpts.Description = field.doc
 		}
 		if field.sourceMap != nil {
-			withFieldOpts.SourceMap = field.sourceMap.TypeDefObject(dag)
+			withFieldOpts.SourceMap = field.sourceMap.TypeDef(dag)
 		}
-		typeDefObject = typeDefObject.WithField(field.name, fieldTypeDefObject, withFieldOpts)
+		typeDefObject = typeDefObject.WithField(field.name, fieldTypeDef, withFieldOpts)
 	}
 
 	if spec.constructor != nil {
-		fnTypeDefObject, err := spec.constructor.TypeDefObjectFunc(dag)
+		fnTypeDef, err := spec.constructor.TypeDefFunc(dag)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert constructor to function def: %w", err)
 		}
-		typeDefObject = typeDefObject.WithConstructor(fnTypeDefObject)
+		typeDefObject = typeDefObject.WithConstructor(fnTypeDef)
 	}
 
 	return typeDefObject, nil
