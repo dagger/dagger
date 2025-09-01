@@ -169,9 +169,9 @@ Installing a module using a local path (relative or absolute) is only possible i
 
 ### Private modules
 
-You can also install private modules from remote repositories, as long as you have access to them. Dagger supports authentication via both HTTPS (using Git credential managers) and SSH (using `SSH_AUTH_SOCK`). For more information, see [Remote Repositories](/extending/remote-repositories).
+You can also install private modules from remote repositories, as long as you have access to them. Dagger supports authentication via both HTTPS (using Git credential managers) and SSH (using `SSH_AUTH_SOCK`). For more information, see the [documentation on remote repositories](../extending/modules/remote-repositories.mdx).
 
-When installing a private module, you can use either the normal ref style (preferred if possible, since it allows any available auth method to be used) or be explicit, and specify the protocol. For example, the following commands install the same private module:
+When installing a private module, you can use either the normal ref style (preferred if possible, since it allows any available authentication method to be used), or explicitly specify the protocol. For example, the following commands all install the same private module:
 
 ```shell
 dagger install github.com/username/private-repo/module
