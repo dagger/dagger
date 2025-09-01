@@ -87,6 +87,7 @@ func (t *TypescriptSdk) ModuleTypeDefs(
 		Container().
 		WithMountedFile(runtime.cfg.entrypointPath(), entrypointFile()).
 		WithEnvVariable("REGISTER_TYPEDEF", "true").
+		WithEnvVariable("TYPEDEF_OUTPUT_FILE", moduleIDPath).
 		WithEnvVariable("MODULE_NAME", runtime.cfg.name).
 		WithExec(runtime.runtimeCmd(), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
