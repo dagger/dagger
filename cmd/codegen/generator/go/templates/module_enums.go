@@ -40,7 +40,7 @@ func (spec *parsedEnumTypeReference) TypeDefCode() (*Statement, error) {
 	return Qual("dag", "TypeDef").Call().Dot("WithEnum").Call(Lit(spec.name)), nil
 }
 
-func (spec *parsedEnumTypeReference) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef, error) {
+func (spec *parsedEnumTypeReference) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
 	return dag.TypeDef().WithEnum(spec.name), nil
 }
 
@@ -241,13 +241,13 @@ func (spec *parsedEnumType) TypeDefCode() (*Statement, error) {
 	return typeDefCode, nil
 }
 
-func (spec *parsedEnumType) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef, error) {
+func (spec *parsedEnumType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
 	withEnumOpts := dagger.TypeDefWithEnumOpts{}
 	if spec.doc != "" {
 		withEnumOpts.Description = strings.TrimSpace(spec.doc)
 	}
 	if spec.sourceMap != nil {
-		withEnumOpts.SourceMap = spec.sourceMap.TypeDefObject(dag)
+		withEnumOpts.SourceMap = spec.sourceMap.TypeDef(dag)
 	}
 	typeDefObject := dag.TypeDef().WithEnum(spec.name, withEnumOpts)
 
@@ -260,7 +260,7 @@ func (spec *parsedEnumType) TypeDefObject(dag *dagger.Client) (*dagger.TypeDef, 
 			memberOpts.Description = strings.TrimSpace(val.doc)
 		}
 		if val.sourceMap != nil {
-			memberOpts.SourceMap = val.sourceMap.TypeDefObject(dag)
+			memberOpts.SourceMap = val.sourceMap.TypeDef(dag)
 		}
 		typeDefObject = typeDefObject.WithEnumMember(val.name, memberOpts)
 	}

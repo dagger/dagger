@@ -55,7 +55,7 @@ func (funcs goTemplateFuncs) TypeDefs() (string, error) {
 			},
 			StructVisitor: func(ps *parseState, named *types.Named, obj *types.TypeName, objTypeSpec *parsedObjectType, strct *types.Struct) error {
 				var err error
-				typeDef, err := objTypeSpec.TypeDefObject(dag)
+				typeDef, err := objTypeSpec.TypeDef(dag)
 				if err != nil {
 					return err
 				}
@@ -64,7 +64,7 @@ func (funcs goTemplateFuncs) TypeDefs() (string, error) {
 			},
 			IfaceVisitor: func(ps *parseState, named *types.Named, obj *types.TypeName, ifaceTypeSpec *parsedIfaceType, iface *types.Interface) error {
 				var err error
-				typeDef, err := ifaceTypeSpec.TypeDefObject(dag)
+				typeDef, err := ifaceTypeSpec.TypeDef(dag)
 				if err != nil {
 					return err
 				}
@@ -73,7 +73,7 @@ func (funcs goTemplateFuncs) TypeDefs() (string, error) {
 			},
 			EnumVisitor: func(ps *parseState, named *types.Named, obj *types.TypeName, enumTypeSpec *parsedEnumType, enum *types.Basic) error {
 				var err error
-				typeDef, err := enumTypeSpec.TypeDefObject(dag)
+				typeDef, err := enumTypeSpec.TypeDef(dag)
 				if err != nil {
 					return err
 				}
