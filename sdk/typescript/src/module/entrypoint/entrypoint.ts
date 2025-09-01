@@ -22,9 +22,11 @@ export async function entrypoint(files: string[]) {
       // be a zero-value leading to a crash.
       if (process.env.REGISTER_TYPEDEF !== undefined) {
         const scanResult = await scan(files, process.env.MODULE_NAME)
+        const outputFilePath =
+          process.env.TYPEDEF_OUTPUT_FILE ?? "/module-id.json"
         const moduleID = await new Register(scanResult).run()
 
-        await fs.promises.writeFile("/module-id.json", moduleID)
+        await fs.promises.writeFile(outputFilePath, moduleID)
 
         return
       }
