@@ -41,14 +41,6 @@ final readonly class Argument
             $parameter->name,
         ));
 
-        /**
-         * @TODO remove once #[Argument] is removed
-         */
-        $argAttribute = (current($parameter
-            ->getAttributes(Attribute\Argument::class)) ?: null)
-            ?->newInstance()
-            ?->description;
-
         $description = (current($parameter
             ->getAttributes(Attribute\Doc::class)) ?: null)
             ?->newInstance()
@@ -64,7 +56,7 @@ final readonly class Argument
 
         return new self(
             name: $parameter->name,
-            description: $description ?? $argAttribute?->description ?? '',
+            description: $description ?? '',
             type: self::getType($parameter),
             default: self::getDefault($parameter),
             defaultPath: $defaultPathAttribute?->path,
