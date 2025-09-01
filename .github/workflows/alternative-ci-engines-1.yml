@@ -1,0 +1,128 @@
+# NOTE: this is a temporary workflow created to test side-by-side the performance
+# of running our CI using our cloud engines. This is not a production workflow.
+# It will not be run on PRs and won't block releases in any way.
+# There's a few steps being done here that will not be taken over to the main CI
+# when/if we migrate to cloud engines.
+name: Alternative CI Engines 1
+
+on:
+  # Run the workflow every day TWICE:
+  # 1. 9:06AM UTC (low activity)
+  # 2. 9:26AM UTC (cache test - high chance of no code changes)
+  schedule:
+    - cron: "6,26 9 * * *"
+  # Enable manual trigger for on-demand runs - helps when debugging
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-devcli:
+    runs-on:
+      - 'nscloud-ubuntu-24.04-amd64-16x32'
+    steps:
+      - name: Install dagger
+        shell: bash
+        run: |
+          echo "::group::Installing dagger"
+          curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=/usr/local/bin/ sudo -E sh
+          echo "::endgroup::"
+
+      - name: exec
+        id: exec
+        run: |
+          dagger call cli dev-binaries --platform=current export --path ./bin
+        env:
+          DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+      - name: Upload dagger binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: dagger-${{ github.sha }}
+          path: ./bin/dagger
+
+  test-everything-else:
+    needs: build-devcli
+    runs-on:
+      - 'ubuntu-24.04'
+    steps:
+      - uses: actions/download-artifact@v5
+        id: download-dagger
+        with:
+          name: dagger-${{ github.sha }}
+          path: /usr/local/bin/
+      - name: exec
+        id: exec
+        run: |
+          chmod +x /usr/local/bin/dagger
+
+          dagger call --cloud \
+            test specific \
+            --race=true \
+            --parallel=16 \
+            --skip='TestProvision|TestTelemetry|TestModule|TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestJava|TestContainer|TestDockerfile|TestLLM|TestCLI|TestEngine|TestClientGenerator|TestInterface|TestCall|TestShell|TestDaggerCMD'
+        env:
+          DAGGER_CLOUD_TOKEN: oidc
+          DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+          NO_OUTPUT: "true"
+
+  test-module-runtimes:
+    needs: build-devcli
+    runs-on:
+      - 'ubuntu-24.04'
+    steps:
+      - uses: actions/download-artifact@v5
+        id: download-dagger
+        with:
+          name: dagger-${{ github.sha }}
+          path: /usr/local/bin/
+      - name: exec
+        id: exec
+        run: |
+          chmod +x /usr/local/bin/dagger
+          dagger call --cloud test specific --race=true --parallel=16 --run='TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestJava'
+        env:
+          DAGGER_CLOUD_TOKEN: oidc
+          DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+          NO_OUTPUT: "true"
+
+  go:
+    needs: build-devcli
+    runs-on:
+      - 'ubuntu-24.04'
+    steps:
+      - uses: actions/download-artifact@v5
+        id: download-dagger
+        with:
+          name: dagger-${{ github.sha }}
+          path: /usr/local/bin/
+      - name: exec
+        id: exec
+        run: |
+          chmod +x /usr/local/bin/dagger
+          dagger call --cloud --docker-cfg=file:$HOME/.docker/config.json check --targets=sdk/go
+        env:
+          DAGGER_CLOUD_TOKEN: oidc
+          DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+          NO_OUTPUT: "true"
+
+  php:
+    needs: build-devcli
+    runs-on:
+      - 'ubuntu-24.04'
+    steps:
+      - uses: actions/download-artifact@v5
+        id: download-dagger
+        with:
+          name: dagger-${{ github.sha }}
+          path: /usr/local/bin/
+      - name: exec
+        id: exec
+        run: |
+          chmod +x /usr/local/bin/dagger
+          dagger call --cloud --docker-cfg=file:$HOME/.docker/config.json check --targets=sdk/php
+        env:
+          DAGGER_CLOUD_TOKEN: oidc
+          DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+          NO_OUTPUT: "true"
