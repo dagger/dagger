@@ -28,7 +28,7 @@ import (
 
 	"github.com/dagger/dagger/core/reffs"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -363,9 +363,10 @@ func mountLLB(ctx context.Context, llb *pb.Definition, f func(string) error) err
 	return ref.Mount(ctx, f)
 }
 
-func Supports(ctx context.Context, minVersion string) (bool, error) {
-	id := dagql.CurrentID(ctx)
-	return engine.CheckVersionCompatibility(id.View(), minVersion), nil
+func Supports(ctx context.Context, minVersion string) bool {
+	return AfterVersion(minVersion).Contains(
+		dagql.CurrentID(ctx).View(),
+	)
 }
 
 // AllVersion is a view that contains all versions.
@@ -377,7 +378,7 @@ type AfterVersion string
 
 var _ dagql.ViewFilter = AfterVersion("")
 
-func (minVersion AfterVersion) Contains(version dagql.View) bool {
+func (minVersion AfterVersion) Contains(version call.View) bool {
 	if version == "" {
 		return true
 	}
@@ -390,7 +391,7 @@ type BeforeVersion string
 
 var _ dagql.ViewFilter = BeforeVersion("")
 
-func (maxVersion BeforeVersion) Contains(version dagql.View) bool {
+func (maxVersion BeforeVersion) Contains(version call.View) bool {
 	if version == "" {
 		return false
 	}

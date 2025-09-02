@@ -402,17 +402,13 @@ func (s *moduleSchema) typeDefWithEnumMember(ctx context.Context, def *core.Type
 		return nil, err
 	}
 
-	supports, err := supportEnumMembers(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if !supports {
+	if !supportEnumMembers(ctx) {
 		return def.WithEnumValue(args.Name, args.Value, args.Description, sourceMap)
 	}
 	return def.WithEnumMember(args.Name, args.Value, args.Description, sourceMap)
 }
 
-func supportEnumMembers(ctx context.Context) (bool, error) {
+func supportEnumMembers(ctx context.Context) bool {
 	return core.Supports(ctx, "v0.18.11")
 }
 

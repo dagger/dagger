@@ -50,9 +50,9 @@ type Server struct {
 	typeDefs   map[string]TypeDef
 	directives map[string]DirectiveSpec
 
-	schemas       map[View]*ast.Schema
-	schemaDigests map[View]digest.Digest
-	schemaOnces   map[View]*sync.Once
+	schemas       map[call.View]*ast.Schema
+	schemaDigests map[call.View]digest.Digest
+	schemaOnces   map[call.View]*sync.Once
 	schemaLock    *sync.Mutex
 
 	installLock  *sync.Mutex
@@ -62,7 +62,7 @@ type Server struct {
 	//
 	// WARNING: this is *not* the view of the current query (for that, inspect
 	// the current id)
-	View View
+	View call.View
 
 	// Cache is the inner cache used by the server. It can be replicated to
 	// another *Server to inherit and share caches.
@@ -81,7 +81,7 @@ func (s *ServerSchema) WithCache(c *SessionCache) *Server {
 	return &inner
 }
 
-func (s *ServerSchema) View() View {
+func (s *ServerSchema) View() call.View {
 	return s.inner.View
 }
 
@@ -126,9 +126,9 @@ func NewServer[T Typed](root T, c *SessionCache) *Server {
 		typeDefs:      map[string]TypeDef{},
 		directives:    map[string]DirectiveSpec{},
 		installLock:   &sync.Mutex{},
-		schemas:       make(map[View]*ast.Schema),
-		schemaDigests: make(map[View]digest.Digest),
-		schemaOnces:   make(map[View]*sync.Once),
+		schemas:       make(map[call.View]*ast.Schema),
+		schemaDigests: make(map[call.View]digest.Digest),
+		schemaOnces:   make(map[call.View]*sync.Once),
 		schemaLock:    &sync.Mutex{},
 	}
 	rootClass := NewClass(srv, ClassOpts[T]{
@@ -1094,7 +1094,7 @@ type Selector struct {
 	Field string
 	Args  []NamedInput
 	Nth   int
-	View  View
+	View  call.View
 }
 
 func (sel Selector) String() string {

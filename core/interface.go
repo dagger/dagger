@@ -272,7 +272,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 
 		fields = append(fields, dagql.Field[*InterfaceAnnotatedValue]{
 			Spec: fieldDef,
-			Func: func(ctx context.Context, self dagql.ObjectResult[*InterfaceAnnotatedValue], args map[string]dagql.Input, view dagql.View) (dagql.AnyResult, error) {
+			Func: func(ctx context.Context, self dagql.ObjectResult[*InterfaceAnnotatedValue], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
 				runtimeVal := self.Self()
 
 				// TODO: support core types too
@@ -340,7 +340,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 					ctx context.Context,
 					parentObj dagql.AnyResult,
 					args map[string]dagql.Input,
-					view dagql.View,
+					view call.View,
 					cacheCfg dagql.CacheConfig,
 				) (*dagql.CacheConfig, error) {
 					parent, ok := parentObj.(dagql.ObjectResult[*InterfaceAnnotatedValue])
@@ -486,7 +486,7 @@ func (iface *InterfaceAnnotatedValue) TypeDescription() string {
 	return iface.TypeDef.Description
 }
 
-func (iface *InterfaceAnnotatedValue) TypeDefinition(view dagql.View) *ast.Definition {
+func (iface *InterfaceAnnotatedValue) TypeDefinition(view call.View) *ast.Definition {
 	def := &ast.Definition{
 		Kind: ast.Object,
 		Name: iface.Type().Name(),

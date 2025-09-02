@@ -261,7 +261,7 @@ func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cac
 func logResult(ctx context.Context, res dagql.AnyResult, self dagql.AnyObjectResult, id *call.ID) {
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
 	defer stdio.Close()
-	fieldSpec, ok := self.ObjectType().FieldSpec(id.Field(), dagql.View(id.View()))
+	fieldSpec, ok := self.ObjectType().FieldSpec(id.Field(), id.View())
 	if !ok {
 		return
 	}

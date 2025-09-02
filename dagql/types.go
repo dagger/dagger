@@ -44,7 +44,7 @@ type ObjectType interface {
 	New(val AnyResult) (AnyObjectResult, error)
 	// ParseField parses the given field and returns a Selector and an expected
 	// return type.
-	ParseField(ctx context.Context, view View, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error)
+	ParseField(ctx context.Context, view call.View, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error)
 	// Extend registers an additional field onto the type.
 	//
 	// Unlike natively added fields, the extended func is limited to the external
@@ -52,7 +52,7 @@ type ObjectType interface {
 	// cacheKeyFun is optional, if not set the default dagql ID cache key will be used.
 	Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec)
 	// FieldSpec looks up a field spec by name.
-	FieldSpec(name string, view View) (FieldSpec, bool)
+	FieldSpec(name string, view call.View) (FieldSpec, bool)
 }
 
 type IDType interface {
@@ -205,7 +205,7 @@ func (Int) TypeName() string {
 	return "Int"
 }
 
-func (i Int) TypeDefinition(view View) *ast.Definition {
+func (i Int) TypeDefinition(view call.View) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
 		Name:        i.TypeName(),
@@ -311,7 +311,7 @@ func (Float) TypeName() string {
 	return "Float"
 }
 
-func (f Float) TypeDefinition(view View) *ast.Definition {
+func (f Float) TypeDefinition(view call.View) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
 		Name:        f.TypeName(),
@@ -412,7 +412,7 @@ func (Boolean) TypeName() string {
 	return "Boolean"
 }
 
-func (b Boolean) TypeDefinition(view View) *ast.Definition {
+func (b Boolean) TypeDefinition(view call.View) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
 		Name:        b.TypeName(),
@@ -497,7 +497,7 @@ func (String) TypeName() string {
 	return "String"
 }
 
-func (s String) TypeDefinition(view View) *ast.Definition {
+func (s String) TypeDefinition(view call.View) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
 		Name:        s.TypeName(),
@@ -662,7 +662,7 @@ func (s Scalar[T]) TypeName() string {
 	return s.Name
 }
 
-func (s Scalar[T]) TypeDefinition(view View) *ast.Definition {
+func (s Scalar[T]) TypeDefinition(view call.View) *ast.Definition {
 	def := &ast.Definition{
 		Kind: ast.Scalar,
 		Name: s.TypeName(),
@@ -753,7 +753,7 @@ func (i ID[T]) ID() *call.ID {
 var _ ScalarType = ID[Typed]{}
 
 // TypeDefinition returns the GraphQL definition of the type.
-func (i ID[T]) TypeDefinition(view View) *ast.Definition {
+func (i ID[T]) TypeDefinition(view call.View) *ast.Definition {
 	return &ast.Definition{
 		Kind: ast.Scalar,
 		Name: i.TypeName(),
@@ -1182,7 +1182,7 @@ func (e *EnumValues[T]) TypeName() string {
 	return e.Type().Name()
 }
 
-func (e *EnumValues[T]) TypeDefinition(view View) *ast.Definition {
+func (e *EnumValues[T]) TypeDefinition(view call.View) *ast.Definition {
 	def := &ast.Definition{
 		Kind:       ast.Enum,
 		Name:       e.TypeName(),
@@ -1207,7 +1207,7 @@ func (e *EnumValues[T]) DecodeInput(val any) (Input, error) {
 	return e.Lookup(v.(*EnumValueName).Name)
 }
 
-func (e *EnumValues[T]) PossibleValues(view View) ast.EnumValueList {
+func (e *EnumValues[T]) PossibleValues(view call.View) ast.EnumValueList {
 	var values ast.EnumValueList
 	for _, val := range *e {
 		if val.View != nil && !val.View.Contains(view) {
@@ -1320,7 +1320,7 @@ func (e *EnumValueName) Type() *ast.Type {
 	}
 }
 
-func (e *EnumValueName) TypeDefinition(view View) *ast.Definition {
+func (e *EnumValueName) TypeDefinition(view call.View) *ast.Definition {
 	return &ast.Definition{
 		Kind: ast.Enum,
 		Name: e.TypeName(),
@@ -1390,7 +1390,7 @@ func (spec InputObjectSpec) TypeName() string {
 	return spec.Name
 }
 
-func (spec InputObjectSpec) TypeDefinition(view View) *ast.Definition {
+func (spec InputObjectSpec) TypeDefinition(view call.View) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.InputObject,
 		Name:        spec.Name,

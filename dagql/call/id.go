@@ -54,6 +54,8 @@ type ID struct {
 	typ      *Type
 }
 
+type View string
+
 // The ID of the object that the field selection will be evaluated against.
 //
 // If nil, the root Query object is implied.
@@ -85,8 +87,8 @@ func (id *ID) Field() string {
 }
 
 // GraphQL view.
-func (id *ID) View() string {
-	return id.pb.View
+func (id *ID) View() View {
+	return View(id.pb.View)
 }
 
 // GraphQL field arguments, always in alphabetical order.
@@ -219,7 +221,7 @@ func (id *ID) SelectNth(nth int) *ID {
 	return id.Append(
 		id.pb.Type.Elem.ToAST(),
 		id.pb.Field,
-		id.pb.View,
+		View(id.pb.View),
 		id.module,
 		nth,
 		dgst,
@@ -229,7 +231,7 @@ func (id *ID) SelectNth(nth int) *ID {
 func (id *ID) Append(
 	ret *ast.Type,
 	field string,
-	view string,
+	view View,
 	mod *Module,
 	nth int,
 	customDigest digest.Digest,
@@ -239,7 +241,7 @@ func (id *ID) Append(
 		pb: &callpbv1.Call{
 			ReceiverDigest: string(id.Digest()),
 			Field:          field,
-			View:           view,
+			View:           string(view),
 			Args:           make([]*callpbv1.Argument, 0, len(args)),
 			Nth:            int64(nth),
 		},
@@ -284,7 +286,7 @@ func (id *ID) WithDigest(customDigest digest.Digest) *ID {
 	return id.receiver.Append(
 		id.pb.Type.ToAST(),
 		id.pb.Field,
-		id.pb.View,
+		View(id.pb.View),
 		id.module,
 		int(id.pb.Nth),
 		customDigest,
@@ -320,7 +322,7 @@ func (id *ID) WithArgument(arg *Argument) *ID {
 	return id.receiver.Append(
 		id.pb.Type.ToAST(),
 		id.pb.Field,
-		id.pb.View,
+		View(id.pb.View),
 		id.module,
 		int(id.pb.Nth),
 		"", // reset to default digest
