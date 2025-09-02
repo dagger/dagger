@@ -81,11 +81,11 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Create or update a binding of type Changes in the environment
+     * Create or update a binding of type Changeset in the environment
      */
-    public function withChangesInput(string $name, ChangesId|Changes $value, string $description): Env
+    public function withChangesetInput(string $name, ChangesetId|Changeset $value, string $description): Env
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChangesInput');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChangesetInput');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('value', $value);
         $innerQueryBuilder->setArgument('description', $description);
@@ -93,11 +93,11 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Declare a desired Changes output to be assigned in the environment
+     * Declare a desired Changeset output to be assigned in the environment
      */
-    public function withChangesOutput(string $name, string $description): Env
+    public function withChangesetOutput(string $name, string $description): Env
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChangesOutput');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChangesetOutput');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('description', $description);
         return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));

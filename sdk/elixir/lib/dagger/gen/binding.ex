@@ -30,14 +30,14 @@ defmodule Dagger.Binding do
   end
 
   @doc """
-  Retrieve the binding value, as type Changes
+  Retrieve the binding value, as type Changeset
   """
-  @spec as_changes(t()) :: Dagger.Changes.t()
-  def as_changes(%__MODULE__{} = binding) do
+  @spec as_changeset(t()) :: Dagger.Changeset.t()
+  def as_changeset(%__MODULE__{} = binding) do
     query_builder =
-      binding.query_builder |> QB.select("asChanges")
+      binding.query_builder |> QB.select("asChangeset")
 
-    %Dagger.Changes{
+    %Dagger.Changeset{
       query_builder: query_builder,
       client: binding.client
     }

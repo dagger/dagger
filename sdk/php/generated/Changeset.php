@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A comparison between two directories representing changes that can be applied.
  */
-class Changes extends Client\AbstractObject implements Client\IdAble
+class Changeset extends Client\AbstractObject implements Client\IdAble
 {
     /**
      * Files and directories that were added in the newer directory.
@@ -50,12 +50,12 @@ class Changes extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * A unique identifier for this Changes.
+     * A unique identifier for this Changeset.
      */
-    public function id(): ChangesId
+    public function id(): ChangesetId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\ChangesId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\ChangesetId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

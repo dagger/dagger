@@ -138,8 +138,8 @@
 		},
 		{
 			"t": "C",
-			"n": "Dagger\\Changes",
-			"p": "Dagger/Changes.html",
+			"n": "Dagger\\Changeset",
+			"p": "Dagger/Changeset.html",
 			"d": "<p>A comparison between two directories representing changes that can be applied.</p>",
 			"f": {
 				"n": "Dagger",
@@ -148,9 +148,9 @@
 		},
 		{
 			"t": "C",
-			"n": "Dagger\\ChangesId",
-			"p": "Dagger/ChangesId.html",
-			"d": "<p>The <code>ChangesID</code> scalar type represents an identifier for an object of type Changes.</p>",
+			"n": "Dagger\\ChangesetId",
+			"p": "Dagger/ChangesetId.html",
+			"d": "<p>The <code>ChangesetID</code> scalar type represents an identifier for an object of type Changeset.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -1275,9 +1275,9 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Binding::asChanges",
-			"p": "Dagger/Binding.html#method_asChanges",
-			"d": "<p>Retrieve the binding value, as type Changes</p>"
+			"n": "Dagger\\Binding::asChangeset",
+			"p": "Dagger/Binding.html#method_asChangeset",
+			"d": "<p>Retrieve the binding value, as type Changeset</p>"
 		},
 		{
 			"t": "M",
@@ -1431,38 +1431,38 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Changes::addedPaths",
-			"p": "Dagger/Changes.html#method_addedPaths",
+			"n": "Dagger\\Changeset::addedPaths",
+			"p": "Dagger/Changeset.html#method_addedPaths",
 			"d": "<p>Files and directories that were added in the newer directory.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Changes::after",
-			"p": "Dagger/Changes.html#method_after",
+			"n": "Dagger\\Changeset::after",
+			"p": "Dagger/Changeset.html#method_after",
 			"d": "<p>The newer/upper snapshot.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Changes::before",
-			"p": "Dagger/Changes.html#method_before",
+			"n": "Dagger\\Changeset::before",
+			"p": "Dagger/Changeset.html#method_before",
 			"d": "<p>The older/lower snapshot to compare against.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Changes::changedPaths",
-			"p": "Dagger/Changes.html#method_changedPaths",
+			"n": "Dagger\\Changeset::changedPaths",
+			"p": "Dagger/Changeset.html#method_changedPaths",
 			"d": "<p>Files and directories that existed before and were updated in the newer directory.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Changes::id",
-			"p": "Dagger/Changes.html#method_id",
-			"d": "<p>A unique identifier for this Changes.</p>"
+			"n": "Dagger\\Changeset::id",
+			"p": "Dagger/Changeset.html#method_id",
+			"d": "<p>A unique identifier for this Changeset.</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Changes::removedPaths",
-			"p": "Dagger/Changes.html#method_removedPaths",
+			"n": "Dagger\\Changeset::removedPaths",
+			"p": "Dagger/Changeset.html#method_removedPaths",
 			"d": "<p>Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.</p>"
 		},
 		{
@@ -1593,9 +1593,9 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Client::loadChangesFromID",
-			"p": "Dagger/Client.html#method_loadChangesFromID",
-			"d": "<p>Load a Changes from its ID.</p>"
+			"n": "Dagger\\Client::loadChangesetFromID",
+			"p": "Dagger/Client.html#method_loadChangesetFromID",
+			"d": "<p>Load a Changeset from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -2943,15 +2943,15 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Env::withChangesInput",
-			"p": "Dagger/Env.html#method_withChangesInput",
-			"d": "<p>Create or update a binding of type Changes in the environment</p>"
+			"n": "Dagger\\Env::withChangesetInput",
+			"p": "Dagger/Env.html#method_withChangesetInput",
+			"d": "<p>Create or update a binding of type Changeset in the environment</p>"
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Env::withChangesOutput",
-			"p": "Dagger/Env.html#method_withChangesOutput",
-			"d": "<p>Declare a desired Changes output to be assigned in the environment</p>"
+			"n": "Dagger\\Env::withChangesetOutput",
+			"p": "Dagger/Env.html#method_withChangesetOutput",
+			"d": "<p>Declare a desired Changeset output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",

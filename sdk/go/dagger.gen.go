@@ -134,8 +134,8 @@ type BindingID string
 // The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
 type CacheVolumeID string
 
-// The `ChangesID` scalar type represents an identifier for an object of type Changes.
-type ChangesID string
+// The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
+type ChangesetID string
 
 // The `CloudID` scalar type represents an identifier for an object of type Cloud.
 type CloudID string
@@ -344,11 +344,11 @@ func (r *Binding) AsCacheVolume() *CacheVolume {
 	}
 }
 
-// Retrieve the binding value, as type Changes
-func (r *Binding) AsChanges() *Changes {
-	q := r.query.Select("asChanges")
+// Retrieve the binding value, as type Changeset
+func (r *Binding) AsChangeset() *Changeset {
+	q := r.query.Select("asChangeset")
 
-	return &Changes{
+	return &Changeset{
 		query: q,
 	}
 }
@@ -665,20 +665,20 @@ func (r *CacheVolume) MarshalJSON() ([]byte, error) {
 }
 
 // A comparison between two directories representing changes that can be applied.
-type Changes struct {
+type Changeset struct {
 	query *querybuilder.Selection
 
-	id *ChangesID
+	id *ChangesetID
 }
 
-func (r *Changes) WithGraphQLQuery(q *querybuilder.Selection) *Changes {
-	return &Changes{
+func (r *Changeset) WithGraphQLQuery(q *querybuilder.Selection) *Changeset {
+	return &Changeset{
 		query: q,
 	}
 }
 
 // Files and directories that were added in the newer directory.
-func (r *Changes) AddedPaths(ctx context.Context) ([]string, error) {
+func (r *Changeset) AddedPaths(ctx context.Context) ([]string, error) {
 	q := r.query.Select("addedPaths")
 
 	var response []string
@@ -688,7 +688,7 @@ func (r *Changes) AddedPaths(ctx context.Context) ([]string, error) {
 }
 
 // The newer/upper snapshot.
-func (r *Changes) After() *Directory {
+func (r *Changeset) After() *Directory {
 	q := r.query.Select("after")
 
 	return &Directory{
@@ -697,7 +697,7 @@ func (r *Changes) After() *Directory {
 }
 
 // The older/lower snapshot to compare against.
-func (r *Changes) Before() *Directory {
+func (r *Changeset) Before() *Directory {
 	q := r.query.Select("before")
 
 	return &Directory{
@@ -706,7 +706,7 @@ func (r *Changes) Before() *Directory {
 }
 
 // Files and directories that existed before and were updated in the newer directory.
-func (r *Changes) ChangedPaths(ctx context.Context) ([]string, error) {
+func (r *Changeset) ChangedPaths(ctx context.Context) ([]string, error) {
 	q := r.query.Select("changedPaths")
 
 	var response []string
@@ -715,31 +715,31 @@ func (r *Changes) ChangedPaths(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
-// A unique identifier for this Changes.
-func (r *Changes) ID(ctx context.Context) (ChangesID, error) {
+// A unique identifier for this Changeset.
+func (r *Changeset) ID(ctx context.Context) (ChangesetID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ChangesID
+	var response ChangesetID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *Changes) XXX_GraphQLType() string {
-	return "Changes"
+func (r *Changeset) XXX_GraphQLType() string {
+	return "Changeset"
 }
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *Changes) XXX_GraphQLIDType() string {
-	return "ChangesID"
+func (r *Changeset) XXX_GraphQLIDType() string {
+	return "ChangesetID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *Changes) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *Changeset) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
 		return "", err
@@ -747,7 +747,7 @@ func (r *Changes) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
-func (r *Changes) MarshalJSON() ([]byte, error) {
+func (r *Changeset) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
@@ -756,7 +756,7 @@ func (r *Changes) MarshalJSON() ([]byte, error) {
 }
 
 // Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.
-func (r *Changes) RemovedPaths(ctx context.Context) ([]string, error) {
+func (r *Changeset) RemovedPaths(ctx context.Context) ([]string, error) {
 	q := r.query.Select("removedPaths")
 
 	var response []string
@@ -2915,12 +2915,12 @@ func (r *Directory) AsModuleSource(opts ...DirectoryAsModuleSourceOpts) *ModuleS
 // Return a virtual comparison between this directory and an older snapshot that can be applied to another filesystem.
 //
 // Returns an error if the other directory is not an ancestor of this directory.
-func (r *Directory) Changes(older *Directory) *Changes {
-	assertNotNil("older", older)
+func (r *Directory) Changes(from *Directory) *Changeset {
+	assertNotNil("from", from)
 	q := r.query.Select("changes")
-	q = q.Arg("older", older)
+	q = q.Arg("from", from)
 
-	return &Changes{
+	return &Changeset{
 		query: q,
 	}
 }
@@ -3352,7 +3352,7 @@ func (r *Directory) Terminal(opts ...DirectoryTerminalOpts) *Directory {
 }
 
 // Return a directory with changes from another directory applied to it.
-func (r *Directory) WithChanges(changes *Changes) *Directory {
+func (r *Directory) WithChanges(changes *Changeset) *Directory {
 	assertNotNil("changes", changes)
 	q := r.query.Select("withChanges")
 	q = q.Arg("changes", changes)
@@ -4462,10 +4462,10 @@ func (r *Env) WithCacheVolumeOutput(name string, description string) *Env {
 	}
 }
 
-// Create or update a binding of type Changes in the environment
-func (r *Env) WithChangesInput(name string, value *Changes, description string) *Env {
+// Create or update a binding of type Changeset in the environment
+func (r *Env) WithChangesetInput(name string, value *Changeset, description string) *Env {
 	assertNotNil("value", value)
-	q := r.query.Select("withChangesInput")
+	q := r.query.Select("withChangesetInput")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
 	q = q.Arg("description", description)
@@ -4475,9 +4475,9 @@ func (r *Env) WithChangesInput(name string, value *Changes, description string) 
 	}
 }
 
-// Declare a desired Changes output to be assigned in the environment
-func (r *Env) WithChangesOutput(name string, description string) *Env {
-	q := r.query.Select("withChangesOutput")
+// Declare a desired Changeset output to be assigned in the environment
+func (r *Env) WithChangesetOutput(name string, description string) *Env {
+	q := r.query.Select("withChangesetOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -9554,12 +9554,12 @@ func (r *Client) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
 	}
 }
 
-// Load a Changes from its ID.
-func (r *Client) LoadChangesFromID(id ChangesID) *Changes {
-	q := r.query.Select("loadChangesFromID")
+// Load a Changeset from its ID.
+func (r *Client) LoadChangesetFromID(id ChangesetID) *Changeset {
+	q := r.query.Select("loadChangesetFromID")
 	q = q.Arg("id", id)
 
-	return &Changes{
+	return &Changeset{
 		query: q,
 	}
 }

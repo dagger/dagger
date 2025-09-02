@@ -93,9 +93,9 @@ function CacheSharingModeNameToValue(name: string): CacheSharingMode {
 export type CacheVolumeID = string & { __CacheVolumeID: never }
 
 /**
- * The `ChangesID` scalar type represents an identifier for an object of type Changes.
+ * The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
  */
-export type ChangesID = string & { __ChangesID: never }
+export type ChangesetID = string & { __ChangesetID: never }
 
 /**
  * The `CloudID` scalar type represents an identifier for an object of type Cloud.
@@ -2232,11 +2232,11 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * Retrieve the binding value, as type Changes
+   * Retrieve the binding value, as type Changeset
    */
-  asChanges = (): Changes => {
-    const ctx = this._ctx.select("asChanges")
-    return new Changes(ctx)
+  asChangeset = (): Changeset => {
+    const ctx = this._ctx.select("asChangeset")
+    return new Changeset(ctx)
   }
 
   /**
@@ -2485,29 +2485,29 @@ export class CacheVolume extends BaseClient {
 /**
  * A comparison between two directories representing changes that can be applied.
  */
-export class Changes extends BaseClient {
-  private readonly _id?: ChangesID = undefined
+export class Changeset extends BaseClient {
+  private readonly _id?: ChangesetID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: ChangesID) {
+  constructor(ctx?: Context, _id?: ChangesetID) {
     super(ctx)
 
     this._id = _id
   }
 
   /**
-   * A unique identifier for this Changes.
+   * A unique identifier for this Changeset.
    */
-  id = async (): Promise<ChangesID> => {
+  id = async (): Promise<ChangesetID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<ChangesID> = await ctx.execute()
+    const response: Awaited<ChangesetID> = await ctx.execute()
 
     return response
   }
@@ -4061,11 +4061,11 @@ export class Directory extends BaseClient {
    * Return a virtual comparison between this directory and an older snapshot that can be applied to another filesystem.
    *
    * Returns an error if the other directory is not an ancestor of this directory.
-   * @param older The older directory snapshot to compare against
+   * @param from The older directory snapshot to compare against
    */
-  changes = (older: Directory): Changes => {
-    const ctx = this._ctx.select("changes", { older })
-    return new Changes(ctx)
+  changes = (from: Directory): Changeset => {
+    const ctx = this._ctx.select("changes", { from })
+    return new Changeset(ctx)
   }
 
   /**
@@ -4283,7 +4283,7 @@ export class Directory extends BaseClient {
    * Return a directory with changes from another directory applied to it.
    * @param changes Changes to apply to the directory
    */
-  withChanges = (changes: Changes): Directory => {
+  withChanges = (changes: Changeset): Directory => {
     const ctx = this._ctx.select("withChanges", { changes })
     return new Directory(ctx)
   }
@@ -5159,17 +5159,17 @@ export class Env extends BaseClient {
   }
 
   /**
-   * Create or update a binding of type Changes in the environment
+   * Create or update a binding of type Changeset in the environment
    * @param name The name of the binding
-   * @param value The Changes value to assign to the binding
+   * @param value The Changeset value to assign to the binding
    * @param description The purpose of the input
    */
-  withChangesInput = (
+  withChangesetInput = (
     name: string,
-    value: Changes,
+    value: Changeset,
     description: string,
   ): Env => {
-    const ctx = this._ctx.select("withChangesInput", {
+    const ctx = this._ctx.select("withChangesetInput", {
       name,
       value,
       description,
@@ -5178,12 +5178,12 @@ export class Env extends BaseClient {
   }
 
   /**
-   * Declare a desired Changes output to be assigned in the environment
+   * Declare a desired Changeset output to be assigned in the environment
    * @param name The name of the binding
    * @param description A description of the desired value of the binding
    */
-  withChangesOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withChangesOutput", { name, description })
+  withChangesetOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withChangesetOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -9365,11 +9365,11 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Load a Changes from its ID.
+   * Load a Changeset from its ID.
    */
-  loadChangesFromID = (id: ChangesID): Changes => {
-    const ctx = this._ctx.select("loadChangesFromID", { id })
-    return new Changes(ctx)
+  loadChangesetFromID = (id: ChangesetID): Changeset => {
+    const ctx = this._ctx.select("loadChangesetFromID", { id })
+    return new Changeset(ctx)
   }
 
   /**

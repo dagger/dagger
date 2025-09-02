@@ -16,8 +16,8 @@ type Binding {
   """Retrieve the binding value, as type CacheVolume"""
   asCacheVolume: CacheVolume!
 
-  """Retrieve the binding value, as type Changes"""
-  asChanges: Changes!
+  """Retrieve the binding value, as type Changeset"""
+  asChangeset: Changeset!
 
   """Retrieve the binding value, as type Cloud"""
   asCloud: Cloud!
@@ -131,7 +131,7 @@ scalar CacheVolumeID
 """
 A comparison between two directories representing changes that can be applied.
 """
-type Changes {
+type Changeset {
   """Files and directories that were added in the newer directory."""
   addedPaths: [String!]!
 
@@ -146,8 +146,8 @@ type Changes {
   """
   changedPaths: [String!]!
 
-  """A unique identifier for this Changes."""
-  id: ChangesID!
+  """A unique identifier for this Changeset."""
+  id: ChangesetID!
 
   """
   Files and directories that were removed. Directories are indicated by a
@@ -157,9 +157,9 @@ type Changes {
 }
 
 """
-The `ChangesID` scalar type represents an identifier for an object of type Changes.
+The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
 """
-scalar ChangesID
+scalar ChangesetID
 
 """Dagger Cloud configuration and state"""
 type Cloud {
@@ -1443,8 +1443,8 @@ type Directory {
   """
   changes(
     """The older directory snapshot to compare against"""
-    older: DirectoryID!
-  ): Changes!
+    from: DirectoryID!
+  ): Changeset!
 
   """
   Return the difference between this directory and an another directory. The difference is encoded as a directory.
@@ -1647,7 +1647,7 @@ type Directory {
   """Return a directory with changes from another directory applied to it."""
   withChanges(
     """Changes to apply to the directory"""
-    changes: ChangesID!
+    changes: ChangesetID!
   ): Directory!
 
   """Return a snapshot with a directory added"""
@@ -1974,20 +1974,20 @@ type Env {
     description: String!
   ): Env!
 
-  """Create or update a binding of type Changes in the environment"""
-  withChangesInput(
+  """Create or update a binding of type Changeset in the environment"""
+  withChangesetInput(
     """The name of the binding"""
     name: String!
 
-    """The Changes value to assign to the binding"""
-    value: ChangesID!
+    """The Changeset value to assign to the binding"""
+    value: ChangesetID!
 
     """The purpose of the input"""
     description: String!
   ): Env!
 
-  """Declare a desired Changes output to be assigned in the environment"""
-  withChangesOutput(
+  """Declare a desired Changeset output to be assigned in the environment"""
+  withChangesetOutput(
     """The name of the binding"""
     name: String!
 
@@ -3890,8 +3890,8 @@ type Query {
   """Load a CacheVolume from its ID."""
   loadCacheVolumeFromID(id: CacheVolumeID!): CacheVolume!
 
-  """Load a Changes from its ID."""
-  loadChangesFromID(id: ChangesID!): Changes!
+  """Load a Changeset from its ID."""
+  loadChangesetFromID(id: ChangesetID!): Changeset!
 
   """Load a Cloud from its ID."""
   loadCloudFromID(id: CloudID!): Cloud!

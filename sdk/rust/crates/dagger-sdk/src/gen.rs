@@ -78,34 +78,36 @@ impl CacheVolumeId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct ChangesId(pub String);
-impl From<&str> for ChangesId {
+pub struct ChangesetId(pub String);
+impl From<&str> for ChangesetId {
     fn from(value: &str) -> Self {
         Self(value.to_string())
     }
 }
-impl From<String> for ChangesId {
+impl From<String> for ChangesetId {
     fn from(value: String) -> Self {
         Self(value)
     }
 }
-impl IntoID<ChangesId> for Changes {
+impl IntoID<ChangesetId> for Changeset {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<ChangesId, DaggerError>> + Send>>
-    {
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<ChangesetId, DaggerError>> + Send>,
+    > {
         Box::pin(async move { self.id().await })
     }
 }
-impl IntoID<ChangesId> for ChangesId {
+impl IntoID<ChangesetId> for ChangesetId {
     fn into_id(
         self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<ChangesId, DaggerError>> + Send>>
-    {
-        Box::pin(async move { Ok::<ChangesId, DaggerError>(self) })
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<ChangesetId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<ChangesetId, DaggerError>(self) })
     }
 }
-impl ChangesId {
+impl ChangesetId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
     }
@@ -1769,10 +1771,10 @@ impl Binding {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Retrieve the binding value, as type Changes
-    pub fn as_changes(&self) -> Changes {
-        let query = self.selection.select("asChanges");
-        Changes {
+    /// Retrieve the binding value, as type Changeset
+    pub fn as_changeset(&self) -> Changeset {
+        let query = self.selection.select("asChangeset");
+        Changeset {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -1976,12 +1978,12 @@ impl CacheVolume {
     }
 }
 #[derive(Clone)]
-pub struct Changes {
+pub struct Changeset {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-impl Changes {
+impl Changeset {
     /// Files and directories that were added in the newer directory.
     pub async fn added_paths(&self) -> Result<Vec<String>, DaggerError> {
         let query = self.selection.select("addedPaths");
@@ -2010,8 +2012,8 @@ impl Changes {
         let query = self.selection.select("changedPaths");
         query.execute(self.graphql_client.clone()).await
     }
-    /// A unique identifier for this Changes.
-    pub async fn id(&self) -> Result<ChangesId, DaggerError> {
+    /// A unique identifier for this Changeset.
+    pub async fn id(&self) -> Result<ChangesetId, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
@@ -4928,17 +4930,17 @@ impl Directory {
     ///
     /// # Arguments
     ///
-    /// * `older` - The older directory snapshot to compare against
-    pub fn changes(&self, older: impl IntoID<DirectoryId>) -> Changes {
+    /// * `from` - The older directory snapshot to compare against
+    pub fn changes(&self, from: impl IntoID<DirectoryId>) -> Changeset {
         let mut query = self.selection.select("changes");
         query = query.arg_lazy(
-            "older",
+            "from",
             Box::new(move || {
-                let older = older.clone();
-                Box::pin(async move { older.into_id().await.unwrap().quote() })
+                let from = from.clone();
+                Box::pin(async move { from.into_id().await.unwrap().quote() })
             }),
         );
-        Changes {
+        Changeset {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -5295,7 +5297,7 @@ impl Directory {
     /// # Arguments
     ///
     /// * `changes` - Changes to apply to the directory
-    pub fn with_changes(&self, changes: impl IntoID<ChangesId>) -> Directory {
+    pub fn with_changes(&self, changes: impl IntoID<ChangesetId>) -> Directory {
         let mut query = self.selection.select("withChanges");
         query = query.arg_lazy(
             "changes",
@@ -6023,20 +6025,20 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Create or update a binding of type Changes in the environment
+    /// Create or update a binding of type Changeset in the environment
     ///
     /// # Arguments
     ///
     /// * `name` - The name of the binding
-    /// * `value` - The Changes value to assign to the binding
+    /// * `value` - The Changeset value to assign to the binding
     /// * `description` - The purpose of the input
-    pub fn with_changes_input(
+    pub fn with_changeset_input(
         &self,
         name: impl Into<String>,
-        value: impl IntoID<ChangesId>,
+        value: impl IntoID<ChangesetId>,
         description: impl Into<String>,
     ) -> Env {
-        let mut query = self.selection.select("withChangesInput");
+        let mut query = self.selection.select("withChangesetInput");
         query = query.arg("name", name.into());
         query = query.arg_lazy(
             "value",
@@ -6052,18 +6054,18 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Declare a desired Changes output to be assigned in the environment
+    /// Declare a desired Changeset output to be assigned in the environment
     ///
     /// # Arguments
     ///
     /// * `name` - The name of the binding
     /// * `description` - A description of the desired value of the binding
-    pub fn with_changes_output(
+    pub fn with_changeset_output(
         &self,
         name: impl Into<String>,
         description: impl Into<String>,
     ) -> Env {
-        let mut query = self.selection.select("withChangesOutput");
+        let mut query = self.selection.select("withChangesetOutput");
         query = query.arg("name", name.into());
         query = query.arg("description", description.into());
         Env {
@@ -10017,9 +10019,9 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Load a Changes from its ID.
-    pub fn load_changes_from_id(&self, id: impl IntoID<ChangesId>) -> Changes {
-        let mut query = self.selection.select("loadChangesFromID");
+    /// Load a Changeset from its ID.
+    pub fn load_changeset_from_id(&self, id: impl IntoID<ChangesetId>) -> Changeset {
+        let mut query = self.selection.select("loadChangesetFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
@@ -10027,7 +10029,7 @@ impl Query {
                 Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
-        Changes {
+        Changeset {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

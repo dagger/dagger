@@ -21,9 +21,9 @@ class CacheVolumeID(Scalar):
     object of type CacheVolume."""
 
 
-class ChangesID(Scalar):
-    """The `ChangesID` scalar type represents an identifier for an object
-    of type Changes."""
+class ChangesetID(Scalar):
+    """The `ChangesetID` scalar type represents an identifier for an
+    object of type Changeset."""
 
 
 class CloudID(Scalar):
@@ -493,11 +493,11 @@ class Binding(Type):
         _ctx = self._select("asCacheVolume", _args)
         return CacheVolume(_ctx)
 
-    def as_changes(self) -> "Changes":
-        """Retrieve the binding value, as type Changes"""
+    def as_changeset(self) -> "Changeset":
+        """Retrieve the binding value, as type Changeset"""
         _args: list[Arg] = []
-        _ctx = self._select("asChanges", _args)
-        return Changes(_ctx)
+        _ctx = self._select("asChangeset", _args)
+        return Changeset(_ctx)
 
     def as_cloud(self) -> "Cloud":
         """Retrieve the binding value, as type Cloud"""
@@ -759,7 +759,7 @@ class CacheVolume(Type):
 
 
 @typecheck
-class Changes(Type):
+class Changeset(Type):
     """A comparison between two directories representing changes that can
     be applied."""
 
@@ -818,8 +818,8 @@ class Changes(Type):
         _ctx = self._select("changedPaths", _args)
         return await _ctx.execute(list[str])
 
-    async def id(self) -> ChangesID:
-        """A unique identifier for this Changes.
+    async def id(self) -> ChangesetID:
+        """A unique identifier for this Changeset.
 
         Note
         ----
@@ -827,9 +827,9 @@ class Changes(Type):
 
         Returns
         -------
-        ChangesID
-            The `ChangesID` scalar type represents an identifier for an object
-            of type Changes.
+        ChangesetID
+            The `ChangesetID` scalar type represents an identifier for an
+            object of type Changeset.
 
         Raises
         ------
@@ -840,7 +840,7 @@ class Changes(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(ChangesID)
+        return await _ctx.execute(ChangesetID)
 
     async def removed_paths(self) -> list[str]:
         """Files and directories that were removed. Directories are indicated by
@@ -3129,7 +3129,7 @@ class Directory(Type):
         _ctx = self._select("asModuleSource", _args)
         return ModuleSource(_ctx)
 
-    def changes(self, older: Self) -> Changes:
+    def changes(self, from_: Self) -> Changeset:
         """Return a virtual comparison between this directory and an older
         snapshot that can be applied to another filesystem.
 
@@ -3138,14 +3138,14 @@ class Directory(Type):
 
         Parameters
         ----------
-        older:
+        from_:
             The older directory snapshot to compare against
         """
         _args = [
-            Arg("older", older),
+            Arg("from", from_),
         ]
         _ctx = self._select("changes", _args)
-        return Changes(_ctx)
+        return Changeset(_ctx)
 
     def diff(self, other: Self) -> Self:
         """Return the difference between this directory and an another directory.
@@ -3582,7 +3582,7 @@ class Directory(Type):
         _ctx = self._select("terminal", _args)
         return Directory(_ctx)
 
-    def with_changes(self, changes: Changes) -> Self:
+    def with_changes(self, changes: Changeset) -> Self:
         """Return a directory with changes from another directory applied to it.
 
         Parameters
@@ -4576,20 +4576,20 @@ class Env(Type):
         _ctx = self._select("withCacheVolumeOutput", _args)
         return Env(_ctx)
 
-    def with_changes_input(
+    def with_changeset_input(
         self,
         name: str,
-        value: Changes,
+        value: Changeset,
         description: str,
     ) -> Self:
-        """Create or update a binding of type Changes in the environment
+        """Create or update a binding of type Changeset in the environment
 
         Parameters
         ----------
         name:
             The name of the binding
         value:
-            The Changes value to assign to the binding
+            The Changeset value to assign to the binding
         description:
             The purpose of the input
         """
@@ -4598,11 +4598,11 @@ class Env(Type):
             Arg("value", value),
             Arg("description", description),
         ]
-        _ctx = self._select("withChangesInput", _args)
+        _ctx = self._select("withChangesetInput", _args)
         return Env(_ctx)
 
-    def with_changes_output(self, name: str, description: str) -> Self:
-        """Declare a desired Changes output to be assigned in the environment
+    def with_changeset_output(self, name: str, description: str) -> Self:
+        """Declare a desired Changeset output to be assigned in the environment
 
         Parameters
         ----------
@@ -4615,7 +4615,7 @@ class Env(Type):
             Arg("name", name),
             Arg("description", description),
         ]
-        _ctx = self._select("withChangesOutput", _args)
+        _ctx = self._select("withChangesetOutput", _args)
         return Env(_ctx)
 
     def with_cloud_input(
@@ -9668,13 +9668,13 @@ class Client(Root):
         _ctx = self._select("loadCacheVolumeFromID", _args)
         return CacheVolume(_ctx)
 
-    def load_changes_from_id(self, id: ChangesID) -> Changes:
-        """Load a Changes from its ID."""
+    def load_changeset_from_id(self, id: ChangesetID) -> Changeset:
+        """Load a Changeset from its ID."""
         _args = [
             Arg("id", id),
         ]
-        _ctx = self._select("loadChangesFromID", _args)
-        return Changes(_ctx)
+        _ctx = self._select("loadChangesetFromID", _args)
+        return Changeset(_ctx)
 
     def load_cloud_from_id(self, id: CloudID) -> Cloud:
         """Load a Cloud from its ID."""
@@ -11434,8 +11434,8 @@ __all__ = [
     "CacheSharingMode",
     "CacheVolume",
     "CacheVolumeID",
-    "Changes",
-    "ChangesID",
+    "Changeset",
+    "ChangesetID",
     "Client",
     "Cloud",
     "CloudID",

@@ -66,12 +66,12 @@ defmodule Dagger.Directory do
 
   Returns an error if the other directory is not an ancestor of this directory.
   """
-  @spec changes(t(), Dagger.Directory.t()) :: Dagger.Changes.t()
-  def changes(%__MODULE__{} = directory, older) do
+  @spec changes(t(), Dagger.Directory.t()) :: Dagger.Changeset.t()
+  def changes(%__MODULE__{} = directory, from) do
     query_builder =
-      directory.query_builder |> QB.select("changes") |> QB.put_arg("older", Dagger.ID.id!(older))
+      directory.query_builder |> QB.select("changes") |> QB.put_arg("from", Dagger.ID.id!(from))
 
-    %Dagger.Changes{
+    %Dagger.Changeset{
       query_builder: query_builder,
       client: directory.client
     }
@@ -358,7 +358,7 @@ defmodule Dagger.Directory do
   @doc """
   Return a directory with changes from another directory applied to it.
   """
-  @spec with_changes(t(), Dagger.Changes.t()) :: Dagger.Directory.t()
+  @spec with_changes(t(), Dagger.Changeset.t()) :: Dagger.Directory.t()
   def with_changes(%__MODULE__{} = directory, changes) do
     query_builder =
       directory.query_builder

@@ -173,10 +173,10 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Changes.html"><abbr title="Dagger\Changes">Changes</abbr></a>
+                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_changes">changes</a>(<abbr title="Dagger\DirectoryId|Dagger\Directory">Directory</abbr> $older)
+                    <a href="#method_changes">changes</a>(<abbr title="Dagger\DirectoryId|Dagger\Directory">Directory</abbr> $from)
         
                                             <p><p>Return a virtual comparison between this directory and an older snapshot that can be applied to another filesystem.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -336,7 +336,7 @@
                     <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withChanges">withChanges</a>(<abbr title="Dagger\ChangesId|Dagger\Changes">Changes</abbr> $changes)
+                    <a href="#method_withChanges">withChanges</a>(<abbr title="Dagger\ChangesetId|Dagger\Changeset">Changeset</abbr> $changes)
         
                                             <p><p>Return a directory with changes from another directory applied to it.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -665,8 +665,8 @@
                     <div class="method-item">
                     <h3 id="method_changes">
         <div class="location">at line 54</div>
-        <code>                    <a href="../Dagger/Changes.html"><abbr title="Dagger\Changes">Changes</abbr></a>
-    <strong>changes</strong>(<abbr title="Dagger\DirectoryId|Dagger\Directory">Directory</abbr> $older)
+        <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
+    <strong>changes</strong>(<abbr title="Dagger\DirectoryId|Dagger\Directory">Directory</abbr> $from)
         </code>
     </h3>
     <div class="details">    
@@ -682,7 +682,7 @@
                     <table class="table table-condensed">
                     <tr>
                 <td><abbr title="Dagger\DirectoryId|Dagger\Directory">Directory</abbr></td>
-                <td>$older</td>
+                <td>$from</td>
                 <td></td>
             </tr>
             </table>
@@ -692,7 +692,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Changes.html"><abbr title="Dagger\Changes">Changes</abbr></a></td>
+            <td><a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -1408,7 +1408,7 @@
                     <h3 id="method_withChanges">
         <div class="location">at line 307</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
-    <strong>withChanges</strong>(<abbr title="Dagger\ChangesId|Dagger\Changes">Changes</abbr> $changes)
+    <strong>withChanges</strong>(<abbr title="Dagger\ChangesetId|Dagger\Changeset">Changeset</abbr> $changes)
         </code>
     </h3>
     <div class="details">    
@@ -1423,7 +1423,7 @@
 
                     <table class="table table-condensed">
                     <tr>
-                <td><abbr title="Dagger\ChangesId|Dagger\Changes">Changes</abbr></td>
+                <td><abbr title="Dagger\ChangesetId|Dagger\Changeset">Changeset</abbr></td>
                 <td>$changes</td>
                 <td></td>
             </tr>

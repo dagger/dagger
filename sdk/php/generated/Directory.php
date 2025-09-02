@@ -51,11 +51,11 @@ class Directory extends Client\AbstractObject implements Client\IdAble
      *
      * Returns an error if the other directory is not an ancestor of this directory.
      */
-    public function changes(DirectoryId|Directory $older): Changes
+    public function changes(DirectoryId|Directory $from): Changeset
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changes');
-        $innerQueryBuilder->setArgument('older', $older);
-        return new \Dagger\Changes($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder->setArgument('from', $from);
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -304,7 +304,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     /**
      * Return a directory with changes from another directory applied to it.
      */
-    public function withChanges(ChangesId|Changes $changes): Directory
+    public function withChanges(ChangesetId|Changeset $changes): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChanges');
         $innerQueryBuilder->setArgument('changes', $changes);
