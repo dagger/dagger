@@ -157,7 +157,7 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 			return s, err
 		}
 
-		s.afterFS = prompted.Env().Hostfs()
+		s.afterFS = prompted.Env().Workspace()
 
 		dirDiff, err := dirDiff(s.plumbingCtx, s.beforeFS, s.afterFS)
 		if err != nil {
@@ -431,7 +431,7 @@ func (s *LLMSession) syncVarsToLLM() error {
 	}
 
 	if s.beforeFS == nil {
-		s.beforeFS = s.llm.Env().Hostfs()
+		s.beforeFS = s.llm.Env().Workspace()
 	}
 
 	syncedEnvQ := s.dag.QueryBuilder().

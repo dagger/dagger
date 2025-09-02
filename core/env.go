@@ -14,13 +14,13 @@ import (
 
 type Env struct {
 	// The environment's host filesystem
-	Hostfs dagql.ObjectResult[*Directory] `field:"true"`
+	Workspace dagql.ObjectResult[*Directory] `field:"true"`
 
 	// The full module dependency chain for the environment, including the core
 	// module and any dependencies from the environment's creator
 	deps *ModDeps
 	// The modules explicitly installed into the environment, to be exposed as
-	// tools that implicitly call the constructor with the environment's hostfs
+	// tools that implicitly call the constructor with the environment's workspace
 	installedModules []*Module
 
 	// Input values
@@ -54,9 +54,9 @@ func EnvFromContext(ctx context.Context) (res dagql.ObjectResult[*Env], ok bool)
 	return env, true
 }
 
-func NewEnv(hostfs dagql.ObjectResult[*Directory], deps *ModDeps) *Env {
+func NewEnv(workspace dagql.ObjectResult[*Directory], deps *ModDeps) *Env {
 	return &Env{
-		Hostfs:        hostfs,
+		Workspace:     workspace,
 		deps:          deps,
 		inputsByName:  map[string]*Binding{},
 		outputsByName: map[string]*Binding{},
@@ -74,9 +74,9 @@ func (env *Env) Clone() *Env {
 	return &cp
 }
 
-func (env *Env) WithHostfs(dir dagql.ObjectResult[*Directory]) *Env {
+func (env *Env) WithWorkspace(dir dagql.ObjectResult[*Directory]) *Env {
 	cp := *env
-	cp.Hostfs = dir
+	cp.Workspace = dir
 	return &cp
 }
 

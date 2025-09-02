@@ -37,10 +37,10 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 			Doc("Return a new environment without any outputs"),
 		dagql.Func("output", s.output).
 			Doc("retrieve an output value by name"),
-		dagql.Func("withHostfs", s.withHostfs).
+		dagql.Func("withWorkspace", s.withWorkspace).
 			Doc("Return a new environment with a new host filesystem").
 			Args(
-				dagql.Arg("hostfs").Doc("The directory to set as the host filesystem"),
+				dagql.Arg("workspace").Doc("The directory to set as the host filesystem"),
 			),
 		dagql.Func("withModule", s.withModule).
 			Doc("load a module and expose its functions to the model"),
@@ -85,12 +85,12 @@ type environmentArgs struct {
 }
 
 func (s environmentSchema) environment(ctx context.Context, parent *core.Query, args environmentArgs) (*core.Env, error) {
-	var hostfs dagql.ObjectResult[*core.Directory]
+	var workspace dagql.ObjectResult[*core.Directory]
 	if mod, err := parent.CurrentModule(ctx); err == nil {
-		hostfs = mod.GetSource().ContextDirectory
+		workspace = mod.GetSource().ContextDirectory
 	} else {
 		// FIXME: inherit from somewhere?
-		if err := s.srv.Select(ctx, s.srv.Root(), &hostfs, dagql.Selector{
+		if err := s.srv.Select(ctx, s.srv.Root(), &workspace, dagql.Selector{
 			Field: "directory",
 		}); err != nil {
 			return nil, err
@@ -100,7 +100,7 @@ func (s environmentSchema) environment(ctx context.Context, parent *core.Query, 
 	if err != nil {
 		return nil, err
 	}
-	env := core.NewEnv(hostfs, deps)
+	env := core.NewEnv(workspace, deps)
 	if args.Privileged {
 		env = env.Privileged()
 	}
@@ -157,14 +157,14 @@ func (s environmentSchema) withoutOutputs(ctx context.Context, env *core.Env, ar
 	return env.WithoutOutputs(), nil
 }
 
-func (s environmentSchema) withHostfs(ctx context.Context, env *core.Env, args struct {
-	Hostfs core.DirectoryID
+func (s environmentSchema) withWorkspace(ctx context.Context, env *core.Env, args struct {
+	Workspace core.DirectoryID
 }) (*core.Env, error) {
-	dir, err := args.Hostfs.Load(ctx, s.srv)
+	dir, err := args.Workspace.Load(ctx, s.srv)
 	if err != nil {
 		return nil, err
 	}
-	return env.WithHostfs(dir), nil
+	return env.WithWorkspace(dir), nil
 }
 
 func (s environmentSchema) withModule(ctx context.Context, env *core.Env, args struct {

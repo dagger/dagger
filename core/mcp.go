@@ -317,13 +317,13 @@ func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
 							return nil, fmt.Errorf("call tool %q on mcp %q: %w", tool.Name, name, err)
 						}
 					} else {
-						// If the container has a working directory, sync the hostfs to it
+						// If the container has a working directory, sync the workspace to it
 						// and snapshot any changes it makes
 						snapshot, hasChanges, err := mcpSrv.Service.Self().runAndSnapshotChanges(
 							ctx,
 							sess.ID(), // container id
 							ctr.Config.WorkingDir,
-							m.env.Self().Hostfs.Self(),
+							m.env.Self().Workspace.Self(),
 							func() error {
 								var err error
 								res, err = sess.CallTool(ctx, &mcp.CallToolParams{
@@ -333,12 +333,12 @@ func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
 								return err
 							})
 						if err != nil {
-							return nil, fmt.Errorf("remount hostfs for mcp %q: %w", name, err)
+							return nil, fmt.Errorf("remount workspace for mcp %q: %w", name, err)
 						}
 						if hasChanges {
-							// If the tool modified the hostfs, update the Env.hostfs
-							if err := m.updateEnvHostfs(ctx, snapshot); err != nil {
-								return nil, fmt.Errorf("update hostfs for mcp %q: %w", name, err)
+							// If the tool modified the workspace, update the Env.workspace
+							if err := m.updateEnvWorkspace(ctx, snapshot); err != nil {
+								return nil, fmt.Errorf("update workspace for mcp %q: %w", name, err)
 							}
 						}
 					}
@@ -370,7 +370,7 @@ func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
 	return tools, nil
 }
 
-func (m *MCP) updateEnvHostfs(ctx context.Context, hostfs dagql.ObjectResult[*Directory]) error {
+func (m *MCP) updateEnvWorkspace(ctx context.Context, workspace dagql.ObjectResult[*Directory]) error {
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return fmt.Errorf("get dagql server: %w", err)
@@ -378,11 +378,11 @@ func (m *MCP) updateEnvHostfs(ctx context.Context, hostfs dagql.ObjectResult[*Di
 
 	var newEnv dagql.ObjectResult[*Env]
 	if err := srv.Select(ctx, m.env, &newEnv, dagql.Selector{
-		Field: "withHostfs",
+		Field: "withWorkspace",
 		Args: []dagql.NamedInput{
 			{
-				Name:  "hostfs",
-				Value: dagql.NewID[*Directory](hostfs.ID()),
+				Name:  "workspace",
+				Value: dagql.NewID[*Directory](workspace.ID()),
 			},
 		},
 	}); err != nil {
@@ -665,7 +665,7 @@ func (m *MCP) call(ctx context.Context,
 	if newEnv, ok := dagql.UnwrapAs[dagql.ObjectResult[*Env]](val); ok {
 		// Swap out the Env for the updated one
 		m.env = newEnv
-		// No particular message needed here. At one point we diffed the Env.hostfs
+		// No particular message needed here. At one point we diffed the Env.workspace
 		// and printed which files were modified, but it's not really necessary to
 		// show things like that unilaterally vs. just allowing each Env-returning
 		// tool to control the messaging.
@@ -835,7 +835,7 @@ func (m *MCP) toolCallToSelections(
 				}
 			}
 			if defaultPath != "" {
-				dir := env.Self().Hostfs
+				dir := env.Self().Workspace
 				switch path.Clean(defaultPath) {
 				case ".", "/":
 				default:

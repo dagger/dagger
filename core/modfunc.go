@@ -368,10 +368,10 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		if err := srv.Select(ctx, srv.Root(), &env, dagql.Selector{
 			Field: "env",
 		}, dagql.Selector{
-			Field: "withHostfs",
+			Field: "withWorkspace",
 			Args: []dagql.NamedInput{
 				{
-					Name:  "hostfs",
+					Name:  "workspace",
 					Value: dagql.NewID[*Directory](mod.GetSource().ContextDirectory.ID()),
 				},
 			},
