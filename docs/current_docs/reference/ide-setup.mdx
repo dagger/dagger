@@ -99,10 +99,10 @@ uv pip install -r requirements.lock -e ./sdk -e .
 ```
 
 :::note
-By default, `uv venv` will create an environment with Python 3.12. To pin Python 3.11 both locally and in Dagger, run this first:
+By default, `uv venv` will create an environment with Python 3.13. To pin Python 3.12 both locally and in Dagger, run this first:
 
 ```shell
-echo 3.11 > .python-version
+echo 3.12 > .python-version
 ```
 
 :::
@@ -110,7 +110,7 @@ echo 3.11 > .python-version
 </TabItem>
 <TabItem value="pip">
 
-Make sure you have the same Python version that Dagger uses first. By default it's Python 3.12, unless it's overridden in `pyproject.toml` or in `.python-version`.
+Make sure you have the same Python version that Dagger uses first. By default it's Python 3.13, unless it's overridden in `pyproject.toml` or in `.python-version`.
 
 ```shell
 python -m venv .venv
