@@ -1509,6 +1509,7 @@ func (fe *frontendPretty) handleEditlineKey(msg tea.KeyMsg) (cmd tea.Cmd) {
 	return cmd
 }
 
+//nolint:gocyclo
 func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 	lastKey := fe.pressedKey
 	fe.pressedKey = msg.String()

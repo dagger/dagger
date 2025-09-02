@@ -633,7 +633,7 @@ func (s *LLMSession) toShell(ctx context.Context, idable dagqlObject) (string, e
 	return newStateToken(key), nil
 }
 
-func (s *LLMSession) Clear(ctx context.Context) *LLMSession {
+func (s *LLMSession) Clear() *LLMSession {
 	s = s.Fork()
 	s.reset()
 	return s
@@ -700,7 +700,7 @@ func (s *LLMSession) History(ctx context.Context) (*LLMSession, error) {
 	return s, nil
 }
 
-func (s *LLMSession) Model(ctx context.Context, model string) (*LLMSession, error) {
+func (s *LLMSession) Model(model string) (*LLMSession, error) {
 	s = s.Fork()
 	s.updateLLMAndAgentVar(s.llm.WithModel(model))
 	model, err := s.llm.Model(s.plumbingCtx)
