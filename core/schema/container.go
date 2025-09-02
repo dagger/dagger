@@ -404,7 +404,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
 
-		dagql.Func("withDirectory", s.withDirectory).
+		dagql.NodeFuncWithCacheKey("withDirectory", s.withDirectory, s.withDirectoryCacheKey).
 			Doc(`Return a new container snapshot, with a directory added to its filesystem`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the written directory (e.g., "/tmp/directory").`),
@@ -1765,23 +1765,85 @@ type containerWithDirectoryArgs struct {
 	Expand bool   `default:"false"`
 }
 
-func (s *containerSchema) withDirectory(ctx context.Context, parent *core.Container, args containerWithDirectoryArgs) (*core.Container, error) {
+func (s *containerSchema) withDirectoryCacheKey(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithDirectoryArgs, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
+	argDigest, err := core.DigestOf(args)
+	if err != nil {
+		return nil, err
+	}
+	_ = argDigest
+
+	doLoad := true
+	var dirDigest digest.Digest
+	if doLoad {
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get server: %w", err)
+		}
+		_ = srv
+		dir, err := args.Directory.Load(ctx, srv)
+		if err != nil {
+			return nil, err
+		}
+
+		// dirDigest, err = core.DigestOf(dir.Self().WithoutInputs())
+		// if err != nil {
+		// 	return nil, err
+		// }
+
+		dirDigestStr, err := dir.Self().Digest(ctx) // NOTE dir.Self().WithoutInputs().Digest(ctx) fails
+		if err != nil {
+			return nil, err
+		}
+		dirDigest = digest.Digest(dirDigestStr)
+	}
+
+	ctrDigest, err := core.DigestOf(parent.Self().WithoutInputs())
+	if err != nil {
+		return nil, err
+	}
+
+	cacheCfg.Digest = dagql.HashFrom(
+		string(dirDigest),
+		string(ctrDigest),
+		string(args.Path),
+	)
+	return &cacheCfg, nil
+}
+
+func (s *containerSchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithDirectoryArgs) (inst dagql.ObjectResult[*core.Container], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get server: %w", err)
+		return inst, fmt.Errorf("failed to get server: %w", err)
+	}
+
+	if !args.IsDagOp {
+		ctr := parent.Self().Clone()
+		ctr.Meta = nil
+		ctr, err := DagOpContainer(ctx, srv, ctr, args, s.withDirectory)
+		if err != nil {
+			return inst, err
+		}
+
+		ctr.ImageRef = ""
+		return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
 	}
 
 	dir, err := args.Directory.Load(ctx, srv)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
-	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)
+	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
-	return parent.WithDirectory(ctx, path, dir, args.CopyFilter, args.Owner)
+	ctr, err := parent.Self().WithDirectory(ctx, path, dir.Self(), args.CopyFilter, args.Owner)
+	if err != nil {
+		return inst, err
+	}
+
+	return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
 }
 
 type containerWithFileArgs struct {
