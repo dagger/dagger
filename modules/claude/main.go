@@ -48,6 +48,6 @@ func (m *Claude) Agent(
 func (m *Claude) Dev(source *dagger.Directory) *dagger.LLM {
 	return m.Agent(
 		dag.LLM().
-			WithEnv(dag.Env().WithHostfs(source)),
+			WithEnv(dag.Env().WithWorkspace(source)),
 	)
 }
