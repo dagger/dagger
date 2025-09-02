@@ -8702,6 +8702,15 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * Update one or more clients.
+   * @param clients The clients to update
+   */
+  withUpdatedClients = (clients: string[]): ModuleSource => {
+    const ctx = this._ctx.select("withUpdatedClients", { clients })
+    return new ModuleSource(ctx)
+  }
+
+  /**
    * Remove the current blueprint from the module source.
    */
   withoutBlueprint = (): ModuleSource => {
