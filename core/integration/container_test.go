@@ -5105,3 +5105,42 @@ func (ContainerSuite) TestExists(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, true, exists)
 }
+
+func (ContainerSuite) TestWithoutFileOnMountedFile(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	f1 := c.File("f", "1")
+	f2 := c.File("f", "2")
+	ents, err := c.Container().
+		From(alpineImage).
+		WithFile("/mnt/f", f1).
+		WithMountedFile("/mnt/f", f2).
+		WithoutFile("/mnt/f").
+		Directory("/mnt").
+		Entries(ctx)
+	require.NoError(t, err)
+	require.Empty(t, ents)
+}
+
+func (ContainerSuite) TestWithFileOnMountedFile(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	d := c.Directory().WithNewFile("f1", "1").WithNewFile("f2", "2")
+	f3 := c.File("f3", "3")
+	ctr := c.Container().
+		From(alpineImage).
+		WithMountedDirectory("/mnt", d).
+		WithMountedFile("/mnt/f2", f3)
+
+	f1Contents, err := ctr.File("/mnt/f1").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "1", f1Contents)
+
+	f2Contents, err := ctr.File("/mnt/f2").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "3", f2Contents)
+
+	f4 := c.File("f4", "4")
+
+	f2Contents, err = ctr.WithFile("/mnt/f2", f4).File("/mnt/f2").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "4", f2Contents)
+}
