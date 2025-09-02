@@ -24,6 +24,7 @@ defmodule PrimitiveTypeArgs do
 end
 
 defmodule PrimitiveTypeDefaultArgs do
+  @moduledoc false
   use Dagger.Mod.Object, name: "PrimitiveTypeDefaultArgs"
 
   defn accept_default_string(name: {String.t(), default: "Foo"}) :: String.t() do
