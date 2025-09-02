@@ -1091,19 +1091,47 @@ func (specs InputSpecs) Input(name string, view call.View) (InputSpec, bool) {
 }
 
 func (specs InputSpecs) Inputs(view call.View) (args []InputSpec) {
-	seen := make(map[string]bool, len(specs.raw))
+	// This function is currently in the hot path, so we optimize duplicate checks by only using
+	// a map when the number of args is above a certain threshold, using slice iteration otherwise.
+	// The previous implementation that only used a map was a genuine bottleneck since most of the
+	// time the number of args is small.
+
+	const useMapThreshold = 15 // based on some benchmarks on an m4 laptop, fairly approximate though
+
+	var seen map[string]struct{}
+	if len(specs.raw) > useMapThreshold {
+		seen = make(map[string]struct{}, len(specs.raw))
+	}
+
+	args = make([]InputSpec, 0, len(specs.raw))
 	for i := len(specs.raw) - 1; i >= 0; i-- {
 		// iterate backwards to allow last-defined spec to have precedence
 		spec := specs.raw[i]
 
-		if seen[spec.Name] {
+		var alreadySeen bool
+		if seen != nil {
+			_, alreadySeen = seen[spec.Name]
+		} else {
+			// check for duplicates w/ O(n^2) iteration since n is small
+			for _, a := range args {
+				if a.Name == spec.Name {
+					alreadySeen = true
+					break
+				}
+			}
+		}
+		if alreadySeen {
 			continue
 		}
+
 		if spec.ViewFilter != nil && !spec.ViewFilter.Contains(view) {
 			continue
 		}
-		seen[spec.Name] = true
+
 		args = append(args, spec)
+		if seen != nil {
+			seen[spec.Name] = struct{}{}
+		}
 	}
 	slices.Reverse(args)
 	return args
