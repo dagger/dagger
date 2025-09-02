@@ -547,7 +547,7 @@ func (svc *Service) startContainer(
 	exited := make(chan struct{})
 	runErr := make(chan error)
 	go func() {
-		_, err = exec.Run(ctx, svcID, p.Root, p.Mounts, executor.ProcessInfo{
+		_, err := exec.Run(ctx, svcID, p.Root, p.Mounts, executor.ProcessInfo{
 			Meta:   *meta,
 			Stdin:  stdinReader,
 			Stdout: stdoutWriters,
@@ -602,6 +602,8 @@ func (svc *Service) startContainer(
 		case <-exited:
 			slog.Info("service exited in signal")
 		case signal <- sig:
+			// close stdio, else we hang waiting on i/o piping goroutines
+			sio.Close()
 		}
 		return nil
 	}
