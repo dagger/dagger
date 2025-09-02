@@ -306,7 +306,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 			err = srv.Select(ctx, parent, &inst, dagql.Selector{
 				Field: "git",
 				Args:  selectArgs,
-				View:  dagql.View(dagql.CurrentID(ctx).View()),
+				View:  dagql.CurrentID(ctx).View(),
 			})
 			return inst, err
 		} else {
@@ -431,7 +431,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 			err = srv.Select(ctx, parent, &inst, dagql.Selector{
 				Field: "git",
 				Args:  selectArgs,
-				View:  dagql.View(dagql.CurrentID(ctx).View()),
+				View:  dagql.CurrentID(ctx).View(),
 			})
 			return inst, err
 		}

@@ -16,6 +16,7 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/client/pathutil"
@@ -2468,7 +2469,7 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src *cor
 			// uses the correct schema version
 			dag := *coreMod.Dag
 
-			dag.View = dagql.View(engine.BaseVersion(engine.NormalizeVersion(src.EngineVersion)))
+			dag.View = call.View(engine.BaseVersion(engine.NormalizeVersion(src.EngineVersion)))
 			deps.Mods[i] = &CoreMod{Dag: &dag}
 		}
 	}

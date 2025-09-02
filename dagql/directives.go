@@ -23,7 +23,7 @@ func (DirectiveLocation) Type() *ast.Type {
 	}
 }
 
-func (d DirectiveSpec) DirectiveDefinition(view View) *ast.DirectiveDefinition {
+func (d DirectiveSpec) DirectiveDefinition(view call.View) *ast.DirectiveDefinition {
 	def := &ast.DirectiveDefinition{
 		Name:         d.Name,
 		Description:  d.Description,

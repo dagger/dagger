@@ -24,6 +24,7 @@ import (
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/server/resource"
@@ -200,7 +201,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	ctx context.Context,
 	parent dagql.AnyResult,
 	args map[string]dagql.Input,
-	view dagql.View,
+	view call.View,
 	inputCfg dagql.CacheConfig,
 ) (*dagql.CacheConfig, error) {
 	cacheCfg, err := fn.mod.CacheConfigForCall(ctx, parent, args, view, inputCfg)

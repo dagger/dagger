@@ -178,7 +178,7 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 	}
 
 	// extract the withExec args
-	withExecField, ok := ctr.ObjectType().FieldSpec(id.Field(), dagql.View(id.View()))
+	withExecField, ok := ctr.ObjectType().FieldSpec(id.Field(), id.View())
 	if !ok {
 		return inst, fmt.Errorf("could not find %s on %s", id.Field(), ctr.Type().NamedType)
 	}
@@ -187,7 +187,7 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 		return inst, err
 	}
 	var withExecArgs containerExecArgs
-	err = withExecField.Args.Decode(inputs, &withExecArgs, dagql.View(id.View()))
+	err = withExecField.Args.Decode(inputs, &withExecArgs, id.View())
 	if err != nil {
 		return inst, err
 	}
@@ -272,7 +272,7 @@ func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.ObjectResult[
 	err = srv.Select(ctx, ctr, &svc,
 		dagql.Selector{
 			Field: "asService",
-			View:  dagql.View(dagql.CurrentID(ctx).View()),
+			View:  dagql.CurrentID(ctx).View(),
 			Args:  inputs,
 		},
 	)
@@ -293,7 +293,7 @@ func (s *serviceSchema) containerUpLegacy(ctx context.Context, ctr dagql.ObjectR
 	err = srv.Select(ctx, ctr, &svc,
 		dagql.Selector{
 			Field: "asService",
-			View:  dagql.View(dagql.CurrentID(ctx).View()),
+			View:  dagql.CurrentID(ctx).View(),
 		},
 	)
 	if err != nil {

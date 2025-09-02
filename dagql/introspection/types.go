@@ -20,7 +20,7 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 
 		// custom dagger field
 		dagql.Func("__schemaVersion", func(ctx context.Context, self T, args struct{}) (string, error) {
-			return dagql.CurrentID(ctx).View(), nil
+			return string(dagql.CurrentID(ctx).View()), nil
 		}).View(dagql.AllView{}),
 
 		dagql.FuncWithCacheKey("__type", func(ctx context.Context, self T, args struct {
