@@ -2151,6 +2151,15 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 	}
 
 	if span != nil {
+		for effect := range span.EffectSpans {
+			if effect.Passthrough {
+				// Don't show spans which are aggressively hidden.
+				continue
+			}
+			fmt.Fprintf(out, " %s ", out.String(CaretRightEmpty).Foreground(termenv.ANSIBrightBlack))
+			r.renderSpan(out, effect, effect.Name)
+		}
+
 		// TODO: when a span has child spans that have progress, do 2-d progress
 		// fe.renderVertexTasks(out, span, depth)
 		r.renderDuration(out, span, !empty)

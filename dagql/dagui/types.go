@@ -161,6 +161,20 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 			}
 		}
 
+		// display causal spans inline (always only one, but the data is many:many)
+		reparent := false
+		for cause := range span.CausalSpans {
+			if !span.HasParent(cause) {
+				walk(cause, parent)
+				reparent = true
+			}
+		}
+
+		// reparent
+		if reparent {
+			parent = lastTree
+		}
+
 		tree := &TraceTree{
 			Span:   span,
 			Parent: parent,

@@ -492,9 +492,6 @@ func (svc *Service) startContainer(
 		fmt.Sprintf("exec %s", strings.Join(svc.Args, " ")),
 		// This span continues the original withExec, by linking to it.
 		telemetry.Resume(trace.ContextWithSpanContext(ctx, svc.Creator)),
-		// telemetry.WithServiceID(svcID),
-		// Hide this span so the user can just focus on the withExec.
-		telemetry.Internal(),
 	)
 	defer func() {
 		if rerr != nil {
