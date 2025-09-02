@@ -2150,26 +2150,80 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 		}
 	}
 
-	if span != nil {
-		for effect := range span.EffectSpans {
-			if effect.Passthrough {
-				// Don't show spans which are aggressively hidden.
-				continue
-			}
-			fmt.Fprintf(out, " %s ", out.String(CaretRightEmpty).Foreground(termenv.ANSIBrightBlack))
-			r.renderSpan(out, effect, effect.Name)
-		}
+	summary := map[string]int{}
 
+	if span != nil {
 		// TODO: when a span has child spans that have progress, do 2-d progress
 		// fe.renderVertexTasks(out, span, depth)
 		r.renderDuration(out, span, !empty)
 		r.renderMetrics(out, span)
 		fe.renderStatus(out, span)
+
+		for effect := range span.EffectSpans {
+			if effect.Passthrough {
+				// Don't show spans which are aggressively hidden.
+				continue
+			}
+			icon, isInteresting := statusIcon(effect)
+			if !isInteresting {
+				// summarize boring statuses, rather than showing them in full
+				summary[icon]++
+				continue
+			}
+			fmt.Fprintf(out, " %s ", out.String(icon).Foreground(statusColor(effect)))
+			r.renderSpan(out, effect, effect.Name)
+		}
+
+		for _, icon := range statusOrder {
+			count := summary[icon]
+			if count > 0 {
+				color := statusColors[icon]
+				fmt.Fprintf(out, " %s %s",
+					out.String(icon).Foreground(color).Faint(),
+					out.String(strconv.Itoa(count)).Faint())
+			}
+		}
 	}
 
 	fmt.Fprintln(out)
 
 	return nil
+}
+
+var statusOrder = []string{
+	DotFilled,
+	IconSuccess,
+	IconCached,
+	IconSkipped,
+	DotEmpty,
+}
+
+var statusColors = map[string]termenv.Color{
+	DotHalf:     termenv.ANSIYellow,
+	IconCached:  termenv.ANSIBlue,
+	IconSkipped: termenv.ANSIBrightBlack,
+	IconFailure: termenv.ANSIRed,
+	DotEmpty:    termenv.ANSIBrightBlack,
+	DotFilled:   termenv.ANSIGreen,
+	IconSuccess: termenv.ANSIGreen,
+}
+
+// statusIcon returns an icon indicating the span's status, and a bool
+// indicating whether it's interesting enough to reveal at a summary level
+func statusIcon(span *dagui.Span) (string, bool) {
+	if span.IsRunningOrEffectsRunning() {
+		return DotHalf, true
+	} else if span.IsCached() {
+		return IconCached, false
+	} else if span.IsCanceled() {
+		return IconSkipped, false
+	} else if span.IsFailedOrCausedFailure() {
+		return IconFailure, true
+	} else if span.IsPending() {
+		return DotEmpty, false
+	} else {
+		return DotFilled, false
+	}
 }
 
 func (fe *frontendPretty) renderToggler(out TermOutput, row *dagui.TraceRow, isFocused bool) {
@@ -2180,18 +2234,9 @@ func (fe *frontendPretty) renderToggler(out TermOutput, row *dagui.TraceRow, isF
 		} else {
 			toggler = out.String(CaretRightFilled)
 		}
-	} else if row.Span.IsRunningOrEffectsRunning() {
-		toggler = out.String(DotHalf)
-	} else if row.Span.IsCached() {
-		toggler = out.String(IconCached)
-	} else if row.Span.IsCanceled() {
-		toggler = out.String(IconSkipped)
-	} else if row.Span.IsFailedOrCausedFailure() {
-		toggler = out.String(IconFailure)
-	} else if row.Span.IsPending() {
-		toggler = out.String(DotEmpty)
 	} else {
-		toggler = out.String(DotFilled)
+		icon, _ := statusIcon(row.Span)
+		toggler = out.String(icon)
 	}
 	toggler = toggler.Foreground(statusColor(row.Span))
 	if row.Span.Message != "" {
