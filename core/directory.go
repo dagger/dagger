@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"syscall"
 	"time"
 
 	containerdfs "github.com/containerd/continuity/fs"
@@ -21,10 +20,13 @@ import (
 	"github.com/dagger/dagger/util/patternmatcher"
 	"github.com/dustin/go-humanize"
 	bkcache "github.com/moby/buildkit/cache"
+	cacheutil "github.com/moby/buildkit/cache/util"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver/pb"
+	copy "github.com/tonistiigi/fsutil/copy"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
@@ -213,33 +215,18 @@ func (dir *Directory) Digest(ctx context.Context) (string, error) {
 func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, src string) (*fstypes.Stat, error) {
 	src = path.Join(dir.Dir, src)
 
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: dir.LLB,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to solve: %w", err)
-	}
-
-	ref, err := res.SingleRef()
+	ref, err := getRefOrEvaluate(ctx, dir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get single ref: %w", err)
 	}
-	// empty directory, i.e. llb.Scratch()
 	if ref == nil {
-		if clean := path.Clean(src); clean == "." || clean == "/" {
-			// fake out a reasonable response
-			return &fstypes.Stat{
-				Path: src,
-				Mode: uint32(fs.ModeDir),
-			}, nil
-		}
-
-		return nil, fmt.Errorf("%s: %w", src, syscall.ENOENT)
+		return nil, fmt.Errorf("cannot stat file in empty directory")
 	}
-
-	st, err := ref.StatFile(ctx, bkgw.StatRequest{
-		Path: src,
-	})
+	mountable, err := ref.Mount(ctx, true, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get single ref: %w", err)
+	}
+	st, err := cacheutil.StatFile(ctx, mountable, src)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat file %s: %w", src, err)
 	}
@@ -670,28 +657,90 @@ type CopyFilter struct {
 func (dir *Directory) WithDirectory(ctx context.Context, destDir string, src *Directory, filter CopyFilter, owner *Ownership) (*Directory, error) {
 	dir = dir.Clone()
 
-	destSt, err := dir.State()
+	destDir = path.Join(dir.Dir, destDir)
+
+	dirRef, err := getRefOrEvaluate(ctx, dir)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get directory ref: %w", err)
 	}
-
-	srcSt, err := src.State()
+	srcRef, err := getRefOrEvaluate(ctx, src)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get source directory ref: %w", err)
 	}
 
-	if err := dir.SetState(ctx, mergeStates(mergeStateInput{
-		Dest:            destSt,
-		DestDir:         path.Join(dir.Dir, destDir),
-		Src:             srcSt,
-		SrcDir:          src.Dir,
-		IncludePatterns: filter.Include,
-		ExcludePatterns: filter.Exclude,
-		Owner:           owner,
-	})); err != nil {
-		return nil, err
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current query: %w", err)
 	}
 
+	cache := query.BuildkitCache()
+
+	// MergeOp currently only supports merging the "/" of states together without any
+	// modifications or filtering
+	canDoDirectMerge :=
+		len(filter.Exclude) == 0 &&
+			len(filter.Include) == 0 &&
+			destDir == "/" &&
+			src.Dir == "/"
+
+	mergeRefs := []bkcache.ImmutableRef{dirRef}
+
+	if canDoDirectMerge {
+		// Directly merge the states together, which is lazy, uses hardlinks instead of
+		// copies and caches inputs individually instead of invalidating the whole
+		// chain following any modified input.
+		mergeRefs = append(mergeRefs, srcRef)
+	} else {
+		// Even if we can't merge directly, we can still get some optimization by
+		// copying to scratch and then merging that. This still results in an on-disk
+		// copy but preserves the other caching benefits of MergeOp. This is the same
+		// behavior as "COPY --link" in Dockerfiles.
+		copyingRef, err := query.BuildkitCache().New(ctx, nil, nil,
+			bkcache.CachePolicyRetain,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription("Directory.withDirectory source"))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create new cache for source directory: %w", err)
+		}
+		err = MountRef(ctx, copyingRef, nil, func(copyDest string) error {
+			mounter, err := srcRef.Mount(ctx, true, nil)
+			if err != nil {
+				return fmt.Errorf("failed to mount source directory: %w", err)
+			}
+			lm := snapshot.LocalMounter(mounter)
+			srcPath, err := lm.Mount()
+			if err != nil {
+				return fmt.Errorf("failed to mount source directory: %w", err)
+			}
+			defer lm.Unmount()
+			var opts []copy.Opt
+			for _, pattern := range filter.Include {
+				opts = append(opts, copy.WithIncludePattern(pattern))
+			}
+			for _, pattern := range filter.Exclude {
+				opts = append(opts, copy.WithExcludePattern(pattern))
+			}
+			if err := copy.Copy(ctx, srcPath, ".", copyDest, ".", opts...); err != nil {
+				return fmt.Errorf("failed to copy source directory: %w", err)
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		copiedRef, err := copyingRef.Commit(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to commit copied directory: %w", err)
+		}
+		defer copiedRef.Release(ctx) // release; the merge should keep it alive
+		mergeRefs = append(mergeRefs, copiedRef)
+	}
+
+	ref, err := cache.Merge(ctx, mergeRefs, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to merge directories: %w", err)
+	}
+	dir.Result = ref
 	return dir, nil
 }
 
@@ -862,75 +911,6 @@ func (dir *Directory) WithFiles(
 	return dir, nil
 }
 
-type mergeStateInput struct {
-	Dest         llb.State
-	DestDir      string
-	DestFileName string
-
-	Src         llb.State
-	SrcDir      string
-	SrcFileName string
-
-	IncludePatterns []string
-	ExcludePatterns []string
-
-	Permissions *int
-	Owner       *Ownership
-}
-
-func mergeStates(input mergeStateInput) llb.State {
-	input.DestDir = path.Join("/", input.DestDir)
-	input.SrcDir = path.Join("/", input.SrcDir)
-
-	copyInfo := &llb.CopyInfo{
-		CreateDestPath:      true,
-		CopyDirContentsOnly: true,
-		IncludePatterns:     input.IncludePatterns,
-		ExcludePatterns:     input.ExcludePatterns,
-	}
-	if input.DestFileName == "" && input.SrcFileName != "" {
-		input.DestFileName = input.SrcFileName
-	}
-	if input.Permissions != nil {
-		fm := fs.FileMode(*input.Permissions)
-		copyInfo.Mode = &fm
-	}
-	if input.Owner != nil {
-		input.Owner.Opt().SetCopyOption(copyInfo)
-	}
-
-	// MergeOp currently only supports merging the "/" of states together without any
-	// modifications or filtering
-	canDoDirectMerge := copyInfo.Mode == nil &&
-		copyInfo.ChownOpt == nil &&
-		len(copyInfo.ExcludePatterns) == 0 &&
-		len(copyInfo.IncludePatterns) == 0 &&
-		input.DestDir == "/" &&
-		input.SrcDir == "/" &&
-		// TODO:(sipsma) we could support direct merge-op with individual files if we can verify
-		// there are no other files in the dir, but doing so by just calling ReadDir would result
-		// in unlazying the inputs, which defeats some of the performance benefits of merge-op.
-		input.DestFileName == "" &&
-		input.SrcFileName == ""
-
-	mergeStates := []llb.State{input.Dest}
-	if canDoDirectMerge {
-		// Directly merge the states together, which is lazy, uses hardlinks instead of
-		// copies and caches inputs individually instead of invalidating the whole
-		// chain following any modified input.
-		mergeStates = append(mergeStates, input.Src)
-	} else {
-		// Even if we can't merge directly, we can still get some optimization by
-		// copying to scratch and then merging that. This still results in an on-disk
-		// copy but preserves the other caching benefits of MergeOp. This is the same
-		// behavior as "COPY --link" in Dockerfiles.
-		mergeStates = append(mergeStates, llb.Scratch().File(llb.Copy(
-			input.Src, path.Join(input.SrcDir, input.SrcFileName), path.Join(input.DestDir, input.DestFileName), copyInfo,
-		)))
-	}
-	return llb.Merge(mergeStates)
-}
-
 func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (*Directory, error) {
 	dir = dir.Clone()
 	return execInMount(ctx, dir, func(root string) error {
@@ -973,8 +953,6 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permiss
 }
 
 func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, error) {
-	dir = dir.Clone()
-
 	thisDirPath := dir.Dir
 	if thisDirPath == "" {
 		thisDirPath = "/"
@@ -987,23 +965,29 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 		// TODO(vito): work around with llb.Copy shenanigans?
 		return nil, fmt.Errorf("cannot diff with different relative paths: %q != %q", dir.Dir, other.Dir)
 	}
-
-	lowerSt, err := dir.State()
+	dirRef, err := getRefOrEvaluate(ctx, dir)
 	if err != nil {
 		return nil, err
 	}
-
-	upperSt, err := other.State()
+	if dirRef == nil {
+		// base is empty; other is the entire diff
+		return other, nil
+	}
+	otherRef, err := getRefOrEvaluate(ctx, other)
 	if err != nil {
 		return nil, err
 	}
-
-	err = dir.SetState(ctx, llb.Diff(lowerSt, upperSt))
+	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	return dir, nil
+	diffRef, err := query.BuildkitCache().Diff(ctx, dirRef, otherRef, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to diff directories: %w", err)
+	}
+	diffDir := NewDirectory(nil, dir.Dir, dir.Platform, dir.Services)
+	diffDir.Result = diffRef
+	return diffDir, nil
 }
 
 func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...string) (*Directory, error) {
