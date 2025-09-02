@@ -158,7 +158,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				`Returns an error if the other directory is not an ancestor of this directory.`,
 			).
 			Args(
-				dagql.Arg("older").Doc(`The older directory snapshot to compare against`),
+				dagql.Arg("from").Doc(`The older directory snapshot to compare against`),
 			),
 		dagql.NodeFunc("withChanges", DagOpDirectoryWrapper(srv, s.withChanges, WithPathFn(keepParentDir[withChangesArgs]))).
 			Doc(`Return a directory with changes from another directory applied to it.`).
@@ -233,7 +233,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.SearchResult]{}.Install(srv)
 	dagql.Fields[*core.SearchSubmatch]{}.Install(srv)
-	dagql.Fields[*core.Changes]{}.Install(srv)
+	dagql.Fields[*core.Changeset]{}.Install(srv)
 }
 
 type directoryPipelineArgs struct {
@@ -591,21 +591,21 @@ func (s *directorySchema) diff(ctx context.Context, parent *core.Directory, args
 }
 
 func (s *directorySchema) changes(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args struct {
-	Older core.DirectoryID
-}) (res *core.Changes, _ error) {
+	From core.DirectoryID
+}) (res *core.Changeset, _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return res, err
 	}
-	dir, err := args.Older.Load(ctx, srv)
+	dir, err := args.From.Load(ctx, srv)
 	if err != nil {
 		return res, err
 	}
-	return core.NewChanges(ctx, dir, parent)
+	return core.NewChangeset(ctx, dir, parent)
 }
 
 type withChangesArgs struct {
-	Changes dagql.ID[*core.Changes]
+	Changes dagql.ID[*core.Changeset]
 	FSDagOpInternalArgs
 }
 
