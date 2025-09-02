@@ -17,10 +17,10 @@ async def client():
 
 
 async def test_timeout(client: dagger.Client, httpx_mock: HTTPXMock):
-    httpx_mock.add_exception(httpx.ReadTimeout("Request took too long"))
-    msg = "Try setting a higher timeout value"
+    msg = "Request took too long"
+    httpx_mock.add_exception(httpx.ReadTimeout(msg))
 
-    with pytest.raises(dagger.ExecuteTimeoutError, match=msg):
+    with pytest.raises(dagger.TransportError, match=msg):
         await client.container()
 
 

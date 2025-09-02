@@ -2,6 +2,7 @@ import dataclasses
 from typing import Any
 
 import cattrs
+import gql
 import graphql
 from gql.transport.exceptions import TransportQueryError
 
@@ -22,18 +23,14 @@ class ClientConnectionError(ClientError):
     """Error while establishing a client connection to the server."""
 
     def __str__(self) -> str:
-        return (
-            "Failed to establish client connection to the Dagger session: "
-            f"{super().__str__()}"
-        )
+        msg = "Failed to establish client connection to the Dagger session"
+        if sup := super().__str__():
+            return f"{msg}: {sup}"
+        return msg
 
 
 class TransportError(ClientError):
     """Error processing request/response during query execution."""
-
-
-class ExecuteTimeoutError(TransportError):
-    """Timeout while executing a query."""
 
 
 class InvalidQueryError(ClientError):
@@ -78,13 +75,14 @@ class QueryError(ClientError):
             return super().__new__(cls)
         return super().__new__(new_type)
 
-    def __init__(self, errors: list[QueryErrorValue], query: graphql.DocumentNode):
+    def __init__(self, errors: list[QueryErrorValue], request: gql.GraphQLRequest):
         if not errors:
             msg = "Errors list is empty"
             raise ValueError(msg)
         super().__init__(*errors)
         self.errors: list[QueryErrorValue] = errors
-        self.query = query
+        self.request = request
+        self.query = request.document
 
     @property
     def error(self) -> QueryErrorValue:
@@ -121,13 +119,13 @@ class QueryError(ClientError):
         return "\n".join(res)
 
 
-def _query_error_from_transport(exc: TransportQueryError, query: graphql.DocumentNode):
+def _query_error_from_transport(exc: TransportQueryError, request: gql.GraphQLRequest):
     """Create instance from a gql exception."""
     try:
         errors = cattrs.structure(exc.errors, list[QueryErrorValue])
     except (TypeError, KeyError, ValueError):
         return None
-    return QueryError(errors, query) if errors else None
+    return QueryError(errors, request) if errors else None
 
 
 class ExecError(QueryError):
@@ -175,7 +173,6 @@ __all__ = [
     "ClientError",
     "DaggerError",
     "ExecError",
-    "ExecuteTimeoutError",
     "InvalidQueryError",
     "QueryError",
     "TransportError",

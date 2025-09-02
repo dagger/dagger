@@ -14,6 +14,7 @@ from typing import (
 import anyio
 import cattrs
 import exceptiongroup
+import gql
 import graphql
 import httpx
 from beartype.door import TypeHint
@@ -21,6 +22,7 @@ from cattrs.preconf.json import make_converter as make_json_converter
 from gql.dsl import DSLField, DSLQuery, DSLSchema, DSLSelectable, DSLType, dsl_gql
 from gql.transport.exceptions import (
     TransportClosed,
+    TransportConnectionFailed,
     TransportProtocolError,
     TransportQueryError,
     TransportServerError,
@@ -29,7 +31,6 @@ from typing_extensions import TypeForm
 
 from dagger import (
     DaggerError,
-    ExecuteTimeoutError,
     InvalidQueryError,
     TransportError,
 )
@@ -160,7 +161,7 @@ class Context:
             )
             raise InvalidQueryError(msg) from e
 
-    async def query(self) -> graphql.DocumentNode:
+    async def request(self) -> gql.GraphQLRequest:
         return dsl_gql(DSLQuery(await self.build()))
 
     @overload
@@ -173,25 +174,15 @@ class Context:
         self, return_type: TypeForm[T] | type[T] | None = None
     ) -> T | None:
         await self.resolve_ids()
-        query = await self.query()
+        request = await self.request()
 
         try:
-            result = await self.conn.session.execute(query)
-        except httpx.TimeoutException as e:
-            msg = (
-                "Request timed out. Try setting a higher timeout value in "
-                "for this connection."
-            )
-            raise ExecuteTimeoutError(msg) from e
-
-        except httpx.RequestError as e:
-            msg = f"Failed to make request: {e}"
-            raise TransportError(msg) from e
+            result = await self.conn.session.execute(request)
 
         except TransportClosed as e:
             msg = (
                 "Connection to engine has been closed. Make sure you're "
-                "calling the API within a `dagger.Connection()` context."
+                "calling the API within a `dagger.connection()` context."
             )
             raise TransportError(msg) from e
 
@@ -199,8 +190,21 @@ class Context:
             msg = f"Unexpected response from engine: {e}"
             raise TransportError(msg) from e
 
+        except TransportConnectionFailed as e:
+            if not (msg := str(e)):
+                match e.__cause__:
+                    case httpx.TimeoutException():
+                        msg = (
+                            "Request timed out. Try setting a higher timeout value "
+                            "for this connection."
+                        )
+                    case _:
+                        msg = "Failed to execute request"
+
+            raise TransportError(msg) from e
+
         except TransportQueryError as e:
-            if error := _query_error_from_transport(e, query):
+            if error := _query_error_from_transport(e, request):
                 raise error from e
             raise
 
