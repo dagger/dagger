@@ -207,6 +207,12 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("outputDir").Doc(`The output directory for the generated client.`),
 			),
 
+		dagql.Func("withUpdatedClients", s.moduleSourceWithUpdatedClients).
+			Doc(`Update one or more clients.`).
+			Args(
+				dagql.Arg("clients").Doc(`The clients to update`),
+			),
+
 		dagql.Func("withoutClient", s.moduleSourceWithoutClient).
 			Doc(`Remove a client from the module source.`).
 			Args(
@@ -2501,9 +2507,155 @@ func (s *moduleSourceSchema) moduleSourceWithClient(
 		}
 	}
 
+	// Verify that the generator can be loaded as a module and clean
+	// the generator path if it's a local path.
+	if !sdk.IsModuleSDKBuiltin(moduleConfigClient.Generator) {
+		dag, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get dag server: %w", err)
+		}
+
+		query, err := core.CurrentQuery(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current query: %w", err)
+		}
+
+		bk, err := query.Buildkit(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+		}
+
+		clientModule, err := core.ResolveDepToSource(ctx, bk, dag, src, moduleConfigClient.Generator, "", "")
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve client module source: %w", err)
+		}
+
+		if clientModule.Self().Kind == core.ModuleSourceKindLocal {
+			moduleConfigClient.Generator = filepath.Clean(moduleConfigClient.Generator)
+		}
+	}
+
 	src.ConfigClients = append(src.ConfigClients, moduleConfigClient)
 
 	src.Digest = src.CalcDigest().String()
+
+	return src, nil
+}
+
+func (s *moduleSourceSchema) moduleSourceWithUpdatedClients(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct {
+		Clients []string
+	},
+) (*core.ModuleSource, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current query: %w", err)
+	}
+
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
+	updateReqs := make(map[string]string, len(args.Clients))
+	for _, updateArg := range args.Clients {
+		source, version, _ := strings.Cut(updateArg, "@")
+		updateReqs[source] = version
+	}
+
+	src = src.Clone()
+	newClientConfig := make([]*modules.ModuleConfigClient, len(src.ConfigClients))
+	for i, client := range src.ConfigClients {
+		clientGeneratorSource, _, _ := strings.Cut(client.Generator, "@")
+
+		// If the client is a builtin SDK, the version is tied to the engine so we skip it.
+		if sdk.IsModuleSDKBuiltin(client.Generator) {
+			newClientConfig[i] = client.Clone()
+
+			continue
+		}
+
+		// If there is an update request but the client is not in the input list, skip it
+		if _, ok := updateReqs[clientGeneratorSource]; !ok && len(updateReqs) > 0 {
+			newClientConfig[i] = client.Clone()
+
+			continue
+		}
+
+		// At that point, we know that the client must be updated either with a given version
+		// or for a global update.
+		var clientModule dagql.ObjectResult[*core.ModuleSource]
+		clientModule, err = core.ResolveDepToSource(ctx, bk, dag, src, client.Generator, "", "")
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve client module source: %w", err)
+		}
+
+		// Ignore local dependency except if it's in the list of update then we throw an error
+		if clientModule.Self().Kind == core.ModuleSourceKindLocal {
+			if _, ok := updateReqs[filepath.Clean(clientGeneratorSource)]; ok {
+				return nil, fmt.Errorf("cannot update local client %s", clientGeneratorSource)
+			}
+
+			newClientConfig[i] = client.Clone()
+
+			continue
+		}
+
+		// If the client generator is a git module, we fetch the latest commit and
+		// reconstruct the git ref with it or use the given version.
+		repo := clientModule.Self().Git.CloneRef
+		var updatedVersion string
+
+		if version, ok := updateReqs[clientGeneratorSource]; ok && version != "" {
+			updatedVersion = version
+		} else {
+			var latestCommit dagql.String
+			err = dag.Select(ctx, dag.Root(), &latestCommit,
+				dagql.Selector{
+					Field: "git",
+					Args: []dagql.NamedInput{
+						{Name: "url", Value: dagql.String(repo)},
+					},
+				},
+				dagql.Selector{
+					Field: "head",
+				},
+				dagql.Selector{
+					Field: "commit",
+				},
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get git module (%s) latest commit: %w", repo, err)
+			}
+
+			updatedVersion = latestCommit.String()
+		}
+
+		newClientConfig[i] = client.Clone()
+		newClientConfig[i].Generator = fmt.Sprintf("%s@%s", clientModule.Self().Git.Symbolic, updatedVersion)
+
+		// Remove the update request from the map
+		delete(updateReqs, clientGeneratorSource)
+	}
+
+	// Verify that all updateReq has been processed, otherwise there's a
+	// invalid update request.
+	if len(updateReqs) > 0 {
+		deps := make([]string, 0, len(updateReqs))
+		for updateReq := range updateReqs {
+			deps = append(deps, updateReq)
+		}
+		return nil, fmt.Errorf("client(s) %q were requested to be updated, but were not found in the clients list", strings.Join(deps, ","))
+	}
+
+	src.ConfigClients = newClientConfig
 
 	return src, nil
 }

@@ -25,6 +25,7 @@ func init() {
 	clientCmd.AddCommand(clientInstallCmd)
 	clientCmd.AddCommand(clientListCmd)
 	clientCmd.AddCommand(clientUninstallCmd)
+	clientCmd.AddCommand(clientUpdateCmd)
 }
 
 var clientCmd = &cobra.Command{
@@ -213,6 +214,40 @@ var clientListCmd = &cobra.Command{
 			}
 
 			return tw.Flush()
+		})
+	},
+}
+
+var clientUpdateCmd = &cobra.Command{
+	Use:     "update [<client>...]",
+	Short:   "Update one or more dagger clients in the current module",
+	Example: "dagger client update github.com/shykes/x/hello@v0.3.0",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
+			dag := engineClient.Dagger()
+
+			mod, err := initializeClientGeneratorModule(ctx, dag, ".")
+			if err != nil {
+				return fmt.Errorf("failed to initialize client generator module: %w", err)
+			}
+
+			contextDirPath, err := mod.Source.LocalContextDirectoryPath(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get local context directory path: %w", err)
+			}
+
+			_, err = mod.Source.
+				WithUpdatedClients(args).
+				GeneratedContextDirectory().
+				Export(ctx, contextDirPath)
+			if err != nil {
+				return fmt.Errorf("failed to update clients: %w", err)
+			}
+
+			w := cmd.OutOrStdout()
+			_, _ = fmt.Fprintln(w, "clients updated")
+
+			return nil
 		})
 	},
 }
