@@ -3,11 +3,21 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
+	"syscall"
 
+	"dagger.io/dagger/telemetry"
+	containerdfs "github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/buildkit"
+	bkcache "github.com/moby/buildkit/cache"
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // NewChangeset creates a Changeset object with all fields computed upfront
@@ -160,4 +170,112 @@ func (ch *Changeset) PBDefinitions(ctx context.Context) ([]*pb.Definition, error
 		return nil, err
 	}
 	return append(beforeDefs, afterDefs...), nil
+}
+
+const ChangesetPatchFilename = "diff.patch"
+
+func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
+	beforeRef, err := getRefOrEvaluate(ctx, ch.Before.Self())
+	if err != nil {
+		return nil, err
+	}
+
+	afterRef, err := getRefOrEvaluate(ctx, ch.After.Self())
+	if err != nil {
+		return nil, err
+	}
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	opt, ok := buildkit.CurrentOpOpts(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit opts in context")
+	}
+	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close()
+
+	newRef, err := query.BuildkitCache().New(ctx, nil, bkSessionGroup,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("Changeset.asPatch"))
+	if err != nil {
+		return nil, err
+	}
+	err = ReadonlyMountRef(ctx, beforeRef, bkSessionGroup, func(before string) error {
+		beforeDir, err := containerdfs.RootPath(before, ch.Before.Self().Dir)
+		if err != nil {
+			return err
+		}
+		return ReadonlyMountRef(ctx, afterRef, bkSessionGroup, func(after string) error {
+			afterDir, err := containerdfs.RootPath(after, ch.After.Self().Dir)
+			if err != nil {
+				return err
+			}
+			return MountRef(ctx, newRef, bkSessionGroup, func(root string) (rerr error) {
+				beforeMount := filepath.Join(root, "a")
+				afterMount := filepath.Join(root, "b")
+				if err := os.Mkdir(beforeMount, 0755); err != nil {
+					return err
+				}
+				defer os.RemoveAll(beforeMount)
+				if err := os.Mkdir(afterMount, 0755); err != nil {
+					return err
+				}
+				defer os.RemoveAll(afterMount)
+				if err := syscall.Mount(beforeDir, beforeMount, "", syscall.MS_BIND, ""); err != nil {
+					return fmt.Errorf("mount before to ./a/: %w", err)
+				}
+				defer syscall.Unmount(beforeMount, syscall.MNT_DETACH)
+				if err := syscall.Mount(afterDir, afterMount, "", syscall.MS_BIND, ""); err != nil {
+					return fmt.Errorf("mount after to ./b/: %w", err)
+				}
+				defer syscall.Unmount(afterMount, syscall.MNT_DETACH)
+
+				diff := exec.Command(
+					"git", "diff",
+					"--no-prefix", // no a/ and b/ prefixes - we have our own
+					"--no-index",  // this runs outside of a git repo
+					"--output="+ChangesetPatchFilename,
+					"a",
+					"b")
+				diff.Dir = root
+				diff.Stdout = stdio.Stdout
+				diff.Stderr = stdio.Stderr
+				if err := diff.Run(); err != nil {
+					// Check if it's exit code 1, which is expected for git diff when files differ
+					if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() != 1 {
+						// NB: we could technically populate a buildkit.ExecError here, but that
+						// feels like it leaks implementation details; "exit status 128" isn't
+						// exactly clear
+						return fmt.Errorf("failed to generate patch: %w", err)
+					}
+				}
+				_, err := os.Stat(filepath.Join(root, "diff.patch"))
+				if err != nil {
+					return fmt.Errorf("check for diff: %w", err)
+				}
+				return nil
+			})
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &File{
+		Result:   snap,
+		File:     ChangesetPatchFilename,
+		Platform: query.Platform(),
+	}, nil
 }

@@ -330,6 +330,22 @@ func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(st
 	return f(dir)
 }
 
+// ReadonlyMountRef is a utility for easily mounting a ref read-only
+func ReadonlyMountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(string) error) error {
+	mount, err := ref.Mount(ctx, true, g)
+	if err != nil {
+		return err
+	}
+	lm := snapshot.LocalMounter(mount)
+	defer lm.Unmount()
+
+	dir, err := lm.Mount()
+	if err != nil {
+		return err
+	}
+	return f(dir)
+}
+
 // mountLLB is a utility for easily mounting an llb definition
 func mountLLB(ctx context.Context, llb *pb.Definition, f func(string) error) error {
 	query, err := CurrentQuery(ctx)

@@ -237,6 +237,9 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Changeset]{
 		dagql.NodeFunc("layer", DagOpDirectoryWrapper(srv, s.changesetLayer)).
 			Doc(`Return a snapshot containing only the created and modified files`),
+		dagql.NodeFunc("asPatch", DagOpFileWrapper(srv, s.changesetAsPatch,
+			WithStaticPath[*core.Changeset, changesetAsPatchArgs](core.ChangesetPatchFilename))).
+			Doc(`Return a Git-compatible patch of the changes`),
 	}.Install(srv)
 }
 
@@ -860,4 +863,21 @@ func (s *directorySchema) changesetLayer(ctx context.Context, parent dagql.Objec
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+}
+
+type changesetAsPatchArgs struct {
+	FSDagOpInternalArgs
+}
+
+func (s *directorySchema) changesetAsPatch(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], _ changesetAsPatchArgs) (inst dagql.ObjectResult[*core.File], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	file, err := parent.Self().AsPatch(ctx)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, file)
 }
