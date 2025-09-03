@@ -4,9 +4,6 @@ version = "0.0.0"
 requires-python = ">=3.13"
 dependencies = ["dagger-io"]
 
-[tool.dagger]
-uv-version = "0.8.4"
-
 [tool.uv.sources]
 dagger-io = { path = "sdk", editable = true }
 
