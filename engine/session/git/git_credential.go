@@ -29,6 +29,29 @@ func (s GitAttachable) GetCredential(ctx context.Context, req *GitCredentialRequ
 		return newGitCredentialErrorResponse(INVALID_REQUEST, "Host and protocol are required"), nil
 	}
 
+	methods := []func(context.Context, *GitCredentialRequest) (*GitCredentialResponse, error){
+		s.getCredentialFromHelper,
+	}
+
+	var firstResp *GitCredentialResponse
+	for _, method := range methods {
+		resp, err := method(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+
+		if firstResp == nil {
+			firstResp = resp
+		}
+		if _, ok := resp.Result.(*GitCredentialResponse_Error); ok {
+			continue
+		}
+		return resp, nil
+	}
+	return firstResp, nil
+}
+
+func (s GitAttachable) getCredentialFromHelper(ctx context.Context, req *GitCredentialRequest) (*GitCredentialResponse, error) {
 	// Check if git is installed
 	if _, err := exec.LookPath("git"); err != nil {
 		return newGitCredentialErrorResponse(NOT_FOUND, "Git is not installed or not in PATH"), nil
@@ -71,7 +94,6 @@ func (s GitAttachable) GetCredential(ctx context.Context, req *GitCredentialRequ
 	if err != nil {
 		return newGitCredentialErrorResponse(CREDENTIAL_RETRIEVAL_FAILED, fmt.Sprintf("Failed to retrieve credentials: %v", err)), nil
 	}
-
 	return &GitCredentialResponse{
 		Result: &GitCredentialResponse_Credential{
 			Credential: cred,
