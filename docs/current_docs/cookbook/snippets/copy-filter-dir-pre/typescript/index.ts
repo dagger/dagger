@@ -9,6 +9,9 @@ import {
 
 @object()
 class MyModule {
+  /**
+   * Return a container with a filtered directory
+   */
   @func()
   async copy_directory_with_exclusions(
     @argument({ ignore: ["*", "!**/*.md"] }) source: Directory,

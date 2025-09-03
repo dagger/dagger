@@ -7,6 +7,7 @@ import (
 
 type MyModule struct{}
 
+// Return a container with a filtered directory
 func (m *MyModule) CopyDirectoryWithExclusions(
 	ctx context.Context,
 	// +ignore=["*", "!**/*.md"]
