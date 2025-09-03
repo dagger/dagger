@@ -502,7 +502,7 @@ func (dir *Directory) WithPatch(ctx context.Context, patch string) (*Directory, 
 		if err != nil {
 			return err
 		}
-		apply := exec.Command("git", "apply", "-")
+		apply := exec.Command("git", "apply", "--allow-empty", "-")
 		apply.Dir = resolvedDir
 		apply.Stdin = strings.NewReader(patch)
 		apply.Stdout = stdio.Stdout

@@ -205,6 +205,14 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("patch").Doc(`Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex 1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-Hello\n+World\n").`),
 			),
+		dagql.NodeFunc("withPatchFile",
+			DagOpDirectoryWrapper(srv, s.withPatchFile,
+				WithPathFn(keepParentDir[withPatchFileArgs]))).
+			Experimental("This API is highly experimental and may be removed or replaced entirely.").
+			Doc(`Retrieves this directory with the given Git-compatible patch file applied.`).
+			Args(
+				dagql.Arg("patch").Doc(`File containing the patch to apply`),
+			),
 		dagql.NodeFunc("asGit", s.asGit).
 			Doc(`Converts this directory to a local git repository`),
 		dagql.NodeFunc("terminal", s.terminal).
@@ -378,12 +386,6 @@ func (s *directorySchema) glob(ctx context.Context, parent dagql.ObjectResult[*c
 	return dagql.NewStringArray(ents...), nil
 }
 
-type withPatchArgs struct {
-	Patch string
-
-	FSDagOpInternalArgs
-}
-
 type searchArgs struct {
 	core.SearchOpts
 	Paths []string `default:"[]"`
@@ -395,6 +397,12 @@ func (s *directorySchema) search(ctx context.Context, parent dagql.ObjectResult[
 	return parent.Self().Search(ctx, args.SearchOpts, args.Paths, args.Globs)
 }
 
+type withPatchArgs struct {
+	Patch string
+
+	FSDagOpInternalArgs
+}
+
 func (s *directorySchema) withPatch(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withPatchArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -402,6 +410,36 @@ func (s *directorySchema) withPatch(ctx context.Context, parent dagql.ObjectResu
 	}
 
 	dir, err := parent.Self().WithPatch(ctx, args.Patch)
+	if err != nil {
+		return inst, err
+	}
+
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+}
+
+type withPatchFileArgs struct {
+	Patch core.FileID
+
+	FSDagOpInternalArgs
+}
+
+func (s *directorySchema) withPatchFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withPatchFileArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	patchFile, err := args.Patch.Load(ctx, srv)
+	if err != nil {
+		return inst, err
+	}
+	// FIXME: would be nice to avoid reading into memory, need to adjust WithPatch
+	// for that
+	patch, err := patchFile.Self().Contents(ctx, nil, nil)
+	if err != nil {
+		return inst, err
+	}
+	dir, err := parent.Self().WithPatch(ctx, string(patch))
 	if err != nil {
 		return inst, err
 	}
