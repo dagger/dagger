@@ -233,7 +233,11 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.SearchResult]{}.Install(srv)
 	dagql.Fields[*core.SearchSubmatch]{}.Install(srv)
-	dagql.Fields[*core.Changeset]{}.Install(srv)
+
+	dagql.Fields[*core.Changeset]{
+		dagql.NodeFunc("layer", DagOpDirectoryWrapper(srv, s.changesetLayer)).
+			Doc(`Return a snapshot containing only the created and modified files`),
+	}.Install(srv)
 }
 
 type directoryPipelineArgs struct {
@@ -837,6 +841,21 @@ func (s *directorySchema) withSymlink(ctx context.Context, parent dagql.ObjectRe
 	}
 
 	dir, err := parent.Self().WithSymlink(ctx, srv, args.Target, args.LinkName)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+}
+
+func (s *directorySchema) changesetLayer(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args struct {
+	FSDagOpInternalArgs
+}) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	dir, err := parent.Self().Before.Self().Diff(ctx, parent.Self().After.Self())
 	if err != nil {
 		return inst, err
 	}

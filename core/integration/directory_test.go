@@ -982,6 +982,218 @@ func (DirectorySuite) TestChanges(ctx context.Context, t *testctx.T) {
 		require.NotContains(t, modifiedPaths, "dir/")
 		require.NotContains(t, modifiedPaths, "dir/added.txt")
 	})
+
+	t.Run("layer basic", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create initial directory
+		oldDir := c.Directory().
+			WithNewFile("unchanged.txt", "same content").
+			WithNewFile("changed.txt", "original content").
+			WithNewFile("dir/changed2.txt", "original content2").
+			WithNewFile("will-be-removed.txt", "remove me")
+
+		// Create new directory with changes
+		newDir := c.Directory().
+			WithNewFile("unchanged.txt", "same content").
+			WithNewFile("changed.txt", "modified content").
+			WithNewFile("dir/changed2.txt", "modified content2").
+			WithNewFile("added.txt", "new file")
+
+		changes := newDir.Changes(oldDir)
+		layer := changes.Layer()
+
+		// Verify layer contains modified files
+		entries, err := layer.Entries(ctx)
+		require.NoError(t, err)
+
+		require.Contains(t, entries, "changed.txt")
+		require.Contains(t, entries, "dir/")
+		require.Contains(t, entries, "added.txt")
+
+		// Verify layer excludes unchanged and removed files
+		require.NotContains(t, entries, "unchanged.txt")
+		require.NotContains(t, entries, "will-be-removed.txt")
+
+		// Verify file contents in layer
+		changedContent, err := layer.File("changed.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "modified content", changedContent)
+
+		addedContent, err := layer.File("added.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "new file", addedContent)
+
+		// Verify nested file in layer
+		dirEntries, err := layer.Directory("dir").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, dirEntries, "changed2.txt")
+
+		changed2Content, err := layer.File("dir/changed2.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "modified content2", changed2Content)
+	})
+
+	t.Run("layer with only added files", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create initial directory with some files
+		oldDir := c.Directory().
+			WithNewFile("existing.txt", "content1").
+			WithNewFile("dir/existing2.txt", "content2")
+
+		// Create new directory with additional files (no modifications)
+		newDir := c.Directory().
+			WithNewFile("existing.txt", "content1").
+			WithNewFile("dir/existing2.txt", "content2").
+			WithNewFile("added.txt", "new content").
+			WithNewFile("dir/added2.txt", "new content2").
+			WithNewFile("new-dir/added3.txt", "new content3")
+
+		changes := newDir.Changes(oldDir)
+		layer := changes.Layer()
+
+		entries, err := layer.Entries(ctx)
+		require.NoError(t, err)
+
+		// Should include added files
+		require.Contains(t, entries, "added.txt")
+		require.Contains(t, entries, "dir/")
+		require.Contains(t, entries, "new-dir/")
+
+		// Should not include existing files
+		require.NotContains(t, entries, "existing.txt")
+
+		// Verify added files have correct content
+		addedContent, err := layer.File("added.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "new content", addedContent)
+
+		added2Content, err := layer.File("dir/added2.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "new content2", added2Content)
+
+		added3Content, err := layer.File("new-dir/added3.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "new content3", added3Content)
+	})
+
+	t.Run("layer excludes removed files", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create initial directory with files to be removed and modified
+		oldDir := c.Directory().
+			WithNewFile("keep-and-change.txt", "original").
+			WithNewFile("remove-me.txt", "will be removed").
+			WithNewFile("remove-dir/file.txt", "in removed dir")
+
+		// Create new directory without removed files but with changes
+		newDir := c.Directory().
+			WithNewFile("keep-and-change.txt", "modified").
+			WithNewFile("new-file.txt", "newly added")
+
+		changes := newDir.Changes(oldDir)
+		layer := changes.Layer()
+
+		entries, err := layer.Entries(ctx)
+		require.NoError(t, err)
+
+		// Should include modified and added files
+		require.Contains(t, entries, "keep-and-change.txt")
+		require.Contains(t, entries, "new-file.txt")
+
+		// Should NOT include removed files or directories
+		require.NotContains(t, entries, "remove-me.txt")
+		require.NotContains(t, entries, "remove-dir/")
+
+		// Verify modified file has new content
+		modifiedContent, err := layer.File("keep-and-change.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "modified", modifiedContent)
+	})
+
+	t.Run("layer with empty changes", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create identical directories
+		dir := c.Directory().
+			WithNewFile("file1.txt", "content1").
+			WithNewFile("dir/file2.txt", "content2")
+
+		changes := dir.Changes(dir)
+		layer := changes.Layer()
+
+		entries, err := layer.Entries(ctx)
+		require.NoError(t, err)
+
+		// Should be empty when no changes
+		require.Empty(t, entries)
+	})
+
+	t.Run("layer with nested directories", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create initial directory with nested structure
+		oldDir := c.Directory().
+			WithNewFile("root.txt", "root content").
+			WithNewFile("level1/file.txt", "level1 original").
+			WithNewFile("level1/level2/file.txt", "level2 original").
+			WithNewFile("level1/level2/level3/deep.txt", "deep original")
+
+		// Create new directory with changes at various levels
+		newDir := c.Directory().
+			WithNewFile("root.txt", "root content").                       // unchanged
+			WithNewFile("level1/file.txt", "level1 modified").             // changed
+			WithNewFile("level1/level2/file.txt", "level2 original").      // unchanged
+			WithNewFile("level1/level2/level3/deep.txt", "deep modified"). // changed
+			WithNewFile("level1/level2/level3/added.txt", "newly added").  // added
+			WithNewFile("level1/added-level2/new.txt", "added in new dir") // added in new dir
+
+		changes := newDir.Changes(oldDir)
+		layer := changes.Layer()
+
+		entries, err := layer.Entries(ctx)
+		require.NoError(t, err)
+
+		// Should include directories with changes
+		require.Contains(t, entries, "level1/")
+
+		// Verify nested structure is preserved
+		level1Entries, err := layer.Directory("level1").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, level1Entries, "file.txt")
+		require.Contains(t, level1Entries, "level2/")
+		require.Contains(t, level1Entries, "added-level2/")
+
+		level2Entries, err := layer.Directory("level1/level2").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, level2Entries, "level3/")
+
+		level3Entries, err := layer.Directory("level1/level2/level3").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, level3Entries, "deep.txt")
+		require.Contains(t, level3Entries, "added.txt")
+
+		// Verify file contents
+		modifiedContent, err := layer.File("level1/file.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "level1 modified", modifiedContent)
+
+		deepContent, err := layer.File("level1/level2/level3/deep.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "deep modified", deepContent)
+
+		addedContent, err := layer.File("level1/level2/level3/added.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "newly added", addedContent)
+
+		newDirContent, err := layer.File("level1/added-level2/new.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "added in new dir", newDirContent)
+
+		// Verify root.txt is NOT included (unchanged)
+		require.NotContains(t, entries, "root.txt")
+	})
 }
 
 func (DirectorySuite) TestWithChanges(ctx context.Context, t *testctx.T) {
