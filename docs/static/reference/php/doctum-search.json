@@ -2741,6 +2741,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Directory::withPatchFile",
+			"p": "Dagger/Directory.html#method_withPatchFile",
+			"d": "<p>Retrieves this directory with the given Git-compatible patch file applied.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Directory::withSymlink",
 			"p": "Dagger/Directory.html#method_withSymlink",
 			"d": "<p>Return a snapshot with a symlink</p>"

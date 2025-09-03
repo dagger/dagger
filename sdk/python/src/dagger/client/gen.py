@@ -3840,6 +3840,25 @@ class Directory(Type):
         _ctx = self._select("withPatch", _args)
         return Directory(_ctx)
 
+    def with_patch_file(self, patch: "File") -> Self:
+        """Retrieves this directory with the given Git-compatible patch file
+        applied.
+
+        .. caution::
+            Experimental: This API is highly experimental and may be removed
+            or replaced entirely.
+
+        Parameters
+        ----------
+        patch:
+            File containing the patch to apply
+        """
+        _args = [
+            Arg("patch", patch),
+        ]
+        _ctx = self._select("withPatchFile", _args)
+        return Directory(_ctx)
+
     def with_symlink(self, target: str, link_name: str) -> Self:
         """Return a snapshot with a symlink
 

@@ -4482,6 +4482,16 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Retrieves this directory with the given Git-compatible patch file applied.
+   * @param patch File containing the patch to apply
+   * @experimental
+   */
+  withPatchFile = (patch: File): Directory => {
+    const ctx = this._ctx.select("withPatchFile", { patch })
+    return new Directory(ctx)
+  }
+
+  /**
    * Return a snapshot with a symlink
    * @param target Location of the file or directory to link to (e.g., "/existing/file").
    * @param linkName Location where the symbolic link will be created (e.g., "/new-file-link").

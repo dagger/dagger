@@ -1787,6 +1787,14 @@ type Directory {
     patch: String!
   ): Directory! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
+  """
+  Retrieves this directory with the given Git-compatible patch file applied.
+  """
+  withPatchFile(
+    """File containing the patch to apply"""
+    patch: FileID!
+  ): Directory! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
+
   """Return a snapshot with a symlink"""
   withSymlink(
     """Location of the file or directory to link to (e.g., "/existing/file")."""
