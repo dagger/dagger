@@ -84,4 +84,13 @@ class Changeset extends Client\AbstractObject implements Client\IdAble
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('removedPaths');
         return (array)$this->queryLeaf($leafQueryBuilder, 'removedPaths');
     }
+
+    /**
+     * Force evaluation in the engine.
+     */
+    public function sync(): ChangesetId
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
+        return new \Dagger\ChangesetId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+    }
 }

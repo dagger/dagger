@@ -10,7 +10,7 @@ defmodule Dagger.Changeset do
   alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
-
+  @derive Dagger.Sync
   defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
@@ -113,6 +113,26 @@ defmodule Dagger.Changeset do
       changeset.query_builder |> QB.select("removedPaths")
 
     Client.execute(changeset.client, query_builder)
+  end
+
+  @doc """
+  Force evaluation in the engine.
+  """
+  @spec sync(t()) :: {:ok, Dagger.Changeset.t()} | {:error, term()}
+  def sync(%__MODULE__{} = changeset) do
+    query_builder =
+      changeset.query_builder |> QB.select("sync")
+
+    with {:ok, id} <- Client.execute(changeset.client, query_builder) do
+      {:ok,
+       %Dagger.Changeset{
+         query_builder:
+           QB.query()
+           |> QB.select("loadChangesetFromID")
+           |> QB.put_arg("id", id),
+         client: changeset.client
+       }}
+    end
   end
 end
 

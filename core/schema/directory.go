@@ -243,6 +243,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.SearchSubmatch]{}.Install(srv)
 
 	dagql.Fields[*core.Changeset]{
+		Syncer[*core.Changeset]().
+			Doc(`Force evaluation in the engine.`),
 		dagql.NodeFunc("layer", DagOpDirectoryWrapper(srv, s.changesetLayer)).
 			Doc(`Return a snapshot containing only the created and modified files`),
 		dagql.NodeFunc("asPatch", DagOpFileWrapper(srv, s.changesetAsPatch,
