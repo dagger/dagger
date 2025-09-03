@@ -418,8 +418,9 @@ func RootPathWithoutFinalSymlink(root, containerPath string) (string, error) {
 }
 
 type execInMountOpt struct {
-	commitSnapshot bool
-	cacheDesc      string
+	commitSnapshot          bool
+	cacheDesc               string
+	allowNilBuildkitSession bool
 }
 
 type execInMountOptFn func(opt *execInMountOpt)
@@ -431,6 +432,10 @@ func withSavedSnapshot(format string, a ...any) execInMountOptFn {
 	}
 }
 
+func allowNilBuildkitSession(opt *execInMountOpt) {
+	opt.allowNilBuildkitSession = true
+}
+
 type fileOrDirectory interface {
 	*File | *Directory
 	getResult() bkcache.ImmutableRef
@@ -440,9 +445,9 @@ type fileOrDirectory interface {
 
 // execInMount is a helper used by Directory.execInMount and File.execInMount
 func execInMount[T fileOrDirectory](ctx context.Context, obj T, f func(string) error, optFns ...execInMountOptFn) (T, error) {
-	var saveOpt execInMountOpt
+	var opt execInMountOpt
 	for _, optFn := range optFns {
-		optFn(&saveOpt)
+		optFn(&opt)
 	}
 
 	parentRef, err := getRefOrEvaluate(ctx, obj)
@@ -452,7 +457,9 @@ func execInMount[T fileOrDirectory](ctx context.Context, obj T, f func(string) e
 
 	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
 	if !ok {
-		return nil, fmt.Errorf("no buildkit session group in context")
+		if !opt.allowNilBuildkitSession {
+			return nil, fmt.Errorf("no buildkit session group in context")
+		}
 	}
 
 	query, err := CurrentQuery(ctx)
@@ -462,12 +469,12 @@ func execInMount[T fileOrDirectory](ctx context.Context, obj T, f func(string) e
 
 	var mountRef bkcache.Ref
 	var newRef bkcache.MutableRef
-	if saveOpt.commitSnapshot {
-		if saveOpt.cacheDesc == "" {
+	if opt.commitSnapshot {
+		if opt.cacheDesc == "" {
 			return nil, fmt.Errorf("execInMount saveSnapshotOpt missing cache description")
 		}
 		newRef, err = query.BuildkitCache().New(ctx, parentRef, bkSessionGroup,
-			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular), bkcache.WithDescription(saveOpt.cacheDesc))
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular), bkcache.WithDescription(opt.cacheDesc))
 		if err != nil {
 			return nil, err
 		}
@@ -482,7 +489,7 @@ func execInMount[T fileOrDirectory](ctx context.Context, obj T, f func(string) e
 	if err != nil {
 		return nil, err
 	}
-	if saveOpt.commitSnapshot {
+	if opt.commitSnapshot {
 		snap, err := newRef.Commit(ctx)
 		if err != nil {
 			return nil, err
