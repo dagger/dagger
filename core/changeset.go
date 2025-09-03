@@ -158,6 +158,12 @@ func (*Changeset) TypeDescription() string {
 	return "A comparison between two directories representing changes that can be applied."
 }
 
+var _ Evaluatable = (*Changeset)(nil)
+
+func (ch *Changeset) Evaluate(context.Context) (*buildkit.Result, error) {
+	return nil, nil
+}
+
 var _ HasPBDefinitions = (*Changeset)(nil)
 
 func (ch *Changeset) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {

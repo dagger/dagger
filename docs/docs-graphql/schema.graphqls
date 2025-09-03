@@ -163,6 +163,9 @@ type Changeset {
   trailing slash, and their child paths are not included.
   """
   removedPaths: [String!]!
+
+  """Force evaluation in the engine."""
+  sync: ChangesetID!
 }
 
 """

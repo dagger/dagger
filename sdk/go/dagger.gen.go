@@ -680,7 +680,8 @@ func (r *CacheVolume) MarshalJSON() ([]byte, error) {
 type Changeset struct {
 	query *querybuilder.Selection
 
-	id *ChangesetID
+	id   *ChangesetID
+	sync *ChangesetID
 }
 
 func (r *Changeset) WithGraphQLQuery(q *querybuilder.Selection) *Changeset {
@@ -793,6 +794,19 @@ func (r *Changeset) RemovedPaths(ctx context.Context) ([]string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Force evaluation in the engine.
+func (r *Changeset) Sync(ctx context.Context) (*Changeset, error) {
+	q := r.query.Select("sync")
+
+	var id ChangesetID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Changeset{
+		query: q.Root().Select("loadChangesetFromID").Arg("id", id),
+	}, nil
 }
 
 // Dagger Cloud configuration and state

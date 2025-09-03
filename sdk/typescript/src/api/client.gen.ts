@@ -2536,14 +2536,16 @@ export class CacheVolume extends BaseClient {
  */
 export class Changeset extends BaseClient {
   private readonly _id?: ChangesetID = undefined
+  private readonly _sync?: ChangesetID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: ChangesetID) {
+  constructor(ctx?: Context, _id?: ChangesetID, _sync?: ChangesetID) {
     super(ctx)
 
     this._id = _id
+    this._sync = _sync
   }
 
   /**
@@ -2624,6 +2626,17 @@ export class Changeset extends BaseClient {
     const response: Awaited<string[]> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Force evaluation in the engine.
+   */
+  sync = async (): Promise<Changeset> => {
+    const ctx = this._ctx.select("sync")
+
+    const response: Awaited<ChangesetID> = await ctx.execute()
+
+    return new Client(ctx.copy()).loadChangesetFromID(response)
   }
 }
 

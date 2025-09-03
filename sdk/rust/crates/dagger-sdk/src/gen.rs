@@ -2082,6 +2082,11 @@ impl Changeset {
         let query = self.selection.select("removedPaths");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Force evaluation in the engine.
+    pub async fn sync(&self) -> Result<ChangesetId, DaggerError> {
+        let query = self.selection.select("sync");
+        query.execute(self.graphql_client.clone()).await
+    }
 }
 #[derive(Clone)]
 pub struct Cloud {

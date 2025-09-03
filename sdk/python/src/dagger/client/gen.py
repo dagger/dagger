@@ -887,6 +887,22 @@ class Changeset(Type):
         _ctx = self._select("removedPaths", _args)
         return await _ctx.execute(list[str])
 
+    async def sync(self) -> Self:
+        """Force evaluation in the engine.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "sync", _args)
+
+    def __await__(self):
+        return self.sync().__await__()
+
 
 @typecheck
 class Cloud(Type):

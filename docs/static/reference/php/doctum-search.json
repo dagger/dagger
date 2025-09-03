@@ -1505,6 +1505,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Changeset::sync",
+			"p": "Dagger/Changeset.html#method_sync",
+			"d": "<p>Force evaluation in the engine.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::cacheVolume",
 			"p": "Dagger/Client.html#method_cacheVolume",
 			"d": "<p>Constructs a cache volume for a given cache key.</p>"
