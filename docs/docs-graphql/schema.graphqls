@@ -1442,7 +1442,7 @@ type Directory {
   Returns an error if the other directory is not an ancestor of this directory.
   """
   changes(
-    """The older directory snapshot to compare against"""
+    """The base directory snapshot to compare against"""
     from: DirectoryID!
   ): Changeset!
 

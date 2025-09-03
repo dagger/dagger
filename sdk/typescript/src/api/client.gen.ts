@@ -4061,7 +4061,7 @@ export class Directory extends BaseClient {
    * Return a virtual comparison between this directory and an older snapshot that can be applied to another filesystem.
    *
    * Returns an error if the other directory is not an ancestor of this directory.
-   * @param from The older directory snapshot to compare against
+   * @param from The base directory snapshot to compare against
    */
   changes = (from: Directory): Changeset => {
     const ctx = this._ctx.select("changes", { from })

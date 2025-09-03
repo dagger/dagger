@@ -3139,7 +3139,7 @@ class Directory(Type):
         Parameters
         ----------
         from_:
-            The older directory snapshot to compare against
+            The base directory snapshot to compare against
         """
         _args = [
             Arg("from", from_),

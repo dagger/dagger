@@ -4930,7 +4930,7 @@ impl Directory {
     ///
     /// # Arguments
     ///
-    /// * `from` - The older directory snapshot to compare against
+    /// * `from` - The base directory snapshot to compare against
     pub fn changes(&self, from: impl IntoID<DirectoryId>) -> Changeset {
         let mut query = self.selection.select("changes");
         query = query.arg_lazy(

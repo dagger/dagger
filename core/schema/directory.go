@@ -158,7 +158,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				`Returns an error if the other directory is not an ancestor of this directory.`,
 			).
 			Args(
-				dagql.Arg("from").Doc(`The older directory snapshot to compare against`),
+				dagql.Arg("from").Doc(`The base directory snapshot to compare against`),
 			),
 		dagql.NodeFunc("withChanges", DagOpDirectoryWrapper(srv, s.withChanges, WithPathFn(keepParentDir[withChangesArgs]))).
 			Doc(`Return a directory with changes from another directory applied to it.`).
