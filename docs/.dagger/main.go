@@ -20,20 +20,16 @@ func New(
 	source *dagger.Directory,
 	// +defaultPath="nginx.conf"
 	nginxConfig *dagger.File,
-	// +defaultPath="doctum-config.php"
-	doctumConfig *dagger.File,
 ) Docs {
 	return Docs{
-		Source:       source,
-		NginxConfig:  nginxConfig,
-		DoctumConfig: doctumConfig,
+		Source:      source,
+		NginxConfig: nginxConfig,
 	}
 }
 
 type Docs struct {
-	Source       *dagger.Directory
-	NginxConfig  *dagger.File // +private
-	DoctumConfig *dagger.File // +private
+	Source      *dagger.Directory
+	NginxConfig *dagger.File // +private
 }
 
 const (
