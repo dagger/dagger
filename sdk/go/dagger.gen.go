@@ -745,6 +745,15 @@ func (r *Changeset) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// Return a snapshot containing only the created and modified files
+func (r *Changeset) Layer() *Directory {
+	q := r.query.Select("layer")
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // Files and directories that existed before and were updated in the newer directory.
 func (r *Changeset) ModifiedPaths(ctx context.Context) ([]string, error) {
 	q := r.query.Select("modifiedPaths")

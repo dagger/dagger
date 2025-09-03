@@ -144,6 +144,9 @@ type Changeset {
   """A unique identifier for this Changeset."""
   id: ChangesetID!
 
+  """Return a snapshot containing only the created and modified files"""
+  layer: Directory!
+
   """
   Files and directories that existed before and were updated in the newer directory.
   """

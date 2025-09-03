@@ -1455,6 +1455,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Changeset::layer",
+			"p": "Dagger/Changeset.html#method_layer",
+			"d": "<p>Return a snapshot containing only the created and modified files</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Changeset::modifiedPaths",
 			"p": "Dagger/Changeset.html#method_modifiedPaths",
 			"d": "<p>Files and directories that existed before and were updated in the newer directory.</p>"

@@ -2540,6 +2540,14 @@ export class Changeset extends BaseClient {
   }
 
   /**
+   * Return a snapshot containing only the created and modified files
+   */
+  layer = (): Directory => {
+    const ctx = this._ctx.select("layer")
+    return new Directory(ctx)
+  }
+
+  /**
    * Files and directories that existed before and were updated in the newer directory.
    */
   modifiedPaths = async (): Promise<string[]> => {

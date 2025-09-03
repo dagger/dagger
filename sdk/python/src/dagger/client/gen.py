@@ -820,6 +820,12 @@ class Changeset(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(ChangesetID)
 
+    def layer(self) -> "Directory":
+        """Return a snapshot containing only the created and modified files"""
+        _args: list[Arg] = []
+        _ctx = self._select("layer", _args)
+        return Directory(_ctx)
+
     async def modified_paths(self) -> list[str]:
         """Files and directories that existed before and were updated in the
         newer directory.

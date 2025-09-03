@@ -50,6 +50,15 @@ class Changeset extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return a snapshot containing only the created and modified files
+     */
+    public function layer(): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('layer');
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Files and directories that existed before and were updated in the newer directory.
      */
     public function modifiedPaths(): array

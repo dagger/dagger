@@ -2012,6 +2012,15 @@ impl Changeset {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Return a snapshot containing only the created and modified files
+    pub fn layer(&self) -> Directory {
+        let query = self.selection.select("layer");
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Files and directories that existed before and were updated in the newer directory.
     pub async fn modified_paths(&self) -> Result<Vec<String>, DaggerError> {
         let query = self.selection.select("modifiedPaths");

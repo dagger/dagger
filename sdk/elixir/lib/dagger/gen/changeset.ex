@@ -66,6 +66,20 @@ defmodule Dagger.Changeset do
   end
 
   @doc """
+  Return a snapshot containing only the created and modified files
+  """
+  @spec layer(t()) :: Dagger.Directory.t()
+  def layer(%__MODULE__{} = changeset) do
+    query_builder =
+      changeset.query_builder |> QB.select("layer")
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: changeset.client
+    }
+  end
+
+  @doc """
   Files and directories that existed before and were updated in the newer directory.
   """
   @spec modified_paths(t()) :: {:ok, [String.t()]} | {:error, term()}
