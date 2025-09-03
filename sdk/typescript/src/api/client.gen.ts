@@ -2542,8 +2542,8 @@ export class Changeset extends BaseClient {
   /**
    * Files and directories that existed before and were updated in the newer directory.
    */
-  changedPaths = async (): Promise<string[]> => {
-    const ctx = this._ctx.select("changedPaths")
+  modifiedPaths = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("modifiedPaths")
 
     const response: Awaited<string[]> = await ctx.execute()
 
@@ -4058,9 +4058,9 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * Return a virtual comparison between this directory and an older snapshot that can be applied to another filesystem.
+   * Return the difference between this directory and another directory, typically an older snapshot.
    *
-   * Returns an error if the other directory is not an ancestor of this directory.
+   * The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
    * @param from The base directory snapshot to compare against
    */
   changes = (from: Directory): Changeset => {

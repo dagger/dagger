@@ -907,7 +907,7 @@ func (DirectorySuite) TestChanges(ctx context.Context, t *testctx.T) {
 		require.NotContains(t, addedFiles, "keep.txt")
 	})
 
-	t.Run("changedFiles basic", func(ctx context.Context, t *testctx.T) {
+	t.Run("modifiedPaths basic", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		// Create initial directory
@@ -926,24 +926,24 @@ func (DirectorySuite) TestChanges(ctx context.Context, t *testctx.T) {
 
 		changes := newDir.Changes(oldDir)
 
-		changedFiles, err := changes.ChangedPaths(ctx)
+		modifiedPaths, err := changes.ModifiedPaths(ctx)
 		require.NoError(t, err)
 
 		// Should include changed files
-		require.Contains(t, changedFiles, "changed.txt")
-		require.Contains(t, changedFiles, "dir/changed2.txt")
+		require.Contains(t, modifiedPaths, "changed.txt")
+		require.Contains(t, modifiedPaths, "dir/changed2.txt")
 
 		// Should not include unchanged files
-		require.NotContains(t, changedFiles, "unchanged.txt")
+		require.NotContains(t, modifiedPaths, "unchanged.txt")
 
 		// Should not include added files
-		require.NotContains(t, changedFiles, "added.txt")
+		require.NotContains(t, modifiedPaths, "added.txt")
 
 		// Should not include removed files
-		require.NotContains(t, changedFiles, "will-be-removed.txt")
+		require.NotContains(t, modifiedPaths, "will-be-removed.txt")
 	})
 
-	t.Run("changedFiles with empty changes", func(ctx context.Context, t *testctx.T) {
+	t.Run("modifiedPaths with empty changes", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		// Create identical directories
@@ -953,14 +953,14 @@ func (DirectorySuite) TestChanges(ctx context.Context, t *testctx.T) {
 
 		changes := dir.Changes(dir)
 
-		changedFiles, err := changes.ChangedPaths(ctx)
+		modifiedPaths, err := changes.ModifiedPaths(ctx)
 		require.NoError(t, err)
 
 		// Should be empty when no changes
-		require.Empty(t, changedFiles)
+		require.Empty(t, modifiedPaths)
 	})
 
-	t.Run("changedFiles excludes directories", func(ctx context.Context, t *testctx.T) {
+	t.Run("modifiedPaths excludes directories", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		oldDir := c.Directory().
@@ -972,15 +972,15 @@ func (DirectorySuite) TestChanges(ctx context.Context, t *testctx.T) {
 
 		changes := newDir.Changes(oldDir)
 
-		changedFiles, err := changes.ChangedPaths(ctx)
+		modifiedPaths, err := changes.ModifiedPaths(ctx)
 		require.NoError(t, err)
 
 		// Should include changed files only
-		require.Contains(t, changedFiles, "dir/file.txt")
+		require.Contains(t, modifiedPaths, "dir/file.txt")
 
 		// Should NOT include directories or added files
-		require.NotContains(t, changedFiles, "dir/")
-		require.NotContains(t, changedFiles, "dir/added.txt")
+		require.NotContains(t, modifiedPaths, "dir/")
+		require.NotContains(t, modifiedPaths, "dir/added.txt")
 	})
 }
 

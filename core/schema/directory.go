@@ -154,8 +154,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("changes", s.changes).
 			Doc(
-				`Return a virtual comparison between this directory and an older snapshot that can be applied to another filesystem.`,
-				`Returns an error if the other directory is not an ancestor of this directory.`,
+				`Return the difference between this directory and another directory, typically an older snapshot.`,
+				`The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.`,
 			).
 			Args(
 				dagql.Arg("from").Doc(`The base directory snapshot to compare against`),

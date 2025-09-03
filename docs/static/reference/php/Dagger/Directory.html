@@ -178,7 +178,7 @@
                 <div class="col-md-8">
                     <a href="#method_changes">changes</a>(<abbr title="Dagger\DirectoryId|Dagger\Directory">Directory</abbr> $from)
         
-                                            <p><p>Return a virtual comparison between this directory and an older snapshot that can be applied to another filesystem.</p></p>                </div>
+                                            <p><p>Return the difference between this directory and another directory, typically an older snapshot.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -674,7 +674,7 @@
             
 
         <div class="method-description">
-                            <p><p>Return a virtual comparison between this directory and an older snapshot that can be applied to another filesystem.</p></p>                <p><p>Returns an error if the other directory is not an ancestor of this directory.</p></p>        
+                            <p><p>Return the difference between this directory and another directory, typically an older snapshot.</p></p>                <p><p>The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.</p></p>        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>

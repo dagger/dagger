@@ -4534,12 +4534,12 @@
                         <td> The older/lower snapshot to compare against. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Changeset-changedPaths" href="#Changeset-changedPaths"><code>changedPaths</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
-                        <td> Files and directories that existed before and were updated in the newer directory. </td>
-                      </tr>
-                      <tr>
                         <td data-property-name=""><a class="property-name" id="Changeset-id" href="#Changeset-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ChangesetID"><code>ChangesetID!</code></a></span> </td>
                         <td> A unique identifier for this Changeset. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Changeset-modifiedPaths" href="#Changeset-modifiedPaths"><code>modifiedPaths</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
+                        <td> Files and directories that existed before and were updated in the newer directory. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Changeset-removedPaths" href="#Changeset-removedPaths"><code>removedPaths</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
@@ -6337,8 +6337,8 @@
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Directory-changes" href="#Directory-changes"><code>changes</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
                         <td>
-                          <p>Return a virtual comparison between this directory and an older snapshot that can be applied to another filesystem.</p>
-                          <p>Returns an error if the other directory is not an ancestor of this directory.</p>
+                          <p>Return the difference between this directory and another directory, typically an older snapshot.</p>
+                          <p>The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.</p>
                         </td>
                       </tr>
                       <tr class="row-field-arguments">

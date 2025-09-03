@@ -94,7 +94,7 @@ func (ch *Changeset) computeChanges(ctx context.Context) error {
 		// i.e. it's not listed here because children were modified, but because the
 		// directory itself was chmodded or something
 		if !strings.HasSuffix(path, "/") && !addedFileSet[path] {
-			ch.ChangedPaths = append(ch.ChangedPaths, path)
+			ch.ModifiedPaths = append(ch.ModifiedPaths, path)
 		}
 	}
 
@@ -132,9 +132,9 @@ type Changeset struct {
 	Before dagql.ObjectResult[*Directory] `field:"true" doc:"The older/lower snapshot to compare against."`
 	After  dagql.ObjectResult[*Directory] `field:"true" doc:"The newer/upper snapshot."`
 
-	AddedPaths   []string `field:"true" doc:"Files and directories that were added in the newer directory."`
-	ChangedPaths []string `field:"true" doc:"Files and directories that existed before and were updated in the newer directory."`
-	RemovedPaths []string `field:"true" doc:"Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included."`
+	AddedPaths    []string `field:"true" doc:"Files and directories that were added in the newer directory."`
+	ModifiedPaths []string `field:"true" doc:"Files and directories that existed before and were updated in the newer directory."`
+	RemovedPaths  []string `field:"true" doc:"Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included."`
 }
 
 func (*Changeset) Type() *ast.Type {

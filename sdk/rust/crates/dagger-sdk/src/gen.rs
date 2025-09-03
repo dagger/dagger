@@ -2007,14 +2007,14 @@ impl Changeset {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Files and directories that existed before and were updated in the newer directory.
-    pub async fn changed_paths(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("changedPaths");
-        query.execute(self.graphql_client.clone()).await
-    }
     /// A unique identifier for this Changeset.
     pub async fn id(&self) -> Result<ChangesetId, DaggerError> {
         let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Files and directories that existed before and were updated in the newer directory.
+    pub async fn modified_paths(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("modifiedPaths");
         query.execute(self.graphql_client.clone()).await
     }
     /// Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.
@@ -4925,8 +4925,8 @@ impl Directory {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return a virtual comparison between this directory and an older snapshot that can be applied to another filesystem.
-    /// Returns an error if the other directory is not an ancestor of this directory.
+    /// Return the difference between this directory and another directory, typically an older snapshot.
+    /// The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
     ///
     /// # Arguments
     ///

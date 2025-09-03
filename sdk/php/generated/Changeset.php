@@ -41,21 +41,21 @@ class Changeset extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Files and directories that existed before and were updated in the newer directory.
-     */
-    public function changedPaths(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('changedPaths');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'changedPaths');
-    }
-
-    /**
      * A unique identifier for this Changeset.
      */
     public function id(): ChangesetId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\ChangesetId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * Files and directories that existed before and were updated in the newer directory.
+     */
+    public function modifiedPaths(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('modifiedPaths');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'modifiedPaths');
     }
 
     /**

@@ -141,13 +141,13 @@ type Changeset {
   """The older/lower snapshot to compare against."""
   before: Directory!
 
+  """A unique identifier for this Changeset."""
+  id: ChangesetID!
+
   """
   Files and directories that existed before and were updated in the newer directory.
   """
-  changedPaths: [String!]!
-
-  """A unique identifier for this Changeset."""
-  id: ChangesetID!
+  modifiedPaths: [String!]!
 
   """
   Files and directories that were removed. Directories are indicated by a
@@ -1437,9 +1437,9 @@ type Directory {
   ): ModuleSource!
 
   """
-  Return a virtual comparison between this directory and an older snapshot that can be applied to another filesystem.
+  Return the difference between this directory and another directory, typically an older snapshot.
 
-  Returns an error if the other directory is not an ancestor of this directory.
+  The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
   """
   changes(
     """The base directory snapshot to compare against"""

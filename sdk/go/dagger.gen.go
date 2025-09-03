@@ -705,16 +705,6 @@ func (r *Changeset) Before() *Directory {
 	}
 }
 
-// Files and directories that existed before and were updated in the newer directory.
-func (r *Changeset) ChangedPaths(ctx context.Context) ([]string, error) {
-	q := r.query.Select("changedPaths")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
 // A unique identifier for this Changeset.
 func (r *Changeset) ID(ctx context.Context) (ChangesetID, error) {
 	if r.id != nil {
@@ -753,6 +743,16 @@ func (r *Changeset) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// Files and directories that existed before and were updated in the newer directory.
+func (r *Changeset) ModifiedPaths(ctx context.Context) ([]string, error) {
+	q := r.query.Select("modifiedPaths")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.
@@ -2912,9 +2912,9 @@ func (r *Directory) AsModuleSource(opts ...DirectoryAsModuleSourceOpts) *ModuleS
 	}
 }
 
-// Return a virtual comparison between this directory and an older snapshot that can be applied to another filesystem.
+// Return the difference between this directory and another directory, typically an older snapshot.
 //
-// Returns an error if the other directory is not an ancestor of this directory.
+// The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
 func (r *Directory) Changes(from *Directory) *Changeset {
 	assertNotNil("from", from)
 	q := r.query.Select("changes")

@@ -62,9 +62,9 @@ defmodule Dagger.Directory do
   end
 
   @doc """
-  Return a virtual comparison between this directory and an older snapshot that can be applied to another filesystem.
+  Return the difference between this directory and another directory, typically an older snapshot.
 
-  Returns an error if the other directory is not an ancestor of this directory.
+  The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
   """
   @spec changes(t(), Dagger.Directory.t()) :: Dagger.Changeset.t()
   def changes(%__MODULE__{} = directory, from) do

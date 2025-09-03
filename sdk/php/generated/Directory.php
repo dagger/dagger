@@ -47,9 +47,9 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Return a virtual comparison between this directory and an older snapshot that can be applied to another filesystem.
+     * Return the difference between this directory and another directory, typically an older snapshot.
      *
-     * Returns an error if the other directory is not an ancestor of this directory.
+     * The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
      */
     public function changes(DirectoryId|Directory $from): Changeset
     {

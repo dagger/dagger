@@ -219,9 +219,7 @@
         <dl id="indexC"><dt><a href="Dagger/CacheVolume.html"><abbr title="Dagger\CacheVolume">CacheVolume</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A directory whose contents persist across runs.</p></dd><dt><a href="Dagger/CacheVolumeId.html"><abbr title="Dagger\CacheVolumeId">CacheVolumeId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The <code>CacheVolumeID</code> scalar type represents an identifier for an object of type CacheVolume.</p></dd><dt><a href="Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>A comparison between two directories representing changes that can be applied.</p></dd><dt><a href="Dagger/Changeset.html#method_changedPaths">
-<abbr title="Dagger\Changeset">Changeset</abbr>::changedPaths</a>() &mdash; <em>Method in class <a href="Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></em></dt>
-                    <dd><p>Files and directories that existed before and were updated in the newer directory.</p></dd><dt><a href="Dagger/ChangesetId.html"><abbr title="Dagger\ChangesetId">ChangesetId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A comparison between two directories representing changes that can be applied.</p></dd><dt><a href="Dagger/ChangesetId.html"><abbr title="Dagger\ChangesetId">ChangesetId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The <code>ChangesetID</code> scalar type represents an identifier for an object of type Changeset.</p></dd><dt><a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The root of the DAG.</p></dd><dt><a href="Dagger/Client.html#method_cacheVolume">
 <abbr title="Dagger\Client">Client</abbr>::cacheVolume</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -258,7 +256,7 @@
 <abbr title="Dagger\Dagger">Dagger</abbr>::connect</a>() &mdash; <em>Method in class <a href="Dagger/Dagger.html"><abbr title="Dagger\Dagger">Dagger</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/Directory.html#method_changes">
 <abbr title="Dagger\Directory">Directory</abbr>::changes</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
-                    <dd><p>Return a virtual comparison between this directory and an older snapshot that can be applied to another filesystem.</p></dd><dt><a href="Dagger/EngineCacheEntry.html#method_createdTimeUnixNano">
+                    <dd><p>Return the difference between this directory and another directory, typically an older snapshot.</p></dd><dt><a href="Dagger/EngineCacheEntry.html#method_createdTimeUnixNano">
 <abbr title="Dagger\EngineCacheEntry">EngineCacheEntry</abbr>::createdTimeUnixNano</a>() &mdash; <em>Method in class <a href="Dagger/EngineCacheEntry.html"><abbr title="Dagger\EngineCacheEntry">EngineCacheEntry</abbr></a></em></dt>
                     <dd><p>The time the cache entry was created, in Unix nanoseconds.</p></dd><dt><a href="Dagger/File.html#method_contents">
 <abbr title="Dagger\File">File</abbr>::contents</a>() &mdash; <em>Method in class <a href="Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></em></dt>
@@ -799,7 +797,9 @@
                     <dd><p>The first line that matched.</p></dd><dt><a href="Dagger/SourceMap.html#method_line">
 <abbr title="Dagger\SourceMap">SourceMap</abbr>::line</a>() &mdash; <em>Method in class <a href="Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a></em></dt>
                     <dd><p>The line number within the filename.</p></dd>        </dl><h2 id="letterM">M</h2>
-        <dl id="indexM"><dt><a href="Dagger/Client.html#method_module">
+        <dl id="indexM"><dt><a href="Dagger/Changeset.html#method_modifiedPaths">
+<abbr title="Dagger\Changeset">Changeset</abbr>::modifiedPaths</a>() &mdash; <em>Method in class <a href="Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></em></dt>
+                    <dd><p>Files and directories that existed before and were updated in the newer directory.</p></dd><dt><a href="Dagger/Client.html#method_module">
 <abbr title="Dagger\Client">Client</abbr>::module</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Create a new module.</p></dd><dt><a href="Dagger/Client.html#method_moduleSource">
 <abbr title="Dagger\Client">Client</abbr>::moduleSource</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>

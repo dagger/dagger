@@ -796,28 +796,6 @@ class Changeset(Type):
         _ctx = self._select("before", _args)
         return Directory(_ctx)
 
-    async def changed_paths(self) -> list[str]:
-        """Files and directories that existed before and were updated in the
-        newer directory.
-
-        Returns
-        -------
-        list[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("changedPaths", _args)
-        return await _ctx.execute(list[str])
-
     async def id(self) -> ChangesetID:
         """A unique identifier for this Changeset.
 
@@ -841,6 +819,28 @@ class Changeset(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(ChangesetID)
+
+    async def modified_paths(self) -> list[str]:
+        """Files and directories that existed before and were updated in the
+        newer directory.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("modifiedPaths", _args)
+        return await _ctx.execute(list[str])
 
     async def removed_paths(self) -> list[str]:
         """Files and directories that were removed. Directories are indicated by
@@ -3130,11 +3130,11 @@ class Directory(Type):
         return ModuleSource(_ctx)
 
     def changes(self, from_: Self) -> Changeset:
-        """Return a virtual comparison between this directory and an older
-        snapshot that can be applied to another filesystem.
+        """Return the difference between this directory and another directory,
+        typically an older snapshot.
 
-        Returns an error if the other directory is not an ancestor of this
-        directory.
+        The difference is encoded as a changeset, which also tracks removed
+        files, and can be applied to other directories.
 
         Parameters
         ----------

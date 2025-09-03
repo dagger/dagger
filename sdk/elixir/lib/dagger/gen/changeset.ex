@@ -55,23 +55,23 @@ defmodule Dagger.Changeset do
   end
 
   @doc """
-  Files and directories that existed before and were updated in the newer directory.
-  """
-  @spec changed_paths(t()) :: {:ok, [String.t()]} | {:error, term()}
-  def changed_paths(%__MODULE__{} = changeset) do
-    query_builder =
-      changeset.query_builder |> QB.select("changedPaths")
-
-    Client.execute(changeset.client, query_builder)
-  end
-
-  @doc """
   A unique identifier for this Changeset.
   """
   @spec id(t()) :: {:ok, Dagger.ChangesetID.t()} | {:error, term()}
   def id(%__MODULE__{} = changeset) do
     query_builder =
       changeset.query_builder |> QB.select("id")
+
+    Client.execute(changeset.client, query_builder)
+  end
+
+  @doc """
+  Files and directories that existed before and were updated in the newer directory.
+  """
+  @spec modified_paths(t()) :: {:ok, [String.t()]} | {:error, term()}
+  def modified_paths(%__MODULE__{} = changeset) do
+    query_builder =
+      changeset.query_builder |> QB.select("modifiedPaths")
 
     Client.execute(changeset.client, query_builder)
   end
