@@ -138,6 +138,9 @@ type Changeset {
   """The newer/upper snapshot."""
   after: Directory!
 
+  """Return a Git-compatible patch of the changes"""
+  asPatch: File!
+
   """The older/lower snapshot to compare against."""
   before: Directory!
 
@@ -1735,6 +1738,14 @@ type Directory {
     @@\n-Hello\n+World\n").
     """
     patch: String!
+  ): Directory! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
+
+  """
+  Retrieves this directory with the given Git-compatible patch file applied.
+  """
+  withPatchFile(
+    """File containing the patch to apply"""
+    patch: FileID!
   ): Directory! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
   """Return a snapshot with a symlink"""

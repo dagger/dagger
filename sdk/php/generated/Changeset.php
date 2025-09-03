@@ -32,6 +32,15 @@ class Changeset extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return a Git-compatible patch of the changes
+     */
+    public function asPatch(): File
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asPatch');
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The older/lower snapshot to compare against.
      */
     public function before(): Directory

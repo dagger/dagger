@@ -41,6 +41,20 @@ defmodule Dagger.Changeset do
   end
 
   @doc """
+  Return a Git-compatible patch of the changes
+  """
+  @spec as_patch(t()) :: Dagger.File.t()
+  def as_patch(%__MODULE__{} = changeset) do
+    query_builder =
+      changeset.query_builder |> QB.select("asPatch")
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: changeset.client
+    }
+  end
+
+  @doc """
   The older/lower snapshot to compare against.
   """
   @spec before(t()) :: Dagger.Directory.t()

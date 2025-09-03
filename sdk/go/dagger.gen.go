@@ -696,6 +696,15 @@ func (r *Changeset) After() *Directory {
 	}
 }
 
+// Return a Git-compatible patch of the changes
+func (r *Changeset) AsPatch() *File {
+	q := r.query.Select("asPatch")
+
+	return &File{
+		query: q,
+	}
+}
+
 // The older/lower snapshot to compare against.
 func (r *Changeset) Before() *Directory {
 	q := r.query.Select("before")
@@ -3502,6 +3511,19 @@ func (r *Directory) WithNewFile(path string, contents string, opts ...DirectoryW
 // Experimental: This API is highly experimental and may be removed or replaced entirely.
 func (r *Directory) WithPatch(patch string) *Directory {
 	q := r.query.Select("withPatch")
+	q = q.Arg("patch", patch)
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Retrieves this directory with the given Git-compatible patch file applied.
+//
+// Experimental: This API is highly experimental and may be removed or replaced entirely.
+func (r *Directory) WithPatchFile(patch *File) *Directory {
+	assertNotNil("patch", patch)
+	q := r.query.Select("withPatchFile")
 	q = q.Arg("patch", patch)
 
 	return &Directory{

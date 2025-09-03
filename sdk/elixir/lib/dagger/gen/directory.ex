@@ -487,6 +487,26 @@ defmodule Dagger.Directory do
   end
 
   @doc """
+  Retrieves this directory with the given Git-compatible patch file applied.
+
+  > #### Experimental {: .warning}
+  >
+  > "This API is highly experimental and may be removed or replaced entirely."
+  """
+  @spec with_patch_file(t(), Dagger.File.t()) :: Dagger.Directory.t()
+  def with_patch_file(%__MODULE__{} = directory, patch) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("withPatchFile")
+      |> QB.put_arg("patch", Dagger.ID.id!(patch))
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc """
   Return a snapshot with a symlink
   """
   @spec with_symlink(t(), String.t(), String.t()) :: Dagger.Directory.t()

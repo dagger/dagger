@@ -1998,6 +1998,15 @@ impl Changeset {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return a Git-compatible patch of the changes
+    pub fn as_patch(&self) -> File {
+        let query = self.selection.select("asPatch");
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The older/lower snapshot to compare against.
     pub fn before(&self) -> Directory {
         let query = self.selection.select("before");
@@ -5565,6 +5574,26 @@ impl Directory {
     pub fn with_patch(&self, patch: impl Into<String>) -> Directory {
         let mut query = self.selection.select("withPatch");
         query = query.arg("patch", patch.into());
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this directory with the given Git-compatible patch file applied.
+    ///
+    /// # Arguments
+    ///
+    /// * `patch` - File containing the patch to apply
+    pub fn with_patch_file(&self, patch: impl IntoID<FileId>) -> Directory {
+        let mut query = self.selection.select("withPatchFile");
+        query = query.arg_lazy(
+            "patch",
+            Box::new(move || {
+                let patch = patch.clone();
+                Box::pin(async move { patch.into_id().await.unwrap().quote() })
+            }),
+        );
         Directory {
             proc: self.proc.clone(),
             selection: query,

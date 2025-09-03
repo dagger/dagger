@@ -2532,6 +2532,14 @@ export class Changeset extends BaseClient {
   }
 
   /**
+   * Return a Git-compatible patch of the changes
+   */
+  asPatch = (): File => {
+    const ctx = this._ctx.select("asPatch")
+    return new File(ctx)
+  }
+
+  /**
    * The older/lower snapshot to compare against.
    */
   before = (): Directory => {
@@ -4377,6 +4385,16 @@ export class Directory extends BaseClient {
    */
   withPatch = (patch: string): Directory => {
     const ctx = this._ctx.select("withPatch", { patch })
+    return new Directory(ctx)
+  }
+
+  /**
+   * Retrieves this directory with the given Git-compatible patch file applied.
+   * @param patch File containing the patch to apply
+   * @experimental
+   */
+  withPatchFile = (patch: File): Directory => {
+    const ctx = this._ctx.select("withPatchFile", { patch })
     return new Directory(ctx)
   }
 

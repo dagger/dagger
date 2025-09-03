@@ -790,6 +790,12 @@ class Changeset(Type):
         _ctx = self._select("after", _args)
         return Directory(_ctx)
 
+    def as_patch(self) -> "File":
+        """Return a Git-compatible patch of the changes"""
+        _args: list[Arg] = []
+        _ctx = self._select("asPatch", _args)
+        return File(_ctx)
+
     def before(self) -> "Directory":
         """The older/lower snapshot to compare against."""
         _args: list[Arg] = []
@@ -3755,6 +3761,25 @@ class Directory(Type):
             Arg("patch", patch),
         ]
         _ctx = self._select("withPatch", _args)
+        return Directory(_ctx)
+
+    def with_patch_file(self, patch: "File") -> Self:
+        """Retrieves this directory with the given Git-compatible patch file
+        applied.
+
+        .. caution::
+            Experimental: This API is highly experimental and may be removed
+            or replaced entirely.
+
+        Parameters
+        ----------
+        patch:
+            File containing the patch to apply
+        """
+        _args = [
+            Arg("patch", patch),
+        ]
+        _ctx = self._select("withPatchFile", _args)
         return Directory(_ctx)
 
     def with_symlink(self, target: str, link_name: str) -> Self:

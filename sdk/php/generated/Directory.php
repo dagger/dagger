@@ -398,6 +398,16 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieves this directory with the given Git-compatible patch file applied.
+     */
+    public function withPatchFile(FileId|File $patch): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPatchFile');
+        $innerQueryBuilder->setArgument('patch', $patch);
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return a snapshot with a symlink
      */
     public function withSymlink(string $target, string $linkName): Directory
