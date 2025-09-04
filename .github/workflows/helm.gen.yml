@@ -20,7 +20,7 @@ jobs:
     helm:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.16' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.17' || 'ubuntu-24.04' }}
         name: Helm
         steps:
             - name: scripts/install-dagger.sh
@@ -48,7 +48,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.16
+                DAGGER_VERSION: v0.18.17
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
