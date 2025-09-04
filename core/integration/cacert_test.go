@@ -593,7 +593,6 @@ func customCACertTests(
 	require.NoError(t, err)
 
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(ctx context.Context, t *testctx.T) {
 			test.run(ctx, t, c2, caCertsTestFixtures{
 				caCertContents: caCertContents,

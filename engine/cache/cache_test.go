@@ -23,7 +23,6 @@ func TestCacheConcurrent(t *testing.T) {
 
 	wg := new(sync.WaitGroup)
 	for i := range 100 {
-		i := i
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

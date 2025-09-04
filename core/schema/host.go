@@ -89,7 +89,6 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			defer layerRefs.Release(context.WithoutCancel(ctx))
 			var eg errgroup.Group
 			for _, layerRef := range layerRefs {
-				layerRef := layerRef
 				eg.Go(func() error {
 					// FileList is the secret method that actually forces an unlazy of blobs in the cases
 					// we want here...

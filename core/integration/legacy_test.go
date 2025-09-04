@@ -1304,8 +1304,6 @@ export class Test {
 		},
 	}
 	for _, tc := range tcs {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 

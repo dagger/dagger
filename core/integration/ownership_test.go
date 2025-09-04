@@ -55,7 +55,6 @@ func testOwnership(
 		//    the above, making it opt-in seems obvious.
 		{name: "no-inherit", owner: "", output: "root root"},
 	} {
-		example := example
 		t.Run(example.name, func(ctx context.Context, t *testctx.T) {
 			withOwner := addContent(ctr, example.name, example.owner)
 			output, err := withOwner.
