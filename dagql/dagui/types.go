@@ -112,11 +112,11 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 	var lastTree *TraceTree
 	var lastCall *TraceTree
 	seen := make(map[SpanID]bool)
-	var walk func(*Span, *TraceTree)
-	walk = func(span *Span, parent *TraceTree) {
+	var walk func(*Span, *TraceTree) bool
+	walk = func(span *Span, parent *TraceTree) bool {
 		spanID := span.ID
 		if seen[spanID] {
-			return
+			return false
 		}
 		seen[spanID] = true
 
@@ -124,7 +124,7 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 		// can track relationships between rows accurately (e.g. chaining pipeline
 		// calls).
 		if !opts.ShouldShow(db, span) {
-			return
+			return false
 		}
 
 		if (span.Passthrough && !opts.Debug) ||
@@ -136,7 +136,7 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 			for _, child := range spans.Order {
 				walk(child, parent)
 			}
-			return
+			return false
 		}
 
 		if opts.Filter != nil {
@@ -146,7 +146,7 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 				if lastTree != nil {
 					lastTree.Final = true
 				}
-				return
+				return false
 			case WalkPassthrough:
 				// TODO: this Final field is a bit tedious...
 				if lastTree != nil {
@@ -156,7 +156,7 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 				for _, child := range spans.Order {
 					walk(child, parent)
 				}
-				return
+				return false
 			}
 		}
 
@@ -164,8 +164,7 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 		reparent := false
 		for cause := range span.CausalSpans {
 			if !span.HasParent(cause) {
-				walk(cause, parent)
-				reparent = true
+				reparent = walk(cause, parent)
 			}
 		}
 
@@ -215,6 +214,7 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 		if tree.Span.CallDigest != "" {
 			lastCall = tree
 		}
+		return true
 	}
 	for span := range spans {
 		walk(span, nil)
