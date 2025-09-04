@@ -71,6 +71,13 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
         Jason.Encode.string(id, opts)
       end
     end
+
+    defimpl JSON.Encoder, for: #{module_name} do
+      def encode(#{module_var}, _encoder) do
+        {:ok, id} = #{module_name}.id(#{module_var})
+        id
+      end
+    end
     """
   end
 

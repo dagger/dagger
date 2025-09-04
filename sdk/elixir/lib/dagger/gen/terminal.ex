@@ -56,6 +56,13 @@ defimpl Jason.Encoder, for: Dagger.Terminal do
   end
 end
 
+defimpl JSON.Encoder, for: Dagger.Terminal do
+  def encode(terminal, _encoder) do
+    {:ok, id} = Dagger.Terminal.id(terminal)
+    id
+  end
+end
+
 defimpl Nestru.Decoder, for: Dagger.Terminal do
   def decode_fields_hint(_struct, _context, id) do
     {:ok, Dagger.Client.load_terminal_from_id(Dagger.Global.dag(), id)}

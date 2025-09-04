@@ -56,6 +56,13 @@ defimpl Jason.Encoder, for: Dagger.Label do
   end
 end
 
+defimpl JSON.Encoder, for: Dagger.Label do
+  def encode(label, _encoder) do
+    {:ok, id} = Dagger.Label.id(label)
+    id
+  end
+end
+
 defimpl Nestru.Decoder, for: Dagger.Label do
   def decode_fields_hint(_struct, _context, id) do
     {:ok, Dagger.Client.load_label_from_id(Dagger.Global.dag(), id)}

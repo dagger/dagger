@@ -124,6 +124,13 @@ defimpl Jason.Encoder, for: Dagger.EngineCache do
   end
 end
 
+defimpl JSON.Encoder, for: Dagger.EngineCache do
+  def encode(engine_cache, _encoder) do
+    {:ok, id} = Dagger.EngineCache.id(engine_cache)
+    id
+  end
+end
+
 defimpl Nestru.Decoder, for: Dagger.EngineCache do
   def decode_fields_hint(_struct, _context, id) do
     {:ok, Dagger.Client.load_engine_cache_from_id(Dagger.Global.dag(), id)}

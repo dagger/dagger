@@ -74,6 +74,13 @@ defimpl Jason.Encoder, for: Dagger.LLMTokenUsage do
   end
 end
 
+defimpl JSON.Encoder, for: Dagger.LLMTokenUsage do
+  def encode(llm_token_usage, _encoder) do
+    {:ok, id} = Dagger.LLMTokenUsage.id(llm_token_usage)
+    id
+  end
+end
+
 defimpl Nestru.Decoder, for: Dagger.LLMTokenUsage do
   def decode_fields_hint(_struct, _context, id) do
     {:ok, Dagger.Client.load_llm_token_usage_from_id(Dagger.Global.dag(), id)}
