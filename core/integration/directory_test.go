@@ -1057,8 +1057,6 @@ func (DirectorySuite) TestGlob(ctx context.Context, t *testctx.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			t.Run("include only markdown", func(ctx context.Context, t *testctx.T) {
 				entries, err := tc.src.Glob(ctx, "*.md")

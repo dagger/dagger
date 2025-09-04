@@ -342,7 +342,6 @@ func (m *Test) Fn(
 					subpath: ".changes",
 				},
 			} {
-				tc := tc
 				t.Run(fmt.Sprintf("%s:%s", tc.baseURL, tc.subpath), func(ctx context.Context, t *testctx.T) {
 					url := tc.baseURL + "#v0.9.1"
 					if tc.subpath != "" {
@@ -2528,8 +2527,6 @@ func (m *Test) ToStatus(status string) Status {
 				enumValue: "foo bar",
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.enumValue, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -2680,8 +2677,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 			modGen := modInit(t, c, tc.sdk, tc.source)

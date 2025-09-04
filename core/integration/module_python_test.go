@@ -552,8 +552,6 @@ build-backend = "poetry.core.masonry.api"
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(fmt.Sprintf("%s/%s", tc.name, tc.path), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -1153,7 +1151,6 @@ func (PythonSuite) TestSignatures(ctx context.Context, t *testctx.T) {
 			expected: `{"test":{"echoOpts":"hello!hello!hello!"}}`,
 		},
 	} {
-		tc := tc
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerQuery(tc.query)).Stdout(ctx)
 			require.NoError(t, err)
@@ -1214,7 +1211,6 @@ func (PythonSuite) TestSignaturesBuiltinTypes(ctx context.Context, t *testctx.T)
 			expected: `{"test":{"readOptional":""}}`,
 		},
 	} {
-		tc := tc
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerQuery(tc.query)).Stdout(ctx)
 			require.NoError(t, err)

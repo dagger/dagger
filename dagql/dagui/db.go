@@ -446,7 +446,6 @@ func (activity *Activity) Intervals(now time.Time) iter.Seq[Interval] {
 	return func(yield func(Interval) bool) {
 		var lastIval *Interval
 		for _, ival := range activity.CompletedIntervals {
-			ival := ival
 			lastIval = &ival
 			if !activity.EarliestRunning.IsZero() &&
 				activity.EarliestRunning.Before(ival.Start) {

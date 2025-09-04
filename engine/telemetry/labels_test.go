@@ -86,7 +86,6 @@ func TestLoadGitLabels(t *testing.T) {
 			},
 		},
 	} {
-		example := example
 		t.Run(example.Name, func(t *testing.T) {
 			labels := telemetry.Labels{}.WithGitLabels(example.Repo)
 			require.Subset(t, labels, example.Labels)
@@ -136,7 +135,6 @@ func TestLoadGitRefEnvLabels(t *testing.T) {
 			},
 		},
 	} {
-		example := example
 		t.Run(example.Name, func(t *testing.T) {
 			for _, e := range example.Env {
 				k, v, _ := strings.Cut(e, "=")
@@ -230,7 +228,6 @@ func TestLoadGitHubLabels(t *testing.T) {
 			},
 		},
 	} {
-		example := example
 		t.Run(example.Name, func(t *testing.T) {
 			for _, e := range example.Env {
 				k, v, _ := strings.Cut(e, "=")
@@ -327,7 +324,6 @@ func TestLoadGitLabLabels(t *testing.T) {
 			},
 		},
 	} {
-		example := example
 		t.Run(example.Name, func(t *testing.T) {
 			// Set environment variables
 			for k, v := range example.Env {
@@ -381,7 +377,6 @@ func TestLoadCircleCILabels(t *testing.T) {
 			},
 		},
 	} {
-		example := example
 		t.Run(example.Name, func(t *testing.T) {
 			// Set environment variables
 			for k, v := range example.Env {
@@ -423,7 +418,6 @@ func TestLoadJenkinsLabels(t *testing.T) {
 			},
 		},
 	} {
-		example := example
 		t.Run(example.Name, func(t *testing.T) {
 			// Set environment variables
 			for k, v := range example.Env {
@@ -465,7 +459,6 @@ func TestLoadHarnessLabels(t *testing.T) {
 			},
 		},
 	} {
-		example := example
 		t.Run(example.Name, func(t *testing.T) {
 			// Set environment variables
 			for k, v := range example.Env {

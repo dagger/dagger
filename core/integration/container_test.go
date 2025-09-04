@@ -3717,7 +3717,6 @@ func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 	} {
-		tc := tc
 		t.Run(string(tc.compression), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -3789,7 +3788,6 @@ func (ContainerSuite) TestMediaTypes(ctx context.Context, t *testctx.T) {
 			"application/vnd.docker.image.rootfs.diff.tar.gzip",
 		},
 	} {
-		tc := tc
 		t.Run(string(tc.mediaTypes), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -3817,7 +3815,6 @@ func (ContainerSuite) TestMediaTypes(ctx context.Context, t *testctx.T) {
 			}
 
 			for _, useAsTarball := range []bool{true, false} {
-				useAsTarball := useAsTarball
 				t.Run(fmt.Sprintf("useAsTarball=%t", useAsTarball), func(ctx context.Context, t *testctx.T) {
 					tarPath := filepath.Join(t.TempDir(), "export.tar")
 					if useAsTarball {
@@ -3904,9 +3901,7 @@ func (ContainerSuite) TestImageLoadCompatibility(ctx context.Context, t *testctx
 	for _, dockerVersion := range []string{"20.10", "23.0", "24.0"} {
 		dockerc := dockerSetup(ctx, t, c, containerSetupOpts{name: t.Name(), version: dockerVersion})
 		for _, mediaType := range []dagger.ImageMediaTypes{dagger.ImageMediaTypesOcimediaTypes, dagger.ImageMediaTypesDockerMediaTypes} {
-			mediaType := mediaType
 			for _, compression := range []dagger.ImageLayerCompression{dagger.ImageLayerCompressionGzip, dagger.ImageLayerCompressionZstd, dagger.ImageLayerCompressionUncompressed} {
-				compression := compression
 				t.Run(fmt.Sprintf("%s-%s-%s-%s", t.Name(), dockerVersion, mediaType, compression), func(ctx context.Context, t *testctx.T) {
 					tmpdir := t.TempDir()
 					tmpfile := filepath.Join(tmpdir, fmt.Sprintf("test-%s-%s-%s.tar", dockerVersion, mediaType, compression))

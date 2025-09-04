@@ -68,7 +68,6 @@ func (CLISuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 				sourceDirEnt: "src/",
 			},
 		} {
-			tc := tc
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				srcRootDir := ctr.
 					With(daggerExec("init", "--name=test", "--sdk="+tc.sdk)).
@@ -332,7 +331,6 @@ func (CLISuite) TestDaggerInitGit(ctx context.Context, t *testctx.T) {
 			},
 		},
 	} {
-		tc := tc
 		t.Run(fmt.Sprintf("module %s git", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -418,7 +416,6 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 
 		// test develop from source root and from subdir (in which case find-up should kick in)
 		for _, wd := range []string{"/work", "/work/from/some/otherdir"} {
-			wd := wd
 			t.Run(wd, func(ctx context.Context, t *testctx.T) {
 				sourceDir, err := filepath.Rel(wd, "/work/cool/subdir")
 				require.NoError(t, err)

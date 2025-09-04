@@ -262,8 +262,6 @@ export class Test {
 			},
 		},
 	} {
-		tc := tc
-
 		t.Run(fmt.Sprintf("%s with %d files (#%d)", tc.sdk, len(tc.sources), i+1), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -272,7 +270,6 @@ export class Test {
 				WithWorkdir("/work")
 
 			for _, src := range tc.sources {
-				src := src
 				modGen = modGen.WithNewFile(src.file, heredoc.Doc(src.contents))
 			}
 
@@ -369,8 +366,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 			modGen := modInit(t, c, tc.sdk, tc.source)
@@ -472,8 +467,6 @@ export class Test {
 			expected: "\"test\", , \"foo\", null, \"bar\"",
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -620,8 +613,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -689,8 +680,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -930,8 +919,6 @@ func (ModuleSuite) TestUseLocal(ctx context.Context, t *testctx.T) {
 			source: useTSOuter,
 		},
 	} {
-		tc := tc
-
 		t.Run(fmt.Sprintf("%s uses go", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -985,8 +972,6 @@ func (ModuleSuite) TestCodegenOnDepChange(ctx context.Context, t *testctx.T) {
 			changed:  strings.ReplaceAll(useTSOuter, `.hello()`, `.hellov2()`),
 		},
 	} {
-		tc := tc
-
 		t.Run(fmt.Sprintf("%s uses go", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -1046,8 +1031,6 @@ func (ModuleSuite) TestSyncDeps(ctx context.Context, t *testctx.T) {
 			source: useTSOuter,
 		},
 	} {
-		tc := tc
-
 		t.Run(fmt.Sprintf("%s uses go", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -1139,8 +1122,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(fmt.Sprintf("%s uses go", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -1321,8 +1302,6 @@ export class Test {
 `,
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 				ctr := modInit(t, c, tc.sdk, tc.source)
@@ -1432,8 +1411,6 @@ export class Test {
 `,
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -1498,8 +1475,6 @@ export class Test {
 `,
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				var logs safeBuffer
 				c := connect(ctx, t, dagger.WithLogOutput(&logs))
@@ -1686,8 +1661,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -1798,8 +1771,6 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 					source: goodIDArgTSSrc,
 				},
 			} {
-				tc := tc
-
 				t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 					c := connect(ctx, t)
 
@@ -1823,8 +1794,6 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 					source: badIDFieldTSSrc,
 				},
 			} {
-				tc := tc
-
 				t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 					c := connect(ctx, t)
 
@@ -1856,8 +1825,6 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 					source: badIDFnTSSrc,
 				},
 			} {
-				tc := tc
-
 				t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 					c := connect(ctx, t)
 
@@ -3921,8 +3888,6 @@ class Test:
 `,
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -4229,8 +4194,6 @@ export class Test {
 `,
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -4494,8 +4457,6 @@ export class Test {
 `,
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -4664,8 +4625,6 @@ export class Test {
 `,
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -5620,8 +5579,6 @@ class Test:
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
