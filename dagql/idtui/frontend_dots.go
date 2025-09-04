@@ -137,7 +137,7 @@ func (fe *frontendDots) Shell(ctx context.Context, handler ShellHandler) {
 	// Dots frontend doesn't support shell
 }
 
-func (fe *frontendDots) HandlePrompt(ctx context.Context, prompt string, dest any) error {
+func (fe *frontendDots) HandlePrompt(ctx context.Context, _, prompt string, dest any) error {
 	return interact.NewInteraction(prompt).Resolve(dest)
 }
 

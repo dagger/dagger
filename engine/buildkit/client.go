@@ -565,6 +565,7 @@ func (c *Client) PromptAllowLLM(ctx context.Context, moduleRepoURL string) error
 	}
 
 	response, err := prompt.NewPromptClient(caller.Conn()).PromptBool(ctx, &prompt.BoolRequest{
+		Title:         "Allow LLM access?",
 		Prompt:        fmt.Sprintf("Remote module **%s** attempted to access the LLM API. Allow it?", moduleRepoURL),
 		PersistentKey: "allow_llm:" + moduleRepoURL,
 		Default:       false, // TODO: default to true?
@@ -579,13 +580,14 @@ func (c *Client) PromptAllowLLM(ctx context.Context, moduleRepoURL string) error
 	return fmt.Errorf("module %s was denied LLM access; pass --allow-llm=%s or --allow-llm=all to allow", moduleRepoURL, moduleRepoURL)
 }
 
-func (c *Client) PromptHumanHelp(ctx context.Context, question string) (string, error) {
+func (c *Client) PromptHumanHelp(ctx context.Context, title, question string) (string, error) {
 	caller, err := c.GetMainClientCaller()
 	if err != nil {
 		return "", fmt.Errorf("failed to get main client caller to prompt user for human help: %w", err)
 	}
 
 	response, err := prompt.NewPromptClient(caller.Conn()).PromptString(ctx, &prompt.StringRequest{
+		Title:   title,
 		Prompt:  question,
 		Default: "The user did not respond.",
 	})
