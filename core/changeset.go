@@ -245,13 +245,19 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 				}
 				defer syscall.Unmount(afterMount, syscall.MNT_DETACH)
 
-				diff := exec.Command(
-					"git", "diff",
+				args := []string{
+					"diff",
 					"--no-prefix", // no a/ and b/ prefixes - we have our own
 					"--no-index",  // this runs outside of a git repo
-					"--output="+ChangesetPatchFilename,
+					"--output=" + ChangesetPatchFilename,
 					"a",
-					"b")
+					"b",
+					"--",
+				}
+				args = append(args, ch.ModifiedPaths...)
+				args = append(args, ch.AddedPaths...)
+				args = append(args, ch.RemovedPaths...)
+				diff := exec.Command("git", args...)
 				diff.Dir = root
 				diff.Stdout = stdio.Stdout
 				diff.Stderr = stdio.Stderr
