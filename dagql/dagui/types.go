@@ -132,8 +132,7 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 			// can happen if we're within a larger trace - we'll allocate our parent,
 			// but not actually see it, so just move along to its children.
 			!span.Received {
-			spans, _ := span.ChildOrRevealedSpans(opts)
-			for _, child := range spans.Order {
+			for _, child := range span.ChildSpans.Order {
 				walk(child, parent)
 			}
 			return false
@@ -152,8 +151,7 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 				if lastTree != nil {
 					lastTree.Final = true
 				}
-				spans, _ := span.ChildOrRevealedSpans(opts)
-				for _, child := range spans.Order {
+				for _, child := range span.ChildSpans.Order {
 					walk(child, parent)
 				}
 				return false

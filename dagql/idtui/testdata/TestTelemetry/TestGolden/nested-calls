@@ -7,30 +7,30 @@ level-2/
 Expected stderr:
 
 ▼ connect X.Xs
-├─● starting engine X.Xs
-├─▼ connecting to engine X.Xs
+├╴✔ starting engine X.Xs
+├╴▼ connecting to engine X.Xs
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
-╰─● starting session X.Xs
+╰╴✔ starting session X.Xs
  
 ▼ load module: ./viztest X.Xs
-├─● finding module configuration X.Xs
-├─● initializing module X.Xs
-├─● inspecting module metadata X.Xs
-╰─● loading type definitions X.Xs
+├╴✔ finding module configuration X.Xs
+├╴✔ initializing module X.Xs
+├╴✔ inspecting module metadata X.Xs
+╰╴✔ loading type definitions X.Xs
  
-● parsing command line arguments X.Xs
+✔ parsing command line arguments X.Xs
 
-● viztest: Viztest! X.Xs
+✔ viztest: Viztest! X.Xs
 ▼ .nestedCalls: [String!]! X.Xs
-├─$ file(name: "file", contents: "hey"): File! X.Xs CACHED
+├╴$ file(name: "file", contents: "hey"): File! X.Xs CACHED
 │
-├─$ Directory.withFile(
+├╴$ Directory.withFile(
 │   ┆ path: "file"
 │   ┆ source: file(name: "file", contents: "hey"): File!
 │   ┆ permissions: 420
 │   ): Directory! X.Xs CACHED
 │
-├─$ Directory.withDirectory(
+├╴$ Directory.withDirectory(
 │   ┆ path: "sub"
 │   ┆ directory: Directory.withFile(
 │   ┆ ┆ path: "file"
@@ -39,8 +39,8 @@ Expected stderr:
 │   ┆ ): Directory!
 │   ): Directory! X.Xs CACHED
 │
-├─● container: Container! X.Xs
-├─$ .withDirectory(
+├╴✔ container: Container! X.Xs
+├╴$ .withDirectory(
 │   ┆ path: "/level-1"
 │   ┆ directory: Directory.withFile(
 │   ┆ ┆ path: "file"
@@ -48,7 +48,7 @@ Expected stderr:
 │   ┆ ┆ permissions: 420
 │   ┆ ): Directory!
 │   ): Container! X.Xs CACHED
-├─$ .withDirectory(
+├╴$ .withDirectory(
 │   ┆ path: "/level-2"
 │   ┆ directory: Directory.withDirectory(
 │   ┆ ┆ path: "sub"
@@ -59,8 +59,8 @@ Expected stderr:
 │   ┆ ┆ ): Directory!
 │   ┆ ): Directory!
 │   ): Container! X.Xs CACHED
-├─● .rootfs: Directory! X.Xs
-╰─● .entries: [String!]! X.Xs
+├╴✔ .rootfs: Directory! X.Xs
+╰╴✔ .entries: [String!]! X.Xs
 
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
