@@ -1,6 +1,0 @@
-kind: Fixed
-body: '`git` now automatically determines the protocol when using a scheme-less URL (instead of defaulting to `https://`)'
-time: 2025-08-29T11:11:58.63020271+01:00
-custom:
-    Author: jedevc
-    PR: "10960"
