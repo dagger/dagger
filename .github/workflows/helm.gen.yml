@@ -67,7 +67,9 @@ jobs:
                 dagger core version
               shell: bash
             - name: Checkout
-              uses: actions/checkout@v4
+              run: dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
+              env:
+                DAGGER_REF: ${{ github.ref }}
             - name: scripts/exec.sh
               id: exec
               run: |
@@ -171,6 +173,6 @@ jobs:
               env:
                 COMMAND: dagger call --docker-cfg=file:$HOME/.docker/config.json check --targets=helm
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                DAGGER_MODULE: .
               shell: bash
         timeout-minutes: 20

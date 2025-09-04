@@ -1,7 +1,9 @@
 #!/bin/bash --noprofile --norc -e -o pipefail
 
 cd $(mktemp -d)
-dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree | export ."
+
+# HACK: with contextual git we won't need --depth=0 anymore
+dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."
 
 ./hack/build
 

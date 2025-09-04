@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/dagger/dagger/.github/internal/dagger"
@@ -23,7 +24,8 @@ func module(paths ...string) string {
 	if path != "" {
 		path = "/" + path
 	}
-	return "github.com/${{ github.repository }}" + path + "@${{ github.sha }}"
+	// return "github.com/${{ github.repository }}" + path + "@${{ github.sha }}"
+	return filepath.Join("./", path)
 }
 
 type CI struct {

@@ -15,7 +15,11 @@ func (j *Job) warmEngineStep() api.JobStep {
 func (j *Job) checkoutStep() api.JobStep {
 	return api.JobStep{
 		Name: "Checkout",
-		Uses: "actions/checkout@v4",
+		// checkout using dagger so we always hit the same cache
+		Run: `dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree --depth=0 | export ."`,
+		Env: map[string]string{
+			"DAGGER_REF": "${{ github.ref }}",
+		},
 	}
 }
 
