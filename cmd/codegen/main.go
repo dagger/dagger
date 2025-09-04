@@ -26,7 +26,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&outputDir, "output", "o", ".", "output directory")
 	rootCmd.PersistentFlags().StringVar(&introspectionJSONPath, "introspection-json-path", "", "optional path to file containing pre-computed graphql introspection JSON")
 	rootCmd.PersistentFlags().BoolVar(&bundle, "bundle", false, "generate the client in bundle mode")
-	rootCmd.PersistentFlags().BoolVar(&remote, "remote", false, "generate the client using the remote sdk")
+	rootCmd.PersistentFlags().BoolVar(&remote, "remote", false, "generate the client using the published client library")
 }
 
 func main() {
