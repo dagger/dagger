@@ -76,6 +76,10 @@ Consider the following Dagger Function:
 ```typescript file=../../getting-started/quickstarts/agent/snippets/part1/typescript/src/index.ts
 ```
 </TabItem>
+<TabItem value="php" label="PHP">
+```php file=../../getting-started/quickstarts/agent/snippets/part1/php/src/CodingAgent.php
+```
+</TabItem>
 </Tabs>
 
 This Dagger Function creates a new LLM, gives it an environment (a container with various tools) with an assignment, and prompts it to complete the assignment. The LLM then runs in a loop, calling tools and iterating on its work, until it completes the assignment. This loop happens inside the LLM object, so the value of `result` is the environment with the completed assignment.
