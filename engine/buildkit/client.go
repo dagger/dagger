@@ -615,7 +615,7 @@ func (c *Client) GetGitConfig(ctx context.Context) ([]*git.GitConfigEntry, error
 		return result.Config.Entries, nil
 	case *git.GitConfigResponse_Error:
 		// if git is not found, ignore that error
-		if result.Error.Type == git.NO_GIT {
+		if result.Error.Type == git.NOT_FOUND {
 			return []*git.GitConfigEntry{}, nil
 		}
 
