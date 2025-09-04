@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"dagger.io/dagger"
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
 	"github.com/iancoleman/strcase"
 )
@@ -124,6 +125,27 @@ func (spec *parsedIfaceType) TypeDefCode() (*Statement, error) {
 	}
 
 	return typeDefCode, nil
+}
+
+func (spec *parsedIfaceType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
+	opts := dagger.TypeDefWithInterfaceOpts{}
+	if spec.doc != "" {
+		opts.Description = strings.TrimSpace(spec.doc)
+	}
+	if spec.sourceMap != nil {
+		opts.SourceMap = spec.sourceMap.TypeDef(dag)
+	}
+	typeDefObject := dag.TypeDef().WithInterface(spec.name, opts)
+
+	for _, m := range spec.methods {
+		fnTypeDefObj, err := m.TypeDefFunc(dag)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert method %s to function def: %w", m.name, err)
+		}
+		typeDefObject = typeDefObject.WithFunction(fnTypeDefObj)
+	}
+
+	return typeDefObject, nil
 }
 
 func (spec *parsedIfaceType) GoType() types.Type {

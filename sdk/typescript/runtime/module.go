@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
+
 	"typescript-sdk/internal/dagger"
 	"typescript-sdk/tsdistconsts"
 
@@ -344,30 +346,45 @@ func (m *moduleRuntimeContainer) withInitTemplate() *moduleRuntimeContainer {
 	return m
 }
 
-// Add the entrypoint to the container runtime so it can be called by the engine.
-func (m *moduleRuntimeContainer) withEntrypoint() *moduleRuntimeContainer {
-	m.ctr = m.ctr.WithMountedFile(
-		m.cfg.entrypointPath(),
-		entrypointFile(),
-	)
-
-	switch m.cfg.runtime {
-	case Bun:
-		m.ctr = m.ctr.
-			WithEntrypoint([]string{"bun", m.cfg.entrypointPath()})
-	case Deno:
-		m.ctr = m.ctr.
-			WithEntrypoint([]string{
-				"deno", "run", "-A", m.cfg.entrypointPath(),
-			})
-	case Node:
-		m.ctr = m.ctr.
-			// need to specify --tsconfig because final runtime container will change working directory to a separate scratch
-			// dir, without this the paths mapped in the tsconfig.json will not be used and js module loading will fail
-			// need to specify --no-deprecation because the default package.json has no main field which triggers a warning
-			// not useful to display to the user.
-			WithEntrypoint([]string{"tsx", "--no-deprecation", "--tsconfig", m.cfg.tsConfigPath(), m.cfg.entrypointPath()})
+// Check if there's any user source files
+func (m *moduleRuntimeContainer) hasUserSourceFiles(ctx context.Context) (bool, error) {
+	sourcesFiles, err := m.ctr.Directory(".").Glob(ctx, "src/**/*.ts")
+	if err != nil {
+		return false, fmt.Errorf("failed to list user source files: %w", err)
 	}
 
+	return len(sourcesFiles) > 0, nil
+}
+
+func (m *moduleRuntimeContainer) addInitTemplateIfNoUserFile(ctx context.Context) (*moduleRuntimeContainer, error) {
+	// Check if there's any user source files, if not, add the template file.
+	// NOTE: This should be moved in a `Init` function once we improve the SDK interface.
+	if hasSourceFiles, err := m.hasUserSourceFiles(ctx); err != nil {
+		return nil, err
+	} else if !hasSourceFiles {
+		return m.withInitTemplate(), nil
+	}
+	return m, nil
+}
+
+// Add the entrypoint to the container runtime so it can be called by the engine.
+func (m *moduleRuntimeContainer) withEntrypoint() *moduleRuntimeContainer {
+	m.ctr = m.ctr.
+		WithMountedFile(m.cfg.entrypointPath(), entrypointFile()).
+		WithEntrypoint(m.runtimeCmd())
+
 	return m
+}
+
+func (m *moduleRuntimeContainer) runtimeCmd() []string {
+	switch m.cfg.runtime {
+	case Bun:
+		return []string{"bun", "run", m.cfg.entrypointPath()}
+	case Deno:
+		return []string{"deno", "run", "-A", m.cfg.entrypointPath()}
+	case Node:
+		return []string{"tsx", "--no-deprecation", "--tsconfig", m.cfg.tsConfigPath(), m.cfg.entrypointPath()}
+	default:
+		return []string{}
+	}
 }
