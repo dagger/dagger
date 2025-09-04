@@ -224,9 +224,9 @@ func (r *renderer) fancyIndent(out TermOutput, row *dagui.TraceRow, selfBar, sel
 		var prefix string
 		if i == 0 && selfHoriz && !row.Span.Reveal && len(parent.Span.RevealedSpans.Order) == 0 {
 			if row.Next != nil {
-				prefix = VertRightBar + HorizBar
+				prefix = VertRightBar + HorizHalfLeftBar
 			} else {
-				prefix = CornerBottomLeft + HorizBar
+				prefix = CornerBottomLeft + HorizHalfLeftBar
 			}
 		} else if nextChild.Next != nil && !row.Span.Reveal && len(parent.Span.RevealedSpans.Order) == 0 {
 			prefix = VertBar + " "
