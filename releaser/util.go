@@ -49,7 +49,7 @@ func (r Releaser) githubRelease(
 		return err
 	}
 
-	commit, err := dag.Version().Git().Commit(src).Commit(ctx)
+	commit, err := dag.Version().Git().Ref(src).Commit(ctx)
 	if err != nil {
 		return err
 	}

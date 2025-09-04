@@ -289,7 +289,7 @@ func (d Docs) Deploy(
 	if err != nil {
 		return "", err
 	}
-	dirty, err := dag.Version().Git().Dirty(ctx)
+	dirty, err := dag.Version().Dirty(ctx)
 	if err != nil {
 		return "", err
 	}
