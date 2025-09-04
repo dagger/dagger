@@ -3,6 +3,7 @@ package core
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -132,7 +133,9 @@ func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bo
 }
 
 type RemoteGitRepository struct {
-	URL *gitutil.GitURL
+	URL        *gitutil.GitURL
+	HeadCommit string
+	HeadRef    string
 
 	SSHKnownHosts string
 	SSHAuthSocket dagql.ObjectResult[*Socket]
@@ -159,6 +162,26 @@ func (repo *RemoteGitRepository) CheckAuth(ctx context.Context) error {
 func (repo *RemoteGitRepository) Ref(ctx context.Context, refstr string) (GitRefBackend, error) {
 	ref := &RemoteGitRef{
 		repo: repo,
+	}
+
+	if refstr == "HEAD" {
+		if repo.HeadCommit != "" {
+			_, resolvedRef, err := ref.resolve(ctx, repo.HeadCommit)
+			if err != nil {
+				return nil, err
+			}
+			ref.Commit = repo.HeadCommit
+			ref.FullRef = cmp.Or(repo.HeadRef, resolvedRef)
+			return ref, nil
+		}
+		if repo.HeadRef != "" {
+			var err error
+			ref.Commit, ref.FullRef, err = ref.resolve(ctx, repo.HeadRef)
+			if err != nil {
+				return nil, err
+			}
+			return ref, nil
+		}
 	}
 
 	// force resolution now, since the remote might change, and we don't want inconsistencies
