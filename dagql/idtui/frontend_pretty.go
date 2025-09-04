@@ -809,7 +809,7 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 func (fe *frontendPretty) keymapView() string {
 	outBuf := new(strings.Builder)
 	out := NewOutput(outBuf, termenv.WithProfile(fe.profile))
-	fmt.Fprint(out, KeymapStyle.Render(strings.Repeat(HorizBar, 1)))
+	fmt.Fprint(out, KeymapStyle.Render(HorizBar))
 	fmt.Fprint(out, KeymapStyle.Render(" "))
 	fe.renderKeymap(out, KeymapStyle, fe.keys(out))
 	fmt.Fprint(out, KeymapStyle.Render(" "))
@@ -2223,7 +2223,7 @@ func statusIcon(span *dagui.Span) (string, bool) {
 	} else if span.IsPending() {
 		return DotEmpty, false
 	} else {
-		return DotFilled, false
+		return IconSuccess, false
 	}
 }
 
