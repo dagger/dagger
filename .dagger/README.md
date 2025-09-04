@@ -3,9 +3,6 @@
 This Dagger module defines pipelines to develop the Dagger itself, including
 building and releasing the CLI, engine and SDKs.
 
-Also see [../hack/](../hack) for additional higher-level helpers to create an
-interactive local dev environment.
-
 ## Dagger 101: functions, pipelines, modules
 
 In Dagger, a pipeline is a sequence of containerized functions, each passing
@@ -27,6 +24,20 @@ With that in mind: this document includes examples of _typical pipelines_ that
 are useful while developing Dagger. But remember, you are free to compose your
 own pipelines, either by modifying the examples, of starting from scratch. This
 flexibility is one of the killer features of Dagger.
+
+## Quick start
+
+TL;DR: to get a dev build of the engine, run:
+
+    ./hack/dev
+
+This will build a dev version of the cli+engine, and start it running on the host
+in a docker container. To connect to it, just use the exported `./bin/dagger`,
+no additional configuration is required.
+
+There are other helpers in the `hack/` directory, see the scripts in there for
+more details. The rest of this document describes manually invoking the dev
+module.
 
 ## Tests
 
@@ -50,19 +61,23 @@ Start a dev shell with dagger-in-dagger:
 
 Run the engine linter:
 
-    dagger call engine lint
+    dagger call lint
+
+You can also filter by package:
+
+    dagger call lint --pkgs=.
 
 ### Build the CLI
 
 Build the CLI:
 
-    dagger call cli binary -o ./bin/dagger
+    dagger call -m cmd/dagger binary -o ./bin/dagger
 
 ### Run the engine service
 
 Run the engine as a service:
 
-    dagger call engine service --name=dagger-engine up --ports=1234:1234
+    dagger call -m cmd/engine service --name=dagger-engine up --ports=1234:1234
 
 Connect to it from a dagger cli:
 
