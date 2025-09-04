@@ -247,12 +247,12 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 	return fe.err
 }
 
-func (fe *frontendPretty) HandlePrompt(ctx context.Context, prompt string, dest any) error {
+func (fe *frontendPretty) HandlePrompt(ctx context.Context, title, prompt string, dest any) error {
 	switch x := dest.(type) {
 	case *bool:
-		return fe.handlePromptBool(ctx, prompt, x)
+		return fe.handlePromptBool(ctx, title, prompt, x)
 	case *string:
-		return fe.handlePromptString(ctx, prompt, x)
+		return fe.handlePromptString(ctx, title, prompt, x)
 	default:
 		return fmt.Errorf("unsupported prompt destination type: %T", dest)
 	}
@@ -2179,13 +2179,19 @@ type promptMsg struct {
 	result func(*huh.Form)
 }
 
-func (fe *frontendPretty) handlePromptBool(ctx context.Context, message string, dest *bool) error {
+func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message string, dest *bool) error {
 	done := make(chan struct{})
 
 	fe.program.Send(promptMsg{
 		form: NewForm(
 			huh.NewGroup(
-				huh.NewConfirm().Title(message).Value(dest),
+				huh.NewConfirm().
+					Title(title).
+					Description(strings.TrimSpace((&Markdown{
+						Content: message,
+						Width:   fe.window.Width,
+					}).View())).
+					Value(dest),
 			),
 		),
 		result: func(f *huh.Form) {
@@ -2201,13 +2207,19 @@ func (fe *frontendPretty) handlePromptBool(ctx context.Context, message string, 
 	}
 }
 
-func (fe *frontendPretty) handlePromptString(ctx context.Context, message string, dest *string) error {
+func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message string, dest *string) error {
 	done := make(chan struct{})
 
 	fe.program.Send(promptMsg{
 		form: NewForm(
 			huh.NewGroup(
-				huh.NewInput().Title(message).Value(dest),
+				huh.NewInput().
+					Title(title).
+					Description(strings.TrimSpace((&Markdown{
+						Content: message,
+						Width:   fe.window.Width,
+					}).View())).
+					Value(dest),
 			),
 		),
 		result: func(f *huh.Form) {

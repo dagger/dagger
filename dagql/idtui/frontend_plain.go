@@ -211,7 +211,7 @@ func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run f
 	return runErr
 }
 
-func (fe *frontendPlain) HandlePrompt(ctx context.Context, prompt string, dest any) error {
+func (fe *frontendPlain) HandlePrompt(ctx context.Context, _, prompt string, dest any) error {
 	return interact.NewInteraction(prompt).Resolve(dest)
 }
 

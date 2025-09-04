@@ -35,7 +35,7 @@ type PromptAttachable struct {
 }
 
 type PromptHandler interface {
-	HandlePrompt(ctx context.Context, prompt string, dest any) error
+	HandlePrompt(ctx context.Context, title, prompt string, dest any) error
 	HandleForm(ctx context.Context, form *huh.Form) error
 }
 
@@ -72,7 +72,7 @@ func (p PromptAttachable) PromptBool(ctx context.Context, req *BoolRequest) (*Bo
 
 	confirm := req.GetDefault()
 	if p.promptHandler != nil {
-		if err := p.promptHandler.HandlePrompt(ctx, req.GetPrompt(), &confirm); err != nil {
+		if err := p.promptHandler.HandlePrompt(ctx, req.GetTitle(), req.GetPrompt(), &confirm); err != nil {
 			return nil, status.Errorf(codes.Internal, "Failed to handle prompt: %v", err)
 		}
 	}
@@ -98,7 +98,7 @@ func (p PromptAttachable) PromptString(ctx context.Context, req *StringRequest) 
 
 	response := req.GetDefault()
 	if p.promptHandler != nil {
-		if err := p.promptHandler.HandlePrompt(ctx, req.GetPrompt(), &response); err != nil {
+		if err := p.promptHandler.HandlePrompt(ctx, req.GetTitle(), req.GetPrompt(), &response); err != nil {
 			return nil, status.Errorf(codes.Internal, "Failed to handle prompt: %v", err)
 		}
 	}
