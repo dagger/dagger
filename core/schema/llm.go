@@ -86,7 +86,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc("Add an external MCP server to the LLM").
 			Args(
 				dagql.Arg("name").Doc("The name of the MCP server"),
-				dagql.Arg("service").Doc("The MCP service to run. If the service exposes a port, HTTP+SSE will be used to communicate."),
+				dagql.Arg("service").Doc("The MCP service to run and communicate with over stdio"),
 			),
 		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[*core.LLM], _ struct{}) (res dagql.Result[dagql.ID[*core.LLM]], _ error) {
 			var inst dagql.Result[*core.LLM]

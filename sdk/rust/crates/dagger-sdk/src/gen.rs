@@ -9332,7 +9332,7 @@ impl Llm {
     /// # Arguments
     ///
     /// * `name` - The name of the MCP server
-    /// * `service` - The MCP service to run. If the service exposes a port, HTTP+SSE will be used to communicate.
+    /// * `service` - The MCP service to run and communicate with over stdio
     pub fn with_mcp_server(&self, name: impl Into<String>, service: impl IntoID<ServiceId>) -> Llm {
         let mut query = self.selection.select("withMCPServer");
         query = query.arg("name", name.into());
