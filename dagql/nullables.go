@@ -66,13 +66,6 @@ func (n Optional[I]) GetOr(v I) I {
 	return n.Value
 }
 
-func (n Optional[I]) AsPtr() *I {
-	if !n.Valid {
-		return nil
-	}
-	return &n.Value
-}
-
 // NoOpt returns an empty Optional value.
 func NoOpt[I Input]() Optional[I] {
 	return Optional[I]{}
