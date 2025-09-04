@@ -1,9 +1,0 @@
-kind: Dependencies
-body: |-
-    Updated `gql` dependency to 4.0
-
-    **Potential breaking change:** Users that constrained the `gql[httpx]` dependency before Dagger v0.18.15 due to a breaking change in that package's latest major version are advised to remove the constraint from v0.18.15+.
-time: 2025-09-03T10:49:15.891814Z
-custom:
-    Author: helderco
-    PR: "10976"
