@@ -156,7 +156,7 @@
                     <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_directory">directory</a>(string $path, array|null $exclude = null, array|null $include = null, bool|null $noCache = false)
+                    <a href="#method_directory">directory</a>(string $path, array|null $exclude = null, array|null $include = null, bool|null $noCache = false, bool|null $noGitAutoIgnore = false)
         
                                             <p><p>Accesses a directory on the host.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -362,7 +362,7 @@
                     <h3 id="method_directory">
         <div class="location">at line 29</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
-    <strong>directory</strong>(string $path, array|null $exclude = null, array|null $include = null, bool|null $noCache = false)
+    <strong>directory</strong>(string $path, array|null $exclude = null, array|null $include = null, bool|null $noCache = false, bool|null $noGitAutoIgnore = false)
         </code>
     </h3>
     <div class="details">    
@@ -396,6 +396,11 @@
                 <td>$noCache</td>
                 <td></td>
             </tr>
+                    <tr>
+                <td>bool|null</td>
+                <td>$noGitAutoIgnore</td>
+                <td></td>
+            </tr>
             </table>
 
             
@@ -417,7 +422,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_file">
-        <div class="location">at line 52</div>
+        <div class="location">at line 56</div>
         <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
     <strong>file</strong>(string $path, bool|null $noCache = false)
         </code>
@@ -464,7 +469,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 65</div>
+        <div class="location">at line 69</div>
         <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
     <strong>id</strong>()
         </code>
@@ -496,7 +501,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_service">
-        <div class="location">at line 74</div>
+        <div class="location">at line 78</div>
         <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
     <strong>service</strong>(array $ports, string|null $host = &#039;localhost&#039;)
         </code>
@@ -543,7 +548,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_setSecretFile">
-        <div class="location">at line 89</div>
+        <div class="location">at line 93</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>setSecretFile</strong>(string $name, string $path)
         </code>
@@ -590,7 +595,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_tunnel">
-        <div class="location">at line 100</div>
+        <div class="location">at line 104</div>
         <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
     <strong>tunnel</strong>(<abbr title="Dagger\ServiceId|Dagger\Service">Service</abbr> $service, bool|null $native = false, array|null $ports = null)
         </code>
@@ -642,7 +647,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_unixSocket">
-        <div class="location">at line 116</div>
+        <div class="location">at line 120</div>
         <code>                    <a href="../Dagger/Socket.html"><abbr title="Dagger\Socket">Socket</abbr></a>
     <strong>unixSocket</strong>(string $path)
         </code>

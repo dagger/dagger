@@ -6540,6 +6540,8 @@ type HostDirectoryOpts struct {
 	Include []string
 	// If true, the directory will always be reloaded from the host.
 	NoCache bool
+	// Don't apply .gitignore filter rules inside the directory
+	NoGitAutoIgnore bool
 }
 
 // Accesses a directory on the host.
@@ -6557,6 +6559,10 @@ func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 		// `noCache` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoCache) {
 			q = q.Arg("noCache", opts[i].NoCache)
+		}
+		// `noGitAutoIgnore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoGitAutoIgnore) {
+			q = q.Arg("noGitAutoIgnore", opts[i].NoGitAutoIgnore)
 		}
 	}
 	q = q.Arg("path", path)

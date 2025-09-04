@@ -151,6 +151,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 				dagql.Arg("noCache").Doc(`If true, the directory will always be reloaded from the host.`),
+				dagql.Arg("noGitAutoIgnore").Doc(`Don't apply .gitignore filter rules inside the directory`),
 			),
 
 		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CacheAsRequested).
@@ -248,24 +249,71 @@ type hostDirectoryArgs struct {
 
 	core.CopyFilter
 	HostDirCacheConfig
+
+	GitIgnoreRoot   string `internal:"true" default:""`
+	NoGitAutoIgnore bool   `default:"false"`
 }
 
-func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostDirectoryArgs) (i dagql.ObjectResult[*core.Directory], err error) {
+func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return i, fmt.Errorf("failed to get current dagql server: %w", err)
+		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
 
 	args.Path = path.Clean(args.Path)
 	if args.Path == ".." || strings.HasPrefix(args.Path, "../") {
-		return i, fmt.Errorf("path %q escapes workdir; use an absolute path instead", args.Path)
+		return inst, fmt.Errorf("path %q escapes workdir; use an absolute path instead", args.Path)
 	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get current query: %w", err)
+	}
+
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
+	hostPath := args.Path
+	hostPath, err = bk.AbsPath(ctx, hostPath)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get absolute path from git ignore root %s: %w", hostPath, err)
+	}
+
+	relPath := "."
+
+	// If NoGitAutoIgnore is not set, we load all the .gitgnore patterns inside the context directory
+	// (if ContextDirectoryPath is set) or the git repo if .git is found.
+	if !args.NoGitAutoIgnore {
+		originalPath := hostPath
+		if args.GitIgnoreRoot != "" {
+			hostPath = args.GitIgnoreRoot
+			hostPath, err = bk.AbsPath(ctx, hostPath)
+			if err != nil {
+				return inst, fmt.Errorf("failed to get absolute path from git ignore root %s: %w", hostPath, err)
+			}
+		} else {
+			dotGitPath, found, err := findUp(ctx, core.NewCallerStatFS(bk), hostPath, ".git")
+			if err != nil {
+				return inst, fmt.Errorf("failed to find up .git: %w", err)
+			}
+			if found {
+				hostPath = dotGitPath
+			}
+		}
+		relPath, err = filepath.Rel(hostPath, originalPath)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get relative path from %q: %w", originalPath, err)
+		}
+	}
+
+	fmt.Println("loading host directory", "hostPath", hostPath, "relPath", relPath)
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return i, fmt.Errorf("failed to get requester session ID: %w", err)
+		return inst, fmt.Errorf("failed to get requester session ID: %w", err)
 	}
-
 	stableID := clientMetadata.ClientStableID
 	if stableID == "" {
 		slog.WarnContext(ctx, "client stable ID not set, using random value")
@@ -278,49 +326,76 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		buildkit.WithTracePropagation(ctx),
 	}
 
-	// HACK(cwlbraa): to bust the cache with noCache:true, we exclude a random text path.
-	// No real chance of excluding something real this changes both the name and the cache key without modification to localsource.
-	// To be removed via dagopification.
-	if args.NoCache {
-		args.Exclude = append(args.Exclude, rand.Text())
-	}
-
 	localName := fmt.Sprintf("upload %s from %s (client id: %s, session id: %s)", args.Path, stableID, clientMetadata.ClientID, clientMetadata.SessionID)
+
+	includePatterns := make([]string, 0, 2+len(args.Include))
+	if relPath != "." {
+		includePatterns = append(includePatterns, "!*", relPath)
+	}
+	for _, include := range args.Include {
+		include, negative := strings.CutPrefix(include, "!")
+		if !filepath.IsLocal(include) {
+			continue
+		}
+		include = filepath.Join(relPath, include)
+		if negative {
+			include = "!" + include
+		}
+		includePatterns = append(includePatterns, include)
+	}
+	localOpts = append(localOpts, llb.IncludePatterns(includePatterns))
 	if len(args.Include) > 0 {
 		localName += fmt.Sprintf(" (include: %s)", strings.Join(args.Include, ", "))
-		localOpts = append(localOpts, llb.IncludePatterns(args.Include))
 	}
+
+	excludePatterns := make([]string, 0, len(args.Exclude))
+	// HACK: to bust the cache and pass custom options, we put them in
+	// excludePatterns. we filter them out later.
+	if !args.NoGitAutoIgnore {
+		excludePatterns = append(excludePatterns, "[dagger.gitignore]")
+	}
+	if args.NoCache {
+		excludePatterns = append(excludePatterns, "[dagger.cachebuster="+rand.Text()+"]")
+	}
+	for _, exclude := range args.Exclude {
+		exclude, negative := strings.CutPrefix(exclude, "!")
+		if !filepath.IsLocal(exclude) {
+			continue
+		}
+		exclude = filepath.Join(relPath, exclude)
+		if negative {
+			exclude = "!" + exclude
+		}
+		excludePatterns = append(excludePatterns, exclude)
+	}
+	localOpts = append(localOpts, llb.ExcludePatterns(excludePatterns))
 	if len(args.Exclude) > 0 {
 		localName += fmt.Sprintf(" (exclude: %s)", strings.Join(args.Exclude, ", "))
-		localOpts = append(localOpts, llb.ExcludePatterns(args.Exclude))
 	}
+
+	if !args.NoGitAutoIgnore {
+		localName += " (with gitignore)"
+	}
+
 	localOpts = append(localOpts, llb.WithCustomName(localName))
 
-	localLLB := llb.Local(args.Path, localOpts...)
-
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return i, err
-	}
+	localLLB := llb.Local(hostPath, localOpts...)
 
 	localDef, err := localLLB.Marshal(ctx, llb.Platform(query.Platform().Spec()))
 	if err != nil {
-		return i, fmt.Errorf("failed to marshal local LLB: %w", err)
+		return inst, fmt.Errorf("failed to marshal local LLB: %w", err)
 	}
 	localPB := localDef.ToPB()
 
-	dir, err := dagql.NewObjectResultForCurrentID(ctx, srv,
-		core.NewDirectory(localPB, "/", query.Platform(), nil),
-	)
+	dir, err := core.NewDirectory(localPB, "/", query.Platform(), nil).Directory(ctx, relPath)
 	if err != nil {
-		return i, fmt.Errorf("failed to create instance: %w", err)
+		return inst, err
 	}
-
-	bk, err := query.Buildkit(ctx)
+	inst, err = dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 	if err != nil {
-		return i, fmt.Errorf("failed to get buildkit client: %w", err)
+		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
-	return core.MakeDirectoryContentHashed(ctx, bk, dir)
+	return core.MakeDirectoryContentHashed(ctx, bk, inst)
 }
 
 type hostSocketArgs struct {
