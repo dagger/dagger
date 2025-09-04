@@ -13,6 +13,7 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
@@ -211,16 +212,11 @@ func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run f
 }
 
 func (fe *frontendPlain) HandlePrompt(ctx context.Context, prompt string, dest any) error {
-	switch x := dest.(type) {
-	case *bool:
-		return fe.handlePromptBool(ctx, prompt, x)
-	default:
-		return fmt.Errorf("unsupported prompt destination type: %T", dest)
-	}
+	return interact.NewInteraction(prompt).Resolve(dest)
 }
 
-func (fe *frontendPlain) handlePromptBool(_ context.Context, prompt string, dest *bool) error {
-	return interact.NewInteraction(prompt).Resolve(dest)
+func (fe *frontendPlain) HandleForm(ctx context.Context, form *huh.Form) error {
+	return form.RunWithContext(ctx)
 }
 
 func (fe *frontendPlain) Opts() *dagui.FrontendOpts {

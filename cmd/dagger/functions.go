@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/huh"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
@@ -654,7 +655,7 @@ func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modType
 
 	// If the function returns a Changeset, apply it to the working directory.
 	if returnType.Name() == "Changeset" {
-		return handleChangesetResponse(ctx, dag, response, o, e)
+		return handleChangesetResponse(ctx, dag, response)
 	}
 
 	// Handle the `export` convenience, i.e, -o,--output flag.
@@ -701,7 +702,7 @@ func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modType
 	return err
 }
 
-func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response any, o, e io.Writer) error {
+func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response any) (rerr error) {
 	var changesetID string
 	switch v := response.(type) {
 	case string:
@@ -712,28 +713,47 @@ func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response a
 
 	changeset := dag.LoadChangesetFromID(dagger.ChangesetID(changesetID))
 
-	patch, err := changeset.AsPatch().Contents(ctx)
-	if err != nil {
-		return fmt.Errorf("get patch contents: %w", err)
-	}
+	var summary strings.Builder
+	if err := (func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "analyzing changes")
+		defer telemetry.End(span, func() error { return rerr })
 
-	out := idtui.NewOutput(o)
-	if err := summarizePatch(out, patch, -1); err != nil {
-		return fmt.Errorf("summarize patch: %w", err)
+		patch, err := changeset.AsPatch().Contents(ctx)
+		if err != nil {
+			return fmt.Errorf("get patch contents: %w", err)
+		}
+
+		return summarizePatch(idtui.NewOutput(&summary), patch, -1)
+	})(); err != nil {
+		return err
 	}
 
 	exportDest := outputPath
-
 	if exportDest == "" {
-		var export bool
-		if err := Frontend.HandlePrompt(ctx, "Apply changes?", &export); err != nil {
+		exportDest = "."
+
+		var confirm bool
+		form := idtui.NewForm(
+			huh.NewGroup(
+				huh.NewConfirm().
+					Title("Apply changes?").
+					Description(summary.String()).
+					Affirmative("Apply").
+					Negative("Discard").
+					Value(&confirm),
+			),
+		)
+		if err := Frontend.HandleForm(ctx, form); err != nil {
 			return err
 		}
-		if !export {
+		if !confirm {
 			return nil
 		}
-		exportDest = "."
 	}
+
+	ctx, span := Tracer().Start(ctx, "applying changes")
+	defer telemetry.End(span, func() error { return rerr })
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 
 	if _, err := changeset.Layer().Export(ctx, exportDest); err != nil {
 		return err
@@ -745,8 +765,10 @@ func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response a
 	}
 
 	for _, filePath := range removed {
-		if err := os.Remove(filepath.Join(exportDest, filePath)); err != nil {
-			return err
+		filePath = filepath.Join(exportDest, filePath)
+		slog.Info("removing file", "path", filePath)
+		if err := os.Remove(filePath); err != nil {
+			slog.Error("failed to remove file; ignoring", "path", filePath, "error", err)
 		}
 	}
 
@@ -761,6 +783,8 @@ func summarizePatch(out *termenv.Output, patch string, maxWidth int) error {
 
 	totalAdded := 0
 	totalRemoved := 0
+
+	fmt.Fprintln(out)
 
 	var longestFilenameLen int
 	for _, f := range diff.Files {
@@ -874,7 +898,7 @@ func summarizePatch(out *termenv.Output, patch string, maxWidth int) error {
 	if totalRemoved > 0 {
 		out.WriteString(out.String(fmt.Sprintf("-%d", totalRemoved)).Foreground(termenv.ANSIRed).String())
 	}
-	out.WriteString(" lines\n")
+	out.WriteString(" lines")
 
 	return nil
 }

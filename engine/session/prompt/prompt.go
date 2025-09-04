@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/adrg/xdg"
+	"github.com/charmbracelet/huh"
 	grpc "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -35,6 +36,7 @@ type PromptAttachable struct {
 
 type PromptHandler interface {
 	HandlePrompt(ctx context.Context, prompt string, dest any) error
+	HandleForm(ctx context.Context, form *huh.Form) error
 }
 
 func NewPromptAttachable(promptHandler PromptHandler) PromptAttachable {
