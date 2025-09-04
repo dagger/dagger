@@ -2178,12 +2178,30 @@ func (DirectorySuite) TestPatch(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "Modified Content 2\n", content2)
 	})
 
-	t.Run("invalid patch format", func(ctx context.Context, t *testctx.T) {
+	t.Run("empty patch", func(ctx context.Context, t *testctx.T) {
 		dir := c.Directory().
 			WithNewFile("test.txt", "test content")
 
-		// Create an invalid patch
-		invalidPatch := "this is not a valid patch format"
+		// Create an empty patch
+		invalidPatch := ""
+
+		// Apply the empty patch and expect no error
+		_, err := dir.WithPatch(invalidPatch).Sync(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("bad patch application", func(ctx context.Context, t *testctx.T) {
+		// Create a directory with a simple file
+		dir := c.Directory().
+			WithNewFile("hello.txt", "Hello, World!\n")
+
+		// Create a patch that is looking for the wrong content
+		invalidPatch := `--- a/hello.txt
++++ b/hello.txt
+@@ -1 +1 @@
+-Goodbye, World!
++Hello, Dagger!
+`
 
 		// Apply the invalid patch and expect an error
 		_, err := dir.WithPatch(invalidPatch).Sync(ctx)
