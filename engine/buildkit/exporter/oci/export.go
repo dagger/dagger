@@ -245,7 +245,6 @@ func (e *imageExporterInstance) Export(ctx context.Context, src *exporter.Source
 	eg, egCtx := errgroup.WithContext(ctx)
 	mprovider := contentutil.NewMultiProvider(e.opt.ImageWriter.ContentStore())
 	for _, ref := range refs {
-		ref := ref
 		eg.Go(func() error {
 			remotes, err := ref.GetRemotes(egCtx, false, e.opts.RefCfg, false, session.NewGroup(sessionID))
 			if err != nil {

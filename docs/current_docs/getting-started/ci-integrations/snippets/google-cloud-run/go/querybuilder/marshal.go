@@ -78,7 +78,6 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 		elems := make([]string, n)
 		eg, gctx := errgroup.WithContext(ctx)
 		for i := 0; i < n; i++ {
-			i := i
 			eg.Go(func() error {
 				m, err := marshalValue(gctx, v.Index(i))
 				if err != nil {
@@ -97,7 +96,6 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 		elems := make([]string, n)
 		eg, gctx := errgroup.WithContext(ctx)
 		for i := 0; i < n; i++ {
-			i := i
 			eg.Go(func() error {
 				f := t.Field(i)
 				fv := v.Field(i)

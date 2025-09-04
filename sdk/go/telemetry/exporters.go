@@ -28,7 +28,6 @@ func (s discardWritesSpan) SpanContext() trace.SpanContext {
 func (m SpanForwarder) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	eg := new(errgroup.Group)
 	for _, p := range m.Processors {
-		p := p
 		eg.Go(func() error {
 			for _, span := range spans {
 				if span.EndTime().Before(span.StartTime()) {
@@ -46,7 +45,6 @@ func (m SpanForwarder) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnl
 func (m SpanForwarder) Shutdown(ctx context.Context) error {
 	eg := new(errgroup.Group)
 	for _, p := range m.Processors {
-		p := p
 		eg.Go(func() error {
 			return p.Shutdown(ctx)
 		})
@@ -86,7 +84,6 @@ var _ sdklog.Exporter = LogForwarder{}
 func (m LogForwarder) Export(ctx context.Context, logs []sdklog.Record) error {
 	eg := new(errgroup.Group)
 	for _, e := range m.Processors {
-		e := e
 		eg.Go(func() error {
 			for _, log := range logs {
 				_ = e.OnEmit(ctx, &log)
@@ -100,7 +97,6 @@ func (m LogForwarder) Export(ctx context.Context, logs []sdklog.Record) error {
 func (m LogForwarder) Shutdown(ctx context.Context) error {
 	eg := new(errgroup.Group)
 	for _, e := range m.Processors {
-		e := e
 		eg.Go(func() error {
 			return e.Shutdown(ctx)
 		})
@@ -111,7 +107,6 @@ func (m LogForwarder) Shutdown(ctx context.Context) error {
 func (m LogForwarder) ForceFlush(ctx context.Context) error {
 	eg := new(errgroup.Group)
 	for _, e := range m.Processors {
-		e := e
 		eg.Go(func() error {
 			return e.ForceFlush(ctx)
 		})

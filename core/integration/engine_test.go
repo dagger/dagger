@@ -486,7 +486,6 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 
 	for _, tc := range tcs {
 		// get a cached engine if possible (saves spinning up more engines than we need to)
-		tc := tc
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			devEngineSvcKey := tc.engineVersion + " " + tc.clientMinVersion
 			enginesMu.Lock()
@@ -599,7 +598,6 @@ func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
 
 	for _, tc := range tcs {
 		// get a cached engine if possible (saves spinning up more engines than we need to)
-		tc := tc
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			devEngineSvcKey := tc.engineVersion + " " + tc.moduleMinVersion
 			enginesMu.Lock()

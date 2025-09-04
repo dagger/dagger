@@ -68,7 +68,6 @@ func (s *Selection) marshalArguments(ctx context.Context) error {
 	eg, gctx := errgroup.WithContext(ctx)
 	for _, sel := range s.path() {
 		for _, arg := range sel.args {
-			arg := arg
 			eg.Go(func() error {
 				return arg.marshal(gctx)
 			})

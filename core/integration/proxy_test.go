@@ -250,7 +250,6 @@ redirect ^(https?://)(.*).example(/.*)$		$1$2$3
 
 		require.NoError(t, err)
 		for _, test := range tests {
-			test := test
 			if test.proxyLogTest != nil {
 				t.Run(test.name+"-proxy-logs", func(ctx context.Context, t *testctx.T) {
 					test.proxyLogTest(t, c, func(ctx context.Context) (string, error) {
@@ -270,7 +269,6 @@ redirect ^(https?://)(.*).example(/.*)$		$1$2$3
 	// we're in the container depending on the custom engine, run the actual tests
 
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(ctx context.Context, t *testctx.T) {
 			test.run(t, c, proxyTestFixtures{
 				caCert: c.Host().File("/ca.pem"),

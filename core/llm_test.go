@@ -122,7 +122,6 @@ func TestLlmConfigDisableStreaming(t *testing.T) {
 			false,
 		},
 	} {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			q := LLMTestQuery{}
 

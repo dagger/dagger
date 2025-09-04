@@ -450,10 +450,6 @@ func SpanLinksToPB(links []sdktrace.Link) []*otlptracev1.Span_Link {
 
 	sl := make([]*otlptracev1.Span_Link, 0, len(links))
 	for _, otLink := range links {
-		// This redefinition is necessary to prevent otLink.*ID[:] copies
-		// being reused -- in short we need a new otLink per iteration.
-		otLink := otLink
-
 		tid := otLink.SpanContext.TraceID()
 		sid := otLink.SpanContext.SpanID()
 
@@ -657,10 +653,6 @@ func SpanLinksFromPB(links []*otlptracev1.Span_Link) []sdktrace.Link {
 		if otLink == nil {
 			continue
 		}
-		// This redefinition is necessary to prevent otLink.*ID[:] copies
-		// being reused -- in short we need a new otLink per iteration.
-		otLink := otLink
-
 		var tid trace.TraceID
 		copy(tid[:], otLink.TraceId)
 		var sid trace.SpanID

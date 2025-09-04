@@ -36,7 +36,6 @@ func main() {
 
 	eg := new(errgroup.Group)
 	for _, u := range svcURLs {
-		u := u
 		eg.Go(func() error {
 			out, err := fetch(ctx, c, mode, u)
 			if err != nil {
