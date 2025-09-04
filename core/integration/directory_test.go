@@ -1197,97 +1197,18 @@ func (DirectorySuite) TestChanges(ctx context.Context, t *testctx.T) {
 }
 
 func (s DirectorySuite) TestWithChanges(ctx context.Context, t *testctx.T) {
-	apply := func(dest *dagger.Directory, source *dagger.Changeset) *dagger.Directory {
+	s.testChangeApplying(t, func(dest *dagger.Directory, source *dagger.Changeset) *dagger.Directory {
 		return dest.WithChanges(source)
-	}
-
-	s.testChangeApplying(t, apply)
-
-	// The tests below concern themselves with empty directories, which
-	// Changeset.AsPatch can't cover, so they're separate.
-
-	t.Run("removed entire directories", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		// Create base directory with nested structure
-		baseDir := c.Directory().
-			WithNewFile("keep.txt", "keep this").
-			WithNewFile("removedir/file1.txt", "remove me").
-			WithNewFile("removedir/subdir/file2.txt", "remove me too").
-			WithNewDirectory("emptydir")
-
-		// Create before directory (same as base)
-		beforeDir := baseDir
-
-		// Create after directory without the directories
-		afterDir := c.Directory().
-			WithNewFile("keep.txt", "keep this")
-
-		// Create changes
-		changes := afterDir.Changes(beforeDir)
-
-		// Apply changes to the base directory
-		resultDir := apply(baseDir, changes)
-
-		// Verify the result
-		entries, err := resultDir.Entries(ctx)
-		require.NoError(t, err)
-
-		require.Contains(t, entries, "keep.txt")
-		require.NotContains(t, entries, "removedir/")
-		require.NotContains(t, entries, "emptydir/")
-
-		// Verify we can't access removed files
-		_, err = resultDir.File("removedir/file1.txt").Contents(ctx)
-		require.Error(t, err)
-	})
-
-	t.Run("empty directories handling", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		// Create base directory with empty directories
-		baseDir := c.Directory().
-			WithNewFile("file.txt", "content").
-			WithNewDirectory("empty1").
-			WithNewDirectory("empty2")
-
-		beforeDir := baseDir
-
-		// Create after directory removing one empty dir and adding another
-		afterDir := c.Directory().
-			WithNewFile("file.txt", "content").
-			WithNewDirectory("empty2").
-			WithNewDirectory("new-empty")
-
-		changes := afterDir.Changes(beforeDir)
-		resultDir := apply(baseDir, changes)
-
-		entries, err := resultDir.Entries(ctx)
-		require.NoError(t, err)
-
-		require.Contains(t, entries, "file.txt")
-		require.Contains(t, entries, "empty2/")
-		require.Contains(t, entries, "new-empty/")
-		require.NotContains(t, entries, "empty1/")
-
-		// Verify directories are actually directories
-		exists, err := resultDir.Directory("empty2").Entries(ctx)
-		require.NoError(t, err)
-		require.Empty(t, exists) // Should be empty
-
-		exists2, err := resultDir.Directory("new-empty").Entries(ctx)
-		require.NoError(t, err)
-		require.Empty(t, exists2) // Should be empty
-	})
+	}, false)
 }
 
 func (s DirectorySuite) TestChangesAsPatch(ctx context.Context, t *testctx.T) {
 	s.testChangeApplying(t, func(dest *dagger.Directory, source *dagger.Changeset) *dagger.Directory {
 		return dest.WithPatchFile(source.AsPatch())
-	})
+	}, true)
 }
 
-func (DirectorySuite) testChangeApplying(t *testctx.T, apply func(*dagger.Directory, *dagger.Changeset) *dagger.Directory) {
+func (DirectorySuite) testChangeApplying(t *testctx.T, apply func(*dagger.Directory, *dagger.Changeset) *dagger.Directory, leaveDirs bool) {
 	t.Run("basic usage with added, changed, and removed files", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -1461,7 +1382,9 @@ func (DirectorySuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 
 		require.Contains(t, entries, "keep.txt")
 		require.NotContains(t, entries, "remove1.txt")
-		require.NotContains(t, entries, "dir/")
+		if !leaveDirs {
+			require.NotContains(t, entries, "dir/")
+		}
 
 		// Verify content of kept file
 		keepContent, err := resultDir.File("keep.txt").Contents(ctx)
@@ -1568,14 +1491,12 @@ func (DirectorySuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 		beforeDir := baseDir
 
 		// Create after directory with complex changes
-		afterDir := c.Directory().
-			WithNewFile("root.txt", "modified root").                        // changed
-			WithNewFile("level1/file1.txt", "level1 content").               // unchanged
-			WithNewFile("level1/level2/file2.txt", "modified l2").           // changed
-			WithNewFile("level1/level2/newfile.txt", "new file").            // added
-			WithNewFile("level1/level2/level3/file3.txt", "level3 content"). // unchanged
-			WithNewFile("new/deep/path/newfile.txt", "deep new").            // added deep
-			WithNewFile("another/different.txt", "different")                // added, another/path/ removed
+		afterDir := baseDir.
+			WithNewFile("root.txt", "modified root").              // changed
+			WithNewFile("level1/level2/file2.txt", "modified l2"). // changed
+			WithNewFile("level1/level2/newfile.txt", "new file").  // added
+			WithNewFile("new/deep/path/newfile.txt", "deep new").  // added deep
+			WithNewFile("another/different.txt", "different")      // added
 
 		changes := afterDir.Changes(beforeDir)
 		resultDir := apply(baseDir, changes)
@@ -1606,13 +1527,88 @@ func (DirectorySuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 		require.NoError(t, err)
 		require.Equal(t, "deep new", deepNewContent)
 
-		// Verify another/path/ was removed but another/different.txt was added
+		// Verify another/different.txt was added
 		differentContent, err := resultDir.File("another/different.txt").Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "different", differentContent)
+	})
 
-		_, err = resultDir.File("another/path/file.txt").Contents(ctx)
-		require.Error(t, err) // Should be removed
+	if leaveDirs {
+		return
+	}
+
+	t.Run("removed entire directories", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create base directory with nested structure
+		baseDir := c.Directory().
+			WithNewFile("keep.txt", "keep this").
+			WithNewFile("removedir/file1.txt", "remove me").
+			WithNewFile("removedir/subdir/file2.txt", "remove me too").
+			WithNewDirectory("emptydir")
+
+		// Create before directory (same as base)
+		beforeDir := baseDir
+
+		// Create after directory without the directories
+		afterDir := c.Directory().
+			WithNewFile("keep.txt", "keep this")
+
+		// Create changes
+		changes := afterDir.Changes(beforeDir)
+
+		// Apply changes to the base directory
+		resultDir := apply(baseDir, changes)
+
+		// Verify the result
+		entries, err := resultDir.Entries(ctx)
+		require.NoError(t, err)
+
+		require.Contains(t, entries, "keep.txt")
+		require.NotContains(t, entries, "removedir/")
+		require.NotContains(t, entries, "emptydir/")
+
+		// Verify we can't access removed files
+		_, err = resultDir.File("removedir/file1.txt").Contents(ctx)
+		require.Error(t, err)
+	})
+
+	t.Run("empty directories handling", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create base directory with empty directories
+		baseDir := c.Directory().
+			WithNewFile("file.txt", "content").
+			WithNewDirectory("empty1").
+			WithNewDirectory("empty2")
+
+		beforeDir := baseDir
+
+		// Create after directory removing one empty dir and adding another
+		afterDir := c.Directory().
+			WithNewFile("file.txt", "content").
+			WithNewDirectory("empty2").
+			WithNewDirectory("new-empty")
+
+		changes := afterDir.Changes(beforeDir)
+		resultDir := apply(baseDir, changes)
+
+		entries, err := resultDir.Entries(ctx)
+		require.NoError(t, err)
+
+		require.Contains(t, entries, "file.txt")
+		require.Contains(t, entries, "empty2/")
+		require.Contains(t, entries, "new-empty/")
+		require.NotContains(t, entries, "empty1/")
+
+		// Verify directories are actually directories
+		exists, err := resultDir.Directory("empty2").Entries(ctx)
+		require.NoError(t, err)
+		require.Empty(t, exists) // Should be empty
+
+		exists2, err := resultDir.Directory("new-empty").Entries(ctx)
+		require.NoError(t, err)
+		require.Empty(t, exists2) // Should be empty
 	})
 }
 

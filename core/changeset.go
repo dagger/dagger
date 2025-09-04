@@ -2,7 +2,9 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -245,34 +247,63 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 				}
 				defer syscall.Unmount(afterMount, syscall.MNT_DETACH)
 
-				args := []string{
-					"diff",
-					"--no-prefix", // no a/ and b/ prefixes - we have our own
-					"--no-index",  // this runs outside of a git repo
-					"--output=" + ChangesetPatchFilename,
-					"a",
-					"b",
-					"--",
+				patchFile, err := os.Create(filepath.Join(root, ChangesetPatchFilename))
+				if err != nil {
+					return err
 				}
-				args = append(args, ch.ModifiedPaths...)
-				args = append(args, ch.AddedPaths...)
-				args = append(args, ch.RemovedPaths...)
-				diff := exec.Command("git", args...)
-				diff.Dir = root
-				diff.Stdout = stdio.Stdout
-				diff.Stderr = stdio.Stderr
-				if err := diff.Run(); err != nil {
-					// Check if it's exit code 1, which is expected for git diff when files differ
-					if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() != 1 {
-						// NB: we could technically populate a buildkit.ExecError here, but that
-						// feels like it leaks implementation details; "exit status 128" isn't
-						// exactly clear
-						return fmt.Errorf("failed to generate patch: %w", err)
+				defer patchFile.Close()
+
+				// TODO: once there's an Alpine with git 2.51, we can just pass the
+				// paths to git diff --no-index a b -- <all paths>
+				diff := func(a, b string) error {
+					var path1, path2 string
+					if a == "" {
+						path1 = "/dev/null"
+					} else {
+						path1 = filepath.Join("a", a)
+					}
+					if b == "" {
+						path2 = "/dev/null"
+					} else {
+						path2 = filepath.Join("b", b)
+					}
+					cmd := exec.Command("git", "diff", "--no-prefix", "--no-index", path1, path2)
+					cmd.Dir = root
+					cmd.Stdout = io.MultiWriter(patchFile, stdio.Stdout)
+					cmd.Stderr = stdio.Stderr
+					if err := cmd.Run(); err != nil {
+						var exitErr *exec.ExitError
+						// Check if it's exit code 1, which is expected for git diff when files differ
+						if errors.As(err, &exitErr) && exitErr.ExitCode() != 1 {
+							// NB: we could technically populate a buildkit.ExecError here, but that
+							// feels like it leaks implementation details; "exit status 128" isn't
+							// exactly clear
+							return fmt.Errorf("failed to generate patch: %w", err)
+						}
+					}
+					return nil
+				}
+
+				for _, modified := range ch.ModifiedPaths {
+					if err := diff(modified, modified); err != nil {
+						return err
 					}
 				}
-				_, err := os.Stat(filepath.Join(root, "diff.patch"))
-				if err != nil {
-					return fmt.Errorf("check for diff: %w", err)
+				for _, added := range ch.AddedPaths {
+					if strings.HasSuffix(added, "/") {
+						continue
+					}
+					if err := diff("", added); err != nil {
+						return err
+					}
+				}
+				for _, removed := range ch.RemovedPaths {
+					if strings.HasSuffix(removed, "/") {
+						continue
+					}
+					if err := diff(removed, ""); err != nil {
+						return err
+					}
 				}
 				return nil
 			})
