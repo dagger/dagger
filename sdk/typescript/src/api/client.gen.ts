@@ -8311,7 +8311,7 @@ export class LLM extends BaseClient {
   /**
    * Add an external MCP server to the LLM
    * @param name The name of the MCP server
-   * @param service The MCP service to run. If the service exposes a port, HTTP+SSE will be used to communicate.
+   * @param service The MCP service to run and communicate with over stdio
    */
   withMCPServer = (name: string, service: Service): LLM => {
     const ctx = this._ctx.select("withMCPServer", { name, service })
