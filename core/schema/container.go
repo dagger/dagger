@@ -404,6 +404,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
 
+		//dagql.NodeFuncWithCacheKey("withDirectory", s.withDirectory, s.withDirectoryCacheKey).
 		dagql.NodeFunc("withDirectory", DagOpContainerWrapper(srv, s.withDirectory)).
 			Doc(`Return a new container snapshot, with a directory added to its filesystem`).
 			Args(
@@ -1786,6 +1787,41 @@ type containerWithDirectoryArgs struct {
 	Owner  string `default:""`
 	Expand bool   `default:"false"`
 }
+
+//func (args containerWithDirectoryArgs) Digest() (digest.Digest, error) {
+//	var inputs []string
+//
+//	clone := args
+//	//clone.ExecMD.Self = nil
+//	res, err := json.Marshal(clone)
+//	if err != nil {
+//		panic(err)
+//	}
+//	inputs = append(inputs, digest.FromBytes(res).String())
+//
+//	fmt.Printf("ACB digest of %s\n", res)
+//	fmt.Printf("ACB dir digest %s\n", args.Directory.ID().Digest())
+//
+//	//if args.ExecMD.Self != nil {
+//	//	inputs = append(inputs, string(args.ExecMD.Self.CacheMixin))
+//	//}
+//
+//	fmt.Printf("ACB digest is %s\n", dagql.HashFrom(inputs...))
+//
+//	return dagql.HashFrom(inputs...), nil
+//}
+//
+//func (s *containerSchema) withDirectoryCacheKey(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithDirectoryArgs, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
+//	argDigest, err := args.Digest()
+//	if err != nil {
+//		return nil, err
+//	}
+//	cacheCfg.Digest = dagql.HashFrom(
+//		parent.ID().Digest().String(),
+//		string(argDigest),
+//	)
+//	return &cacheCfg, nil
+//}
 
 func (s *containerSchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithDirectoryArgs) (inst dagql.ObjectResult[*core.Container], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)

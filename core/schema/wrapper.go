@@ -125,7 +125,8 @@ func DagOpDirectoryWrapper[T dagql.Typed, A DagOpInternalArgsIface](
 }
 
 type DagOpOpts[T dagql.Typed, A any] struct {
-	pfn PathFunc[T, A]
+	pfn          PathFunc[T, A]
+	keepImageRef bool
 }
 
 type DagOpOptsFn[T dagql.Typed, A any] func(*DagOpOpts[T, A])
@@ -141,6 +142,12 @@ func WithStaticPath[T dagql.Typed, A any](pathVal string) DagOpOptsFn[T, A] {
 		o.pfn = func(_ context.Context, _ T, _ A) (string, error) {
 			return pathVal, nil
 		}
+	}
+}
+
+func KeepImageRef[T dagql.Typed, A any](keep bool) DagOpOptsFn[T, A] {
+	return func(o *DagOpOpts[T, A]) {
+		o.keepImageRef = keep
 	}
 }
 
@@ -212,7 +219,9 @@ func DagOpDirectory[T dagql.Typed, A any](
 func DagOpContainerWrapper[A DagOpInternalArgsIface](
 	srv *dagql.Server,
 	fn dagql.NodeFuncHandler[*core.Container, A, dagql.ObjectResult[*core.Container]],
+	opts ...DagOpOptsFn[*core.Container, A],
 ) dagql.NodeFuncHandler[*core.Container, A, dagql.ObjectResult[*core.Container]] {
+	o := getOpts(opts...)
 	return func(ctx context.Context, self dagql.ObjectResult[*core.Container], args A) (inst dagql.ObjectResult[*core.Container], err error) {
 		if args.InDagOp() {
 			return fn(ctx, self, args)
@@ -220,6 +229,9 @@ func DagOpContainerWrapper[A DagOpInternalArgsIface](
 		ctr, err := DagOpContainer(ctx, srv, self.Self(), args, fn)
 		if err != nil {
 			return inst, err
+		}
+		if !o.keepImageRef {
+			ctr.ImageRef = ""
 		}
 		return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
 	}
