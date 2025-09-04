@@ -213,7 +213,6 @@ func TestParseGit(t *testing.T) {
 			wantRemote: "git@github.com:sipsma/daggerverse.git",
 		},
 	} {
-		tc := tc
 		t.Run(tc.urlStr, func(t *testing.T) {
 			t.Parallel()
 			parsedGit, err := parseGitURL(tc.urlStr)

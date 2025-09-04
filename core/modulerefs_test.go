@@ -360,7 +360,6 @@ func TestParseRefString(t *testing.T) {
 			},
 		},
 	} {
-		tc := tc
 		t.Run(tc.urlStr, func(t *testing.T) {
 			t.Parallel()
 			parsed, err := ParseRefString(

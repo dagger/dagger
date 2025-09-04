@@ -303,7 +303,6 @@ func (d *Discovery) loadFiles(ctx context.Context, m *PythonSdk) error {
 
 	if d.EnableCustomConfig {
 		for _, name := range FileContents {
-			name := name
 			if d.HasFile(name) {
 				eg.Go(func() error {
 					contents, err := m.GetFile(name).Contents(gctx)
