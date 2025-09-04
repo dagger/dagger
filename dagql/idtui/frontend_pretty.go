@@ -592,6 +592,10 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 }
 
 func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
+	if fe.form != nil {
+		return fe.form.KeyBinds()
+	}
+
 	if fe.editlineFocused {
 		bnds := []key.Binding{
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "nav mode")),
@@ -666,10 +670,6 @@ func KeyEnabled(enabled bool) key.BindingOpt {
 func (fe *frontendPretty) Render(out TermOutput) error {
 	progHeight := fe.window.Height
 
-	if fe.editline != nil {
-		progHeight -= lipgloss.Height(fe.editlineView())
-	}
-
 	r := newRenderer(fe.db, fe.window.Width/2, fe.FrontendOpts)
 
 	var progPrefix string
@@ -683,14 +683,8 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 	}
 
 	below := new(strings.Builder)
-	var countOut TermOutput = NewOutput(below, termenv.WithProfile(fe.profile))
-
-	if fe.editline == nil {
-		fmt.Fprint(countOut, fe.viewKeymap())
-	}
 
 	if logs := fe.logs.Logs[fe.ZoomedSpan]; logs != nil && logs.UsedHeight() > 0 {
-		fmt.Fprintln(below)
 		logs.SetHeight(fe.window.Height / 3)
 		logs.SetPrefix(progPrefix)
 		fmt.Fprint(below, logs.View())
@@ -698,6 +692,16 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 
 	belowOut := strings.TrimRight(below.String(), "\n")
 	progHeight -= lipgloss.Height(belowOut)
+
+	if fe.editline != nil {
+		progHeight -= lipgloss.Height(fe.editlineView())
+	}
+
+	if fe.form != nil {
+		progHeight -= lipgloss.Height(fe.formView())
+	}
+
+	progHeight -= lipgloss.Height(fe.keymapView())
 
 	if fe.renderProgress(out, r, progHeight, progPrefix) {
 		fmt.Fprintln(out)
@@ -707,7 +711,7 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 	return nil
 }
 
-func (fe *frontendPretty) viewKeymap() string {
+func (fe *frontendPretty) keymapView() string {
 	outBuf := new(strings.Builder)
 	out := NewOutput(outBuf, termenv.WithProfile(fe.profile))
 	fmt.Fprint(out, KeymapStyle.Render(strings.Repeat(HorizBar, 1)))
@@ -775,7 +779,10 @@ func (fe *frontendPretty) renderProgress(out TermOutput, r *renderer, height int
 		rendered = true
 	}
 
-	fmt.Fprint(out, strings.Join(lines, "\n"))
+	for _, line := range lines {
+		fmt.Fprintln(out, line)
+	}
+
 	return
 }
 
@@ -917,33 +924,36 @@ func (fe *frontendPretty) View() string {
 	}
 	var mainView string
 	if fe.editline != nil {
-		prog := ""
 		if fe.scrollback.Len() > 0 {
-			prog += fe.scrollback.String()
-			// prog += "> " + strings.ReplaceAll(
+			mainView += fe.scrollback.String()
+			// mainView += "> " + strings.ReplaceAll(
 			// 	strings.TrimSuffix(fe.scrollback.String(), "\n"),
 			// 	"\n",
 			// 	"\n> ",
 			// ) + "\n"
 		}
-		prog += "\n"
-		if view := strings.TrimSpace(fe.view.String()); view != "" {
-			prog += view
-			prog += "\n"
-		}
-		mainView = prog + fe.editlineView()
+		mainView += "\n"
+		mainView += fe.view.String()
+		mainView += fe.editlineView()
 	} else {
-		mainView = fe.view.String()
+		mainView += fe.view.String()
 	}
 	if fe.form != nil {
-		mainView += "\n\n"
-		mainView += fe.form.View()
+		mainView += fe.formView()
 	}
+	if !strings.HasSuffix(mainView, "\n") {
+		mainView += "\n"
+	}
+	mainView += fe.keymapView()
 	return mainView
 }
 
 func (fe *frontendPretty) editlineView() string {
-	return fe.editline.View() + "\n" + fe.viewKeymap()
+	return fe.editline.View()
+}
+
+func (fe *frontendPretty) formView() string {
+	return fe.form.View() + "\n\n"
 }
 
 type doneMsg struct {
@@ -1169,7 +1179,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			msg.result(msg.form)
 			return promptDone{}
 		}
-		fe.form = form
+		fe.form = form.WithTheme(huh.ThemeBase16()).WithShowHelp(false)
 		return fe, fe.form.Init()
 
 	case promptDone:
