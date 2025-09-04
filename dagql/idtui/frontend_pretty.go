@@ -1191,7 +1191,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		promptCmd := fe.updatePrompt()
 
 		return fe, tea.Batch(
-			tea.Printf(`Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.`),
+			tea.Printf(`Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.`+"\n"),
 			fe.editline.Focus(),
 			tea.DisableMouse,
 			promptCmd,
@@ -1974,23 +1974,17 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 		(row.Expanded || row.Span.LLMTool != "") {
 		isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused
 		fe.renderStepLogs(out, r, row, prefix, isFocused)
+	} else if fe.shell != nil && row.Depth == 0 && !row.Expanded {
+		// in shell mode, we print top-level command logs unindented, like shells
+		// usually does
+		if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
+			unindent := *row
+			unindent.Depth = -1
+			fe.renderLogs(out, r, &unindent, logs, logs.UsedHeight(), prefix, false)
+		}
 	}
 	fe.renderStepError(out, r, row, prefix)
 	fe.renderDebug(out, row.Span, prefix+Block25+" ", false)
-	if fe.shell != nil {
-		if row.NextVisual == nil {
-			root := row.Root()
-			if logs := fe.logs.Logs[root.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
-				if fe.Verbosity < dagui.ExpandCompletedVerbosity {
-					cp := *row
-					cp.Depth = -1
-					row = &cp
-				}
-				fe.renderLogs(out, r, row, logs, logs.UsedHeight(), prefix, false)
-			}
-			fe.renderStepError(out, r, root, prefix)
-		}
-	}
 	return true
 }
 
