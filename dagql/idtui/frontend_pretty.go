@@ -2180,49 +2180,45 @@ type promptMsg struct {
 }
 
 func (fe *frontendPretty) handlePromptBool(ctx context.Context, message string, dest *bool) error {
-	result := make(chan bool, 1)
+	done := make(chan struct{})
 
 	fe.program.Send(promptMsg{
 		form: NewForm(
 			huh.NewGroup(
-				huh.NewConfirm().Key("confirm").
-					Description("hey there").
-					Title(message),
+				huh.NewConfirm().Title(message).Value(dest),
 			),
 		),
 		result: func(f *huh.Form) {
-			result <- f.GetBool("confirm")
+			close(done)
 		},
 	})
 
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case val := <-result:
-		*dest = val
+	case <-done:
 		return nil
 	}
 }
 
 func (fe *frontendPretty) handlePromptString(ctx context.Context, message string, dest *string) error {
-	result := make(chan string, 1)
+	done := make(chan struct{})
 
 	fe.program.Send(promptMsg{
 		form: NewForm(
 			huh.NewGroup(
-				huh.NewInput().Key("value").Title(message),
+				huh.NewInput().Title(message).Value(dest),
 			),
 		),
 		result: func(f *huh.Form) {
-			result <- f.GetString("value")
+			close(done)
 		},
 	})
 
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case val := <-result:
-		*dest = val
+	case <-done:
 		return nil
 	}
 }
