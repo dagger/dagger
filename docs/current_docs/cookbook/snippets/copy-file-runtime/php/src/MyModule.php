@@ -6,6 +6,7 @@ namespace DaggerModule;
 
 use Dagger\Attribute\DaggerFunction;
 use Dagger\Attribute\DaggerObject;
+use Dagger\Attribute\Doc;
 use Dagger\File;
 
 use function Dagger\dag;
@@ -15,7 +16,7 @@ class MyModule
 {
     #[DaggerFunction]
     public function copyFile(
-        // source file
+        #[Doc('source file')]
         File $source
     ): void {
         $source->export('foo.txt');

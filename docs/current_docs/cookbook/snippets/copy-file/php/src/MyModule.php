@@ -6,6 +6,7 @@ namespace DaggerModule;
 
 use Dagger\Attribute\DaggerFunction;
 use Dagger\Attribute\DaggerObject;
+use Dagger\Attribute\Doc;
 use Dagger\Container;
 use Dagger\File;
 
@@ -15,9 +16,9 @@ use function Dagger\dag;
 class MyModule
 {
     #[DaggerFunction]
-    // Return a container with a specified file
+    #[Doc('Return a container with a specified file')]
     public function copyFile(
-        // source file
+        #[Doc('source file')]
         File $f,
     ): Container {
         $name = $f->name();

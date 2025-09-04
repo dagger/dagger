@@ -6,6 +6,7 @@ namespace DaggerModule;
 
 use Dagger\Attribute\DaggerFunction;
 use Dagger\Attribute\DaggerObject;
+use Dagger\Attribute\Doc;
 use Dagger\Attribute\Ignore;
 use Dagger\Container;
 use Dagger\Directory;
@@ -16,9 +17,9 @@ use function Dagger\dag;
 class MyModule
 {
     #[DaggerFunction]
-    // Return a container with a filtered directory
+    #[Doc('Return a container with a filtered directory')]
     public function copyDirectoryWithExclusions(
-        // source directory
+        #[Doc('source directory')]
         #[Ignore('*', '!**/*.md')]
         Directory $source,
     ): Container {

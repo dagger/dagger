@@ -6,6 +6,7 @@ namespace DaggerModule;
 
 use Dagger\Attribute\DaggerFunction;
 use Dagger\Attribute\DaggerObject;
+use Dagger\Attribute\Doc;
 use Dagger\Container;
 use Dagger\File;
 use Dagger\Directory;
@@ -16,21 +17,21 @@ use function Dagger\dag;
 class MyModule
 {
     #[DaggerFunction]
-    // Return a directory
+    #[Doc('Return a directory')]
     public function getDir(): Directory {
         return $this->base()
             ->directory('/src');
     }
 
     #[DaggerFunction]
-    // Return a file
+    #[Doc('Return a file')]
     public function getFile(): File {
         return $this->base()
             ->file('/src/foo');
     }
 
     #[DaggerFunction]
-    // Return a base container
+    #[Doc('Return a base container')]
     public function base(): Container {
         return dag()
             ->container()
