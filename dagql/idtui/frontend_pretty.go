@@ -815,13 +815,7 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 func (fe *frontendPretty) keymapView() string {
 	outBuf := new(strings.Builder)
 	out := NewOutput(outBuf, termenv.WithProfile(fe.profile))
-	fmt.Fprint(out, KeymapStyle.Render(HorizBar))
-	fmt.Fprint(out, KeymapStyle.Render(" "))
 	fe.renderKeymap(out, KeymapStyle, fe.keys(out))
-	fmt.Fprint(out, KeymapStyle.Render(" "))
-	if rest := fe.contentWidth - lipgloss.Width(outBuf.String()); rest > 0 {
-		fmt.Fprint(out, KeymapStyle.Render(strings.Repeat(HorizBar, rest)))
-	}
 	return outBuf.String()
 }
 
@@ -1070,35 +1064,28 @@ func (fe *frontendPretty) renderWithSidebar(mainContent, sidebarContent string) 
 
 	contentView, contentHeight := haircut(mainContent, fe.window.Height)
 
-	// Style the sidebar with a left border
-	sidebarStyle := lipgloss.NewStyle().
+	styledSidebar := lipgloss.NewStyle().
 		Width(fe.sidebarWidth).
-		MaxHeight(fe.window.Height-1).
-		Height(contentHeight-1).
+		MaxHeight(fe.window.Height).
+		Height(contentHeight).
 		Background(sidebarBG).
-		Border(lipgloss.NormalBorder(), false, false, false, true).
+		Border(lipgloss.Border{
+			Left: BorderLeft, // use a line that hugs the background
+		}, false, false, false, true).
 		BorderForeground(ANSIBrightBlack).
-		Padding(1, 1)
-
-	styledSidebar := lipgloss.JoinVertical(lipgloss.Left,
-		sidebarStyle.Render(sidebarContent),
-		lipgloss.JoinHorizontal(
-			lipgloss.Bottom,
-			lipgloss.NewStyle().
-				Foreground(ANSIBrightBlack).
-				Render("┤"),
-			lipgloss.NewStyle().
-				Background(sidebarBG).
-				Render(strings.Repeat(" ", fe.sidebarWidth))))
+		Padding(1, 1).
+		Render(sidebarContent)
 
 	styledContent := lipgloss.NewStyle().
 		MaxWidth(fe.contentWidth).
 		MaxHeight(fe.window.Height).
-		MaxHeight(fe.window.Height).
 		Render(contentView)
 
-	// Join horizontally
-	return lipgloss.JoinHorizontal(lipgloss.Bottom, styledContent, styledSidebar)
+	return lipgloss.JoinHorizontal(
+		lipgloss.Bottom,
+		styledContent,
+		styledSidebar,
+	)
 }
 
 func (fe *frontendPretty) editlineView() string {
