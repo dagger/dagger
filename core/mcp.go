@@ -659,12 +659,47 @@ func (m *MCP) call(ctx context.Context,
 		return "", err
 	}
 
+	if id, ok := dagql.UnwrapAs[dagql.IDType](val); ok {
+		// Handle ID results by turning them back into Objects, since these are
+		// typically implementation details hinting to SDKs to unlazy the call.
+		syncedObj, err := srv.Load(ctx, id.ID())
+		if err != nil {
+			return "", fmt.Errorf("failed to load synced object: %w", err)
+		}
+		val = syncedObj
+	}
+
 	// NOTE: returning an Env takes special meaning, at a higher precedence than
 	// everything else; no object is actually returned, instead it directly
 	// updates the MCP environment.
 	if newEnv, ok := dagql.UnwrapAs[dagql.ObjectResult[*Env]](val); ok {
 		// Swap out the Env for the updated one
 		m.env = newEnv
+		// No particular message needed here. At one point we diffed the Env.workspace
+		// and printed which files were modified, but it's not really necessary to
+		// show things like that unilaterally vs. just allowing each Env-returning
+		// tool to control the messaging.
+		return "", nil
+	}
+
+	// NOTE: returning a Changeset behaves similarly to returning an Env; it is
+	// directly applied to the Env.
+	if changes, ok := dagql.UnwrapAs[dagql.ObjectResult[*Changeset]](val); ok {
+		var newWS dagql.ObjectResult[*Directory]
+		if err := srv.Select(ctx, m.env.Self().Workspace, &newWS, dagql.Selector{
+			Field: "withChanges",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "changes",
+					Value: dagql.NewID[*Changeset](changes.ID()),
+				},
+			},
+		}); err != nil {
+			return "", err
+		}
+		if err := m.updateEnvWorkspace(ctx, newWS); err != nil {
+			return "", err
+		}
 		// No particular message needed here. At one point we diffed the Env.workspace
 		// and printed which files were modified, but it's not really necessary to
 		// show things like that unilaterally vs. just allowing each Env-returning
@@ -701,16 +736,6 @@ func (m *MCP) call(ctx context.Context,
 }
 
 func (m *MCP) outputToLLM(ctx context.Context, srv *dagql.Server, val dagql.Typed) (string, error) {
-	if id, ok := dagql.UnwrapAs[dagql.IDType](val); ok {
-		// Handle ID results by turning them back into Objects, since these are
-		// typically implementation details hinting to SDKs to unlazy the call.
-		syncedObj, err := srv.Load(ctx, id.ID())
-		if err != nil {
-			return "", fmt.Errorf("failed to load synced object: %w", err)
-		}
-		val = syncedObj
-	}
-
 	if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](val); ok {
 		// Handle object returns
 		return m.toolObjectResponse(ctx, srv, obj, m.Ingest(obj, ""))
