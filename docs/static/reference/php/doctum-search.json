@@ -8,16 +8,6 @@
 		},
 		{
 			"t": "C",
-			"n": "Dagger\\Attribute\\Argument",
-			"p": "Dagger/Attribute/Argument.html",
-			"d": "",
-			"f": {
-				"n": "Dagger\\Attribute",
-				"p": "Dagger/Attribute.html"
-			}
-		},
-		{
-			"t": "C",
 			"n": "Dagger\\Attribute\\DaggerFunction",
 			"p": "Dagger/Attribute/DaggerFunction.html",
 			"d": null,
@@ -1204,12 +1194,6 @@
 				"n": "Dagger\\Client",
 				"p": "Dagger/Client.html"
 			}
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Attribute\\Argument::__construct",
-			"p": "Dagger/Attribute/Argument.html#method___construct",
-			"d": null
 		},
 		{
 			"t": "M",
