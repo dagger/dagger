@@ -20,6 +20,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/server/resource"
+	"github.com/dagger/dagger/engine/sources/local"
 )
 
 // Query forms the root of the DAG and houses all necessary state and
@@ -112,6 +113,9 @@ type Server interface {
 
 	// Gets the buildkit session manager
 	BuildkitSession() *bksession.Manager
+
+	// Gets the local source
+	LocalSource() *local.LocalSource
 
 	// A global lock for the engine, can be used to synchronize access to
 	// shared resources between multiple potentially concurrent calls.
