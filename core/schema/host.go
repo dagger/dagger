@@ -161,6 +161,24 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 				dagql.Arg("noCache").Doc(`If true, the file will always be reloaded from the host.`),
 			),
 
+		dagql.NodeFuncWithCacheKey("findup", s.findup, dagql.CacheAsRequested).
+			Doc(`Search for a file or directory by walking up the tree from system workdir. Return its relative path`).
+			Args(
+				dagql.Arg("name").Doc(`name of the file or directory to search for`),
+			),
+
+		dagql.NodeFuncWithCacheKey("findupFile", s.findupFile, dagql.CacheAsRequested).
+			Doc(`Search for a file by walking up the tree from system workdir`).
+			Args(
+				dagql.Arg("name").Doc(`name of the file or directory to search for`),
+			),
+
+		dagql.NodeFuncWithCacheKey("findupDirectory", s.findupDirectory, dagql.CacheAsRequested).
+			Doc(`Search for a directory by walking up the tree from system workdir`).
+			Args(
+				dagql.Arg("name").Doc(`name of the directory to search for`),
+			),
+
 		dagql.NodeFuncWithCacheKey("unixSocket", s.socket, s.socketCacheKey).
 			Doc(`Accesses a Unix socket on the host.`).
 			Args(
@@ -261,9 +279,6 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	}
 
 	args.Path = path.Clean(args.Path)
-	if args.Path == ".." || strings.HasPrefix(args.Path, "../") {
-		return inst, fmt.Errorf("path %q escapes workdir; use an absolute path instead", args.Path)
-	}
 
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
@@ -503,6 +518,137 @@ func (s *hostSchema) file(ctx context.Context, host dagql.ObjectResult[*core.Hos
 		return i, err
 	}
 	return i, nil
+}
+
+type hostFindupFileArgs struct {
+	Name string
+	HostDirCacheConfig
+}
+
+//nolint:dupl
+func (s *hostSchema) findupFile(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostFindupFileArgs) (i dagql.Result[*core.File], err error) {
+	findupResult, err := s.getFindupResult(ctx, args.Name, args.NoCache)
+	if err != nil {
+		return i, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return i, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+	if err := srv.Select(ctx, srv.Root(), &i, dagql.Selector{
+		Field: "host",
+	}, dagql.Selector{
+		Field: "file",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "path",
+				Value: findupResult,
+			},
+			{
+				Name:  "noCache",
+				Value: dagql.NewBoolean(args.NoCache),
+			},
+		},
+	}); err != nil {
+		return i, err
+	}
+	return i, nil
+}
+
+type hostFindupDirectoryArgs struct {
+	Name string
+	HostDirCacheConfig
+}
+
+//nolint:dupl
+func (s *hostSchema) findupDirectory(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostFindupDirectoryArgs) (i dagql.Result[*core.Directory], err error) {
+	findupResult, err := s.getFindupResult(ctx, args.Name, args.NoCache)
+	if err != nil {
+		return i, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return i, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+	if err := srv.Select(ctx, srv.Root(), &i, dagql.Selector{
+		Field: "host",
+	}, dagql.Selector{
+		Field: "directory",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "path",
+				Value: findupResult,
+			},
+			{
+				Name:  "noCache",
+				Value: dagql.NewBoolean(args.NoCache),
+			},
+		},
+	}); err != nil {
+		return i, err
+	}
+	return i, nil
+}
+
+func (s *hostSchema) getFindupResult(ctx context.Context, name string, noCache bool) (dagql.String, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	var findupResult dagql.String
+	if err := srv.Select(ctx, srv.Root(), &findupResult, dagql.Selector{
+		Field: "host",
+	}, dagql.Selector{
+		Field: "findup",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "name",
+				Value: dagql.NewString(name),
+			},
+			{
+				Name:  "noCache",
+				Value: dagql.NewBoolean(noCache),
+			},
+		},
+	}); err != nil {
+		return "", err
+	}
+	return findupResult, nil
+}
+
+type hostFindupArgs struct {
+	Name string
+	HostDirCacheConfig
+}
+
+func (s *hostSchema) findup(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostFindupArgs) (i dagql.String, err error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return i, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return i, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	cwd, err := bk.AbsPath(ctx, ".")
+	if err != nil {
+		return i, fmt.Errorf("failed to get cwd: %w", err)
+	}
+	foundPath, found, err := findUp(ctx, core.NewCallerStatFS(bk), cwd, args.Name)
+	if err != nil {
+		return i, fmt.Errorf("failed to find %s: %w", args.Name, err)
+	}
+	if !found {
+		// FIXME: return a null result instead of an error. Better DX
+		return i, fmt.Errorf("no result for findup search: %q", args.Name)
+	}
+	foundPath = path.Join(foundPath, args.Name)
+	relPath, err := filepath.Rel(cwd, foundPath)
+	if err != nil {
+		return i, fmt.Errorf("failed to make path relative to cwd: %w", err)
+	}
+	return dagql.NewString(relPath), nil
 }
 
 type hostTunnelArgs struct {

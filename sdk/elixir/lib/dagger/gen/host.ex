@@ -72,6 +72,55 @@ defmodule Dagger.Host do
   end
 
   @doc """
+  Search for a file or directory by walking up the tree from system workdir. Return its relative path
+  """
+  @spec findup(t(), String.t(), [{:no_cache, boolean() | nil}]) ::
+          {:ok, String.t()} | {:error, term()}
+  def findup(%__MODULE__{} = host, name, optional_args \\ []) do
+    query_builder =
+      host.query_builder
+      |> QB.select("findup")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg("noCache", optional_args[:no_cache])
+
+    Client.execute(host.client, query_builder)
+  end
+
+  @doc """
+  Search for a directory by walking up the tree from system workdir
+  """
+  @spec findup_directory(t(), String.t(), [{:no_cache, boolean() | nil}]) :: Dagger.Directory.t()
+  def findup_directory(%__MODULE__{} = host, name, optional_args \\ []) do
+    query_builder =
+      host.query_builder
+      |> QB.select("findupDirectory")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg("noCache", optional_args[:no_cache])
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: host.client
+    }
+  end
+
+  @doc """
+  Search for a file by walking up the tree from system workdir
+  """
+  @spec findup_file(t(), String.t(), [{:no_cache, boolean() | nil}]) :: Dagger.File.t()
+  def findup_file(%__MODULE__{} = host, name, optional_args \\ []) do
+    query_builder =
+      host.query_builder
+      |> QB.select("findupFile")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg("noCache", optional_args[:no_cache])
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: host.client
+    }
+  end
+
+  @doc """
   A unique identifier for this Host.
   """
   @spec id(t()) :: {:ok, Dagger.HostID.t()} | {:error, term()}
