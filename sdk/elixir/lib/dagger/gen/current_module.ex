@@ -27,6 +27,20 @@ defmodule Dagger.CurrentModule do
   end
 
   @doc """
+  The fully instantiated module implementing the current function call.
+  """
+  @spec meta(t()) :: Dagger.Module.t()
+  def meta(%__MODULE__{} = current_module) do
+    query_builder =
+      current_module.query_builder |> QB.select("meta")
+
+    %Dagger.Module{
+      query_builder: query_builder,
+      client: current_module.client
+    }
+  end
+
+  @doc """
   The name of the module being executed in
   """
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}

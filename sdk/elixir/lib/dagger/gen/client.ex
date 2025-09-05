@@ -59,6 +59,17 @@ defmodule Dagger.Client do
     }
   end
 
+  @spec current_env(t()) :: Dagger.Env.t()
+  def current_env(%__MODULE__{} = client) do
+    query_builder =
+      client.query_builder |> QB.select("currentEnv")
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
   @doc """
   The FunctionCall context that the SDK caller is currently executing in.
 
@@ -365,6 +376,20 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("loadCacheVolumeFromID") |> QB.put_arg("id", id)
 
     %Dagger.CacheVolume{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a Changeset from its ID.
+  """
+  @spec load_changeset_from_id(t(), Dagger.ChangesetID.t()) :: Dagger.Changeset.t()
+  def load_changeset_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadChangesetFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Changeset{
       query_builder: query_builder,
       client: client.client
     }

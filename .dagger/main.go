@@ -80,7 +80,8 @@ func New(
 		if strings.HasPrefix(module, "dagql/idtui/viztest/broken") {
 			continue
 		}
-		if strings.HasPrefix(module, "modules/evaluator/") {
+		if strings.HasPrefix(module, "modules/claude/") {
+			// re-enable after we ship its dependent APIs
 			continue
 		}
 		dev.ModCodegenTargets = append(dev.ModCodegenTargets, module)
@@ -134,7 +135,8 @@ func (dev *DaggerDev) Lint(
 				if strings.HasPrefix(pkg, "dagql/idtui/viztest/broken") {
 					continue
 				}
-				if strings.HasPrefix(pkg, "modules/evaluator/") {
+				if strings.HasPrefix(pkg, "modules/claude/") {
+					// re-enable after we ship its dependent APIs
 					continue
 				}
 				pkgs = append(pkgs, pkg)
@@ -222,8 +224,6 @@ func (dev *DaggerDev) Evals(
 func (dev *DaggerDev) evaluator() *dagger.Evaluator {
 	return dag.Evaluator().
 		WithDocsFile(dev.Source.File("core/llm_docs.md")).
-		WithoutDefaultSystemPrompt().
-		WithSystemPromptFile(dev.Source.File("core/llm_dagger_prompt.md")).
 		WithEvals([]*dagger.EvaluatorEval{
 			// FIXME: ideally this list would live closer to where the evals are
 			// defined, but it's not possible for a module to return an interface type

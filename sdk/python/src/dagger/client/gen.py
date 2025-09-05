@@ -21,6 +21,11 @@ class CacheVolumeID(Scalar):
     object of type CacheVolume."""
 
 
+class ChangesetID(Scalar):
+    """The `ChangesetID` scalar type represents an identifier for an
+    object of type Changeset."""
+
+
 class CloudID(Scalar):
     """The `CloudID` scalar type represents an identifier for an object of
     type Cloud."""
@@ -488,6 +493,12 @@ class Binding(Type):
         _ctx = self._select("asCacheVolume", _args)
         return CacheVolume(_ctx)
 
+    def as_changeset(self) -> "Changeset":
+        """Retrieve the binding value, as type Changeset"""
+        _args: list[Arg] = []
+        _ctx = self._select("asChangeset", _args)
+        return Changeset(_ctx)
+
     def as_cloud(self) -> "Cloud":
         """Retrieve the binding value, as type Cloud"""
         _args: list[Arg] = []
@@ -535,12 +546,6 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asJSONValue", _args)
         return JSONValue(_ctx)
-
-    def as_llm(self) -> "LLM":
-        """Retrieve the binding value, as type LLM"""
-        _args: list[Arg] = []
-        _ctx = self._select("asLLM", _args)
-        return LLM(_ctx)
 
     def as_module(self) -> "Module":
         """Retrieve the binding value, as type Module"""
@@ -745,6 +750,141 @@ class CacheVolume(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(CacheVolumeID)
+
+
+@typecheck
+class Changeset(Type):
+    """A comparison between two directories representing changes that can
+    be applied."""
+
+    async def added_paths(self) -> list[str]:
+        """Files and directories that were added in the newer directory.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("addedPaths", _args)
+        return await _ctx.execute(list[str])
+
+    def after(self) -> "Directory":
+        """The newer/upper snapshot."""
+        _args: list[Arg] = []
+        _ctx = self._select("after", _args)
+        return Directory(_ctx)
+
+    def as_patch(self) -> "File":
+        """Return a Git-compatible patch of the changes"""
+        _args: list[Arg] = []
+        _ctx = self._select("asPatch", _args)
+        return File(_ctx)
+
+    def before(self) -> "Directory":
+        """The older/lower snapshot to compare against."""
+        _args: list[Arg] = []
+        _ctx = self._select("before", _args)
+        return Directory(_ctx)
+
+    async def id(self) -> ChangesetID:
+        """A unique identifier for this Changeset.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        ChangesetID
+            The `ChangesetID` scalar type represents an identifier for an
+            object of type Changeset.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(ChangesetID)
+
+    def layer(self) -> "Directory":
+        """Return a snapshot containing only the created and modified files"""
+        _args: list[Arg] = []
+        _ctx = self._select("layer", _args)
+        return Directory(_ctx)
+
+    async def modified_paths(self) -> list[str]:
+        """Files and directories that existed before and were updated in the
+        newer directory.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("modifiedPaths", _args)
+        return await _ctx.execute(list[str])
+
+    async def removed_paths(self) -> list[str]:
+        """Files and directories that were removed. Directories are indicated by
+        a trailing slash, and their child paths are not included.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("removedPaths", _args)
+        return await _ctx.execute(list[str])
+
+    async def sync(self) -> Self:
+        """Force evaluation in the engine.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "sync", _args)
+
+    def __await__(self):
+        return self.sync().__await__()
 
 
 @typecheck
@@ -2881,6 +3021,12 @@ class CurrentModule(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(CurrentModuleID)
 
+    def meta(self) -> "Module":
+        """The fully instantiated module implementing the current function call."""
+        _args: list[Arg] = []
+        _ctx = self._select("meta", _args)
+        return Module(_ctx)
+
     async def name(self) -> str:
         """The name of the module being executed in
 
@@ -3010,6 +3156,24 @@ class Directory(Type):
         ]
         _ctx = self._select("asModuleSource", _args)
         return ModuleSource(_ctx)
+
+    def changes(self, from_: Self) -> Changeset:
+        """Return the difference between this directory and another directory,
+        typically an older snapshot.
+
+        The difference is encoded as a changeset, which also tracks removed
+        files, and can be applied to other directories.
+
+        Parameters
+        ----------
+        from_:
+            The base directory snapshot to compare against
+        """
+        _args = [
+            Arg("from", from_),
+        ]
+        _ctx = self._select("changes", _args)
+        return Changeset(_ctx)
 
     def diff(self, other: Self) -> Self:
         """Return the difference between this directory and an another directory.
@@ -3446,6 +3610,20 @@ class Directory(Type):
         _ctx = self._select("terminal", _args)
         return Directory(_ctx)
 
+    def with_changes(self, changes: Changeset) -> Self:
+        """Return a directory with changes from another directory applied to it.
+
+        Parameters
+        ----------
+        changes:
+            Changes to apply to the directory
+        """
+        _args = [
+            Arg("changes", changes),
+        ]
+        _ctx = self._select("withChanges", _args)
+        return Directory(_ctx)
+
     def with_directory(
         self,
         path: str,
@@ -3599,6 +3777,25 @@ class Directory(Type):
             Arg("patch", patch),
         ]
         _ctx = self._select("withPatch", _args)
+        return Directory(_ctx)
+
+    def with_patch_file(self, patch: "File") -> Self:
+        """Retrieves this directory with the given Git-compatible patch file
+        applied.
+
+        .. caution::
+            Experimental: This API is highly experimental and may be removed
+            or replaced entirely.
+
+        Parameters
+        ----------
+        patch:
+            File containing the patch to apply
+        """
+        _args = [
+            Arg("patch", patch),
+        ]
+        _ctx = self._select("withPatchFile", _args)
         return Directory(_ctx)
 
     def with_symlink(self, target: str, link_name: str) -> Self:
@@ -4426,6 +4623,48 @@ class Env(Type):
         _ctx = self._select("withCacheVolumeOutput", _args)
         return Env(_ctx)
 
+    def with_changeset_input(
+        self,
+        name: str,
+        value: Changeset,
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type Changeset in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The Changeset value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withChangesetInput", _args)
+        return Env(_ctx)
+
+    def with_changeset_output(self, name: str, description: str) -> Self:
+        """Declare a desired Changeset output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withChangesetOutput", _args)
+        return Env(_ctx)
+
     def with_cloud_input(
         self,
         name: str,
@@ -4763,46 +5002,12 @@ class Env(Type):
         _ctx = self._select("withJSONValueOutput", _args)
         return Env(_ctx)
 
-    def with_llm_input(
-        self,
-        name: str,
-        value: "LLM",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type LLM in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The LLM value to assign to the binding
-        description:
-            The purpose of the input
-        """
+    def with_module(self, module: "Module") -> Self:
+        """load a module and expose its functions to the model"""
         _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
+            Arg("module", module),
         ]
-        _ctx = self._select("withLLMInput", _args)
-        return Env(_ctx)
-
-    def with_llm_output(self, name: str, description: str) -> Self:
-        """Declare a desired LLM output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withLLMOutput", _args)
+        _ctx = self._select("withModule", _args)
         return Env(_ctx)
 
     def with_module_config_client_input(
@@ -5187,6 +5392,31 @@ class Env(Type):
         ]
         _ctx = self._select("withStringOutput", _args)
         return Env(_ctx)
+
+    def with_workspace(self, workspace: Directory) -> Self:
+        """Return a new environment with a new host filesystem
+
+        Parameters
+        ----------
+        workspace:
+            The directory to set as the host filesystem
+        """
+        _args = [
+            Arg("workspace", workspace),
+        ]
+        _ctx = self._select("withWorkspace", _args)
+        return Env(_ctx)
+
+    def without_outputs(self) -> Self:
+        """Return a new environment without any outputs"""
+        _args: list[Arg] = []
+        _ctx = self._select("withoutOutputs", _args)
+        return Env(_ctx)
+
+    def workspace(self) -> Directory:
+        _args: list[Arg] = []
+        _ctx = self._select("workspace", _args)
+        return Directory(_ctx)
 
     def with_(self, cb: Callable[["Env"], "Env"]) -> "Env":
         """Call the provided callable with current Env.
@@ -7465,6 +7695,25 @@ class LLM(Type):
         _ctx = self._select("env", _args)
         return Env(_ctx)
 
+    async def has_prompt(self) -> bool:
+        """Indicates that the LLM can be synced or stepped
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("hasPrompt", _args)
+        return await _ctx.execute(bool)
+
     async def history(self) -> list[str]:
         """return the llm message history
 
@@ -7551,7 +7800,7 @@ class LLM(Type):
         return await _ctx.execute(str)
 
     def loop(self) -> Self:
-        """synchronize LLM state"""
+        """Loop completing tool calls until the LLM ends its turn"""
         _args: list[Arg] = []
         _ctx = self._select("loop", _args)
         return LLM(_ctx)
@@ -7598,6 +7847,12 @@ class LLM(Type):
         _ctx = self._select("provider", _args)
         return await _ctx.execute(str)
 
+    def step(self) -> Self:
+        """Returns an LLM that will only sync one step instead of looping"""
+        _args: list[Arg] = []
+        _ctx = self._select("step", _args)
+        return LLM(_ctx)
+
     async def sync(self) -> Self:
         """synchronize LLM state
 
@@ -7641,12 +7896,63 @@ class LLM(Type):
         _ctx = self._select("tools", _args)
         return await _ctx.execute(str)
 
+    def with_blocked_function(self, type_name: str, field_name: str) -> Self:
+        """Return a new LLM with the specified tool disabled
+
+        Parameters
+        ----------
+        type_name:
+            The type name whose field will be disabled
+        field_name:
+            The field name to disable
+        """
+        _args = [
+            Arg("typeName", type_name),
+            Arg("fieldName", field_name),
+        ]
+        _ctx = self._select("withBlockedFunction", _args)
+        return LLM(_ctx)
+
+    def with_caller(self, name: str, description: str) -> Self:
+        """Provide the calling object as an input to the LLM environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            The description of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withCaller", _args)
+        return LLM(_ctx)
+
     def with_env(self, env: Env) -> Self:
         """allow the LLM to interact with an environment via MCP"""
         _args = [
             Arg("env", env),
         ]
         _ctx = self._select("withEnv", _args)
+        return LLM(_ctx)
+
+    def with_mcp_server(self, name: str, service: "Service") -> Self:
+        """Add an external MCP server to the LLM
+
+        Parameters
+        ----------
+        name:
+            The name of the MCP server
+        service:
+            The MCP service to run and communicate with over stdio
+        """
+        _args = [
+            Arg("name", name),
+            Arg("service", service),
+        ]
+        _ctx = self._select("withMCPServer", _args)
         return LLM(_ctx)
 
     def with_model(self, model: str) -> Self:
@@ -7689,6 +7995,14 @@ class LLM(Type):
             Arg("file", file),
         ]
         _ctx = self._select("withPromptFile", _args)
+        return LLM(_ctx)
+
+    def with_static_tools(self) -> Self:
+        """Use a static set of tools for method calls, e.g. for MCP clients that
+        do not support dynamic tool registration
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withStaticTools", _args)
         return LLM(_ctx)
 
     def with_system_prompt(self, prompt: str) -> Self:
@@ -9185,6 +9499,11 @@ class Client(Root):
         _ctx = self._select("container", _args)
         return Container(_ctx)
 
+    def current_env(self) -> Env:
+        _args: list[Arg] = []
+        _ctx = self._select("currentEnv", _args)
+        return Env(_ctx)
+
     def current_function_call(self) -> FunctionCall:
         """The FunctionCall context that the SDK caller is currently executing
         in.
@@ -9475,6 +9794,14 @@ class Client(Root):
         ]
         _ctx = self._select("loadCacheVolumeFromID", _args)
         return CacheVolume(_ctx)
+
+    def load_changeset_from_id(self, id: ChangesetID) -> Changeset:
+        """Load a Changeset from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadChangesetFromID", _args)
+        return Changeset(_ctx)
 
     def load_cloud_from_id(self, id: CloudID) -> Cloud:
         """Load a Cloud from its ID."""
@@ -11234,6 +11561,8 @@ __all__ = [
     "CacheSharingMode",
     "CacheVolume",
     "CacheVolumeID",
+    "Changeset",
+    "ChangesetID",
     "Client",
     "Cloud",
     "CloudID",

@@ -93,6 +93,11 @@ function CacheSharingModeNameToValue(name: string): CacheSharingMode {
 export type CacheVolumeID = string & { __CacheVolumeID: never }
 
 /**
+ * The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
+ */
+export type ChangesetID = string & { __ChangesetID: never }
+
+/**
  * The `CloudID` scalar type represents an identifier for an object of type Cloud.
  */
 export type CloudID = string & { __CloudID: never }
@@ -2227,6 +2232,14 @@ export class Binding extends BaseClient {
   }
 
   /**
+   * Retrieve the binding value, as type Changeset
+   */
+  asChangeset = (): Changeset => {
+    const ctx = this._ctx.select("asChangeset")
+    return new Changeset(ctx)
+  }
+
+  /**
    * Retrieve the binding value, as type Cloud
    */
   asCloud = (): Cloud => {
@@ -2288,14 +2301,6 @@ export class Binding extends BaseClient {
   asJSONValue = (): JSONValue => {
     const ctx = this._ctx.select("asJSONValue")
     return new JSONValue(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type LLM
-   */
-  asLLM = (): LLM => {
-    const ctx = this._ctx.select("asLLM")
-    return new LLM(ctx)
   }
 
   /**
@@ -2466,6 +2471,115 @@ export class CacheVolume extends BaseClient {
     const response: Awaited<CacheVolumeID> = await ctx.execute()
 
     return response
+  }
+}
+
+/**
+ * A comparison between two directories representing changes that can be applied.
+ */
+export class Changeset extends BaseClient {
+  private readonly _id?: ChangesetID = undefined
+  private readonly _sync?: ChangesetID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ChangesetID, _sync?: ChangesetID) {
+    super(ctx)
+
+    this._id = _id
+    this._sync = _sync
+  }
+
+  /**
+   * A unique identifier for this Changeset.
+   */
+  id = async (): Promise<ChangesetID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ChangesetID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Files and directories that were added in the newer directory.
+   */
+  addedPaths = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("addedPaths")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The newer/upper snapshot.
+   */
+  after = (): Directory => {
+    const ctx = this._ctx.select("after")
+    return new Directory(ctx)
+  }
+
+  /**
+   * Return a Git-compatible patch of the changes
+   */
+  asPatch = (): File => {
+    const ctx = this._ctx.select("asPatch")
+    return new File(ctx)
+  }
+
+  /**
+   * The older/lower snapshot to compare against.
+   */
+  before = (): Directory => {
+    const ctx = this._ctx.select("before")
+    return new Directory(ctx)
+  }
+
+  /**
+   * Return a snapshot containing only the created and modified files
+   */
+  layer = (): Directory => {
+    const ctx = this._ctx.select("layer")
+    return new Directory(ctx)
+  }
+
+  /**
+   * Files and directories that existed before and were updated in the newer directory.
+   */
+  modifiedPaths = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("modifiedPaths")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.
+   */
+  removedPaths = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("removedPaths")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Force evaluation in the engine.
+   */
+  sync = async (): Promise<Changeset> => {
+    const ctx = this._ctx.select("sync")
+
+    const response: Awaited<ChangesetID> = await ctx.execute()
+
+    return new Client(ctx.copy()).loadChangesetFromID(response)
   }
 }
 
@@ -3843,6 +3957,14 @@ export class CurrentModule extends BaseClient {
   }
 
   /**
+   * The fully instantiated module implementing the current function call.
+   */
+  meta = (): Module_ => {
+    const ctx = this._ctx.select("meta")
+    return new Module_(ctx)
+  }
+
+  /**
    * The name of the module being executed in
    */
   name = async (): Promise<string> => {
@@ -3962,6 +4084,17 @@ export class Directory extends BaseClient {
   asModuleSource = (opts?: DirectoryAsModuleSourceOpts): ModuleSource => {
     const ctx = this._ctx.select("asModuleSource", { ...opts })
     return new ModuleSource(ctx)
+  }
+
+  /**
+   * Return the difference between this directory and another directory, typically an older snapshot.
+   *
+   * The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
+   * @param from The base directory snapshot to compare against
+   */
+  changes = (from: Directory): Changeset => {
+    const ctx = this._ctx.select("changes", { from })
+    return new Changeset(ctx)
   }
 
   /**
@@ -4176,6 +4309,15 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Return a directory with changes from another directory applied to it.
+   * @param changes Changes to apply to the directory
+   */
+  withChanges = (changes: Changeset): Directory => {
+    const ctx = this._ctx.select("withChanges", { changes })
+    return new Directory(ctx)
+  }
+
+  /**
    * Return a snapshot with a directory added
    * @param path Location of the written directory (e.g., "/src/").
    * @param directory Identifier of the directory to copy.
@@ -4256,6 +4398,16 @@ export class Directory extends BaseClient {
    */
   withPatch = (patch: string): Directory => {
     const ctx = this._ctx.select("withPatch", { patch })
+    return new Directory(ctx)
+  }
+
+  /**
+   * Retrieves this directory with the given Git-compatible patch file applied.
+   * @param patch File containing the patch to apply
+   * @experimental
+   */
+  withPatchFile = (patch: File): Directory => {
+    const ctx = this._ctx.select("withPatchFile", { patch })
     return new Directory(ctx)
   }
 
@@ -5046,6 +5198,35 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Create or update a binding of type Changeset in the environment
+   * @param name The name of the binding
+   * @param value The Changeset value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withChangesetInput = (
+    name: string,
+    value: Changeset,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withChangesetInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Changeset output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withChangesetOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withChangesetOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
    * Create or update a binding of type Cloud in the environment
    * @param name The name of the binding
    * @param value The Cloud value to assign to the binding
@@ -5253,23 +5434,12 @@ export class Env extends BaseClient {
   }
 
   /**
-   * Create or update a binding of type LLM in the environment
-   * @param name The name of the binding
-   * @param value The LLM value to assign to the binding
-   * @param description The purpose of the input
+   * load a module and expose its functions to the model
    */
-  withLLMInput = (name: string, value: LLM, description: string): Env => {
-    const ctx = this._ctx.select("withLLMInput", { name, value, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired LLM output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withLLMOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withLLMOutput", { name, description })
+  withModule = (module_: Module_): Env => {
+    const ctx = this._ctx.select("withModule", {
+      module: module_,
+    })
     return new Env(ctx)
   }
 
@@ -5532,6 +5702,27 @@ export class Env extends BaseClient {
   withStringOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withStringOutput", { name, description })
     return new Env(ctx)
+  }
+
+  /**
+   * Return a new environment with a new host filesystem
+   * @param workspace The directory to set as the host filesystem
+   */
+  withWorkspace = (workspace: Directory): Env => {
+    const ctx = this._ctx.select("withWorkspace", { workspace })
+    return new Env(ctx)
+  }
+
+  /**
+   * Return a new environment without any outputs
+   */
+  withoutOutputs = (): Env => {
+    const ctx = this._ctx.select("withoutOutputs")
+    return new Env(ctx)
+  }
+  workspace = (): Directory => {
+    const ctx = this._ctx.select("workspace")
+    return new Directory(ctx)
   }
 
   /**
@@ -7402,6 +7593,7 @@ export class JSONValue extends BaseClient {
 
 export class LLM extends BaseClient {
   private readonly _id?: LLMID = undefined
+  private readonly _hasPrompt?: boolean = undefined
   private readonly _historyJSON?: JSON = undefined
   private readonly _lastReply?: string = undefined
   private readonly _model?: string = undefined
@@ -7415,6 +7607,7 @@ export class LLM extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: LLMID,
+    _hasPrompt?: boolean,
     _historyJSON?: JSON,
     _lastReply?: string,
     _model?: string,
@@ -7425,6 +7618,7 @@ export class LLM extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._hasPrompt = _hasPrompt
     this._historyJSON = _historyJSON
     this._lastReply = _lastReply
     this._model = _model
@@ -7475,6 +7669,21 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Indicates that the LLM can be synced or stepped
+   */
+  hasPrompt = async (): Promise<boolean> => {
+    if (this._hasPrompt) {
+      return this._hasPrompt
+    }
+
+    const ctx = this._ctx.select("hasPrompt")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * return the llm message history
    */
   history = async (): Promise<string[]> => {
@@ -7516,7 +7725,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * synchronize LLM state
+   * Loop completing tool calls until the LLM ends its turn
    */
   loop = (): LLM => {
     const ctx = this._ctx.select("loop")
@@ -7554,6 +7763,14 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Returns an LLM that will only sync one step instead of looping
+   */
+  step = (): LLM => {
+    const ctx = this._ctx.select("step")
+    return new LLM(ctx)
+  }
+
+  /**
    * synchronize LLM state
    */
   sync = async (): Promise<LLM> => {
@@ -7588,10 +7805,40 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Return a new LLM with the specified tool disabled
+   * @param typeName The type name whose field will be disabled
+   * @param fieldName The field name to disable
+   */
+  withBlockedFunction = (typeName: string, fieldName: string): LLM => {
+    const ctx = this._ctx.select("withBlockedFunction", { typeName, fieldName })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Provide the calling object as an input to the LLM environment
+   * @param name The name of the binding
+   * @param description The description of the input
+   */
+  withCaller = (name: string, description: string): LLM => {
+    const ctx = this._ctx.select("withCaller", { name, description })
+    return new LLM(ctx)
+  }
+
+  /**
    * allow the LLM to interact with an environment via MCP
    */
   withEnv = (env: Env): LLM => {
     const ctx = this._ctx.select("withEnv", { env })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Add an external MCP server to the LLM
+   * @param name The name of the MCP server
+   * @param service The MCP service to run and communicate with over stdio
+   */
+  withMCPServer = (name: string, service: Service): LLM => {
+    const ctx = this._ctx.select("withMCPServer", { name, service })
     return new LLM(ctx)
   }
 
@@ -7619,6 +7866,14 @@ export class LLM extends BaseClient {
    */
   withPromptFile = (file: File): LLM => {
     const ctx = this._ctx.select("withPromptFile", { file })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
+   */
+  withStaticTools = (): LLM => {
+    const ctx = this._ctx.select("withStaticTools")
     return new LLM(ctx)
   }
 
@@ -9036,6 +9291,10 @@ export class Client extends BaseClient {
     const ctx = this._ctx.select("container", { ...opts })
     return new Container(ctx)
   }
+  currentEnv = (): Env => {
+    const ctx = this._ctx.select("currentEnv")
+    return new Env(ctx)
+  }
 
   /**
    * The FunctionCall context that the SDK caller is currently executing in.
@@ -9220,6 +9479,14 @@ export class Client extends BaseClient {
   loadCacheVolumeFromID = (id: CacheVolumeID): CacheVolume => {
     const ctx = this._ctx.select("loadCacheVolumeFromID", { id })
     return new CacheVolume(ctx)
+  }
+
+  /**
+   * Load a Changeset from its ID.
+   */
+  loadChangesetFromID = (id: ChangesetID): Changeset => {
+    const ctx = this._ctx.select("loadChangesetFromID", { id })
+    return new Changeset(ctx)
   }
 
   /**

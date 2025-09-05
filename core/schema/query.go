@@ -134,7 +134,11 @@ func (s *querySchema) schemaJSONFile(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	dgst, err := core.GetContentHashFromDef(ctx, bk, f.LLB, "/")
+	def, err := f.LLB(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get LLB definition: %w", err)
+	}
+	dgst, err := core.GetContentHashFromDef(ctx, bk, def, "/")
 	if err != nil {
 		return inst, fmt.Errorf("failed to get content hash: %w", err)
 	}

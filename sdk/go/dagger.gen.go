@@ -134,6 +134,9 @@ type BindingID string
 // The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
 type CacheVolumeID string
 
+// The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
+type ChangesetID string
+
 // The `CloudID` scalar type represents an identifier for an object of type Cloud.
 type CloudID string
 
@@ -341,6 +344,15 @@ func (r *Binding) AsCacheVolume() *CacheVolume {
 	}
 }
 
+// Retrieve the binding value, as type Changeset
+func (r *Binding) AsChangeset() *Changeset {
+	q := r.query.Select("asChangeset")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // Retrieve the binding value, as type Cloud
 func (r *Binding) AsCloud() *Cloud {
 	q := r.query.Select("asCloud")
@@ -409,15 +421,6 @@ func (r *Binding) AsJSONValue() *JSONValue {
 	q := r.query.Select("asJSONValue")
 
 	return &JSONValue{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type LLM
-func (r *Binding) AsLLM() *LLM {
-	q := r.query.Select("asLLM")
-
-	return &LLM{
 		query: q,
 	}
 }
@@ -650,6 +653,139 @@ func (r *CacheVolume) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// A comparison between two directories representing changes that can be applied.
+type Changeset struct {
+	query *querybuilder.Selection
+
+	id   *ChangesetID
+	sync *ChangesetID
+}
+
+func (r *Changeset) WithGraphQLQuery(q *querybuilder.Selection) *Changeset {
+	return &Changeset{
+		query: q,
+	}
+}
+
+// Files and directories that were added in the newer directory.
+func (r *Changeset) AddedPaths(ctx context.Context) ([]string, error) {
+	q := r.query.Select("addedPaths")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The newer/upper snapshot.
+func (r *Changeset) After() *Directory {
+	q := r.query.Select("after")
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Return a Git-compatible patch of the changes
+func (r *Changeset) AsPatch() *File {
+	q := r.query.Select("asPatch")
+
+	return &File{
+		query: q,
+	}
+}
+
+// The older/lower snapshot to compare against.
+func (r *Changeset) Before() *Directory {
+	q := r.query.Select("before")
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// A unique identifier for this Changeset.
+func (r *Changeset) ID(ctx context.Context) (ChangesetID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ChangesetID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Changeset) XXX_GraphQLType() string {
+	return "Changeset"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Changeset) XXX_GraphQLIDType() string {
+	return "ChangesetID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Changeset) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Changeset) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Return a snapshot containing only the created and modified files
+func (r *Changeset) Layer() *Directory {
+	q := r.query.Select("layer")
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Files and directories that existed before and were updated in the newer directory.
+func (r *Changeset) ModifiedPaths(ctx context.Context) ([]string, error) {
+	q := r.query.Select("modifiedPaths")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.
+func (r *Changeset) RemovedPaths(ctx context.Context) ([]string, error) {
+	q := r.query.Select("removedPaths")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Force evaluation in the engine.
+func (r *Changeset) Sync(ctx context.Context) (*Changeset, error) {
+	q := r.query.Select("sync")
+
+	var id ChangesetID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Changeset{
+		query: q.Root().Select("loadChangesetFromID").Arg("id", id),
+	}, nil
 }
 
 // Dagger Cloud configuration and state
@@ -2654,6 +2790,15 @@ func (r *CurrentModule) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// The fully instantiated module implementing the current function call.
+func (r *CurrentModule) Meta() *Module {
+	q := r.query.Select("meta")
+
+	return &Module{
+		query: q,
+	}
+}
+
 // The name of the module being executed in
 func (r *CurrentModule) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
@@ -2795,6 +2940,19 @@ func (r *Directory) AsModuleSource(opts ...DirectoryAsModuleSourceOpts) *ModuleS
 	}
 
 	return &ModuleSource{
+		query: q,
+	}
+}
+
+// Return the difference between this directory and another directory, typically an older snapshot.
+//
+// The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
+func (r *Directory) Changes(from *Directory) *Changeset {
+	assertNotNil("from", from)
+	q := r.query.Select("changes")
+	q = q.Arg("from", from)
+
+	return &Changeset{
 		query: q,
 	}
 }
@@ -3225,6 +3383,17 @@ func (r *Directory) Terminal(opts ...DirectoryTerminalOpts) *Directory {
 	}
 }
 
+// Return a directory with changes from another directory applied to it.
+func (r *Directory) WithChanges(changes *Changeset) *Directory {
+	assertNotNil("changes", changes)
+	q := r.query.Select("withChanges")
+	q = q.Arg("changes", changes)
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // DirectoryWithDirectoryOpts contains options for Directory.WithDirectory
 type DirectoryWithDirectoryOpts struct {
 	// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
@@ -3356,6 +3525,19 @@ func (r *Directory) WithNewFile(path string, contents string, opts ...DirectoryW
 // Experimental: This API is highly experimental and may be removed or replaced entirely.
 func (r *Directory) WithPatch(patch string) *Directory {
 	q := r.query.Select("withPatch")
+	q = q.Arg("patch", patch)
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Retrieves this directory with the given Git-compatible patch file applied.
+//
+// Experimental: This API is highly experimental and may be removed or replaced entirely.
+func (r *Directory) WithPatchFile(patch *File) *Directory {
+	assertNotNil("patch", patch)
+	q := r.query.Select("withPatchFile")
 	q = q.Arg("patch", patch)
 
 	return &Directory{
@@ -4325,6 +4507,30 @@ func (r *Env) WithCacheVolumeOutput(name string, description string) *Env {
 	}
 }
 
+// Create or update a binding of type Changeset in the environment
+func (r *Env) WithChangesetInput(name string, value *Changeset, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withChangesetInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Changeset output to be assigned in the environment
+func (r *Env) WithChangesetOutput(name string, description string) *Env {
+	q := r.query.Select("withChangesetOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create or update a binding of type Cloud in the environment
 func (r *Env) WithCloudInput(name string, value *Cloud, description string) *Env {
 	assertNotNil("value", value)
@@ -4517,24 +4723,11 @@ func (r *Env) WithJSONValueOutput(name string, description string) *Env {
 	}
 }
 
-// Create or update a binding of type LLM in the environment
-func (r *Env) WithLLMInput(name string, value *LLM, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withLLMInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired LLM output to be assigned in the environment
-func (r *Env) WithLLMOutput(name string, description string) *Env {
-	q := r.query.Select("withLLMOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
+// load a module and expose its functions to the model
+func (r *Env) WithModule(module *Module) *Env {
+	assertNotNil("module", module)
+	q := r.query.Select("withModule")
+	q = q.Arg("module", module)
 
 	return &Env{
 		query: q,
@@ -4752,6 +4945,34 @@ func (r *Env) WithStringOutput(name string, description string) *Env {
 	q = q.Arg("description", description)
 
 	return &Env{
+		query: q,
+	}
+}
+
+// Return a new environment with a new host filesystem
+func (r *Env) WithWorkspace(workspace *Directory) *Env {
+	assertNotNil("workspace", workspace)
+	q := r.query.Select("withWorkspace")
+	q = q.Arg("workspace", workspace)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Return a new environment without any outputs
+func (r *Env) WithoutOutputs() *Env {
+	q := r.query.Select("withoutOutputs")
+
+	return &Env{
+		query: q,
+	}
+}
+
+func (r *Env) Workspace() *Directory {
+	q := r.query.Select("workspace")
+
+	return &Directory{
 		query: q,
 	}
 }
@@ -7204,6 +7425,7 @@ func (r *JSONValue) WithField(path []string, value *JSONValue) *JSONValue {
 type LLM struct {
 	query *querybuilder.Selection
 
+	hasPrompt   *bool
 	historyJSON *JSON
 	id          *LLMID
 	lastReply   *string
@@ -7254,6 +7476,19 @@ func (r *LLM) Env() *Env {
 	return &Env{
 		query: q,
 	}
+}
+
+// Indicates that the LLM can be synced or stepped
+func (r *LLM) HasPrompt(ctx context.Context) (bool, error) {
+	if r.hasPrompt != nil {
+		return *r.hasPrompt, nil
+	}
+	q := r.query.Select("hasPrompt")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // return the llm message history
@@ -7332,7 +7567,7 @@ func (r *LLM) LastReply(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// synchronize LLM state
+// Loop completing tool calls until the LLM ends its turn
 func (r *LLM) Loop() *LLM {
 	q := r.query.Select("loop")
 
@@ -7365,6 +7600,15 @@ func (r *LLM) Provider(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Returns an LLM that will only sync one step instead of looping
+func (r *LLM) Step() *LLM {
+	q := r.query.Select("step")
+
+	return &LLM{
+		query: q,
+	}
 }
 
 // synchronize LLM state
@@ -7402,11 +7646,45 @@ func (r *LLM) Tools(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Return a new LLM with the specified tool disabled
+func (r *LLM) WithBlockedFunction(typeName string, fieldName string) *LLM {
+	q := r.query.Select("withBlockedFunction")
+	q = q.Arg("typeName", typeName)
+	q = q.Arg("fieldName", fieldName)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Provide the calling object as an input to the LLM environment
+func (r *LLM) WithCaller(name string, description string) *LLM {
+	q := r.query.Select("withCaller")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // allow the LLM to interact with an environment via MCP
 func (r *LLM) WithEnv(env *Env) *LLM {
 	assertNotNil("env", env)
 	q := r.query.Select("withEnv")
 	q = q.Arg("env", env)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Add an external MCP server to the LLM
+func (r *LLM) WithMCPServer(name string, service *Service) *LLM {
+	assertNotNil("service", service)
+	q := r.query.Select("withMCPServer")
+	q = q.Arg("name", name)
+	q = q.Arg("service", service)
 
 	return &LLM{
 		query: q,
@@ -7438,6 +7716,15 @@ func (r *LLM) WithPromptFile(file *File) *LLM {
 	assertNotNil("file", file)
 	q := r.query.Select("withPromptFile")
 	q = q.Arg("file", file)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
+func (r *LLM) WithStaticTools() *LLM {
+	q := r.query.Select("withStaticTools")
 
 	return &LLM{
 		query: q,
@@ -9058,6 +9345,14 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 	}
 }
 
+func (r *Client) CurrentEnv() *Env {
+	q := r.query.Select("currentEnv")
+
+	return &Env{
+		query: q,
+	}
+}
+
 // The FunctionCall context that the SDK caller is currently executing in.
 //
 // If the caller is not currently executing in a function, this will return an error.
@@ -9389,6 +9684,16 @@ func (r *Client) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
 	q = q.Arg("id", id)
 
 	return &CacheVolume{
+		query: q,
+	}
+}
+
+// Load a Changeset from its ID.
+func (r *Client) LoadChangesetFromID(id ChangesetID) *Changeset {
+	q := r.query.Select("loadChangesetFromID")
+	q = q.Arg("id", id)
+
+	return &Changeset{
 		query: q,
 	}
 }

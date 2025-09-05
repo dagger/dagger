@@ -135,6 +135,41 @@ defmodule Dagger.Env do
   end
 
   @doc """
+  Create or update a binding of type Changeset in the environment
+  """
+  @spec with_changeset_input(t(), String.t(), Dagger.Changeset.t(), String.t()) :: Dagger.Env.t()
+  def with_changeset_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withChangesetInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired Changeset output to be assigned in the environment
+  """
+  @spec with_changeset_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_changeset_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withChangesetOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
   Create or update a binding of type Cloud in the environment
   """
   @spec with_cloud_input(t(), String.t(), Dagger.Cloud.t(), String.t()) :: Dagger.Env.t()
@@ -416,33 +451,12 @@ defmodule Dagger.Env do
   end
 
   @doc """
-  Create or update a binding of type LLM in the environment
+  load a module and expose its functions to the model
   """
-  @spec with_llm_input(t(), String.t(), Dagger.LLM.t(), String.t()) :: Dagger.Env.t()
-  def with_llm_input(%__MODULE__{} = env, name, value, description) do
+  @spec with_module(t(), Dagger.Module.t()) :: Dagger.Env.t()
+  def with_module(%__MODULE__{} = env, module) do
     query_builder =
-      env.query_builder
-      |> QB.select("withLLMInput")
-      |> QB.put_arg("name", name)
-      |> QB.put_arg("value", Dagger.ID.id!(value))
-      |> QB.put_arg("description", description)
-
-    %Dagger.Env{
-      query_builder: query_builder,
-      client: env.client
-    }
-  end
-
-  @doc """
-  Declare a desired LLM output to be assigned in the environment
-  """
-  @spec with_llm_output(t(), String.t(), String.t()) :: Dagger.Env.t()
-  def with_llm_output(%__MODULE__{} = env, name, description) do
-    query_builder =
-      env.query_builder
-      |> QB.select("withLLMOutput")
-      |> QB.put_arg("name", name)
-      |> QB.put_arg("description", description)
+      env.query_builder |> QB.select("withModule") |> QB.put_arg("module", Dagger.ID.id!(module))
 
     %Dagger.Env{
       query_builder: query_builder,
@@ -768,6 +782,47 @@ defmodule Dagger.Env do
       |> QB.put_arg("description", description)
 
     %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Return a new environment with a new host filesystem
+  """
+  @spec with_workspace(t(), Dagger.Directory.t()) :: Dagger.Env.t()
+  def with_workspace(%__MODULE__{} = env, workspace) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withWorkspace")
+      |> QB.put_arg("workspace", Dagger.ID.id!(workspace))
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Return a new environment without any outputs
+  """
+  @spec without_outputs(t()) :: Dagger.Env.t()
+  def without_outputs(%__MODULE__{} = env) do
+    query_builder =
+      env.query_builder |> QB.select("withoutOutputs")
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @spec workspace(t()) :: Dagger.Directory.t()
+  def workspace(%__MODULE__{} = env) do
+    query_builder =
+      env.query_builder |> QB.select("workspace")
+
+    %Dagger.Directory{
       query_builder: query_builder,
       client: env.client
     }
