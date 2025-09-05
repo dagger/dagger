@@ -14,7 +14,8 @@ import (
 const (
 	PhpImage      = "php:8.3-cli-alpine"
 	PhpDigest     = "sha256:e4ffe0a17a6814009b5f0713a5444634a9c5b688ee34b8399e7d4f2db312c3b4"
-	ComposerImage = "composer:2@sha256:6d2b5386580c3ba67399c6ccfb50873146d68fcd7c31549f8802781559bed709"
+	ComposerImage = "composer/composer:2.8-bin" +
+		"@sha256:c735b6a52ea118693178babc601984dbbbd07f1d31ec87eaa881173622b467ed"
 	ModSourcePath = "/src"
 	GenPath       = "sdk"
 )
@@ -74,7 +75,7 @@ func (m *PhpSdk) CodegenBase(
 	base := dag.Container().
 		From(fmt.Sprintf("%s@%s", PhpImage, PhpDigest)).
 		WithExec([]string{"apk", "add", "git", "openssh", "curl"}).
-		WithFile("/usr/bin/composer", dag.Container().From(ComposerImage).File("/usr/bin/composer")).
+		WithFile("/usr/bin/composer", dag.Container().From(ComposerImage).File("/composer")).
 		WithMountedCache("/root/.composer", dag.CacheVolume(fmt.Sprintf("composer-%s", PhpImage))).
 		WithEnvVariable("COMPOSER_HOME", "/root/.composer").
 		WithEnvVariable("COMPOSER_NO_INTERACTION", "1").
