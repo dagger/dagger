@@ -11,6 +11,25 @@ namespace Dagger;
 class Env extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * retrieve an object binding
+     */
+    public function binding(string $name): Binding
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('binding');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Binding($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * return all object bindings
+     */
+    public function bindings(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('bindings');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'bindings');
+    }
+
+    /**
      * A unique identifier for this Env.
      */
     public function id(): EnvId
@@ -55,6 +74,20 @@ class Env extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('outputs');
         return (array)$this->queryLeaf($leafQueryBuilder, 'outputs');
+    }
+
+    /**
+     * bind an object to the env
+     */
+    public function withBinding(string $name, string $value, ?string $description = null): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withBinding');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
+        if (null !== $description) {
+        $innerQueryBuilder->setArgument('description', $description);
+        }
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

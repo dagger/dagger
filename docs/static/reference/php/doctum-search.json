@@ -2821,6 +2821,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::binding",
+			"p": "Dagger/Env.html#method_binding",
+			"d": "<p>retrieve an object binding</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::bindings",
+			"p": "Dagger/Env.html#method_bindings",
+			"d": "<p>return all object bindings</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::id",
 			"p": "Dagger/Env.html#method_id",
 			"d": "<p>A unique identifier for this Env.</p>"
@@ -2848,6 +2860,12 @@
 			"n": "Dagger\\Env::outputs",
 			"p": "Dagger/Env.html#method_outputs",
 			"d": "<p>return all output values for the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withBinding",
+			"p": "Dagger/Env.html#method_withBinding",
+			"d": "<p>bind an object to the env</p>"
 		},
 		{
 			"t": "M",
