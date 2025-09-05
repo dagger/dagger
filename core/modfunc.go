@@ -293,12 +293,14 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	var cacheMixins []string
-	if !opts.Cache {
-		// Scope the exec cache key to the current session ID. It will be
-		// cached in the context of the session but invalidated across
-		// different sessions.
-		cacheMixins = append(cacheMixins, clientMetadata.SessionID)
-	}
+	/*
+		if !opts.Cache {
+			// Scope the exec cache key to the current session ID. It will be
+			// cached in the context of the session but invalidated across
+			// different sessions.
+			cacheMixins = append(cacheMixins, clientMetadata.SessionID)
+		}
+	*/
 	if !opts.SkipCallDigestCacheKey {
 		// If true, scope the exec cache key to the current dagql call digest. This is needed currently
 		// for module function calls specifically so that their cache key is based on their arguments and
