@@ -261,9 +261,6 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	}
 
 	args.Path = path.Clean(args.Path)
-	if args.Path == ".." || strings.HasPrefix(args.Path, "../") {
-		return inst, fmt.Errorf("path %q escapes workdir; use an absolute path instead", args.Path)
-	}
 
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
