@@ -1,0 +1,117 @@
+name: Alternative CI Runners 2
+
+on:
+  # Run the workflow every day TWICE:
+  # 1. 9:06AM UTC (low activity)
+  # 2. 9:26AM UTC (cache test - high chance of no code changes)
+  schedule:
+    - cron: "6,26 9 * * *"
+  # Enable manual trigger for on-demand runs - helps when debugging
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-devengine:
+    runs-on:
+      - 'nscloud-ubuntu-24.04-amd64-16x32'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Dagger CLI
+        id: install-dagger
+        run: |
+          #!/bin/bash
+
+          set -o pipefail
+          # Fallback to /usr/local for backwards compatability
+          prefix_dir="${RUNNER_TEMP:-/usr/local}"
+
+          # Ensure the dir is writable otherwise fallback to tmpdir
+          if [[ ! -d "$prefix_dir" ]] || [[ ! -w "$prefix_dir" ]]; then
+            prefix_dir="$(mktemp -d)"
+          fi
+          printf '%s/bin' "$prefix_dir" >>$GITHUB_PATH
+
+          # If the dagger version is 'latest', set the version back to an empty
+          # string. This allows the install script to detect and install the latest
+          # version itself
+          if [[ "$DAGGER_VERSION" == "latest" ]]; then
+            DAGGER_VERSION=
+          fi
+
+          # The install.sh script creates path ${prefix_dir}/bin
+          curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
+      - name: Build Dagger Dev Engine
+        id: build-dev-engine
+        run: |
+          #!/bin/bash -e -o pipefail
+          # build and publish an engine image to the NSC registry
+          # docker credentials are automatically configured on NSC runners
+          export DAGGER_ENGINE_IMAGE_FULL_ADDR="$NSC_CONTAINER_REGISTRY/engine:${{ github.sha }}"
+          ./hack/build-publish
+          # write the image to the output so that other jobs can use it
+          echo "DAGGER_ENGINE_IMAGE=$DAGGER_ENGINE_IMAGE_FULL_ADDR" >> $GITHUB_OUTPUT
+      - name: Upload dagger CLI binary artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: dagger-${{ github.sha }}
+          path: ./bin/dagger
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
+
+  testdev-everything-else:
+    runs-on:
+      - 'ubuntu-24.04'
+    needs: build-devengine
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: dagger-${{ github.sha }}
+          path: /usr/local/bin/dagger
+
+      - name: exec
+        id: exec
+        run: |
+          #!/bin/bash -e -o pipefail
+          # set the right permissions on the downloaded dagger CLI
+          chmod +x /usr/local/bin/dagger
+
+          dagger call \
+            test specific \
+            --race=true \
+            --parallel=16 \
+            --skip='TestProvision|TestTelemetry|TestModule|TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestJava|TestContainer|TestDockerfile|TestLLM|TestCLI|TestEngine|TestClientGenerator|TestInterface|TestCall|TestShell|TestDaggerCMD'
+        env:
+          # Use OIDC authentication to provision engines
+          _EXPERIMENTAL_DAGGER_RUNNER_HOST: "dagger-cloud://default-engine-config.dagger.cloud?image=${{ needs.build-devengine.outputs.DAGGER_ENGINE_IMAGE }}"
+          DAGGER_CLOUD_TOKEN: oidc
+          DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+          NO_OUTPUT: "true"
+
+  testdev-module-runtimes:
+    runs-on:
+      - 'ubuntu-24.04'
+    needs: build-devengine
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: dagger-${{ github.sha }}
+          path: /usr/local/bin/dagger
+
+      - name: exec
+        id: exec
+        run: |
+          #!/bin/bash --noprofile --norc -e -o pipefail
+          # set the right permissions on the downloaded dagger CLI
+          chmod +x /usr/local/bin/dagger
+
+          dagger call test specific --race=true --parallel=16 --run='TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestJava'
+        env:
+          _EXPERIMENTAL_DAGGER_RUNNER_HOST: "dagger-cloud://default-engine-config.dagger.cloud?image=${{ needs.build-devengine.outputs.DAGGER_ENGINE_IMAGE }}"
+          DAGGER_CLOUD_TOKEN: oidc
+          DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+          NO_OUTPUT: "true"
