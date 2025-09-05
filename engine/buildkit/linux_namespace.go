@@ -19,7 +19,7 @@ import (
 
 const (
 	idleTimeout    = 1 * time.Second
-	workerPoolSize = 5
+	workerPoolSize = 2
 )
 
 func runInNetNS[T any](

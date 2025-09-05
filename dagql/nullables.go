@@ -129,6 +129,29 @@ func (o *Optional[I]) UnmarshalJSON(p []byte) error {
 	return nil
 }
 
+var _ Setter = Optional[Input]{}
+
+func (o Optional[I]) SetField(val reflect.Value) error {
+	switch val.Kind() {
+	case reflect.Ptr:
+		if o.Valid {
+			ptr := reflect.New(val.Type().Elem())
+			if err := assign(ptr.Elem(), o.Value); err != nil {
+				return fmt.Errorf("optional pointer: %w", err)
+			}
+			val.Set(ptr)
+		}
+	default:
+		if o.Valid {
+			if err := assign(val, o.Value); err != nil {
+				return fmt.Errorf("optional: %w", err)
+			}
+			return nil
+		}
+	}
+	return nil
+}
+
 type DynamicOptional struct {
 	Elem  Input
 	Value Input

@@ -424,6 +424,16 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 	if releaseRootMount != nil {
 		state.cleanups.Add("release rootfs mount", releaseRootMount)
 	}
+	// TODO: is this robust? the one for submounts is very complicated
+	if state.rootMount.Selector != "" {
+		for i, mnt := range rootMnts {
+			mnt.Source, err = fs.RootPath(mnt.Source, state.rootMount.Selector)
+			if err != nil {
+				return fmt.Errorf("root mount %s points to invalid source: %w", state.rootMount.Selector, err)
+			}
+			rootMnts[i] = mnt
+		}
+	}
 	if err := mount.All(rootMnts, state.rootfsPath); err != nil {
 		return fmt.Errorf("mount rootfs: %w", err)
 	}
