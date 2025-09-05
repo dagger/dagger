@@ -133,6 +133,12 @@ type Server struct {
 	cacheImporters map[string]remotecache.ResolveCacheImporterFunc
 
 	//
+	// worker custom source
+	//
+
+	workerLocalSource *local.LocalSource
+
+	//
 	// worker/executor-specific config+state
 	//
 
@@ -427,13 +433,15 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	logrus.Infof("found worker %q, labels=%v, platforms=%v", workerID, baseLabels, FormatPlatforms(srv.enabledPlatforms))
 	archutil.WarnIfUnsupported(srv.enabledPlatforms)
 
-	ls, err := local.NewSource(local.Opt{
+	// TODO: remove in favor of global core.LocalSource()
+	srv.workerLocalSource = local.NewLocalSource(local.LocalSourceOpt{
 		CacheAccessor: srv.workerCache,
 	})
-	if err != nil {
-		return nil, err
-	}
-	srv.workerSourceManager.Register(ls)
+
+	// TODO: remove in favor of global LocalSource, we just want to make
+	// sure that this local is never called.
+	dummyLs := local.NewDummySource()
+	srv.workerSourceManager.Register(dummyLs)
 
 	bs, err := blob.NewSource(blob.Opt{
 		CacheAccessor: srv.workerCache,
@@ -576,6 +584,10 @@ func (srv *Server) BuildkitCache() bkcache.Manager {
 
 func (srv *Server) BuildkitSession() *bksession.Manager {
 	return srv.bkSessionManager
+}
+
+func (srv *Server) LocalSource() *local.LocalSource {
+	return srv.workerLocalSource
 }
 
 func (srv *Server) Info(context.Context, *controlapi.InfoRequest) (*controlapi.InfoResponse, error) {
