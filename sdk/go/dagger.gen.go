@@ -8692,6 +8692,16 @@ func (r *ModuleSource) WithUpdateDependencies(dependencies []string) *ModuleSour
 	}
 }
 
+// Update one or more clients.
+func (r *ModuleSource) WithUpdatedClients(clients []string) *ModuleSource {
+	q := r.query.Select("withUpdatedClients")
+	q = q.Arg("clients", clients)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
 // Remove the current blueprint from the module source.
 func (r *ModuleSource) WithoutBlueprint() *ModuleSource {
 	q := r.query.Select("withoutBlueprint")
