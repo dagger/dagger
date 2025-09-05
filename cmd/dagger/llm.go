@@ -10,18 +10,19 @@ import (
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
+	"github.com/muesli/termenv"
+	"github.com/opencontainers/go-digest"
+	"go.opentelemetry.io/otel/trace"
+	"mvdan.cc/sh/v3/syntax"
+
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
-	"github.com/charmbracelet/bubbles/key"
 	"github.com/dagger/dagger/core/openrouter"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/muesli/termenv"
-	"github.com/opencontainers/go-digest"
-	"go.opentelemetry.io/otel/trace"
-	"mvdan.cc/sh/v3/syntax"
 )
 
 type interpreterMode int
@@ -259,32 +260,32 @@ func (s *LLMSession) syncAndUpdateSidebar(ctx context.Context) error {
 		return err
 	}
 	lines := []string{
-		idtui.DotFilled + " " + termenv.String(s.model).Bold().String(),
+		termenv.String(s.model).Foreground(termenv.ANSIMagenta).Bold().String(),
 	}
 
 	if opts.Verbosity > dagui.ShowInternalVerbosity {
 		if inputTokens > 0 {
 			lines = append(lines,
 				fmt.Sprintf("%s "+termenv.String("%d").Bold().String(),
-					"  Tokens In: ",
+					"Tokens In: ",
 					inputTokens))
 		}
 		if outputTokens > 0 {
 			lines = append(lines,
 				fmt.Sprintf("%s "+termenv.String("%d").Bold().String(),
-					"  Tokens Out:",
+					"Tokens Out:",
 					outputTokens))
 		}
 		if cacheReads > 0 {
 			lines = append(lines,
 				fmt.Sprintf("%s "+termenv.String("%d").Bold().String(),
-					"  Cache Reads: ",
+					"Cache Reads: ",
 					cacheReads))
 		}
 		if cacheWrites > 0 {
 			lines = append(lines,
 				fmt.Sprintf("%s "+termenv.String("%d").Bold().String(),
-					"  Cache Writes:",
+					"Cache Writes:",
 					cacheWrites))
 		}
 	}
@@ -308,9 +309,9 @@ func (s *LLMSession) syncAndUpdateSidebar(ctx context.Context) error {
 				contextStyle = contextStyle.Foreground(termenv.ANSIBrightRed)
 			}
 			lines = append(lines,
-				fmt.Sprintf("  Cost: "+termenv.String("$%0.2f").Bold().String(),
+				fmt.Sprintf("Cost: "+termenv.String("$%0.2f").Bold().String(),
 					totalCost),
-				fmt.Sprintf("  Context: "+contextStyle.String(),
+				fmt.Sprintf("Context: "+contextStyle.String(),
 					contextUsage),
 			)
 		}
