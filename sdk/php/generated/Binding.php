@@ -56,6 +56,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the binding value, as type EnvFile
+     */
+    public function asEnvFile(): EnvFile
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asEnvFile');
+        return new \Dagger\EnvFile($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type File
      */
     public function asFile(): File
