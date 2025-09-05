@@ -108,17 +108,19 @@ const denoConfigPath = "./deno.json"
 // Import paths used by user.
 const daggerPathAlias = "@dagger.io/dagger"
 const daggerTelemetryPathAlias = "@dagger.io/dagger/telemetry"
-const daggerClientPathAlias = "@dagger.io/client"
+const daggerCorePathAlias = "@dagger.io/core"
 
 // Filename of imported path aliases.
 const daggerRootFilename = {
   bundle: "./sdk/index.ts",
   local: "./sdk/src/index.ts",
+  remote: "./sdk/index.ts",
 }
 
 const daggerTelemetryFilename = {
   bundle: "./sdk/telemetry.ts",
   local: "./sdk/src/telemetry/index.ts",
+  remote: "./sdk/telemetry.ts",
 }
 
 const typescriptImport = `npm:typescript@^5.8.2`
@@ -169,16 +171,19 @@ if (denoConfig.imports["typescript"] === undefined) {
   denoConfig.imports["typescript"] = typescriptImport
 }
 
-if (sdkLibOrigin.value !== "remote") {
-  for (const [key, value] of Object.entries(daggerImports)) {
-    denoConfig.imports[key] = value
-  }
+for (const [key, value] of Object.entries(daggerImports)) {
+  denoConfig.imports[key] = value
 }
 
 if (standaloneClient.value === true) {
-  denoConfig.compilerOptions.paths[daggerClientPathAlias] = [
-    `./${clientDir.value}/client.gen.ts`,
+  denoConfig.imports[daggerPathAlias] = [`./${clientDir.value}/client.gen.ts`]
+  denoConfig.imports[daggerCorePathAlias] = [
+    `${daggerRootFilename[sdkLibOrigin.value!]}`,
   ]
+}
+
+if (sdkLibOrigin.value === "remote") {
+  denoConfig.imports[daggerCorePathAlias] = "npm:@dagger.io/dagger"
 }
 
 // Update unstable features
