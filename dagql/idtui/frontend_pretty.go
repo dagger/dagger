@@ -234,7 +234,7 @@ func (fe *frontendPretty) renderSidebar() {
 		}
 
 		filler := fe.sidebarWidth - len(section.Title)
-		filler -= 4 // border, space on each side, and between title and bar
+		filler -= 6 // 1 border + 2 spaces * 2 sides + 1 space between title and bar
 		if len(section.KeyMap) > 0 {
 			filler -= fe.renderKeymap(keymap,
 				KeymapStyle.Background(sidebarBG),
@@ -784,15 +784,15 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 	}
 
 	below := new(strings.Builder)
-
 	if logs := fe.logs.Logs[fe.ZoomedSpan]; logs != nil && logs.UsedHeight() > 0 {
 		logs.SetHeight(fe.window.Height / 3)
 		logs.SetPrefix(progPrefix)
 		fmt.Fprint(below, logs.View())
 	}
 
-	belowOut := strings.TrimRight(below.String(), "\n")
-	progHeight -= lipgloss.Height(belowOut)
+	if below.Len() > 0 {
+		progHeight -= lipgloss.Height(below.String())
+	}
 
 	if fe.editline != nil {
 		progHeight -= lipgloss.Height(fe.editlineView())
@@ -803,12 +803,17 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 	}
 
 	progHeight -= lipgloss.Height(fe.keymapView())
+	progHeight -= 1 // mind the gap between progress and logs
 
 	if fe.renderProgress(out, r, progHeight, progPrefix) {
 		fmt.Fprintln(out)
 	}
 
-	fmt.Fprint(out, belowOut)
+	if below.Len() > 0 {
+		fmt.Fprint(out, below.String())
+		fmt.Fprintln(out)
+	}
+
 	return nil
 }
 
@@ -1073,7 +1078,7 @@ func (fe *frontendPretty) renderWithSidebar(mainContent, sidebarContent string) 
 			Left: BorderLeft, // use a line that hugs the background
 		}, false, false, false, true).
 		BorderForeground(ANSIBrightBlack).
-		Padding(1, 1).
+		Padding(1, 2).
 		Render(sidebarContent)
 
 	styledContent := lipgloss.NewStyle().
