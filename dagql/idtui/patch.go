@@ -17,8 +17,6 @@ func SummarizePatch(out *termenv.Output, patch string, maxWidth int) error {
 	totalAdded := 0
 	totalRemoved := 0
 
-	fmt.Fprintln(out)
-
 	var longestFilenameLen int
 	for _, f := range diff.Files {
 		filename := f.NewName
@@ -95,20 +93,19 @@ func SummarizePatch(out *termenv.Output, patch string, maxWidth int) error {
 		if len(filename) < longestFilenameLen {
 			out.WriteString(strings.Repeat(" ", longestFilenameLen-len(filename)))
 		}
-		out.WriteString(" | ")
 
 		// Show change indicator
 		if maxWidth > 0 {
 			// Simplified text form for constrained width
-			var parts []string
 			if addedLines > 0 {
-				parts = append(parts, out.String(fmt.Sprintf("+%d", addedLines)).Foreground(termenv.ANSIGreen).String())
+				fmt.Fprintf(out, " %s", out.String(fmt.Sprintf("+%d", addedLines)).Foreground(termenv.ANSIGreen))
 			}
 			if removedLines > 0 {
-				parts = append(parts, out.String(fmt.Sprintf("-%d", removedLines)).Foreground(termenv.ANSIRed).String())
+				fmt.Fprintf(out, " %s", out.String(fmt.Sprintf("-%d", removedLines)).Foreground(termenv.ANSIRed))
 			}
-			out.WriteString(strings.Join(parts, ", "))
 		} else {
+			out.WriteString(" | ")
+
 			// Absolute bars representation
 			if addedLines > 0 {
 				out.WriteString(out.String(strings.Repeat("+", addedLines)).Foreground(termenv.ANSIGreen).String())
@@ -121,17 +118,26 @@ func SummarizePatch(out *termenv.Output, patch string, maxWidth int) error {
 	}
 
 	// Add summary line
-	fmt.Fprintf(out, "%d files changed, ", len(diff.Files))
-	if totalAdded > 0 {
-		out.WriteString(out.String(fmt.Sprintf("+%d", totalAdded)).Foreground(termenv.ANSIGreen).String())
+	fmt.Fprintln(out)
+	fmt.Fprintf(out, "%d %s changed", len(diff.Files),
+		func() string {
+			if len(diff.Files) == 1 {
+				return "file"
+			} else {
+				return "files"
+			}
+		}(),
+	)
+	if totalAdded+totalRemoved > 0 {
+		fmt.Fprint(out, ",")
+		if totalAdded > 0 {
+			out.WriteString(out.String(fmt.Sprintf(" +%d", totalAdded)).Foreground(termenv.ANSIGreen).String())
+		}
+		if totalRemoved > 0 {
+			out.WriteString(out.String(fmt.Sprintf(" -%d", totalRemoved)).Foreground(termenv.ANSIRed).String())
+		}
+		out.WriteString(" lines")
 	}
-	if totalAdded > 0 && totalRemoved > 0 {
-		out.WriteString(" ")
-	}
-	if totalRemoved > 0 {
-		out.WriteString(out.String(fmt.Sprintf("-%d", totalRemoved)).Foreground(termenv.ANSIRed).String())
-	}
-	out.WriteString(" lines")
 
 	return nil
 }

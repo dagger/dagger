@@ -108,6 +108,8 @@ type SidebarSection struct {
 	Title string
 	// The content to display.
 	Content string
+	// The content to display, for a given width.
+	ContentFunc func(int) string
 	// Keymap associated with this section
 	KeyMap []key.Binding
 }

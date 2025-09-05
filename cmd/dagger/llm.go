@@ -8,7 +8,6 @@ import (
 	"log"
 	"maps"
 	"os"
-	"slices"
 	"strings"
 
 	"dagger.io/dagger"
@@ -159,37 +158,24 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 
 		s.afterFS = prompted.Env().Workspace()
 
-		dirDiff, err := dirDiff(s.plumbingCtx, s.beforeFS, s.afterFS)
+		dirDiff := s.afterFS.Changes(s.beforeFS)
+
+		patch, err := dirDiff.AsPatch().Contents(ctx)
 		if err != nil {
 			return s, err
 		}
 
-		if dirDiff.HasChanges() {
-			diff := ""
-			for _, fp := range dirDiff.Added {
-				diff += fmt.Sprintf("%s\n", termenv.String("+ "+fp).Bold().Foreground(termenv.ANSIGreen))
-			}
-			for _, fp := range dirDiff.Changed {
-				diff += fmt.Sprintf("%s\n", termenv.String("• "+fp).Bold().Foreground(termenv.ANSIYellow))
-			}
-			dirs := map[string]bool{}
-		removed:
-			for _, fp := range dirDiff.Removed {
-				for dir := range dirs {
-					if strings.HasPrefix(fp, dir) {
-						// don't show removed files in directories that were already removed
-						continue removed
-					}
-				}
-				// if the path ends with a slash, it's a directory
-				if strings.HasSuffix(fp, "/") {
-					dirs[fp] = true
-				}
-				diff += fmt.Sprintf("%s\n", termenv.String("− "+fp).Bold().Foreground(termenv.ANSIRed))
-			}
+		if len(patch) > 0 {
 			Frontend.SetSidebarContent(idtui.SidebarSection{
-				Title:   "Changes",
-				Content: diff,
+				Title: "Changes",
+				ContentFunc: func(width int) string {
+					var buf strings.Builder
+					out := idtui.NewOutput(&buf)
+					if err := idtui.SummarizePatch(out, patch, width); err != nil {
+						return "ERROR: " + err.Error()
+					}
+					return buf.String()
+				},
 				KeyMap: []key.Binding{
 					key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "sync")),
 				},
@@ -210,78 +196,6 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 	}
 
 	return s, nil
-}
-
-func dirDiff(ctx context.Context, before, after *dagger.Directory) (*DirDiff, error) {
-	beforeFiles, err := before.Glob(ctx, "**/*")
-	if err != nil {
-		return nil, err
-	}
-	afterFiles, err := after.Glob(ctx, "**/*")
-	if err != nil {
-		return nil, err
-	}
-	changedFiles, err := before.Diff(after).Glob(ctx, "**/*")
-	if err != nil {
-		return nil, err
-	}
-	removed := map[string]bool{}
-	added := map[string]bool{}
-	for _, fp := range afterFiles {
-		added[fp] = true
-	}
-	for _, fp := range beforeFiles {
-		if added[fp] {
-			delete(added, fp)
-		} else {
-			removed[fp] = true
-		}
-	}
-	changedFiles = slices.DeleteFunc(changedFiles, func(s string) bool {
-		return added[s] || strings.HasSuffix(s, "/")
-	})
-	return &DirDiff{
-		Before:  before,
-		After:   after,
-		Added:   slices.Sorted(maps.Keys(added)),
-		Changed: changedFiles,
-		Removed: slices.Sorted(maps.Keys(removed)),
-	}, nil
-}
-
-type DirDiff struct {
-	Before, After *dagger.Directory
-
-	Added, Changed, Removed []string
-}
-
-func (diff *DirDiff) HasChanges() bool {
-	return len(diff.Added) > 0 || len(diff.Changed) > 0 || len(diff.Removed) > 0
-}
-
-func (diff *DirDiff) Apply(ctx context.Context, dest string) (rerr error) {
-	slog.Debug("exporting", "dest", dest)
-	_, err := diff.Before.Diff(diff.After).Export(ctx, dest)
-	if err != nil {
-		slog.Debug("exporting failed", "error", err)
-		return err
-	}
-
-	for _, p := range diff.Removed {
-		if strings.HasSuffix(p, "/") {
-			// Be a little paranoid about directory paths for now, and just leave the
-			// directories there.
-			// This might be stupid.
-			continue
-		}
-		slog.Debug("removing", "path", p)
-		if err := os.Remove(p); err != nil {
-			slog.Error("failed to remove", "path", p, "error", err)
-			return err
-		}
-	}
-
-	return nil
 }
 
 var dbg *log.Logger
@@ -720,15 +634,8 @@ func (s *LLMSession) SyncToLocal(ctx context.Context) error {
 		return fmt.Errorf("nothing to sync")
 	}
 
-	// Get the current filesystem state from the LLM environment
-	diff, err := dirDiff(ctx, s.beforeFS, s.afterFS)
-	if err != nil {
+	if _, err := s.afterFS.Changes(s.beforeFS).Export(ctx, "."); err != nil {
 		return err
-	}
-
-	// Export the entire directory to the local filesystem (current working directory)
-	if err := diff.Apply(ctx, "."); err != nil {
-		return fmt.Errorf("failed to sync changes to local filesystem: %w", err)
 	}
 
 	s.beforeFS = s.afterFS

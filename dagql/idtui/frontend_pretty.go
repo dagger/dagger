@@ -212,7 +212,12 @@ func (fe *frontendPretty) renderSidebar() {
 	fe.sidebarBuf.Reset()
 
 	for i, section := range fe.sidebar {
-		if section.Content == "" {
+		content := section.Content
+		if section.ContentFunc != nil {
+			content = section.ContentFunc(fe.sidebarWidth)
+		}
+
+		if content == "" {
 			// Section became empty (e.g. changes synced); don't show it
 			continue
 		}
@@ -250,7 +255,10 @@ func (fe *frontendPretty) renderSidebar() {
 		fe.sidebarBuf.WriteString(keymap.String())
 		fe.sidebarBuf.WriteString("\n\n")
 
-		fe.sidebarBuf.WriteString(strings.TrimRight(section.Content, "\n"))
+		// reset everything but the background
+		content = strings.ReplaceAll(content, reset, termenv.CSI+"39;22;23;24;25;27;28;29m")
+
+		fe.sidebarBuf.WriteString(strings.TrimRight(content, "\n"))
 	}
 }
 
