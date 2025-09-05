@@ -743,8 +743,6 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 			key.WithHelp("home", "first")),
 		key.NewBinding(key.WithKeys("end", " "),
 			key.WithHelp("end", "last")),
-		key.NewBinding(key.WithKeys("enter"),
-			key.WithHelp("enter", "zoom")),
 		key.NewBinding(key.WithKeys("+/-", "+", "-"),
 			key.WithHelp("+/-", fmt.Sprintf("verbosity=%d", fe.Verbosity))),
 		key.NewBinding(key.WithKeys("E"),
