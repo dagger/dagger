@@ -8,6 +8,7 @@ frontend_dots.go
 frontend_plain.go
 frontend_pretty.go
 golden_test.go
+huh.go
 multiprefixw/
 output.go
 symbols.go
@@ -47,6 +48,7 @@ Expected stderr:
 ┃ frontend_plain.go
 ┃ frontend_pretty.go
 ┃ golden_test.go
+┃ huh.go
 ┃ multiprefixw/
 ┃ output.go
 ┃ symbols.go

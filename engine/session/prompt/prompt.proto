@@ -17,6 +17,8 @@ message BoolRequest {
     string persistentKey = 2;
     // the default value to return if the user doesn't respond
     bool default = 3;
+    // a (very) brief title for the prompt
+    string title = 4;
 }
 
 message BoolResponse {
@@ -29,6 +31,8 @@ message StringRequest {
     string prompt = 1;
     // the default value to return if the user doesn't respond
     string default = 2;
+    // a (very) brief title for the prompt
+    string title = 3;
 }
 
 message StringResponse {

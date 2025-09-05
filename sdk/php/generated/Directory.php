@@ -47,6 +47,18 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return the difference between this directory and another directory, typically an older snapshot.
+     *
+     * The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
+     */
+    public function changes(DirectoryId|Directory $from): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('changes');
+        $innerQueryBuilder->setArgument('from', $from);
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return the difference between this directory and an another directory. The difference is encoded as a directory.
      */
     public function diff(DirectoryId|Directory $other): Directory
@@ -290,6 +302,16 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return a directory with changes from another directory applied to it.
+     */
+    public function withChanges(ChangesetId|Changeset $changes): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChanges');
+        $innerQueryBuilder->setArgument('changes', $changes);
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return a snapshot with a directory added
      */
     public function withDirectory(
@@ -371,6 +393,16 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     public function withPatch(string $patch): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPatch');
+        $innerQueryBuilder->setArgument('patch', $patch);
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this directory with the given Git-compatible patch file applied.
+     */
+    public function withPatchFile(FileId|File $patch): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPatchFile');
         $innerQueryBuilder->setArgument('patch', $patch);
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

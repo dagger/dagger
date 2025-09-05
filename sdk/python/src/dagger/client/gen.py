@@ -21,6 +21,11 @@ class CacheVolumeID(Scalar):
     object of type CacheVolume."""
 
 
+class ChangesetID(Scalar):
+    """The `ChangesetID` scalar type represents an identifier for an
+    object of type Changeset."""
+
+
 class CloudID(Scalar):
     """The `CloudID` scalar type represents an identifier for an object of
     type Cloud."""
@@ -488,6 +493,12 @@ class Binding(Type):
         _ctx = self._select("asCacheVolume", _args)
         return CacheVolume(_ctx)
 
+    def as_changeset(self) -> "Changeset":
+        """Retrieve the binding value, as type Changeset"""
+        _args: list[Arg] = []
+        _ctx = self._select("asChangeset", _args)
+        return Changeset(_ctx)
+
     def as_cloud(self) -> "Cloud":
         """Retrieve the binding value, as type Cloud"""
         _args: list[Arg] = []
@@ -745,6 +756,141 @@ class CacheVolume(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(CacheVolumeID)
+
+
+@typecheck
+class Changeset(Type):
+    """A comparison between two directories representing changes that can
+    be applied."""
+
+    async def added_paths(self) -> list[str]:
+        """Files and directories that were added in the newer directory.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("addedPaths", _args)
+        return await _ctx.execute(list[str])
+
+    def after(self) -> "Directory":
+        """The newer/upper snapshot."""
+        _args: list[Arg] = []
+        _ctx = self._select("after", _args)
+        return Directory(_ctx)
+
+    def as_patch(self) -> "File":
+        """Return a Git-compatible patch of the changes"""
+        _args: list[Arg] = []
+        _ctx = self._select("asPatch", _args)
+        return File(_ctx)
+
+    def before(self) -> "Directory":
+        """The older/lower snapshot to compare against."""
+        _args: list[Arg] = []
+        _ctx = self._select("before", _args)
+        return Directory(_ctx)
+
+    async def id(self) -> ChangesetID:
+        """A unique identifier for this Changeset.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        ChangesetID
+            The `ChangesetID` scalar type represents an identifier for an
+            object of type Changeset.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(ChangesetID)
+
+    def layer(self) -> "Directory":
+        """Return a snapshot containing only the created and modified files"""
+        _args: list[Arg] = []
+        _ctx = self._select("layer", _args)
+        return Directory(_ctx)
+
+    async def modified_paths(self) -> list[str]:
+        """Files and directories that existed before and were updated in the
+        newer directory.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("modifiedPaths", _args)
+        return await _ctx.execute(list[str])
+
+    async def removed_paths(self) -> list[str]:
+        """Files and directories that were removed. Directories are indicated by
+        a trailing slash, and their child paths are not included.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("removedPaths", _args)
+        return await _ctx.execute(list[str])
+
+    async def sync(self) -> Self:
+        """Force evaluation in the engine.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "sync", _args)
+
+    def __await__(self):
+        return self.sync().__await__()
 
 
 @typecheck
@@ -3011,6 +3157,24 @@ class Directory(Type):
         _ctx = self._select("asModuleSource", _args)
         return ModuleSource(_ctx)
 
+    def changes(self, from_: Self) -> Changeset:
+        """Return the difference between this directory and another directory,
+        typically an older snapshot.
+
+        The difference is encoded as a changeset, which also tracks removed
+        files, and can be applied to other directories.
+
+        Parameters
+        ----------
+        from_:
+            The base directory snapshot to compare against
+        """
+        _args = [
+            Arg("from", from_),
+        ]
+        _ctx = self._select("changes", _args)
+        return Changeset(_ctx)
+
     def diff(self, other: Self) -> Self:
         """Return the difference between this directory and an another directory.
         The difference is encoded as a directory.
@@ -3446,6 +3610,20 @@ class Directory(Type):
         _ctx = self._select("terminal", _args)
         return Directory(_ctx)
 
+    def with_changes(self, changes: Changeset) -> Self:
+        """Return a directory with changes from another directory applied to it.
+
+        Parameters
+        ----------
+        changes:
+            Changes to apply to the directory
+        """
+        _args = [
+            Arg("changes", changes),
+        ]
+        _ctx = self._select("withChanges", _args)
+        return Directory(_ctx)
+
     def with_directory(
         self,
         path: str,
@@ -3599,6 +3777,25 @@ class Directory(Type):
             Arg("patch", patch),
         ]
         _ctx = self._select("withPatch", _args)
+        return Directory(_ctx)
+
+    def with_patch_file(self, patch: "File") -> Self:
+        """Retrieves this directory with the given Git-compatible patch file
+        applied.
+
+        .. caution::
+            Experimental: This API is highly experimental and may be removed
+            or replaced entirely.
+
+        Parameters
+        ----------
+        patch:
+            File containing the patch to apply
+        """
+        _args = [
+            Arg("patch", patch),
+        ]
+        _ctx = self._select("withPatchFile", _args)
         return Directory(_ctx)
 
     def with_symlink(self, target: str, link_name: str) -> Self:
@@ -4424,6 +4621,48 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withCacheVolumeOutput", _args)
+        return Env(_ctx)
+
+    def with_changeset_input(
+        self,
+        name: str,
+        value: Changeset,
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type Changeset in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The Changeset value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withChangesetInput", _args)
+        return Env(_ctx)
+
+    def with_changeset_output(self, name: str, description: str) -> Self:
+        """Declare a desired Changeset output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withChangesetOutput", _args)
         return Env(_ctx)
 
     def with_cloud_input(
@@ -9476,6 +9715,14 @@ class Client(Root):
         _ctx = self._select("loadCacheVolumeFromID", _args)
         return CacheVolume(_ctx)
 
+    def load_changeset_from_id(self, id: ChangesetID) -> Changeset:
+        """Load a Changeset from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadChangesetFromID", _args)
+        return Changeset(_ctx)
+
     def load_cloud_from_id(self, id: CloudID) -> Cloud:
         """Load a Cloud from its ID."""
         _args = [
@@ -11234,6 +11481,8 @@ __all__ = [
     "CacheSharingMode",
     "CacheVolume",
     "CacheVolumeID",
+    "Changeset",
+    "ChangesetID",
     "Client",
     "Cloud",
     "CloudID",

@@ -16,6 +16,9 @@ type Binding {
   """Retrieve the binding value, as type CacheVolume"""
   asCacheVolume: CacheVolume!
 
+  """Retrieve the binding value, as type Changeset"""
+  asChangeset: Changeset!
+
   """Retrieve the binding value, as type Cloud"""
   asCloud: Cloud!
 
@@ -124,6 +127,48 @@ type CacheVolume {
 The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
 """
 scalar CacheVolumeID
+
+"""
+A comparison between two directories representing changes that can be applied.
+"""
+type Changeset {
+  """Files and directories that were added in the newer directory."""
+  addedPaths: [String!]!
+
+  """The newer/upper snapshot."""
+  after: Directory!
+
+  """Return a Git-compatible patch of the changes"""
+  asPatch: File!
+
+  """The older/lower snapshot to compare against."""
+  before: Directory!
+
+  """A unique identifier for this Changeset."""
+  id: ChangesetID!
+
+  """Return a snapshot containing only the created and modified files"""
+  layer: Directory!
+
+  """
+  Files and directories that existed before and were updated in the newer directory.
+  """
+  modifiedPaths: [String!]!
+
+  """
+  Files and directories that were removed. Directories are indicated by a
+  trailing slash, and their child paths are not included.
+  """
+  removedPaths: [String!]!
+
+  """Force evaluation in the engine."""
+  sync: ChangesetID!
+}
+
+"""
+The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
+"""
+scalar ChangesetID
 
 """Dagger Cloud configuration and state"""
 type Cloud {
@@ -1401,6 +1446,16 @@ type Directory {
   ): ModuleSource!
 
   """
+  Return the difference between this directory and another directory, typically an older snapshot.
+
+  The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
+  """
+  changes(
+    """The base directory snapshot to compare against"""
+    from: DirectoryID!
+  ): Changeset!
+
+  """
   Return the difference between this directory and an another directory. The difference is encoded as a directory.
   """
   diff(
@@ -1598,6 +1653,12 @@ type Directory {
     insecureRootCapabilities: Boolean = false
   ): Directory!
 
+  """Return a directory with changes from another directory applied to it."""
+  withChanges(
+    """Changes to apply to the directory"""
+    changes: ChangesetID!
+  ): Directory!
+
   """Return a snapshot with a directory added"""
   withDirectory(
     """Location of the written directory (e.g., "/src/")."""
@@ -1680,6 +1741,14 @@ type Directory {
     @@\n-Hello\n+World\n").
     """
     patch: String!
+  ): Directory! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
+
+  """
+  Retrieves this directory with the given Git-compatible patch file applied.
+  """
+  withPatchFile(
+    """File containing the patch to apply"""
+    patch: FileID!
   ): Directory! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
   """Return a snapshot with a symlink"""
@@ -1915,6 +1984,27 @@ type Env {
 
   """Declare a desired CacheVolume output to be assigned in the environment"""
   withCacheVolumeOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type Changeset in the environment"""
+  withChangesetInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Changeset value to assign to the binding"""
+    value: ChangesetID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Changeset output to be assigned in the environment"""
+  withChangesetOutput(
     """The name of the binding"""
     name: String!
 
@@ -3816,6 +3906,9 @@ type Query {
 
   """Load a CacheVolume from its ID."""
   loadCacheVolumeFromID(id: CacheVolumeID!): CacheVolume!
+
+  """Load a Changeset from its ID."""
+  loadChangesetFromID(id: ChangesetID!): Changeset!
 
   """Load a Cloud from its ID."""
   loadCloudFromID(id: CloudID!): Cloud!

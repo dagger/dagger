@@ -152,6 +152,19 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("other").Doc(`The directory to compare against`),
 			),
+		dagql.NodeFunc("changes", s.changes).
+			Doc(
+				`Return the difference between this directory and another directory, typically an older snapshot.`,
+				`The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.`,
+			).
+			Args(
+				dagql.Arg("from").Doc(`The base directory snapshot to compare against`),
+			),
+		dagql.NodeFunc("withChanges", DagOpDirectoryWrapper(srv, s.withChanges, WithPathFn(keepParentDir[withChangesArgs]))).
+			Doc(`Return a directory with changes from another directory applied to it.`).
+			Args(
+				dagql.Arg("changes").Doc(`Changes to apply to the directory`),
+			),
 		dagql.Func("export", s.export).
 			View(AllVersion).
 			DoNotCache("Writes to the local host.").
@@ -192,6 +205,14 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("patch").Doc(`Patch to apply (e.g., "diff --git a/file.txt b/file.txt\nindex 1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-Hello\n+World\n").`),
 			),
+		dagql.NodeFunc("withPatchFile",
+			DagOpDirectoryWrapper(srv, s.withPatchFile,
+				WithPathFn(keepParentDir[withPatchFileArgs]))).
+			Experimental("This API is highly experimental and may be removed or replaced entirely.").
+			Doc(`Retrieves this directory with the given Git-compatible patch file applied.`).
+			Args(
+				dagql.Arg("patch").Doc(`File containing the patch to apply`),
+			),
 		dagql.NodeFunc("asGit", s.asGit).
 			Doc(`Converts this directory to a local git repository`),
 		dagql.NodeFunc("terminal", s.terminal).
@@ -220,6 +241,16 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.SearchResult]{}.Install(srv)
 	dagql.Fields[*core.SearchSubmatch]{}.Install(srv)
+
+	dagql.Fields[*core.Changeset]{
+		Syncer[*core.Changeset]().
+			Doc(`Force evaluation in the engine.`),
+		dagql.NodeFunc("layer", DagOpDirectoryWrapper(srv, s.changesetLayer)).
+			Doc(`Return a snapshot containing only the created and modified files`),
+		dagql.NodeFunc("asPatch", DagOpFileWrapper(srv, s.changesetAsPatch,
+			WithStaticPath[*core.Changeset, changesetAsPatchArgs](core.ChangesetPatchFilename))).
+			Doc(`Return a Git-compatible patch of the changes`),
+	}.Install(srv)
 }
 
 type directoryPipelineArgs struct {
@@ -357,12 +388,6 @@ func (s *directorySchema) glob(ctx context.Context, parent dagql.ObjectResult[*c
 	return dagql.NewStringArray(ents...), nil
 }
 
-type withPatchArgs struct {
-	Patch string
-
-	FSDagOpInternalArgs
-}
-
 type searchArgs struct {
 	core.SearchOpts
 	Paths []string `default:"[]"`
@@ -374,6 +399,12 @@ func (s *directorySchema) search(ctx context.Context, parent dagql.ObjectResult[
 	return parent.Self().Search(ctx, args.SearchOpts, args.Paths, args.Globs)
 }
 
+type withPatchArgs struct {
+	Patch string
+
+	FSDagOpInternalArgs
+}
+
 func (s *directorySchema) withPatch(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withPatchArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -381,6 +412,36 @@ func (s *directorySchema) withPatch(ctx context.Context, parent dagql.ObjectResu
 	}
 
 	dir, err := parent.Self().WithPatch(ctx, args.Patch)
+	if err != nil {
+		return inst, err
+	}
+
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+}
+
+type withPatchFileArgs struct {
+	Patch core.FileID
+
+	FSDagOpInternalArgs
+}
+
+func (s *directorySchema) withPatchFile(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withPatchFileArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	patchFile, err := args.Patch.Load(ctx, srv)
+	if err != nil {
+		return inst, err
+	}
+	// FIXME: would be nice to avoid reading into memory, need to adjust WithPatch
+	// for that
+	patch, err := patchFile.Self().Contents(ctx, nil, nil)
+	if err != nil {
+		return inst, err
+	}
+	dir, err := parent.Self().WithPatch(ctx, string(patch))
 	if err != nil {
 		return inst, err
 	}
@@ -574,6 +635,41 @@ func (s *directorySchema) diff(ctx context.Context, parent *core.Directory, args
 		return nil, err
 	}
 	return parent.Diff(ctx, dir.Self())
+}
+
+func (s *directorySchema) changes(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args struct {
+	From core.DirectoryID
+}) (res *core.Changeset, _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	dir, err := args.From.Load(ctx, srv)
+	if err != nil {
+		return res, err
+	}
+	return core.NewChangeset(ctx, dir, parent)
+}
+
+type withChangesArgs struct {
+	Changes dagql.ID[*core.Changeset]
+	FSDagOpInternalArgs
+}
+
+func (s *directorySchema) withChanges(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args withChangesArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	changes, err := args.Changes.Load(ctx, srv)
+	if err != nil {
+		return res, err
+	}
+	with, err := parent.Self().WithChanges(ctx, changes.Self())
+	if err != nil {
+		return res, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, with)
 }
 
 type dirExportArgs struct {
@@ -792,4 +888,36 @@ func (s *directorySchema) withSymlink(ctx context.Context, parent dagql.ObjectRe
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+}
+
+func (s *directorySchema) changesetLayer(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args struct {
+	FSDagOpInternalArgs
+}) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	dir, err := parent.Self().Before.Self().Diff(ctx, parent.Self().After.Self())
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+}
+
+type changesetAsPatchArgs struct {
+	FSDagOpInternalArgs
+}
+
+func (s *directorySchema) changesetAsPatch(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], _ changesetAsPatchArgs) (inst dagql.ObjectResult[*core.File], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	file, err := parent.Self().AsPatch(ctx)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, file)
 }

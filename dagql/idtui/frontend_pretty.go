@@ -18,6 +18,7 @@ import (
 	"github.com/adrg/xdg"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/cellbuf"
 	"github.com/muesli/termenv"
@@ -109,8 +110,7 @@ type frontendPretty struct {
 	msgPreFinalRender strings.Builder
 
 	// Add prompt field
-	activeBoolPrompt   *promptBool
-	activeStringPrompt *promptString
+	form *huh.Form
 }
 
 func (fe *frontendPretty) SetClient(client *dagger.Client) {
@@ -247,14 +247,32 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 	return fe.err
 }
 
-func (fe *frontendPretty) HandlePrompt(ctx context.Context, prompt string, dest any) error {
+func (fe *frontendPretty) HandlePrompt(ctx context.Context, title, prompt string, dest any) error {
 	switch x := dest.(type) {
 	case *bool:
-		return fe.handlePromptBool(ctx, prompt, x)
+		return fe.handlePromptBool(ctx, title, prompt, x)
 	case *string:
-		return fe.handlePromptString(ctx, prompt, x)
+		return fe.handlePromptString(ctx, title, prompt, x)
 	default:
 		return fmt.Errorf("unsupported prompt destination type: %T", dest)
+	}
+}
+
+func (fe *frontendPretty) HandleForm(ctx context.Context, form *huh.Form) error {
+	done := make(chan struct{}, 1)
+
+	fe.program.Send(promptMsg{
+		form: form,
+		result: func(f *huh.Form) {
+			close(done)
+		},
+	})
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-done:
+		return nil
 	}
 }
 
@@ -574,6 +592,10 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 }
 
 func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
+	if fe.form != nil {
+		return fe.form.KeyBinds()
+	}
+
 	if fe.editlineFocused {
 		bnds := []key.Binding{
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "nav mode")),
@@ -648,10 +670,6 @@ func KeyEnabled(enabled bool) key.BindingOpt {
 func (fe *frontendPretty) Render(out TermOutput) error {
 	progHeight := fe.window.Height
 
-	if fe.editline != nil {
-		progHeight -= lipgloss.Height(fe.editlineView())
-	}
-
 	r := newRenderer(fe.db, fe.window.Width/2, fe.FrontendOpts)
 
 	var progPrefix string
@@ -665,24 +683,8 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 	}
 
 	below := new(strings.Builder)
-	var countOut TermOutput = NewOutput(below, termenv.WithProfile(fe.profile))
-
-	if fe.activeBoolPrompt != nil {
-		fmt.Fprint(countOut, fe.viewBoolPrompt(countOut))
-		fmt.Fprintln(countOut)
-	}
-
-	if fe.activeStringPrompt != nil {
-		fmt.Fprintln(countOut)
-		fmt.Fprint(countOut, fe.viewStringPrompt())
-	}
-
-	if fe.editline == nil {
-		fmt.Fprint(countOut, fe.viewKeymap())
-	}
 
 	if logs := fe.logs.Logs[fe.ZoomedSpan]; logs != nil && logs.UsedHeight() > 0 {
-		fmt.Fprintln(below)
 		logs.SetHeight(fe.window.Height / 3)
 		logs.SetPrefix(progPrefix)
 		fmt.Fprint(below, logs.View())
@@ -690,6 +692,16 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 
 	belowOut := strings.TrimRight(below.String(), "\n")
 	progHeight -= lipgloss.Height(belowOut)
+
+	if fe.editline != nil {
+		progHeight -= lipgloss.Height(fe.editlineView())
+	}
+
+	if fe.form != nil {
+		progHeight -= lipgloss.Height(fe.formView())
+	}
+
+	progHeight -= lipgloss.Height(fe.keymapView())
 
 	if fe.renderProgress(out, r, progHeight, progPrefix) {
 		fmt.Fprintln(out)
@@ -699,64 +711,7 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 	return nil
 }
 
-func (fe *frontendPretty) viewStringPrompt() string {
-	return fe.activeStringPrompt.message.View()
-}
-
-func (fe *frontendPretty) viewBoolPrompt(out TermOutput) string {
-	message := fe.activeBoolPrompt.message.View()
-	width := lipgloss.Width(message)
-
-	// Render Yes/No buttons
-	yesStyles := []termenv.Style{
-		out.String(" "),
-		out.String("Y").Underline(),
-		out.String("ES "),
-	}
-	noStyles := []termenv.Style{
-		out.String(" "),
-		out.String("N").Underline(),
-		out.String("O "),
-	}
-	for i, style := range yesStyles {
-		yesStyles[i] = style.Foreground(termenv.ANSIGreen)
-	}
-	for i, style := range noStyles {
-		noStyles[i] = style.Foreground(termenv.ANSIRed)
-	}
-	if fe.activeBoolPrompt.yessing {
-		for i, style := range yesStyles {
-			yesStyles[i] = style.Bold().Reverse()
-		}
-	} else {
-		for i, style := range noStyles {
-			noStyles[i] = style.Bold().Reverse()
-		}
-	}
-
-	var yes, no string
-	for _, style := range yesStyles {
-		yes += style.String()
-	}
-	for _, style := range noStyles {
-		no += style.String()
-	}
-
-	bubble := lipgloss.JoinVertical(
-		lipgloss.Left,
-		message,
-		lipgloss.PlaceHorizontal(width, lipgloss.Center,
-			fmt.Sprintf("%s %s", yes, no),
-		),
-	)
-
-	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).
-		BorderForeground(ANSIBrightBlack).
-		Padding(1, 2).
-		Render(bubble)
-}
-
-func (fe *frontendPretty) viewKeymap() string {
+func (fe *frontendPretty) keymapView() string {
 	outBuf := new(strings.Builder)
 	out := NewOutput(outBuf, termenv.WithProfile(fe.profile))
 	fmt.Fprint(out, KeymapStyle.Render(strings.Repeat(HorizBar, 1)))
@@ -824,7 +779,10 @@ func (fe *frontendPretty) renderProgress(out TermOutput, r *renderer, height int
 		rendered = true
 	}
 
-	fmt.Fprint(out, strings.Join(lines, "\n"))
+	for _, line := range lines {
+		fmt.Fprintln(out, line)
+	}
+
 	return
 }
 
@@ -964,31 +922,38 @@ func (fe *frontendPretty) View() string {
 		// print nothing; make way for the pristine output in the final render
 		return ""
 	}
+	var mainView string
 	if fe.editline != nil {
-		prog := ""
 		if fe.scrollback.Len() > 0 {
-			prog += fe.scrollback.String()
-			// prog += "> " + strings.ReplaceAll(
+			mainView += fe.scrollback.String()
+			// mainView += "> " + strings.ReplaceAll(
 			// 	strings.TrimSuffix(fe.scrollback.String(), "\n"),
 			// 	"\n",
 			// 	"\n> ",
 			// ) + "\n"
 		}
-		prog += "\n"
-		if view := strings.TrimSpace(fe.view.String()); view != "" {
-			prog += view
-			prog += "\n"
-			if fe.activeStringPrompt == nil {
-				prog += "\n"
-			}
-		}
-		return prog + fe.editlineView()
+		mainView += "\n"
+		mainView += fe.view.String()
+		mainView += fe.editlineView()
+	} else {
+		mainView += fe.view.String()
 	}
-	return fe.view.String()
+	if fe.form != nil {
+		mainView += fe.formView()
+	}
+	if !strings.HasSuffix(mainView, "\n") {
+		mainView += "\n"
+	}
+	mainView += fe.keymapView()
+	return mainView
 }
 
 func (fe *frontendPretty) editlineView() string {
-	return fe.editline.View() + "\n" + fe.viewKeymap()
+	return fe.editline.View()
+}
+
+func (fe *frontendPretty) formView() string {
+	return fe.form.View() + "\n\n"
 }
 
 type doneMsg struct {
@@ -1035,6 +1000,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			go fe.program.Send(msg.msg)
 		}
 		return fe, nil
+
 	case doneMsg: // run finished
 		slog.Debug("run finished", "err", msg.err)
 		fe.done = true
@@ -1131,7 +1097,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			fe.pressedKey = "up"
 			fe.pressedKeyAt = time.Now()
 		}
-		return fe, nil
+		return fe.offloadUpdates(msg)
 
 	case editline.InputCompleteMsg:
 		if !fe.editlineFocused {
@@ -1144,12 +1110,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 
 		// reset now that we've accepted input
 		fe.editline.Reset()
-		if fe.activeStringPrompt != nil {
-			fe.activeStringPrompt.result <- value
-			fe.editline = nil
-			fe.activeStringPrompt = nil
-			fe.editlineFocused = false
-		} else if fe.shell != nil {
+		if fe.shell != nil {
 			ctx, cancel := context.WithCancelCause(fe.shellCtx)
 			fe.shellInterrupt = cancel
 			fe.shellRunning = true
@@ -1187,8 +1148,8 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 	case tea.KeyMsg:
 		switch {
 		// Handle prompt input if there's an active prompt
-		case fe.activeBoolPrompt != nil:
-			return fe, fe.handleBoolPromptKey(msg)
+		case fe.form != nil:
+			return fe.offloadUpdates(msg)
 		// send all input to editline if it's focused
 		case fe.editlineFocused:
 			return fe, fe.handleEditlineKey(msg)
@@ -1198,7 +1159,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 
 	case tea.WindowSizeMsg:
 		fe.setWindowSizeLocked(msg)
-		return fe, nil
+		return fe.offloadUpdates(msg)
 
 	case frameMsg:
 		fe.renderLocked()
@@ -1208,52 +1169,44 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		// adjust the outermost layer.
 		return fe, tea.Batch(flushCmd, frame(fe.fps))
 
-	case promptBool:
-		fe.activeBoolPrompt = &msg
-		return fe, nil
+	case promptMsg:
+		form := msg.form
+		form.SubmitCmd = func() tea.Msg {
+			msg.result(msg.form)
+			return promptDone{}
+		}
+		form.CancelCmd = func() tea.Msg {
+			msg.result(msg.form)
+			return promptDone{}
+		}
+		fe.form = form.WithTheme(huh.ThemeBase16()).WithShowHelp(false)
+		return fe, fe.form.Init()
 
-	case promptString:
-		fe.activeStringPrompt = &msg
-		fe.initEditline()
-		return fe, fe.updatePrompt()
+	case promptDone:
+		fe.form = nil
+		return fe, nil
 
 	default:
-		return fe, nil
+		return fe.offloadUpdates(msg)
 	}
 }
 
-func (fe *frontendPretty) handleBoolPromptKey(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "left", "h", "right", "l":
-		fe.activeBoolPrompt.yessing = !fe.activeBoolPrompt.yessing
-	case "enter":
-		result := fe.activeBoolPrompt.result
-		choice := fe.activeBoolPrompt.yessing
-		fe.activeBoolPrompt = nil
-		return func() tea.Msg {
-			result <- choice
-			close(result)
-			return nil
-		}
-	case "n", "N":
-		result := fe.activeBoolPrompt.result
-		fe.activeBoolPrompt = nil
-		return func() tea.Msg {
-			result <- false
-			close(result)
-			return nil
-		}
-	case "y", "Y":
-		result := fe.activeBoolPrompt.result
-		fe.activeBoolPrompt = nil
-		return func() tea.Msg {
-			result <- true
-			close(result)
-			return nil
+// offloadUpdates delegates messages to embedded components, whether they're
+// Bubbletea built-in messages (tea.KeyMsg) or internal messages to those
+// components
+func (fe *frontendPretty) offloadUpdates(msg tea.Msg) (*frontendPretty, tea.Cmd) {
+	var cmds []tea.Cmd
+	if fe.form != nil {
+		form, cmd := fe.form.Update(msg)
+		cmds = append(cmds, cmd)
+		if f, ok := form.(*huh.Form); ok {
+			fe.form = f
 		}
 	}
-	return nil
+	return fe, tea.Batch(cmds...)
 }
+
+type promptDone struct{}
 
 func (fe *frontendPretty) enterNavMode(auto bool) {
 	fe.autoModeSwitch = auto
@@ -1524,17 +1477,6 @@ func (fe *frontendPretty) initEditline() {
 
 type UpdatePromptMsg struct{}
 
-type promptBool struct {
-	message *Markdown
-	result  chan bool
-	yessing bool
-}
-
-type promptString struct {
-	message *Markdown
-	result  chan string
-}
-
 func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 	if fe.shell == nil {
 		return fe, nil
@@ -1800,12 +1742,6 @@ func (fe *frontendPretty) setWindowSizeLocked(msg tea.WindowSizeMsg) {
 	if fe.editline != nil {
 		fe.editline.SetSize(msg.Width, msg.Height)
 	}
-	if fe.activeBoolPrompt != nil {
-		fe.activeBoolPrompt.message.Width = msg.Width
-	}
-	if fe.activeStringPrompt != nil {
-		fe.activeStringPrompt.message.Width = msg.Width
-	}
 }
 
 func (fe *frontendPretty) setExpanded(id dagui.SpanID, expanded bool) {
@@ -1980,7 +1916,7 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 	span := row.Span
 	chained := row.Chained
 	depth := row.Depth
-	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused
+	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused && fe.form == nil
 
 	fmt.Fprint(out, prefix)
 	r.fancyIndent(out, row, false, true)
@@ -2238,43 +2174,63 @@ type TermOutput interface {
 	String(...string) termenv.Style
 }
 
-func (fe *frontendPretty) handlePromptBool(ctx context.Context, message string, dest *bool) error {
-	result := make(chan bool, 1)
+type promptMsg struct {
+	form   *huh.Form
+	result func(*huh.Form)
+}
 
-	fe.program.Send(tea.Msg(promptBool{
-		message: &Markdown{
-			Content: message,
-			Width:   min(max(fe.window.Width/2, 50), 80),
+func (fe *frontendPretty) handlePromptBool(ctx context.Context, title, message string, dest *bool) error {
+	done := make(chan struct{})
+
+	fe.program.Send(promptMsg{
+		form: NewForm(
+			huh.NewGroup(
+				huh.NewConfirm().
+					Title(title).
+					Description(strings.TrimSpace((&Markdown{
+						Content: message,
+						Width:   fe.window.Width,
+					}).View())).
+					Value(dest),
+			),
+		),
+		result: func(f *huh.Form) {
+			close(done)
 		},
-		result:  result,
-		yessing: *dest,
-	}))
+	})
 
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case val := <-result:
-		*dest = val
+	case <-done:
 		return nil
 	}
 }
 
-func (fe *frontendPretty) handlePromptString(ctx context.Context, message string, dest *string) error {
-	result := make(chan string, 1)
+func (fe *frontendPretty) handlePromptString(ctx context.Context, title, message string, dest *string) error {
+	done := make(chan struct{})
 
-	fe.program.Send(tea.Msg(promptString{
-		message: &Markdown{
-			Content: message,
-			Width:   fe.window.Width,
+	fe.program.Send(promptMsg{
+		form: NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title(title).
+					Description(strings.TrimSpace((&Markdown{
+						Content: message,
+						Width:   fe.window.Width,
+					}).View())).
+					Value(dest),
+			),
+		),
+		result: func(f *huh.Form) {
+			close(done)
 		},
-		result: result,
-	}))
+	})
 
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case val := <-result:
-		*dest = val
+	case <-done:
 		return nil
 	}
 }

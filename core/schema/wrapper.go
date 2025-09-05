@@ -159,6 +159,9 @@ func getSelfDigest(a any) (digest.Digest, error) {
 	case *core.GitRef:
 		// FIXME can core.DigestOf(x) be used instead? When set, the TestGit/TestAuthClient test failed intermittently
 		return "", nil // fallback to using dagop ID
+	case *core.Changeset:
+		// FIXME this seems weird?
+		return "", nil
 	default:
 		return "", fmt.Errorf("unable to create digest: unknown type %T", a)
 	}
