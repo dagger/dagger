@@ -57,9 +57,9 @@ func versionCmd() *cobra.Command {
 }
 
 func version() string {
-	return fmt.Sprintf("dagger %s (%s) %s",
+	// FIXME: replace deprecated 'runnerHost' for display
+	return fmt.Sprintf("dagger %s %s",
 		engine.Version,
-		RunnerHost,
 		platforms.DefaultString(),
 	)
 }
