@@ -182,7 +182,7 @@ func getSelfDigest(a any) (digest.Digest, []llb.State, error) {
 			deps = append(deps, llb.NewState(op))
 		}
 		return dgst, deps, err
-	case *core.GitRef, *core.Changeset, *core.Query:
+	case *core.GitRef, *core.Changeset, *core.Query, *core.Host:
 		// FIXME: these are weird
 		return "", nil, nil // fallback to using dagop ID
 	default:
