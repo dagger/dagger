@@ -314,8 +314,19 @@ func ptr[T any](v T) *T {
 	return &v
 }
 
-// MountRef is a utility for easily mounting a ref
+// MountRef is a utility for easily mounting a ref.
+//
+// To simplify external logic, when the ref is nil, i.e. scratch, the callback
+// just receives a tmpdir that gets deleted when the function completes.
 func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(string) error) error {
+	if ref == nil {
+		dir, err := os.MkdirTemp("", "readonly-scratch")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(dir)
+		return f(dir)
+	}
 	mount, err := ref.Mount(ctx, false, g)
 	if err != nil {
 		return err
@@ -330,8 +341,19 @@ func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(st
 	return f(dir)
 }
 
-// ReadonlyMountRef is a utility for easily mounting a ref read-only
+// ReadonlyMountRef is a utility for easily mounting a ref read-only.
+//
+// To simplify external logic, when the ref is nil, i.e. scratch, the callback
+// just receives a tmpdir that gets deleted when the function completes.
 func ReadonlyMountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(string) error) error {
+	if ref == nil {
+		dir, err := os.MkdirTemp("", "readonly-scratch")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(dir)
+		return f(dir)
+	}
 	mount, err := ref.Mount(ctx, true, g)
 	if err != nil {
 		return err
