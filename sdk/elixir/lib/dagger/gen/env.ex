@@ -99,6 +99,41 @@ defmodule Dagger.Env do
   end
 
   @doc """
+  Create or update a binding of type Address in the environment
+  """
+  @spec with_address_input(t(), String.t(), Dagger.Address.t(), String.t()) :: Dagger.Env.t()
+  def with_address_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withAddressInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired Address output to be assigned in the environment
+  """
+  @spec with_address_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_address_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withAddressOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
   Create or update a binding of type CacheVolume in the environment
   """
   @spec with_cache_volume_input(t(), String.t(), Dagger.CacheVolume.t(), String.t()) ::

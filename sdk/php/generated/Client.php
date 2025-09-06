@@ -14,6 +14,16 @@ namespace Dagger;
 class Client extends Client\AbstractClient
 {
     /**
+     * initialize an address to load directories, containers, secrets or other object types.
+     */
+    public function address(string $value): Address
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('address');
+        $innerQueryBuilder->setArgument('value', $value);
+        return new \Dagger\Address($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Constructs a cache volume for a given cache key.
      */
     public function cacheVolume(string $key): CacheVolume
@@ -271,6 +281,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder->setArgument('maxAPICalls', $maxAPICalls);
         }
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Address from its ID.
+     */
+    public function loadAddressFromID(AddressId|Address $id): Address
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadAddressFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Address($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

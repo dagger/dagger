@@ -57,38 +57,39 @@ func (ContainerSuite) TestWithUnixSocket(ctx context.Context, t *testctx.T) {
 
 	echo := c.Directory().WithNewFile("main.go", echoSocketSrc).File("main.go")
 
-	ctr := c.Container().
-		From(golangImage).
-		WithMountedFile("/src/main.go", echo).
-		WithUnixSocket("/tmp/test.sock", c.Host().UnixSocket(sock)).
-		WithExec([]string{"go", "run", "/src/main.go", "/tmp/test.sock", "hello"})
-
-	stdout, err := ctr.Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "hello\n", stdout)
-
-	t.Run("socket can be removed", func(ctx context.Context, t *testctx.T) {
-		without := ctr.WithoutUnixSocket("/tmp/test.sock").
-			WithExec([]string{"ls", "/tmp"})
-
-		stdout, err = without.Stdout(ctx)
-		require.NoError(t, err)
-		require.Empty(t, stdout)
-	})
-
-	t.Run("replaces existing socket at same path", func(ctx context.Context, t *testctx.T) {
-		repeated := ctr.WithUnixSocket("/tmp/test.sock", c.Host().UnixSocket(sock))
-
-		stdout, err := repeated.Stdout(ctx)
+	ContainerSuite{}.withHostSocket(c, sock, func(hostSock *dagger.Socket) {
+		ctr := c.Container().
+			From(golangImage).
+			WithMountedFile("/src/main.go", echo).
+			WithUnixSocket("/tmp/test.sock", hostSock).
+			WithExec([]string{"go", "run", "/src/main.go", "/tmp/test.sock", "hello"})
+		stdout, err := ctr.Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hello\n", stdout)
 
-		without := repeated.WithoutUnixSocket("/tmp/test.sock").
-			WithExec([]string{"ls", "/tmp"})
+		t.Run("socket can be removed", func(ctx context.Context, t *testctx.T) {
+			without := ctr.WithoutUnixSocket("/tmp/test.sock").
+				WithExec([]string{"ls", "/tmp"})
 
-		stdout, err = without.Stdout(ctx)
-		require.NoError(t, err)
-		require.Empty(t, stdout)
+			stdout, err = without.Stdout(ctx)
+			require.NoError(t, err)
+			require.Empty(t, stdout)
+		})
+
+		t.Run("replaces existing socket at same path", func(ctx context.Context, t *testctx.T) {
+			repeated := ctr.WithUnixSocket("/tmp/test.sock", hostSock)
+
+			stdout, err := repeated.Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hello\n", stdout)
+
+			without := repeated.WithoutUnixSocket("/tmp/test.sock").
+				WithExec([]string{"ls", "/tmp"})
+
+			stdout, err = without.Stdout(ctx)
+			require.NoError(t, err)
+			require.Empty(t, stdout)
+		})
 	})
 }
 
@@ -104,11 +105,21 @@ func (ContainerSuite) TestWithUnixSocketOwner(ctx context.Context, t *testctx.T)
 		l.Close()
 	})
 
-	socket := c.Host().UnixSocket(sock)
-
-	testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
-		return ctr.WithUnixSocket(name, socket, dagger.ContainerWithUnixSocketOpts{
-			Owner: owner,
+	ContainerSuite{}.withHostSocket(c, sock, func(hostSock *dagger.Socket) {
+		testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+			return ctr.WithUnixSocket(name, hostSock, dagger.ContainerWithUnixSocketOpts{
+				Owner: owner,
+			})
 		})
 	})
+}
+
+func (ContainerSuite) withHostSocket(c *dagger.Client, path string, fn func(*dagger.Socket)) {
+	for _, socket := range []*dagger.Socket{
+		c.Host().UnixSocket(path),
+		c.Address(path).Socket(),
+		c.Address("unix://" + path).Socket(),
+	} {
+		fn(socket)
+	}
 }
