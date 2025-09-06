@@ -28,6 +28,7 @@
           <div class="nav-group">
             <h4 class="nav-group-title">Queries</h4>
             <ul class="nav-group-items">
+              <li><a href="#query-address">address</a></li>
               <li><a href="#query-cacheVolume">cacheVolume</a></li>
               <li><a href="#query-cloud">cloud</a></li>
               <li><a href="#query-container">container</a></li>
@@ -48,6 +49,7 @@
               <li><a href="#query-http">http</a></li>
               <li><a href="#query-json">json</a></li>
               <li><a href="#query-llm">llm</a></li>
+              <li><a href="#query-loadAddressFromID">loadAddressFromID</a></li>
               <li><a href="#query-loadBindingFromID">loadBindingFromID</a></li>
               <li><a href="#query-loadCacheVolumeFromID">loadCacheVolumeFromID</a></li>
               <li><a href="#query-loadChangesetFromID">loadChangesetFromID</a></li>
@@ -110,6 +112,8 @@
           <div class="nav-group">
             <h4 class="nav-group-title">Types</h4>
             <ul class="nav-group-items">
+              <li><a href="#definition-Address">Address</a></li>
+              <li><a href="#definition-AddressID">AddressID</a></li>
               <li><a href="#definition-Binding">Binding</a></li>
               <li><a href="#definition-BindingID">BindingID</a></li>
               <li><a href="#definition-Boolean">Boolean</a></li>
@@ -243,7 +247,60 @@
           <div id="introduction" data-traverse-target="introduction">
           </div>
           <h1 id="group-Queries" class="group-heading" data-traverse-target="group-Queries">Queries</h1>
+          <section id="query-address" class="operation operation-query" data-traverse-target="query-address">
+            <h2 class="operation-heading ">
+              <code>address</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>initialize an address to load directories, containers, secrets or other object types.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Address"><code>Address!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-cacheVolume" class="operation operation-query" data-traverse-target="query-cacheVolume">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
             <h2 class="operation-heading ">
               <code>cacheVolume</code>
             </h2>
@@ -1284,6 +1341,59 @@
                           <span class="property-name"><code>maxAPICalls</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span>
                         </td>
                         <td> Cap the number of API calls for this LLM </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadAddressFromID" class="operation operation-query" data-traverse-target="query-loadAddressFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadAddressFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a Address from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Address"><code>Address!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-AddressID"><code>AddressID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
                       </tr>
                     </tbody>
                   </table>
@@ -4315,7 +4425,124 @@
             </div>
           </section>
           <h1 id="group-Types" class="group-heading" data-traverse-target="group-Types">Types</h1>
+          <section id="definition-Address" class="definition definition-object" data-traverse-target="definition-Address">
+            <h2 class="definition-heading">Address</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Address-container" href="#Address-container"><code>container</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td> Load a container from the address. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Address-directory" href="#Address-directory"><code>directory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
+                        <td> Load a directory from the address. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>exclude</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>noCache</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Address-file" href="#Address-file"><code>file</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
+                        <td> Load a file from the address. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>exclude</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>noCache</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Address-gitRef" href="#Address-gitRef"><code>gitRef</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef!</code></a></span> </td>
+                        <td> Load a git ref (branch, tag or commit) from the address. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Address-gitRepository" href="#Address-gitRepository"><code>gitRepository</code></a> - <span class="property-type"><a href="#definition-GitRepository"><code>GitRepository!</code></a></span> </td>
+                        <td> Load a git repository from the address. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Address-id" href="#Address-id"><code>id</code></a> - <span class="property-type"><a href="#definition-AddressID"><code>AddressID!</code></a></span> </td>
+                        <td> A unique identifier for this Address. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Address-secret" href="#Address-secret"><code>secret</code></a> - <span class="property-type"><a href="#definition-Secret"><code>Secret!</code></a></span> </td>
+                        <td> Load a secret from the address. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Address-service" href="#Address-service"><code>service</code></a> - <span class="property-type"><a href="#definition-Service"><code>Service!</code></a></span> </td>
+                        <td> Load a service from the address. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Address-socket" href="#Address-socket"><code>socket</code></a> - <span class="property-type"><a href="#definition-Socket"><code>Socket!</code></a></span> </td>
+                        <td> Load a local socket from the address. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Address-value" href="#Address-value"><code>value</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The address value </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-AddressID" class="definition definition-scalar" data-traverse-target="definition-AddressID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">AddressID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>AddressID</code> scalar type represents an identifier for an object of type Address.</p>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="definition-Binding" class="definition definition-object" data-traverse-target="definition-Binding">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
             <h2 class="definition-heading">Binding</h2>
             <div class="doc-row">
               <div class="doc-copy">
@@ -4329,6 +4556,10 @@
                       </tr>
                     </thead>
                     <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asAddress" href="#Binding-asAddress"><code>asAddress</code></a> - <span class="property-type"><a href="#definition-Address"><code>Address!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type Address </td>
+                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asCacheVolume" href="#Binding-asCacheVolume"><code>asCacheVolume</code></a> - <span class="property-type"><a href="#definition-CacheVolume"><code>CacheVolume!</code></a></span> </td>
                         <td> Retrieve the binding value, as type CacheVolume </td>
@@ -7579,6 +7810,52 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Env-outputs" href="#Env-outputs"><code>outputs</code></a> - <span class="property-type"><a href="#definition-Binding"><code>[Binding!]!</code></a></span> </td>
                         <td> return all output values for the environment </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withAddressInput" href="#Env-withAddressInput"><code>withAddressInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type Address in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-AddressID"><code>AddressID!</code></a></span></h6>
+                                <p>The Address value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withAddressOutput" href="#Env-withAddressOutput"><code>withAddressOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired Address output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withCacheVolumeInput" href="#Env-withCacheVolumeInput"><code>withCacheVolumeInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>

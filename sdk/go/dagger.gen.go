@@ -128,6 +128,9 @@ func (e *ExecError) Unwrap() error {
 	return e.original
 }
 
+// The `AddressID` scalar type represents an identifier for an object of type Address.
+type AddressID string
+
 // The `BindingID` scalar type represents an identifier for an object of type Binding.
 type BindingID string
 
@@ -321,6 +324,191 @@ type PortForward struct {
 	Protocol NetworkProtocol `json:"protocol,omitempty"`
 }
 
+// A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.
+type Address struct {
+	query *querybuilder.Selection
+
+	id    *AddressID
+	value *string
+}
+
+func (r *Address) WithGraphQLQuery(q *querybuilder.Selection) *Address {
+	return &Address{
+		query: q,
+	}
+}
+
+// Load a container from the address.
+func (r *Address) Container() *Container {
+	q := r.query.Select("container")
+
+	return &Container{
+		query: q,
+	}
+}
+
+// AddressDirectoryOpts contains options for Address.Directory
+type AddressDirectoryOpts struct {
+	Exclude []string
+
+	Include []string
+
+	NoCache bool
+}
+
+// Load a directory from the address.
+func (r *Address) Directory(opts ...AddressDirectoryOpts) *Directory {
+	q := r.query.Select("directory")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		// `noCache` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoCache) {
+			q = q.Arg("noCache", opts[i].NoCache)
+		}
+	}
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// AddressFileOpts contains options for Address.File
+type AddressFileOpts struct {
+	Exclude []string
+
+	Include []string
+
+	NoCache bool
+}
+
+// Load a file from the address.
+func (r *Address) File(opts ...AddressFileOpts) *File {
+	q := r.query.Select("file")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		// `noCache` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoCache) {
+			q = q.Arg("noCache", opts[i].NoCache)
+		}
+	}
+
+	return &File{
+		query: q,
+	}
+}
+
+// Load a git ref (branch, tag or commit) from the address.
+func (r *Address) GitRef() *GitRef {
+	q := r.query.Select("gitRef")
+
+	return &GitRef{
+		query: q,
+	}
+}
+
+// Load a git repository from the address.
+func (r *Address) GitRepository() *GitRepository {
+	q := r.query.Select("gitRepository")
+
+	return &GitRepository{
+		query: q,
+	}
+}
+
+// A unique identifier for this Address.
+func (r *Address) ID(ctx context.Context) (AddressID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response AddressID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Address) XXX_GraphQLType() string {
+	return "Address"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Address) XXX_GraphQLIDType() string {
+	return "AddressID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Address) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Address) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Load a secret from the address.
+func (r *Address) Secret() *Secret {
+	q := r.query.Select("secret")
+
+	return &Secret{
+		query: q,
+	}
+}
+
+// Load a service from the address.
+func (r *Address) Service() *Service {
+	q := r.query.Select("service")
+
+	return &Service{
+		query: q,
+	}
+}
+
+// Load a local socket from the address.
+func (r *Address) Socket() *Socket {
+	q := r.query.Select("socket")
+
+	return &Socket{
+		query: q,
+	}
+}
+
+// The address value
+func (r *Address) Value(ctx context.Context) (string, error) {
+	if r.value != nil {
+		return *r.value, nil
+	}
+	q := r.query.Select("value")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 type Binding struct {
 	query *querybuilder.Selection
 
@@ -334,6 +522,15 @@ type Binding struct {
 
 func (r *Binding) WithGraphQLQuery(q *querybuilder.Selection) *Binding {
 	return &Binding{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Address
+func (r *Binding) AsAddress() *Address {
+	q := r.query.Select("asAddress")
+
+	return &Address{
 		query: q,
 	}
 }
@@ -4540,6 +4737,30 @@ func (r *Env) Outputs(ctx context.Context) ([]Binding, error) {
 	}
 
 	return convert(response), nil
+}
+
+// Create or update a binding of type Address in the environment
+func (r *Env) WithAddressInput(name string, value *Address, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withAddressInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Address output to be assigned in the environment
+func (r *Env) WithAddressOutput(name string, description string) *Env {
+	q := r.query.Select("withAddressOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
 }
 
 // Create or update a binding of type CacheVolume in the environment
@@ -9516,6 +9737,16 @@ func (r *Client) WithGraphQLQuery(q *querybuilder.Selection) *Client {
 	}
 }
 
+// initialize an address to load directories, containers, secrets or other object types.
+func (r *Client) Address(value string) *Address {
+	q := r.query.Select("address")
+	q = q.Arg("value", value)
+
+	return &Address{
+		query: q,
+	}
+}
+
 // Constructs a cache volume for a given cache key.
 func (r *Client) CacheVolume(key string) *CacheVolume {
 	q := r.query.Select("cacheVolume")
@@ -9890,6 +10121,16 @@ func (r *Client) LLM(opts ...LLMOpts) *LLM {
 	}
 
 	return &LLM{
+		query: q,
+	}
+}
+
+// Load a Address from its ID.
+func (r *Client) LoadAddressFromID(id AddressID) *Address {
+	q := r.query.Select("loadAddressFromID")
+	q = q.Arg("id", id)
+
+	return &Address{
 		query: q,
 	}
 }

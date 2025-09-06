@@ -39,6 +39,7 @@ import (
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/testctx"
+	"mvdan.cc/sh/v3/syntax"
 )
 
 type ServiceSuite struct{}
@@ -1225,15 +1226,7 @@ func (ServiceSuite) TestExecServicesChained(ctx context.Context, t *testctx.T) {
 			WithDefaultArgs([]string{"python", "-m", "http.server"}).
 			AsService()
 	}
-
-	fileContent, err := c.Container().
-		From(alpineImage).
-		WithServiceBinding("www", srv).
-		WithExec([]string{"wget", "http://www:8000"}).
-		WithExec([]string{"cat", "index.html"}).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n", fileContent)
+	require.Equal(t, "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n", httpQuery(t, c, srv, "http://www:8000"))
 }
 
 func (ServiceSuite) TestExecServicesNestedExec(ctx context.Context, t *testctx.T) {
@@ -2087,36 +2080,49 @@ func (ServiceSuite) TestHostToContainer(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (ServiceSuite) TestContainerToHost(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
+func tcpService(t *testctx.T, h func(http.ResponseWriter, *http.Request)) int {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-
 	t.Cleanup(func() { _ = l.Close() })
-
-	go http.Serve(l, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, r.URL.Query().Get("content"))
-	}))
-
+	go http.Serve(l, http.HandlerFunc(h))
 	_, portStr, err := net.SplitHostPort(l.Addr().String())
 	require.NoError(t, err)
 	port, err := strconv.Atoi(portStr)
 	require.NoError(t, err)
+	return port
+}
+
+func httpQuery(t *testctx.T, c *dagger.Client, svc *dagger.Service, urls ...string) string {
+	var cmds []string
+	for _, url := range urls {
+		quoted, err := syntax.Quote(url, syntax.LangBash)
+		require.NoError(t, err)
+		cmds = append(cmds, "wget -O- "+quoted)
+	}
+	script := strings.Join(cmds, "\n")
+	out, err := c.Container().
+		From(alpineImage).
+		WithServiceBinding("www", svc).
+		WithExec([]string{"sh", "-c", script}).
+		Stdout(t.Context())
+	require.NoError(t, err)
+	return out
+}
+
+func (ServiceSuite) TestContainerToHost(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	port := tcpService(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, r.URL.Query().Get("content"))
+	})
 
 	t.Run("simple", func(ctx context.Context, t *testctx.T) {
 		host := c.Host().Service([]dagger.PortForward{
 			{Frontend: 80, Backend: port},
 		})
-
 		for _, content := range []string{"yes", "no", "maybe", "so"} {
-			out, err := c.Container().
-				From(alpineImage).
-				WithServiceBinding("www", host).
-				WithExec([]string{"wget", "-O-", "http://www/?content=" + content}).
-				Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, content+"\n", out)
+			url := "http://www/?content=" + content
+			require.Equal(t, content+"\n", httpQuery(t, c, host, url))
 		}
 	})
 
@@ -2124,72 +2130,38 @@ func (ServiceSuite) TestContainerToHost(ctx context.Context, t *testctx.T) {
 		host := c.Host().Service([]dagger.PortForward{
 			{Frontend: 80, Backend: port},
 		})
-
 		hn, err := host.Hostname(ctx)
 		require.NoError(t, err)
-
-		out, err := c.Container().
-			From(alpineImage).
-			WithServiceBinding("www", host).
-			WithExec([]string{"wget", "-O-", "http://" + hn + "/?content=hello"}).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "hello\n", out)
+		url := fmt.Sprintf("http://%s/?content=hello", hn)
+		require.Equal(t, "hello\n", httpQuery(t, c, host, url))
 	})
 
 	t.Run("using endpoint", func(ctx context.Context, t *testctx.T) {
 		host := c.Host().Service([]dagger.PortForward{
 			{Frontend: 80, Backend: port},
 		})
-
-		svcURL, err := host.Endpoint(ctx, dagger.ServiceEndpointOpts{
+		rootURL, err := host.Endpoint(ctx, dagger.ServiceEndpointOpts{
 			Scheme: "http",
 		})
 		require.NoError(t, err)
-
-		out, err := c.Container().
-			From(alpineImage).
-			WithServiceBinding("www", host).
-			WithExec([]string{"wget", "-O-", svcURL + "/?content=hello"}).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "hello\n", out)
+		require.Equal(t, "hello\n", httpQuery(t, c, host, rootURL+"/?content=hello"))
 	})
 
 	t.Run("multiple ports", func(ctx context.Context, t *testctx.T) {
-		l2, err := net.Listen("tcp", "127.0.0.1:0")
-		require.NoError(t, err)
-
-		defer l2.Close()
-
-		go http.Serve(l2, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		port2 := tcpService(t, func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintln(w, r.URL.Query().Get("content")+"-2")
-		}))
-
-		_, port2Str, err := net.SplitHostPort(l2.Addr().String())
-		require.NoError(t, err)
-		port2, err := strconv.Atoi(port2Str)
-		require.NoError(t, err)
-
+		})
 		host := c.Host().Service([]dagger.PortForward{
 			{Frontend: 80, Backend: port},
 			{Frontend: 8000, Backend: port2},
 		})
-
-		out, err := c.Container().
-			From(alpineImage).
-			WithServiceBinding("www", host).
-			WithExec([]string{"sh", "-c", `
-				a=$(wget -O- http://www/?content=hey)
-				b=$(wget -O- http://www:8000/?content=hey)
-				echo -n $a $b
-			`}).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "hey hey-2", out)
+		require.Equal(t, "hey\nhey-2\n", httpQuery(t, c, host,
+			"http://www/?content=hey",
+			"http://www:8000/?content=hey",
+		))
 	})
 
-	t.Run("no ports given", func(ctx context.Context, t *testctx.T) {
+	t.Run("invalid host service", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Host().Service(nil).ID(ctx)
 		require.Error(t, err)
 	})
