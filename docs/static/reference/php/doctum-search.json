@@ -2565,6 +2565,24 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Directory::findup",
+			"p": "Dagger/Directory.html#method_findup",
+			"d": "<p>Search up the directory tree for a file or directory, and return its path</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Directory::findupDirectory",
+			"p": "Dagger/Directory.html#method_findupDirectory",
+			"d": "<p>Search up the directory tree for a directory, and return it</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Directory::findupFile",
+			"p": "Dagger/Directory.html#method_findupFile",
+			"d": "<p>Search up the directory tree for a file, and return it</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Directory::glob",
 			"p": "Dagger/Directory.html#method_glob",
 			"d": "<p>Returns a list of files and directories that matche the given pattern.</p>"
@@ -3642,6 +3660,24 @@
 			"n": "Dagger\\Host::file",
 			"p": "Dagger/Host.html#method_file",
 			"d": "<p>Accesses a file on the host.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Host::findup",
+			"p": "Dagger/Host.html#method_findup",
+			"d": "<p>Search for a file or directory by walking up the tree from system workdir. Return its relative path</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Host::findupDirectory",
+			"p": "Dagger/Host.html#method_findupDirectory",
+			"d": "<p>Search for a directory by walking up the tree from system workdir</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Host::findupFile",
+			"p": "Dagger/Host.html#method_findupFile",
+			"d": "<p>Search for a file by walking up the tree from system workdir</p>"
 		},
 		{
 			"t": "M",

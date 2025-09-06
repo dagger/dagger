@@ -1519,6 +1519,35 @@ type Directory {
     include: [String!] = []
   ): Directory!
 
+  """
+  Search up the directory tree for a file or directory, and return its path
+  """
+  findup(
+    """The name of the file or directory to search for"""
+    name: String!
+
+    """The path to start the search from"""
+    start: String!
+  ): String!
+
+  """Search up the directory tree for a directory, and return it"""
+  findupDirectory(
+    """The name of the directory to search for"""
+    name: String!
+
+    """The path to start the search from"""
+    start: String!
+  ): Directory!
+
+  """Search up the directory tree for a file, and return it"""
+  findupFile(
+    """The name of the file to search for"""
+    name: String!
+
+    """The path to start the search from"""
+    start: String!
+  ): File!
+
   """Returns a list of files and directories that matche the given pattern."""
   glob(
     """Pattern to match (e.g., "*.md")."""
@@ -2956,6 +2985,32 @@ type Host {
     path: String!
 
     """If true, the file will always be reloaded from the host."""
+    noCache: Boolean = false
+  ): File!
+
+  """
+  Search for a file or directory by walking up the tree from system workdir. Return its relative path
+  """
+  findup(
+    """name of the file or directory to search for"""
+    name: String!
+
+    noCache: Boolean = false
+  ): String!
+
+  """Search for a directory by walking up the tree from system workdir"""
+  findupDirectory(
+    """name of the directory to search for"""
+    name: String!
+
+    noCache: Boolean = false
+  ): Directory!
+
+  """Search for a file by walking up the tree from system workdir"""
+  findupFile(
+    """name of the file or directory to search for"""
+    name: String!
+
     noCache: Boolean = false
   ): File!
 

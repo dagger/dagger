@@ -212,6 +212,54 @@ defmodule Dagger.Directory do
   end
 
   @doc """
+  Search up the directory tree for a file or directory, and return its path
+  """
+  @spec findup(t(), String.t(), String.t()) :: {:ok, String.t()} | {:error, term()}
+  def findup(%__MODULE__{} = directory, name, start) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("findup")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("start", start)
+
+    Client.execute(directory.client, query_builder)
+  end
+
+  @doc """
+  Search up the directory tree for a directory, and return it
+  """
+  @spec findup_directory(t(), String.t(), String.t()) :: Dagger.Directory.t()
+  def findup_directory(%__MODULE__{} = directory, name, start) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("findupDirectory")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("start", start)
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc """
+  Search up the directory tree for a file, and return it
+  """
+  @spec findup_file(t(), String.t(), String.t()) :: Dagger.File.t()
+  def findup_file(%__MODULE__{} = directory, name, start) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("findupFile")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("start", start)
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc """
   Returns a list of files and directories that matche the given pattern.
   """
   @spec glob(t(), String.t()) :: {:ok, [String.t()]} | {:error, term()}

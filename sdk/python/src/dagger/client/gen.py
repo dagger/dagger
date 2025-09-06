@@ -3267,6 +3267,72 @@ class Directory(Type):
         _ctx = self._select("filter", _args)
         return Directory(_ctx)
 
+    async def findup(self, name: str, start: str) -> str:
+        """Search up the directory tree for a file or directory, and return its
+        path
+
+        Parameters
+        ----------
+        name:
+            The name of the file or directory to search for
+        start:
+            The path to start the search from
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("start", start),
+        ]
+        _ctx = self._select("findup", _args)
+        return await _ctx.execute(str)
+
+    def findup_directory(self, name: str, start: str) -> Self:
+        """Search up the directory tree for a directory, and return it
+
+        Parameters
+        ----------
+        name:
+            The name of the directory to search for
+        start:
+            The path to start the search from
+        """
+        _args = [
+            Arg("name", name),
+            Arg("start", start),
+        ]
+        _ctx = self._select("findupDirectory", _args)
+        return Directory(_ctx)
+
+    def findup_file(self, name: str, start: str) -> "File":
+        """Search up the directory tree for a file, and return it
+
+        Parameters
+        ----------
+        name:
+            The name of the file to search for
+        start:
+            The path to start the search from
+        """
+        _args = [
+            Arg("name", name),
+            Arg("start", start),
+        ]
+        _ctx = self._select("findupFile", _args)
+        return File(_ctx)
+
     async def glob(self, pattern: str) -> list[str]:
         """Returns a list of files and directories that matche the given pattern.
 
@@ -7067,6 +7133,84 @@ class Host(Type):
             Arg("noCache", no_cache, False),
         ]
         _ctx = self._select("file", _args)
+        return File(_ctx)
+
+    async def findup(
+        self,
+        name: str,
+        *,
+        no_cache: bool | None = False,
+    ) -> str:
+        """Search for a file or directory by walking up the tree from system
+        workdir. Return its relative path
+
+        Parameters
+        ----------
+        name:
+            name of the file or directory to search for
+        no_cache:
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("noCache", no_cache, False),
+        ]
+        _ctx = self._select("findup", _args)
+        return await _ctx.execute(str)
+
+    def findup_directory(
+        self,
+        name: str,
+        *,
+        no_cache: bool | None = False,
+    ) -> Directory:
+        """Search for a directory by walking up the tree from system workdir
+
+        Parameters
+        ----------
+        name:
+            name of the directory to search for
+        no_cache:
+        """
+        _args = [
+            Arg("name", name),
+            Arg("noCache", no_cache, False),
+        ]
+        _ctx = self._select("findupDirectory", _args)
+        return Directory(_ctx)
+
+    def findup_file(
+        self,
+        name: str,
+        *,
+        no_cache: bool | None = False,
+    ) -> File:
+        """Search for a file by walking up the tree from system workdir
+
+        Parameters
+        ----------
+        name:
+            name of the file or directory to search for
+        no_cache:
+        """
+        _args = [
+            Arg("name", name),
+            Arg("noCache", no_cache, False),
+        ]
+        _ctx = self._select("findupFile", _args)
         return File(_ctx)
 
     async def id(self) -> HostID:

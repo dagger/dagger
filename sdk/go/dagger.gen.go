@@ -2733,6 +2733,7 @@ type Directory struct {
 	digest *string
 	exists *bool
 	export *string
+	findup *string
 	id     *DirectoryID
 	name   *string
 	sync   *DirectoryID
@@ -3015,6 +3016,43 @@ func (r *Directory) Filter(opts ...DirectoryFilterOpts) *Directory {
 	}
 
 	return &Directory{
+		query: q,
+	}
+}
+
+// Search up the directory tree for a file or directory, and return its path
+func (r *Directory) Findup(ctx context.Context, name string, start string) (string, error) {
+	if r.findup != nil {
+		return *r.findup, nil
+	}
+	q := r.query.Select("findup")
+	q = q.Arg("name", name)
+	q = q.Arg("start", start)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Search up the directory tree for a directory, and return it
+func (r *Directory) FindupDirectory(name string, start string) *Directory {
+	q := r.query.Select("findupDirectory")
+	q = q.Arg("name", name)
+	q = q.Arg("start", start)
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Search up the directory tree for a file, and return it
+func (r *Directory) FindupFile(name string, start string) *File {
+	q := r.query.Select("findupFile")
+	q = q.Arg("name", name)
+	q = q.Arg("start", start)
+
+	return &File{
 		query: q,
 	}
 }
@@ -6697,7 +6735,8 @@ func (r *GitRepository) WithAuthToken(token *Secret) *GitRepository {
 type Host struct {
 	query *querybuilder.Selection
 
-	id *HostID
+	findup *string
+	id     *HostID
 }
 
 func (r *Host) WithGraphQLQuery(q *querybuilder.Selection) *Host {
@@ -6772,6 +6811,73 @@ func (r *Host) File(path string, opts ...HostFileOpts) *File {
 		}
 	}
 	q = q.Arg("path", path)
+
+	return &File{
+		query: q,
+	}
+}
+
+// HostFindupOpts contains options for Host.Findup
+type HostFindupOpts struct {
+	NoCache bool
+}
+
+// Search for a file or directory by walking up the tree from system workdir. Return its relative path
+func (r *Host) Findup(ctx context.Context, name string, opts ...HostFindupOpts) (string, error) {
+	if r.findup != nil {
+		return *r.findup, nil
+	}
+	q := r.query.Select("findup")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noCache` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoCache) {
+			q = q.Arg("noCache", opts[i].NoCache)
+		}
+	}
+	q = q.Arg("name", name)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// HostFindupDirectoryOpts contains options for Host.FindupDirectory
+type HostFindupDirectoryOpts struct {
+	NoCache bool
+}
+
+// Search for a directory by walking up the tree from system workdir
+func (r *Host) FindupDirectory(name string, opts ...HostFindupDirectoryOpts) *Directory {
+	q := r.query.Select("findupDirectory")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noCache` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoCache) {
+			q = q.Arg("noCache", opts[i].NoCache)
+		}
+	}
+	q = q.Arg("name", name)
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// HostFindupFileOpts contains options for Host.FindupFile
+type HostFindupFileOpts struct {
+	NoCache bool
+}
+
+// Search for a file by walking up the tree from system workdir
+func (r *Host) FindupFile(name string, opts ...HostFindupFileOpts) *File {
+	q := r.query.Select("findupFile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noCache` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoCache) {
+			q = q.Arg("noCache", opts[i].NoCache)
+		}
+	}
+	q = q.Arg("name", name)
 
 	return &File{
 		query: q,
