@@ -12,7 +12,52 @@ directive @experimental(
 """Indicates the source information for where a given field is defined."""
 directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!, url: String!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
 
+"""
+A standardized address to load containers, directories, secrets, and other
+object types. Address format depends on the type, and is validated at type
+selection.
+"""
+type Address {
+  """Load a container from the address."""
+  container: Container!
+
+  """Load a directory from the address."""
+  directory(exclude: [String!] = [], include: [String!] = [], noCache: Boolean = false): Directory!
+
+  """Load a file from the address."""
+  file(exclude: [String!] = [], include: [String!] = [], noCache: Boolean = false): File!
+
+  """Load a git ref (branch, tag or commit) from the address."""
+  gitRef: GitRef!
+
+  """Load a git repository from the address."""
+  gitRepository: GitRepository!
+
+  """A unique identifier for this Address."""
+  id: AddressID!
+
+  """Load a secret from the address."""
+  secret: Secret!
+
+  """Load a service from the address."""
+  service: Service!
+
+  """Load a local socket from the address."""
+  socket: Socket!
+
+  """The address value"""
+  value: String!
+}
+
+"""
+The `AddressID` scalar type represents an identifier for an object of type Address.
+"""
+scalar AddressID
+
 type Binding {
+  """Retrieve the binding value, as type Address"""
+  asAddress: Address!
+
   """Retrieve the binding value, as type CacheVolume"""
   asCacheVolume: CacheVolume!
 
@@ -2017,6 +2062,27 @@ type Env {
   """return all output values for the environment"""
   outputs: [Binding!]!
 
+  """Create or update a binding of type Address in the environment"""
+  withAddressInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Address value to assign to the binding"""
+    value: AddressID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Address output to be assigned in the environment"""
+  withAddressOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Create or update a binding of type CacheVolume in the environment"""
   withCacheVolumeInput(
     """The name of the binding"""
@@ -3882,6 +3948,11 @@ scalar PortID
 
 """The root of the DAG."""
 type Query {
+  """
+  initialize an address to load directories, containers, secrets or other object types.
+  """
+  address(value: String!): Address!
+
   """Constructs a cache volume for a given cache key."""
   cacheVolume(
     """
@@ -4049,6 +4120,9 @@ type Query {
     """Cap the number of API calls for this LLM"""
     maxAPICalls: Int
   ): LLM! @experimental(reason: "LLM support is not yet stabilized")
+
+  """Load a Address from its ID."""
+  loadAddressFromID(id: AddressID!): Address!
 
   """Load a Binding from its ID."""
   loadBindingFromID(id: BindingID!): Binding!

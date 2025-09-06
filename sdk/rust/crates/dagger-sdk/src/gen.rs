@@ -10,6 +10,39 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct AddressId(pub String);
+impl From<&str> for AddressId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for AddressId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<AddressId> for Address {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<AddressId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<AddressId> for AddressId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<AddressId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<AddressId, DaggerError>(self) })
+    }
+}
+impl AddressId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct BindingId(pub String);
 impl From<&str> for BindingId {
     fn from(value: &str) -> Self {
@@ -1789,12 +1822,181 @@ pub struct PortForward {
     pub protocol: NetworkProtocol,
 }
 #[derive(Clone)]
+pub struct Address {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct AddressDirectoryOpts<'a> {
+    #[builder(setter(into, strip_option), default)]
+    pub exclude: Option<Vec<&'a str>>,
+    #[builder(setter(into, strip_option), default)]
+    pub include: Option<Vec<&'a str>>,
+    #[builder(setter(into, strip_option), default)]
+    pub no_cache: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct AddressFileOpts<'a> {
+    #[builder(setter(into, strip_option), default)]
+    pub exclude: Option<Vec<&'a str>>,
+    #[builder(setter(into, strip_option), default)]
+    pub include: Option<Vec<&'a str>>,
+    #[builder(setter(into, strip_option), default)]
+    pub no_cache: Option<bool>,
+}
+impl Address {
+    /// Load a container from the address.
+    pub fn container(&self) -> Container {
+        let query = self.selection.select("container");
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a directory from the address.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn directory(&self) -> Directory {
+        let query = self.selection.select("directory");
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a directory from the address.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn directory_opts<'a>(&self, opts: AddressDirectoryOpts<'a>) -> Directory {
+        let mut query = self.selection.select("directory");
+        if let Some(exclude) = opts.exclude {
+            query = query.arg("exclude", exclude);
+        }
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
+        }
+        if let Some(no_cache) = opts.no_cache {
+            query = query.arg("noCache", no_cache);
+        }
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a file from the address.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn file(&self) -> File {
+        let query = self.selection.select("file");
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a file from the address.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn file_opts<'a>(&self, opts: AddressFileOpts<'a>) -> File {
+        let mut query = self.selection.select("file");
+        if let Some(exclude) = opts.exclude {
+            query = query.arg("exclude", exclude);
+        }
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
+        }
+        if let Some(no_cache) = opts.no_cache {
+            query = query.arg("noCache", no_cache);
+        }
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a git ref (branch, tag or commit) from the address.
+    pub fn git_ref(&self) -> GitRef {
+        let query = self.selection.select("gitRef");
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a git repository from the address.
+    pub fn git_repository(&self) -> GitRepository {
+        let query = self.selection.select("gitRepository");
+        GitRepository {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// A unique identifier for this Address.
+    pub async fn id(&self) -> Result<AddressId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Load a secret from the address.
+    pub fn secret(&self) -> Secret {
+        let query = self.selection.select("secret");
+        Secret {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a service from the address.
+    pub fn service(&self) -> Service {
+        let query = self.selection.select("service");
+        Service {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a local socket from the address.
+    pub fn socket(&self) -> Socket {
+        let query = self.selection.select("socket");
+        Socket {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The address value
+    pub async fn value(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("value");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
 pub struct Binding {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
 impl Binding {
+    /// Retrieve the binding value, as type Address
+    pub fn as_address(&self) -> Address {
+        let query = self.selection.select("asAddress");
+        Address {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieve the binding value, as type CacheVolume
     pub fn as_cache_volume(&self) -> CacheVolume {
         let query = self.selection.select("asCacheVolume");
@@ -6113,6 +6315,55 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }]
     }
+    /// Create or update a binding of type Address in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The Address value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_address_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<AddressId>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withAddressInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired Address output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_address_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withAddressOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create or update a binding of type CacheVolume in the environment
     ///
     /// # Arguments
@@ -9961,6 +10212,16 @@ pub struct QuerySecretOpts<'a> {
     pub cache_key: Option<&'a str>,
 }
 impl Query {
+    /// initialize an address to load directories, containers, secrets or other object types.
+    pub fn address(&self, value: impl Into<String>) -> Address {
+        let mut query = self.selection.select("address");
+        query = query.arg("value", value.into());
+        Address {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Constructs a cache volume for a given cache key.
     ///
     /// # Arguments
@@ -10371,6 +10632,22 @@ impl Query {
             query = query.arg("maxAPICalls", max_api_calls);
         }
         Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a Address from its ID.
+    pub fn load_address_from_id(&self, id: impl IntoID<AddressId>) -> Address {
+        let mut query = self.selection.select("loadAddressFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        Address {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

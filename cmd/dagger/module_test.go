@@ -55,26 +55,22 @@ func TestParseGit(t *testing.T) {
 		{
 			urlStr: "ssh://git@github.com/shykes/daggerverse",
 			want: &gitutil.GitURL{
-				Scheme: "ssh",
-				User:   url.User("git"),
-				Host:   "github.com",
-				Path:   "/shykes/daggerverse",
-				Fragment: &gitutil.GitURLFragment{
-					Ref: "",
-				},
+				Scheme:   "ssh",
+				User:     url.User("git"),
+				Host:     "github.com",
+				Path:     "/shykes/daggerverse",
+				Fragment: nil,
 			},
 			wantRemote: "ssh://git@github.com/shykes/daggerverse",
 		},
 		{
 			urlStr: "ssh://git@github.com/shykes/daggerverse.git",
 			want: &gitutil.GitURL{
-				Scheme: "ssh",
-				User:   url.User("git"),
-				Host:   "github.com",
-				Path:   "/shykes/daggerverse.git",
-				Fragment: &gitutil.GitURLFragment{
-					Ref: "",
-				},
+				Scheme:   "ssh",
+				User:     url.User("git"),
+				Host:     "github.com",
+				Path:     "/shykes/daggerverse.git",
+				Fragment: nil,
 			},
 			wantRemote: "ssh://git@github.com/shykes/daggerverse.git",
 		},
@@ -135,26 +131,22 @@ func TestParseGit(t *testing.T) {
 		{
 			urlStr: "git@github.com:sipsma/daggerverse",
 			want: &gitutil.GitURL{
-				Scheme: "ssh",
-				User:   url.User("git"),
-				Host:   "github.com",
-				Path:   "sipsma/daggerverse",
-				Fragment: &gitutil.GitURLFragment{
-					Ref: "",
-				},
+				Scheme:   "ssh",
+				User:     url.User("git"),
+				Host:     "github.com",
+				Path:     "sipsma/daggerverse",
+				Fragment: nil,
 			},
 			wantRemote: "git@github.com:sipsma/daggerverse",
 		},
 		{
 			urlStr: "git@github.com:sipsma/daggerverse.git",
 			want: &gitutil.GitURL{
-				Scheme: "ssh",
-				User:   url.User("git"),
-				Host:   "github.com",
-				Path:   "sipsma/daggerverse.git",
-				Fragment: &gitutil.GitURLFragment{
-					Ref: "",
-				},
+				Scheme:   "ssh",
+				User:     url.User("git"),
+				Host:     "github.com",
+				Path:     "sipsma/daggerverse.git",
+				Fragment: nil,
 			},
 			wantRemote: "git@github.com:sipsma/daggerverse.git",
 		},

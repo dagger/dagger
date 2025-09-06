@@ -58,6 +58,29 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Create or update a binding of type Address in the environment
+     */
+    public function withAddressInput(string $name, AddressId|Address $value, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withAddressInput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Declare a desired Address output to be assigned in the environment
+     */
+    public function withAddressOutput(string $name, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withAddressOutput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Create or update a binding of type CacheVolume in the environment
      */
     public function withCacheVolumeInput(string $name, CacheVolumeId|CacheVolume $value, string $description): Env
