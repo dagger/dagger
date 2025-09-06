@@ -96,9 +96,15 @@ func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
 	return nil, false
 }
 
-func (mod *Module) OverrideArgs(ctx context.Context, overrides map[string]string) error {
-	for argName, prettyValue := range overrides {
-		if err := mod.OverrideArg(ctx, argName, prettyValue); err != nil {
+func (mod *Module) OverrideArgs(ctx context.Context, overrides *EnvFile) error {
+	for _, variable := range overrides.Variables() {
+		nameParts := strings.Split(variable.Name, "_")
+		namePrefix := strings.ToLower(nameParts[0])
+		nameWithoutPrefix := strings.Join(nameParts[1:], "_")
+		if strings.ToLower(mod.Name()) != namePrefix {
+			continue
+		}
+		if err := mod.OverrideArg(ctx, nameWithoutPrefix, variable.Value); err != nil {
 			return err
 		}
 	}

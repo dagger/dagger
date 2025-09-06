@@ -1215,40 +1215,30 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 }
 
 // FIXME: POC of loading .env.dagger.json
-func (srv *Server) loadEnvConfig(ctx context.Context, mod *core.Module) (map[string]string, error) {
+func (srv *Server) loadEnvConfig(ctx context.Context, mod *core.Module) (*core.EnvFile, error) {
 	dag, err := srv.Server(ctx)
 	if err != nil {
 		return nil, err
 	}
-	envConfigDir, err := mod.GetSource().LoadContext(ctx, dag, ".", []string{
-		"*", ".*", "!.env.dagger.json",
-	})
-	if err != nil {
-		return nil, err
-	}
 	var (
-		envConfigContents string
-		envConfig         = map[string]string{}
+		envConfig *core.EnvFile
 	)
-	if err := dag.Select(ctx, envConfigDir, &envConfigContents,
+	if err := dag.Select(ctx, dag.Root(), &envConfig,
 		dagql.Selector{
-			Field: "file",
+			Field: "findupFile",
 			Args: []dagql.NamedInput{
 				{
-					Name:  "path",
-					Value: dagql.NewString(".env.dagger.json"),
+					Name:  "name",
+					Value: dagql.NewString(".env"),
 				},
 			},
 		},
 		dagql.Selector{
-			Field: "contents",
+			Field: "asEnvFile",
 		},
 	); err != nil {
-		// FIXME: gracefully handle non-existent file, without dropping legit errors
-		return envConfig, nil
-	}
-	if err := json.Unmarshal([]byte(envConfigContents), &envConfig); err != nil {
-		return nil, err
+		// Default to an empty env file
+		return &core.EnvFile{}, nil
 	}
 	return envConfig, nil
 }
@@ -1263,12 +1253,11 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module, includeDep
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
 
-	// FIXME: POC for injecting env-specific argument overrides, only in the top-level
 	envConfig, err := srv.loadEnvConfig(ctx, mod)
 	if err != nil {
 		return err
 	}
-	slog.Info("Loaded .env.dagger.json", "num_entries", len(envConfig), "config", envConfig, "module.Name", mod.Name(), "module.OriginalName", mod.OriginalName)
+	slog.Info("Loaded .env", "num_entries", len(envConfig.Variables()), "config", envConfig, "module.Name", mod.Name(), "module.OriginalName", mod.OriginalName)
 	if err := mod.OverrideArgs(ctx, envConfig); err != nil {
 		return err
 	}
