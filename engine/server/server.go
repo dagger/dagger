@@ -263,7 +263,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			srv.entitlements[entitlements.EntitlementSecurityInsecure] = struct{}{}
 		}
 	} else if bkcfg.Entitlements != nil {
-		// fallback to the dagger config
+		// fall back to the dagger config
 		for _, entStr := range bkcfg.Entitlements {
 			ent, err := entitlements.Parse(entStr)
 			if err != nil {

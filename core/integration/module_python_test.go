@@ -246,12 +246,12 @@ class Test:
 		require.JSONEq(t, `{"test":{"message":"Hello, World!"}}`, out)
 	})
 
-	t.Run("fallback to main import package name", func(ctx context.Context, t *testctx.T) {
+	t.Run("fall back to main import package name", func(ctx context.Context, t *testctx.T) {
 		// Name in dagger.json: "test"
 		// Name in pyproject.toml: "hello-world"
 		// Source code in `src/main/__init__.py`
 		// Expected main object name: "Test"
-		// Expected import package name: "hello_world", but fallback to "main"
+		// Expected import package name: "hello_world", but fall back to "main"
 
 		c := connect(ctx, t)
 

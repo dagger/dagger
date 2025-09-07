@@ -99,7 +99,7 @@ func ParseRefString(
 			Git:  &parsedGitRef,
 		}, nil
 	case errors.As(err, &gitEndpointError{}):
-		// couldn't connect to git endpoint, fallback to local
+		// couldn't connect to git endpoint, fall back to local
 		return &ParsedRefString{
 			Kind: ModuleSourceKindLocal,
 			Local: &ParsedLocalRefString{

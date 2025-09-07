@@ -312,7 +312,7 @@ func (h *shellCallHandler) parseModRef(ctx context.Context, path string) (rcfg *
 		}
 	}
 
-	// fallback to original path, which may be an absolute ref
+	// fall back to original path, which may be an absolute ref
 	return h.getModuleConfig(ctx, path)
 }
 

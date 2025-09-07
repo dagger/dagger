@@ -1,10 +1,10 @@
 #!/bin/bash
 
 set -o pipefail
-# Fallback to /usr/local for backwards compatability
+# Fall back to /usr/local for backwards compatability
 prefix_dir="${RUNNER_TEMP:-/usr/local}"
 
-# Ensure the dir is writable otherwise fallback to tmpdir
+# Ensure the dir is writable otherwise fall back to tmpdir
 if [[ ! -d "$prefix_dir" ]] || [[ ! -w "$prefix_dir" ]]; then
   prefix_dir="$(mktemp -d)"
 fi

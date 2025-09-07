@@ -50,7 +50,7 @@ func init() {
 func defaultRunnerHost() string {
 	tag := engine.Tag
 	if tag == "" {
-		// can happen during naive dev builds (so just fallback to something
+		// can happen during naive dev builds (so just fall back to something
 		// semi-reasonable)
 		return "container://" + distconsts.EngineContainerName
 	}

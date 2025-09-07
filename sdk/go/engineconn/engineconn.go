@@ -62,7 +62,7 @@ func Get(ctx context.Context, cfg *Config) (EngineConn, error) {
 		return conn, nil
 	}
 
-	// Fallback to downloading the CLI
+	// Fall back to downloading the CLI
 	conn, err = FromDownloadedCLI(ctx, cfg)
 	if err != nil {
 		return nil, err

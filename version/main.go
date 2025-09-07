@@ -215,7 +215,7 @@ func (v Version) NextReleaseVersion(ctx context.Context) (string, error) {
 		}
 	}
 
-	// HACK: fallback to the contents
+	// HACK: fall back to the contents
 	// we can remove this when remote modules have KeepGitDir by default
 	if nextVersion == "" {
 		entries, err := v.Changes.Directory(".changes").Entries(ctx)

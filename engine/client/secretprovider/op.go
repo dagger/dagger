@@ -18,7 +18,7 @@ func opProvider(ctx context.Context, key string) ([]byte, error) {
 		return opSDKProvider(ctx, key)
 	}
 
-	// If not set, fallback to the `op` CLI, if present
+	// If not set, fall back to the `op` CLI, if present
 	if _, err := exec.LookPath("op"); err == nil {
 		return opCLIProvider(ctx, key)
 	}

@@ -1158,7 +1158,7 @@ func (GitSuite) TestGitSchemeless(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("private no auth fails", func(ctx context.Context, t *testctx.T) {
-		// should fallback to https and fail
+		// should fall back to https and fail
 		repo := c.Git("github.com/grouville/daggerverse-private.git")
 		err := checkAccess(ctx, repo)
 		require.Error(t, err)

@@ -410,7 +410,7 @@ func (d *Discovery) findPythonVersion() string {
 	// NB: In pyproject.toml, the "requires-python" option refers to a minimum
 	// version because it's meant for checking if the (already installed)
 	// Python version in the environment is compatible with what a library
-	// supports. If it's set, we'll use it as a fallback to decide which
+	// supports. If it's set, we'll use it as a fall back to decide which
 	// version to install.
 	minimum := strings.TrimSpace(d.Config.Project.RequiresPython)
 

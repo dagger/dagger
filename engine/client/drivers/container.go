@@ -367,7 +367,7 @@ func resolveImageID(imageRef string) (string, error) {
 		return id[:hashLen], nil
 	}
 	if tag, ok := ref.(name.Tag); ok {
-		// Otherwise, fallback to the image tag
+		// Otherwise, fall back to the image tag
 		return tag.TagStr(), nil
 	}
 

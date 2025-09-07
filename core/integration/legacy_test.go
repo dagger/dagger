@@ -357,7 +357,7 @@ class Test:
 func (LegacySuite) TestLegacyNoExec(ctx context.Context, t *testctx.T) {
 	// Changed in dagger/dagger#7857
 	//
-	// Older schemas should continue to fallback to the default command on
+	// Older schemas should continue to fall back to the default command on
 	// stdout and stderr.
 
 	c := connect(ctx, t)

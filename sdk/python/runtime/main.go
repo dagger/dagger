@@ -471,7 +471,7 @@ func (m *PythonSdk) WithInstall() *PythonSdk {
 		return m
 	}
 
-	// Fallback to pip-compile workflow (legacy).
+	// Fall back to pip-compile workflow (legacy).
 	install := []string{"pip", "install", "-e", "./sdk", "-e", "."}
 	check := []string{"pip", "check"}
 

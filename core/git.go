@@ -529,7 +529,7 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 
 	if _, err := git.Run(ctx, args...); err != nil {
 		if errors.Is(err, gitutil.ErrShallowNotSupported) {
-			// fallback to full fetch
+			// fall back to full fetch
 			args = slices.DeleteFunc(args, func(s string) bool {
 				return strings.HasPrefix(s, "--depth")
 			})
