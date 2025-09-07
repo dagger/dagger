@@ -10,14 +10,14 @@ import (
 	"github.com/containerd/containerd/leases"
 )
 
-type TarballWriter func(ctx context.Context, name string, tarball io.Reader) error
 type TarballReader func(ctx context.Context, name string, tarball io.Writer) error
+type TarballWriter func(ctx context.Context, name string, tarball io.Reader) error
 
 type Loader struct {
 	ID string
 
-	// TarballWriter and TarballReader allow the backend to write and read tarballs
-	// to and from the content store.
+	// TarballReader and TarballWriter allow the backend to read from and write to tarballs
+	// with the content store.
 	TarballWriter TarballWriter
 	TarballReader TarballReader
 
