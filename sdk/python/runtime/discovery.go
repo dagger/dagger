@@ -110,7 +110,7 @@ func NewDiscovery(cfg UserConfig) (*Discovery, error) {
 	}, nil
 }
 
-// UserConfig is the configuration the user can set in pyproject.toml, under
+// UserConfig is configuration the user can set in pyproject.toml, under
 // the "tool.dagger" table.
 func (d *Discovery) UserConfig() *UserConfig {
 	return &d.Config.Tool.Dagger

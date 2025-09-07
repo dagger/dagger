@@ -578,7 +578,7 @@ type procHandle struct {
 	ready          chan struct{}
 	ended          chan struct{}
 	shutdown       func(error)
-	// this this only used when the request context is canceled and we need
+	// this is only used when the request context is canceled and we need
 	// to kill the in-container process.
 	killer procKiller
 }
