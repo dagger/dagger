@@ -87,7 +87,7 @@ func (DaggerCMDSuite) TestShellAutocomplete(ctx context.Context, t *testctx.T) {
 		`container | directory <--$expand >`,
 
 		// TODO: These have been hidden. Uncomment when stable, or put them
-		// bethind a feature flag so they can be tested even if hidden.
+		// behind a feature flag so they can be tested even if hidden.
 
 		// // .deps builtin
 		// `.deps | <$alpine >`,
