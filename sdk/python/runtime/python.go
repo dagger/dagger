@@ -20,7 +20,7 @@ var (
 //
 // See https://packaging.python.org/en/latest/specifications/name-normalization/
 func NormalizeProjectName(n string) string {
-	// project name is case insensitive
+	// project name is case-insensitive
 	n = strings.ToLower(n)
 	// valid non alphanumeric chars, even if repeated, should be replaced
 	// with a single "-"

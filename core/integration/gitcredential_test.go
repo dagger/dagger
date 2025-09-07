@@ -46,7 +46,7 @@ func (GitCredentialSuite) TestGitCredentialErrors(ctx context.Context, t *testct
 		// Start with the full environment
 		currentEnv := os.Environ()
 
-		// Filter out any Git-related environment variables (case insensitive)
+		// Filter out any Git-related environment variables (case-insensitive)
 		filteredEnv := make([]string, 0, len(currentEnv))
 		for _, e := range currentEnv {
 			key := strings.SplitN(e, "=", 2)[0]

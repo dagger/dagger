@@ -1754,7 +1754,7 @@ func another() {
 		require.Equal(t, 1, lineNumber0)
 	})
 
-	t.Run("case insensitive search", func(ctx context.Context, t *testctx.T) {
+	t.Run("case-insensitive search", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		dir := c.Directory().
