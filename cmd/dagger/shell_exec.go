@@ -222,7 +222,7 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 				// The last command in a pipeline will resolve this state and
 				// if that query returns an error, it will be returned here.
 				// Otherwise, this should only fail if there's an unexpected
-				// error while writing to the pipe the interpreter sets up.
+				// error while writing to the pipe set up by the interpreter.
 				err = h.Save(ctx, *st)
 			}
 		}
