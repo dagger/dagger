@@ -120,7 +120,7 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	// error when trying to exec it below.
 	//
 	// We workaround this the same way suggested in the issue, by sleeping
-	// and retrying the exec a few times. This is such an obscure case that
+	// and retrying the exec call a few times. This is such an obscure case that
 	// this retry approach should be fine. It can only happen when a new
 	// dagger binary needs to be created and even then only if many
 	// threads within this process are trying to provision it at the same time.
