@@ -237,7 +237,7 @@ type Commit struct {
 	// The commit hash.
 	Commit string
 
-	// The commit commit date.
+	// The commit date.
 	// Distinct from the *author* date.
 	Date string
 }
