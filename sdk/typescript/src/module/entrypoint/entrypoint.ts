@@ -87,7 +87,7 @@ function formatError(e: unknown): DaggerError {
   if (e instanceof Error) {
     let error = dag.error(e.message)
 
-    // If the error is an instance of GraphQLError or a inherit type of it,
+    // If the error is an instance of GraphQLError or an inherit type of it,
     // we can add the extensions fields in the error object.
     if (e instanceof ExecError || e instanceof GraphQLRequestError) {
       Object.entries(e.extensions ?? []).forEach(([key, value]) => {

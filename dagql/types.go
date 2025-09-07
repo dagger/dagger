@@ -117,7 +117,7 @@ type AnyObjectResult interface {
 	Select(context.Context, *Server, Selector) (AnyResult, error)
 }
 
-// InterfaceValue is a value that wraps some underlying object with a interface to that object's API. This type exists to support unwrapping it and getting the underlying object.
+// InterfaceValue is a value that wraps some underlying object with an interface to that object's API. This type exists to support unwrapping it and getting the underlying object.
 type InterfaceValue interface {
 	// UnderlyingObject returns the underlying object of the InterfaceValue
 	UnderlyingObject() (Typed, error)

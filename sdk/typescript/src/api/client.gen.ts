@@ -56,7 +56,7 @@ export enum CacheSharingMode {
 
 /**
  * Utility function to convert a CacheSharingMode value to its name so
- * it can be uses as argument to call a exposed function.
+ * it can be uses as argument to call an exposed function.
  */
 function CacheSharingModeValueToName(value: CacheSharingMode): string {
   switch (value) {
@@ -1044,7 +1044,7 @@ export enum ExistsType {
 
 /**
  * Utility function to convert a ExistsType value to its name so
- * it can be uses as argument to call a exposed function.
+ * it can be uses as argument to call an exposed function.
  */
 function ExistsTypeValueToName(value: ExistsType): string {
   switch (value) {
@@ -1331,7 +1331,7 @@ export enum ImageLayerCompression {
 
 /**
  * Utility function to convert a ImageLayerCompression value to its name so
- * it can be uses as argument to call a exposed function.
+ * it can be uses as argument to call an exposed function.
  */
 function ImageLayerCompressionValueToName(
   value: ImageLayerCompression,
@@ -1380,7 +1380,7 @@ export enum ImageMediaTypes {
 
 /**
  * Utility function to convert a ImageMediaTypes value to its name so
- * it can be uses as argument to call a exposed function.
+ * it can be uses as argument to call an exposed function.
  */
 function ImageMediaTypesValueToName(value: ImageMediaTypes): string {
   switch (value) {
@@ -1495,7 +1495,7 @@ export enum ModuleSourceKind {
 
 /**
  * Utility function to convert a ModuleSourceKind value to its name so
- * it can be uses as argument to call a exposed function.
+ * it can be uses as argument to call an exposed function.
  */
 function ModuleSourceKindValueToName(value: ModuleSourceKind): string {
   switch (value) {
@@ -1536,7 +1536,7 @@ export enum NetworkProtocol {
 
 /**
  * Utility function to convert a NetworkProtocol value to its name so
- * it can be uses as argument to call a exposed function.
+ * it can be uses as argument to call an exposed function.
  */
 function NetworkProtocolValueToName(value: NetworkProtocol): string {
   switch (value) {
@@ -1761,7 +1761,7 @@ export enum ReturnType {
 
 /**
  * Utility function to convert a ReturnType value to its name so
- * it can be uses as argument to call a exposed function.
+ * it can be uses as argument to call an exposed function.
  */
 function ReturnTypeValueToName(value: ReturnType): string {
   switch (value) {
@@ -2083,7 +2083,7 @@ export enum TypeDefKind {
 
 /**
  * Utility function to convert a TypeDefKind value to its name so
- * it can be uses as argument to call a exposed function.
+ * it can be uses as argument to call an exposed function.
  */
 function TypeDefKindValueToName(value: TypeDefKind): string {
   switch (value) {

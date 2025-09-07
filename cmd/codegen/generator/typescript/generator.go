@@ -20,7 +20,7 @@ type TypeScriptGenerator struct {
 	Config generator.Config
 }
 
-// Generate will generate the TypeScript SDK code and might modify the schema to reorder types in a alphanumeric fashion.
+// Generate will generate the TypeScript SDK code and might modify the schema to reorder types in an alphanumeric fashion.
 func (g *TypeScriptGenerator) GenerateModule(_ context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
 	target := filepath.Join(g.Config.ModuleConfig.ModuleSourcePath, "sdk/src/api", ClientGenFile)
 

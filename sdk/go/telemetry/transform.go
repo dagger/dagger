@@ -708,7 +708,7 @@ func SpanEventsFromPB(es []*otlptracev1.Span_Event) []sdktrace.Event {
 	return events
 }
 
-// spanKindFromPB transforms a an OTLP span kind to SpanKind.
+// spanKindFromPB transforms an OTLP span kind to SpanKind.
 func spanKindFromPB(kind otlptracev1.Span_SpanKind) trace.SpanKind {
 	switch kind {
 	case otlptracev1.Span_SPAN_KIND_INTERNAL:

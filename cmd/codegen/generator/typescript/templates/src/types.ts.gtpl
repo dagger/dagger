@@ -74,7 +74,7 @@ export enum {{ $enumName }} { {{- with .Directives.SourceMap }} // {{ .Module }}
 
 /**
  * Utility function to convert a {{ .Name }} value to its name so
- * it can be uses as argument to call a exposed function.
+ * it can be uses as argument to call an exposed function.
  */
 function {{ .Name | PascalCase }}ValueToName(value: {{ .Name }}): string {
   switch (value) {

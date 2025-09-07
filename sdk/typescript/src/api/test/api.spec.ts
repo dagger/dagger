@@ -208,7 +208,7 @@ describe("TypeScript SDK api", function () {
     )
   })
 
-  it("Return a error for Graphql object nested response", function () {
+  it("Return an error for Graphql object nested response", function () {
     const tree = {
       container: {
         from: "from",

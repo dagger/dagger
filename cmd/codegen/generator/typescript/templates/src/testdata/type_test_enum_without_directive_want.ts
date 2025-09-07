@@ -9,7 +9,7 @@ export enum NetworkProtocol {
 
 /**
  * Utility function to convert a NetworkProtocol value to its name so
- * it can be uses as argument to call a exposed function.
+ * it can be uses as argument to call an exposed function.
  */
 function NetworkProtocolValueToName(value: NetworkProtocol): string {
   switch (value) {

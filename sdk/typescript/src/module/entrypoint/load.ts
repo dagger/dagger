@@ -308,7 +308,7 @@ export async function loadResult(
             module.objects[(_property as TypeDef<TypeDefKind.ObjectKind>).name]
         }
 
-        // If the original type is a enum, we use it as the referenced object.
+        // If the original type is an enum, we use it as the referenced object.
         if (_property.kind === TypeDefKind.EnumKind) {
           referencedObject =
             module.enums[(_property as TypeDef<TypeDefKind.EnumKind>).name]

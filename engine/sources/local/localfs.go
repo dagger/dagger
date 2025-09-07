@@ -400,7 +400,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 	}
 
 	// FIXME: when the ID of the ref given to SetCacheContext is different from the ID of the
-	// ref the cacheCtx was created with, buildkit just stores it in a in-memory LRU that's
+	// ref the cacheCtx was created with, buildkit just stores it in an in-memory LRU that's
 	// only hit by some code paths. This is probably a bug. To coerce it into actually storing
 	// the cacheCtx on finalRef, we have to do this little dance of setting it (so it's in the LRU)
 	// and then getting it+setting again.

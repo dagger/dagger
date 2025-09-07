@@ -12,7 +12,7 @@ export enum ImageLayerCompression {
 
 /**
  * Utility function to convert a ImageLayerCompression value to its name so
- * it can be uses as argument to call a exposed function.
+ * it can be uses as argument to call an exposed function.
  */
 function ImageLayerCompressionValueToName(value: ImageLayerCompression): string {
   switch (value) {

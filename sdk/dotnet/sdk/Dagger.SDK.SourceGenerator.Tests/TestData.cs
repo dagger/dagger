@@ -6562,7 +6562,7 @@ public static class TestData
                   {
                     "args": [],
                     "deprecationReason": null,
-                    "description": "If the source is a of kind git, the git source representation of it.",
+                    "description": "If the source is of kind git, the git source representation of it.",
                     "isDeprecated": false,
                     "name": "asGitSource",
                     "type": {
