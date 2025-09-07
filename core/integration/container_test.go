@@ -3357,7 +3357,7 @@ func (ContainerSuite) TestImageRef(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (ContainerSuite) TestInsecureRootCapabilites(ctx context.Context, t *testctx.T) {
+func (ContainerSuite) TestInsecureRootCapabilities(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	// This isn't exhaustive, but it's the major important ones. Being exhaustive
@@ -3397,7 +3397,7 @@ func (ContainerSuite) TestInsecureRootCapabilites(ctx context.Context, t *testct
 	}
 }
 
-func (ContainerSuite) TestInsecureRootCapabilitesWithService(ctx context.Context, t *testctx.T) {
+func (ContainerSuite) TestInsecureRootCapabilitiesWithService(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	middleware := func(ctr *dagger.Container) *dagger.Container {
