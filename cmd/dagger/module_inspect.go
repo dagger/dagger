@@ -541,7 +541,7 @@ func (m *moduleDef) HasFunction(fp functionProvider, name string) bool {
 }
 
 // LoadTypeDef attempts to replace a function's return object type or argument's
-// object type with with one from the module's object type definitions, to
+// object type with one from the module's object type definitions, to
 // recover missing function definitions in those places when chaining functions.
 func (m *moduleDef) LoadTypeDef(typeDef *modTypeDef) {
 	typeDef.once.Do(func() {
