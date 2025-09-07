@@ -971,7 +971,7 @@ To specify a function argument as optional, simply make it nullable. When using 
 </TabItem>
 <TabItem value="java" label="Java">
 :::note
-Because of the usage of `Optional`, primitive types can not be marked as optional. You have to use the boxed types like `Integer` or `Boolean`.
+Because of the usage of `Optional`, primitive types cannot be marked as optional. You have to use the boxed types like `Integer` or `Boolean`.
 
 When an argument is not set as optional, Dagger will ensure the value is not `null` by adding a call to `Objects.requireNonNull` against the argument.
 :::

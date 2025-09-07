@@ -112,7 +112,7 @@ public class DaggerJava {
   @Function
   public String nonNullableNoDefault(String stringArg) {
     if (stringArg == null) {
-      throw new RuntimeException("can not be null");
+      throw new RuntimeException("cannot be null");
     }
     return stringArg;
   }
@@ -123,7 +123,7 @@ public class DaggerJava {
   @Function
   public String nonNullableDefault(@Default("default value") String stringArg) {
     if (stringArg == null) {
-      throw new RuntimeException("can not be null");
+      throw new RuntimeException("cannot be null");
     }
     return stringArg;
   }

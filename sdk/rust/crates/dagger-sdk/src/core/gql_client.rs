@@ -185,7 +185,7 @@ impl GQLClient {
 
         builder
             .build()
-            .map_err(|e| GraphQLError::with_text(format!("Can not create client: {:?}", e)))
+            .map_err(|e| GraphQLError::with_text(format!("Cannot create client: {:?}", e)))
     }
 }
 
@@ -340,7 +340,7 @@ impl GQLClient {
             let response_body_text = raw_response
                 .text()
                 .await
-                .map_err(|e| GraphQLError::with_text(format!("Can not get response: {:?}", e)))?;
+                .map_err(|e| GraphQLError::with_text(format!("Cannot get response: {:?}", e)))?;
 
             let json: GraphQLResponse<K> =
                 serde_json::from_str(&response_body_text).map_err(|e| {

@@ -300,7 +300,7 @@ func (JavaSuite) TestEnum(_ context.Context, t *testctx.T) {
 		require.Equal(t, "LOW", out)
 	})
 
-	t.Run("can not use a value not defined in the enum", func(ctx context.Context, t *testctx.T) {
+	t.Run("cannot use a value not defined in the enum", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		_, err := javaModule(t, c, "enums").
