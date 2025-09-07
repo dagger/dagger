@@ -226,7 +226,7 @@ class InterfaceWrapper {
   }
 
   /**
-   * ID function to make the interface IDeable when serialized as return value to the
+   * ID function to make the interface IDable when serialized as return value to the
    * Dagger API.
    */
   public async id(): Promise<string> {
