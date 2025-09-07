@@ -263,7 +263,7 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 				if !errors.As(e, &he) {
 					// If we fail to pass the current error on to the next
 					// handler in the pipeline the next one will return a
-					// confiusing "unexpected input" error, but it's still
+					// confusing "unexpected input" error, but it's still
 					// better than obfuscating the original one if we returned
 					// here, so just log it.
 					slog.Error("failed to save error state", "args", args, "err", e)
