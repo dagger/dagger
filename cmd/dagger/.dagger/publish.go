@@ -51,7 +51,7 @@ func (cli *DaggerCli) Publish(
 		// all non-semver tags (like "main") are dev builds
 		tag = ""
 	} else {
-		// sanity check that the semver tag actually exists, otherwise do a dev build
+		// sanity check that the semver tag actually exists; otherwise, do a dev build
 		_, err = ctr.WithExec([]string{"git", "show-ref", "--verify", "refs/tags/" + tag}).Sync(ctx)
 		if err != nil {
 			err, ok := err.(*ExecError)

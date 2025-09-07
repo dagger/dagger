@@ -371,7 +371,7 @@ func (container *Container) FromRefString(ctx context.Context, addr string) (*Co
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse image address %s: %w", addr, err)
 	}
-	// add a default :latest if no tag or digest, otherwise this is a no-op
+	// add a default :latest if no tag or digest; otherwise, this is a no-op
 	refName = reference.TagNameOnly(refName)
 
 	if refName, isCanonical := refName.(reference.Canonical); isCanonical {
@@ -1188,7 +1188,7 @@ func (container *Container) chown(
 			chowned := "/chown"
 
 			// NB(vito): need to create intermediate directory with correct ownership
-			// to handle the directory case, otherwise the mount will be owned by
+			// to handle the directory case; otherwise, the mount will be owned by
 			// root
 			srcSt = llb.Scratch().File(
 				llb.Mkdir(chowned, os.FileMode(stat.Mode), ownership.Opt()).

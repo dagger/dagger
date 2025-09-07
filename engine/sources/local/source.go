@@ -274,7 +274,7 @@ func (ls *localSourceHandler) sync(
 	ctx context.Context,
 	ref *filesyncCacheRef,
 	clientPath string,
-	drive string, // only set for windows clients, otherwise ""
+	drive string, // only set for windows clients; otherwise, ""
 	session session.Group,
 	caller session.Caller,
 ) (_ bkcache.ImmutableRef, rerr error) {
@@ -301,7 +301,7 @@ func (ls *localSourceHandler) syncParentDirs(
 	ctx context.Context,
 	ref *filesyncCacheRef,
 	clientPath string,
-	drive string, // only set for windows clients, otherwise ""
+	drive string, // only set for windows clients; otherwise, ""
 	caller session.Caller,
 ) (rerr error) {
 	ctx, cancel := context.WithCancelCause(ctx)
@@ -354,7 +354,7 @@ type filesyncCacheRef struct {
 func (ls *localSourceHandler) getRef(
 	ctx context.Context,
 	session session.Group,
-	drive string, // only set for windows clients, otherwise ""
+	drive string, // only set for windows clients; otherwise, ""
 ) (_ *filesyncCacheRef, _ func(context.Context) error, rerr error) {
 	clientKey := ls.src.SharedKeyHint // this is the clientMetadata.ClientStableID
 	if drive != "" {

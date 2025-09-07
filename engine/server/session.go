@@ -1069,7 +1069,7 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
 	ctx := r.Context()
 
-	// only record telemetry if the request is traced, otherwise
+	// only record telemetry if the request is traced; otherwise,
 	// we end up with orphaned spans in their own separate traces from tests etc.
 	if trace.SpanContextFromContext(ctx).IsValid() {
 		// create a span to record telemetry into the client's DB

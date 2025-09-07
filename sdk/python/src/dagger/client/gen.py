@@ -3840,7 +3840,7 @@ class EngineCache(Type):
         Parameters
         ----------
         use_default_policy:
-            Use the engine-wide default pruning policy if true, otherwise
+            Use the engine-wide default pruning policy if true; otherwise,
             prune the whole cache of any releasable entries.
 
         Returns

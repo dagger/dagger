@@ -967,7 +967,7 @@ export type EngineCacheEntrySetOpts = {
 
 export type EngineCachePruneOpts = {
   /**
-   * Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+   * Use the engine-wide default pruning policy if true; otherwise, prune the whole cache of any releasable entries.
    */
   useDefaultPolicy?: boolean
 }
@@ -4463,7 +4463,7 @@ export class EngineCache extends BaseClient {
 
   /**
    * Prune the cache of releaseable entries
-   * @param opts.useDefaultPolicy Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+   * @param opts.useDefaultPolicy Use the engine-wide default pruning policy if true; otherwise, prune the whole cache of any releasable entries.
    */
   prune = async (opts?: EngineCachePruneOpts): Promise<void> => {
     if (this._prune) {

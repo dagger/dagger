@@ -798,7 +798,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	if err != nil {
 		return inst, fmt.Errorf("failed to parse image address %s: %w", args.Address, err)
 	}
-	// add a default :latest if no tag or digest, otherwise this is a no-op
+	// add a default :latest if no tag or digest; otherwise, this is a no-op
 	refName = reference.TagNameOnly(refName)
 
 	if refName, isCanonical := refName.(reference.Canonical); isCanonical {

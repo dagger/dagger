@@ -21,7 +21,7 @@
 		{{- /* Write argument description */ -}}
 		{{- $desc := CommentToLines .Description }}
 			{{- range $i, $line := $desc }}
-				{{- /* If it's the first line, add the JSDoc tag, otherwise treat it as a simple line */ -}}
+				{{- /* If it's the first line, add the JSDoc tag; otherwise, treat it as a simple line */ -}}
 				{{- if (eq $i 0) }}
    * @param {{ $arg.Name }} {{ $line }}
 				{{- else }}
@@ -39,7 +39,7 @@
 				{{- /* Write argument description */ -}}
 				{{- $desc := CommentToLines .Description }}
 				{{- range $i, $line := $desc }}
-					{{- /* If it's the first line, add the JSDoc tag, otherwise treat it as a simple line */ -}}
+					{{- /* If it's the first line, add the JSDoc tag; otherwise, treat it as a simple line */ -}}
 					{{- if (eq $i 0) }}
    * @param opts.{{ $arg.Name }} {{ $line }}
 					{{- else }}

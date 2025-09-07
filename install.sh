@@ -256,7 +256,7 @@ EOF
 }
 
 fetch_version() {
-  # attempt to interpret the DAGGER_VERSION as a build pointer, otherwise
+  # attempt to interpret the DAGGER_VERSION as a build pointer; otherwise,
   # just use it's value directly
   curl -sfL "${base}/${name}/versions/${DAGGER_VERSION}" || echo "${DAGGER_VERSION}"
 }

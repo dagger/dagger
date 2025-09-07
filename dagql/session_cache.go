@@ -143,7 +143,7 @@ func (c *SessionCache) GetOrInitializeWithCallbacks(
 	}
 	_, seen := keys.LoadOrStore(key, struct{}{})
 	if o.Telemetry != nil && (!seen || isZero) {
-		// track keys globally in addition to any local key stores, otherwise we'll
+		// track keys globally in addition to any local key stores; otherwise, we'll
 		// see dupes when e.g. IDs returned out of the "bubble" are loaded
 		c.seenKeys.Store(key, struct{}{})
 

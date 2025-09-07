@@ -559,7 +559,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 	if !doFindUp {
 		configPath = filepath.Join(gitSrc.SourceRootSubpath, modules.Filename)
 	} else {
-		// first validate the given path exists at all, otherwise weird things like
+		// first validate the given path exists at all; otherwise, weird things like
 		// `dagger -m github.com/dagger/dagger/not/a/real/dir` can succeed because
 		// they find-up to a real dagger.json
 		statFS := core.NewCoreDirStatFS(gitSrc.ContextDirectory.Self(), bk)
@@ -1560,7 +1560,7 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateDependencies(
 			continue
 		}
 
-		// if the existingDep is local and requested to be updated, return error, otherwise skip it
+		// if the existingDep is local and requested to be updated, return error; otherwise, skip it
 		if existingDep.Self().Kind == core.ModuleSourceKindLocal {
 			for updateReq := range updateReqs {
 				if updateReq.symbolic == existingDep.Self().ModuleName {

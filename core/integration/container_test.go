@@ -3911,7 +3911,7 @@ func (ContainerSuite) TestImageLoadCompatibility(ctx context.Context, t *testctx
 					tmpdir := t.TempDir()
 					tmpfile := filepath.Join(tmpdir, fmt.Sprintf("test-%s-%s-%s.tar", dockerVersion, mediaType, compression))
 					_, err := c.Container().From(alpineImage).
-						// we need a unique image, otherwise docker load skips it after the first tar load
+						// we need a unique image; otherwise, docker load skips it after the first tar load
 						WithExec([]string{"sh", "-c", "echo '" + string(compression) + string(mediaType) + "' > /foo"}).
 						Export(ctx, tmpfile, dagger.ContainerExportOpts{
 							MediaTypes:        mediaType,

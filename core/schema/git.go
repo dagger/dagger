@@ -248,7 +248,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 	switch remote.Scheme {
 	case gitutil.SSHProtocol:
 		if remote.User == nil {
-			// default to git user for SSH, otherwise weird incorrect defaults
+			// default to git user for SSH; otherwise, weird incorrect defaults
 			// like "root" can get applied in various places. This matches the
 			// git module source implementation.
 			remote.User = url.User("git")

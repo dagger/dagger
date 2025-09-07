@@ -85,7 +85,7 @@ engine:
 
   image:
     ### Set a ref if you want to use a custom Dagger image
-    #   NOTE: you will need to ensure that a compatible dagger CLI is embedded in the image, otherwise readiness probes will fail
+    #   NOTE: you will need to ensure that a compatible dagger CLI is embedded in the image; otherwise, readiness probes will fail
     #   In the example below, we are configuring the latest, unreleased bleeding edge version
     #
     # ref: registry.dagger.io/engine:main

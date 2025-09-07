@@ -871,7 +871,7 @@ func (c *Client) dialContextNoClientClose(ctx context.Context) (net.Conn, error)
 }
 
 func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// propagate span from per-request client headers, otherwise all spans
+	// propagate span from per-request client headers; otherwise, all spans
 	// end up beneath the client session span
 	ctx := telemetry.Propagator.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
 

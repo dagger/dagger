@@ -197,7 +197,7 @@ func (g *GoGenerator) bootstrapMod(mfs *memfs.FS, genSt *generator.GeneratedStat
 func (g *GoGenerator) syncModReplaceAndTidy(mod *modfile.File, genSt *generator.GeneratedState, modPath string) error {
 	modDir := filepath.Join(g.Config.OutputDir, modPath)
 
-	// if there is a go.work, we need to also set overrides there, otherwise
+	// if there is a go.work, we need to also set overrides there; otherwise,
 	// modules will have individually conflicting replace directives
 	goWork, err := goEnv(modDir, "GOWORK")
 	if err != nil {

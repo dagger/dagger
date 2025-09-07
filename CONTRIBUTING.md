@@ -131,7 +131,7 @@ that matches the commit author. When committing, use the `--signoff` flag:
 git commit -s
 ```
 
-The Signed-off-by line must match the **author's real name**, otherwise the PR will be rejected.
+The Signed-off-by line must match the **author's real name**; otherwise, the PR will be rejected.
 
 ### Commit messages
 

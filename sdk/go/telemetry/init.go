@@ -441,7 +441,7 @@ func Init(ctx context.Context, cfg Config) context.Context {
 	// Register our TracerProvider as the global so any imported instrumentation
 	// in the future will default to using it.
 	//
-	// NB: this is also necessary so that we can establish a root span, otherwise
+	// NB: this is also necessary so that we can establish a root span; otherwise,
 	// telemetry doesn't work.
 	otel.SetTracerProvider(tracerProvider)
 

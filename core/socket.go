@@ -421,7 +421,7 @@ func proxyStream[T any](ctx context.Context, clientStream grpc.ClientStream, ser
 
 // withContext adapts a blocking function to a context-aware function. It's
 // up to the caller to ensure that the blocking function f will unblock at
-// some time, otherwise there can be a goroutine leak.
+// some time; otherwise, there can be a goroutine leak.
 func withContext[T any](ctx context.Context, f func() (T, error)) (T, error) {
 	type result struct {
 		v   T

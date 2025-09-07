@@ -685,7 +685,7 @@ func (h *shellCallHandler) parseArgumentValues(
 
 	// Parse arguments using flags to get the values matched with the right
 	// argument definition. Bypass the flag if the argument value is an object
-	// ID, otherwise set the flag value.
+	// ID; otherwise, set the flag value.
 	f := func(flag *pflag.Flag, value string) error {
 		a, err := fn.GetArg(flag.Name)
 		if err != nil {

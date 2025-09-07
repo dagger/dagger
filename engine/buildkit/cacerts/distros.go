@@ -407,7 +407,7 @@ func (d *commonInstaller) Uninstall(ctx context.Context) error {
 		}
 	}
 
-	// update the bundle using the command if available, otherwise manually remove the certs
+	// update the bundle using the command if available; otherwise, manually remove the certs
 	if updateCommandExists {
 		if err := d.ctrFS.Exec(ctx, d.updateCmd...); err != nil {
 			return fmt.Errorf("failed to run %v for install: %w", d.updateCmd, err)

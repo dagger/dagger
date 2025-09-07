@@ -31,7 +31,7 @@ func (s *engineSchema) Install(srv *dagql.Server) {
 			DoNotCache("Mutates mutable state").
 			Doc("Prune the cache of releaseable entries").
 			Args(
-				dagql.Arg("useDefaultPolicy").Doc("Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries."),
+				dagql.Arg("useDefaultPolicy").Doc("Use the engine-wide default pruning policy if true; otherwise, prune the whole cache of any releasable entries."),
 			),
 	}.Install(srv)
 

@@ -16,7 +16,7 @@
  *
  * If any value is already set but wrong, the script will update it to its expected value.
  *
- * If standalone client is set to true, the script expects output-dir to be set, otherwise it's optional.
+ * If standalone client is set to true, the script expects output-dir to be set; otherwise, it's optional.
  *
  * Usage:
  *   ts_config_updator --sdk-lib-origin=bundle|local|remote --standalone-client=true|false --output-dir=string

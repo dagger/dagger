@@ -5548,7 +5548,7 @@ pub struct EngineCacheEntrySetOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct EngineCachePruneOpts {
-    /// Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+    /// Use the engine-wide default pruning policy if true; otherwise, prune the whole cache of any releasable entries.
     #[builder(setter(into, strip_option), default)]
     pub use_default_policy: Option<bool>,
 }

@@ -85,7 +85,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	return types.PrintResult(result, netConf.CNIVersion)
 }
 
-// Do not return an error, otherwise cni will stop
+// Do not return an error; otherwise, cni will stop
 // and not invoke the following plugins del command.
 func cmdDel(args *skel.CmdArgs) error {
 	netConf, result, podname, err := parseConfig(args.StdinData, args.Args)

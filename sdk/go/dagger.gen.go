@@ -3598,7 +3598,7 @@ func (r *EngineCache) MinFreeSpace(ctx context.Context) (int, error) {
 
 // EngineCachePruneOpts contains options for EngineCache.Prune
 type EngineCachePruneOpts struct {
-	// Use the engine-wide default pruning policy if true, otherwise prune the whole cache of any releasable entries.
+	// Use the engine-wide default pruning policy if true; otherwise, prune the whole cache of any releasable entries.
 	UseDefaultPolicy bool
 }
 

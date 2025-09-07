@@ -153,7 +153,7 @@ export type {{ $.Name | FormatName }} = {
    */
 		{{- end }}
 
-		{{- /* Write type, if it's an id it's an output, otherwise it's an input. */ -}}
+		{{- /* Write type, if it's an id it's an output; otherwise, it's an input. */ -}}
 		{{- if eq $field.Name "id" }}
   {{ $field.Name }}{{ $opt }}: {{ $field.TypeRef | FormatOutputType }} {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 		{{- else }}
