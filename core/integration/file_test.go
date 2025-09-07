@@ -723,7 +723,7 @@ func another() {
 		require.Empty(t, results)
 	})
 
-	t.Run("case sensitive search", func(ctx context.Context, t *testctx.T) {
+	t.Run("case-sensitive search", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		file := c.Directory().

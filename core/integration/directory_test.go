@@ -1740,7 +1740,7 @@ func another() {
 		require.Contains(t, filePaths, "deep/file.txt")
 	})
 
-	t.Run("case sensitive search", func(ctx context.Context, t *testctx.T) {
+	t.Run("case-sensitive search", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		dir := c.Directory().
