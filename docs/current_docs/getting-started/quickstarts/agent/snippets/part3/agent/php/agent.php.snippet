@@ -1,16 +1,16 @@
 #[DaggerFunction]
-  #[Doc('Develop with a Github issue as the assignment and open a pull request')]
+  #[Doc('Develop with a GitHub issue as the assignment and open a pull request')]
   public function developIssue(
-    #[Doc('Github Token with permissions to write issues and contents')] Secret $githubToken,
-    #[Doc('Github issue number')] int $issueID,
-    #[Doc('Github repository url')] string $repository,
+    #[Doc('GitHub Token with permissions to write issues and contents')] Secret $githubToken,
+    #[Doc('GitHub issue number')] int $issueID,
+    #[Doc('GitHub repository url')] string $repository,
     #[Doc('Source directory to develop')] #[DefaultPath('/')] Directory $source
   ): string {
-    // Get the Github issue
+    // Get the GitHub issue
     $issueClient = dag()->githubIssue(token: $githubToken);
     $issue = $issueClient->read($repository, $issueID);
 
-    // Get information from the Github issue
+    // Get information from the GitHub issue
     $assignment = $issue->body();
 
     // Solve the issue with the Develop agent

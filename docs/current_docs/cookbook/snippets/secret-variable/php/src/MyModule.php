@@ -13,7 +13,7 @@ use function Dagger\dag;
 class MyModule
 {
     #[DaggerFunction]
-    #[Doc('Query the Github API')]
+    #[Doc('Query the GitHub API')]
     public function githubApi(Secret $token): string
     {
         return dag()

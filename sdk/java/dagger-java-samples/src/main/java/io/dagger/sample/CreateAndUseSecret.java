@@ -5,7 +5,7 @@ import io.dagger.client.Dagger;
 import io.dagger.client.Secret;
 import java.util.List;
 
-@Description("Create a secret with a Github token and call a Github API using this secret")
+@Description("Create a secret with a GitHub token and call a GitHub API using this secret")
 public class CreateAndUseSecret {
   public static void main(String... args) throws Exception {
     String token = System.getenv("GH_API_TOKEN");

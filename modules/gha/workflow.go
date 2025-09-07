@@ -340,7 +340,7 @@ func (w *Workflow) onSchedule(
 
 const configHeader = "# This file was generated. See https://daggerverse.dev/mod/github.com/dagger/dagger/modules/gha"
 
-// A Dagger workflow to be called from a Github Actions configuration
+// A Dagger workflow to be called from a GitHub Actions configuration
 func (w *Workflow) config(
 	// Encode all files as JSON (which is also valid YAML)
 	// +optional

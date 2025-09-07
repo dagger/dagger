@@ -9,7 +9,7 @@ on:
       - "docs"
       - "Engine & CLI"
       - "evals"
-      - "Github"
+      - "GitHub"
       - "Helm"
       - "Publish"
       - "Publish Rust SDK"

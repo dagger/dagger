@@ -148,10 +148,10 @@ const (
 	// The HTML URL of the module, e.g. "https://github.com/dagger/dagger"
 	ModuleHTMLRepoURLAttr = "dagger.io/module.htmlRepoURL"
 
-	// The normalized module ref, e.g. "githuv.com/dagger/dagger@abc123"
+	// The normalized module ref, e.g. "github.com/dagger/dagger@abc123"
 	ModuleRefAttr = "dagger.io/module.ref"
 
-	// The normalized caller module ref, e.g. "githuv.com/dagger/dagger@abc123"
+	// The normalized caller module ref, e.g. "github.com/dagger/dagger@abc123"
 	ModuleCallerRefAttr = "dagger.io/module.caller.ref"
 
 	// The function name of the current module in the format if "type.functionName"

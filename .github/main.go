@@ -127,7 +127,7 @@ func New() *CI {
 		withEvalsWorkflow()
 }
 
-// Generate Github Actions workflows to call our Dagger workflows
+// Generate GitHub Actions workflows to call our Dagger workflows
 func (ci *CI) Generate(
 	// +defaultPath="/"
 	// +ignore=["*", "!.github"]

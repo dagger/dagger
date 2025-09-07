@@ -189,7 +189,7 @@ We run trivy scanning of our engine image in GHA to scan for any CVEs present in
 
 It's sometimes possible that the vulnerability may require quite a bit of work to address, especially if it's coming from third-party binary or a transitive dependency in our go.mod that does not have a release with the fix yet.
 
-- In this case, it's worth checking whether the specific vulnerability is actually relevant to us. If it's not or if you're unsure, reach out to the Dagger team on Github or Discord and we can figure out whether to address it or add it to an ignore list.
+- In this case, it's worth checking whether the specific vulnerability is actually relevant to us. If it's not or if you're unsure, reach out to the Dagger team on GitHub or Discord and we can figure out whether to address it or add it to an ignore list.
 
 The rest of this section gives some guidance on fixing these vulnerabilities when they are relevant.
 
@@ -211,7 +211,7 @@ If a vulnerability is reported in the Go stdlib, we'll want to upgrade the versi
 
 Otherwise, you'll want to check if the binary in question has a newer version with the vulnerability gone. The versions of these binaries are also controlled in `.dagger/consts/versions.go`.
 
-If there isn't a newer version to upgrade to, we'll be in a tougher spot and may need some combination of upgrading to a non-released commit, sending patches upstream or (as a worst-case fallback) patching it ourselves. Reach out to the Dagger team on Github or Discord if you're unsure how to best proceed.
+If there isn't a newer version to upgrade to, we'll be in a tougher spot and may need some combination of upgrading to a non-released commit, sending patches upstream or (as a worst-case fallback) patching it ourselves. Reach out to the Dagger team on GitHub or Discord if you're unsure how to best proceed.
 
 ### How to test SDK changes locally?
 

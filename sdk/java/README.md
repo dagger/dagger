@@ -192,7 +192,7 @@ Then select the sample to run:
    6  io.dagger.sample.ReadFileInGitRepository        Clone the Dagger git repository and print the first line of README.md
    7  io.dagger.sample.PublishImage                   Publish a container image to a remote registry
    8  io.dagger.sample.BuildFromDockerfile            Clone the Dagger git repository and build from a Dockerfile
-   9  io.dagger.sample.CreateAndUseSecret             Create a secret with a Github token and call a Github API using this secret
+   9  io.dagger.sample.CreateAndUseSecret             Create a secret with a GitHub token and call a GitHub API using this secret
   10  io.dagger.sample.TestWithDatabase               Run a sample CI test pipeline with MariaDB, Drupal and PHPUnit
   11  io.dagger.sample.HostToContainerNetworking      Expose a service from a container to the host
   12  io.dagger.sample.ContainerToHostNetworking      Expose MySQL service running on the host to client containers

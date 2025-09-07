@@ -6,7 +6,7 @@ import (
 
 type Examples struct{}
 
-// Access Github secrets
+// Access GitHub secrets
 func (m *Examples) GhaSecrets() *dagger.Directory {
 	return dag.
 		Gha().

@@ -1,5 +1,5 @@
 # This file was generated. See https://daggerverse.dev/mod/github.com/dagger/dagger/modules/gha
-name: Github
+name: GitHub
 "on":
     push:
         branches:
@@ -21,7 +21,7 @@ jobs:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
             - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.16' || 'ubuntu-24.04' }}
-        name: Github
+        name: GitHub
         steps:
             - name: scripts/install-dagger.sh
               id: install-dagger

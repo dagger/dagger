@@ -23,7 +23,7 @@ func (r Releaser) changeNotes(
 	return r.Dagger.Source().File(path)
 }
 
-// Publish a Github release
+// Publish a GitHub release
 func (r Releaser) githubRelease(
 	ctx context.Context,
 	// GitHub repository URL

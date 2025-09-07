@@ -1,9 +1,9 @@
 /**
-   * Develop with a Github issue as the assignment and open a pull request
+   * Develop with a GitHub issue as the assignment and open a pull request
    *
-   * @param githubToken Github Token with permissions to write issues and contents
-   * @param issueID Github issue number
-   * @param repository Github repository url
+   * @param githubToken GitHub Token with permissions to write issues and contents
+   * @param issueID GitHub issue number
+   * @param repository GitHub repository url
    * @param source Source directory
    */
   @Function
@@ -13,12 +13,12 @@
     String repository,
     @DefaultPath("/") Directory source
   ) throws ExecutionException, DaggerQueryException, InterruptedException {
-    // Get the Github issue
+    // Get the GitHub issue
     var args = new Client.GithubIssueArguments().withToken(githubToken);
     GithubIssue issueClient = dag().githubIssue(args);
     var issue = issueClient.read(repository, issueID);
 
-    // Get information from the Github issue
+    // Get information from the GitHub issue
     String assignment = issue.body();
 
     // Solve the issue with the Develop agent

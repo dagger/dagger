@@ -1,4 +1,4 @@
-// Develop with a Github issue as the assignment and open a pull request
+// Develop with a GitHub issue as the assignment and open a pull request
 func (m *HelloDagger) DevelopIssue(
 	ctx context.Context,
 	// Github Token with permissions to write issues and contents
@@ -10,11 +10,11 @@ func (m *HelloDagger) DevelopIssue(
 	// +defaultPath="/"
 	source *dagger.Directory,
 ) (string, error) {
-	// Get the Github issue
+	// Get the GitHub issue
 	issueClient := dag.GithubIssue(dagger.GithubIssueOpts{Token: githubToken})
 	issue := issueClient.Read(repository, issueID)
 
-	// Get information from the Github issue
+	// Get information from the GitHub issue
 	assignment, err := issue.Body(ctx)
 	if err != nil {
 		return "", err

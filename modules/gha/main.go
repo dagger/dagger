@@ -1,4 +1,4 @@
-// Manage Github Actions configurations with Dagger
+// Manage GitHub Actions configurations with Dagger
 //
 // Daggerizing your CI makes your YAML configurations smaller, but they still exist,
 // and they're still a pain to maintain by hand.

@@ -2,18 +2,18 @@
 async def develop_issue(
     self,
     github_token: Annotated[
-        dagger.Secret, Doc("Github Token with permissions to write issues and contents")
+        dagger.Secret, Doc("GitHub Token with permissions to write issues and contents")
     ],
-    issue_id: Annotated[int, Doc("Github issue number")],
-    repository: Annotated[str, Doc("Github repository url")],
+    issue_id: Annotated[int, Doc("GitHub issue number")],
+    repository: Annotated[str, Doc("GitHub repository url")],
     source: Annotated[dagger.Directory, DefaultPath("/")],
 ) -> str:
-    """Develop with a Github issue as the assignment and open a pull request."""
-    # Get the Github issue
+    """Develop with a GitHub issue as the assignment and open a pull request."""
+    # Get the GitHub issue
     issue_client = dag.github_issue(token=github_token)
     issue = issue_client.read(repository, issue_id)
 
-    # Get information from the Github issue
+    # Get information from the GitHub issue
     assignment = await issue.body()
 
     # Solve the issue with the Develop agent

@@ -1,8 +1,8 @@
 /**
-   * Develop with a Github issue as the assignment and open a pull request
-   * @param githubToken Github Token with permissions to write issues and contents
-   * @param issueID Github issue number
-   * @param repository Github repository url
+   * Develop with a GitHub issue as the assignment and open a pull request
+   * @param githubToken GitHub Token with permissions to write issues and contents
+   * @param issueID GitHub issue number
+   * @param repository GitHub repository url
    * @param source The source directory
    */
   @func()
@@ -12,11 +12,11 @@
     repository: string,
     @argument({ defaultPath: '/' }) source: Directory
   ): Promise<string> {
-    // Get the Github issue
+    // Get the GitHub issue
     const issueClient = dag.githubIssue({ token: githubToken })
     const issue = issueClient.read(repository, issueID)
 
-    // Get information from the Github issue
+    // Get information from the GitHub issue
     const assignment = await issue.body()
 
     // Solve the issue with the Develop agent
