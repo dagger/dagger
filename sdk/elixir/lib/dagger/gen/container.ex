@@ -642,7 +642,7 @@ defmodule Dagger.Container do
   end
 
   @doc """
-  Retrieves this container plus the given OCI anotation.
+  Retrieves this container plus the given OCI annotation.
   """
   @spec with_annotation(t(), String.t(), String.t()) :: Dagger.Container.t()
   def with_annotation(%__MODULE__{} = container, name, value) do
