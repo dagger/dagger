@@ -262,7 +262,7 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 				var he *HandlerError
 				if !errors.As(e, &he) {
 					// If we fail to pass the current error on to the next
-					// handler in the pipeline the next one will return a
+					// handler in the pipeline then the next one will return a
 					// confusing "unexpected input" error, but it's still
 					// better than obfuscating the original one if we returned
 					// here, so just log it.
