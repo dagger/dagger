@@ -128,6 +128,6 @@ Consider the following Dagger Function:
 </TabItem>
 </Tabs>
 
-Here, an instance a `Container` is attached as an input to the `Env` environment. The `Container` is a type with a number of functions useful for a coding environment such as `WithNewFile()`, `File().Contents()`, and `WithExec()`. When this environment is attached to an `LLM`, the LLM can call any of these Dagger Functions to change the state of the `Container` and complete the assigned task.
+Here, an instance `Container` is attached as an input to the `Env` environment. The `Container` is a type with a number of functions useful for a coding environment such as `WithNewFile()`, `File().Contents()`, and `WithExec()`. When this environment is attached to an `LLM`, the LLM can call any of these Dagger Functions to change the state of the `Container` and complete the assigned task.
 
 In the `Env`, a `Container` instance called `completed` is specified as a desired output of the LLM. This means that the LLM should return the `Container` instance as a result of completing its task. The resulting `Container` object is then available for further processing or for use in other Dagger Functions.
