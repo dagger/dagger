@@ -277,7 +277,7 @@ func (s *moduleSourceSchema) localModuleSource(
 	query dagql.ObjectResult[*core.Query],
 	bk *buildkit.Client,
 
-	// localPath is the path the user provided to load the module, it may be relative or absolute and
+	// localPath is the path that the user provided to load the module, it may be relative or absolute and
 	// may point to either the directory containing dagger.json or any subdirectory in the
 	// filetree under the directory containing dagger.json.
 	// When findUp is enabled, it can also be a name of a dependency in the default dagger.json found-up from the cwd.

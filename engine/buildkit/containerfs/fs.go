@@ -492,7 +492,7 @@ func (ctrFS *ContainerFS) resolvePath(path string, resolveBase bool, linkCount i
 		one-by-one. Each iteration of the loop needs to re-check which mount it's under to handle
 		cases like one mount at /foo and another mount at /foo/bar with path being /foo/bar/baz.
 
-		In the case a symlink is found, we just recursively start over with the new path pointed
+		In the case that a symlink is found, we just recursively start over with the new path pointed
 		to by the symlink.
 	*/
 	split := strings.Split(path, "/")

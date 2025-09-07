@@ -6025,7 +6025,7 @@ public static class TestData
                 "possibleTypes": []
               },
               {
-                "description": "Module source that that originates from a path locally relative to an arbitrary directory.",
+                "description": "Module source that originates from a path locally relative to an arbitrary directory.",
                 "enumValues": [],
                 "fields": [
                   {

@@ -107,7 +107,7 @@ func (s *secretSchema) secret(
 		/* Derive the cache key from the plaintext value using argon2.
 		We avoid a simple xxh3/sha256/etc. hash since the cache key is public; it's sent around in IDs and stored on the local disk unencrypted.
 
-		This is similar to the problems a web-server avoids when hashing passwords in that we want to make brute-forcing the secret from its hash
+		This is similar to the problems that a web-server avoids when hashing passwords in that we want to make brute-forcing the secret from its hash
 		infeasible, even in offline attacks. This argon2 hash takes on the order of 1-100ms, which is 10s of millions of times slower than the
 		time to compute e.g. a sha256 hash on a modern GPU, but not slow enough to be a noticeable bottleneck in our execution.
 
