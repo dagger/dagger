@@ -66,7 +66,7 @@ export class DaggerArgument extends Locatable {
   /**
    * Get the type of the parameter.
    *
-   * If for it's a complex type that cannot be
+   * If it's a complex type that cannot be
    * resolve yet, we save its string representation for further reference.
    */
   private getType(): TypeDef<TypeDefKind> | undefined {
