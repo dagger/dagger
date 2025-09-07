@@ -2,8 +2,8 @@ package copy
 
 import "os"
 
-// GetLinkInfo returns an identifier representing the node a hardlink is pointing
-// to. If the file is not hard linked then 0 will be returned.
+// GetLinkInfo returns an identifier representing the node to which a hardlink
+// points. If the file is not hard linked then 0 will be returned.
 func GetLinkInfo(fi os.FileInfo) (uint64, bool) {
 	return getLinkInfo(fi)
 }
