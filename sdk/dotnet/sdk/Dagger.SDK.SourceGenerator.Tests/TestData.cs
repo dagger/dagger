@@ -4896,7 +4896,7 @@ public static class TestData
                   {
                     "args": [],
                     "deprecationReason": null,
-                    "description": "The directory containing everything needed to load load and use the module.",
+                    "description": "The directory containing everything needed to load and use the module.",
                     "isDeprecated": false,
                     "name": "contextDirectory",
                     "type": {
@@ -6031,7 +6031,7 @@ public static class TestData
                   {
                     "args": [],
                     "deprecationReason": null,
-                    "description": "The directory containing everything needed to load load and use the module.",
+                    "description": "The directory containing everything needed to load and use the module.",
                     "isDeprecated": false,
                     "name": "contextDirectory",
                     "type": {
@@ -6634,7 +6634,7 @@ public static class TestData
                   {
                     "args": [],
                     "deprecationReason": null,
-                    "description": "The directory containing everything needed to load load and use the module.",
+                    "description": "The directory containing everything needed to load and use the module.",
                     "isDeprecated": false,
                     "name": "contextDirectory",
                     "type": {
