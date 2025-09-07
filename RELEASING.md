@@ -355,7 +355,7 @@ See `dagger/dagger-for-github`'s [`RELEASING.md`](https://github.com/dagger/dagg
 
 🚨 Non-main branch release only: you'll likely want the changes from this PR in both `$RELEASE_BRANCH` and `main`.
 
-- [ ] Start an release improvements branch:
+- [ ] Start a release improvements branch:
 
 ```console
 git checkout -b improve-releasing-during-$ENGINE_VERSION

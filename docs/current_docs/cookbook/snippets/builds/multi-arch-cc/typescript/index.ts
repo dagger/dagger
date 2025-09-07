@@ -31,7 +31,7 @@ class MyModule {
 
       const ctr = dag
         // pull golang image for the *host* platform, this is done by
-        // not specifying the a platform. The default is the host platform.
+        // not specifying a platform. The default is the host platform.
         .container()
         .from("golang:1.21-alpine")
         // mount source

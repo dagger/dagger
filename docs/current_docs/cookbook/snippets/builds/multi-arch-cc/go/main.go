@@ -35,7 +35,7 @@ func (m *MyModule) Build(
 		}
 
 		// pull golang image for the *host* platform, this is done by
-		// not specifying the a platform. The default is the host platform.
+		// not specifying a platform. The default is the host platform.
 		ctr := dag.Container().
 			From("golang:1.21-alpine").
 			// mount source code
