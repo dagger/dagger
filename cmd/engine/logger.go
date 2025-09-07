@@ -155,7 +155,7 @@ func logValue(v any) log.Value {
 		}
 		return log.SliceValue(vals...)
 	default:
-		// sane default fallback, don't want to panic
+		// sane fallback, don't want to panic
 		return log.StringValue(fmt.Sprintf("%v", x))
 	}
 }
