@@ -100,10 +100,23 @@ func (mod *Module) OverrideArgs(ctx context.Context, overrides *EnvFile) error {
 	for _, variable := range overrides.Variables() {
 		nameParts := strings.Split(variable.Name, "_")
 		namePrefix := strings.ToLower(nameParts[0])
-		nameWithoutPrefix := strings.Join(nameParts[1:], "_")
-		if strings.ToLower(mod.Name()) != namePrefix {
+		nameWithoutPrefix := strings.ToLower(strings.Join(nameParts[1:], "_"))
+		modName := strings.ToLower(mod.Name())
+		if modName != namePrefix {
+			slog.Debug("skipping .env override",
+				"variable", variable.Name,
+				"module", modName,
+				"variable prefix", namePrefix,
+				"arg name", nameWithoutPrefix,
+			)
 			continue
 		}
+		slog.Debug("match! applying .env override",
+			"variable", variable.Name,
+			"module", modName,
+			"variable prefix", namePrefix,
+			"arg name", nameWithoutPrefix,
+		)
 		if err := mod.OverrideArg(ctx, nameWithoutPrefix, variable.Value); err != nil {
 			return err
 		}

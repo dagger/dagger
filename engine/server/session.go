@@ -1225,6 +1225,9 @@ func (srv *Server) loadEnvConfig(ctx context.Context, mod *core.Module) (*core.E
 	)
 	if err := dag.Select(ctx, dag.Root(), &envConfig,
 		dagql.Selector{
+			Field: "host",
+		},
+		dagql.Selector{
 			Field: "findupFile",
 			Args: []dagql.NamedInput{
 				{
