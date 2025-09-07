@@ -240,7 +240,7 @@ func startSessionSubprocess() error {
 		defer close(doneCh)
 		io.Copy(io.Discard, r)
 	}()
-	// something really really wrong would have to happen for this to block indefinitely, but be
+	// something really, really, wrong would have to happen for this to block indefinitely, but be
 	// cautious anyways w/ an overly generous timeout
 	select {
 	case <-doneCh:
