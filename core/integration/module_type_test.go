@@ -729,7 +729,7 @@ export class Test {
 func (TypeSuite) TestArgOwnType(ctx context.Context, t *testctx.T) {
 	// Verify use of a module's own object as an argument type.
 	// The server needs to specifically decode the input type from an ID into
-	// the raw JSON, since the module doesn't understand it's own types as IDs
+	// the raw JSON, since the module doesn't understand its own types as IDs
 
 	type testCase struct {
 		sdk    string

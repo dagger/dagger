@@ -122,7 +122,7 @@ type ModuleEnum struct {
 	Name    string
 
 	// Local marks this enum value as local to the module that declares its
-	// typedef. This is so that when converting it to/from it's own module we
+	// typedef. This is so that when converting it to/from its own module we
 	// can use its OriginalName, but when converting it for other modules, we
 	// use the declared Name.
 	Local bool

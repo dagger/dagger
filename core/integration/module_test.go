@@ -3167,7 +3167,7 @@ func (t *Test) GetEncoded(ctx context.Context) (string, error) {
 	})
 
 	t.Run("duplicate secret names", func(ctx context.Context, t *testctx.T) {
-		// check that each module has it's own segmented secret store, by
+		// check that each module has its own segmented secret store, by
 		// writing secrets with the same name
 
 		var logs safeBuffer

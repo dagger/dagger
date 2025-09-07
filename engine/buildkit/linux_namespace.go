@@ -111,7 +111,7 @@ func (w *Worker) runNetNSWorkers(ctx context.Context, state *execState) error {
 					setNSArg: unix.CLONE_NEWNET,
 				}}}
 
-				// must run in it's own isolated goroutine since it will lock to threads
+				// must run in its own isolated goroutine since it will lock to threads
 				errCh := make(chan error, 1)
 				go func() {
 					defer close(errCh)

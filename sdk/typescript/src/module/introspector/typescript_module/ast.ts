@@ -117,7 +117,7 @@ export class AST {
    * Ideally, we use the identifier of the node accessible by node.name but fallback
    * to node itself if it's not available.
    *
-   * The TypeScript SDK based it's line and column on index 0 but editors starts
+   * The TypeScript SDK based its line and column on index 0 but editors starts
    * at 1 so we always add 1 to fix that difference.
    */
   public static getNodeLocation(

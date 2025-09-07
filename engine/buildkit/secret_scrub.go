@@ -319,7 +319,7 @@ func (t *TrieIter) insert(key []byte, value []byte) {
 //
 // This function can take any iterable part of the trie, and if the node is
 // virtual, then it will modify the trie to make it "real". This means that
-// this node can then store data, or can be given it's own children.
+// this node can then store data, or can be given its own children.
 func (t *TrieIter) materialize() *Trie {
 	if t.idx == len(t.direct) {
 		// already materialized

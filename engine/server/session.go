@@ -612,7 +612,7 @@ func (srv *Server) initializeDaggerClient(
 		// client.mod = modInst.Self
 
 		client.deps = core.NewModDeps(client.dagqlRoot, client.mod.Deps.Mods)
-		// if the module has any of it's own objects defined, serve its schema to itself too
+		// if the module has any of its own objects defined, serve its schema to itself too
 		if len(client.mod.ObjectDefs) > 0 {
 			client.deps = client.deps.Append(client.mod)
 		}
