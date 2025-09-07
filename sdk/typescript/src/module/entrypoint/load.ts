@@ -203,7 +203,7 @@ export async function loadValue(
 
 /**
  * Load the object type from the return type of the method.
- * This covers the case where the return type is an other object of the module.
+ * This covers the case where the return type is another object of the module.
  * For example: `msg(): Message` where message is an object of the module.
  *
  * @param module  The module to load the object from.
