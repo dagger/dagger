@@ -679,7 +679,7 @@ func (h *shellCallHandler) parseArgumentValues(
 			continue
 		}
 		if err != nil {
-			return nil, fmt.Errorf("error addding flag: %w", err)
+			return nil, fmt.Errorf("error adding flag: %w", err)
 		}
 	}
 
