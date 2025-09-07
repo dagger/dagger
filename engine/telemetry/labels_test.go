@@ -271,7 +271,7 @@ func TestLoadGitLabLabels(t *testing.T) {
 				"CI_JOB_NAME":                         "test-job",
 				"GITLAB_USER_ID":                      "789",
 				"GITLAB_USER_EMAIL":                   "user@gitlab.com",
-				"GITLAB_USER_NAME":                    "Gitlab User",
+				"GITLAB_USER_NAME":                    "GitLab User",
 				"GITLAB_USER_LOGIN":                   "gitlab-user",
 			},
 			Labels: telemetry.Labels{
@@ -288,7 +288,7 @@ func TestLoadGitLabLabels(t *testing.T) {
 				"gitlab.com/job.id":             "123",
 				"gitlab.com/triggerer.id":       "789",
 				"gitlab.com/triggerer.email":    "user@gitlab.com",
-				"gitlab.com/triggerer.name":     "Gitlab User",
+				"gitlab.com/triggerer.name":     "GitLab User",
 			},
 		},
 		{
@@ -306,7 +306,7 @@ func TestLoadGitLabLabels(t *testing.T) {
 				"CI_JOB_NAME":        "test-job",
 				"GITLAB_USER_ID":     "789",
 				"GITLAB_USER_EMAIL":  "user@gitlab.com",
-				"GITLAB_USER_NAME":   "Gitlab User",
+				"GITLAB_USER_NAME":   "GitLab User",
 				"GITLAB_USER_LOGIN":  "gitlab-user",
 			},
 			Labels: telemetry.Labels{
@@ -323,7 +323,7 @@ func TestLoadGitLabLabels(t *testing.T) {
 				"gitlab.com/job.id":             "123",
 				"gitlab.com/triggerer.id":       "789",
 				"gitlab.com/triggerer.email":    "user@gitlab.com",
-				"gitlab.com/triggerer.name":     "Gitlab User",
+				"gitlab.com/triggerer.name":     "GitLab User",
 			},
 		},
 	} {
