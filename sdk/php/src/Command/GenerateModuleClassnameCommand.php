@@ -38,9 +38,9 @@ class GenerateModuleClassnameCommand extends Command
         $whiteSpaceSeperatedValue = preg_replace('#[\s\-_]#', ' ', $value);
 
         assert(is_string($whiteSpaceSeperatedValue));
-        $capitilisedValue = ucwords($whiteSpaceSeperatedValue);
+        $capitalisedValue = ucwords($whiteSpaceSeperatedValue);
 
-        $pascalValue = preg_replace('#\s#', '', $capitilisedValue);
+        $pascalValue = preg_replace('#\s#', '', $capitalisedValue);
         return preg_replace('#[^a-zA-Z0-9]#', '', $pascalValue);
     }
 }
