@@ -453,7 +453,7 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 			clientMinVersion: "v2.0.0-foo-123",
 		},
 		{
-			// but can't not be a perfect match (unlike dev versions)
+			// but can't be a perfect match (unlike dev versions)
 			name:             "incompatible prereleases",
 			engineVersion:    "v2.0.0-foo-123",
 			engineMinVersion: "v2.0.0-foo-456",
