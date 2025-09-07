@@ -28,7 +28,7 @@ type ExecuteContainerFunc func(ctx context.Context, args ...string) error
 
 type mount struct {
 	specs.Mount
-	// in the case the destination of a mount includes any symlinks in its path, ResolvedDest
+	// if the destination of a mount includes any symlinks in its path, ResolvedDest
 	// is the resolved path of the destination
 	ResolvedDest string
 }
