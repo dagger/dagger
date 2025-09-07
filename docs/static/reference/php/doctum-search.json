@@ -8,6 +8,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Address",
+			"p": "Dagger/Address.html",
+			"d": "<p>A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\AddressId",
+			"p": "Dagger/AddressId.html",
+			"d": "<p>The <code>AddressID</code> scalar type represents an identifier for an object of type Address.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Attribute\\Argument",
 			"p": "Dagger/Attribute/Argument.html",
 			"d": "",
@@ -441,6 +461,26 @@
 			"n": "Dagger\\Env",
 			"p": "Dagger/Env.html",
 			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\EnvFile",
+			"p": "Dagger/EnvFile.html",
+			"d": "<p>A collection of environment variables.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\EnvFileId",
+			"p": "Dagger/EnvFileId.html",
+			"d": "<p>The <code>EnvFileID</code> scalar type represents an identifier for an object of type EnvFile.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -1207,6 +1247,60 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Address::container",
+			"p": "Dagger/Address.html#method_container",
+			"d": "<p>Load a container from the address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::directory",
+			"p": "Dagger/Address.html#method_directory",
+			"d": "<p>Load a directory from the address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::file",
+			"p": "Dagger/Address.html#method_file",
+			"d": "<p>Load a file from the address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::gitRef",
+			"p": "Dagger/Address.html#method_gitRef",
+			"d": "<p>Load a git ref (branch, tag or commit) from the address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::gitRepository",
+			"p": "Dagger/Address.html#method_gitRepository",
+			"d": "<p>Load a git repository from the address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::id",
+			"p": "Dagger/Address.html#method_id",
+			"d": "<p>A unique identifier for this Address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::secret",
+			"p": "Dagger/Address.html#method_secret",
+			"d": "<p>Load a secret from the address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::service",
+			"p": "Dagger/Address.html#method_service",
+			"d": "<p>Load a service from the address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::value",
+			"p": "Dagger/Address.html#method_value",
+			"d": "<p>The address value</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Attribute\\Argument::__construct",
 			"p": "Dagger/Attribute/Argument.html#method___construct",
 			"d": null
@@ -1249,6 +1343,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Binding::asAddress",
+			"p": "Dagger/Binding.html#method_asAddress",
+			"d": "<p>Retrieve the binding value, as type Address</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Binding::asCacheVolume",
 			"p": "Dagger/Binding.html#method_asCacheVolume",
 			"d": "<p>Retrieve the binding value, as type CacheVolume</p>"
@@ -1276,6 +1376,12 @@
 			"n": "Dagger\\Binding::asEnv",
 			"p": "Dagger/Binding.html#method_asEnv",
 			"d": "<p>Retrieve the binding value, as type Env</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asEnvFile",
+			"p": "Dagger/Binding.html#method_asEnvFile",
+			"d": "<p>Retrieve the binding value, as type EnvFile</p>"
 		},
 		{
 			"t": "M",
@@ -1405,6 +1511,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::address",
+			"p": "Dagger/Client.html#method_address",
+			"d": "<p>initialize an address to load directories, containers, secrets or other object types.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::cacheVolume",
 			"p": "Dagger/Client.html#method_cacheVolume",
 			"d": "<p>Constructs a cache volume for a given cache key.</p>"
@@ -1465,6 +1577,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::envFile",
+			"p": "Dagger/Client.html#method_envFile",
+			"d": "<p>Initialize an environment file</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::error",
 			"p": "Dagger/Client.html#method_error",
 			"d": "<p>Create a new error.</p>"
@@ -1516,6 +1634,12 @@
 			"n": "Dagger\\Client::llm",
 			"p": "Dagger/Client.html#method_llm",
 			"d": "<p>Initialize a Large Language Model (LLM)</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadAddressFromID",
+			"p": "Dagger/Client.html#method_loadAddressFromID",
+			"d": "<p>Load a Address from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -1588,6 +1712,12 @@
 			"n": "Dagger\\Client::loadEnumValueTypeDefFromID",
 			"p": "Dagger/Client.html#method_loadEnumValueTypeDefFromID",
 			"d": "<p>Load a EnumValueTypeDef from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadEnvFileFromID",
+			"p": "Dagger/Client.html#method_loadEnvFileFromID",
+			"d": "<p>Load a EnvFile from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -2527,6 +2657,24 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Directory::findup",
+			"p": "Dagger/Directory.html#method_findup",
+			"d": "<p>Search up the directory tree for a file or directory, and return its path</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Directory::findupDirectory",
+			"p": "Dagger/Directory.html#method_findupDirectory",
+			"d": "<p>Search up the directory tree for a directory, and return it</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Directory::findupFile",
+			"p": "Dagger/Directory.html#method_findupFile",
+			"d": "<p>Search up the directory tree for a file, and return it</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Directory::glob",
 			"p": "Dagger/Directory.html#method_glob",
 			"d": "<p>Returns a list of files and directories that matche the given pattern.</p>"
@@ -2851,6 +2999,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withAddressInput",
+			"p": "Dagger/Env.html#method_withAddressInput",
+			"d": "<p>Create or update a binding of type Address in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withAddressOutput",
+			"p": "Dagger/Env.html#method_withAddressOutput",
+			"d": "<p>Declare a desired Address output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withCacheVolumeInput",
 			"p": "Dagger/Env.html#method_withCacheVolumeInput",
 			"d": "<p>Create or update a binding of type CacheVolume in the environment</p>"
@@ -2896,6 +3056,18 @@
 			"n": "Dagger\\Env::withDirectoryOutput",
 			"p": "Dagger/Env.html#method_withDirectoryOutput",
 			"d": "<p>Declare a desired Directory output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withEnvFileInput",
+			"p": "Dagger/Env.html#method_withEnvFileInput",
+			"d": "<p>Create or update a binding of type EnvFile in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withEnvFileOutput",
+			"p": "Dagger/Env.html#method_withEnvFileOutput",
+			"d": "<p>Declare a desired EnvFile output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",
@@ -3079,6 +3251,42 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\EnvFile::file",
+			"p": "Dagger/EnvFile.html#method_file",
+			"d": "<p>Return the contents as a file</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\EnvFile::id",
+			"p": "Dagger/EnvFile.html#method_id",
+			"d": "<p>A unique identifier for this EnvFile.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\EnvFile::variable",
+			"p": "Dagger/EnvFile.html#method_variable",
+			"d": "<p>Lookup a variable by name (last occurrence wins)</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\EnvFile::variables",
+			"p": "Dagger/EnvFile.html#method_variables",
+			"d": "<p>Return all variables</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\EnvFile::withVariable",
+			"p": "Dagger/EnvFile.html#method_withVariable",
+			"d": "<p>Add a variable</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\EnvFile::withoutVariable",
+			"p": "Dagger/EnvFile.html#method_withoutVariable",
+			"d": "<p>Remove all occurrences of the named variable</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\EnvVariable::id",
 			"p": "Dagger/EnvVariable.html#method_id",
 			"d": "<p>A unique identifier for this EnvVariable.</p>"
@@ -3166,6 +3374,12 @@
 			"n": "Dagger\\FieldTypeDef::typeDef",
 			"p": "Dagger/FieldTypeDef.html#method_typeDef",
 			"d": "<p>The type of the field.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\File::asEnvFile",
+			"p": "Dagger/File.html#method_asEnvFile",
+			"d": "<p>Parse as an env file</p>"
 		},
 		{
 			"t": "M",
@@ -3550,6 +3764,24 @@
 			"n": "Dagger\\Host::file",
 			"p": "Dagger/Host.html#method_file",
 			"d": "<p>Accesses a file on the host.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Host::findup",
+			"p": "Dagger/Host.html#method_findup",
+			"d": "<p>Search for a file or directory by walking up the tree from system workdir. Return its relative path</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Host::findupDirectory",
+			"p": "Dagger/Host.html#method_findupDirectory",
+			"d": "<p>Search for a directory by walking up the tree from system workdir</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Host::findupFile",
+			"p": "Dagger/Host.html#method_findupFile",
+			"d": "<p>Search for a file by walking up the tree from system workdir</p>"
 		},
 		{
 			"t": "M",

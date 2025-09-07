@@ -11,6 +11,15 @@ namespace Dagger;
 class Binding extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * Retrieve the binding value, as type Address
+     */
+    public function asAddress(): Address
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asAddress');
+        return new \Dagger\Address($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type CacheVolume
      */
     public function asCacheVolume(): CacheVolume
@@ -53,6 +62,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asEnv');
         return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type EnvFile
+     */
+    public function asEnvFile(): EnvFile
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asEnvFile');
+        return new \Dagger\EnvFile($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

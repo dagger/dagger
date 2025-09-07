@@ -12,7 +12,49 @@ directive @experimental(
 """Indicates the source information for where a given field is defined."""
 directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!, url: String!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
 
+"""
+A standardized address to load containers, directories, secrets, and other
+object types. Address format depends on the type, and is validated at type
+selection.
+"""
+type Address {
+  """Load a container from the address."""
+  container: Container!
+
+  """Load a directory from the address."""
+  directory(exclude: [String!] = [], include: [String!] = [], noCache: Boolean = false): Directory!
+
+  """Load a file from the address."""
+  file(exclude: [String!] = [], include: [String!] = [], noCache: Boolean = false): File!
+
+  """Load a git ref (branch, tag or commit) from the address."""
+  gitRef: GitRef!
+
+  """Load a git repository from the address."""
+  gitRepository: GitRepository!
+
+  """A unique identifier for this Address."""
+  id: AddressID!
+
+  """Load a secret from the address."""
+  secret: Secret!
+
+  """Load a service from the address."""
+  service: Service!
+
+  """The address value"""
+  value: String!
+}
+
+"""
+The `AddressID` scalar type represents an identifier for an object of type Address.
+"""
+scalar AddressID
+
 type Binding {
+  """Retrieve the binding value, as type Address"""
+  asAddress: Address!
+
   """Retrieve the binding value, as type CacheVolume"""
   asCacheVolume: CacheVolume!
 
@@ -27,6 +69,9 @@ type Binding {
 
   """Retrieve the binding value, as type Env"""
   asEnv: Env!
+
+  """Retrieve the binding value, as type EnvFile"""
+  asEnvFile: EnvFile!
 
   """Retrieve the binding value, as type File"""
   asFile: File!
@@ -1516,6 +1561,35 @@ type Directory {
     include: [String!] = []
   ): Directory!
 
+  """
+  Search up the directory tree for a file or directory, and return its path
+  """
+  findup(
+    """The name of the file or directory to search for"""
+    name: String!
+
+    """The path to start the search from"""
+    start: String!
+  ): String!
+
+  """Search up the directory tree for a directory, and return it"""
+  findupDirectory(
+    """The name of the directory to search for"""
+    name: String!
+
+    """The path to start the search from"""
+    start: String!
+  ): Directory!
+
+  """Search up the directory tree for a file, and return it"""
+  findupFile(
+    """The name of the file to search for"""
+    name: String!
+
+    """The path to start the search from"""
+    start: String!
+  ): File!
+
   """Returns a list of files and directories that matche the given pattern."""
   glob(
     """Pattern to match (e.g., "*.md")."""
@@ -1901,6 +1975,27 @@ type Env {
   """return all output values for the environment"""
   outputs: [Binding!]!
 
+  """Create or update a binding of type Address in the environment"""
+  withAddressInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Address value to assign to the binding"""
+    value: AddressID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Address output to be assigned in the environment"""
+  withAddressOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Create or update a binding of type CacheVolume in the environment"""
   withCacheVolumeInput(
     """The name of the binding"""
@@ -1978,6 +2073,27 @@ type Env {
 
   """Declare a desired Directory output to be assigned in the environment"""
   withDirectoryOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type EnvFile in the environment"""
+  withEnvFileInput(
+    """The name of the binding"""
+    name: String!
+
+    """The EnvFile value to assign to the binding"""
+    value: EnvFileID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired EnvFile output to be assigned in the environment"""
+  withEnvFileOutput(
     """The name of the binding"""
     name: String!
 
@@ -2313,6 +2429,44 @@ type Env {
   ): Env!
 }
 
+"""A collection of environment variables."""
+type EnvFile {
+  """Return the contents as a file"""
+  file: File!
+
+  """A unique identifier for this EnvFile."""
+  id: EnvFileID!
+
+  """Lookup a variable by name (last occurrence wins)"""
+  variable(
+    """Variable name to lookup"""
+    name: String!
+  ): String
+
+  """Return all variables"""
+  variables: [EnvVariable!]!
+
+  """Add a variable"""
+  withVariable(
+    """Variable name"""
+    name: String!
+
+    """Variable value"""
+    value: String!
+  ): EnvFile!
+
+  """Remove all occurrences of the named variable"""
+  withoutVariable(
+    """Variable name to remove"""
+    name: String!
+  ): EnvFile!
+}
+
+"""
+The `EnvFileID` scalar type represents an identifier for an object of type EnvFile.
+"""
+scalar EnvFileID
+
 """
 The `EnvID` scalar type represents an identifier for an object of type Env.
 """
@@ -2418,6 +2572,9 @@ scalar FieldTypeDefID
 
 """A file."""
 type File {
+  """Parse as an env file"""
+  asEnvFile: EnvFile!
+
   """Retrieves the contents of the file."""
   contents(
     """Start reading after this line"""
@@ -2891,6 +3048,32 @@ type Host {
     path: String!
 
     """If true, the file will always be reloaded from the host."""
+    noCache: Boolean = false
+  ): File!
+
+  """
+  Search for a file or directory by walking up the tree from system workdir. Return its relative path
+  """
+  findup(
+    """name of the file or directory to search for"""
+    name: String!
+
+    noCache: Boolean = false
+  ): String!
+
+  """Search for a directory by walking up the tree from system workdir"""
+  findupDirectory(
+    """name of the directory to search for"""
+    name: String!
+
+    noCache: Boolean = false
+  ): Directory!
+
+  """Search for a file by walking up the tree from system workdir"""
+  findupFile(
+    """name of the file or directory to search for"""
+    name: String!
+
     noCache: Boolean = false
   ): File!
 
@@ -3649,6 +3832,11 @@ scalar PortID
 
 """The root of the DAG."""
 type Query {
+  """
+  initialize an address to load directories, containers, secrets or other object types.
+  """
+  address(value: String!): Address!
+
   """Constructs a cache volume for a given cache key."""
   cacheVolume(
     """
@@ -3706,6 +3894,9 @@ type Query {
     """Allow new outputs to be declared and saved in the environment"""
     writable: Boolean = false
   ): Env! @experimental(reason: "Environments are not yet stabilized")
+
+  """Initialize an environment file"""
+  envFile: EnvFile!
 
   """Create a new error."""
   error(
@@ -3811,6 +4002,9 @@ type Query {
     maxAPICalls: Int
   ): LLM! @experimental(reason: "LLM support is not yet stabilized")
 
+  """Load a Address from its ID."""
+  loadAddressFromID(id: AddressID!): Address!
+
   """Load a Binding from its ID."""
   loadBindingFromID(id: BindingID!): Binding!
 
@@ -3846,6 +4040,9 @@ type Query {
 
   """Load a EnumValueTypeDef from its ID."""
   loadEnumValueTypeDefFromID(id: EnumValueTypeDefID!): EnumValueTypeDef!
+
+  """Load a EnvFile from its ID."""
+  loadEnvFileFromID(id: EnvFileID!): EnvFile!
 
   """Load a Env from its ID."""
   loadEnvFromID(id: EnvID!): Env!

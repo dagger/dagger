@@ -91,7 +91,7 @@ func (s *secretSchema) secret(
 		return i, fmt.Errorf("failed to create instance: %w", err)
 	}
 
-	if args.CacheKey.Valid {
+	if args.CacheKey.Valid && args.CacheKey.Value != "" {
 		i = i.WithObjectDigest(dagql.HashFrom(string(args.CacheKey.Value)))
 	} else {
 		plaintext, err := secretStore.GetSecretPlaintextDirect(ctx, secret)

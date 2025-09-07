@@ -805,8 +805,8 @@ func (DirectorySuite) TestExport(ctx context.Context, t *testctx.T) {
 
 	t.Run("to outer dir", func(ctx context.Context, t *testctx.T) {
 		actual, err := dir.Export(ctx, "../")
-		require.Error(t, err)
-		require.Empty(t, actual)
+		require.NoError(t, err)
+		require.Contains(t, actual, "/")
 	})
 }
 

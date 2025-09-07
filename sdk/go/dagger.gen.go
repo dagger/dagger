@@ -128,6 +128,9 @@ func (e *ExecError) Unwrap() error {
 	return e.original
 }
 
+// The `AddressID` scalar type represents an identifier for an object of type Address.
+type AddressID string
+
 // The `BindingID` scalar type represents an identifier for an object of type Binding.
 type BindingID string
 
@@ -163,6 +166,9 @@ type EnumTypeDefID string
 
 // The `EnumValueTypeDefID` scalar type represents an identifier for an object of type EnumValueTypeDef.
 type EnumValueTypeDefID string
+
+// The `EnvFileID` scalar type represents an identifier for an object of type EnvFile.
+type EnvFileID string
 
 // The `EnvID` scalar type represents an identifier for an object of type Env.
 type EnvID string
@@ -315,6 +321,182 @@ type PortForward struct {
 	Protocol NetworkProtocol `json:"protocol,omitempty"`
 }
 
+// A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.
+type Address struct {
+	query *querybuilder.Selection
+
+	id    *AddressID
+	value *string
+}
+
+func (r *Address) WithGraphQLQuery(q *querybuilder.Selection) *Address {
+	return &Address{
+		query: q,
+	}
+}
+
+// Load a container from the address.
+func (r *Address) Container() *Container {
+	q := r.query.Select("container")
+
+	return &Container{
+		query: q,
+	}
+}
+
+// AddressDirectoryOpts contains options for Address.Directory
+type AddressDirectoryOpts struct {
+	Exclude []string
+
+	Include []string
+
+	NoCache bool
+}
+
+// Load a directory from the address.
+func (r *Address) Directory(opts ...AddressDirectoryOpts) *Directory {
+	q := r.query.Select("directory")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		// `noCache` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoCache) {
+			q = q.Arg("noCache", opts[i].NoCache)
+		}
+	}
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// AddressFileOpts contains options for Address.File
+type AddressFileOpts struct {
+	Exclude []string
+
+	Include []string
+
+	NoCache bool
+}
+
+// Load a file from the address.
+func (r *Address) File(opts ...AddressFileOpts) *File {
+	q := r.query.Select("file")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		// `noCache` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoCache) {
+			q = q.Arg("noCache", opts[i].NoCache)
+		}
+	}
+
+	return &File{
+		query: q,
+	}
+}
+
+// Load a git ref (branch, tag or commit) from the address.
+func (r *Address) GitRef() *GitRef {
+	q := r.query.Select("gitRef")
+
+	return &GitRef{
+		query: q,
+	}
+}
+
+// Load a git repository from the address.
+func (r *Address) GitRepository() *GitRepository {
+	q := r.query.Select("gitRepository")
+
+	return &GitRepository{
+		query: q,
+	}
+}
+
+// A unique identifier for this Address.
+func (r *Address) ID(ctx context.Context) (AddressID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response AddressID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Address) XXX_GraphQLType() string {
+	return "Address"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Address) XXX_GraphQLIDType() string {
+	return "AddressID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Address) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Address) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Load a secret from the address.
+func (r *Address) Secret() *Secret {
+	q := r.query.Select("secret")
+
+	return &Secret{
+		query: q,
+	}
+}
+
+// Load a service from the address.
+func (r *Address) Service() *Service {
+	q := r.query.Select("service")
+
+	return &Service{
+		query: q,
+	}
+}
+
+// The address value
+func (r *Address) Value(ctx context.Context) (string, error) {
+	if r.value != nil {
+		return *r.value, nil
+	}
+	q := r.query.Select("value")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 type Binding struct {
 	query *querybuilder.Selection
 
@@ -328,6 +510,15 @@ type Binding struct {
 
 func (r *Binding) WithGraphQLQuery(q *querybuilder.Selection) *Binding {
 	return &Binding{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Address
+func (r *Binding) AsAddress() *Address {
+	q := r.query.Select("asAddress")
+
+	return &Address{
 		query: q,
 	}
 }
@@ -373,6 +564,15 @@ func (r *Binding) AsEnv() *Env {
 	q := r.query.Select("asEnv")
 
 	return &Env{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type EnvFile
+func (r *Binding) AsEnvFile() *EnvFile {
+	q := r.query.Select("asEnvFile")
+
+	return &EnvFile{
 		query: q,
 	}
 }
@@ -2721,6 +2921,7 @@ type Directory struct {
 	digest *string
 	exists *bool
 	export *string
+	findup *string
 	id     *DirectoryID
 	name   *string
 	sync   *DirectoryID
@@ -3003,6 +3204,43 @@ func (r *Directory) Filter(opts ...DirectoryFilterOpts) *Directory {
 	}
 
 	return &Directory{
+		query: q,
+	}
+}
+
+// Search up the directory tree for a file or directory, and return its path
+func (r *Directory) Findup(ctx context.Context, name string, start string) (string, error) {
+	if r.findup != nil {
+		return *r.findup, nil
+	}
+	q := r.query.Select("findup")
+	q = q.Arg("name", name)
+	q = q.Arg("start", start)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Search up the directory tree for a directory, and return it
+func (r *Directory) FindupDirectory(name string, start string) *Directory {
+	q := r.query.Select("findupDirectory")
+	q = q.Arg("name", name)
+	q = q.Arg("start", start)
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Search up the directory tree for a file, and return it
+func (r *Directory) FindupFile(name string, start string) *File {
+	q := r.query.Select("findupFile")
+	q = q.Arg("name", name)
+	q = q.Arg("start", start)
+
+	return &File{
 		query: q,
 	}
 }
@@ -4301,6 +4539,30 @@ func (r *Env) Outputs(ctx context.Context) ([]Binding, error) {
 	return convert(response), nil
 }
 
+// Create or update a binding of type Address in the environment
+func (r *Env) WithAddressInput(name string, value *Address, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withAddressInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Address output to be assigned in the environment
+func (r *Env) WithAddressOutput(name string, description string) *Env {
+	q := r.query.Select("withAddressOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create or update a binding of type CacheVolume in the environment
 func (r *Env) WithCacheVolumeInput(name string, value *CacheVolume, description string) *Env {
 	assertNotNil("value", value)
@@ -4389,6 +4651,30 @@ func (r *Env) WithDirectoryInput(name string, value *Directory, description stri
 // Declare a desired Directory output to be assigned in the environment
 func (r *Env) WithDirectoryOutput(name string, description string) *Env {
 	q := r.query.Select("withDirectoryOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type EnvFile in the environment
+func (r *Env) WithEnvFileInput(name string, value *EnvFile, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withEnvFileInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired EnvFile output to be assigned in the environment
+func (r *Env) WithEnvFileOutput(name string, description string) *Env {
+	q := r.query.Select("withEnvFileOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -4752,6 +5038,145 @@ func (r *Env) WithStringOutput(name string, description string) *Env {
 	q = q.Arg("description", description)
 
 	return &Env{
+		query: q,
+	}
+}
+
+// A collection of environment variables.
+type EnvFile struct {
+	query *querybuilder.Selection
+
+	id       *EnvFileID
+	variable *string
+}
+type WithEnvFileFunc func(r *EnvFile) *EnvFile
+
+// With calls the provided function with current EnvFile.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *EnvFile) With(f WithEnvFileFunc) *EnvFile {
+	return f(r)
+}
+
+func (r *EnvFile) WithGraphQLQuery(q *querybuilder.Selection) *EnvFile {
+	return &EnvFile{
+		query: q,
+	}
+}
+
+// Return the contents as a file
+func (r *EnvFile) File() *File {
+	q := r.query.Select("file")
+
+	return &File{
+		query: q,
+	}
+}
+
+// A unique identifier for this EnvFile.
+func (r *EnvFile) ID(ctx context.Context) (EnvFileID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response EnvFileID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EnvFile) XXX_GraphQLType() string {
+	return "EnvFile"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EnvFile) XXX_GraphQLIDType() string {
+	return "EnvFileID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EnvFile) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *EnvFile) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Lookup a variable by name (last occurrence wins)
+func (r *EnvFile) Variable(ctx context.Context, name string) (string, error) {
+	if r.variable != nil {
+		return *r.variable, nil
+	}
+	q := r.query.Select("variable")
+	q = q.Arg("name", name)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Return all variables
+func (r *EnvFile) Variables(ctx context.Context) ([]EnvVariable, error) {
+	q := r.query.Select("variables")
+
+	q = q.Select("id")
+
+	type variables struct {
+		Id EnvVariableID
+	}
+
+	convert := func(fields []variables) []EnvVariable {
+		out := []EnvVariable{}
+
+		for i := range fields {
+			val := EnvVariable{id: &fields[i].Id}
+			val.query = q.Root().Select("loadEnvVariableFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []variables
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Add a variable
+func (r *EnvFile) WithVariable(name string, value string) *EnvFile {
+	q := r.query.Select("withVariable")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &EnvFile{
+		query: q,
+	}
+}
+
+// Remove all occurrences of the named variable
+func (r *EnvFile) WithoutVariable(name string) *EnvFile {
+	q := r.query.Select("withoutVariable")
+	q = q.Arg("name", name)
+
+	return &EnvFile{
 		query: q,
 	}
 }
@@ -5159,6 +5584,15 @@ func (r *File) With(f WithFileFunc) *File {
 
 func (r *File) WithGraphQLQuery(q *querybuilder.Selection) *File {
 	return &File{
+		query: q,
+	}
+}
+
+// Parse as an env file
+func (r *File) AsEnvFile() *EnvFile {
+	q := r.query.Select("asEnvFile")
+
+	return &EnvFile{
 		query: q,
 	}
 }
@@ -6513,7 +6947,8 @@ func (r *GitRepository) WithAuthToken(token *Secret) *GitRepository {
 type Host struct {
 	query *querybuilder.Selection
 
-	id *HostID
+	findup *string
+	id     *HostID
 }
 
 func (r *Host) WithGraphQLQuery(q *querybuilder.Selection) *Host {
@@ -6588,6 +7023,73 @@ func (r *Host) File(path string, opts ...HostFileOpts) *File {
 		}
 	}
 	q = q.Arg("path", path)
+
+	return &File{
+		query: q,
+	}
+}
+
+// HostFindupOpts contains options for Host.Findup
+type HostFindupOpts struct {
+	NoCache bool
+}
+
+// Search for a file or directory by walking up the tree from system workdir. Return its relative path
+func (r *Host) Findup(ctx context.Context, name string, opts ...HostFindupOpts) (string, error) {
+	if r.findup != nil {
+		return *r.findup, nil
+	}
+	q := r.query.Select("findup")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noCache` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoCache) {
+			q = q.Arg("noCache", opts[i].NoCache)
+		}
+	}
+	q = q.Arg("name", name)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// HostFindupDirectoryOpts contains options for Host.FindupDirectory
+type HostFindupDirectoryOpts struct {
+	NoCache bool
+}
+
+// Search for a directory by walking up the tree from system workdir
+func (r *Host) FindupDirectory(name string, opts ...HostFindupDirectoryOpts) *Directory {
+	q := r.query.Select("findupDirectory")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noCache` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoCache) {
+			q = q.Arg("noCache", opts[i].NoCache)
+		}
+	}
+	q = q.Arg("name", name)
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// HostFindupFileOpts contains options for Host.FindupFile
+type HostFindupFileOpts struct {
+	NoCache bool
+}
+
+// Search for a file by walking up the tree from system workdir
+func (r *Host) FindupFile(name string, opts ...HostFindupFileOpts) *File {
+	q := r.query.Select("findupFile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `noCache` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoCache) {
+			q = q.Arg("noCache", opts[i].NoCache)
+		}
+	}
+	q = q.Arg("name", name)
 
 	return &File{
 		query: q,
@@ -9016,6 +9518,16 @@ func (r *Client) WithGraphQLQuery(q *querybuilder.Selection) *Client {
 	}
 }
 
+// initialize an address to load directories, containers, secrets or other object types.
+func (r *Client) Address(value string) *Address {
+	q := r.query.Select("address")
+	q = q.Arg("value", value)
+
+	return &Address{
+		query: q,
+	}
+}
+
 // Constructs a cache volume for a given cache key.
 func (r *Client) CacheVolume(key string) *CacheVolume {
 	q := r.query.Select("cacheVolume")
@@ -9164,6 +9676,15 @@ func (r *Client) Env(opts ...EnvOpts) *Env {
 	}
 
 	return &Env{
+		query: q,
+	}
+}
+
+// Initialize an environment file
+func (r *Client) EnvFile() *EnvFile {
+	q := r.query.Select("envFile")
+
+	return &EnvFile{
 		query: q,
 	}
 }
@@ -9373,6 +9894,16 @@ func (r *Client) LLM(opts ...LLMOpts) *LLM {
 	}
 }
 
+// Load a Address from its ID.
+func (r *Client) LoadAddressFromID(id AddressID) *Address {
+	q := r.query.Select("loadAddressFromID")
+	q = q.Arg("id", id)
+
+	return &Address{
+		query: q,
+	}
+}
+
 // Load a Binding from its ID.
 func (r *Client) LoadBindingFromID(id BindingID) *Binding {
 	q := r.query.Select("loadBindingFromID")
@@ -9489,6 +10020,16 @@ func (r *Client) LoadEnumValueTypeDefFromID(id EnumValueTypeDefID) *EnumValueTyp
 	q = q.Arg("id", id)
 
 	return &EnumValueTypeDef{
+		query: q,
+	}
+}
+
+// Load a EnvFile from its ID.
+func (r *Client) LoadEnvFileFromID(id EnvFileID) *EnvFile {
+	q := r.query.Select("loadEnvFileFromID")
+	q = q.Arg("id", id)
+
+	return &EnvFile{
 		query: q,
 	}
 }

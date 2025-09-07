@@ -17,6 +17,23 @@ class BaseClient {
   constructor(protected _ctx: Context = new Context()) {}
 }
 
+export type AddressDirectoryOpts = {
+  exclude?: string[]
+  include?: string[]
+  noCache?: boolean
+}
+
+export type AddressFileOpts = {
+  exclude?: string[]
+  include?: string[]
+  noCache?: boolean
+}
+
+/**
+ * The `AddressID` scalar type represents an identifier for an object of type Address.
+ */
+export type AddressID = string & { __AddressID: never }
+
 /**
  * The `BindingID` scalar type represents an identifier for an object of type Binding.
  */
@@ -1003,6 +1020,11 @@ export type EnumTypeDefID = string & { __EnumTypeDefID: never }
 export type EnumValueTypeDefID = string & { __EnumValueTypeDefID: never }
 
 /**
+ * The `EnvFileID` scalar type represents an identifier for an object of type EnvFile.
+ */
+export type EnvFileID = string & { __EnvFileID: never }
+
+/**
  * The `EnvID` scalar type represents an identifier for an object of type Env.
  */
 export type EnvID = string & { __EnvID: never }
@@ -1283,6 +1305,18 @@ export type HostFileOpts = {
   /**
    * If true, the file will always be reloaded from the host.
    */
+  noCache?: boolean
+}
+
+export type HostFindupOpts = {
+  noCache?: boolean
+}
+
+export type HostFindupDirectoryOpts = {
+  noCache?: boolean
+}
+
+export type HostFindupFileOpts = {
   noCache?: boolean
 }
 
@@ -2173,6 +2207,110 @@ export type __TypeInputFieldsOpts = {
   includeDeprecated?: boolean
 }
 
+/**
+ * A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.
+ */
+export class Address extends BaseClient {
+  private readonly _id?: AddressID = undefined
+  private readonly _value?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: AddressID, _value?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._value = _value
+  }
+
+  /**
+   * A unique identifier for this Address.
+   */
+  id = async (): Promise<AddressID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<AddressID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Load a container from the address.
+   */
+  container = (): Container => {
+    const ctx = this._ctx.select("container")
+    return new Container(ctx)
+  }
+
+  /**
+   * Load a directory from the address.
+   */
+  directory = (opts?: AddressDirectoryOpts): Directory => {
+    const ctx = this._ctx.select("directory", { ...opts })
+    return new Directory(ctx)
+  }
+
+  /**
+   * Load a file from the address.
+   */
+  file = (opts?: AddressFileOpts): File => {
+    const ctx = this._ctx.select("file", { ...opts })
+    return new File(ctx)
+  }
+
+  /**
+   * Load a git ref (branch, tag or commit) from the address.
+   */
+  gitRef = (): GitRef => {
+    const ctx = this._ctx.select("gitRef")
+    return new GitRef(ctx)
+  }
+
+  /**
+   * Load a git repository from the address.
+   */
+  gitRepository = (): GitRepository => {
+    const ctx = this._ctx.select("gitRepository")
+    return new GitRepository(ctx)
+  }
+
+  /**
+   * Load a secret from the address.
+   */
+  secret = (): Secret => {
+    const ctx = this._ctx.select("secret")
+    return new Secret(ctx)
+  }
+
+  /**
+   * Load a service from the address.
+   */
+  service = (): Service => {
+    const ctx = this._ctx.select("service")
+    return new Service(ctx)
+  }
+
+  /**
+   * The address value
+   */
+  value = async (): Promise<string> => {
+    if (this._value) {
+      return this._value
+    }
+
+    const ctx = this._ctx.select("value")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
 export class Binding extends BaseClient {
   private readonly _id?: BindingID = undefined
   private readonly _asString?: string = undefined
@@ -2219,6 +2357,14 @@ export class Binding extends BaseClient {
   }
 
   /**
+   * Retrieve the binding value, as type Address
+   */
+  asAddress = (): Address => {
+    const ctx = this._ctx.select("asAddress")
+    return new Address(ctx)
+  }
+
+  /**
    * Retrieve the binding value, as type CacheVolume
    */
   asCacheVolume = (): CacheVolume => {
@@ -2256,6 +2402,14 @@ export class Binding extends BaseClient {
   asEnv = (): Env => {
     const ctx = this._ctx.select("asEnv")
     return new Env(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type EnvFile
+   */
+  asEnvFile = (): EnvFile => {
+    const ctx = this._ctx.select("asEnvFile")
+    return new EnvFile(ctx)
   }
 
   /**
@@ -3894,6 +4048,7 @@ export class Directory extends BaseClient {
   private readonly _digest?: string = undefined
   private readonly _exists?: boolean = undefined
   private readonly _export?: string = undefined
+  private readonly _findup?: string = undefined
   private readonly _name?: string = undefined
   private readonly _sync?: DirectoryID = undefined
 
@@ -3906,6 +4061,7 @@ export class Directory extends BaseClient {
     _digest?: string,
     _exists?: boolean,
     _export?: string,
+    _findup?: string,
     _name?: string,
     _sync?: DirectoryID,
   ) {
@@ -3915,6 +4071,7 @@ export class Directory extends BaseClient {
     this._digest = _digest
     this._exists = _exists
     this._export = _export
+    this._findup = _findup
     this._name = _name
     this._sync = _sync
   }
@@ -4093,6 +4250,43 @@ export class Directory extends BaseClient {
   filter = (opts?: DirectoryFilterOpts): Directory => {
     const ctx = this._ctx.select("filter", { ...opts })
     return new Directory(ctx)
+  }
+
+  /**
+   * Search up the directory tree for a file or directory, and return its path
+   * @param name The name of the file or directory to search for
+   * @param start The path to start the search from
+   */
+  findup = async (name: string, start: string): Promise<string> => {
+    if (this._findup) {
+      return this._findup
+    }
+
+    const ctx = this._ctx.select("findup", { name, start })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Search up the directory tree for a directory, and return it
+   * @param name The name of the directory to search for
+   * @param start The path to start the search from
+   */
+  findupDirectory = (name: string, start: string): Directory => {
+    const ctx = this._ctx.select("findupDirectory", { name, start })
+    return new Directory(ctx)
+  }
+
+  /**
+   * Search up the directory tree for a file, and return it
+   * @param name The name of the file to search for
+   * @param start The path to start the search from
+   */
+  findupFile = (name: string, start: string): File => {
+    const ctx = this._ctx.select("findupFile", { name, start })
+    return new File(ctx)
   }
 
   /**
@@ -5017,6 +5211,35 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Create or update a binding of type Address in the environment
+   * @param name The name of the binding
+   * @param value The Address value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withAddressInput = (
+    name: string,
+    value: Address,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withAddressInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Address output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withAddressOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withAddressOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
    * Create or update a binding of type CacheVolume in the environment
    * @param name The name of the binding
    * @param value The CacheVolume value to assign to the binding
@@ -5121,6 +5344,35 @@ export class Env extends BaseClient {
    */
   withDirectoryOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withDirectoryOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type EnvFile in the environment
+   * @param name The name of the binding
+   * @param value The EnvFile value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withEnvFileInput = (
+    name: string,
+    value: EnvFile,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withEnvFileInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired EnvFile output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withEnvFileOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withEnvFileOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -5545,6 +5797,108 @@ export class Env extends BaseClient {
 }
 
 /**
+ * A collection of environment variables.
+ */
+export class EnvFile extends BaseClient {
+  private readonly _id?: EnvFileID = undefined
+  private readonly _variable?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: EnvFileID, _variable?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._variable = _variable
+  }
+
+  /**
+   * A unique identifier for this EnvFile.
+   */
+  id = async (): Promise<EnvFileID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<EnvFileID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return the contents as a file
+   */
+  file = (): File => {
+    const ctx = this._ctx.select("file")
+    return new File(ctx)
+  }
+
+  /**
+   * Lookup a variable by name (last occurrence wins)
+   * @param name Variable name to lookup
+   */
+  variable = async (name: string): Promise<string> => {
+    if (this._variable) {
+      return this._variable
+    }
+
+    const ctx = this._ctx.select("variable", { name })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return all variables
+   */
+  variables = async (): Promise<EnvVariable[]> => {
+    type variables = {
+      id: EnvVariableID
+    }
+
+    const ctx = this._ctx.select("variables").select("id")
+
+    const response: Awaited<variables[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadEnvVariableFromID(r.id),
+    )
+  }
+
+  /**
+   * Add a variable
+   * @param name Variable name
+   * @param value Variable value
+   */
+  withVariable = (name: string, value: string): EnvFile => {
+    const ctx = this._ctx.select("withVariable", { name, value })
+    return new EnvFile(ctx)
+  }
+
+  /**
+   * Remove all occurrences of the named variable
+   * @param name Variable name to remove
+   */
+  withoutVariable = (name: string): EnvFile => {
+    const ctx = this._ctx.select("withoutVariable", { name })
+    return new EnvFile(ctx)
+  }
+
+  /**
+   * Call the provided function with current EnvFile.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: EnvFile) => EnvFile) => {
+    return arg(this)
+  }
+}
+
+/**
  * An environment variable name and value.
  */
 export class EnvVariable extends BaseClient {
@@ -5899,6 +6253,14 @@ export class File extends BaseClient {
     const response: Awaited<FileID> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Parse as an env file
+   */
+  asEnvFile = (): EnvFile => {
+    const ctx = this._ctx.select("asEnvFile")
+    return new EnvFile(ctx)
   }
 
   /**
@@ -6913,14 +7275,16 @@ export class GitRepository extends BaseClient {
  */
 export class Host extends BaseClient {
   private readonly _id?: HostID = undefined
+  private readonly _findup?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: HostID) {
+  constructor(ctx?: Context, _id?: HostID, _findup?: string) {
     super(ctx)
 
     this._id = _id
+    this._findup = _findup
   }
 
   /**
@@ -6967,6 +7331,43 @@ export class Host extends BaseClient {
    */
   file = (path: string, opts?: HostFileOpts): File => {
     const ctx = this._ctx.select("file", { path, ...opts })
+    return new File(ctx)
+  }
+
+  /**
+   * Search for a file or directory by walking up the tree from system workdir. Return its relative path
+   * @param name name of the file or directory to search for
+   */
+  findup = async (name: string, opts?: HostFindupOpts): Promise<string> => {
+    if (this._findup) {
+      return this._findup
+    }
+
+    const ctx = this._ctx.select("findup", { name, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Search for a directory by walking up the tree from system workdir
+   * @param name name of the directory to search for
+   */
+  findupDirectory = (
+    name: string,
+    opts?: HostFindupDirectoryOpts,
+  ): Directory => {
+    const ctx = this._ctx.select("findupDirectory", { name, ...opts })
+    return new Directory(ctx)
+  }
+
+  /**
+   * Search for a file by walking up the tree from system workdir
+   * @param name name of the file or directory to search for
+   */
+  findupFile = (name: string, opts?: HostFindupFileOpts): File => {
+    const ctx = this._ctx.select("findupFile", { name, ...opts })
     return new File(ctx)
   }
 
@@ -9010,6 +9411,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * initialize an address to load directories, containers, secrets or other object types.
+   */
+  address = (value: string): Address => {
+    const ctx = this._ctx.select("address", { value })
+    return new Address(ctx)
+  }
+
+  /**
    * Constructs a cache volume for a given cache key.
    * @param key A string identifier to target this cache volume (e.g., "modules-cache").
    */
@@ -9106,6 +9515,14 @@ export class Client extends BaseClient {
   env = (opts?: ClientEnvOpts): Env => {
     const ctx = this._ctx.select("env", { ...opts })
     return new Env(ctx)
+  }
+
+  /**
+   * Initialize an environment file
+   */
+  envFile = (): EnvFile => {
+    const ctx = this._ctx.select("envFile")
+    return new EnvFile(ctx)
   }
 
   /**
@@ -9207,6 +9624,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a Address from its ID.
+   */
+  loadAddressFromID = (id: AddressID): Address => {
+    const ctx = this._ctx.select("loadAddressFromID", { id })
+    return new Address(ctx)
+  }
+
+  /**
    * Load a Binding from its ID.
    */
   loadBindingFromID = (id: BindingID): Binding => {
@@ -9302,6 +9727,14 @@ export class Client extends BaseClient {
   loadEnumValueTypeDefFromID = (id: EnumValueTypeDefID): EnumValueTypeDef => {
     const ctx = this._ctx.select("loadEnumValueTypeDefFromID", { id })
     return new EnumValueTypeDef(ctx)
+  }
+
+  /**
+   * Load a EnvFile from its ID.
+   */
+  loadEnvFileFromID = (id: EnvFileID): EnvFile => {
+    const ctx = this._ctx.select("loadEnvFileFromID", { id })
+    return new EnvFile(ctx)
   }
 
   /**

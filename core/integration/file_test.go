@@ -256,8 +256,8 @@ func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
 		wd := t.TempDir()
 		c := connect(ctx, t, dagger.WithWorkdir(wd))
 		actual, err := file(c).Export(ctx, "../some-file")
-		require.Error(t, err)
-		require.Empty(t, actual)
+		require.NoError(t, err)
+		require.Contains(t, actual, "/some-file")
 	})
 
 	t.Run("to absolute dir", func(ctx context.Context, t *testctx.T) {

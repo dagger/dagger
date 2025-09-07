@@ -64,6 +64,45 @@ class Host extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Search for a file or directory by walking up the tree from system workdir. Return its relative path
+     */
+    public function findup(string $name, ?bool $noCache = false): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('findup');
+        $leafQueryBuilder->setArgument('name', $name);
+        if (null !== $noCache) {
+        $leafQueryBuilder->setArgument('noCache', $noCache);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'findup');
+    }
+
+    /**
+     * Search for a directory by walking up the tree from system workdir
+     */
+    public function findupDirectory(string $name, ?bool $noCache = false): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('findupDirectory');
+        $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $noCache) {
+        $innerQueryBuilder->setArgument('noCache', $noCache);
+        }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Search for a file by walking up the tree from system workdir
+     */
+    public function findupFile(string $name, ?bool $noCache = false): File
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('findupFile');
+        $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $noCache) {
+        $innerQueryBuilder->setArgument('noCache', $noCache);
+        }
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * A unique identifier for this Host.
      */
     public function id(): HostId

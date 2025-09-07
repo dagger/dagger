@@ -14,6 +14,16 @@ namespace Dagger;
 class Client extends Client\AbstractClient
 {
     /**
+     * initialize an address to load directories, containers, secrets or other object types.
+     */
+    public function address(string $value): Address
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('address');
+        $innerQueryBuilder->setArgument('value', $value);
+        return new \Dagger\Address($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Constructs a cache volume for a given cache key.
      */
     public function cacheVolume(string $key): CacheVolume
@@ -115,6 +125,15 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder->setArgument('writable', $writable);
         }
         return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Initialize an environment file
+     */
+    public function envFile(): EnvFile
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('envFile');
+        return new \Dagger\EnvFile($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -262,6 +281,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a Address from its ID.
+     */
+    public function loadAddressFromID(AddressId|Address $id): Address
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadAddressFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Address($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Binding from its ID.
      */
     public function loadBindingFromID(BindingId|Binding $id): Binding
@@ -379,6 +408,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEnumValueTypeDefFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\EnumValueTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a EnvFile from its ID.
+     */
+    public function loadEnvFileFromID(EnvFileId|EnvFile $id): EnvFile
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEnvFileFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\EnvFile($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
