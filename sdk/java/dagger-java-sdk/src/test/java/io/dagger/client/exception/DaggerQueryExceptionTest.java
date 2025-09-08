@@ -29,7 +29,7 @@ public class DaggerQueryExceptionTest {
   }
 
   @Test
-  void shouldReturnEnanchedMessage() {
+  void shouldReturnEnhancedMessage() {
     GraphQLError error =
         buildError(
             "ERROR",
