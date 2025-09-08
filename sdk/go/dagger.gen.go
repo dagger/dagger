@@ -5794,6 +5794,7 @@ func (r *ErrorValue) Value(ctx context.Context) (JSON, error) {
 type FieldTypeDef struct {
 	query *querybuilder.Selection
 
+	deprecated  *string
 	description *string
 	id          *FieldTypeDefID
 	name        *string
@@ -5803,6 +5804,19 @@ func (r *FieldTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *FieldTypeDef
 	return &FieldTypeDef{
 		query: q,
 	}
+}
+
+// If deprecated, the reason or migration path.
+func (r *FieldTypeDef) Deprecated(ctx context.Context) (string, error) {
+	if r.deprecated != nil {
+		return *r.deprecated, nil
+	}
+	q := r.query.Select("deprecated")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A doc string for the field, if any.
@@ -6273,6 +6287,7 @@ func (r *File) WithTimestamps(timestamp int) *File {
 type Function struct {
 	query *querybuilder.Selection
 
+	deprecated  *string
 	description *string
 	id          *FunctionID
 	name        *string
@@ -6323,6 +6338,19 @@ func (r *Function) Args(ctx context.Context) ([]FunctionArg, error) {
 	}
 
 	return convert(response), nil
+}
+
+// The reason this function is deprecated, if any.
+func (r *Function) Deprecated(ctx context.Context) (string, error) {
+	if r.deprecated != nil {
+		return *r.deprecated, nil
+	}
+	q := r.query.Select("deprecated")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A doc string for the function, if any.
@@ -6473,6 +6501,16 @@ func (r *Function) WithCachePolicy(policy FunctionCachePolicy, opts ...FunctionW
 		}
 	}
 	q = q.Arg("policy", policy)
+
+	return &Function{
+		query: q,
+	}
+}
+
+// Returns the function with the given deprecated string.
+func (r *Function) WithDeprecated(deprecated string) *Function {
+	q := r.query.Select("withDeprecated")
+	q = q.Arg("deprecated", deprecated)
 
 	return &Function{
 		query: q,
@@ -12288,6 +12326,8 @@ type TypeDefWithFieldOpts struct {
 	Description string
 	// The source map for the field definition.
 	SourceMap *SourceMap
+	// If deprecated, the reason or migration path.
+	Deprecated string
 }
 
 // Adds a static field for an Object TypeDef, failing if the type is not an object.
@@ -12302,6 +12342,10 @@ func (r *TypeDef) WithField(name string, typeDef *TypeDef, opts ...TypeDefWithFi
 		// `sourceMap` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourceMap) {
 			q = q.Arg("sourceMap", opts[i].SourceMap)
+		}
+		// `deprecated` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Deprecated) {
+			q = q.Arg("deprecated", opts[i].Deprecated)
 		}
 	}
 	q = q.Arg("name", name)
