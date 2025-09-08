@@ -15,7 +15,7 @@ This CI pipeline is an example of how to use the Dagger SDK to automate the buil
 
 The pipeline demonstrates how to split a more complex pipeline into different functions and contains the following steps:
 
-1. **Building the Backend**
+1. **BuiltIng the Backend**
 2. **Creating the Production Image** 
 3. **Publishing the Image**
 
@@ -27,6 +27,6 @@ This CI pipeline automates the build of a Rust-based frontend application based 
 
 Similar to the backend pipeline, the pipeline is subdivided into smaller steps:
 
-1. **Building the Frontend**
+1. **BuiltIng the Frontend**
 2. **Creating the Production Image**
 3. **Publishing the Image**

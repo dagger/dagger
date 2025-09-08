@@ -14,7 +14,7 @@ func main() {
 }
 
 func build(ctx context.Context) error {
-	fmt.Println("Building with Dagger")
+	fmt.Println("BuiltIng with Dagger")
 
 	// define build matrix
 	oses := []string{"linux", "darwin"}

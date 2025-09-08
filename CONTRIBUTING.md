@@ -6,7 +6,7 @@ You can ask questions along the way, we're always happy to help you with your co
 the earlier you should talk to maintainers to make sure you're taking the right approach and are not wasting your effort
 on something that will not get merged.
 
-## Building/Running/Testing
+## BuiltIng/Running/Testing
 
 For more detailed instructions on building, running and testing dagger locally,
 see the dagger [dev module](https://github.com/dagger/dagger/tree/main/dagger.json).

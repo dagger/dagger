@@ -405,7 +405,7 @@ func (TypescriptSuite) TestSignatures(ctx context.Context, t *testctx.T) {
 //go:embed testdata/modules/typescript/minimal/builtin.ts
 var tsSignaturesBuiltin string
 
-func (TypescriptSuite) TestSignaturesBuildinTypes(ctx context.Context, t *testctx.T) {
+func (TypescriptSuite) TestSignaturesBuiltInTypes(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	modGen := c.Container().From(golangImage).
