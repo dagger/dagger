@@ -84,7 +84,9 @@ func New(
 				// Install protoc for protobug support by default
 				// The specific version is dictated by Dagger's own requirement
 				// FIXME: make this optional with overlay support
-				"protobuf-dev~3.29.5",
+				"protobuf~31", // ADD: brings /usr/bin/protoc and runtime libs
+				"protobuf-dev~31",
+				// "protobuf-dev~3.29.5",
 				"ca-certificates",
 			}}).
 			WithEnvVariable("GOLANG_VERSION", version).
