@@ -953,7 +953,7 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 		if name == "id" && r.TypeDef.AsObject.IsCore() {
 			// FIXME: The core TypeDefs have ids converted to objects, but we'd
 			// need the CLI to recognize that and either use the object's ID
-			// or allow inputing it directly. Just don't support it for now.
+			// or allow inputting it directly. Just don't support it for now.
 			return &UnsupportedFlagError{
 				Name: name,
 				Type: fmt.Sprintf("%sID", objName),
