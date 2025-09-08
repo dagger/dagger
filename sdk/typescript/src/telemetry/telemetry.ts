@@ -19,7 +19,7 @@ export async function close() {
  * Return a tracer to use with Dagger.
  *
  * The tracer is automatically initialized if not already done.
- * As a conveniance function, you can use `withTracingSpan` that automatically close
+ * As a convenience function, you can use `withTracingSpan` that automatically close
  * the span at the end of the function.
  *
  * You can add a custom name to the tracer based on your application.
