@@ -1516,7 +1516,7 @@ type Directory {
     include: [String!] = []
   ): Directory!
 
-  """Returns a list of files and directories that matche the given pattern."""
+  """Returns a list of files and directories that match the given pattern."""
   glob(
     """Pattern to match (e.g., "*.md")."""
     pattern: String!

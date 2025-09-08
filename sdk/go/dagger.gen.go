@@ -3007,7 +3007,7 @@ func (r *Directory) Filter(opts ...DirectoryFilterOpts) *Directory {
 	}
 }
 
-// Returns a list of files and directories that matche the given pattern.
+// Returns a list of files and directories that match the given pattern.
 func (r *Directory) Glob(ctx context.Context, pattern string) ([]string, error) {
 	q := r.query.Select("glob")
 	q = q.Arg("pattern", pattern)

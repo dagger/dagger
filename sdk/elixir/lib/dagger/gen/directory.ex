@@ -212,7 +212,7 @@ defmodule Dagger.Directory do
   end
 
   @doc """
-  Returns a list of files and directories that matche the given pattern.
+  Returns a list of files and directories that match the given pattern.
   """
   @spec glob(t(), String.t()) :: {:ok, [String.t()]} | {:error, term()}
   def glob(%__MODULE__{} = directory, pattern) do

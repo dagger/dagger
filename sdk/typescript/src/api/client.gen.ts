@@ -4096,7 +4096,7 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * Returns a list of files and directories that matche the given pattern.
+   * Returns a list of files and directories that match the given pattern.
    * @param pattern Pattern to match (e.g., "*.md").
    */
   glob = async (pattern: string): Promise<string[]> => {

@@ -3257,7 +3257,7 @@ class Directory(Type):
         return Directory(_ctx)
 
     async def glob(self, pattern: str) -> list[str]:
-        """Returns a list of files and directories that matche the given pattern.
+        """Returns a list of files and directories that match the given pattern.
 
         Parameters
         ----------

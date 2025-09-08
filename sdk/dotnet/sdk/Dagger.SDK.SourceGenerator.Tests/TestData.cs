@@ -3282,7 +3282,7 @@ public static class TestData
                       }
                     ],
                     "deprecationReason": null,
-                    "description": "Returns a list of files and directories that matche the given pattern.",
+                    "description": "Returns a list of files and directories that match the given pattern.",
                     "isDeprecated": false,
                     "name": "glob",
                     "type": {

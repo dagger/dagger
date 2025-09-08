@@ -2529,7 +2529,7 @@
 			"t": "M",
 			"n": "Dagger\\Directory::glob",
 			"p": "Dagger/Directory.html#method_glob",
-			"d": "<p>Returns a list of files and directories that matche the given pattern.</p>"
+			"d": "<p>Returns a list of files and directories that match the given pattern.</p>"
 		},
 		{
 			"t": "M",

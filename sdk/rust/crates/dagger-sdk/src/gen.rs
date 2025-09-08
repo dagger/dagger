@@ -5049,7 +5049,7 @@ impl Directory {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Returns a list of files and directories that matche the given pattern.
+    /// Returns a list of files and directories that match the given pattern.
     ///
     /// # Arguments
     ///

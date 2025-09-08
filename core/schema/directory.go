@@ -50,7 +50,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("glob", DagOpWrapper(srv, s.glob)).
 			View(AllVersion). // glob returns different results in different versions
-			Doc(`Returns a list of files and directories that matche the given pattern.`).
+			Doc(`Returns a list of files and directories that match the given pattern.`).
 			Args(
 				dagql.Arg("pattern").Doc(`Pattern to match (e.g., "*.md").`),
 			),
