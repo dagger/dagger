@@ -217,7 +217,7 @@ type Foo struct{}
 // This function sets the value of secret in vault, gets its plaintext value. Then
 // this function updates the value of secret in vault (to simulate expired or changed secret), and sleeps for 5s to allow for ttl (if any) 
 // to expire. It then gets its plaintext value again.
-// After that it returns both the values as string, which our tescase then verifies.
+// After that it returns both the values as string, which our testcase then verifies.
 func (m *Foo) VerifySecret(ctx context.Context, vault *dagger.Service, secret *dagger.Secret, tc string) (string, error) {
 	_, err := dag.Container().From("hashicorp/vault").
 		WithEnvVariable("VAULT_ADDR", "http://vault:8200").
