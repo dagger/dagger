@@ -84,7 +84,7 @@ func ExpandHomeDir(homeDir string, path string) (string, error) {
 	return strings.Replace(path, "~", homeDir, 1), nil
 }
 
-// Getwd returns the current working directory, but handles case-insensitive filesystems (i.e. MacOS defaults)
+// Getwd returns the current working directory, but handles case-insensitive filesystems (i.e. macOS defaults)
 // and returns the path with the casing as it appears when doing list dir syscalls.
 // For example, on a case-insensitive filesystem, you can do "cd /FoO/bAr" and os.Getwd will return "/FoO/bAr",
 // but if you do "ls /" you may see "fOO" and if you do "ls /fOO" you may see "BAR", which creates inconsistent
@@ -98,7 +98,7 @@ func Getwd() (string, error) {
 		return cwd, nil
 	}
 
-	// it's possible to have case-sensitive filesystems on MacOS but not sure how to check, so
+	// it's possible to have case-sensitive filesystems on macOS but not sure how to check, so
 	// just assume we're on a case-insensitive filesystem
 	split := strings.Split(cwd, "/")
 	fixedCwd := "/"
