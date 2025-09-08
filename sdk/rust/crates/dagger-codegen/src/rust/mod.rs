@@ -114,7 +114,7 @@ impl Generator for RustGenerator {
 
         let heading = render_heading()
             .to_string()
-            .context("failed to render heaing")?;
+            .context("failed to render heading")?;
 
         Ok(format!("{heading}\n\n{body}"))
     }
