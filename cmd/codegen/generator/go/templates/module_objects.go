@@ -77,7 +77,16 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 		return nil, fmt.Errorf("failed to find decl for named type %s: %w", spec.name, err)
 	}
 	if doc := docForAstSpec(astSpec); doc != nil {
-		spec.doc = doc.Text()
+		docPragmas, docComment := parsePragmaComment(doc.Text())
+		comment := strings.TrimSpace(docComment)
+		if v, ok := docPragmas["deprecated"]; ok {
+			if v == nil {
+				spec.deprecated = ""
+			} else {
+				spec.deprecated, _ = v.(string)
+			}
+		}
+		spec.doc = comment
 	}
 
 	spec.sourceMap = ps.sourceMap(astSpec)
@@ -135,6 +144,13 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 				fieldSpec.isPrivate, _ = v.(bool)
 			}
 		}
+		if v, ok := pragmas["deprecated"]; ok {
+			if v == nil {
+				fieldSpec.deprecated = ""
+			} else {
+				fieldSpec.deprecated, _ = v.(string)
+			}
+		}
 
 		fieldSpec.doc = comment
 
@@ -158,6 +174,7 @@ type parsedObjectType struct {
 	moduleName string
 	doc        string
 	sourceMap  *sourceMap
+	deprecated string
 
 	fields      []*fieldSpec
 	methods     []*funcTypeSpec
@@ -173,6 +190,10 @@ func (spec *parsedObjectType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, erro
 	if spec.doc != "" {
 		withObjectOpts.Description = strings.TrimSpace(spec.doc)
 	}
+	// todo(guillaume): add deprecated field to object
+	// if spec.deprecated != "" {
+	// 	withObjectOpts.Deprecated = strings.TrimSpace(spec.deprecated)
+	// }
 	if spec.sourceMap != nil {
 		withObjectOpts.SourceMap = spec.sourceMap.TypeDef(dag)
 	}
@@ -204,6 +225,9 @@ func (spec *parsedObjectType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, erro
 		}
 		if field.sourceMap != nil {
 			withFieldOpts.SourceMap = field.sourceMap.TypeDef(dag)
+		}
+		if field.deprecated != "" {
+			withFieldOpts.Deprecated = strings.TrimSpace(field.deprecated)
 		}
 		typeDefObject = typeDefObject.WithField(field.name, fieldTypeDef, withFieldOpts)
 	}
@@ -506,10 +530,11 @@ func (spec *parsedObjectType) setFieldsToMarshalStructCode(field *fieldSpec) *St
 }
 
 type fieldSpec struct {
-	name      string
-	doc       string
-	sourceMap *sourceMap
-	typeSpec  ParsedType
+	name       string
+	doc        string
+	deprecated string
+	sourceMap  *sourceMap
+	typeSpec   ParsedType
 
 	// isPrivate is true if the field is marked with the +private pragma
 	isPrivate bool
