@@ -1,6 +1,6 @@
 // Helper functions for extension modules.
 //
-// Exension modules are runtime modules that depend on this one, to be used
+// Extension modules are runtime modules that depend on this one, to be used
 // as a custom SDK.
 //
 // WARNING: Extending this module is considered experimental and may change
