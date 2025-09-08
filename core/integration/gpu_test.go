@@ -22,7 +22,7 @@ func TestGPU(t *testing.T) {
 }
 
 const (
-	// imageName defines the name of Nvidia's CUDA contaimer image:
+	// imageName defines the name of Nvidia's CUDA container image:
 	imageName = "nvidia/cuda"
 	// imageFlavor sets the default image flavor, as defined in: https://hub.docker.com/r/nvidia/cuda
 	imageFlavor = "base"

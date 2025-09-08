@@ -189,7 +189,7 @@ var jsKeywords = map[string]struct{}{
 	"do":       {},
 	"else":     {},
 	"enum":     {},
-	// "export":     {}, // containr.export
+	// "export":     {}, // container.export
 	"extends":    {},
 	"false":      {},
 	"finally":    {},
