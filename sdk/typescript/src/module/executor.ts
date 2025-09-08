@@ -114,7 +114,7 @@ export class Executor {
 }
 
 /**
- * Interface Wrapper serves as dynaminc module binding so the module can
+ * Interface Wrapper serves as dynamic module binding so the module can
  * call function of this interface.
  * Because the actual interface implementation can come from any external modules,
  * all resolution are done by API Call.
