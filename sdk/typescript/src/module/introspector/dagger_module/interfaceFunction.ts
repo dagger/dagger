@@ -45,7 +45,7 @@ export class DaggerInterfaceFunction extends Locatable {
 
     // If it's a method signature, we can directly use it to get the signature props
     // If it's a property kind signature, we need to get the signature from the type
-    // Examle:
+    // Example:
     // interface Foo {
     //   bar(): void       // <- this is a method signature
     //   baz: () => string // <- this is a property kind signature
