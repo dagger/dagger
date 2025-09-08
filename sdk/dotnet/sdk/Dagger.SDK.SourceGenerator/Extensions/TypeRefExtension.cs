@@ -9,7 +9,7 @@ public static class TypeRefExtension
     // Get a type from TypeRef.
     //
     // This method doesn't indicate the type is nullable or not. The caller
-    // must detecting it from TypeRef object by themself.
+    // must detecting it from TypeRef object by themselves.
     // </summary>
     public static string GetTypeName(this TypeRef typeRef)
     {
