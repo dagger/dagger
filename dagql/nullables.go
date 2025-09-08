@@ -19,7 +19,7 @@ type Derefable interface {
 	Deref() (Typed, bool)
 }
 
-// DerefableResult is a Derefable that can return a result underlied by the specific type the Derefable wraps.
+// DerefableResult is a Derefable that can return a result of the specific type the Derefable wraps.
 type DerefableResult interface {
 	Derefable
 	DerefToResult(constructor *call.ID, postCall cache.PostCallFunc) (AnyResult, bool)
