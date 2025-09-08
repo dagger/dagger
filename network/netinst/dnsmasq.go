@@ -61,7 +61,7 @@ func InstallDnsmasq(ctx context.Context, name string) error {
 	// graceful shutdown.
 	dnsmasq.SysProcAttr.Setpgid = true
 
-	// We have to lock proess start+wait to the os thread when using Pdeathsig; otherwise, it's
+	// We have to lock process start+wait to the os thread when using Pdeathsig; otherwise, it's
 	// possible for the thread that started the process to run elsewhere, exit and the child process
 	// to unexpectedly get its parent death signal.
 	started := make(chan error, 1)
