@@ -770,7 +770,7 @@ class Module:
             import dagger
 
 
-            @dager.interface
+            @dagger.interface
             class Foo(typing.Protocol):
                 @dagger.function
                 async def bar(self) -> str: ...
