@@ -386,7 +386,7 @@ func (r Result[T]) ResultWithPostCall(fn cache.PostCallFunc) Result[T] {
 // NOTE: customDigest must be used with care as any instances with the same digest
 // will be considered equivalent and can thus replace each other in the cache.
 // Generally, customDigest should be used when there's a content-based digest available
-// that won't be caputured by the default, call-chain derived digest.
+// that won't be captured by the default, call-chain derived digest.
 func (r Result[T]) WithDigest(customDigest digest.Digest) Result[T] {
 	return Result[T]{
 		constructor: r.constructor.WithDigest(customDigest),
