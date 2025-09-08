@@ -134,6 +134,12 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("description").Doc(`The doc string to set.`),
 			),
 
+			dagql.Func("withDeprecated", s.functionWithDeprecated).
+			Doc(`Returns the function with the given deprecated string.`).
+			Args(
+				dagql.Arg("deprecated").Doc(`The deprecated string to set.`),
+			),
+
 		dagql.Func("withSourceMap", s.functionWithSourceMap).
 			Doc(`Returns the function with the given source map.`).
 			Args(
@@ -188,6 +194,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("typeDef").Doc(`The type of the field`),
 				dagql.Arg("description").Doc(`A doc string for the field, if any`),
 				dagql.Arg("sourceMap").Doc(`The source map for the field definition.`),
+				dagql.Arg("deprecated").Doc(`If deprecated, the reason or migration path.`),
 			),
 
 		dagql.Func("withFunction", s.typeDefWithFunction).
@@ -316,6 +323,7 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 	TypeDef     core.TypeDefID
 	Description string `default:""`
 	SourceMap   dagql.Optional[core.SourceMapID]
+	Deprecated  string `default:""`
 }) (*core.TypeDef, error) {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -330,7 +338,7 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 	if err != nil {
 		return nil, err
 	}
-	return def.WithObjectField(args.Name, fieldType.Self(), args.Description, sourceMap)
+	return def.WithObjectField(args.Name, fieldType.Self(), args.Description, sourceMap, args.Deprecated)
 }
 
 func (s *moduleSchema) typeDefWithFunction(ctx context.Context, def *core.TypeDef, args struct {
@@ -467,6 +475,12 @@ func (s *moduleSchema) functionWithDescription(ctx context.Context, fn *core.Fun
 	Description string
 }) (*core.Function, error) {
 	return fn.WithDescription(args.Description), nil
+}
+
+func (s *moduleSchema) functionWithDeprecated(ctx context.Context, fn *core.Function, args struct {
+	Deprecated string
+}) (*core.Function, error) {
+	return fn.WithDeprecated(args.Deprecated), nil
 }
 
 func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, args struct {

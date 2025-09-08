@@ -426,10 +426,11 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fiel
 
 func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 	spec := &dagql.FieldSpec{
-		Name:        field.Name,
-		Description: field.Description,
-		Type:        field.TypeDef.ToTyped(),
-		Module:      mod.IDModule(),
+		Name:             field.Name,
+		Description:      field.Description,
+		Type:             field.TypeDef.ToTyped(),
+		Module:           mod.IDModule(),
+		DeprecatedReason: field.Deprecated,
 	}
 	spec.Directives = append(spec.Directives, &ast.Directive{
 		Name: trivialFieldDirectiveName,

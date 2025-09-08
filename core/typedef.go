@@ -26,6 +26,8 @@ type Function struct {
 
 	SourceMap dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this function declaration."`
 
+	Deprecated string `field:"true" doc:"The reason this function is deprecated, if any."`
+
 	// Below are not in public API
 
 	// OriginalName of the parent object
@@ -140,6 +142,12 @@ func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec
 func (fn *Function) WithDescription(desc string) *Function {
 	fn = fn.Clone()
 	fn.Description = strings.TrimSpace(desc)
+	return fn
+}
+
+func (fn *Function) WithDeprecated(deprecated string) *Function {
+	fn = fn.Clone()
+	fn.Deprecated = strings.TrimSpace(deprecated)
 	return fn
 }
 
@@ -542,7 +550,7 @@ func (typeDef *TypeDef) WithOptional(optional bool) *TypeDef {
 	return typeDef
 }
 
-func (typeDef *TypeDef) WithObjectField(name string, fieldType *TypeDef, desc string, sourceMap *SourceMap) (*TypeDef, error) {
+func (typeDef *TypeDef) WithObjectField(name string, fieldType *TypeDef, desc string, sourceMap *SourceMap, deprecated string) (*TypeDef, error) {
 	if !typeDef.AsObject.Valid {
 		return nil, fmt.Errorf("cannot add function to non-object type: %s", typeDef.Kind)
 	}
@@ -553,6 +561,7 @@ func (typeDef *TypeDef) WithObjectField(name string, fieldType *TypeDef, desc st
 		OriginalName: name,
 		Description:  desc,
 		TypeDef:      fieldType,
+		Deprecated:   deprecated,
 	}
 	if sourceMap != nil {
 		field.SourceMap = dagql.NonNull(sourceMap)
@@ -847,6 +856,8 @@ type FieldTypeDef struct {
 	TypeDef     *TypeDef `field:"true" doc:"The type of the field."`
 
 	SourceMap dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this field declaration."`
+
+	Deprecated string `field:"true" doc:"If deprecated, the reason or migration path."`
 
 	// Below are not in public API
 
