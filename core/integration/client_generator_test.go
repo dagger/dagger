@@ -1269,7 +1269,7 @@ func main() {
 		With(daggerClientInstallAt("go", "./dagger2")).
 		WithNewFile("main.go", mainGoFile)
 
-	t.Run("execute two differents clients in one session", func(ctx context.Context, t *testctx.T) {
+	t.Run("execute two different clients in one session", func(ctx context.Context, t *testctx.T) {
 		out, err := moduleSrc.With(daggerNonNestedRun("go", "run", "main.go")).Stdout(ctx)
 
 		require.NoError(t, err)
