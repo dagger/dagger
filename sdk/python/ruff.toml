@@ -7,7 +7,7 @@ docstring-code-format = true
 [lint]
 select = ["ALL"]
 ignore = [
-    # Type inferrance is ok in a lot of places.
+    # Type inference is ok in a lot of places.
     "ANN",
     # This rule doesn't know to ignore a subclass override
     # so we get false positives for unused arguments.
