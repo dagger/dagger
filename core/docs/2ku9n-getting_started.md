@@ -51,7 +51,7 @@ TODO: document more, but see `Invoking` section above for some examples and `cmd
 
 #### With Embedded Go SDK
 
-TODO: document more, but the idea here is that you can also write your own `main.go` that, similar to `cmd/dagger/main.go`, calls `engine.Start` and then do anything you want from there with the full power of Go rather than being limited to the CLI interface of `dagger`. Eventually, this embedding use case should be possible from any of our supported languages (e.g. Typescript).
+TODO: document more, but the idea here is that you can also write your own `main.go` that, similar to `cmd/dagger/main.go`, calls `engine.Start` and then do anything you want from there with the full power of Go rather than being limited to the CLI interface of `dagger`. Eventually, this embedding use case should be possible from any of our supported languages (e.g. TypeScript).
 
 ### Modifying Core
 

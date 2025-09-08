@@ -292,7 +292,7 @@ This will kick off [`.github/workflows/publish.yml`](https://github.com/dagger/d
 - New docs to [docs.dagger.io](https://docs.dagger.io) (served from netlify)
 - Go packages to [🐙 dagger.io/dagger](https://pkg.go.dev/dagger.io/dagger) via [github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
 - Python packages to [🐍 dagger-io](https://pypi.org/project/dagger-io).
-- Typescript packages to [⬢ npmjs.com/package/@dagger.io/dagger](https://www.npmjs.com/package/@dagger.io/dagger).
+- TypeScript packages to [⬢ npmjs.com/package/@dagger.io/dagger](https://www.npmjs.com/package/@dagger.io/dagger).
 - Elixir packages to [🧪 hex.pm/packages/dagger](https://hex.pm/packages/dagger).
 - Rust crates to [⚙️ crates.io/crate/dagger-sdk](https://crates.io/crates/dagger-sdk).
 - PHP packages to [🐘 packagist.org/packages/dagger/dagger](https://packagist.org/packages/dagger/dagger) via [github.com/dagger/dagger-php-sdk](https://github.com/dagger/dagger-php-sdk/tags).

@@ -20,7 +20,7 @@ func (c *clientGenContainer) GeneratedDirectory() *dagger.Directory {
 // If Node or Bun: Create a container with the default Node image.
 // If Deno: Create a container with the default Deno image.
 // Add required binaries to the container:
-// - tsx: to execute Typescript scripts
+// - tsx: to execute TypeScript scripts
 // - codegen: to generate the client bindings
 func clientGenBaseContainer(cfg *moduleConfig, sdkSourceDir *dagger.Directory) *clientGenContainer {
 	baseCtr := dag.Container()
@@ -53,7 +53,7 @@ func clientGenBaseContainer(cfg *moduleConfig, sdkSourceDir *dagger.Directory) *
 // - Add the bundle library (code.js & core.d.ts) to the sdk directory.
 // - Add the static export setup (index.ts & client.gen.ts) to the sdk directory.
 // If lib origin is local:
-// - Copy the complete Typescript SDK directory
+// - Copy the complete TypeScript SDK directory
 // Do nothing if remote.
 // Note: this doesn't include the generated client, only SDK.
 func (c *clientGenContainer) withBundledSDK() *clientGenContainer {
@@ -97,7 +97,7 @@ func (c *clientGenContainer) withBundledSDK() *clientGenContainer {
 // Return the container with the updated execution environment.
 // If Node or Bun:
 // - Copy the local host `package.json` and `tsconfig.json` in the current directory.
-// - Update the `package.json` to work with Dagger and add Typescript if it's not already set.
+// - Update the `package.json` to work with Dagger and add TypeScript if it's not already set.
 // - Update the `tsconfig.json` with the necessary configuration to work with the generated client.
 // If Deno:
 // - Copy the local host `deno.json` in the current directory.

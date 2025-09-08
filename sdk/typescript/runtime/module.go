@@ -130,7 +130,7 @@ func (m *moduleRuntimeContainer) withConfiguredRuntimeEnvironment() *moduleRunti
 }
 
 // Update the user's package.json with required dependencies to use the
-// Typescript SDK.
+// TypeScript SDK.
 // We need to use a node container to run npm since it's not available on
 // bun (https://github.com/oven-sh/bun/issues/9840).
 // This function can be removed once supported by bun so we
@@ -270,7 +270,7 @@ func (m *moduleRuntimeContainer) withUserSourceCode() *moduleRuntimeContainer {
 // - Add the static export setup (index.ts & client.gen.ts) to the sdk directory.
 // - Generate the client.gen.ts file using the introspection file.
 // If lib origin is local:
-// - Copy the complete Typescript SDK directory
+// - Copy the complete TypeScript SDK directory
 // - Generate the client.gen.ts file using the introspection file.
 func (m *moduleRuntimeContainer) withGeneratedSDK(introspectionJSON *dagger.File) *moduleRuntimeContainer {
 	var sdkDir *dagger.Directory

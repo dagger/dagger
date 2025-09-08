@@ -218,7 +218,7 @@ export class DaggerModule {
           continue
         }
 
-        // Typescript enum declaration cannot be decorated, so we don't check it.
+        // TypeScript enum declaration cannot be decorated, so we don't check it.
         const daggerEnum = new DaggerEnum(enumRef.node, this.ast)
         this.enums[daggerEnum.name] = daggerEnum
         this.references[daggerEnum.name] = {

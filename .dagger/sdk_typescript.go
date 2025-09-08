@@ -30,14 +30,14 @@ type TypescriptSDK struct {
 	Dagger *DaggerDev // +private
 }
 
-// Lint the Typescript SDK
+// Lint the TypeScript SDK
 func (t TypescriptSDK) Lint(ctx context.Context) (rerr error) {
 	eg := errgroup.Group{}
 
 	base := t.nodeJsBase()
 
 	eg.Go(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "lint the Typescript SDK code")
+		ctx, span := Tracer().Start(ctx, "lint the TypeScript SDK code")
 		defer func() {
 			if rerr != nil {
 				span.SetStatus(codes.Error, rerr.Error())
@@ -49,7 +49,7 @@ func (t TypescriptSDK) Lint(ctx context.Context) (rerr error) {
 	})
 
 	eg.Go(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "lint Typescript snippets in the docs")
+		ctx, span := Tracer().Start(ctx, "lint TypeScript snippets in the docs")
 		defer func() {
 			if rerr != nil {
 				span.SetStatus(codes.Error, rerr.Error())
@@ -111,7 +111,7 @@ func (t TypescriptSDK) Lint(ctx context.Context) (rerr error) {
 	return eg.Wait()
 }
 
-// Test the Typescript SDK
+// Test the TypeScript SDK
 func (t TypescriptSDK) Test(ctx context.Context) (rerr error) {
 	installer := t.Dagger.installer("sdk")
 
@@ -140,7 +140,7 @@ func (t TypescriptSDK) Test(ctx context.Context) (rerr error) {
 	return eg.Wait()
 }
 
-// Regenerate the Typescript SDK API
+// Regenerate the TypeScript SDK API
 func (t TypescriptSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 	installer := t.Dagger.installer("sdk")
 	generated := t.nodeJsBase().
@@ -157,7 +157,7 @@ func (t TypescriptSDK) TestPublish(ctx context.Context, tag string) error {
 	return t.Publish(ctx, tag, true, nil)
 }
 
-// Publish the Typescript SDK
+// Publish the TypeScript SDK
 func (t TypescriptSDK) Publish(
 	ctx context.Context,
 	tag string,
@@ -205,7 +205,7 @@ always-auth=true`, plaintext)
 	return nil
 }
 
-// Bump the Typescript SDK's Engine dependency
+// Bump the TypeScript SDK's Engine dependency
 func (t TypescriptSDK) Bump(ctx context.Context, version string) (*dagger.Directory, error) {
 	// trim leading v from version
 	version = strings.TrimPrefix(version, "v")

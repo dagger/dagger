@@ -19,7 +19,7 @@ type SDK struct {
 	Go *GoSDK
 	// Develop the Dagger Python SDK
 	Python *PythonSDK
-	// Develop the Dagger Typescript SDK
+	// Develop the Dagger TypeScript SDK
 	Typescript *TypescriptSDK
 
 	// Develop the Dagger Elixir SDK (experimental)

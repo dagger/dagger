@@ -210,7 +210,7 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.18.5`. [See what changed in tha
 📒 https://docs.dagger.io/reference/typescript/modules/api_client_gen
 
 ### Added
-- Bundle the Typescript SDK library instead of coping the whole module by @TomChv in https://github.com/dagger/dagger/pull/10094 \
+- Bundle the TypeScript SDK library instead of coping the whole module by @TomChv in https://github.com/dagger/dagger/pull/10094 \
   This improves:
   - Maintainability: less files are generated.
   - Dependency management: The SDK already bundles all dependencies, so only user's specific one used in the module will be downloaded.
@@ -441,7 +441,7 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.15.3`. [See what changed in tha
 📒 https://docs.dagger.io/reference/typescript/modules/api_client_gen
 
 ### Added
-- Add interface support in Typescript SDK by @TomChv in https://github.com/dagger/dagger/pull/9347 \
+- Add interface support in TypeScript SDK by @TomChv in https://github.com/dagger/dagger/pull/9347 \
   This allows to define an abstract object that can be implemented by any module.
   This is specially useful for monorepos or for modules that are not dependent on
   a specific implementation to perform its operations.
