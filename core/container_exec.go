@@ -319,7 +319,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 				default:
 					mountIdx := i - 2
 					if mountIdx >= len(container.Mounts) {
-						// something is disastourously wrong, panic!
+						// something is disastrously wrong, panic!
 						panic(fmt.Sprintf("index %d escapes number of mounts %d", mountIdx, len(container.Mounts)))
 					}
 					container.Mounts[mountIdx].Result = iref
@@ -416,7 +416,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		default:
 			mountIdx := ref.MountIndex - 2
 			if mountIdx >= len(container.Mounts) {
-				// something is disastourously wrong, panic!
+				// something is disastrously wrong, panic!
 				panic(fmt.Sprintf("index %d escapes number of mounts %d", mountIdx, len(container.Mounts)))
 			}
 			container.Mounts[mountIdx].Result = iref
