@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// this diastrous hack sanitizes the commandline so dagger call invocations get
+// this disastrous hack sanitizes the commandline so dagger call invocations get
 // a shorter name for the trace
 //
 // constructor flags are skipped, since they tend to not be worth their length
