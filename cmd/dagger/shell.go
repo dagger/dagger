@@ -129,7 +129,7 @@ type shellCallHandler struct {
 }
 
 // Debug prints to stderr internal command handler state and workflow that
-// can be helpful while developing the shell or even troubhleshooting, and
+// can be helpful while developing the shell or even troubleshooting, and
 // is toggled with the hidden builtin .debug
 func (h *shellCallHandler) Debug() bool {
 	h.mu.RLock()
