@@ -184,7 +184,7 @@ async def test_container_with(alpine_image: str):
 async def test_container_sync(alpine_image: str):
     base = dag.container().from_(alpine_image)
 
-    # short cirtcut
+    # short circuit
     with pytest.raises(dagger.QueryError, match="foobar"):
         await base.with_exec(["foobar"]).sync()
 
@@ -196,7 +196,7 @@ async def test_container_sync(alpine_image: str):
 async def test_container_awaitable(alpine_image: str):
     base = dag.container().from_(alpine_image)
 
-    # short cirtcut
+    # short circuit
     with pytest.raises(dagger.QueryError, match="foobar"):
         await base.with_exec(["foobar"])
 
@@ -210,7 +210,7 @@ async def test_directory_sync():
     # sync in different types work.
     base = dag.directory().with_new_file("foo", "bar")
 
-    # short cirtcut
+    # short circuit
     with pytest.raises(dagger.QueryError, match="no such file or directory"):
         await base.directory("foobar").sync()
 
