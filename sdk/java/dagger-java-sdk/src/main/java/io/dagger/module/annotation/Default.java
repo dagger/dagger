@@ -25,7 +25,7 @@ import java.lang.annotation.Target;
  * set the json <code>null</code> value. In this very specific case, the parameter will be flagged
  * as <b>nullable</b>.
  *
- * <p>Once a default value is set, the parameter is optional in the way the user don't need to
+ * <p>Once a default value is set, the parameter is optional in such that the user doesn't need to
  * provide a value.
  */
 @Target(ElementType.PARAMETER)
