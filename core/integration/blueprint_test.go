@@ -68,6 +68,21 @@ func (BlueprintSuite) TestBlueprintWithDependency(ctx context.Context, t *testct
 	})
 }
 
+func (BlueprintSuite) TestBlueprintTypescript(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	t.Run("use a blueprint which has a dependency", func(ctx context.Context, t *testctx.T) {
+		modGen := blueprintTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init", "--blueprint=../myblueprint-ts"))
+		// Verify blueprint was installed by calling function
+		out, err := modGen.
+			With(daggerExec("call", "hello")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello from blueprint")
+	})
+}
+
 func (BlueprintSuite) TestBlueprintNoSDK(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	t.Run("init with --sdk and --blueprint", func(ctx context.Context, t *testctx.T) {

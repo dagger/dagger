@@ -1,0 +1,7 @@
+{
+  "name": "myblueprint-ts",
+  "engineVersion": "v0.18.17",
+  "sdk": {
+    "source": "typescript"
+  }
+}
