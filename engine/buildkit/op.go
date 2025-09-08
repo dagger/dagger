@@ -82,7 +82,7 @@ func NewCustomLLB(ctx context.Context, op CustomOp, inputs []llb.State, opts ...
 		return llb.State{}, err
 	}
 
-	// pre-populate a reasonable underlying representation that has some inputs
+	// prepopulate a reasonable underlying representation that has some inputs
 	a := llb.Rm("/" + id.Encoded())
 	for _, input := range inputs {
 		a = a.Copy(input, "/", "/")
