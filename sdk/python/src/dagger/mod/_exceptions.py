@@ -117,7 +117,7 @@ def log_exception_only(
 
     The full traceback will still be included in dag.Error() values which
     could at some point be optionally shown in the web/cloud UI at some
-    point, but it's also fully available to LLM in the meantim.
+    point, but it's also fully available to LLM in the meantime.
     """
     if note and hasattr(exc, "add_note"):
         exc.add_note(note)
