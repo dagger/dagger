@@ -209,7 +209,7 @@ describe("TypeScript sdk Connect", function () {
         bin._overrideCLIChecksumsURL(checksumsUrl)
       }
 
-      // Otherwise if _EXPERIMENTAL_DAGGER_CLI_BIN is set, create a mock http server for it
+      // Otherwise, if _EXPERIMENTAL_DAGGER_CLI_BIN is set, create a mock http server for it
       const cliBin = process.env._EXPERIMENTAL_DAGGER_CLI_BIN
       if (cliBin && !cliURL) {
         delete process.env._EXPERIMENTAL_DAGGER_CLI_BIN

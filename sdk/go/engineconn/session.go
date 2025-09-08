@@ -156,7 +156,7 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 
 		// Write stderr to logWriter but also buffer it for the duration
 		// of this function so we can return it in the error if something
-		// goes wrong here. Otherwise the only error ends up being EOF and
+		// goes wrong here. Otherwise, the only error ends up being EOF and
 		// the user has to enable log output to see anything.
 		stderrBuf = &safeBuffer{}
 		discardableBuf := &discardableWriter{w: stderrBuf}

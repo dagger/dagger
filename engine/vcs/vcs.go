@@ -104,7 +104,7 @@ func (v *Cmd) String() string {
 // splitting cmd into individual arguments.
 // If an error occurs, run prints the command line and the
 // command's combined stdout+stderr to standard error.
-// Otherwise run discards the command's output.
+// Otherwise, run discards the command's output.
 func (v *Cmd) run(dir string, cmd string, keyval ...string) error {
 	_, err := v.run1(dir, cmd, keyval, true)
 	return err

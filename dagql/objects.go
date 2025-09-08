@@ -1238,7 +1238,7 @@ func (fields Fields[T]) Install(server *Server) {
 
 type CacheSpec struct {
 	// If set, this GetCacheConfig will be called before ID evaluation to determine the
-	// ID's digest. Otherwise the ID defaults to the digest of the call chain.
+	// ID's digest. Otherwise, the ID defaults to the digest of the call chain.
 	GetCacheConfig GenericGetCacheConfigFunc
 
 	// If set, the result of this field will never be cached and not have concurrent equal

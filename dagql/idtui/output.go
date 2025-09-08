@@ -25,7 +25,7 @@ func NewOutput(w io.Writer, opts ...termenv.OutputOption) *termenv.Output {
 }
 
 // ColorProfile returns Ascii if, and only if, NO_COLOR or similar is set.
-// Otherwise it returns termenv.ANSI, allowing colors to be used.
+// Otherwise, it returns termenv.ANSI, allowing colors to be used.
 //
 // Note that color profiles beyond simple ANSI are not used by Progrock. 16
 // colors is all you need. Anything else disrespects the user's color scheme

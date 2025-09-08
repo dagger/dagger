@@ -1973,7 +1973,7 @@ pub struct ContainerAsServiceOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub insecure_root_capabilities: Option<bool>,
     /// If set, skip the automatic init process injected into containers by default.
-    /// This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+    /// This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise, it may result in unexpected behavior.
     #[builder(setter(into, strip_option), default)]
     pub no_init: Option<bool>,
     /// If the container has an entrypoint, prepend it to the args.
@@ -2004,7 +2004,7 @@ pub struct ContainerBuildOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub dockerfile: Option<&'a str>,
     /// If set, skip the automatic init process injected into containers created by RUN statements.
-    /// This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+    /// This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise, it may result in unexpected behavior.
     #[builder(setter(into, strip_option), default)]
     pub no_init: Option<bool>,
     /// Secrets to pass to the build.
@@ -2119,7 +2119,7 @@ pub struct ContainerUpOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub insecure_root_capabilities: Option<bool>,
     /// If set, skip the automatic init process injected into containers by default.
-    /// This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+    /// This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise, it may result in unexpected behavior.
     #[builder(setter(into, strip_option), default)]
     pub no_init: Option<bool>,
     /// List of frontend/backend port mappings to forward.
@@ -2187,7 +2187,7 @@ pub struct ContainerWithExecOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub insecure_root_capabilities: Option<bool>,
     /// Skip the automatic init process injected into containers by default.
-    /// Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.
+    /// Only use this if you specifically need the command to be pid 1 in the container. Otherwise, it may result in unexpected behavior. If you're not sure, you don't need this.
     #[builder(setter(into, strip_option), default)]
     pub no_init: Option<bool>,
     /// Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
@@ -4642,7 +4642,7 @@ pub struct DirectoryDockerBuildOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub dockerfile: Option<&'a str>,
     /// If set, skip the automatic init process injected into containers created by RUN statements.
-    /// This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+    /// This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise, it may result in unexpected behavior.
     #[builder(setter(into, strip_option), default)]
     pub no_init: Option<bool>,
     /// The platform to build.
@@ -4874,7 +4874,7 @@ impl Directory {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.
+    /// Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise, use the native Container type directly, it is feature-complete and supports all Dockerfile features.
     ///
     /// # Arguments
     ///
@@ -4887,7 +4887,7 @@ impl Directory {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.
+    /// Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise, use the native Container type directly, it is feature-complete and supports all Dockerfile features.
     ///
     /// # Arguments
     ///

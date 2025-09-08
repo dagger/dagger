@@ -772,7 +772,7 @@ type ContainerAsServiceOpts struct {
 	Expand bool
 	// If set, skip the automatic init process injected into containers by default.
 	//
-	// This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+	// This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise, it may result in unexpected behavior.
 	NoInit bool
 }
 
@@ -872,7 +872,7 @@ type ContainerBuildOpts struct {
 	Secrets []*Secret
 	// If set, skip the automatic init process injected into containers created by RUN statements.
 	//
-	// This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+	// This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise, it may result in unexpected behavior.
 	NoInit bool
 }
 
@@ -1560,7 +1560,7 @@ type ContainerUpOpts struct {
 	Expand bool
 	// If set, skip the automatic init process injected into containers by default.
 	//
-	// This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+	// This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise, it may result in unexpected behavior.
 	NoInit bool
 }
 
@@ -1789,7 +1789,7 @@ type ContainerWithExecOpts struct {
 	Expand bool
 	// Skip the automatic init process injected into containers by default.
 	//
-	// Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.
+	// Only use this if you specifically need the command to be pid 1 in the container. Otherwise, it may result in unexpected behavior. If you're not sure, you don't need this.
 	NoInit bool
 }
 
@@ -2851,11 +2851,11 @@ type DirectoryDockerBuildOpts struct {
 	Secrets []*Secret
 	// If set, skip the automatic init process injected into containers created by RUN statements.
 	//
-	// This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+	// This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise, it may result in unexpected behavior.
 	NoInit bool
 }
 
-// Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.
+// Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise, use the native Container type directly, it is feature-complete and supports all Dockerfile features.
 func (r *Directory) DockerBuild(opts ...DirectoryDockerBuildOpts) *Container {
 	q := r.query.Select("dockerBuild")
 	for i := len(opts) - 1; i >= 0; i-- {

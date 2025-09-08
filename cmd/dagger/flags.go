@@ -332,7 +332,7 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 			Sync(ctx)
 	}
 
-	// Otherwise it's a local dir path
+	// Otherwise, it's a local dir path
 	path := v.String()
 	path, err = getLocalPath(path)
 	if err != nil {
@@ -423,7 +423,7 @@ func (v *fileValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.Modul
 		return gitDir.File(path).Sync(ctx)
 	}
 
-	// Otherwise it's a local file path
+	// Otherwise, it's a local file path
 	path := v.String()
 	path, err = getLocalPath(path)
 	if err != nil {
@@ -820,7 +820,7 @@ func (v *gitRepositoryValue) Get(ctx context.Context, dag *dagger.Client, _ *dag
 		return dag.Git(gitURL.Remote()), nil
 	}
 
-	// Otherwise it's a local dir path
+	// Otherwise, it's a local dir path
 	path := v.String()
 	path, err = getLocalPath(path)
 	if err != nil {
@@ -868,7 +868,7 @@ func (v *gitRefValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.Mod
 		return repo.Head(), nil
 	}
 
-	// Otherwise it's a local dir path
+	// Otherwise, it's a local dir path
 	path, ref, _ := strings.Cut(v.String(), "#")
 	path, err = getLocalPath(path)
 	if err != nil {

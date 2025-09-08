@@ -90,7 +90,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 						/run/secrets/my-secret))`),
 				dagql.Arg("noInit").Doc(`If set, skip the automatic init process injected into containers created by RUN statements.`,
 					`This should only be used if the user requires that their exec processes be the
-					pid 1 process in the container. Otherwise it may result in unexpected behavior.`,
+					pid 1 process in the container. Otherwise, it may result in unexpected behavior.`,
 				),
 			),
 
@@ -474,7 +474,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 						`environment variables defined in the container (e.g. "/$VAR/foo").`),
 				dagql.Arg("noInit").Doc(
 					`Skip the automatic init process injected into containers by default.`,
-					`Only use this if you specifically need the command to be pid 1 in the container. Otherwise it may result in unexpected behavior. If you're not sure, you don't need this.`,
+					`Only use this if you specifically need the command to be pid 1 in the container. Otherwise, it may result in unexpected behavior. If you're not sure, you don't need this.`,
 				),
 			),
 

@@ -164,7 +164,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 		dagql.NodeFunc("dockerBuild", s.dockerBuild).
-			Doc(`Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.`).
+			Doc(`Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise, use the native Container type directly, it is feature-complete and supports all Dockerfile features.`).
 			Args(
 				dagql.Arg("dockerfile").Doc(`Path to the Dockerfile to use (e.g., "frontend.Dockerfile").`),
 				dagql.Arg("platform").Doc(`The platform to build.`),
@@ -175,7 +175,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("noInit").Doc(
 					`If set, skip the automatic init process injected into containers created by RUN statements.`,
 					`This should only be used if the user requires that their exec processes be the
-				pid 1 process in the container. Otherwise it may result in unexpected behavior.`,
+				pid 1 process in the container. Otherwise, it may result in unexpected behavior.`,
 				),
 			),
 		dagql.NodeFunc("withTimestamps", DagOpDirectoryWrapper(srv, s.withTimestamps, WithPathFn(keepParentDir[dirWithTimestampsArgs]))).

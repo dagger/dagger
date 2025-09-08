@@ -56,7 +56,7 @@ func TestProvision(t *testing.T) {
 			engineconn.OverrideChecksumsURL = ""
 		}()
 	} else if binPath, ok := os.LookupEnv("_EXPERIMENTAL_DAGGER_CLI_BIN"); ok {
-		// Otherwise if _EXPERIMENTAL_DAGGER_CLI_BIN is set, create a mock http server for it
+		// Otherwise, if _EXPERIMENTAL_DAGGER_CLI_BIN is set, create a mock http server for it
 		defer os.Setenv("_EXPERIMENTAL_DAGGER_CLI_BIN", binPath)
 		os.Unsetenv("_EXPERIMENTAL_DAGGER_CLI_BIN")
 

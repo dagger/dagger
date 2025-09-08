@@ -634,7 +634,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			// 1. Backward compatibility - this is how links are already interpreted.
 			// 2. Span links are almost always representing a causal relationship
 			// where the target of the link completed before the linking span.
-			// (Otherwise the linking span could just be a child span.)
+			// (Otherwise, the linking span could just be a child span.)
 			"":
 			linked := db.initSpan(linkedCtx.SpanID)
 			linked.ChildSpans.Add(span)

@@ -2493,7 +2493,7 @@
 			"t": "M",
 			"n": "Dagger\\Directory::dockerBuild",
 			"p": "Dagger/Directory.html#method_dockerBuild",
-			"d": "<p>Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise use the native Container type directly, it is feature-complete and supports all Dockerfile features.</p>"
+			"d": "<p>Use Dockerfile compatibility to build a container from this directory. Only use this function for Dockerfile compatibility. Otherwise, use the native Container type directly, it is feature-complete and supports all Dockerfile features.</p>"
 		},
 		{
 			"t": "M",

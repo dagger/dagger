@@ -838,7 +838,7 @@ class Container(Type):
             If set, skip the automatic init process injected into containers
             by default.
             This should only be used if the user requires that their exec
-            process be the pid 1 process in the container. Otherwise it may
+            process be the pid 1 process in the container. Otherwise, it may
             result in unexpected behavior.
         """
         _args = [
@@ -933,7 +933,7 @@ class Container(Type):
             If set, skip the automatic init process injected into containers
             created by RUN statements.
             This should only be used if the user requires that their exec
-            processes be the pid 1 process in the container. Otherwise it may
+            processes be the pid 1 process in the container. Otherwise, it may
             result in unexpected behavior.
         """
         warnings.warn(
@@ -1712,7 +1712,7 @@ class Container(Type):
             If set, skip the automatic init process injected into containers
             by default.
             This should only be used if the user requires that their exec
-            process be the pid 1 process in the container. Otherwise it may
+            process be the pid 1 process in the container. Otherwise, it may
             result in unexpected behavior.
 
         Returns
@@ -1987,7 +1987,7 @@ class Container(Type):
             Skip the automatic init process injected into containers by
             default.
             Only use this if you specifically need the command to be pid 1 in
-            the container. Otherwise it may result in unexpected behavior. If
+            the container. Otherwise, it may result in unexpected behavior. If
             you're not sure, you don't need this.
         """
         _args = [
@@ -3074,7 +3074,7 @@ class Directory(Type):
         no_init: bool | None = False,
     ) -> Container:
         """Use Dockerfile compatibility to build a container from this directory.
-        Only use this function for Dockerfile compatibility. Otherwise use the
+        Only use this function for Dockerfile compatibility. Otherwise, use the
         native Container type directly, it is feature-complete and supports
         all Dockerfile features.
 
@@ -3095,7 +3095,7 @@ class Directory(Type):
             If set, skip the automatic init process injected into containers
             created by RUN statements.
             This should only be used if the user requires that their exec
-            processes be the pid 1 process in the container. Otherwise it may
+            processes be the pid 1 process in the container. Otherwise, it may
             result in unexpected behavior.
         """
         _args = [
