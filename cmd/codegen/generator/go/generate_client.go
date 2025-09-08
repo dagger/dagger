@@ -111,7 +111,7 @@ func (g *GoGenerator) daggerPackageReplacement(goMod *modfile.File) (string, boo
 			// We need to exclude the first parent directory of the replaced path since it's the
 			// root of the generated directory (c.Config.OutputDir) and the overlays root is that
 			// path.
-			// FIXME(TomChv): This will disapear once I fix the overlays root to the module root instead
+			// FIXME(TomChv): This will disappear once I fix the overlays root to the module root instead
 			// of the client output directory.
 			replacedPath := replace.New.Path
 
