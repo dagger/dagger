@@ -200,7 +200,7 @@ def is_object_list_type(t: Any):
 
 
 def object_list_of(t: Any) -> type[Type] | None:
-    """Retrive a list's element type or None if not a list of objects."""
+    """Retrieve a list's element type or None if not a list of objects."""
     if is_object_list_type(t) and (el := list_of(t)):
         return cast(type[Type], el)
     return None
