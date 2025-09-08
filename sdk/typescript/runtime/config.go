@@ -301,7 +301,7 @@ func (c *moduleConfig) detectBaseImageRef() (string, error) {
 }
 
 // DetectRuntime returns the runtime(bun or node) detected for the user's module
-// If a runtime is specfied inside the package.json, it will be used.
+// If a runtime is specified inside the package.json, it will be used.
 // If a package-lock.json, yarn.lock, or pnpm-lock.yaml is present, node will be used.
 // If a bun.lock or bun.lockb is present, bun will be used.
 // If none of the above is present, node will be used.
