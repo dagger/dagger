@@ -7,7 +7,7 @@
  *   * sloppy-imports: for compatibility with the Node import system with `.js` extensions.
  *   * node-globals: for compatibility with the Node global variables (process, global, Buffer etc...)
  *   * byonm: for compatibility with `node_modules` dependencies.
- * - `paths` to be set to the correctl location of the SDK library
+ * - `paths` to be set to the correct location of the SDK library
  * - `experimentalDecorators`: to be `true` for `@func`, `@object`, `@arguments`...
  * - `nodeModulesDir`: to be `true` so it installs dependencies locally inside
  * `node_modules` instead of relying on symlink that may break in the TS runtime
