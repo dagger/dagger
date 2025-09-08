@@ -594,7 +594,7 @@ func (DirectorySuite) TestWithoutPaths(ctx context.Context, t *testctx.T) {
 	require.Equal(t, []string{"some-file"}, entries)
 
 	entries, err = dir1.
-		WithoutDirectory("non-existent").
+		WithoutDirectory("nonexistent").
 		Entries(ctx)
 
 	require.NoError(t, err)
@@ -2051,7 +2051,7 @@ func main() {
 		})
 
 		t.Run("path with no matches", func(ctx context.Context, t *testctx.T) {
-			// Search for non-existent pattern in existing directory
+			// Search for nonexistent pattern in existing directory
 			results, err := dir.Search(ctx, "nonexistent-pattern", dagger.DirectorySearchOpts{
 				Paths: []string{"src"},
 			})
@@ -2315,7 +2315,7 @@ func (DirectorySuite) TestExists(ctx context.Context, t *testctx.T) {
 		ErrorContains       string
 	}{
 		{
-			Description: "test exists is false when referencing a non-existent file",
+			Description: "test exists is false when referencing a nonexistent file",
 			Path:        "We believe in nothing Lebowski",
 			Type:        "",
 			Expected:    false,
@@ -2410,11 +2410,11 @@ func (DirectorySuite) TestDirCaching(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t)
 	d1 := c.Directory().
-		WithoutFile("non-existent").
+		WithoutFile("nonexistent").
 		WithNewFile("file", "data")
 
 	d2 := c.Directory().
-		WithoutFile("also-non-existent").
+		WithoutFile("also-nonexistent").
 		WithNewFile("file", "data")
 
 	out, err := c.Container().

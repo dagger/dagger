@@ -2687,7 +2687,7 @@ func TestServerSelect(t *testing.T) {
 		objResult, err := testObjClass.New(testObj)
 		require.NoError(t, err)
 
-		// Test selecting a non-existent field
+		// Test selecting a nonexistent field
 		var result int
 		err = srv.Select(ctx, objResult, &result, dagql.Selector{Field: "nonExistentField"})
 		require.Error(t, err)

@@ -4691,15 +4691,15 @@ export class Test {
 					requireErrOut(t, err, `path should be relative to the context directory`)
 				})
 
-				t.Run("non existing dir path", func(ctx context.Context, t *testctx.T) {
-					out, err := modGen.With(daggerCall("non-existing-path")).Stdout(ctx)
+				t.Run("nonexistent dir path", func(ctx context.Context, t *testctx.T) {
+					out, err := modGen.With(daggerCall("nonexistent-path")).Stdout(ctx)
 					require.Empty(t, out)
 					require.Error(t, err)
 					requireErrOut(t, err, "no such file or directory")
 				})
 
-				t.Run("non existing file", func(ctx context.Context, t *testctx.T) {
-					out, err := modGen.With(daggerCall("non-existing-file")).Stdout(ctx)
+				t.Run("nonexistent file", func(ctx context.Context, t *testctx.T) {
+					out, err := modGen.With(daggerCall("nonexistent-file")).Stdout(ctx)
 					require.Empty(t, out)
 					require.Error(t, err)
 					requireErrOut(t, err, "no such file or directory")

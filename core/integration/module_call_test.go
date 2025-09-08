@@ -2366,7 +2366,7 @@ func (CallSuite) TestFindup(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "yo", strings.TrimSpace(out))
 	})
 
-	t.Run("non-existent subdir", func(ctx context.Context, t *testctx.T) {
+	t.Run("nonexistent subdir", func(ctx context.Context, t *testctx.T) {
 		c, logs, mod := prep(t)
 		_, err := mod.
 			With(daggerCallAt("bad/subdir", "container-echo", "--string-arg", "yo", "stdout")).

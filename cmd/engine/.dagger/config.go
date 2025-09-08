@@ -32,7 +32,7 @@ cat $0
 if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
 	# move the processes from the root group to the /init group,
 	# otherwise writing subtree_control fails with EBUSY.
-	# An error during moving non-existent process (i.e., "cat") is ignored.
+	# An error during moving nonexistent process (i.e., "cat") is ignored.
 	mkdir -p /sys/fs/cgroup/init
 	xargs -rn1 < /sys/fs/cgroup/cgroup.procs > /sys/fs/cgroup/init/cgroup.procs || :
 	# enable controllers

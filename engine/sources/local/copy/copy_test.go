@@ -274,7 +274,7 @@ func TestCopyExistingDirDest(t *testing.T) {
 		require.Equal(t, 1, gid)
 	}
 
-	// verify that non-existing file was created
+	// verify that nonexistent file was created
 	_, err = os.Lstat(filepath.Join(t2, "dir/foo.txt"))
 	require.NoError(t, err)
 

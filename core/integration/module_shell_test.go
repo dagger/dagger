@@ -1239,7 +1239,7 @@ func (ShellSuite) TestPrintenvCommand(ctx context.Context, t *testctx.T) {
 		require.Contains(t, out, "/usr/local/bin")
 	})
 
-	t.Run("printenv non-existing", func(ctx context.Context, t *testctx.T) {
+	t.Run("printenv nonexistent", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		_, err := daggerCliBase(t, c).
 			With(daggerShell(`.printenv NON_EXISTING_VAR`)).

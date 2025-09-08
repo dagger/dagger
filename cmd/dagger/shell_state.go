@@ -117,7 +117,7 @@ func (s *ShellStateStore) Load(key string) (*ShellState, error) {
 	}
 	st, exists := s.Get(key)
 	if !exists {
-		return nil, fmt.Errorf("tried to access non-existent state %q", key)
+		return nil, fmt.Errorf("tried to access nonexistent state %q", key)
 	}
 	cp := st
 	cp.Calls = slices.Clone(st.Calls)
