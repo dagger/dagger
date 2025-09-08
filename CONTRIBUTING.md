@@ -104,7 +104,7 @@ It's OK if it takes multiple pull requests to close an issue.
 The idea is that each improvement should land in Dagger's main branch within a
 few hours. The sooner we can get multiple people looking at and agreeing on a
 specific change, the quicker we will have it out in a release. The quicker we
-can get these small improvementes in a Dagger release, the quicker we can get
+can get these small improvements in a Dagger release, the quicker we can get
 feedback from our users and find out what doesn't work, or what we have missed.
 
 The added benefit is that this will force everyone to think about handling
