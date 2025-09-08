@@ -520,7 +520,7 @@ func (h *shellCallHandler) shellPreprocessArgs(
 	opts := fn.OptionalArgs()
 
 	// All CLI arguments are strings at first, but booleans can be omitted.
-	// We don't wan't to process values yet, just validate and consume the flags
+	// We don't want to process values yet, just validate and consume the flags
 	// so we get the remaining positional args.
 	for _, arg := range opts {
 		name := arg.FlagName()
