@@ -59,7 +59,7 @@ sometime the communication protocol changes, or a bug fix or new feature
 requires changes on both the CLI and the engine.
 
 Before releasing, make sure to sanity check the backwards compatibility of a
-release. If you enounter issues, then:
+release. If you encounter issues, then:
 
 - [ ] Add a release note using `changie new` (or add it later manually).
 - [ ] Bump the minimum version numbers in [engine/version.go](https://github.com/dagger/dagger/blob/main/engine/version.go).
