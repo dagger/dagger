@@ -89,7 +89,7 @@ type spanData struct {
 	parentID dagui.SpanID
 
 	// ready indicates that the span is ready to be displayed - this allows to
-	// start bufferings logs before we've actually exported the span itself
+	// start buffering logs before we've actually exported the span itself
 	ready bool
 	// started indicates that the span has started and has been rendered for
 	// the first time
