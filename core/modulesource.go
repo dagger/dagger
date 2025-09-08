@@ -347,7 +347,7 @@ func (src *ModuleSource) LoadContextDir(
 			return inst, fmt.Errorf("failed to get relative path to context: %w", err)
 		}
 
-		// If the relative path is outisde of the context directory, throw an error.
+		// If the relative path is outside of the context directory, throw an error.
 		if strings.HasPrefix(relativePathToCtx, "..") {
 			return inst, fmt.Errorf("path %q is outside of context directory %q, path should be relative to the context directory", path, ctxPath)
 		}
