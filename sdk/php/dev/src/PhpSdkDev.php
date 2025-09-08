@@ -102,7 +102,7 @@ final class PhpSdkDev
                 "errors" => [
                     [
                         "message" =>
-                            "An error occured during execution of PHPCBF",
+                            "An error occurred during execution of PHPCBF",
                     ],
                 ],
             ]);
