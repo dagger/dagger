@@ -1390,7 +1390,7 @@ main()`))
 	}
 }
 
-func (ClientGeneratorTest) TestMissmatchDependencyVersion(ctx context.Context, t *testctx.T) {
+func (ClientGeneratorTest) TestMismatchDependencyVersion(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	moduleSrc := c.Container().From(golangImage).
