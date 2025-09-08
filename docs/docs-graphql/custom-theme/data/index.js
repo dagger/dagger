@@ -1,7 +1,7 @@
 /**
  * This is the data source entrypoint for handlebars.
  * 
- * From the speactaql docs, this API is experimental, so
+ * From the SpectaQL docs, this API is experimental, so
  * it may break with future releases.
  * 
  * This script takes the output from Microfiber, a tool
