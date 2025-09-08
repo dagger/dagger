@@ -107,7 +107,7 @@ type Call struct {
 	// The GraphQL field name to select.
 	Field string `protobuf:"bytes,3,opt,name=field,proto3" json:"field,omitempty"`
 	// The arguments to pass to the GraphQL field selection. The order matters;
-	// if it changes, the digest changes. For optimal readability hese should
+	// if it changes, the digest changes. For optimal readability these should
 	// ideally be in the order defined in the schema.
 	Args []*Argument `protobuf:"bytes,4,rep,name=args,proto3" json:"args,omitempty"`
 	// If the field selection returns a list, this is the index of the element to

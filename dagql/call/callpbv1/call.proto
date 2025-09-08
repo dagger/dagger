@@ -40,7 +40,7 @@ message Call {
   string field = 3;
 
   // The arguments to pass to the GraphQL field selection. The order matters;
-  // if it changes, the digest changes. For optimal readability hese should
+  // if it changes, the digest changes. For optimal readability these should
   // ideally be in the order defined in the schema.
   repeated Argument args = 4;
 
