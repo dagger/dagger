@@ -740,7 +740,7 @@ func (LocalDirSuite) TestLocalHardlinks(ctx context.Context, t *testctx.T) {
 		// as the previous load and thus still export the hardlink'd "z" file as opposed to the standalone
 		// one (which is otherwise identical).
 		//
-		// This is debatable behavior but given the various inconstencies around how hardlinks are handled
+		// This is debatable behavior but given the various inconsistencies around how hardlinks are handled
 		// in different snapshotters, users can't rely on hardlink status being exactly preserved from their
 		// host filesystem anyways. This behavior also seems to have existed for a while (i.e. before
 		// filesync refactorizing), so calling this "expected" for the time being.
