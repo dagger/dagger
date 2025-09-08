@@ -59,7 +59,7 @@ public class DaggerCodegenMojo extends AbstractMojo {
     }
 
     Path dest = outputDir.toPath();
-    try (InputStream in = getInstrospectionJson()) {
+    try (InputStream in = getIntrospectionJson()) {
       Schema schema = Schema.initialize(in, version);
       SchemaVisitor codegen = new CodegenVisitor(schema, dest, Charset.forName(outputEncoding));
       schema.visit(
@@ -110,7 +110,7 @@ public class DaggerCodegenMojo extends AbstractMojo {
     }
   }
 
-  private InputStream getInstrospectionJson()
+  private InputStream getIntrospectionJson()
       throws IOException, MojoFailureException, InterruptedException {
     if (this.introspectionJson != null && !this.introspectionJson.isEmpty()) {
       File f = new File(this.introspectionJson);
