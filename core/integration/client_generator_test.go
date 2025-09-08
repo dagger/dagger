@@ -1430,7 +1430,7 @@ func (ClientGeneratorTest) TestMismatchDependencyVersion(ctx context.Context, t 
 			defaultGenDir)).
 		With(daggerClientInstall("go")).
 		WithExec([]string{"apk", "add", "jq"}).
-		// Update the dagger.json manually to not rettrigger the generation so we can verify that it triggers an error
+		// Update the dagger.json manually to not retrigger the generation so we can verify that it triggers an error
 		// on execute
 		WithExec([]string{"sh", "-c", `sh -c 'cat dagger.json | jq '\''(.dependencies[] | select(.name == "hello") | .source) = "github.com/shykes/hello@main" | (.dependencies[] | select(.name == "hello") | .pin) = "main"'\'' > dagger.tmp && mv dagger.tmp dagger.json'`})
 
