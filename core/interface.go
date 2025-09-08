@@ -207,7 +207,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 	for _, fnTypeDef := range iface.typeDef.Functions {
 		fnName := gqlFieldName(fnTypeDef.Name)
 
-		// check whether this is a pre-existing object from a dependency module
+		// check whether this is a preexisting object from a dependency module
 		returnModType, ok, err := iface.mod.Deps.ModTypeFor(ctx, fnTypeDef.ReturnType)
 		if err != nil {
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
@@ -238,7 +238,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 		}
 
 		for _, argMetadata := range fnTypeDef.Args {
-			// check whether this is a pre-existing object from a dependency module
+			// check whether this is a preexisting object from a dependency module
 			argModType, ok, err := iface.mod.Deps.ModTypeFor(ctx, argMetadata.TypeDef)
 			if err != nil {
 				return fmt.Errorf("failed to get mod type for type def: %w", err)

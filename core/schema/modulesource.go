@@ -1366,7 +1366,7 @@ func (s *moduleSourceSchema) moduleSourceWithDependencies(
 		}
 	}
 
-	// append the pre-existing deps to the slice too; they need to come later so we prefer new ones over existing ones below
+	// append the preexisting deps to the slice too; they need to come later so we prefer new ones over existing ones below
 	allDeps = append(allDeps, parentSrc.Dependencies...)
 
 	// deduplicate equivalent deps at differing versions, preferring the new dep over the existing one
@@ -1865,7 +1865,7 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 				// parent=dir, dep=dir
 				// This is a bit subtle, but we can assume that any dependencies of kind dir were sourced from the same
 				// context directory as the parent. This is because module sources of type dir only load dependencies
-				// from a pre-existing dagger.json; they cannot *currently* have more deps added via the withDependencies
+				// from a preexisting dagger.json; they cannot *currently* have more deps added via the withDependencies
 				// API.
 				parentSrcRoot := filepath.Join("/", src.SourceRootSubpath)
 				depSrcRoot := filepath.Join("/", depSrc.Self().SourceRootSubpath)

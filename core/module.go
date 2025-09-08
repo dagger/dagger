@@ -134,7 +134,7 @@ func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
 
 		slog.ExtraDebug("installing object", "name", mod.Name(), "object", objDef.Name)
 
-		// check whether this is a pre-existing object from a dependency module
+		// check whether this is a preexisting object from a dependency module
 		modType, ok, err := mod.Deps.ModTypeFor(ctx, def)
 		if err != nil {
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
@@ -391,7 +391,7 @@ func (mod *Module) validateTypeDef(ctx context.Context, typeDef *TypeDef) error 
 }
 
 func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) error {
-	// check whether this is a pre-existing object from core or another module
+	// check whether this is a preexisting object from core or another module
 	modType, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
 	if err != nil {
 		return fmt.Errorf("failed to get mod type for type def: %w", err)
@@ -480,7 +480,7 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 func (mod *Module) validateInterfaceTypeDef(ctx context.Context, typeDef *TypeDef) error {
 	iface := typeDef.AsInterface.Value
 
-	// check whether this is a pre-existing interface from core or another module
+	// check whether this is a preexisting interface from core or another module
 	modType, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
 	if err != nil {
 		return fmt.Errorf("failed to get mod type for type def: %w", err)

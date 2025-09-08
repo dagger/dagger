@@ -37,7 +37,7 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 		methodObj := methodSet.At(i).Obj()
 
 		if ps.isDaggerGenerated(methodObj) {
-			// We don't care about pre-existing methods on core types or objects from dependency modules.
+			// We don't care about preexisting methods on core types or objects from dependency modules.
 			continue
 		}
 		if objectIsDaggerGenerated {

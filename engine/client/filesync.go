@@ -171,12 +171,12 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 	// If the dest is a directory that already exists, we will never delete it and replace it with the file.
 	// However, if allowParentDirPath is set, we will write the file underneath that existing directory.
 	// But if allowParentDirPath is not set, which is the default setting in our API right now, we will return
-	// an error when path is a pre-existing directory.
+	// an error when path is a preexisting directory.
 	allowParentDirPath := opts.AllowParentDirPath
 
 	// File exports specifically (as opposed to container tar exports) have an original filename that we will
 	// use in the case where dest is a directory and allowParentDirPath is set, in which case we need to know
-	// what to name the file underneath the pre-existing directory.
+	// what to name the file underneath the preexisting directory.
 	fileOriginalName := opts.FileOriginalName
 
 	var destParentDir string

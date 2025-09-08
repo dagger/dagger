@@ -5697,7 +5697,7 @@ public static class TestData
                 "possibleTypes": []
               },
               {
-                "description": "A graphql input type, which is essentially just a group of named args.\nThis is currently only used to represent pre-existing usage of graphql input types\nin the core API. It is not used by user modules and shouldn't ever be as user\nmodule accept input objects via their id rather than graphql input types.",
+                "description": "A graphql input type, which is essentially just a group of named args.\nThis is currently only used to represent preexisting usage of graphql input types\nin the core API. It is not used by user modules and shouldn't ever be as user\nmodule accept input objects via their id rather than graphql input types.",
                 "enumValues": [],
                 "fields": [
                   {

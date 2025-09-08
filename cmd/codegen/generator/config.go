@@ -53,7 +53,7 @@ type ModuleGeneratorConfig struct {
 
 	// Whether we are initializing a new module.
 	// Currently, this is only used in go codegen to enforce backwards-compatible behavior
-	// where a pre-existing go.mod file is checked during dagger init for whether its module
+	// where a preexisting go.mod file is checked during dagger init for whether its module
 	// name is the expected value.
 	IsInit bool
 }
