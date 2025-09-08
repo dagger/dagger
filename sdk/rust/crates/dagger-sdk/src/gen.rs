@@ -4712,7 +4712,7 @@ pub struct DirectorySearchOpts<'a> {
     /// Directory or file paths to search
     #[builder(setter(into, strip_option), default)]
     pub paths: Option<Vec<&'a str>>,
-    /// Skip hidden files (files starting with .).
+    /// Skip hidden files (files starting with `.`).
     #[builder(setter(into, strip_option), default)]
     pub skip_hidden: Option<bool>,
     /// Honor .gitignore, .ignore, and .rgignore files.
@@ -6940,7 +6940,7 @@ pub struct FileSearchOpts<'a> {
     pub multiline: Option<bool>,
     #[builder(setter(into, strip_option), default)]
     pub paths: Option<Vec<&'a str>>,
-    /// Skip hidden files (files starting with .).
+    /// Skip hidden files (files starting with `.`).
     #[builder(setter(into, strip_option), default)]
     pub skip_hidden: Option<bool>,
     /// Honor .gitignore, .ignore, and .rgignore files.

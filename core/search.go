@@ -66,7 +66,7 @@ func (opts SearchOpts) Args() []dagql.Argument {
 		dagql.Arg("dotall").Doc(`Allow the . pattern to match newlines in multiline mode.`),
 		dagql.Arg("insensitive").Doc(`Enable case-insensitive matching.`),
 		dagql.Arg("skipIgnored").Doc(`Honor .gitignore, .ignore, and .rgignore files.`),
-		dagql.Arg("skipHidden").Doc(`Skip hidden files (files starting with .).`),
+		dagql.Arg("skipHidden").Doc(`Skip hidden files (files starting with `.`).`),
 		dagql.Arg("filesOnly").Doc(`Only return matching files, not lines and content`),
 		dagql.Arg("limit").Doc(`Limit the number of results to return`),
 	}

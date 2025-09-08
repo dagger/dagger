@@ -3087,7 +3087,7 @@ type DirectorySearchOpts struct {
 	Insensitive bool
 	// Honor .gitignore, .ignore, and .rgignore files.
 	SkipIgnored bool
-	// Skip hidden files (files starting with .).
+	// Skip hidden files (files starting with `.`).
 	SkipHidden bool
 	// Only return matching files, not lines and content
 	FilesOnly bool
@@ -5310,7 +5310,7 @@ type FileSearchOpts struct {
 	Insensitive bool
 	// Honor .gitignore, .ignore, and .rgignore files.
 	SkipIgnored bool
-	// Skip hidden files (files starting with .).
+	// Skip hidden files (files starting with `.`).
 	SkipHidden bool
 	// Only return matching files, not lines and content
 	FilesOnly bool

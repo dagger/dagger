@@ -3370,7 +3370,7 @@ class Directory(Type):
         skip_ignored:
             Honor .gitignore, .ignore, and .rgignore files.
         skip_hidden:
-            Skip hidden files (files starting with .).
+            Skip hidden files (files starting with `.`).
         files_only:
             Only return matching files, not lines and content
         limit:
@@ -5692,7 +5692,7 @@ class File(Type):
         skip_ignored:
             Honor .gitignore, .ignore, and .rgignore files.
         skip_hidden:
-            Skip hidden files (files starting with .).
+            Skip hidden files (files starting with `.`).
         files_only:
             Only return matching files, not lines and content
         limit:

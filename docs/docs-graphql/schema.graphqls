@@ -1560,7 +1560,7 @@ type Directory {
     """Honor .gitignore, .ignore, and .rgignore files."""
     skipIgnored: Boolean = false
 
-    """Skip hidden files (files starting with .)."""
+    """Skip hidden files (files starting with `.`)."""
     skipHidden: Boolean = false
 
     """Only return matching files, not lines and content"""
@@ -2481,7 +2481,7 @@ type File {
     """Honor .gitignore, .ignore, and .rgignore files."""
     skipIgnored: Boolean = false
 
-    """Skip hidden files (files starting with .)."""
+    """Skip hidden files (files starting with `.`)."""
     skipHidden: Boolean = false
 
     """Only return matching files, not lines and content"""

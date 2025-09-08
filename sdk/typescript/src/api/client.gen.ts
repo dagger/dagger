@@ -879,7 +879,7 @@ export type DirectorySearchOpts = {
   skipIgnored?: boolean
 
   /**
-   * Skip hidden files (files starting with .).
+   * Skip hidden files (files starting with `.`).
    */
   skipHidden?: boolean
 
@@ -1133,7 +1133,7 @@ export type FileSearchOpts = {
   skipIgnored?: boolean
 
   /**
-   * Skip hidden files (files starting with .).
+   * Skip hidden files (files starting with `.`).
    */
   skipHidden?: boolean
 
@@ -4134,7 +4134,7 @@ export class Directory extends BaseClient {
    * @param opts.dotall Allow the . pattern to match newlines in multiline mode.
    * @param opts.insensitive Enable case-insensitive matching.
    * @param opts.skipIgnored Honor .gitignore, .ignore, and .rgignore files.
-   * @param opts.skipHidden Skip hidden files (files starting with .).
+   * @param opts.skipHidden Skip hidden files (files starting with `.`).
    * @param opts.filesOnly Only return matching files, not lines and content
    * @param opts.limit Limit the number of results to return
    */
@@ -5976,7 +5976,7 @@ export class File extends BaseClient {
    * @param opts.dotall Allow the . pattern to match newlines in multiline mode.
    * @param opts.insensitive Enable case-insensitive matching.
    * @param opts.skipIgnored Honor .gitignore, .ignore, and .rgignore files.
-   * @param opts.skipHidden Skip hidden files (files starting with .).
+   * @param opts.skipHidden Skip hidden files (files starting with `.`).
    * @param opts.filesOnly Only return matching files, not lines and content
    * @param opts.limit Limit the number of results to return
    */
