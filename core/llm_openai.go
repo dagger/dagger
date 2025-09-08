@@ -48,7 +48,7 @@ func newOpenAIClient(endpoint *LLMEndpoint, azureVersion string, disableStreamin
 var _ LLMClient = (*OpenAIClient)(nil)
 
 func (c *OpenAIClient) IsRetryable(err error) bool {
-	// OpenAI client immplements retrying internally; nothing to do here.
+	// OpenAI client implements retrying internally; nothing to do here.
 	return false
 }
 
