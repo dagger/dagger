@@ -830,7 +830,7 @@ forced), to avoid mistakenly depending on uncommitted files.
 			//
 			// TODO: the proper fix here might be to check for dependent code, too.
 			// Specifically I should be able to publish a dependency before
-			// committing + pushing its dependers. but in the end it doesn't really
+			// committing + pushing its dependents. but in the end it doesn't really
 			// matter; just commit everything and _then_ publish.
 			if !st.IsClean() && !force {
 				cmd.Println(st)
