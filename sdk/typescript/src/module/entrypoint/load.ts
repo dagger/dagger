@@ -147,7 +147,7 @@ export async function loadValue(
   value: any,
   type: TypeDef<TypeDefKind>,
 ): Promise<any> {
-  // If value is undefinied, return it directly.
+  // If value is undefined, return it directly.
   if (value === undefined) {
     return value
   }
