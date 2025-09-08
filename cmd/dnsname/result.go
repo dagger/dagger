@@ -21,7 +21,7 @@ func getIPs(r *current.Result) ([]*net.IPNet, error) {
 	}
 	for _, ip := range r.IPs {
 		if ip.Address.IP != nil && ip.Interface != nil {
-			if isInterfaceIndexSandox(*ip.Interface, r) {
+			if isInterfaceIndexSandbox(*ip.Interface, r) {
 				ips = append(ips, &ip.Address)
 			} else {
 				return nil, errors.Errorf("unable to check if interface has a sandbox due to index being out of range")
@@ -34,9 +34,9 @@ func getIPs(r *current.Result) ([]*net.IPNet, error) {
 	return ips, nil
 }
 
-// isInterfaceIndexSandox determines if the given interface index has the sandbox
+// isInterfaceIndexSandbox determines if the given interface index has the sandbox
 // attribute and the value is greater than 0
-func isInterfaceIndexSandox(idx int, r *current.Result) bool {
+func isInterfaceIndexSandbox(idx int, r *current.Result) bool {
 	if idx >= 0 && idx < len(r.Interfaces) {
 		return len(r.Interfaces[idx].Sandbox) > 0
 	}
