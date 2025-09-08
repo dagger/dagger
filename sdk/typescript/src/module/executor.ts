@@ -40,10 +40,10 @@ export class Executor {
       case "class": {
         const obj = this.getExportedObject(object)
 
-        const instanciatedClass = Object.create(obj.prototype)
-        Object.assign(instanciatedClass, state)
+        const instantiatedClass = Object.create(obj.prototype)
+        Object.assign(instantiatedClass, state)
 
-        return instanciatedClass
+        return instantiatedClass
       }
       case "object": {
         return state
