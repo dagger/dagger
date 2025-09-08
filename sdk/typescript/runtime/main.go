@@ -35,7 +35,7 @@ const (
 // ModuleRuntime implements the `ModuleRuntime` method from the SDK module interface.
 //
 // It returns a ready to call container with the correct node, bun or deno runtime setup.
-// On call, this will trigger the entrypoint that will either intropect and register the
+// On call, this will trigger the entrypoint that will either introspect and register the
 // module in the Dagger engine or execute a function of that module.
 //
 // The returned container has the codegen freshly generated and any necessary dependency
