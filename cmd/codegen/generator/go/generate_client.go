@@ -66,7 +66,7 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 
 	// Get the go package from the module
 	// We assume that we'll be located at the root source directory
-	// If no main package is found, we will generat the client as a sub module library.
+	// If no main package is found, we will generate the client as a sub module library.
 	pkg, _, err := loadPackage(ctx, g.Config.OutputDir, true)
 	if err != nil {
 		return nil, fmt.Errorf("load package %q: %w", g.Config.OutputDir, err)
