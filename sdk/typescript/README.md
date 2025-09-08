@@ -35,7 +35,7 @@ npx tsc --init
 
 ### 2. Update project settings
 
-Dagger exports its SDK using type module so you will need to also update
+Dagger exports its SDK using type module so you will also need to update
 your `package.json` to the same type.
 
 Add or update the field `type` in your `package.json` from your project root directory:
