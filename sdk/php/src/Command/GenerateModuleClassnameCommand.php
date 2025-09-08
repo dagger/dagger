@@ -35,10 +35,10 @@ class GenerateModuleClassnameCommand extends Command
 
     private function toSuitableClassname(string $value): string
     {
-        $whiteSpaceSeperatedValue = preg_replace('#[\s\-_]#', ' ', $value);
+        $whiteSpaceSeparatedValue = preg_replace('#[\s\-_]#', ' ', $value);
 
-        assert(is_string($whiteSpaceSeperatedValue));
-        $capitalisedValue = ucwords($whiteSpaceSeperatedValue);
+        assert(is_string($whiteSpaceSeparatedValue));
+        $capitalisedValue = ucwords($whiteSpaceSeparatedValue);
 
         $pascalValue = preg_replace('#\s#', '', $capitalisedValue);
         return preg_replace('#[^a-zA-Z0-9]#', '', $pascalValue);
