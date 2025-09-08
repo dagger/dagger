@@ -2892,7 +2892,7 @@ func (ContainerSuite) TestAsTarballCached(ctx context.Context, t *testctx.T) {
 	// make sure the index.json timestamp changes so we get a different hash
 	time.Sleep(2 * time.Second)
 
-	// setup a second client, so we don't share the dagql cache
+	// set up a second client, so we don't share the dagql cache
 	c2 := connect(ctx, t)
 	ctr2 := c2.Container().From(alpineImage)
 	second, err := ctr2.

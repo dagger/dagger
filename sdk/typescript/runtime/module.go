@@ -153,7 +153,7 @@ func (m *moduleRuntimeContainer) configurePackageJSON(file *dagger.File) *dagger
 	return ctr.File("/src/package.json")
 }
 
-// Setup the package manager for the user's module.
+// Set up the package manager for the user's module.
 //
 // Yarn:
 // - Enable corepack
@@ -161,7 +161,7 @@ func (m *moduleRuntimeContainer) configurePackageJSON(file *dagger.File) *dagger
 // yarn when possible)
 // Pnpm:
 // - Install pnpm required version using npm
-// - Setup pnpm workspace if needed to fetch transitive local dependencies
+// - Set up pnpm workspace if needed to fetch transitive local dependencies
 // Npm:
 // - Install npm required version using npm
 // Bun & Deno:

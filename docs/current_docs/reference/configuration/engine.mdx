@@ -43,7 +43,7 @@ docker rm -f $(docker ps -q --filter "name=dagger-engine-*")
 ```
 
 If you are not using an automatically provisioned Dagger Engine, and have
-followed the steps to setup a [custom runner](./custom-runner.mdx), then you'll
+followed the steps to set up a [custom runner](./custom-runner.mdx), then you'll
 need to manually mount your `engine.json` to the engine container's filesystem
 at `/etc/dagger/engine.json`. For example:
 

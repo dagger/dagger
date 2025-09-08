@@ -570,7 +570,7 @@ func (srv *Server) initializeDaggerClient(
 		return fmt.Errorf("failed to create buildkit client: %w", err)
 	}
 
-	// setup the graphql server + module/function state for the client
+	// set up the graphql server + module/function state for the client
 	client.dagqlRoot = core.NewRoot(srv)
 	// make query available via context to all APIs
 	ctx = core.ContextWithQuery(ctx, client.dagqlRoot)

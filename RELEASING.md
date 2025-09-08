@@ -165,7 +165,7 @@ git push --set-upstream $DAGGER_REPO_REMOTE "$RELEASE_BRANCH"
 
 </details>
 
-Setup the local branch to align with the remote branch being released
+Set up the local branch to align with the remote branch being released
 
 ```console
 git checkout "$RELEASE_BRANCH"

@@ -65,7 +65,7 @@ func TestTelemetry(t *testing.T) {
 }
 
 func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
-	// setup a git repo so function call tests can pick up the right metadata
+	// set up a git repo so function call tests can pick up the right metadata
 
 	// remove the repo if it exists now too, since the Cleanup doesn't always run, e.g. after a ctrl-C
 	exec.Command("rm", "-rf", ".git").Run()
