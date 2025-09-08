@@ -94,7 +94,7 @@ type spanData struct {
 	// started indicates that the span has started and has been rendered for
 	// the first time
 	started bool
-	// ended indicates that the span has copmleted and has been rendered for
+	// ended indicates that the span has completed and has been rendered for
 	// the second time
 	ended bool
 
