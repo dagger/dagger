@@ -5,7 +5,7 @@ This directory contains a proposal for a complete GraphQL API for Dagger. It is 
 1. Feature parity with Dagger 0.2
 2. Close to feature parity with Buildkit, with an incremental path to reaching full parity in the future
 3. Follow established graphql best practices
-4. Sove as many outstanding DX problems as possible
+4. Solve as many outstanding DX problems as possible
 
 ## Reference
 
