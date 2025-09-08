@@ -444,4 +444,4 @@ public function myDaggerFunction(
 }
 ```
 
-`Ignore` follows the [`.gitignore` syntax](https://git-scm.com/docs/gitignore/en) and should be referred to for further detail.
+`Ignore` follows the [`.gitignore` syntax](https://git-scm.com/docs/gitignore/en).
