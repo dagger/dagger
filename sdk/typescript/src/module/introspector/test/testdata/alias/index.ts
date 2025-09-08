@@ -23,7 +23,7 @@ export class Bar {
 @object()
 export class Alias {
   @func("prefix")
-  gretingPrefix = "test"
+  greetingPrefix = "test"
 
   @func("container")
   ctr: Container
@@ -56,6 +56,6 @@ export class Alias {
 
   @func("customGreet")
   customHelloWorld(name: string): string {
-    return `${this.gretingPrefix} ${name}`
+    return `${this.greetingPrefix} ${name}`
   }
 }
