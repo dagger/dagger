@@ -1149,7 +1149,7 @@ func allCacheConfigsFromEnv() (cacheImportConfigs []*controlapi.CacheOptionsEntr
 func (c *Client) clientMetadata() engine.ClientMetadata {
 	sshAuthSock := os.Getenv("SSH_AUTH_SOCK")
 	// expand ~ into absolute path for consistent behavior with CLI
-	// ⚠️ When updating clientMetadata's logic, please also update setupNestedClient
+	// ⚠️ When updating clientMetadata's logic, please update setupNestedClient
 	// for consistent behavior of CLI inside nested execution
 	homeDir, err := os.UserHomeDir()
 	if err == nil {
