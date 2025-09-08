@@ -55,7 +55,7 @@ export class AST {
       ts.forEachChild(sourceFile, (node) => {
         if (result !== undefined) return
 
-        // Skip if it's not from the client gen nor the user module
+        // Skip unless it's from the client gen or the user module
         if (
           !sourceFile.fileName.endsWith(CLIENT_GEN_FILE) &&
           !this.files.includes(sourceFile.fileName)
