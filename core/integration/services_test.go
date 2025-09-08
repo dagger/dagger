@@ -1764,7 +1764,7 @@ func (ServiceSuite) TestStartStopKill(ctx context.Context, t *testctx.T) {
 	}, time.Minute, time.Second)
 
 	eg.Go(func() error {
-		// attempt to SIGKILL the serive (this will work)
+		// attempt to SIGKILL the service (this will work)
 		_, err := httpSrv.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
 		return err
 	})
