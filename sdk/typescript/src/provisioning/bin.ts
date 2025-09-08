@@ -400,7 +400,7 @@ export class Bin implements EngineConn {
   }
 
   private async extractArchive(destDir: string, os: string): Promise<string> {
-    // extract the dagger binary in the cli archive and return the archive of the .zip for windows and .tar.gz for other plateforms
+    // extract the dagger binary in the cli archive and return the archive of the .zip for windows and .tar.gz for other platforms
     const archiveResp = await fetch(this.cliArchiveURL())
     if (!archiveResp.ok) {
       throw new Error(
