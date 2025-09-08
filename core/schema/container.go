@@ -357,7 +357,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("withoutFiles", DagOpContainerWrapper(srv, s.withoutFiles)).
-			Doc(`Return a new container spanshot with specified files removed`).
+			Doc(`Return a new container snapshot with specified files removed`).
 			Args(
 				dagql.Arg("paths").Doc(`Paths of the files to remove. Example: ["foo.txt, "/root/.ssh/config"`),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of paths according to the current `+

@@ -1234,7 +1234,7 @@ type Container {
     expand: Boolean = false
   ): Container!
 
-  """Return a new container spanshot with specified files removed"""
+  """Return a new container snapshot with specified files removed"""
   withoutFiles(
     """
     Paths of the files to remove. Example: ["foo.txt, "/root/.ssh/config"

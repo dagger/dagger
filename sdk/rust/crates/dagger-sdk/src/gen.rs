@@ -4336,7 +4336,7 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return a new container spanshot with specified files removed
+    /// Return a new container snapshot with specified files removed
     ///
     /// # Arguments
     ///
@@ -4354,7 +4354,7 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return a new container spanshot with specified files removed
+    /// Return a new container snapshot with specified files removed
     ///
     /// # Arguments
     ///

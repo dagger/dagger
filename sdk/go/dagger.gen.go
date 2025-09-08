@@ -2475,7 +2475,7 @@ type ContainerWithoutFilesOpts struct {
 	Expand bool
 }
 
-// Return a new container spanshot with specified files removed
+// Return a new container snapshot with specified files removed
 func (r *Container) WithoutFiles(paths []string, opts ...ContainerWithoutFilesOpts) *Container {
 	q := r.query.Select("withoutFiles")
 	for i := len(opts) - 1; i >= 0; i-- {

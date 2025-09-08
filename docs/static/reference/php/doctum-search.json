@@ -2361,7 +2361,7 @@
 			"t": "M",
 			"n": "Dagger\\Container::withoutFiles",
 			"p": "Dagger/Container.html#method_withoutFiles",
-			"d": "<p>Return a new container spanshot with specified files removed</p>"
+			"d": "<p>Return a new container snapshot with specified files removed</p>"
 		},
 		{
 			"t": "M",

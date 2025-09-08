@@ -2691,7 +2691,7 @@ class Container(Type):
         *,
         expand: bool | None = False,
     ) -> Self:
-        """Return a new container spanshot with specified files removed
+        """Return a new container snapshot with specified files removed
 
         Parameters
         ----------
