@@ -3997,7 +3997,7 @@ type Query {
     values.
 
     For example, two secrets with the same cache key provided as secret env vars
-    to other wise equivalent containers will result in the container withExecs
+    to otherwise equivalent containers will result in the container withExecs
     hitting the cache for each other.
 
     If not set, the cache key for the secret will be derived from its plaintext
