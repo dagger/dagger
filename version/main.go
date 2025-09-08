@@ -1,6 +1,6 @@
 // Shared logic for managing Dagger versions
 //
-// In general, it attempts to follow go's psedudoversioning:
+// In general, it attempts to follow go's pseudoversioning:
 // https://go.dev/doc/modules/version-numbers
 package main
 
