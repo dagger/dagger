@@ -10,7 +10,7 @@ import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.apache.maven.project.MavenProject;
 
-/** Generate the API schama by querying the dagger CLI */
+/** Generate the API schema by querying the dagger CLI */
 @Mojo(
     name = "generateSchema",
     requiresDependencyResolution = ResolutionScope.COMPILE,
