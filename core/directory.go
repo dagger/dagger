@@ -281,7 +281,7 @@ func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error)
 	return paths, nil
 }
 
-// patternWithoutTrailingGlob is from fsuitls
+// patternWithoutTrailingGlob is from fsutils
 func patternWithoutTrailingGlob(p *patternmatcher.Pattern) string {
 	patStr := p.String()
 	// We use filepath.Separator here because patternmatcher.Pattern patterns
