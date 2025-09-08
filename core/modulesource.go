@@ -353,10 +353,7 @@ func (src *ModuleSource) LoadContextDir(
 		}
 
 		// Ensure backward compatibility by not applying .gitignore rules if the engine version is less than v0.17.17
-		noGitIgnore := false
-		if semver.Compare(src.EngineVersion, "v0.18.17") < 0 {
-			noGitIgnore = true
-		}
+		noGitIgnore := src.compareEngineVersion("v0.18.17") < 0
 
 		err = dag.Select(localSourceCtx, dag.Root(), &inst,
 			dagql.Selector{
@@ -517,6 +514,10 @@ func (src *ModuleSource) LoadContextGit(
 	}
 
 	return inst, nil
+}
+
+func (src *ModuleSource) compareEngineVersion(version string) int {
+	return semver.Compare(src.EngineVersion, version)
 }
 
 type LocalModuleSource struct {
