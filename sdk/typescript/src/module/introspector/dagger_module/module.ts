@@ -110,57 +110,31 @@ export class DaggerModule {
       )
     }
 
-    let mainObjectNode = this.ast.findResolvedNodeByName(
-      this.name,
-      ts.SyntaxKind.ClassDeclaration,
-    )
+    // TODO: add a test for this
+    // if (!mainObjectNode) {
+    //   throw new IntrospectionError(
+    //     `could not find main object ${this.name} in module ${JSON.stringify(mainModule, null, 2) ?? ""} located at ${this.ast.files}`,
+    //   )
+    // }
 
-    // If we can't find a class with the exact module name, try to find any @object decorated class
-    // This is important for blueprint modules where the class name doesn't match the target module name
-    if (!mainObjectNode) {
-      const allClassDeclarations = this.ast.findAllDeclarations(
-        ts.SyntaxKind.ClassDeclaration,
-      )
-      for (const classDecl of allClassDeclarations) {
-        if (this.ast.isNodeDecoratedWith(classDecl.node, OBJECT_DECORATOR)) {
-          mainObjectNode = classDecl
-          break
-        }
-      }
-    }
+    const classObjects = this.findClasses()
+    for (const classObject of classObjects) {
+      // TODO: yolo
+      const mainFileContent = classObject.file.getFullText()
+      this.description = this.getDescription(mainFileContent)
 
-    if (!mainObjectNode) {
-      throw new IntrospectionError(
-        `could not find main object ${this.name} in module ${JSON.stringify(mainModule, null, 2) ?? ""} located at ${this.ast.files}`,
-      )
-    }
+      const daggerObject = new DaggerObject(classObject.node, this.ast)
+      const objectName = classObject.node.name?.getText() || this.name
 
-    const mainFileContent = mainObjectNode.file.getFullText()
-    this.description = this.getDescription(mainFileContent)
-
-    const mainDaggerObject = new DaggerObject(mainObjectNode.node, this.ast)
-
-    // For blueprint modules, we store the object under its actual class name
-    // This ensures that during execution, the object can be found by its GraphQL type name
-    const objectName = mainObjectNode.node.name?.getText() || this.name
-
-    this.objects[objectName] = mainDaggerObject
-    this.references[objectName] = {
-      kind: TypeDefKind.ObjectKind,
-      name: objectName,
-    }
-
-    // Also store under the module name for backward compatibility
-    if (objectName !== this.name) {
-      this.objects[this.name] = mainDaggerObject
-      this.references[this.name] = {
+      this.objects[objectName] = daggerObject
+      this.references[objectName] = {
         kind: TypeDefKind.ObjectKind,
-        name: this.name,
+        name: objectName,
       }
-    }
 
-    this.resolveReferences(mainDaggerObject.getReferences())
-    this.propagateReferences()
+      this.resolveReferences(daggerObject.getReferences())
+      this.propagateReferences()
+    }
   }
 
   /**
@@ -389,6 +363,36 @@ export class DaggerModule {
     throw new IntrospectionError(
       `could not resolve type reference for ${reference} at ${AST.getNodePosition(typeAlias.node)}`,
     )
+  }
+
+  /**
+   * Find the classes in the AST. Returns only our main class if it exists
+   */
+  private findClasses(): ResolvedNodeWithSymbol<ts.SyntaxKind.ClassDeclaration>[] {
+    const allClassDeclarations = this.ast.findAllDeclarations(
+      ts.SyntaxKind.ClassDeclaration,
+    )
+
+    const allClasses: ResolvedNodeWithSymbol<ts.SyntaxKind.ClassDeclaration>[] =
+      []
+    for (const classDecl of allClassDeclarations) {
+      const convertedDecl =
+        classDecl as ResolvedNodeWithSymbol<ts.SyntaxKind.ClassDeclaration>
+
+      // Check if the class matches this.name and return only that if so
+      if (
+        convertedDecl.node.name &&
+        convertedDecl.node.name.getText() === this.name
+      ) {
+        return [convertedDecl]
+      }
+
+      // or we return all classes decorated with @object
+      if (this.ast.isNodeDecoratedWith(classDecl.node, OBJECT_DECORATOR)) {
+        allClasses.push(convertedDecl)
+      }
+    }
+    return allClasses
   }
 
   /**
