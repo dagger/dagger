@@ -623,7 +623,7 @@ main()
 		}
 	})
 
-	t.Run("cohexist with a module implementation", func(ctx context.Context, t *testctx.T) {
+	t.Run("coexist with a module implementation", func(ctx context.Context, t *testctx.T) {
 		type testCase struct {
 			baseImage string
 			generator string
