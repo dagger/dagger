@@ -86,7 +86,6 @@ func New(
 				// FIXME: make this optional with overlay support
 				"protobuf~31", // ADD: brings /usr/bin/protoc and runtime libs
 				"protobuf-dev~31",
-				// "protobuf-dev~3.29.5",
 				"ca-certificates",
 			}}).
 			WithEnvVariable("GOLANG_VERSION", version).
