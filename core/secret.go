@@ -27,7 +27,7 @@ type Secret struct {
 	Name string
 
 	// The secret plaintext, if created by setSecret
-	Plaintext []byte `json:"-"` // we shouldn't be json marshalling this, but disclude just in case
+	Plaintext []byte `json:"-"` // we shouldn't be json marshalling this, but exclude just in case
 }
 
 func (*Secret) Type() *ast.Type {
