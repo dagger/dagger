@@ -23,10 +23,9 @@ type Function struct {
 	Description string         `field:"true" doc:"A doc string for the function, if any."`
 	Args        []*FunctionArg `field:"true" doc:"Arguments accepted by the function, if any."`
 	ReturnType  *TypeDef       `field:"true" doc:"The type returned by the function."`
+	Deprecated  string         `field:"true" doc:"The reason this function is deprecated, if any."`
 
 	SourceMap dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this function declaration."`
-
-	Deprecated string `field:"true" doc:"The reason this function is deprecated, if any."`
 
 	// Below are not in public API
 	CachePolicy     FunctionCachePolicy
@@ -92,9 +91,10 @@ func (fn Function) Clone() *Function {
 // the complete GraphQL schema that clients will query against.
 func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec, error) {
 	spec := dagql.FieldSpec{
-		Name:        fn.Name,
-		Description: formatGqlDescription(fn.Description),
-		Type:        fn.ReturnType.ToTyped(),
+		Name:             fn.Name,
+		Description:      formatGqlDescription(fn.Description),
+		Type:             fn.ReturnType.ToTyped(),
+		DeprecatedReason: fn.Deprecated,
 	}
 	if fn.SourceMap.Valid {
 		spec.Directives = append(spec.Directives, fn.SourceMap.Value.TypeDirective())
@@ -126,10 +126,11 @@ func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec
 		}
 
 		argSpec := dagql.InputSpec{
-			Name:        arg.Name,
-			Description: formatGqlDescription(arg.Description),
-			Type:        input,
-			Default:     defaultVal,
+			Name:             arg.Name,
+			Description:      formatGqlDescription(arg.Description),
+			Type:             input,
+			Default:          defaultVal,
+			DeprecatedReason: arg.Deprecated,
 		}
 		if arg.SourceMap.Valid {
 			argSpec.Directives = append(argSpec.Directives, arg.SourceMap.Value.TypeDirective())
@@ -182,7 +183,7 @@ func (fn *Function) WithDeprecated(deprecated string) *Function {
 	return fn
 }
 
-func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultValue JSON, defaultPath string, ignore []string, sourceMap *SourceMap) *Function {
+func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultValue JSON, defaultPath string, ignore []string, sourceMap *SourceMap, deprecated string) *Function {
 	fn = fn.Clone()
 	arg := &FunctionArg{
 		Name:         strcase.ToLowerCamel(name),
@@ -192,6 +193,7 @@ func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultV
 		OriginalName: name,
 		DefaultPath:  defaultPath,
 		Ignore:       ignore,
+		Deprecated:   deprecated,
 	}
 	if sourceMap != nil {
 		arg.SourceMap = dagql.NonNull(sourceMap)
@@ -300,6 +302,7 @@ type FunctionArg struct {
 	DefaultValue JSON                       `field:"true" doc:"A default value to use for this argument when not explicitly set by the caller, if any."`
 	DefaultPath  string                     `field:"true" doc:"Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory"`
 	Ignore       []string                   `field:"true" doc:"Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner."`
+	Deprecated   string                     `field:"true" doc:"The reason this function is deprecated, if any."`
 
 	// Below are not in public API
 
