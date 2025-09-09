@@ -110,16 +110,10 @@ export class DaggerModule {
       )
     }
 
-    // TODO: add a test for this
-    // if (!mainObjectNode) {
-    //   throw new IntrospectionError(
-    //     `could not find main object ${this.name} in module ${JSON.stringify(mainModule, null, 2) ?? ""} located at ${this.ast.files}`,
-    //   )
-    // }
-
     const classObjects = this.findClasses()
     for (const classObject of classObjects) {
-      // TODO: yolo
+      // This only applies to cloud. If this is the true main object, it is correct
+      // if this is a blueprint, the description will not matter in any situation
       const mainFileContent = classObject.file.getFullText()
       this.description = this.getDescription(mainFileContent)
 
