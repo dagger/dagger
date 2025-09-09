@@ -6449,6 +6449,8 @@ type FunctionWithArgOpts struct {
 	Ignore []string
 	// The source map for the argument definition.
 	SourceMap *SourceMap
+	// If deprecated, the reason or migration path.
+	Deprecated string
 }
 
 // Returns the function with the provided argument
@@ -6475,6 +6477,10 @@ func (r *Function) WithArg(name string, typeDef *TypeDef, opts ...FunctionWithAr
 		// `sourceMap` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourceMap) {
 			q = q.Arg("sourceMap", opts[i].SourceMap)
+		}
+		// `deprecated` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Deprecated) {
+			q = q.Arg("deprecated", opts[i].Deprecated)
 		}
 	}
 	q = q.Arg("name", name)
@@ -6546,6 +6552,7 @@ type FunctionArg struct {
 
 	defaultPath  *string
 	defaultValue *JSON
+	deprecated   *string
 	description  *string
 	id           *FunctionArgID
 	name         *string
@@ -6578,6 +6585,19 @@ func (r *FunctionArg) DefaultValue(ctx context.Context) (JSON, error) {
 	q := r.query.Select("defaultValue")
 
 	var response JSON
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The reason this function is deprecated, if any.
+func (r *FunctionArg) Deprecated(ctx context.Context) (string, error) {
+	if r.deprecated != nil {
+		return *r.deprecated, nil
+	}
+	q := r.query.Select("deprecated")
+
+	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)

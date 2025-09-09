@@ -144,7 +144,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("description").Doc(`The doc string to set.`),
 			),
 
-			dagql.Func("withDeprecated", s.functionWithDeprecated).
+		dagql.Func("withDeprecated", s.functionWithDeprecated).
 			Doc(`Returns the function with the given deprecated string.`).
 			Args(
 				dagql.Arg("deprecated").Doc(`The deprecated string to set.`),
@@ -166,6 +166,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("defaultPath").Doc(`If the argument is a Directory or File type, default to load path from context directory, relative to root directory.`),
 				dagql.Arg("ignore").Doc(`Patterns to ignore when loading the contextual argument value.`),
 				dagql.Arg("sourceMap").Doc(`The source map for the argument definition.`),
+				dagql.Arg("deprecated").Doc(`If deprecated, the reason or migration path.`),
 			),
 
 		dagql.Func("withCachePolicy", s.functionWithCachePolicy).
@@ -508,6 +509,7 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 	DefaultPath  string    `default:""`
 	Ignore       []string  `default:"[]"`
 	SourceMap    dagql.Optional[core.SourceMapID]
+	Deprecated   string `default:""`
 }) (*core.Function, error) {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -568,7 +570,7 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 		td = td.WithOptional(true)
 	}
 
-	return fn.WithArg(args.Name, td, args.Description, args.DefaultValue, args.DefaultPath, args.Ignore, sourceMap), nil
+	return fn.WithArg(args.Name, td, args.Description, args.DefaultValue, args.DefaultPath, args.Ignore, sourceMap, args.Deprecated), nil
 }
 
 func (s *moduleSchema) functionWithSourceMap(ctx context.Context, fn *core.Function, args struct {

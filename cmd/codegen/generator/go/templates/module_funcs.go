@@ -35,6 +35,14 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 		}
 	}
 
+	if v, ok := docPragmas["deprecated"]; ok {
+		if v == nil {
+			spec.deprecated = ""
+		} else {
+			spec.deprecated, _ = v.(string)
+		}
+	}
+
 	spec.sourceMap = ps.sourceMap(funcDecl)
 
 	sig, ok := fn.Type().(*types.Signature)
@@ -94,6 +102,8 @@ type funcTypeSpec struct {
 
 	argSpecs []paramSpec
 
+	deprecated string
+
 	returnSpec   ParsedType // nil if void return
 	returnsError bool
 
@@ -146,6 +156,9 @@ func (spec *funcTypeSpec) TypeDefFunc(dag *dagger.Client) (*dagger.Function, err
 	if spec.sourceMap != nil {
 		fnTypeDef = fnTypeDef.WithSourceMap(spec.sourceMap.TypeDef(dag))
 	}
+	if spec.deprecated != "" {
+		fnTypeDef = fnTypeDef.WithDeprecated(spec.deprecated)
+	}
 
 	for _, argSpec := range spec.argSpecs {
 		if argSpec.isContext {
@@ -192,6 +205,10 @@ func (spec *funcTypeSpec) TypeDefFunc(dag *dagger.Client) (*dagger.Function, err
 
 		if argSpec.defaultPath != "" {
 			argOpts.DefaultPath = argSpec.defaultPath
+		}
+
+		if argSpec.deprecated != "" {
+			argOpts.Deprecated = argSpec.deprecated
 		}
 
 		if len(argSpec.ignore) > 0 {
@@ -341,6 +358,14 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 		}
 		optional = true // If defaultPath is set, the argument becomes optional
 	}
+	deprecated := ""
+	if v, ok := pragmas["deprecated"]; ok {
+		if v == nil {
+			deprecated = ""
+		} else {
+			deprecated, _ = v.(string)
+		}
+	}
 
 	ignore := []string{}
 	if v, ok := pragmas["ignore"]; ok {
@@ -383,6 +408,7 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 		hasDefaultValue: hasDefaultValue,
 		description:     comment,
 		defaultPath:     defaultPath,
+		deprecated:      deprecated,
 		ignore:          ignore,
 	}, nil
 }
@@ -400,6 +426,8 @@ type paramSpec struct {
 	// Set a default value for the argument. Value must be a json-encoded literal value
 	defaultValue    any
 	hasDefaultValue bool
+
+	deprecated string
 
 	// paramType is the full type declared in the function signature, which may
 	// include pointer types, etc
