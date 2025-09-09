@@ -3965,6 +3965,13 @@ func (ContainerSuite) TestWithMountedSecretMode(ctx context.Context, t *testctx.
 	require.NoError(t, err)
 }
 
+func (ContainerSuite) TestFileSize(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	size, err := daggerCliFile(t, c).Size(ctx)
+	require.NoError(t, err)
+	require.Greater(t, size, 1024)
+}
+
 func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
 	t.Run("basic", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
