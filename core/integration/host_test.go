@@ -385,6 +385,24 @@ func (HostSuite) TestDirectoryGitIgnore(ctx context.Context, t *testctx.T) {
 		requireErrOut(t, err, "no such file or directory")
 	})
 
+	t.Run("correctly handle excluded gitignore", func(ctx context.Context, t *testctx.T) {
+		hostDir := c.Host().Directory(dir, dagger.HostDirectoryOpts{
+			Exclude: []string{".gitignore"},
+		})
+
+		rootHostDir, err := hostDir.Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"c.txt.rar", "subdir/", "subdir2/"}, rootHostDir)
+
+		subDirEntries, err := hostDir.Directory("subdir").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"e.txt", "h.yaml"}, subDirEntries)
+
+		subDir2Entries, err := hostDir.Directory("subdir2").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"foo.go"}, subDir2Entries)
+	})
+
 	t.Run("disable git auto ignore", func(ctx context.Context, t *testctx.T) {
 		entries, err := c.Host().Directory(dir, dagger.HostDirectoryOpts{NoGitAutoIgnore: true}).Entries(ctx)
 		require.NoError(t, err)
