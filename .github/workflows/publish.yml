@@ -18,7 +18,7 @@ on:
 
 jobs:
   publish:
-    if: ${{ github.repository == 'dagger/dagger' && github.event_name == 'push' }}
+    if: ${{ github.event_name == 'push' }}
     runs-on: dagger-g3-v0-18-16-16c-st
     steps:
       - uses: actions/checkout@v4
@@ -51,7 +51,7 @@ jobs:
             markdown
           redirect: /tmp/release-report
         env:
-          DAGGER_ENGINE_IMAGE: ${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}
+          DAGGER_ENGINE_IMAGE: ghcr.io/abloch/dagger_engine
           DAGGER_ENGINE_IMAGE_USERNAME: ${{ github.actor }}
           DAGGER_ENGINE_IMAGE_PASSWORD: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
 
