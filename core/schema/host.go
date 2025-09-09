@@ -305,7 +305,7 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		}
 	}
 
-	fmt.Println("loading host directory", "hostPath", hostPath, "relPath", relPath)
+	fmt.Println("loading host directory", "hostPath", hostPath, "relPath", relPath, "noGitAutoIgnore", args.NoGitAutoIgnore)
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
