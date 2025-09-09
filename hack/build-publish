@@ -1,4 +1,4 @@
-#!/usr/bin/env -S dagger shell --no-mod
+#!/usr/bin/env -S dagger shell --no-mod --cloud
 
 # hack/build builds the engine and cli from local code and pushes the container
 # image to the specified registry
