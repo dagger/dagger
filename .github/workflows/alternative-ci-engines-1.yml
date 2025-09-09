@@ -1,6 +1,9 @@
 name: Alternative CI Engines 1
 
 on:
+  push:
+    branches:
+      - ci-alt-cloud-engine-runners
   # Run the workflow every day TWICE:
   # 1. 9:06AM UTC (low activity)
   # 2. 9:26AM UTC (cache test - high chance of no code changes)
@@ -17,7 +20,10 @@ jobs:
   build-devengine:
     runs-on:
       - 'nscloud-ubuntu-24.04-amd64-16x32'
+    outputs:
+      DAGGER_ENGINE_IMAGE: ${{ steps.build-dev-engine.outputs.DAGGER_ENGINE_IMAGE }}
     steps:
+
       - name: Checkout
         uses: actions/checkout@v4
       - name: Install Dagger CLI
