@@ -39,7 +39,7 @@ func (c *Cleanups) Add(msg string, f CleanupF) CleanupFunc {
 // ReAdd allows you to decide to run an already added cleanup function at a later time. Once readded,
 // it will only be run at this time rather than both times.
 // This is occasionally needed when you want to ensure some state is cleaned up right after it's created,
-// but if more state is created later you ned to run this cleanup at that later time (e.g. closing a network
+// but if more state is created later you need to run this cleanup at that later time (e.g. closing a network
 // connection in all cases).
 func (c *Cleanups) ReAdd(f CleanupFunc) CleanupFunc {
 	c.funcs = append(c.funcs, f.fn)
