@@ -810,7 +810,7 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 	for i, output := range outputs {
 		if output == nil {
 			// this *shouldn't* happen, and means we've got somehow got gaps in
-			// the output araray. the mounts are therefore badly constructed,
+			// the output array. the mounts are therefore badly constructed,
 			// so we should error out. otherwise we'll get weird panics deep in
 			// buildkit that are near impossible to debug.
 			return nil, fmt.Errorf("internal: output %d was empty", i)
