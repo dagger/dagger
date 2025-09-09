@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -184,7 +186,18 @@ func (ls *localSourceHandler) Snapshot(ctx context.Context, g session.Group) (bk
 	}
 
 	timeoutCtx, cancel := context.WithCancelCause(ctx)
-	timeoutCtx, _ = context.WithTimeoutCause(timeoutCtx, 5*time.Second, fmt.Errorf("timeout: %w", context.DeadlineExceeded))
+	timeout := 5
+	envTimeoutStr := os.Getenv("SNAPSHOT_CONTEXT_TIMEOUT")
+	if envTimeoutStr != "" {
+		// try to get the snapshot lookup timeout from an env var
+		envTimeout, err := strconv.Atoi(envTimeoutStr)
+		if err != nil {
+			return nil, fmt.Errorf("could not convert SNAPSHOT_CONTEXT_TIMEOUT env var %s to integer: %w", envTimeoutStr, err)
+		} else {
+			timeout = envTimeout
+		}
+	}
+	timeoutCtx, _ = context.WithTimeoutCause(timeoutCtx, time.Duration(timeout)*time.Second, fmt.Errorf("timeout of %d seconds: %w", timeout, context.DeadlineExceeded))
 	defer cancel(context.Canceled)
 
 	caller, err := ls.sm.Get(timeoutCtx, sessionID, false)
