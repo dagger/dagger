@@ -3103,8 +3103,8 @@ type Host {
     """If true, the directory will always be reloaded from the host."""
     noCache: Boolean = false
 
-    """Don't apply .gitignore filter rules inside the directory"""
-    noGitAutoIgnore: Boolean = false
+    """Apply .gitignore filter rules inside the directory"""
+    gitignore: Boolean = false
   ): Directory!
 
   """Accesses a file on the host."""

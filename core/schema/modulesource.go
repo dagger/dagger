@@ -944,6 +944,7 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String(src.Local.ContextDirectoryPath)},
 					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(fullIncludePaths...))},
+					{Name: "gitignore", Value: dagql.NewBoolean(true)},
 				},
 			},
 		)
