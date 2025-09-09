@@ -18,7 +18,7 @@ defmodule Dagger.Mod.Object do
 
   ## Declare a function
 
-  The module provides a `defn`, a macro for declare a function.
+  The module provides the `defn` macro to declare a function.
   Let's declare a new function named `echo` that accepts a `name` as a string
   and return a container that echo a name in the module `Potato` from the previous
   section:
