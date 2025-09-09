@@ -5350,7 +5350,7 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 			require.NoError(t, err)
 			require.Equal(t, ".gitattributes\n.gitignore\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
 
-			// Verify the directories exist but files are correctly ignored (including the .gitiginore exclusion)
+			// Verify the directories exist but files are correctly ignored (including the .gitignore exclusion)
 			out, err = modGen.With(daggerCall("ignore-every-go-file-except-main-go", "directory", "--path", "internal", "entries")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "foo/\n", out)

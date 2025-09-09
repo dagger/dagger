@@ -280,7 +280,7 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 
 	relPath := "."
 
-	// If NoGitAutoIgnore is not set, we load all the .gitgnore patterns inside the context directory
+	// If NoGitAutoIgnore is not set, we load all the .gitignore patterns inside the context directory
 	// (if ContextDirectoryPath is set) or the git repo if .git is found.
 	if !args.NoGitAutoIgnore {
 		originalPath := hostPath
