@@ -167,8 +167,7 @@ func TestLlmConfigEnvFile(t *testing.T) {
 	dagql.Fields[mockSecret]{
 		dagql.Func("plaintext", func(ctx context.Context, self mockSecret, _ struct{}) (string, error) {
 			if self.uri == "file://.env" {
-				return `ANTHRIOPIC_API_KEY=anthropic-api-key
-ANTHROPIC_BASE_URL=anthropic-base-url
+				return `ANTHROPIC_BASE_URL=anthropic-base-url
 ANTHROPIC_MODEL=anthropic-model
 ANTHROPIC_API_KEY=anthropic-api-key
 OPENAI_API_KEY=openai-api-key
