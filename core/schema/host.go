@@ -151,7 +151,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 				dagql.Arg("noCache").Doc(`If true, the directory will always be reloaded from the host.`),
-				dagql.Arg("noGitAutoIgnore").Doc(`Don't apply .gitignore filter rules inside the directory`),
+				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory`),
 			),
 
 		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CacheAsRequested).
@@ -250,8 +250,8 @@ type hostDirectoryArgs struct {
 	core.CopyFilter
 	HostDirCacheConfig
 
-	GitIgnoreRoot   string `internal:"true" default:""`
-	NoGitAutoIgnore bool   `default:"false"`
+	GitIgnoreRoot string `internal:"true" default:""`
+	Gitignore     bool   `default:"false"`
 }
 
 func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
@@ -280,9 +280,9 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 
 	relPath := "."
 
-	// If NoGitAutoIgnore is not set, we load all the .gitgnore patterns inside the context directory
-	// (if ContextDirectoryPath is set) or the git repo if .git is found.
-	if !args.NoGitAutoIgnore {
+	if args.Gitignore {
+		// load all the .gitgnore patterns inside the context directory (if
+		// ContextDirectoryPath is set) or the git repo if .git is found.
 		originalPath := hostPath
 		if args.GitIgnoreRoot != "" {
 			hostPath = args.GitIgnoreRoot
@@ -346,7 +346,7 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	excludePatterns := make([]string, 0, len(args.Exclude))
 	// HACK: to bust the cache and pass custom options, we put them in
 	// excludePatterns. we filter them out later.
-	if !args.NoGitAutoIgnore {
+	if args.Gitignore {
 		excludePatterns = append(excludePatterns, "[dagger.gitignore]")
 	}
 	if args.NoCache {
@@ -368,7 +368,7 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		localName += fmt.Sprintf(" (exclude: %s)", strings.Join(args.Exclude, ", "))
 	}
 
-	if !args.NoGitAutoIgnore {
+	if args.Gitignore {
 		localName += " (with gitignore)"
 	}
 

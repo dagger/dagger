@@ -360,7 +360,6 @@ func (src *ModuleSource) LoadContextDir(
 				Args: append([]dagql.NamedInput{
 					{Name: "path", Value: dagql.String(path)},
 					{Name: "noCache", Value: dagql.Boolean(true)},
-					{Name: "gitIgnoreRoot", Value: dagql.String(ctxPath)},
 				}, filterInputs...),
 			},
 		)
