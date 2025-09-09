@@ -110,10 +110,25 @@ export class DaggerModule {
       )
     }
 
-    const mainObjectNode = this.ast.findResolvedNodeByName(
+    let mainObjectNode = this.ast.findResolvedNodeByName(
       this.name,
       ts.SyntaxKind.ClassDeclaration,
     )
+
+    // If we can't find a class with the exact module name, try to find any @object decorated class
+    // This is important for blueprint modules where the class name doesn't match the target module name
+    if (!mainObjectNode) {
+      const allClassDeclarations = this.ast.findAllDeclarations(
+        ts.SyntaxKind.ClassDeclaration,
+      )
+      for (const classDecl of allClassDeclarations) {
+        if (this.ast.isNodeDecoratedWith(classDecl.node, OBJECT_DECORATOR)) {
+          mainObjectNode = classDecl
+          break
+        }
+      }
+    }
+
     if (!mainObjectNode) {
       throw new IntrospectionError(
         `could not find main object ${this.name} in module ${JSON.stringify(mainModule, null, 2) ?? ""} located at ${this.ast.files}`,
@@ -125,10 +140,23 @@ export class DaggerModule {
 
     const mainDaggerObject = new DaggerObject(mainObjectNode.node, this.ast)
 
-    this.objects[this.name] = mainDaggerObject
-    this.references[this.name] = {
+    // For blueprint modules, we store the object under its actual class name
+    // This ensures that during execution, the object can be found by its GraphQL type name
+    const objectName = mainObjectNode.node.name?.getText() || this.name
+
+    this.objects[objectName] = mainDaggerObject
+    this.references[objectName] = {
       kind: TypeDefKind.ObjectKind,
-      name: this.name,
+      name: objectName,
+    }
+
+    // Also store under the module name for backward compatibility
+    if (objectName !== this.name) {
+      this.objects[this.name] = mainDaggerObject
+      this.references[this.name] = {
+        kind: TypeDefKind.ObjectKind,
+        name: this.name,
+      }
     }
 
     this.resolveReferences(mainDaggerObject.getReferences())
