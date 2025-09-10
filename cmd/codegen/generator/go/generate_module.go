@@ -156,6 +156,9 @@ func (g *GoGenerator) bootstrapMod(mfs *memfs.FS, genSt *generator.GeneratedStat
 	if semver.Compare("v"+goMod.Go.Version, "v"+goVersion) > 0 {
 		return nil, false, fmt.Errorf("existing go.mod has unsupported version %v (highest supported version is %v)", goMod.Go.Version, goVersion)
 	}
+	if semver.Compare("v"+goMod.Go.Version, "v"+minGoVersion) < 0 {
+		return nil, false, fmt.Errorf("existing go.mod has unsupported version %v (lowest supported version is %v)", goMod.Go.Version, minGoVersion)
+	}
 
 	if err := g.syncModReplaceAndTidy(goMod, genSt, daggerModPath); err != nil {
 		return nil, false, err
