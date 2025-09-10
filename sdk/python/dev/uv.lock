@@ -119,7 +119,7 @@ requires-dist = [
     { name = "beartype", specifier = ">=0.18.2" },
     { name = "cattrs", specifier = ">=25.1.0" },
     { name = "exceptiongroup", specifier = ">=1.3.0" },
-    { name = "gql", extras = ["httpx"], specifier = "~=3.5.0" },
+    { name = "gql", extras = ["httpx"], specifier = ">=4.0" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.23.0" },
     { name = "opentelemetry-instrumentation-logging", specifier = ">=0.54b1" },
     { name = "opentelemetry-sdk", specifier = ">=1.23.0" },
@@ -165,7 +165,7 @@ wheels = [
 
 [[package]]
 name = "gql"
-version = "3.5.3"
+version = "4.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -173,9 +173,9 @@ dependencies = [
     { name = "graphql-core" },
     { name = "yarl" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/34/ed/44ffd30b06b3afc8274ee2f38c3c1b61fe4740bf03d92083e43d2c17ac77/gql-3.5.3.tar.gz", hash = "sha256:393b8c049d58e0d2f5461b9d738a2b5f904186a40395500b4a84dd092d56e42b", size = 180504, upload-time = "2025-05-20T12:34:08.954Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/06/9f/cf224a88ed71eb223b7aa0b9ff0aa10d7ecc9a4acdca2279eb046c26d5dc/gql-4.0.0.tar.gz", hash = "sha256:f22980844eb6a7c0266ffc70f111b9c7e7c7c13da38c3b439afc7eab3d7c9c8e", size = 215644, upload-time = "2025-08-17T14:32:35.397Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cb/50/2f4e99b216821ac921dbebf91c644ba95818f5d07857acadee17220221f3/gql-3.5.3-py2.py3-none-any.whl", hash = "sha256:e1fcbde2893fcafdd28114ece87ff47f1cc339a31db271fc4e1d528f5a1d4fbc", size = 74348, upload-time = "2025-05-20T12:34:07.687Z" },
+    { url = "https://files.pythonhosted.org/packages/ac/94/30bbd09e8d45339fa77a48f5778d74d47e9242c11b3cd1093b3d994770a5/gql-4.0.0-py3-none-any.whl", hash = "sha256:f3beed7c531218eb24d97cb7df031b4a84fdb462f4a2beb86e2633d395937479", size = 89900, upload-time = "2025-08-17T14:32:34.029Z" },
 ]
 
 [package.optional-dependencies]
