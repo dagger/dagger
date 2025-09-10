@@ -1,7 +1,12 @@
 # This file was generated. See https://daggerverse.dev/mod/github.com/dagger/dagger/modules/gha
 name: evals
 "on":
-    push:
+    pull_request:
+        types:
+            - opened
+            - reopened
+            - synchronize
+            - ready_for_review
         paths:
             - core/llm.go
             - core/mcp.go
@@ -11,7 +16,6 @@ name: evals
             - core/schema/llm.go
             - core/schema/env.go
             - modules/evaluator/**
-            - .github/workflows/evals.gen.yml
     workflow_dispatch: {}
 jobs:
     testdev:
