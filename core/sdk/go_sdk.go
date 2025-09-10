@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
@@ -230,6 +231,7 @@ func (sdk *goSDK) Runtime(
 	if err != nil {
 		return inst, err
 	}
+	fmt.Printf("ACB dag.Select calling go build at %v\n", time.Now())
 	if err := dag.Select(ctx, ctr, &ctr,
 		dagql.Selector{
 			Field: "withExec",
@@ -286,6 +288,7 @@ func (sdk *goSDK) Runtime(
 			},
 		},
 	); err != nil {
+		fmt.Printf("ACB dag.Select go build failed at %v with %v\n", time.Now(), err)
 		return inst, fmt.Errorf("failed to build go runtime binary: %w", err)
 	}
 
