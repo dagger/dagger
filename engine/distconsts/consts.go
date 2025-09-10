@@ -37,3 +37,7 @@ const (
 const (
 	OCIVersionAnnotation = "org.opencontainers.image.version"
 )
+
+const (
+	EngineCustomCACertsDir = "/usr/local/share/ca-certificates"
+)
