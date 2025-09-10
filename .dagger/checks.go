@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
@@ -32,6 +33,12 @@ func (dev *DaggerDev) Check(ctx context.Context,
 	routes.Add(dev.checksForSDK("sdk/rust", dev.SDK().Rust)...)
 	routes.Add(dev.checksForSDK("sdk/elixir", dev.SDK().Elixir)...)
 	routes.Add(dev.checksForSDK("sdk/dotnet", dev.SDK().Dotnet)...)
+
+	size, err := dev.Go().Binary("./cmd/codegen").Size(ctx)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("ACB codegen size is %d bytes\n", size)
 
 	if len(targets) == 0 {
 		for route := range routes.children {
