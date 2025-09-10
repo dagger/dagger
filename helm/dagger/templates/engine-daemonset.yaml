@@ -95,14 +95,25 @@ spec:
                 name: {{ include "dagger.fullname" . }}-magicache-token
                 {{- end }}
           {{- end }}
-          {{- if .Values.engine.port }}
+          {{- if or .Values.engine.containerPorts .Values.engine.port }}
           ports:
+            {{- if .Values.engine.containerPorts }}
+            {{- range .Values.engine.containerPorts }}
+            - name: {{ .name }}
+              containerPort: {{ .containerPort }}
+              protocol: {{ .protocol | default "TCP" }}
+              {{- if .hostPort }}
+              hostPort: {{ .hostPort }}
+              {{- end }}
+            {{- end }}
+            {{- else if .Values.engine.port }}
             - name: dagger
               containerPort: {{ .Values.engine.port }}
               protocol: TCP
               {{- if .Values.engine.hostPort }}
               hostPort: {{ .Values.engine.hostPort }}
               {{- end }}
+            {{- end }}
           {{- end }}
           securityContext:
             privileged: true
