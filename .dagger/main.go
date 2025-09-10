@@ -41,7 +41,8 @@ func New(
 	// "sdk/typescript/node_modules",
 	// "sdk/typescript/dist",
 	// "sdk/rust/examples/backend/target",
-	// "sdk/rust/target"
+	// "sdk/rust/target",
+	// "sdk/php/vendor"
 	// ]
 	source *dagger.Directory,
 
