@@ -106,6 +106,7 @@ func (l *Loader) namedSDK(
 
 	switch sdkNamedParsed {
 	case sdkGo:
+		fmt.Printf("ACB loading goSDK config=%+v\n", sdk.Config)
 		return &goSDK{root: root, rawConfig: sdk.Config}, nil
 	case sdkPython:
 		return l.loadBuiltinSDK(ctx, root, sdk, digest.Digest(os.Getenv(distconsts.PythonSDKManifestDigestEnvName)))
