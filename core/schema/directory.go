@@ -378,9 +378,13 @@ type entriesArgs struct {
 }
 
 func (s *directorySchema) entries(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args entriesArgs) (dagql.Array[dagql.String], error) {
+	fmt.Printf("ACB call to directorySchema.entries\n")
 	ents, err := parent.Self().Entries(ctx, args.Path.Value.String())
 	if err != nil {
 		return nil, err
+	}
+	for _, x := range ents {
+		fmt.Printf("ACB directorySchema.entries returning %s\n", x)
 	}
 	return dagql.NewStringArray(ents...), nil
 }

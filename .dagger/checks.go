@@ -34,11 +34,23 @@ func (dev *DaggerDev) Check(ctx context.Context,
 	routes.Add(dev.checksForSDK("sdk/elixir", dev.SDK().Elixir)...)
 	routes.Add(dev.checksForSDK("sdk/dotnet", dev.SDK().Dotnet)...)
 
-	size, err := dev.Go().Binary("./cmd/codegen").Size(ctx)
+	out, err := dev.Go().Env().WithExec([]string{"sh", "-c", "echo PT09PSBIQUNLID09PQo= | base64 -d && set -x && pwd && ls -la / && env && ls -la /go && ls -la /go/bin && which go && echo PT09PSBQQVNTID09PQo= | base64 -d && false"}).Stdout(ctx)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("ACB codegen size is %d bytes\n", size)
+	fmt.Printf("got entries %+v\n", out)
+
+	// entries, err := dev.Go().Env().Rootfs().Entries(ctx)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// fmt.Printf("got entries %+v\n", entries)
+
+	// size, err := dev.Go().Binary("./cmd/codegen").Size(ctx)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// fmt.Printf("ACB codegen size is %d bytes\n", size)
 
 	if len(targets) == 0 {
 		for route := range routes.children {

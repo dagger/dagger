@@ -42,18 +42,22 @@ type goSDKConfig struct {
 }
 
 func (sdk *goSDK) AsRuntime() (core.Runtime, bool) {
+	fmt.Printf("ACB goSDK.AsRuntime\n")
 	return sdk, true
 }
 
 func (sdk *goSDK) AsCodeGenerator() (core.CodeGenerator, bool) {
+	fmt.Printf("ACB goSDK.AsCodeGenerator\n")
 	return sdk, true
 }
 
 func (sdk *goSDK) AsClientGenerator() (core.ClientGenerator, bool) {
+	fmt.Printf("ACB goSDK.AsClientGenerator\n")
 	return sdk, true
 }
 
 func (sdk *goSDK) RequiredClientGenerationFiles(_ context.Context) (dagql.Array[dagql.String], error) {
+	fmt.Printf("ACB goSDK.RequiredClientGenerationFiles\n")
 	return dagql.NewStringArray("./go.mod", "./go.sum", "main.go"), nil
 }
 
@@ -64,6 +68,7 @@ func (sdk *goSDK) GenerateClient(
 	outputDir string,
 ) (inst dagql.ObjectResult[*core.Directory], err error) {
 	dag, err := sdk.root.Server.Server(ctx)
+	fmt.Printf("ACB goSDK.GenerateClient\n")
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag for go module sdk client generation: %w", err)
 	}
@@ -174,6 +179,7 @@ func (sdk *goSDK) Codegen(
 	deps *core.ModDeps,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (_ *core.GeneratedCode, rerr error) {
+	fmt.Printf("ACB goSDK.Codegen\n")
 	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: run codegen")
 	defer telemetry.End(span, func() error { return rerr })
 	dag, err := sdk.root.Server.Server(ctx)
@@ -222,6 +228,7 @@ func (sdk *goSDK) Runtime(
 	deps *core.ModDeps,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (inst dagql.ObjectResult[*core.Container], rerr error) {
+	fmt.Printf("ACB goSDK.Runtime\n")
 	dag, err := sdk.root.Server.Server(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag for go module sdk runtime: %w", err)
@@ -232,6 +239,33 @@ func (sdk *goSDK) Runtime(
 		return inst, err
 	}
 	fmt.Printf("ACB dag.Select calling go build at %v\n", time.Now())
+
+	if 1 > 0 {
+		fmt.Printf("ACB testing go exists (inside Runtime)\n")
+		var out dagql.String
+		err := dag.Select(ctx, ctr, &out,
+			dagql.Selector{
+				Field: "withExec",
+				Args: []dagql.NamedInput{
+					{
+						Name: "args",
+						Value: dagql.ArrayInput[dagql.String]{
+							"sh", "-c", "which go",
+						},
+					},
+				},
+			},
+			dagql.Selector{
+				Field: "stdout",
+			},
+		)
+		if err != nil {
+			fmt.Printf("ACB go exists test failed\n")
+			panic(err)
+		}
+		fmt.Printf("ACB which go: %s\n", out)
+	}
+
 	if err := dag.Select(ctx, ctr, &ctr,
 		dagql.Selector{
 			Field: "withExec",
@@ -300,6 +334,7 @@ func (sdk *goSDK) baseWithCodegen(
 	deps *core.ModDeps,
 	src dagql.ObjectResult[*core.ModuleSource],
 ) (dagql.ObjectResult[*core.Container], error) {
+	fmt.Printf("ACB goSDK.baseWithCodegen\n")
 	var ctr dagql.ObjectResult[*core.Container]
 
 	dag, err := sdk.root.Server.Server(ctx)
@@ -337,6 +372,24 @@ func (sdk *goSDK) baseWithCodegen(
 		},
 	); err != nil {
 		return ctr, fmt.Errorf("failed to remove dagger.gen.go from source directory: %w", err)
+	}
+
+	if 1 > 0 {
+		//fmt.Printf("ACB I AM HERE\n")
+		//var entries dagql.Array[dagql.String]
+		//err := dag.Select(ctx, contextDir, &entries,
+		//	//dagql.Selector{
+		//	//	Field: "rootfs",
+		//	//},
+		//	dagql.Selector{
+		//		Field: "entries",
+		//	},
+		//)
+		//if err != nil {
+		//	panic(err)
+		//}
+		//fmt.Printf("ACB got entries %+v\n", entries)
+
 	}
 
 	codegenArgs := dagql.ArrayInput[dagql.String]{
@@ -457,10 +510,63 @@ func (sdk *goSDK) baseWithCodegen(
 		return ctr, fmt.Errorf("failed to mount introspection json file into go module sdk container codegen: %w", err)
 	}
 
+	//if 5 > -3 {
+	//	fmt.Printf("ACB testing codegen exists\n")
+	//	var out dagql.String
+	//	err := dag.Select(ctx, ctr, &out,
+	//		dagql.Selector{
+	//			Field: "withExec",
+	//			Args: []dagql.NamedInput{
+	//				{
+	//					Name: "args",
+	//					Value: dagql.ArrayInput[dagql.String]{
+	//						"sh", "-c", "which codegen",
+	//					},
+	//				},
+	//			},
+	//		},
+	//		dagql.Selector{
+	//			Field: "stdout",
+	//		},
+	//	)
+	//	if err != nil {
+	//		fmt.Printf("ACB codegen exists test failed\n")
+	//		panic(err)
+	//	}
+	//	fmt.Printf("ACB which codegen: %s\n", out)
+	//}
+
+	//if 5 > -3 {
+	//	fmt.Printf("ACB testing go exists\n")
+	//	var out dagql.String
+	//	err := dag.Select(ctx, ctr, &out,
+	//		dagql.Selector{
+	//			Field: "withExec",
+	//			Args: []dagql.NamedInput{
+	//				{
+	//					Name: "args",
+	//					Value: dagql.ArrayInput[dagql.String]{
+	//						"sh", "-c", "which go",
+	//					},
+	//				},
+	//			},
+	//		},
+	//		dagql.Selector{
+	//			Field: "stdout",
+	//		},
+	//	)
+	//	if err != nil {
+	//		fmt.Printf("ACB go exists test failed\n")
+	//		panic(err)
+	//	}
+	//	fmt.Printf("ACB which go: %s\n", out)
+	//}
+
 	return ctr, nil
 }
 
 func (sdk *goSDK) base(ctx context.Context) (dagql.ObjectResult[*core.Container], error) {
+	fmt.Printf("ACB goSDK.base\n")
 	var inst dagql.ObjectResult[*core.Container]
 
 	dag, err := sdk.root.Server.Server(ctx)
@@ -481,6 +587,32 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.ObjectResult[*core.Container]
 		},
 	); err != nil {
 		return inst, fmt.Errorf("failed to get base container from go module sdk tarball: %w", err)
+	}
+
+	if 5 > -3 {
+		fmt.Printf("ACB what is in _builtinContainer for %q\n", os.Getenv(distconsts.GoSDKManifestDigestEnvName))
+		var out dagql.String
+		err := dag.Select(ctx, baseCtr, &out,
+			dagql.Selector{
+				Field: "withExec",
+				Args: []dagql.NamedInput{
+					{
+						Name: "args",
+						Value: dagql.ArrayInput[dagql.String]{
+							"sh", "-c", "set -x && env && which go",
+						},
+					},
+				},
+			},
+			dagql.Selector{
+				Field: "stdout",
+			},
+		)
+		if err != nil {
+			fmt.Printf("ACB go exists test failed\n")
+			panic(err)
+		}
+		fmt.Printf("ACB which go: %s\n", out)
 	}
 
 	var modCacheBaseDir dagql.Result[*core.Directory]
@@ -657,6 +789,7 @@ func gitConfigSelectors(ctx context.Context, bk *buildkit.Client) ([]dagql.Selec
 }
 
 func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, []dagql.Selector, error) {
+	fmt.Printf("ACB goSDK.getUnixSocketSelector\n")
 	dag, err := sdk.root.Server.Server(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get dag for go module sdk: %w", err)
