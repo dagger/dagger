@@ -303,7 +303,11 @@ func (ci *CI) withEvalsWorkflow() *CI {
 	})
 	w := gha.Workflow("evals", dagger.GhaWorkflowOpts{
 		// Only run when LLM-related files are changed
-		OnPushPaths: []string{
+		OnPullRequestOpened:         true,
+		OnPullRequestReopened:       true,
+		OnPullRequestSynchronize:    true,
+		OnPullRequestReadyForReview: true,
+		OnPullRequestPaths: []string{
 			"core/llm.go",
 			"core/mcp.go",
 			"core/env.go",
@@ -312,7 +316,6 @@ func (ci *CI) withEvalsWorkflow() *CI {
 			"core/schema/llm.go",
 			"core/schema/env.go",
 			"modules/evaluator/**",
-			".github/workflows/evals.gen.yml",
 		},
 	}).WithJob(gha.Job(
 		"testdev",
