@@ -10,15 +10,10 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	. "github.com/dave/jennifer/jen" //nolint:staticcheck
 	"github.com/mitchellh/mapstructure"
 )
 
 const errorTypeName = "error"
-
-var voidDef = Qual("dag", "TypeDef").Call().
-	Dot("WithKind").Call(Id("dagger").Dot("TypeDefKindVoidKind")).
-	Dot("WithOptional").Call(Lit(true))
 
 func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*funcTypeSpec, error) {
 	spec := &funcTypeSpec{
@@ -96,94 +91,6 @@ type funcTypeSpec struct {
 
 var _ ParsedType = &funcTypeSpec{}
 var _ FuncParsedType = &funcTypeSpec{}
-
-func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
-	var fnReturnTypeDefCode *Statement
-	if spec.returnSpec == nil {
-		fnReturnTypeDefCode = voidDef
-	} else {
-		var err error
-		fnReturnTypeDefCode, err = spec.returnSpec.TypeDefCode()
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate return type code: %w", err)
-		}
-	}
-
-	fnTypeDefCode := Qual("dag", "Function").Call(Lit(spec.name), Add(Line(), fnReturnTypeDefCode))
-
-	if spec.doc != "" {
-		fnTypeDefCode = dotLine(fnTypeDefCode, "WithDescription").Call(Lit(strings.TrimSpace(spec.doc)))
-	}
-	if spec.sourceMap != nil {
-		fnTypeDefCode = dotLine(fnTypeDefCode, "WithSourceMap").Call(spec.sourceMap.TypeDefCode())
-	}
-
-	for _, argSpec := range spec.argSpecs {
-		if argSpec.isContext {
-			// ignore ctx arg
-			continue
-		}
-
-		argTypeDefCode, err := argSpec.typeSpec.TypeDefCode()
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate arg type code: %w", err)
-		}
-		if argSpec.optional {
-			argTypeDefCode = argTypeDefCode.Dot("WithOptional").Call(Lit(true))
-		}
-
-		argOptsCode := []Code{}
-		if argSpec.description != "" {
-			argOptsCode = append(argOptsCode, Id("Description").Op(":").Lit(argSpec.description))
-		}
-		if argSpec.sourceMap != nil {
-			argOptsCode = append(argOptsCode, Id("SourceMap").Op(":").Add(argSpec.sourceMap.TypeDefCode()))
-		}
-		if argSpec.hasDefaultValue {
-			var defaultValue string
-			if enumType, ok := argSpec.typeSpec.(*parsedEnumTypeReference); ok {
-				v, ok := argSpec.defaultValue.(string)
-				if !ok {
-					return nil, fmt.Errorf("unknown enum value %q", v)
-				}
-				res := enumType.lookup(v)
-				if res == nil {
-					return nil, fmt.Errorf("unknown enum value %q", defaultValue)
-				}
-				defaultValue = strconv.Quote(res.name)
-			} else {
-				v, err := json.Marshal(argSpec.defaultValue)
-				if err != nil {
-					return nil, fmt.Errorf("could not encode default value %q: %w", argSpec.defaultValue, err)
-				}
-				defaultValue = string(v)
-			}
-			argOptsCode = append(argOptsCode, Id("DefaultValue").Op(":").Id("dagger").Dot("JSON").Call(Lit(defaultValue)))
-		}
-
-		if argSpec.defaultPath != "" {
-			argOptsCode = append(argOptsCode, Id("DefaultPath").Op(":").Lit(argSpec.defaultPath))
-		}
-
-		if len(argSpec.ignore) > 0 {
-			ignores := make([]Code, 0, len(argSpec.ignore))
-			for _, pattern := range argSpec.ignore {
-				ignores = append(ignores, Lit(pattern))
-			}
-
-			argOptsCode = append(argOptsCode, Id("Ignore").Op(":").Index().String().Values(ignores...))
-		}
-
-		// arguments to WithArg (args to arg... ugh, at least the name of the variable is honest?)
-		argTypeDefArgCode := []Code{Lit(argSpec.name), argTypeDefCode}
-		if len(argOptsCode) > 0 {
-			argTypeDefArgCode = append(argTypeDefArgCode, Id("dagger").Dot("FunctionWithArgOpts").Values(argOptsCode...))
-		}
-		fnTypeDefCode = dotLine(fnTypeDefCode, "WithArg").Call(argTypeDefArgCode...)
-	}
-
-	return fnTypeDefCode, nil
-}
 
 func (spec *funcTypeSpec) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
 	return nil, nil

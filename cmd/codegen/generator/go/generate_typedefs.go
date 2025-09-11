@@ -33,13 +33,14 @@ func (g *GoGenerator) GenerateTypeDefs(ctx context.Context, schema *introspectio
 	mfs := memfs.New()
 	var overlay fs.FS = layerfs.New(
 		mfs,
+		&MountedFS{FS: dagger.QueryBuilder, Name: filepath.Join(outDir, "internal")},
 	)
 
 	res := &generator.GeneratedState{
 		Overlay: overlay,
 	}
 
-	pkgInfo, partial, err := g.bootstrapMod(mfs, res)
+	pkgInfo, partial, err := g.bootstrapMod(mfs, res, true)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap package: %w", err)
 	}
@@ -63,12 +64,11 @@ func (g *GoGenerator) GenerateTypeDefs(ctx context.Context, schema *introspectio
 	if _, err := os.Stat(genFile); err != nil {
 		// assume package main, default for modules
 		pkgInfo.PackageName = "main"
-		if err := mfs.MkdirAll("internal/dagger", 0700); err != nil {
-			return nil, err
+		// generate an initial dagger.gen.go from the base Dagger API
+		if err := generateCode(ctx, g.Config, schema, schemaVersion, mfs, pkgInfo, nil, nil, 0); err != nil {
+			return nil, fmt.Errorf("generate code: %w", err)
 		}
-		if err := mfs.WriteFile(filepath.Join("internal/dagger", ClientGenFile), dagger.GoDagGen, 0600); err != nil {
-			return nil, err
-		}
+
 		partial = true
 	}
 

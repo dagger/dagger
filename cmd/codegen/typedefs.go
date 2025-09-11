@@ -27,7 +27,7 @@ func TypeDefs(ctx context.Context, cfg generator.Config, typedefFunc TypeDefFunc
 		generator.SetSchemaParents(introspectionSchema)
 	}
 
-	slog.Info("generating %s typedefs\n", cfg.Lang)
+	slog.Info(fmt.Sprintf("generating %s typedefs\n", cfg.Lang))
 
 	for ctx.Err() == nil {
 		generated, err := typedefFunc(ctx, introspectionSchema, introspectionSchemaVersion)

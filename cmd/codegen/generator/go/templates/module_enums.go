@@ -36,10 +36,6 @@ func (spec *parsedEnumTypeReference) lookup(key string) *parsedEnumMember {
 	return nil
 }
 
-func (spec *parsedEnumTypeReference) TypeDefCode() (*Statement, error) {
-	return Qual("dag", "TypeDef").Call().Dot("WithEnum").Call(Lit(spec.name)), nil
-}
-
 func (spec *parsedEnumTypeReference) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
 	return dag.TypeDef().WithEnum(spec.name), nil
 }
@@ -198,48 +194,6 @@ type parsedEnumMember struct {
 }
 
 var _ NamedParsedType = &parsedEnumType{}
-
-func (spec *parsedEnumType) TypeDefCode() (*Statement, error) {
-	withEnumArgsCode := []Code{
-		Lit(spec.name),
-	}
-	withEnumOptsCode := []Code{}
-	if spec.doc != "" {
-		withEnumOptsCode = append(withEnumOptsCode, Id("Description").Op(":").Lit(strings.TrimSpace(spec.doc)))
-	}
-	if spec.sourceMap != nil {
-		withEnumOptsCode = append(withEnumOptsCode, Id("SourceMap").Op(":").Add(spec.sourceMap.TypeDefCode()))
-	}
-	if len(withEnumOptsCode) > 0 {
-		withEnumArgsCode = append(withEnumArgsCode, Id("dagger").Dot("TypeDefWithEnumOpts").Values(withEnumOptsCode...))
-	}
-
-	typeDefCode := Qual("dag", "TypeDef").Call().Dot("WithEnum").Call(withEnumArgsCode...)
-
-	for _, val := range spec.values {
-		memberTypeDefCode := []Code{
-			Lit(val.name),
-		}
-		var withEnumMemberOpts []Code
-		if val.value != "" {
-			withEnumMemberOpts = append(withEnumMemberOpts, Id("Value").Op(":").Lit(val.value))
-		}
-		if val.doc != "" {
-			withEnumMemberOpts = append(withEnumMemberOpts, Id("Description").Op(":").Lit(strings.TrimSpace(val.doc)))
-		}
-		if val.sourceMap != nil {
-			withEnumMemberOpts = append(withEnumMemberOpts, Id("SourceMap").Op(":").Add(val.sourceMap.TypeDefCode()))
-		}
-		if len(withEnumMemberOpts) > 0 {
-			memberTypeDefCode = append(memberTypeDefCode,
-				Id("dagger").Dot("TypeDefWithEnumMemberOpts").Values(withEnumMemberOpts...),
-			)
-		}
-		typeDefCode = dotLine(typeDefCode, "WithEnumMember").Call(memberTypeDefCode...)
-	}
-
-	return typeDefCode, nil
-}
 
 func (spec *parsedEnumType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
 	withEnumOpts := dagger.TypeDefWithEnumOpts{}
