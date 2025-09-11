@@ -332,8 +332,9 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		spec := dagql.FieldSpec{
 			Name: gqlFieldName(mod.Name()),
 			// Description: "TODO", // XXX(vito)
-			Type:   obj,
-			Module: obj.Module.IDModule(),
+			Type:             obj,
+			Module:           obj.Module.IDModule(),
+			DeprecatedReason: objDef.Deprecated,
 		}
 
 		if objDef.SourceMap.Valid {
