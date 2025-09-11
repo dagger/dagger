@@ -303,8 +303,16 @@ func FromDir(dir, srcRoot string) (vcs *Cmd, root string, err error) {
 					continue
 				}
 				// Otherwise, we have one VCS inside a different VCS.
-				return nil, "", fmt.Errorf("directory %q uses %s, but parent %q uses %s",
-					filepath.Join(srcRoot, rootRet), vcsRet.Cmd, filepath.Join(srcRoot, root), vcs.Cmd)
+				return nil, "", fmt.Errorf(
+					"directory %q uses %s, but parent %q uses %s",
+					filepath.Join(
+						srcRoot,
+						rootRet,
+					),
+					vcsRet.Cmd,
+					filepath.Join(srcRoot, root),
+					vcs.Cmd,
+				)
 			}
 		}
 
@@ -500,7 +508,12 @@ func RepoRootForImportDynamic(importPath string, verbose bool) (*RepoRoot, error
 		}
 		metaImport2, err := matchGoImport(imports, originalImportPath)
 		if err != nil || metaImport != metaImport2 {
-			return nil, fmt.Errorf("%s and %s disagree about go-import for %s", urlStr0, urlStr, metaImport.Prefix)
+			return nil, fmt.Errorf(
+				"%s and %s disagree about go-import for %s",
+				urlStr0,
+				urlStr,
+				metaImport.Prefix,
+			)
 		}
 	}
 
@@ -666,7 +679,7 @@ var vcsPaths = []*vcsPath{
 	// HTTPS ref
 	{
 		prefix: "dev.azure.com/",
-		re:     `^(?P<root>dev\.azure\.com/(?P<account>[A-Za-z0-9_.\-]+)(/(?P<project>[A-Za-z0-9_.\-]+))?/_git/(?P<repo>[A-Za-z0-9_.\-]+)(\.git)?)(/[\p{L}0-9_.\-]+)*(/.*)?$`,
+		re:     `^(?P<root>dev\.azure\.com/(?P<account>[A-Za-z0-9_.%\-]+)(/(?P<project>[A-Za-z0-9_.%\-]+))?/_git/(?P<repo>[A-Za-z0-9_.%\-]+)(\.git)?)(/[\p{L}0-9_.\-]+)*(/.*)?$`,
 		vcs:    "git",
 		repo:   "https://{root}",
 		check: func(match map[string]string) error {
@@ -677,7 +690,7 @@ var vcsPaths = []*vcsPath{
 	// SSH ref
 	{
 		prefix: "ssh.dev.azure.com/",
-		re:     `^(?P<root>ssh\.dev\.azure\.com/v\d+/(?P<account>[A-Za-z0-9_.\-]+)/(?P<project>[A-Za-z0-9_.\-]+)/(?P<repo>[A-Za-z0-9_.\-]+))(/[\p{L}0-9_.\-]+)*(/.*)?$`,
+		re:     `^(?P<root>ssh\.dev\.azure\.com/v\d+/(?P<account>[A-Za-z0-9_.%\-]+)/(?P<project>[A-Za-z0-9_.%\-]+)/(?P<repo>[A-Za-z0-9_.%\-]+))(/[\p{L}0-9_.\-]+)*(/.*)?$`,
 		vcs:    "git",
 		repo:   "https://dev.azure.com/{account}/{project}/_git/{repo}",
 		check: func(match map[string]string) error {
@@ -716,7 +729,9 @@ func launchpadVCS(match map[string]string) error {
 	if match["project"] == "" || match["series"] == "" {
 		return nil
 	}
-	_, err := httpGET(expand(match, "https://code.launchpad.net/{project}{series}/.bzr/branch-format"))
+	_, err := httpGET(
+		expand(match, "https://code.launchpad.net/{project}{series}/.bzr/branch-format"),
+	)
 	if err != nil {
 		match["root"] = expand(match, "launchpad.net/{project}")
 		match["repo"] = expand(match, "https://{root}")
