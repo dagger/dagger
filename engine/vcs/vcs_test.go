@@ -275,6 +275,14 @@ func TestRepoRootForImportPath(t *testing.T) {
 				Root: "dev.azure.com/daggere2e/public/_git/dagger-test-modules.git",
 			},
 		},
+		{
+			"dev.azure.com/dagger%20e2e/public/_git/dagger%20test%20modules.git/depth1/depth2",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://dev.azure.com/dagger%20e2e/public/_git/dagger%20test%20modules",
+				Root: "dev.azure.com/dagger%20e2e/public/_git/dagger%20test%20modules.git",
+			},
+		},
 
 		// SSH ref - new ref style
 		// https://learn.microsoft.com/en-us/azure/devops/repos/git/use-ssh-keys-to-authenticate?view=azure-devops
@@ -292,6 +300,14 @@ func TestRepoRootForImportPath(t *testing.T) {
 				VCS:  vcsGit,
 				Repo: "https://dev.azure.com/daggere2e/private/_git/dagger-test-modules",
 				Root: "ssh.dev.azure.com/v3/daggere2e/private/dagger-test-modules.git",
+			},
+		},
+		{
+			"ssh.dev.azure.com/v3/dagger%20e2e/private/dagger%20test%20modules.git/depth1/depth2",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://dev.azure.com/dagger%20e2e/private/_git/dagger%20test%20modules",
+				Root: "ssh.dev.azure.com/v3/dagger%20e2e/private/dagger%20test%20modules.git",
 			},
 		},
 		{
@@ -322,10 +338,24 @@ func TestRepoRootForImportPath(t *testing.T) {
 			continue
 		}
 		if got.VCS.Name != want.VCS.Name || got.Repo != want.Repo {
-			t.Errorf("RepoRootForImportPath(%q) = VCS(%s) Repo(%s), want VCS(%s) Repo(%s)", test.path, got.VCS, got.Repo, want.VCS, want.Repo)
+			t.Errorf(
+				"RepoRootForImportPath(%q) = VCS(%s) Repo(%s), want VCS(%s) Repo(%s)",
+				test.path,
+				got.VCS,
+				got.Repo,
+				want.VCS,
+				want.Repo,
+			)
 		}
 		if got.Root != want.Root {
-			t.Errorf("RepoRootForImportPath(%q) = VCS(%s) Root(%s), want VCS(%s) Root(%s)", test.path, got.VCS, got.Root, want.VCS, want.Root)
+			t.Errorf(
+				"RepoRootForImportPath(%q) = VCS(%s) Root(%s), want VCS(%s) Root(%s)",
+				test.path,
+				got.VCS,
+				got.Root,
+				want.VCS,
+				want.Root,
+			)
 		}
 	}
 }
@@ -368,7 +398,15 @@ func TestFromDir(t *testing.T) {
 			continue
 		}
 		if got.VCS.Name != want.VCS.Name || got.Root != want.Root {
-			t.Errorf("FromDir(%q, %q) = VCS(%s) Root(%s), want VCS(%s) Root(%s)", dir, tempDir, got.VCS, got.Root, want.VCS, want.Root)
+			t.Errorf(
+				"FromDir(%q, %q) = VCS(%s) Root(%s), want VCS(%s) Root(%s)",
+				dir,
+				tempDir,
+				got.VCS,
+				got.Root,
+				want.VCS,
+				want.Root,
+			)
 		}
 	}
 }
@@ -497,70 +535,150 @@ func TestMatchGoImport(t *testing.T) {
 	}{
 		{
 			imports: []metaImport{
-				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
+				{
+					Prefix:   "example.com/user/foo",
+					VCS:      "git",
+					RepoRoot: "https://example.com/repo/target",
+				},
 			},
 			path: "example.com/user/foo",
-			mi:   metaImport{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
+			mi: metaImport{
+				Prefix:   "example.com/user/foo",
+				VCS:      "git",
+				RepoRoot: "https://example.com/repo/target",
+			},
 		},
 		{
 			imports: []metaImport{
-				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
+				{
+					Prefix:   "example.com/user/foo",
+					VCS:      "git",
+					RepoRoot: "https://example.com/repo/target",
+				},
 			},
 			path: "example.com/user/foo/",
-			mi:   metaImport{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
+			mi: metaImport{
+				Prefix:   "example.com/user/foo",
+				VCS:      "git",
+				RepoRoot: "https://example.com/repo/target",
+			},
 		},
 		{
 			imports: []metaImport{
-				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-				{Prefix: "example.com/user/fooa", VCS: "git", RepoRoot: "https://example.com/repo/target"},
+				{
+					Prefix:   "example.com/user/foo",
+					VCS:      "git",
+					RepoRoot: "https://example.com/repo/target",
+				},
+				{
+					Prefix:   "example.com/user/fooa",
+					VCS:      "git",
+					RepoRoot: "https://example.com/repo/target",
+				},
 			},
 			path: "example.com/user/foo",
-			mi:   metaImport{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
+			mi: metaImport{
+				Prefix:   "example.com/user/foo",
+				VCS:      "git",
+				RepoRoot: "https://example.com/repo/target",
+			},
 		},
 		{
 			imports: []metaImport{
-				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-				{Prefix: "example.com/user/fooa", VCS: "git", RepoRoot: "https://example.com/repo/target"},
+				{
+					Prefix:   "example.com/user/foo",
+					VCS:      "git",
+					RepoRoot: "https://example.com/repo/target",
+				},
+				{
+					Prefix:   "example.com/user/fooa",
+					VCS:      "git",
+					RepoRoot: "https://example.com/repo/target",
+				},
 			},
 			path: "example.com/user/fooa",
-			mi:   metaImport{Prefix: "example.com/user/fooa", VCS: "git", RepoRoot: "https://example.com/repo/target"},
+			mi: metaImport{
+				Prefix:   "example.com/user/fooa",
+				VCS:      "git",
+				RepoRoot: "https://example.com/repo/target",
+			},
 		},
 		{
 			imports: []metaImport{
-				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-				{Prefix: "example.com/user/foo/bar", VCS: "git", RepoRoot: "https://example.com/repo/target"},
+				{
+					Prefix:   "example.com/user/foo",
+					VCS:      "git",
+					RepoRoot: "https://example.com/repo/target",
+				},
+				{
+					Prefix:   "example.com/user/foo/bar",
+					VCS:      "git",
+					RepoRoot: "https://example.com/repo/target",
+				},
 			},
 			path: "example.com/user/foo/bar",
 			err:  errors.New("should not be allowed to create nested repo"),
 		},
 		{
 			imports: []metaImport{
-				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-				{Prefix: "example.com/user/foo/bar", VCS: "git", RepoRoot: "https://example.com/repo/target"},
+				{
+					Prefix:   "example.com/user/foo",
+					VCS:      "git",
+					RepoRoot: "https://example.com/repo/target",
+				},
+				{
+					Prefix:   "example.com/user/foo/bar",
+					VCS:      "git",
+					RepoRoot: "https://example.com/repo/target",
+				},
 			},
 			path: "example.com/user/foo/bar/baz",
 			err:  errors.New("should not be allowed to create nested repo"),
 		},
 		{
 			imports: []metaImport{
-				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-				{Prefix: "example.com/user/foo/bar", VCS: "git", RepoRoot: "https://example.com/repo/target"},
+				{
+					Prefix:   "example.com/user/foo",
+					VCS:      "git",
+					RepoRoot: "https://example.com/repo/target",
+				},
+				{
+					Prefix:   "example.com/user/foo/bar",
+					VCS:      "git",
+					RepoRoot: "https://example.com/repo/target",
+				},
 			},
 			path: "example.com/user/foo/bar/baz/qux",
 			err:  errors.New("should not be allowed to create nested repo"),
 		},
 		{
 			imports: []metaImport{
-				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-				{Prefix: "example.com/user/foo/bar", VCS: "git", RepoRoot: "https://example.com/repo/target"},
+				{
+					Prefix:   "example.com/user/foo",
+					VCS:      "git",
+					RepoRoot: "https://example.com/repo/target",
+				},
+				{
+					Prefix:   "example.com/user/foo/bar",
+					VCS:      "git",
+					RepoRoot: "https://example.com/repo/target",
+				},
 			},
 			path: "example.com/user/foo/bar/baz/",
 			err:  errors.New("should not be allowed to create nested repo"),
 		},
 		{
 			imports: []metaImport{
-				{Prefix: "example.com/user/foo", VCS: "git", RepoRoot: "https://example.com/repo/target"},
-				{Prefix: "example.com/user/foo/bar", VCS: "git", RepoRoot: "https://example.com/repo/target"},
+				{
+					Prefix:   "example.com/user/foo",
+					VCS:      "git",
+					RepoRoot: "https://example.com/repo/target",
+				},
+				{
+					Prefix:   "example.com/user/foo/bar",
+					VCS:      "git",
+					RepoRoot: "https://example.com/repo/target",
+				},
 			},
 			path: "example.com",
 			err:  errors.New("pathologically short path"),
