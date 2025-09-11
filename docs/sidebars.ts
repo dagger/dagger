@@ -37,6 +37,7 @@ module.exports = {
       items: [
         "getting-started/quickstarts/basics/index",
         "getting-started/quickstarts/ci/index",
+        "getting-started/quickstarts/blueprint/index",
         "getting-started/quickstarts/agent/index",
         "getting-started/quickstarts/agent/inproject",
       ],
