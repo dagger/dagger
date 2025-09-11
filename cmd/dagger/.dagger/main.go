@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/dagger/dagger/cmd/dagger/.dagger/internal/dagger"
 )
@@ -64,6 +65,11 @@ func (cli DaggerCli) Binary(
 	// +optional
 	platform dagger.Platform,
 ) *dagger.File {
+	out, err := cli.Go.Env().WithExec([]string{"sh", "-c", "set -x && env && ls -la /usr/local/ && which go"}).Stdout(context.TODO())
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("ACB got output %s\n", out)
 	return cli.Go.Binary("./cmd/dagger", dagger.GoBinaryOpts{
 		Platform:  platform,
 		NoSymbols: true,

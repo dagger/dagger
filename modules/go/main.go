@@ -97,6 +97,14 @@ func New(
 			WithMountedCache("/root/.cache/go-build", buildCache).
 			WithWorkdir("/app")
 	}
+
+	fmt.Printf("ACB maybe investigate the base here?\n")
+	out, err := base.WithExec([]string{"sh", "-c", "echo ACB here I am && which go"}).Stdout(context.TODO())
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("ACB out is %s\n", out)
+
 	return Go{
 		Version:     version,
 		Source:      source,
@@ -272,6 +280,7 @@ func (p Go) Build(
 	env := p.Env(platform)
 	cmd := []string{"go", "build", "-o", output}
 	for _, pkg := range mainPkgs {
+		fmt.Printf("ACB under modules/go/main running %v\n", cmd)
 		env = env.WithExec(goCommand(cmd, []string{pkg}, ldflags, p.Values, p.Race))
 	}
 	return dag.Directory().WithDirectory(output, env.Directory(output)), nil
