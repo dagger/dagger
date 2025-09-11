@@ -327,6 +327,7 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.Type
 					Name:        value.Name,
 					Value:       value.Directives.EnumValue(),
 					Description: value.Description,
+					Deprecated:  value.DeprecationReason,
 				})
 			}
 
