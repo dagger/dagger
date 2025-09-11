@@ -18,8 +18,6 @@ import (
 )
 
 func New(
-	ctx context.Context,
-
 	// A directory containing all the inputs of the artifact to be versioned.
 	// An input is any file that changes the artifact if it changes.
 	// This directory is used to compute a digest. If any input changes, the digest changes.
@@ -31,8 +29,7 @@ func New(
 	inputs *dagger.Directory,
 	// +optional
 	// +defaultPath="/"
-	// +ignore=["*", "!.git", "!**/.gitignore", ".git/config"]
-	gitDir *dagger.Directory,
+	gitDir *dagger.GitRepository,
 	// .changes file used to extract version information
 	// +optional
 	// +defaultPath="/"
@@ -45,7 +42,7 @@ func New(
 	// NOTE: .git/config is excluded, since *some* tools (GitHub actions)
 	// produce weird configs with custom headers set
 
-	git, err := git(ctx, gitDir, inputs)
+	git, err := git(gitDir, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +148,7 @@ func (v Version) ImageTag(ctx context.Context) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return mergeBase.Commit, nil
+		return mergeBase, nil
 	}
 
 	versionTag, err := v.Git.VersionTagLatest(ctx, "", head.Commit)
@@ -170,7 +167,7 @@ func (v Version) ImageTag(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return mergeBase.Commit, nil
+	return mergeBase, nil
 }
 
 // Determine the last released version.
