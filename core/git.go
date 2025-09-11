@@ -712,12 +712,12 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			if err != nil {
 				return err
 			}
-			_, err = checkoutGit.Run(ctx, "remote", "add", "origin", gitURL)
+
+			err := doGitCheckout(ctx, checkoutGit, ref.repo.URL.Remote(), gitURL, ref.FullRef, ref.Commit, depth, discardGitDir)
 			if err != nil {
 				return err
 			}
-
-			return doGitCheckout(ctx, checkoutGit, ref.repo.URL.Remote(), ref.FullRef, ref.Commit, depth, discardGitDir)
+			return nil
 		})
 		if err != nil {
 			return fmt.Errorf("failed to checkout %s in %s: %w", ref.FullRef, ref.repo.URL.Remote(), err)
@@ -757,7 +757,8 @@ func (ref *RemoteGitRef) mount(ctx context.Context, depth int, fn func(*gitutil.
 func doGitCheckout(
 	ctx context.Context,
 	checkoutGit *gitutil.GitCLI,
-	remote string,
+	remoteURL string,
+	cloneURL string,
 	fullref string, commit string,
 	depth int,
 	discardGitDir bool,
@@ -776,30 +777,32 @@ func doGitCheckout(
 	if depth > 0 {
 		args = append(args, fmt.Sprintf("--depth=%d", depth))
 	}
-	args = append(args, "origin", pullref)
+	args = append(args, cloneURL, pullref)
 	_, err = checkoutGit.Run(ctx, args...)
 	if err != nil {
 		return err
 	}
 	_, err = checkoutGit.Run(ctx, "checkout", strings.TrimPrefix(fullref, "refs/heads/"))
 	if err != nil {
-		return fmt.Errorf("failed to checkout remote %s: %w", remote, err)
+		return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
 	}
 	_, err = checkoutGit.Run(ctx, "reset", "--hard", commit)
 	if err != nil {
-		return fmt.Errorf("failed to reset ref %s: %w", remote, err)
+		return fmt.Errorf("failed to reset ref: %w", err)
 	}
-	_, err = checkoutGit.Run(ctx, "remote", "set-url", "origin", remote)
-	if err != nil {
-		return fmt.Errorf("failed to set remote origin to %s: %w", remote, err)
+	if remoteURL != "" {
+		_, err = checkoutGit.Run(ctx, "remote", "add", "origin", remoteURL)
+		if err != nil {
+			return fmt.Errorf("failed to set remote origin to %s: %w", remoteURL, err)
+		}
 	}
 	_, err = checkoutGit.Run(ctx, "reflog", "expire", "--all", "--expire=now")
 	if err != nil {
-		return fmt.Errorf("failed to expire reflog for remote %s: %w", remote, err)
+		return fmt.Errorf("failed to expire reflog: %w", err)
 	}
 
 	if err := os.Remove(filepath.Join(checkoutDirGit, "FETCH_HEAD")); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("failed to remove FETCH_HEAD for remote %s: %w", remote, err)
+		return fmt.Errorf("failed to remove FETCH_HEAD: %w", err)
 	}
 
 	// TODO: this feels completely out-of-sync from how we do the rest
@@ -813,13 +816,13 @@ func doGitCheckout(
 			_, err = checkoutGit.Run(ctx, subArgs...)
 		}
 		if err != nil {
-			return fmt.Errorf("failed to update submodules for %s: %w", remote, err)
+			return fmt.Errorf("failed to update submodules: %w", err)
 		}
 	}
 
 	if discardGitDir {
 		if err := os.RemoveAll(checkoutDirGit); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("failed to remove .git for remote %s: %w", remote, err)
+			return fmt.Errorf("failed to remove .git: %w", err)
 		}
 	}
 
@@ -1038,12 +1041,7 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 			if err != nil {
 				return err
 			}
-			_, err = checkoutGit.Run(ctx, "remote", "add", "origin", gitURL)
-			if err != nil {
-				return err
-			}
-
-			return doGitCheckout(ctx, checkoutGit, gitURL, fullref, commit, depth, discardGitDir)
+			return doGitCheckout(ctx, checkoutGit, "", gitURL, fullref, commit, depth, discardGitDir)
 		})
 	})
 	if err != nil {
