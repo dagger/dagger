@@ -303,16 +303,8 @@ func FromDir(dir, srcRoot string) (vcs *Cmd, root string, err error) {
 					continue
 				}
 				// Otherwise, we have one VCS inside a different VCS.
-				return nil, "", fmt.Errorf(
-					"directory %q uses %s, but parent %q uses %s",
-					filepath.Join(
-						srcRoot,
-						rootRet,
-					),
-					vcsRet.Cmd,
-					filepath.Join(srcRoot, root),
-					vcs.Cmd,
-				)
+				return nil, "", fmt.Errorf("directory %q uses %s, but parent %q uses %s",
+					filepath.Join(srcRoot, rootRet), vcsRet.Cmd, filepath.Join(srcRoot, root), vcs.Cmd)
 			}
 		}
 
@@ -508,12 +500,7 @@ func RepoRootForImportDynamic(importPath string, verbose bool) (*RepoRoot, error
 		}
 		metaImport2, err := matchGoImport(imports, originalImportPath)
 		if err != nil || metaImport != metaImport2 {
-			return nil, fmt.Errorf(
-				"%s and %s disagree about go-import for %s",
-				urlStr0,
-				urlStr,
-				metaImport.Prefix,
-			)
+			return nil, fmt.Errorf("%s and %s disagree about go-import for %s", urlStr0, urlStr, metaImport.Prefix)
 		}
 	}
 
@@ -729,9 +716,7 @@ func launchpadVCS(match map[string]string) error {
 	if match["project"] == "" || match["series"] == "" {
 		return nil
 	}
-	_, err := httpGET(
-		expand(match, "https://code.launchpad.net/{project}{series}/.bzr/branch-format"),
-	)
+	_, err := httpGET(expand(match, "https://code.launchpad.net/{project}{series}/.bzr/branch-format"))
 	if err != nil {
 		match["root"] = expand(match, "launchpad.net/{project}")
 		match["repo"] = expand(match, "https://{root}")
