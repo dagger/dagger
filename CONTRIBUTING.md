@@ -1,15 +1,20 @@
-The best way to find a good contribution is to use Dagger for something. Then write down what problems you encounter.
-Could be as simple as a question you had, that the docs didn't answer. Or a bug in the tool, or a missing feature.
-Then pick an item that you're comfortable with in terms of difficulty, and give it a try. 🙂
+The best way to find a good contribution is to use Dagger for something. Then
+write down what problems you encounter. Could be as simple as a question you
+had, that the docs didn't answer. Or a bug in the tool, or a missing feature.
+Then pick an item that you're comfortable with in terms of difficulty, and give
+it a try. 🙂
 
-You can ask questions along the way, we're always happy to help you with your contribution. The bigger the contribution,
-the earlier you should talk to maintainers to make sure you're taking the right approach and are not wasting your effort
-on something that will not get merged.
+You can ask questions along the way, we're always happy to help you with your
+contribution. The bigger the contribution, the earlier you should talk to
+maintainers to make sure you're taking the right approach and are not wasting
+your effort on something that will not get merged.
 
-## Building/Running/Testing
+For more information on SDK contributions, see the SDK-specific [CONTRIBUTING.md](https://github.com/dagger/dagger/tree/main/sdk/CONTRIBUTING.md).
+
+## Development environment
 
 For more detailed instructions on building, running and testing dagger locally,
-see the dagger [dev module](https://github.com/dagger/dagger/tree/main/dagger.json).
+see the dagger [dev module](https://github.com/dagger/dagger/tree/main/.dagger/README.md).
 
 Working on dagger requires dagger to bootstrap it - you can install dagger
 using the instructions at [https://docs.dagger.io/install](https://docs.dagger.io/install).
@@ -23,42 +28,57 @@ The recommended workflow is to fork the repository and open pull requests from y
 
 ### 1. Fork, clone & configure Dagger upstream
 
-- Click on the _Fork_ button on GitHub
+- Click on the *Fork* button on GitHub
 - Clone your fork
+
+  ```shell
+  git clone git@github.com:$YOUR_GITHUB_USER/dagger.git
+  ```
+
 - Add the upstream repository as a new remote
 
-```shell
-# Clone repository
-git clone git@github.com:$YOUR_GITHUB_USER/dagger.git
-
-# Add upstream origin
-git remote add upstream git@github.com:dagger/dagger.git
-```
+  ```shell
+  git remote add upstream git@github.com:dagger/dagger.git
+  ```
 
 ### 2. Create a pull request
 
-```shell
-# Create a new feature branch
-git checkout -b my_feature_branch
+- Create a new feature branch for your changes:
 
-# Make changes to your branch
-# ...
+  ```shell
+  git checkout -b my_feature_branch
+  ```
 
-# Commit changes - remember to sign!
-git commit -s
+- Make whatever changes you need
 
-# Push your new feature branch
-git push my_feature_branch
+- Commit your changes
 
-# Create a new pull request from https://github.com/dagger/dagger
-```
+  ```shell
+  git commit -s
+  ```
 
-### 3. Add release notes fragment
+- Push your changes to your fork
 
-If this is a user-facing change, please add a line for the release notes.
-You will need to have [`changie` installed](https://changie.dev/guide/installation/).
+  ```shell
+  git push
+  ```
 
-If this is a user-facing change in the 🚙 Engine or 🚗 CLI, run `changie new` in the top level directory.
+- Create a new pull request from https://github.com/dagger/dagger
+
+### 3. Review process
+
+- A maintainer will review your pull request and may suggest changes, etc.
+- If needed, make any changes and push them to your branch. If there are
+  conflicts with `main`, rebase your branch on top of the latest `main` and
+  force-push it (find any guide on how to do this online if you're not
+  familiar).
+- Once everything is good, a maintainer will merge your changes.
+
+## Release notes
+
+If this is a user-facing change, a maintainer will ask you to add a line for
+the release notes. You will need to have [`changie` installed](https://changie.dev/guide/installation/).
+
 Here is an example of what that looks like:
 
 ```shell
@@ -71,47 +91,8 @@ changie new
 
 If there are code changes in the SDKs, run `changie new` in the corresponding directory, e.g. `sdk/go`, `sdk/typescript`, etc.
 
-Remember to add & commit the release notes fragment.
-This will be used at release time, in the changelog.
-Here is an example of the end-result for all release notes fragments: [https://github.com/dagger/dagger/blob/v0.6.4/.changes/v0.6.4.md](https://github.com/dagger/dagger/blob/v0.6.4/.changes/v0.6.4.md)
-
-You can find an asciinema of how `changie` works on [https://changie.dev](https://changie.dev)
-
-### 4. Update your pull request with latest changes
-
-```shell
-# Checkout main branch
-git checkout main
-
-# Update your fork's main branch from upstream
-git pull upstream main
-
-# Checkout your feature branch
-git checkout my_feature_branch
-
-# Rebase your feature branch changes on top of the updated main branch
-git rebase main
-
-# Update your pull request with latest changes
-git push -f my_feature_branch
-```
-
-## Scope of pull requests
-
-We prefer small incremental changes that can be reviewed and merged quickly.
-It's OK if it takes multiple pull requests to close an issue.
-
-The idea is that each improvement should land in Dagger's main branch within a
-few hours. The sooner we can get multiple people looking at and agreeing on a
-specific change, the quicker we will have it out in a release. The quicker we
-can get these small improvementes in a Dagger release, the quicker we can get
-feedback from our users and find out what doesn't work, or what we have missed.
-
-The added benefit is that this will force everyone to think about handling
-partially implemented features & non-breaking changes. Both are great
-approaches, and they work really well in the context of Dagger.
-
-["Small incremental changes ftw"](https://github.com/dagger/dagger/pull/1348#issuecomment-1009628531) -> Small pull requests that get merged within hours!
+Remember to add & commit the release notes fragment. This will be used at
+release time, in the changelog.
 
 ## Commits
 
@@ -135,96 +116,7 @@ The Signed-off-by line must match the **author's real name**, otherwise the PR w
 
 ### Commit messages
 
-:::tip
-[How to Write a Git Commit Message](https://chris.beams.io/posts/git-commit/)
-:::
+See:
 
-Guidelines:
-
-- **Group Commits:** Each commit should represent a meaningful change (e.g. implement feature X, fix bug Y, ...).
-  - For instance, a PR should not look like _1) Add Feature X 2) Fix Typo 3) Changes to features X 5) Bugfix for feature X 6) Fix Linter 7)_ ...
-  - Instead, these commits should be squashed together into a single "Add Feature" commit.
-- Each commit should work on its own: it must compile, pass the linter and so on.
-  - This makes life much easier when using `git log`, `git blame`, `git bisect`, etc.
-  - For instance, when doing a `git blame` on a file to figure out why a change
-    was introduced, it's pretty meaningless to see a _Fix linter_ commit message.
-    "Add Feature X" is much more meaningful.
-- Use `git rebase -i main` to group commits together and rewrite their commit message.
-- To add changes to the previous commit, use `git commit --amend -s`. This will
-  change the last commit (amend) instead of creating a new commit.
-- Format: Use the imperative mood in the subject line: "If applied, this commit
-  will _your subject line here_"
-- Add the following prefixes to your commit message to help trigger automated processes[^1]:
-  - `docs:` for documentation changes only (e.g., `docs: Fix typo in X`);
-  - `test:` for changes to tests only (e.g., `test: Check if X does Y`);
-  - `chore:` general things that should be excluded (e.g., `chore: Clean up X`);
-  - `website:` for the documentation website (i.e., the frontend code; e.g., `website: Add X link to navbar`);
-  - `ci:` for internal CI specific changes (e.g., `ci: Enable X for tests`);
-  - `infra:` for infrastructure changes (e.g., `infra: Enable cloudfront for X`);
-  - `fix`: for improvements and bugfixes that do not introduce a feature (e.g., `fix: improve error message`);
-  - `feat`: for new features (e.g., `feat: implement --cache-to feature to export cache`)
-
-[^1]: See [https://www.conventionalcommits.org](https://www.conventionalcommits.org)
-
-## Docs
-
-### Use relative file paths for links
-
-Instead of using URLs to link to a doc page, use relative file paths instead:
-
-```markdown
-❌ This is [a problematic link](/doc-url).
-
-✅ This is [a good link](../relative-doc-file-path.md).
-```
-
-The docs compiler will replace file links with URLs automatically. This helps
-prevent broken internal links. If a file gets renamed, the compiler will catch
-broken links and throw an error. [Learn
-more](https://docusaurus.io/docs/markdown-features/links).
-
-## Vulnerability Scanning
-
-We run trivy scanning of our engine image in GHA to scan for any CVEs present in any third-party binaries we build or that we include in the image (e.g. runc, CNI plugins, etc.). As of this writing, we currently only scan for Critical and High severity CVEs. If any of those are found the GHA job will fail.
-
-It's sometimes possible that the vulnerability may require quite a bit of work to address, especially if it's coming from third-party binary or a transitive dependency in our go.mod that does not have a release with the fix yet.
-
-- In this case, it's worth checking whether the specific vulnerability is actually relevant to us. If it's not or if you're unsure, reach out to the Dagger team on Github or Discord and we can figure out whether to address it or add it to an ignore list.
-
-The rest of this section gives some guidance on fixing these vulnerabilities when they are relevant.
-
-### Vulnerability in a Dagger binary
-
-If a vulnerability is reported in the Go stdlib, we'll want to upgrade the version of Go we use to build everything. As of this writing, this can be done by changing `GolangVersion` in `.dagger/consts/versions.go`.
-
-Otherwise, if a vulnerability is reported in a Go dependency, you'll want to track down where the dependency is coming from.
-
-This can become a bit complicated since it's possible for multiple versions of a Go module to be in the dependency DAG, with only a subset of the versions actually being vulnerable.
-
-1. If the dependency at the vulnerable version is directly listed in our `go.mod`, then you should start by just upgrading it there.
-1. After that, if the vulnerability is still reported, it may be coming from a transitive dependency.
-   - You can track those down with the `go mod graph` command. For example, if the vulnerable module version is `golang.org/x/sys@v0.0.0-20211116061358-0a5406a5449c`, you can run `go mod graph | grep 'golang.org/x/sys@v0.0.0-20211116061358-0a5406a5449c'`.
-
-### Vulnerability in a third-party binary
-
-If a vulnerability is reported in the Go stdlib, we'll want to upgrade the version of Go we use to build everything. As of this writing, this can be done by changing `GolangVersion` in `.dagger/consts/versions.go`.
-
-Otherwise, you'll want to check if the binary in question has a newer version with the vulnerability gone. The versions of these binaries are also controlled in `.dagger/consts/versions.go`.
-
-If there isn't a newer version to upgrade to, we'll be in a tougher spot and may need some combination of upgrading to a non-released commit, sending patches upstream or (as a worst-case fallback) patching it ourselves. Reach out to the Dagger team on Github or Discord if you're unsure how to best proceed.
-
-### How to test SDK changes locally?
-
-TypeScript:
-
-- In `sdk/typescript`, run `npm run build`
-- In your `package.json`, update `@dagger.io/dagger` to reference your local path. For example `"@dagger.io/dagger": "<PATH TO DAGGER FORK>/dagger/sdk/typescript",`
-
-Python:
-
-- While in a VirtualEnvironment, run `pip install <PATH TO DAGGER FORK>/sdk/python`
-
-Go:
-
-- In your Go project, run `go mod edit -replace dagger.io/dagger=<PATH TO DAGGER FORK>/sdk/go`
-- Then `go mod tidy`
+- [How to Write a Git Commit Message](https://chris.beams.io/posts/git-commit/)
+- [Conventional Commits](https://www.conventionalcommits.org)
