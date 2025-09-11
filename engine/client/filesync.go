@@ -105,13 +105,7 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 		if err != nil {
 			return err
 		}
-		if opts.UseGitIgnore {
-			fs, err = fsxutil.NewGitIgnoreFS(fs)
-			if err != nil {
-				return err
-			}
-		}
-		fs, err = fsutil.NewFilterFS(fs, &fsutil.FilterOpt{
+		filteredFS, err := fsutil.NewFilterFS(fs, &fsutil.FilterOpt{
 			IncludePatterns: opts.IncludePatterns,
 			ExcludePatterns: opts.ExcludePatterns,
 			FollowPaths:     opts.FollowPaths,
@@ -121,10 +115,16 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 				return fsutil.MapResultKeep
 			},
 		})
+		if opts.UseGitIgnore {
+			filteredFS, err = fsxutil.NewGitIgnoreFS(filteredFS, fsxutil.NewGitIgnoreMatcher(fs))
+			if err != nil {
+				return err
+			}
+		}
 		if err != nil {
 			return err
 		}
-		return fsutil.Send(stream.Context(), stream, fs, nil)
+		return fsutil.Send(stream.Context(), stream, filteredFS, nil)
 	}
 }
 

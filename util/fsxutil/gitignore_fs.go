@@ -20,10 +20,13 @@ type gitignoreFS struct {
 }
 
 // NewGitIgnoreFS creates a new FS that filters the given FS using gitignore rules
-func NewGitIgnoreFS(fs fsutil.FS) (fsutil.FS, error) {
+func NewGitIgnoreFS(fs fsutil.FS, matcher *GitignoreMatcher) (fsutil.FS, error) {
+	if matcher == nil {
+		matcher = NewGitIgnoreMatcher(fs)
+	}
 	gfs := &gitignoreFS{
 		fs:      fs,
-		matcher: NewGitIgnoreMatcher(fs),
+		matcher: matcher,
 	}
 	return gfs, nil
 }

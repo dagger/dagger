@@ -75,19 +75,18 @@ func newLocalFS(sharedState *localFSSharedState, subdir string, includes, exclud
 		return nil, fmt.Errorf("failed to create base fs: %w", err)
 	}
 
-	if useGitIgnore {
-		baseFS, err = fsxutil.NewGitIgnoreFS(baseFS)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create gitignore fs: %w", err)
-		}
-	}
-
 	filterFS, err := fsutil.NewFilterFS(baseFS, &fsutil.FilterOpt{
 		IncludePatterns: includes,
 		ExcludePatterns: excludes,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create filter fs: %w", err)
+	}
+	if useGitIgnore {
+		filterFS, err = fsxutil.NewGitIgnoreFS(filterFS, fsxutil.NewGitIgnoreMatcher(baseFS))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &localFS{
