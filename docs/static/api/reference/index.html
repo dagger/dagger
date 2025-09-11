@@ -49,6 +49,7 @@
               <li><a href="#query-llm">llm</a></li>
               <li><a href="#query-loadBindingFromID">loadBindingFromID</a></li>
               <li><a href="#query-loadCacheVolumeFromID">loadCacheVolumeFromID</a></li>
+              <li><a href="#query-loadChangesetFromID">loadChangesetFromID</a></li>
               <li><a href="#query-loadCloudFromID">loadCloudFromID</a></li>
               <li><a href="#query-loadContainerFromID">loadContainerFromID</a></li>
               <li><a href="#query-loadCurrentModuleFromID">loadCurrentModuleFromID</a></li>
@@ -114,6 +115,8 @@
               <li><a href="#definition-CacheSharingMode">CacheSharingMode</a></li>
               <li><a href="#definition-CacheVolume">CacheVolume</a></li>
               <li><a href="#definition-CacheVolumeID">CacheVolumeID</a></li>
+              <li><a href="#definition-Changeset">Changeset</a></li>
+              <li><a href="#definition-ChangesetID">ChangesetID</a></li>
               <li><a href="#definition-Cloud">Cloud</a></li>
               <li><a href="#definition-CloudID">CloudID</a></li>
               <li><a href="#definition-Container">Container</a></li>
@@ -1328,6 +1331,59 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-CacheVolumeID"><code>CacheVolumeID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadChangesetFromID" class="operation operation-query" data-traverse-target="query-loadChangesetFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadChangesetFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a Changeset from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Changeset"><code>Changeset!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-ChangesetID"><code>ChangesetID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -4169,6 +4225,10 @@
                         <td> Retrieve the binding value, as type CacheVolume </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asChangeset" href="#Binding-asChangeset"><code>asChangeset</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type Changeset </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asCloud" href="#Binding-asCloud"><code>asCloud</code></a> - <span class="property-type"><a href="#definition-Cloud"><code>Cloud!</code></a></span> </td>
                         <td> Retrieve the binding value, as type Cloud </td>
                       </tr>
@@ -4436,6 +4496,83 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>CacheVolumeID</code> scalar type represents an identifier for an object of type CacheVolume.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-Changeset" class="definition definition-object" data-traverse-target="definition-Changeset">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">Changeset</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A comparison between two directories representing changes that can be applied.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Changeset-addedPaths" href="#Changeset-addedPaths"><code>addedPaths</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
+                        <td> Files and directories that were added in the newer directory. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Changeset-after" href="#Changeset-after"><code>after</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
+                        <td> The newer/upper snapshot. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Changeset-asPatch" href="#Changeset-asPatch"><code>asPatch</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
+                        <td> Return a Git-compatible patch of the changes </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Changeset-before" href="#Changeset-before"><code>before</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
+                        <td> The older/lower snapshot to compare against. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Changeset-id" href="#Changeset-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ChangesetID"><code>ChangesetID!</code></a></span> </td>
+                        <td> A unique identifier for this Changeset. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Changeset-layer" href="#Changeset-layer"><code>layer</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
+                        <td> Return a snapshot containing only the created and modified files </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Changeset-modifiedPaths" href="#Changeset-modifiedPaths"><code>modifiedPaths</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
+                        <td> Files and directories that existed before and were updated in the newer directory. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Changeset-removedPaths" href="#Changeset-removedPaths"><code>removedPaths</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
+                        <td> Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Changeset-sync" href="#Changeset-sync"><code>sync</code></a> - <span class="property-type"><a href="#definition-ChangesetID"><code>ChangesetID!</code></a></span> </td>
+                        <td> Force evaluation in the engine. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-ChangesetID" class="definition definition-scalar" data-traverse-target="definition-ChangesetID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ChangesetID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>ChangesetID</code> scalar type represents an identifier for an object of type Changeset.</p>
                 </div>
               </div>
             </div>
@@ -6210,6 +6347,26 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Directory-changes" href="#Directory-changes"><code>changes</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
+                        <td>
+                          <p>Return the difference between this directory and another directory, typically an older snapshot.</p>
+                          <p>The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>from</code></span> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span></h6>
+                                <p>The base directory snapshot to compare against</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Directory-diff" href="#Directory-diff"><code>diff</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td> Return the difference between this directory and an another directory. The difference is encoded as a directory. </td>
                       </tr>
@@ -6506,6 +6663,23 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Directory-withChanges" href="#Directory-withChanges"><code>withChanges</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
+                        <td> Return a directory with changes from another directory applied to it. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>changes</code></span> - <span class="property-type"><a href="#definition-ChangesetID"><code>ChangesetID!</code></a></span></h6>
+                                <p>Changes to apply to the directory</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Directory-withDirectory" href="#Directory-withDirectory"><code>withDirectory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td> Return a snapshot with a directory added </td>
                       </tr>
@@ -6642,6 +6816,23 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>patch</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>Patch to apply (e.g., &quot;diff --git a/file.txt b/file.txt\nindex 1234567..abcdef8 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-Hello\n+World\n&quot;).</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Directory-withPatchFile" href="#Directory-withPatchFile"><code>withPatchFile</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
+                        <td> Retrieves this directory with the given Git-compatible patch file applied. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>patch</code></span> - <span class="property-type"><a href="#definition-FileID"><code>FileID!</code></a></span></h6>
+                                <p>File containing the patch to apply</p>
                               </div>
                             </div>
                           </div>
@@ -7248,6 +7439,52 @@
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withCacheVolumeOutput" href="#Env-withCacheVolumeOutput"><code>withCacheVolumeOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Declare a desired CacheVolume output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withChangesetInput" href="#Env-withChangesetInput"><code>withChangesetInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type Changeset in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ChangesetID"><code>ChangesetID!</code></a></span></h6>
+                                <p>The Changeset value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withChangesetOutput" href="#Env-withChangesetOutput"><code>withChangesetOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired Changeset output to be assigned in the environment </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">

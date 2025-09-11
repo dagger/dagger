@@ -274,7 +274,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 
 			tty := console.Tty()
-			err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 60}) // for plain, we should make this wider, like 150
+			err = pty.Setsize(tty, &pty.Winsize{Rows: 10, Cols: 80}) // for plain, we should make this wider, like 150
 			require.NoError(t, err)
 
 			cmd := hostDaggerCommand(
@@ -342,7 +342,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 				err := cmd.Start()
 				require.NoError(t, err)
 
-				_, err = console.ExpectString("attempted to access the LLM API. Allow it?")
+				_, err = console.ExpectString("Allow LLM access?")
 				require.NoError(t, err)
 
 				// only test the  "no" case- the yes case persists history and requires special handling

@@ -138,6 +138,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Changeset",
+			"p": "Dagger/Changeset.html",
+			"d": "<p>A comparison between two directories representing changes that can be applied.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\ChangesetId",
+			"p": "Dagger/ChangesetId.html",
+			"d": "<p>The <code>ChangesetID</code> scalar type represents an identifier for an object of type Changeset.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Client",
 			"p": "Dagger/Client.html",
 			"d": "<p>The root of the DAG.</p>",
@@ -1255,6 +1275,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Binding::asChangeset",
+			"p": "Dagger/Binding.html#method_asChangeset",
+			"d": "<p>Retrieve the binding value, as type Changeset</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Binding::asCloud",
 			"p": "Dagger/Binding.html#method_asCloud",
 			"d": "<p>Retrieve the binding value, as type Cloud</p>"
@@ -1405,6 +1431,60 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Changeset::addedPaths",
+			"p": "Dagger/Changeset.html#method_addedPaths",
+			"d": "<p>Files and directories that were added in the newer directory.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Changeset::after",
+			"p": "Dagger/Changeset.html#method_after",
+			"d": "<p>The newer/upper snapshot.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Changeset::asPatch",
+			"p": "Dagger/Changeset.html#method_asPatch",
+			"d": "<p>Return a Git-compatible patch of the changes</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Changeset::before",
+			"p": "Dagger/Changeset.html#method_before",
+			"d": "<p>The older/lower snapshot to compare against.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Changeset::id",
+			"p": "Dagger/Changeset.html#method_id",
+			"d": "<p>A unique identifier for this Changeset.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Changeset::layer",
+			"p": "Dagger/Changeset.html#method_layer",
+			"d": "<p>Return a snapshot containing only the created and modified files</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Changeset::modifiedPaths",
+			"p": "Dagger/Changeset.html#method_modifiedPaths",
+			"d": "<p>Files and directories that existed before and were updated in the newer directory.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Changeset::removedPaths",
+			"p": "Dagger/Changeset.html#method_removedPaths",
+			"d": "<p>Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Changeset::sync",
+			"p": "Dagger/Changeset.html#method_sync",
+			"d": "<p>Force evaluation in the engine.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::cacheVolume",
 			"p": "Dagger/Client.html#method_cacheVolume",
 			"d": "<p>Constructs a cache volume for a given cache key.</p>"
@@ -1528,6 +1608,12 @@
 			"n": "Dagger\\Client::loadCacheVolumeFromID",
 			"p": "Dagger/Client.html#method_loadCacheVolumeFromID",
 			"d": "<p>Load a CacheVolume from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadChangesetFromID",
+			"p": "Dagger/Client.html#method_loadChangesetFromID",
+			"d": "<p>Load a Changeset from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -2473,6 +2559,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Directory::changes",
+			"p": "Dagger/Directory.html#method_changes",
+			"d": "<p>Return the difference between this directory and another directory, typically an older snapshot.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Directory::diff",
 			"p": "Dagger/Directory.html#method_diff",
 			"d": "<p>Return the difference between this directory and an another directory. The difference is encoded as a directory.</p>"
@@ -2563,6 +2655,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Directory::withChanges",
+			"p": "Dagger/Directory.html#method_withChanges",
+			"d": "<p>Return a directory with changes from another directory applied to it.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Directory::withDirectory",
 			"p": "Dagger/Directory.html#method_withDirectory",
 			"d": "<p>Return a snapshot with a directory added</p>"
@@ -2596,6 +2694,12 @@
 			"n": "Dagger\\Directory::withPatch",
 			"p": "Dagger/Directory.html#method_withPatch",
 			"d": "<p>Retrieves this directory with the given Git-compatible patch applied.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Directory::withPatchFile",
+			"p": "Dagger/Directory.html#method_withPatchFile",
+			"d": "<p>Retrieves this directory with the given Git-compatible patch file applied.</p>"
 		},
 		{
 			"t": "M",
@@ -2860,6 +2964,18 @@
 			"n": "Dagger\\Env::withCacheVolumeOutput",
 			"p": "Dagger/Env.html#method_withCacheVolumeOutput",
 			"d": "<p>Declare a desired CacheVolume output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withChangesetInput",
+			"p": "Dagger/Env.html#method_withChangesetInput",
+			"d": "<p>Create or update a binding of type Changeset in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withChangesetOutput",
+			"p": "Dagger/Env.html#method_withChangesetOutput",
+			"d": "<p>Declare a desired Changeset output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",

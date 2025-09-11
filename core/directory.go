@@ -502,7 +502,7 @@ func (dir *Directory) WithPatch(ctx context.Context, patch string) (*Directory, 
 		if err != nil {
 			return err
 		}
-		apply := exec.Command("git", "apply", "-")
+		apply := exec.Command("git", "apply", "--allow-empty", "-")
 		apply.Dir = resolvedDir
 		apply.Stdin = strings.NewReader(patch)
 		apply.Stdout = stdio.Stdout
@@ -1001,6 +1001,37 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 	err = dir.SetState(ctx, llb.Diff(lowerSt, upperSt))
 	if err != nil {
 		return nil, err
+	}
+
+	return dir, nil
+}
+
+func (dir *Directory) WithChanges(ctx context.Context, changes *Changeset) (*Directory, error) {
+	dir = dir.Clone()
+
+	// First, get the diff directory from Changes.before.diff(Changes.after)
+	diffDir, err := changes.Before.Self().Diff(ctx, changes.After.Self())
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute diff between before and after directories: %w", err)
+	}
+
+	// Apply the diff (added + changed files) using WithDirectory
+	dir, err = dir.WithDirectory(ctx, "/", diffDir, CopyFilter{}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to apply diff directory: %w", err)
+	}
+
+	// Remove all the paths in Changes.removedPaths using Without
+	if len(changes.RemovedPaths) > 0 {
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get dagql server: %w", err)
+		}
+
+		dir, err = dir.Without(ctx, srv, changes.RemovedPaths...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to remove paths: %w", err)
+		}
 	}
 
 	return dir, nil
