@@ -72,6 +72,11 @@ type Container struct {
 	// Mount points configured for the container.
 	Mounts ContainerMounts
 
+	HostMounts []buildkit.HostMount
+
+	// VolumeMounts are mounts backed by engine-managed volumes (e.g. sshfs).
+	VolumeMounts []VolumeMount
+
 	// Meta is the /dagger filesystem. It will be null if nothing has run yet.
 	Meta *Directory
 
@@ -177,12 +182,14 @@ func (container *Container) Clone() *Container {
 	cp := *container
 	cp.Config.ExposedPorts = maps.Clone(cp.Config.ExposedPorts)
 	cp.Config.Env = slices.Clone(cp.Config.Env)
+	cp.HostMounts = slices.Clone(cp.HostMounts)
 	cp.Config.Entrypoint = slices.Clone(cp.Config.Entrypoint)
 	cp.Config.Cmd = slices.Clone(cp.Config.Cmd)
 	cp.Config.Volumes = maps.Clone(cp.Config.Volumes)
 	cp.Config.Labels = maps.Clone(cp.Config.Labels)
 	cp.Mounts = slices.Clone(cp.Mounts)
 	cp.Secrets = slices.Clone(cp.Secrets)
+	cp.VolumeMounts = slices.Clone(cp.VolumeMounts)
 	cp.Sockets = slices.Clone(cp.Sockets)
 	cp.Ports = slices.Clone(cp.Ports)
 	cp.Services = slices.Clone(cp.Services)
@@ -332,6 +339,29 @@ type ContainerMount struct {
 	CacheSource *CacheMountSource
 	// The mounted tmpfs
 	TmpfsSource *TmpfsMountSource
+}
+
+// VolumeMount represents binding an engine-managed Volume into the container
+type VolumeMount struct {
+	Target   string
+	Volume   dagql.ObjectResult[*Volume]
+	Readonly bool
+}
+
+// WithVolumeMount binds an engine-managed volume into the container at target.
+func (container *Container) WithVolumeMount(ctx context.Context, target string, vol dagql.ObjectResult[*Volume]) *Container {
+	container = container.Clone()
+
+	target = absPath(container.Config.WorkingDir, target)
+
+	container.VolumeMounts = append(container.VolumeMounts, VolumeMount{
+		Target: target,
+		Volume: vol,
+	})
+
+	container.ImageRef = ""
+
+	return container
 }
 
 type CacheMountSource struct {
@@ -1049,6 +1079,25 @@ func (container *Container) WithFiles(
 	}
 
 	return container, nil
+}
+func (container *Container) WithMountedHostDirectory(ctx context.Context, target string, source string) *Container {
+	container = container.Clone()
+
+	target = absPath(container.Config.WorkingDir, target)
+	source, err := filepath.Abs(source)
+	if err != nil {
+		// should never happen
+		panic(err)
+	}
+
+	container.HostMounts = append(container.HostMounts, buildkit.HostMount{
+		Target: target,
+		Source: source,
+	})
+
+	container.ImageRef = ""
+
+	return container
 }
 
 func (container *Container) WithNewFile(

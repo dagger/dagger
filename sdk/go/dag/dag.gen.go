@@ -498,6 +498,12 @@ func LoadTypeDefFromID(id dagger.TypeDefID) *dagger.TypeDef {
 	return client.LoadTypeDefFromID(id)
 }
 
+// Load a Volume from its ID.
+func LoadVolumeFromID(id dagger.VolumeID) *dagger.Volume {
+	client := initClient()
+	return client.LoadVolumeFromID(id)
+}
+
 // Create a new module.
 func Module() *dagger.Module {
 	client := initClient()
@@ -528,6 +534,12 @@ func SetSecret(name string, plaintext string) *dagger.Secret {
 func SourceMap(filename string, line int, column int) *dagger.SourceMap {
 	client := initClient()
 	return client.SourceMap(filename, line, column)
+}
+
+// Create or retrieve an engine-managed SSHFS volume. Endpoint must be a parseable SSH URL, e.g. 'ssh://user@host:2222/path'.
+func SshfsVolume(endpoint string, privateKey *dagger.Secret, publicKey *dagger.Secret) *dagger.Volume {
+	client := initClient()
+	return client.SshfsVolume(endpoint, privateKey, publicKey)
 }
 
 // Create a new TypeDef.

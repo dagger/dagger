@@ -808,6 +808,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a Volume from its ID.
+     */
+    public function loadVolumeFromID(VolumeId|Volume $id): Volume
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadVolumeFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Volume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Create a new module.
      */
     public function module(): Module
@@ -879,6 +889,18 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder->setArgument('line', $line);
         $innerQueryBuilder->setArgument('column', $column);
         return new \Dagger\SourceMap($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Create or retrieve an engine-managed SSHFS volume. Endpoint must be a parseable SSH URL, e.g. 'ssh://user@host:2222/path'.
+     */
+    public function sshfsVolume(string $endpoint, SecretId|Secret $privateKey, SecretId|Secret $publicKey): Volume
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sshfsVolume');
+        $innerQueryBuilder->setArgument('endpoint', $endpoint);
+        $innerQueryBuilder->setArgument('privateKey', $privateKey);
+        $innerQueryBuilder->setArgument('publicKey', $publicKey);
+        return new \Dagger\Volume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

@@ -20,16 +20,17 @@ import (
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/moby/locker"
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-type mockServer struct {
-}
+type mockServer struct{}
 
 func (ms *mockServer) ServeModule(ctx context.Context, mod *Module, includeDependencies bool) error {
 	return nil
 }
+
 func (ms *mockServer) CurrentModule(context.Context) (*Module, error) {
 	c := call.New().Append(&ast.Type{}, "caller1")
 	rs, err := dagql.NewResultForID(&ModuleSource{}, c)
@@ -45,15 +46,19 @@ func (ms *mockServer) CurrentModule(context.Context) (*Module, error) {
 		Source: dn,
 	}, nil
 }
+
 func (ms *mockServer) CurrentFunctionCall(context.Context) (*FunctionCall, error) {
 	return nil, nil
 }
+
 func (ms *mockServer) CurrentServedDeps(context.Context) (*ModDeps, error) {
 	return &ModDeps{}, nil
 }
+
 func (ms *mockServer) MainClientCallerMetadata(context.Context) (*engine.ClientMetadata, error) {
 	return &engine.ClientMetadata{}, nil
 }
+
 func (ms *mockServer) NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error) {
 	return nil, nil
 }
@@ -95,6 +100,9 @@ func (ms *mockServer) ClientTelemetry(ctc context.Context, sessID, clientID stri
 }
 func (ms *mockServer) EngineName() string { return "mockEngine" }
 func (ms *mockServer) Clients() []string  { return []string{} }
+func (ms *mockServer) RegisterSSHFSVolume(context.Context, string, digest.Digest, digest.Digest) (*Volume, error) {
+	return nil, nil
+}
 
 func TestParseCallerCalleeRefs(t *testing.T) {
 	mID := call.New().Append(&ast.Type{}, "callee1")

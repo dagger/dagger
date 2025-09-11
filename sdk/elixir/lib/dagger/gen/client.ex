@@ -1116,6 +1116,20 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Load a Volume from its ID.
+  """
+  @spec load_volume_from_id(t(), Dagger.VolumeID.t()) :: Dagger.Volume.t()
+  def load_volume_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadVolumeFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Volume{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Create a new module.
   """
   @spec module(t()) :: Dagger.Module.t()
@@ -1203,6 +1217,24 @@ defmodule Dagger.Client do
       |> QB.put_arg("column", column)
 
     %Dagger.SourceMap{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Create or retrieve an engine-managed SSHFS volume. Endpoint must be a parseable SSH URL, e.g. 'ssh://user@host:2222/path'.
+  """
+  @spec sshfs_volume(t(), String.t(), Dagger.Secret.t(), Dagger.Secret.t()) :: Dagger.Volume.t()
+  def sshfs_volume(%__MODULE__{} = client, endpoint, private_key, public_key) do
+    query_builder =
+      client.query_builder
+      |> QB.select("sshfsVolume")
+      |> QB.put_arg("endpoint", endpoint)
+      |> QB.put_arg("privateKey", Dagger.ID.id!(private_key))
+      |> QB.put_arg("publicKey", Dagger.ID.id!(public_key))
+
+    %Dagger.Volume{
       query_builder: query_builder,
       client: client.client
     }

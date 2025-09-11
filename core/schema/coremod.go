@@ -56,6 +56,7 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
 		&httpSchema{},
 		&platformSchema{},
 		&socketSchema{},
+		&volumeSchema{},
 		&moduleSourceSchema{},
 		&moduleSchema{},
 		&errorSchema{},

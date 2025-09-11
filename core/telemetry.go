@@ -142,7 +142,7 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, callID *call.ID) (*mod
 	call := callID.Call()
 	calleeModule := call.Module
 
-	var callerRef, calleeRef = &moduleCallRef{}, &moduleCallRef{}
+	callerRef, calleeRef := &moduleCallRef{}, &moduleCallRef{}
 	// there's a caller
 
 	var ms *ModuleSource

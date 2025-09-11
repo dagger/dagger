@@ -200,6 +200,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the binding value, as type Volume
+     */
+    public function asVolume(): Volume
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asVolume');
+        return new \Dagger\Volume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Returns the digest of the binding value
      */
     public function digest(): string

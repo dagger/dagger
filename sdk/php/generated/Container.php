@@ -805,6 +805,17 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieves this container plus a host directory mounted at the given path.
+     */
+    public function withMountedHostDirectory(string $source, string $path): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedHostDirectory');
+        $innerQueryBuilder->setArgument('source', $source);
+        $innerQueryBuilder->setArgument('path', $path);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieves this container plus a secret mounted into a file at the given path.
      */
     public function withMountedSecret(
@@ -962,6 +973,17 @@ class Container extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUser');
         $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container plus an engine-managed volume mounted at the given path.
+     */
+    public function withVolumeMount(string $path, VolumeId|Volume $volume): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withVolumeMount');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('volume', $volume);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

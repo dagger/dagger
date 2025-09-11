@@ -307,6 +307,20 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type Volume
+  """
+  @spec as_volume(t()) :: Dagger.Volume.t()
+  def as_volume(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asVolume")
+
+    %Dagger.Volume{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Returns the digest of the binding value
   """
   @spec digest(t()) :: {:ok, String.t()} | {:error, term()}
