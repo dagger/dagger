@@ -139,6 +139,12 @@ func (e LoadedEngine) Start(
 	args = append(args, []string{
 		"-v", name + ":" + distconsts.EngineDefaultStateDir,
 		"--name", name,
+		// allow use of FUSE inside the engine container so features like
+		// SSHFS volume mounts work. We add the device and relax apparmor.
+		"--device", "/dev/fuse",
+		"--security-opt", "apparmor:unconfined",
+		// some setups require SYS_ADMIN to mount fuse
+		"--cap-add", "SYS_ADMIN",
 		"--privileged",
 	}...)
 	args = append(args, e.Image)

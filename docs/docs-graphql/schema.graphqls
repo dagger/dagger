@@ -124,6 +124,9 @@ type Binding {
   """Returns the binding's string value"""
   asString: String
 
+  """Retrieve the binding value, as type Volume"""
+  asVolume: Volume!
+
   """Returns the digest of the binding value"""
   digest: String!
 
@@ -1055,6 +1058,19 @@ type Container {
   ): Container!
 
   """
+  Retrieves this container plus a host directory mounted at the given path.
+  """
+  withMountedHostDirectory(
+    """
+    Source path of the host directory to mount (e.g., "/home/user/directory").
+    """
+    source: String!
+
+    """Location of the mounted directory (e.g., "/mnt/directory")."""
+    path: String!
+  ): Container!
+
+  """
   Retrieves this container plus a secret mounted into a file at the given path.
   """
   withMountedSecret(
@@ -1241,6 +1257,17 @@ type Container {
   withUser(
     """The user to set (e.g., "root")."""
     name: String!
+  ): Container!
+
+  """
+  Retrieves this container plus an engine-managed volume mounted at the given path.
+  """
+  withVolumeMount(
+    """Location where the volume will be mounted (e.g., "/mnt/volume")."""
+    path: String!
+
+    """Identifier of the volume to mount."""
+    volume: VolumeID!
   ): Container!
 
   """Change the container's working directory. Like WORKDIR in Dockerfile."""
@@ -2526,6 +2553,27 @@ type Env {
     name: String!
 
     """The description of the output"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type Volume in the environment"""
+  withVolumeInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Volume value to assign to the binding"""
+    value: VolumeID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Volume output to be assigned in the environment"""
+  withVolumeOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
     description: String!
   ): Env!
 
@@ -4422,6 +4470,9 @@ type Query {
   """Load a TypeDef from its ID."""
   loadTypeDefFromID(id: TypeDefID!): TypeDef!
 
+  """Load a Volume from its ID."""
+  loadVolumeFromID(id: VolumeID!): Volume!
+
   """Create a new module."""
   module: Module!
 
@@ -4497,6 +4548,20 @@ type Query {
     """The column number within the line."""
     column: Int!
   ): SourceMap!
+
+  """
+  Create or retrieve an engine-managed SSHFS volume. Endpoint must be a parseable SSH URL, e.g. 'ssh://user@host:2222/path'.
+  """
+  sshfsVolume(
+    """SSH endpoint URL, e.g. ssh://user@host[:port]/absolute/path"""
+    endpoint: String!
+
+    """The private key to use for authentication"""
+    privateKey: SecretID!
+
+    """The public key to use for authentication"""
+    publicKey: SecretID!
+  ): Volume!
 
   """Create a new TypeDef."""
   typeDef: TypeDef!
@@ -5025,5 +5090,16 @@ The absence of a value.
 A Null Void is used as a placeholder for resolvers that do not return anything.
 """
 scalar Void
+
+"""A reference to an engine-managed volume."""
+type Volume {
+  """A unique identifier for this Volume."""
+  id: VolumeID!
+}
+
+"""
+The `VolumeID` scalar type represents an identifier for an object of type Volume.
+"""
+scalar VolumeID
 
 

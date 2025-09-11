@@ -1247,6 +1247,26 @@
 			}
 		},
 		{
+			"t": "C",
+			"n": "Dagger\\Volume",
+			"p": "Dagger/Volume.html",
+			"d": "<p>A reference to an engine-managed volume.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\VolumeId",
+			"p": "Dagger/VolumeId.html",
+			"d": "<p>The <code>VolumeID</code> scalar type represents an identifier for an object of type Volume.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
 			"t": "I",
 			"n": "Dagger\\Client\\IdAble",
 			"p": "Dagger/Client/IdAble.html",
@@ -1470,6 +1490,12 @@
 			"n": "Dagger\\Binding::asString",
 			"p": "Dagger/Binding.html#method_asString",
 			"d": "<p>Returns the binding's string value</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asVolume",
+			"p": "Dagger/Binding.html#method_asVolume",
+			"d": "<p>Retrieve the binding value, as type Volume</p>"
 		},
 		{
 			"t": "M",
@@ -2019,6 +2045,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::loadVolumeFromID",
+			"p": "Dagger/Client.html#method_loadVolumeFromID",
+			"d": "<p>Load a Volume from its ID.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::module",
 			"p": "Dagger/Client.html#method_module",
 			"d": "<p>Create a new module.</p>"
@@ -2046,6 +2078,12 @@
 			"n": "Dagger\\Client::sourceMap",
 			"p": "Dagger/Client.html#method_sourceMap",
 			"d": "<p>Creates source map metadata.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::sshfsVolume",
+			"p": "Dagger/Client.html#method_sshfsVolume",
+			"d": "<p>Create or retrieve an engine-managed SSHFS volume. Endpoint must be a parseable SSH URL, e.g. 'ssh://user@host:2222/path'.</p>"
 		},
 		{
 			"t": "M",
@@ -2463,6 +2501,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Container::withMountedHostDirectory",
+			"p": "Dagger/Container.html#method_withMountedHostDirectory",
+			"d": "<p>Retrieves this container plus a host directory mounted at the given path.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Container::withMountedSecret",
 			"p": "Dagger/Container.html#method_withMountedSecret",
 			"d": "<p>Retrieves this container plus a secret mounted into a file at the given path.</p>"
@@ -2520,6 +2564,12 @@
 			"n": "Dagger\\Container::withUser",
 			"p": "Dagger/Container.html#method_withUser",
 			"d": "<p>Retrieves this container with a different command user.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Container::withVolumeMount",
+			"p": "Dagger/Container.html#method_withVolumeMount",
+			"d": "<p>Retrieves this container plus an engine-managed volume mounted at the given path.</p>"
 		},
 		{
 			"t": "M",
@@ -3366,6 +3416,18 @@
 			"n": "Dagger\\Env::withStringOutput",
 			"p": "Dagger/Env.html#method_withStringOutput",
 			"d": "<p>Declares a desired string output binding</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withVolumeInput",
+			"p": "Dagger/Env.html#method_withVolumeInput",
+			"d": "<p>Create or update a binding of type Volume in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withVolumeOutput",
+			"p": "Dagger/Env.html#method_withVolumeOutput",
+			"d": "<p>Declare a desired Volume output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",
@@ -5172,6 +5234,12 @@
 			"n": "Dagger\\TypeDef::withScalar",
 			"p": "Dagger/TypeDef.html#method_withScalar",
 			"d": "<p>Returns a TypeDef of kind Scalar with the provided name.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Volume::id",
+			"p": "Dagger/Volume.html#method_id",
+			"d": "<p>A unique identifier for this Volume.</p>"
 		},
 		{
 			"t": "M",

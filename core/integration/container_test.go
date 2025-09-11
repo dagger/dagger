@@ -5212,3 +5212,24 @@ func (ContainerSuite) TestWithFileOnMountedFile(ctx context.Context, t *testctx.
 	require.NoError(t, err)
 	require.Equal(t, "4", f2Contents)
 }
+
+func (ContainerSuite) TestWithHostMount(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := c.Container().
+		From(alpineImage).
+		WithMountedHostDirectory(".", "/hostdir").
+		WithExec([]string{"touch", "/hostdir/newfile"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeSuccess})
+
+	_, err := ctr.Stdout(ctx)
+	require.NoError(t, err)
+
+	ctr = c.Container().
+		From(alpineImage).
+		WithMountedHostDirectory(".", "/hostdir").
+		WithExec([]string{"ls", "-la", "/hostdir"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeSuccess})
+
+	output, err := ctr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, output, "newfile")
+}

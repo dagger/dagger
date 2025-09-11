@@ -101,11 +101,13 @@
               <li><a href="#query-loadSourceMapFromID">loadSourceMapFromID</a></li>
               <li><a href="#query-loadTerminalFromID">loadTerminalFromID</a></li>
               <li><a href="#query-loadTypeDefFromID">loadTypeDefFromID</a></li>
+              <li><a href="#query-loadVolumeFromID">loadVolumeFromID</a></li>
               <li><a href="#query-module">module</a></li>
               <li><a href="#query-moduleSource">moduleSource</a></li>
               <li><a href="#query-secret">secret</a></li>
               <li><a href="#query-setSecret">setSecret</a></li>
               <li><a href="#query-sourceMap">sourceMap</a></li>
+              <li><a href="#query-sshfsVolume">sshfsVolume</a></li>
               <li><a href="#query-typeDef">typeDef</a></li>
               <li><a href="#query-version">version</a></li>
             </ul>
@@ -234,6 +236,8 @@
               <li><a href="#definition-TypeDefID">TypeDefID</a></li>
               <li><a href="#definition-TypeDefKind">TypeDefKind</a></li>
               <li><a href="#definition-Void">Void</a></li>
+              <li><a href="#definition-Volume">Volume</a></li>
+              <li><a href="#definition-VolumeID">VolumeID</a></li>
             </ul>
           </div>
         </nav>
@@ -4096,6 +4100,59 @@
               </div>
             </div>
           </section>
+          <section id="query-loadVolumeFromID" class="operation operation-query" data-traverse-target="query-loadVolumeFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadVolumeFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a Volume from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Volume"><code>Volume!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-VolumeID"><code>VolumeID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-module" class="operation operation-query" data-traverse-target="query-module">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -4382,6 +4439,70 @@
                           <span class="property-name"><code>column</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span>
                         </td>
                         <td> The column number within the line. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-sshfsVolume" class="operation operation-query" data-traverse-target="query-sshfsVolume">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>sshfsVolume</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Create or retrieve an engine-managed SSHFS volume. Endpoint must be a parseable SSH URL, e.g. &#39;ssh://user@host:2222/path&#39;.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Volume"><code>Volume!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>endpoint</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
+                        </td>
+                        <td> SSH endpoint URL, e.g. ssh://user@host[:port]/absolute/path </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>privateKey</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID!</code></a></span>
+                        </td>
+                        <td> The private key to use for authentication </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>publicKey</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID!</code></a></span>
+                        </td>
+                        <td> The public key to use for authentication </td>
                       </tr>
                     </tbody>
                   </table>
@@ -4683,6 +4804,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asString" href="#Binding-asString"><code>asString</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
                         <td> Returns the binding's string value </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asVolume" href="#Binding-asVolume"><code>asVolume</code></a> - <span class="property-type"><a href="#definition-Volume"><code>Volume!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type Volume </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-digest" href="#Binding-digest"><code>digest</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -6026,6 +6151,27 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Container-withMountedHostDirectory" href="#Container-withMountedHostDirectory"><code>withMountedHostDirectory</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td> Retrieves this container plus a host directory mounted at the given path. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>source</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Source path of the host directory to mount (e.g., &quot;/home/user/directory&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Location of the mounted directory (e.g., &quot;/mnt/directory&quot;).</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withMountedSecret" href="#Container-withMountedSecret"><code>withMountedSecret</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
                         <td> Retrieves this container plus a secret mounted into a file at the given path. </td>
                       </tr>
@@ -6278,6 +6424,27 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>The user to set (e.g., &quot;root&quot;).</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Container-withVolumeMount" href="#Container-withVolumeMount"><code>withVolumeMount</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td> Retrieves this container plus an engine-managed volume mounted at the given path. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Location where the volume will be mounted (e.g., &quot;/mnt/volume&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>volume</code></span> - <span class="property-type"><a href="#definition-VolumeID"><code>VolumeID!</code></a></span></h6>
+                                <p>Identifier of the volume to mount.</p>
                               </div>
                             </div>
                           </div>
@@ -8871,6 +9038,52 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>The description of the output</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withVolumeInput" href="#Env-withVolumeInput"><code>withVolumeInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type Volume in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-VolumeID"><code>VolumeID!</code></a></span></h6>
+                                <p>The Volume value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withVolumeOutput" href="#Env-withVolumeOutput"><code>withVolumeOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired Volume output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
                               </div>
                             </div>
                           </div>
@@ -13889,6 +14102,51 @@
                   <h5>Description</h5>
                   <p>The absence of a value.</p>
                   <p>A Null Void is used as a placeholder for resolvers that do not return anything.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-Volume" class="definition definition-object" data-traverse-target="definition-Volume">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">Volume</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A reference to an engine-managed volume.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Volume-id" href="#Volume-id"><code>id</code></a> - <span class="property-type"><a href="#definition-VolumeID"><code>VolumeID!</code></a></span> </td>
+                        <td> A unique identifier for this Volume. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-VolumeID" class="definition definition-scalar" data-traverse-target="definition-VolumeID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">VolumeID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>VolumeID</code> scalar type represents an identifier for an object of type Volume.</p>
                 </div>
               </div>
             </div>
