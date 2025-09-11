@@ -312,6 +312,7 @@ func (s *moduleSchema) typeDefWithObject(ctx context.Context, def *core.TypeDef,
 	Name        string
 	Description string `default:""`
 	SourceMap   dagql.Optional[core.SourceMapID]
+	Deprecated  string `default:""`
 }) (*core.TypeDef, error) {
 	if args.Name == "" {
 		return nil, fmt.Errorf("object type def must have a name")
@@ -320,7 +321,7 @@ func (s *moduleSchema) typeDefWithObject(ctx context.Context, def *core.TypeDef,
 	if err != nil {
 		return nil, err
 	}
-	return def.WithObject(args.Name, args.Description, sourceMap), nil
+	return def.WithObject(args.Name, args.Description, args.Deprecated, sourceMap), nil
 }
 
 func (s *moduleSchema) typeDefWithInterface(ctx context.Context, def *core.TypeDef, args struct {

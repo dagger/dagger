@@ -595,9 +595,9 @@ func (typeDef *TypeDef) WithListOf(elem *TypeDef) *TypeDef {
 	return typeDef
 }
 
-func (typeDef *TypeDef) WithObject(name, desc string, sourceMap *SourceMap) *TypeDef {
+func (typeDef *TypeDef) WithObject(name, desc, deprecated string, sourceMap *SourceMap) *TypeDef {
 	typeDef = typeDef.WithKind(TypeDefKindObject)
-	typeDef.AsObject = dagql.NonNull(NewObjectTypeDef(name, desc).WithSourceMap(sourceMap))
+	typeDef.AsObject = dagql.NonNull(NewObjectTypeDef(name, desc, deprecated).WithSourceMap(sourceMap))
 	return typeDef
 }
 
@@ -777,6 +777,7 @@ type ObjectTypeDef struct {
 	Fields      []*FieldTypeDef            `field:"true" doc:"Static fields defined on this object, if any."`
 	Functions   []*Function                `field:"true" doc:"Functions defined on this object, if any."`
 	Constructor dagql.Nullable[*Function]  `field:"true" doc:"The function used to construct new instances of this object, if any"`
+	Deprecated  string                     `field:"true" doc:"The reason this enum member is deprecated, if any."`
 
 	// SourceModuleName is currently only set when returning the TypeDef from the Objects field on Module
 	SourceModuleName string `field:"true" doc:"If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise."`
@@ -814,11 +815,12 @@ func (*ObjectTypeDef) TypeDescription() string {
 	return "A definition of a custom object defined in a Module."
 }
 
-func NewObjectTypeDef(name, description string) *ObjectTypeDef {
+func NewObjectTypeDef(name, description, deprecated string) *ObjectTypeDef {
 	return &ObjectTypeDef{
 		Name:         strcase.ToCamel(name),
 		OriginalName: name,
 		Description:  description,
+		Deprecated:   deprecated,
 	}
 }
 
@@ -925,7 +927,7 @@ type FieldTypeDef struct {
 
 	SourceMap dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this field declaration."`
 
-	Deprecated string `field:"true" doc:"The reason this function is deprecated, if any."`
+	Deprecated string `field:"true" doc:"The reason this enum member is deprecated, if any."`
 
 	// Below are not in public API
 
