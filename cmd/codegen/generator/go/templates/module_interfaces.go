@@ -99,34 +99,6 @@ type parsedIfaceType struct {
 
 var _ NamedParsedType = &parsedIfaceType{}
 
-func (spec *parsedIfaceType) TypeDefCode() (*Statement, error) {
-	withIfaceArgsCode := []Code{
-		Lit(spec.name),
-	}
-	withIfaceOptsCode := []Code{}
-	if spec.doc != "" {
-		withIfaceOptsCode = append(withIfaceOptsCode, Id("Description").Op(":").Lit(strings.TrimSpace(spec.doc)))
-	}
-	if spec.sourceMap != nil {
-		withIfaceOptsCode = append(withIfaceOptsCode, Id("SourceMap").Op(":").Add(spec.sourceMap.TypeDefCode()))
-	}
-	if len(withIfaceOptsCode) > 0 {
-		withIfaceArgsCode = append(withIfaceArgsCode, Id("dagger").Dot("TypeDefWithInterfaceOpts").Values(withIfaceOptsCode...))
-	}
-
-	typeDefCode := Qual("dag", "TypeDef").Call().Dot("WithInterface").Call(withIfaceArgsCode...)
-
-	for _, method := range spec.methods {
-		fnTypeDefCode, err := method.TypeDefCode()
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert method %s to function def: %w", method.name, err)
-		}
-		typeDefCode = dotLine(typeDefCode, "WithFunction").Call(Add(Line(), fnTypeDefCode))
-	}
-
-	return typeDefCode, nil
-}
-
 func (spec *parsedIfaceType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
 	opts := dagger.TypeDefWithInterfaceOpts{}
 	if spec.doc != "" {
