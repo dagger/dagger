@@ -5,39 +5,39 @@ AAABBBCCC
 Expected stderr:
 
 ▼ connect X.Xs
-├─● starting engine X.Xs
-├─▼ connecting to engine X.Xs
+├╴✔ starting engine X.Xs
+├╴▼ connecting to engine X.Xs
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
-╰─● starting session X.Xs
+╰╴✔ starting session X.Xs
  
 ▼ load module: ./viztest X.Xs
-├─● finding module configuration X.Xs
-├─● initializing module X.Xs
-├─● inspecting module metadata X.Xs
-╰─● loading type definitions X.Xs
+├╴✔ finding module configuration X.Xs
+├╴✔ initializing module X.Xs
+├╴✔ inspecting module metadata X.Xs
+╰╴✔ loading type definitions X.Xs
  
-● parsing command line arguments X.Xs
+✔ parsing command line arguments X.Xs
 
-● viztest: Viztest! X.Xs
+✔ viztest: Viztest! X.Xs
 ▼ .objectLists: String! X.Xs
 ┃ AAABBBCCC
-├─● dep: Dep! X.Xs
-├─▼ .getFiles: [File!]! X.Xs
-│ ├─$ file(name: "a", contents: "AAA"): File! X.Xs CACHED
+├╴✔ dep: Dep! X.Xs
+├╴▼ .getFiles: [File!]! X.Xs
+│ ├╴$ file(name: "a", contents: "AAA"): File! X.Xs CACHED
 │ │
-│ ├─$ file(name: "b", contents: "BBB"): File! X.Xs CACHED
+│ ├╴$ file(name: "b", contents: "BBB"): File! X.Xs CACHED
 │ │
-│ ╰─$ file(name: "c", contents: "CCC"): File! X.Xs CACHED
+│ ╰╴$ file(name: "c", contents: "CCC"): File! X.Xs CACHED
 │  
-╰─▼ Dep.fileContents(files: [xxh3:XXXXXXXXXXXXXXXX, xxh3:XXXXXXXXXXXXXXXX, xxh3:XXXXXXXXXXXXXXXX]): String! X.Xs
+╰╴▼ Dep.fileContents(files: [xxh3:XXXXXXXXXXXXXXXX, xxh3:XXXXXXXXXXXXXXXX, xxh3:XXXXXXXXXXXXXXXX]): String! X.Xs
   ┃ AAABBBCCC
-  ├─▼ File.contents: String! X.Xs
+  ├╴▼ File.contents: String! X.Xs
   │ ┃ AAA
   │
-  ├─▼ File.contents: String! X.Xs
+  ├╴▼ File.contents: String! X.Xs
   │ ┃ BBB
   │
-  ╰─▼ File.contents: String! X.Xs
+  ╰╴▼ File.contents: String! X.Xs
     ┃ CCC
 
 

@@ -12,10 +12,13 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/huh"
+	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"github.com/waigani/diffparser"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
@@ -571,7 +574,7 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 		// else to sub-select. In that case `q` will be nil to signal that we
 		// just want to return the object's name, without making an API request.
 		if q == nil {
-			return handleResponse(fn.ReturnType, nil, o, e)
+			return handleResponse(ctx, fc.c.Dagger(), fn.ReturnType, nil, o, e)
 		}
 
 		var response any
@@ -580,7 +583,7 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 			return err
 		}
 
-		return handleResponse(fn.ReturnType, response, o, e)
+		return handleResponse(ctx, fc.c.Dagger(), fn.ReturnType, response, o, e)
 	}
 }
 
@@ -645,9 +648,19 @@ func makeRequest(ctx context.Context, q *querybuilder.Selection, response any) e
 	return nil
 }
 
-func handleResponse(returnType *modTypeDef, response any, o, e io.Writer) error {
+func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modTypeDef, response any, o, e io.Writer) error {
 	if returnType.Kind == dagger.TypeDefKindVoidKind {
 		return nil
+	}
+
+	// If the function returns a Changeset, apply it to the working directory.
+	if returnType.Name() == "Changeset" {
+		return handleChangesetResponse(ctx, dag, response)
+	}
+
+	// Check if the function returns an LLM type - start interactive prompt mode
+	if returnType.Name() == "LLM" {
+		return startInteractivePromptMode(ctx, dag, response)
 	}
 
 	// Handle the `export` convenience, i.e, -o,--output flag.
@@ -692,6 +705,255 @@ func handleResponse(returnType *modTypeDef, response any, o, e io.Writer) error 
 	}
 
 	return err
+}
+
+func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response any) (rerr error) {
+	var changesetID string
+	switch v := response.(type) {
+	case string:
+		changesetID = v
+	default:
+		return fmt.Errorf("unexpected response type for changeset: %T", v)
+	}
+
+	changeset := dag.LoadChangesetFromID(dagger.ChangesetID(changesetID))
+
+	summary := new(strings.Builder)
+	if err := (func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "analyzing changes")
+		defer telemetry.End(span, func() error { return rerr })
+
+		patch, err := changeset.AsPatch().Contents(ctx)
+		if err != nil {
+			return fmt.Errorf("get patch contents: %w", err)
+		}
+
+		return summarizePatch(idtui.NewOutput(summary), patch, -1)
+	})(); err != nil {
+		return err
+	}
+
+	exportDest := outputPath
+	if exportDest == "" {
+		exportDest = "."
+
+		var confirm bool
+		form := idtui.NewForm(
+			huh.NewGroup(
+				huh.NewConfirm().
+					Title("Apply changes?").
+					Description(summary.String()).
+					Affirmative("Apply").
+					Negative("Discard").
+					Value(&confirm),
+			),
+		)
+		if err := Frontend.HandleForm(ctx, form); err != nil {
+			return err
+		}
+		if !confirm {
+			return nil
+		}
+	}
+
+	return applyChanges(ctx, exportDest, changeset)
+}
+
+func applyChanges(ctx context.Context, dest string, changeset *dagger.Changeset) (rerr error) {
+	ctx, span := Tracer().Start(ctx, "applying changes")
+	defer telemetry.End(span, func() error { return rerr })
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+
+	if _, err := changeset.Layer().Export(ctx, dest); err != nil {
+		return err
+	}
+
+	removed, err := changeset.RemovedPaths(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, filePath := range removed {
+		filePath = filepath.Join(dest, filePath)
+		slog.Info("removing file", "path", filePath)
+		if err := os.Remove(filePath); err != nil {
+			slog.Error("failed to remove file; ignoring", "path", filePath, "error", err)
+		}
+	}
+
+	return nil
+}
+
+func summarizePatch(out *termenv.Output, patch string, maxWidth int) error {
+	diff, err := diffparser.Parse(patch)
+	if err != nil {
+		return fmt.Errorf("parse patch: %w", err)
+	}
+
+	totalAdded := 0
+	totalRemoved := 0
+
+	var longestFilenameLen int
+	for _, f := range diff.Files {
+		filename := f.NewName
+		if filename == "" {
+			filename = f.OrigName
+		}
+		if filename == "" {
+			// FIXME: likely an empty file was created, which yields:
+			//
+			//   diff --git b/hey b/hey
+			//   new file mode 100644
+			//   index 0000000..e69de29
+			//
+			// our diff parsing package doesn't handle 'new file' and parse the
+			// filename
+			args := strings.Fields(f.DiffHeader)
+			lastArg := args[len(args)-1]
+			_, filename, _ = strings.Cut(lastArg, "/")
+			f.NewName = filename
+		}
+		if len(filename) > longestFilenameLen {
+			longestFilenameLen = len(filename)
+		}
+	}
+
+	var maxFilenameLen int
+	if maxWidth > 0 {
+		maxFilenameLen := max(maxWidth-20, 10) // Leave space for " | ", change count, and bars
+		if longestFilenameLen > maxFilenameLen {
+			longestFilenameLen = maxFilenameLen
+		}
+	}
+
+	for _, f := range diff.Files {
+		var removedLines, addedLines int
+		for _, h := range f.Hunks {
+			for _, l := range h.WholeRange.Lines {
+				switch l.Mode {
+				case diffparser.ADDED:
+					addedLines++
+				case diffparser.REMOVED:
+					removedLines++
+				}
+			}
+		}
+
+		totalAdded += addedLines
+		totalRemoved += removedLines
+
+		// Determine filename and color
+		var filenameColor termenv.Color
+		isAdded := f.OrigName == ""
+		isRemoved := f.NewName == ""
+
+		filename := f.NewName
+		if isRemoved {
+			filename = f.OrigName
+			filenameColor = termenv.ANSIRed
+		} else if isAdded {
+			filenameColor = termenv.ANSIGreen
+		} else {
+			filenameColor = termenv.ANSIYellow
+		}
+
+		// Shorten filename based on maxWidth
+		if maxFilenameLen > 0 {
+			if len(filename) > maxFilenameLen {
+				filename = "..." + filename[len(filename)-(maxFilenameLen-3):]
+			}
+		}
+
+		// Format line with colors
+		out.WriteString(out.String(filename).Foreground(filenameColor).String())
+		if len(filename) < longestFilenameLen {
+			out.WriteString(strings.Repeat(" ", longestFilenameLen-len(filename)))
+		}
+
+		// Show change indicator
+		if maxWidth > 0 {
+			// Simplified text form for constrained width
+			if addedLines > 0 {
+				fmt.Fprintf(out, " %s", out.String(fmt.Sprintf("+%d", addedLines)).Foreground(termenv.ANSIGreen))
+			}
+			if removedLines > 0 {
+				fmt.Fprintf(out, " %s", out.String(fmt.Sprintf("-%d", removedLines)).Foreground(termenv.ANSIRed))
+			}
+		} else {
+			out.WriteString(" | ")
+
+			// Absolute bars representation
+			if addedLines > 0 {
+				out.WriteString(out.String(strings.Repeat("+", addedLines)).Foreground(termenv.ANSIGreen).String())
+			}
+			if removedLines > 0 {
+				out.WriteString(out.String(strings.Repeat("-", removedLines)).Foreground(termenv.ANSIRed).String())
+			}
+		}
+		out.WriteString("\n")
+	}
+
+	// Add summary line
+	fmt.Fprintln(out)
+	fmt.Fprintf(out, "%d %s changed,", len(diff.Files),
+		func() string {
+			if len(diff.Files) == 1 {
+				return "file"
+			} else {
+				return "files"
+			}
+		}(),
+	)
+	if totalAdded > 0 {
+		out.WriteString(out.String(fmt.Sprintf(" +%d", totalAdded)).Foreground(termenv.ANSIGreen).String())
+	}
+	if totalRemoved > 0 {
+		out.WriteString(out.String(fmt.Sprintf(" -%d", totalRemoved)).Foreground(termenv.ANSIRed).String())
+	}
+	out.WriteString(" lines")
+
+	return nil
+}
+
+// startInteractivePromptMode starts the interactive shell with the returned LLM assigned as $agent
+func startInteractivePromptMode(ctx context.Context, dag *dagger.Client, response any) error {
+	// Extract the LLM ID from the response
+	var llmID string
+	switch v := response.(type) {
+	case string:
+		llmID = v
+	case map[string]any:
+		if id, ok := v["id"].(string); ok {
+			llmID = id
+		} else {
+			return fmt.Errorf("startInteractivePromptMode: no ID found in LLM object: %+v", v)
+		}
+	default:
+		return fmt.Errorf("startInteractivePromptMode: unexpected response type for LLM: %T", v)
+	}
+
+	// Start the shell handler with prompt mode
+	handler := &shellCallHandler{
+		dag:  dag,
+		mode: modePrompt, // Set mode to prompt
+	}
+
+	// Initialize the handler
+	if err := handler.Initialize(ctx); err != nil {
+		return err
+	}
+
+	// Load the LLM from the ID and assign it as $agent
+	llm := dag.LoadLLMFromID(dagger.LLMID(llmID))
+	if _, err := handler.llm(ctx); err != nil { // init llmSession
+		return err
+	}
+	if err := handler.llmSession.updateLLMAndAgentVar(llm); err != nil {
+		return err
+	}
+
+	// Start interactive mode
+	return handler.runInteractive(ctx)
 }
 
 func printID(w io.Writer, response any, typeDef *modTypeDef) error {

@@ -5,27 +5,27 @@ hi from root hi from dep hi from dep2
 Expected stderr:
 
 ▼ connect X.Xs
-├─● starting engine X.Xs
-├─▼ connecting to engine X.Xs
+├╴✔ starting engine X.Xs
+├╴▼ connecting to engine X.Xs
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
-╰─● starting session X.Xs
+╰╴✔ starting session X.Xs
  
 ▼ load module: github.com/dagger/dagger-test-modules@73670b0338c02cdd190f56b34c6e25066c7c8875 X.Xs
-├─● finding module configuration X.Xs
-├─● initializing module X.Xs
-├─● inspecting module metadata X.Xs
-╰─● loading type definitions X.Xs
+├╴✔ finding module configuration X.Xs
+├╴✔ initializing module X.Xs
+├╴✔ inspecting module metadata X.Xs
+╰╴✔ loading type definitions X.Xs
  
-● parsing command line arguments X.Xs
+✔ parsing command line arguments X.Xs
 
-● rootMod: RootMod! X.Xs
+✔ rootMod: RootMod! X.Xs
 ▼ .fn: String! X.Xs
 ┃ hi from root hi from dep hi from dep2
-├─● depAlias: DepAlias! X.Xs
-╰─▼ .fn: String! X.Xs
+├╴✔ depAlias: DepAlias! X.Xs
+╰╴▼ .fn: String! X.Xs
   ┃ hi from dep hi from dep2
-  ├─● dep2: Dep2! X.Xs
-  ╰─▼ .fn: String! X.Xs
+  ├╴✔ dep2: Dep2! X.Xs
+  ╰╴▼ .fn: String! X.Xs
     ┃ hi from dep2
 
 

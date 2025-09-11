@@ -104,7 +104,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			}
 
 			container := core.NewContainer(parent.Platform())
-			container.FS = ctrDef.ToPB()
+			container.SetFS(ctrDef.ToPB(), nil)
 
 			goSDKContentStore, err := local.NewStore(distconsts.EngineContainerBuiltinContentDir)
 			if err != nil {

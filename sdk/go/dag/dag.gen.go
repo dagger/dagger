@@ -66,6 +66,11 @@ func Container(opts ...dagger.ContainerOpts) *dagger.Container {
 	return client.Container(opts...)
 }
 
+func CurrentEnv() *dagger.Env {
+	client := initClient()
+	return client.CurrentEnv()
+}
+
 // The FunctionCall context that the SDK caller is currently executing in.
 //
 // If the caller is not currently executing in a function, this will return an error.
@@ -178,6 +183,12 @@ func LoadBindingFromID(id dagger.BindingID) *dagger.Binding {
 func LoadCacheVolumeFromID(id dagger.CacheVolumeID) *dagger.CacheVolume {
 	client := initClient()
 	return client.LoadCacheVolumeFromID(id)
+}
+
+// Load a Changeset from its ID.
+func LoadChangesetFromID(id dagger.ChangesetID) *dagger.Changeset {
+	client := initClient()
+	return client.LoadChangesetFromID(id)
 }
 
 // Load a Cloud from its ID.
