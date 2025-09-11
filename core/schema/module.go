@@ -134,7 +134,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("withDeprecated", s.functionWithDeprecated).
 			Doc(`Returns the function with the given deprecated string.`).
 			Args(
-				dagql.Arg("deprecated").Doc(`The deprecated string to set.`),
+				dagql.Arg("deprecated").Doc(`If deprecated, the reason or migration path.`),
 			),
 
 		dagql.Func("withSourceMap", s.functionWithSourceMap).
@@ -218,6 +218,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("value").Doc(`The name of the value in the enum`),
 				dagql.Arg("description").Doc(`A doc string for the value, if any`),
 				dagql.Arg("sourceMap").Doc(`The source map for the enum value definition.`),
+				dagql.Arg("deprecated").Doc(`If deprecated, the reason or migration path.`),
 			),
 
 		dagql.Func("withEnumMember", s.typeDefWithEnumMember).
@@ -228,6 +229,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("value").Doc(`The value of the member in the enum`),
 				dagql.Arg("description").Doc(`A doc string for the member, if any`),
 				dagql.Arg("sourceMap").Doc(`The source map for the enum member definition.`),
+				dagql.Arg("deprecated").Doc(`If deprecated, the reason or migration path.`),
 			),
 	}.Install(dag)
 
@@ -393,12 +395,13 @@ func (s *moduleSchema) typeDefWithEnumValue(ctx context.Context, def *core.TypeD
 	Value       string
 	Description string `default:""`
 	SourceMap   dagql.Optional[core.SourceMapID]
+	Deprecated  string `default:""`
 }) (*core.TypeDef, error) {
 	sourceMap, err := s.loadSourceMap(ctx, args.SourceMap)
 	if err != nil {
 		return nil, err
 	}
-	return def.WithEnumValue(args.Value, args.Value, args.Description, sourceMap)
+	return def.WithEnumValue(args.Value, args.Value, args.Description, args.Deprecated, sourceMap)
 }
 
 func (s *moduleSchema) typeDefWithEnumMember(ctx context.Context, def *core.TypeDef, args struct {
@@ -406,6 +409,7 @@ func (s *moduleSchema) typeDefWithEnumMember(ctx context.Context, def *core.Type
 	Value       string `default:""`
 	Description string `default:""`
 	SourceMap   dagql.Optional[core.SourceMapID]
+	Deprecated  string `default:""`
 }) (*core.TypeDef, error) {
 	sourceMap, err := s.loadSourceMap(ctx, args.SourceMap)
 	if err != nil {
@@ -413,9 +417,9 @@ func (s *moduleSchema) typeDefWithEnumMember(ctx context.Context, def *core.Type
 	}
 
 	if !supportEnumMembers(ctx) {
-		return def.WithEnumValue(args.Name, args.Value, args.Description, sourceMap)
+		return def.WithEnumValue(args.Name, args.Value, args.Description, args.Deprecated, sourceMap)
 	}
-	return def.WithEnumMember(args.Name, args.Value, args.Description, sourceMap)
+	return def.WithEnumMember(args.Name, args.Value, args.Description, args.Deprecated, sourceMap)
 }
 
 func supportEnumMembers(ctx context.Context) bool {
