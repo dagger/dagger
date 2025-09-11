@@ -2362,7 +2362,6 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 	modName := src.Self().ModuleName
 
 	typeDefsImpl, typeDefsEnabled := src.Self().SDKImpl.AsTypeDefs()
-	typeDefsEnabled = typeDefsEnabled && isSelfCallsEnabled(srcInstContentHashed)
 	if typeDefsEnabled {
 		var resultInst dagql.ObjectResult[*core.Module]
 		resultInst, err = typeDefsImpl.TypeDefs(ctx, mod.Deps, srcInstContentHashed)
@@ -2454,7 +2453,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		return nil, fmt.Errorf("failed to patch module %q: %w", modName, err)
 	}
 
-	if typeDefsEnabled {
+	if typeDefsEnabled && isSelfCallsEnabled(srcInstContentHashed) {
 		// append module types to the module itself so self calls are possible
 		mod.Deps = mod.Deps.Append(mod)
 	}

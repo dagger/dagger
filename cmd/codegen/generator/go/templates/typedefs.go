@@ -45,7 +45,7 @@ func (funcs goTemplateFuncs) TypeDefs() (string, error) {
 	module := dag.Module()
 
 	err := funcs.visitTypes(
-		false,
+		true,
 		&visitorFuncs{
 			RootVisitor: func(pkgDoc string) error {
 				if pkgDoc != "" {
