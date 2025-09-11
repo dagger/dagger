@@ -140,17 +140,12 @@ Go function.
 func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 	objFunctionCases := map[string][]Code{}
 
-	createMod := Qual("dag", "Module").Call()
-
 	implementationCode := Empty()
 
 	err := funcs.visitTypes(
 		true,
 		&visitorFuncs{
 			RootVisitor: func(pkgDoc string) error {
-				if pkgDoc != "" {
-					createMod = dotLine(createMod, "WithDescription").Call(Lit(pkgDoc))
-				}
 				return nil
 			},
 			StructVisitor: func(ps *parseState, named *types.Named, obj *types.TypeName, objTypeSpec *parsedObjectType, strct *types.Struct) error {
@@ -160,12 +155,6 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 				}
 
 				// Add the object to the module
-				objTypeDefCode, err := objTypeSpec.TypeDefCode()
-				if err != nil {
-					return fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
-				}
-				createMod = dotLine(createMod, "WithObject").Call(Add(Line(), objTypeDefCode))
-
 				implCode, err := objTypeSpec.ImplementationCode()
 				if err != nil {
 					return fmt.Errorf("failed to generate json method code for %s: %w", obj.Name(), err)
@@ -176,12 +165,6 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 			},
 			IfaceVisitor: func(ps *parseState, named *types.Named, obj *types.TypeName, ifaceTypeSpec *parsedIfaceType, iface *types.Interface) error {
 				// Add the iface to the module
-				ifaceTypeDefCode, err := ifaceTypeSpec.TypeDefCode()
-				if err != nil {
-					return fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
-				}
-				createMod = dotLine(createMod, "WithInterface").Call(Add(Line(), ifaceTypeDefCode))
-
 				implCode, err := ifaceTypeSpec.ImplementationCode()
 				if err != nil {
 					return fmt.Errorf("failed to generate concrete struct code for %s: %w", obj.Name(), err)
@@ -192,12 +175,6 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 			},
 			EnumVisitor: func(ps *parseState, named *types.Named, obj *types.TypeName, enumTypeSpec *parsedEnumType, enum *types.Basic) error {
 				// Add the enum to the module
-				enumTypeDefCode, err := enumTypeSpec.TypeDefCode()
-				if err != nil {
-					return fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
-				}
-				createMod = dotLine(createMod, "WithEnum").Call(Add(Line(), enumTypeDefCode))
-
 				implCode, err := enumTypeSpec.ImplementationCode()
 				if err != nil {
 					return fmt.Errorf("failed to generate enum code for %s: %w", obj.Name(), err)
@@ -219,23 +196,17 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 	out = append(out,
 		fmt.Sprintf("%#v", implementationCode),
 		mainSrc(funcs.CheckVersionCompatibility),
-		registerSrc(createMod),
 		invokeSrc(objFunctionCases),
 	)
 	return strings.Join(out, "\n"), nil
 }
 
-func dotLine(a *Statement, id string) *Statement {
-	return a.Op(".").Line().Id(id)
-}
-
 const (
-	parentJSONVar    = "parentJSON"
-	parentNameVar    = "parentName"
-	fnNameVar        = "fnName"
-	inputArgsVar     = "inputArgs"
-	invokeFuncName   = "invoke"
-	registerFuncName = "register"
+	parentJSONVar  = "parentJSON"
+	parentNameVar  = "parentName"
+	fnNameVar      = "fnName"
+	inputArgsVar   = "inputArgs"
+	invokeFuncName = "invoke"
 )
 
 // mainSrc returns the static part of the generated code. It calls out to the
@@ -372,10 +343,6 @@ func invokeSrc(objFunctionCases map[string][]Code) string {
 		functionCases := objFunctionCases[objName]
 		objCases = append(objCases, Case(Lit(objName)).Block(Switch(Id(fnNameVar)).Block(functionCases...)))
 	}
-	// when the object name is empty, return the module definition
-	objCases = append(objCases, Case(Lit("")).Block(
-		Return(Id(registerFuncName).Call()),
-	))
 	// default case (return error)
 	objCases = append(objCases, Default().Block(
 		Return(Nil(), Qual("fmt", "Errorf").Call(Lit("unknown object %s"), Id(parentNameVar))),
@@ -403,21 +370,6 @@ func invokeSrc(objFunctionCases map[string][]Code) string {
 		// suppress warning if `inputArgs` is unused
 		Id("_").Op("=").Id(inputArgsVar),
 		objSwitch,
-	)
-
-	return fmt.Sprintf("%#v", invokeFunc)
-}
-
-// the source code of the register func, which exposes the module's defined types
-func registerSrc(createMod Code) string {
-	// func register(
-	invokeFunc := Func().Id(registerFuncName).Params().Params(
-		// ) (_ any,
-		Id("_").Id("any"),
-		// err error)
-		Id("err").Error(),
-	).Block(
-		Return(createMod, Nil()),
 	)
 
 	return fmt.Sprintf("%#v", invokeFunc)
