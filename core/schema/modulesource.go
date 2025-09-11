@@ -2274,7 +2274,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 			mod.Runtime.Value,
 			core.NewFunction("", &core.TypeDef{
 				Kind:     core.TypeDefKindObject,
-				AsObject: dagql.NonNull(core.NewObjectTypeDef("Module", "")),
+				AsObject: dagql.NonNull(core.NewObjectTypeDef("Module", "", "")),
 			}))
 		if err != nil {
 			return fmt.Errorf("failed to create module definition function for module %q: %w", modName, err)
