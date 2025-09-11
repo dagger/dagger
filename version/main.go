@@ -30,9 +30,8 @@ func New(
 	// +ignore=["**_test.go", "**/.git*", "**/.venv", "**/.dagger", ".*", "bin", "**/node_modules", "**/testdata/**", "**/.changes", ".changes", "docs", "helm", "release", "version", "modules", "*.md", "LICENSE", "NOTICE", "hack"]
 	inputs *dagger.Directory,
 	// +optional
-	// +defaultPath="/"
-	// +ignore=["*", "!.git", "!**/.gitignore", ".git/config"]
-	gitDir *dagger.Directory,
+	// +defaultPath="."
+	gitDir *dagger.GitRepository,
 	// .changes file used to extract version information
 	// +optional
 	// +defaultPath="/"
@@ -151,7 +150,7 @@ func (v Version) ImageTag(ctx context.Context) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return mergeBase.Commit, nil
+		return mergeBase, nil
 	}
 
 	versionTag, err := v.Git.VersionTagLatest(ctx, "", head.Commit)
@@ -170,7 +169,7 @@ func (v Version) ImageTag(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return mergeBase.Commit, nil
+	return mergeBase, nil
 }
 
 // Determine the last released version.
