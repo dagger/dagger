@@ -122,7 +122,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to retrieve. Example: "/src"`),
 			),
-		dagql.Func("withDirectory", s.withDirectory).
+		dagql.NodeFunc("withDirectory", DagOpDirectoryWrapper(srv, s.withDirectory, WithPathFn(keepParentDir[WithDirectoryArgs]))).
 			Doc(`Return a snapshot with a directory added`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the written directory (e.g., "/src/").`),
@@ -271,19 +271,24 @@ type WithDirectoryArgs struct {
 	Directory core.DirectoryID
 
 	core.CopyFilter
+	DagOpInternalArgs
 }
 
-func (s *directorySchema) withDirectory(ctx context.Context, parent *core.Directory, args WithDirectoryArgs) (*core.Directory, error) {
+func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithDirectoryArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 
 	dir, err := args.Directory.Load(ctx, srv)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
-	return parent.WithDirectory(ctx, args.Path, dir.Self(), args.CopyFilter, nil)
+	with, err := parent.Self().WithDirectory(ctx, args.Path, dir.Self(), args.CopyFilter, nil)
+	if err != nil {
+		return res, fmt.Errorf("failed to add directory %q: %w", args.Path, err)
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, with)
 }
 
 type FilterArgs struct {
@@ -336,9 +341,13 @@ type entriesArgs struct {
 }
 
 func (s *directorySchema) entries(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args entriesArgs) (dagql.Array[dagql.String], error) {
+	fmt.Printf("ACB call to directorySchema.entries\n")
 	ents, err := parent.Self().Entries(ctx, args.Path.Value.String())
 	if err != nil {
 		return nil, err
+	}
+	for _, x := range ents {
+		fmt.Printf("ACB directorySchema.entries returning %s\n", x)
 	}
 	return dagql.NewStringArray(ents...), nil
 }
