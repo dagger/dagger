@@ -152,15 +152,29 @@ func getOpts[T dagql.Typed, A any](opts ...DagOpOptsFn[T, A]) *DagOpOpts[T, A] {
 	return &o
 }
 
-func getSelfDigest(a any) (digest.Digest, error) {
+func getSelfDigest(a any) (digest.Digest, []llb.State, error) {
 	switch x := a.(type) {
 	case *core.Directory:
-		return core.DigestOf(x.WithoutInputs())
+		dgst, err := core.DigestOf(x.WithoutInputs())
+		if err != nil {
+			return "", nil, err
+		}
+
+		var deps []llb.State
+		if x.LLB == nil || x.LLB.Def == nil {
+			deps = append(deps, llb.Scratch())
+		} else {
+			op, err := llb.NewDefinitionOp(x.LLB)
+			if err != nil {
+				return "", nil, err
+			}
+			deps = append(deps, llb.NewState(op))
+		}
+		return dgst, deps, err
 	case *core.GitRef:
-		// FIXME can core.DigestOf(x) be used instead? When set, the TestGit/TestAuthClient test failed intermittently
-		return "", nil // fallback to using dagop ID
+		return "", nil, nil // use dagop ID (we've manually updated the dagql digest)
 	default:
-		return "", fmt.Errorf("unable to create digest: unknown type %T", a)
+		return "", nil, fmt.Errorf("unable to create digest: unknown type %T", a)
 	}
 }
 
@@ -178,17 +192,12 @@ func DagOpDirectory[T dagql.Typed, A any](
 ) (*core.Directory, error) {
 	o := getOpts(opts...)
 
-	selfDigest, err := getSelfDigest(self)
+	selfDigest, deps, err := getSelfDigest(self)
 	if err != nil {
 		return nil, err
 	}
 
 	argDigest, err := core.DigestOf(args)
-	if err != nil {
-		return nil, err
-	}
-
-	deps, err := extractLLBDependencies(ctx, self)
 	if err != nil {
 		return nil, err
 	}
@@ -236,12 +245,7 @@ func DagOpContainer[A any](
 	if err != nil {
 		return nil, err
 	}
-
-	deps, err := extractLLBDependencies(ctx, ctr)
-	if err != nil {
-		return nil, err
-	}
-	return core.NewContainerDagOp(ctx, currentIDForContainerDagOp(ctx), argDigest, ctr, deps)
+	return core.NewContainerDagOp(ctx, currentIDForContainerDagOp(ctx), argDigest, ctr)
 }
 
 const (
