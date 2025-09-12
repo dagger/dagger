@@ -286,6 +286,36 @@ func (GitSuite) TestKeepGitDir(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (GitSuite) TestCheckoutOrigin(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	getOrigin := func(ctx context.Context, t *testctx.T, checkout *dagger.Directory) string {
+		out, err := c.Container().From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			WithWorkdir("/src").
+			WithMountedDirectory(".", checkout).
+			WithExec([]string{"git", "remote", "get-url", "origin"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		return strings.TrimSpace(out)
+	}
+
+	t.Run("remote", func(ctx context.Context, t *testctx.T) {
+		checkout := c.Git("https://github.com/dagger/dagger").Head().Tree()
+		require.Equal(t, "https://github.com/dagger/dagger", getOrigin(ctx, t, checkout))
+	})
+
+	t.Run("local", func(ctx context.Context, t *testctx.T) {
+		clone := c.Container().From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			WithWorkdir("/src").
+			WithExec([]string{"git", "clone", "https://github.com/dagger/dagger", ".", "--depth=1"}).
+			Directory(".")
+		checkout := clone.AsGit().Head().Tree()
+		require.Equal(t, "", getOrigin(ctx, t, checkout))
+	})
+}
+
 func (GitSuite) TestGitDepth(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
