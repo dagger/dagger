@@ -297,7 +297,7 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 				return inst, fmt.Errorf("failed to get absolute path from git ignore root %s: %w", hostPath, err)
 			}
 		} else {
-			dotGitPath, found, err := findUp(ctx, core.NewCallerStatFS(bk), hostPath, ".git")
+			dotGitPath, found, err := host.Self().FindUp(ctx, core.NewCallerStatFS(bk), hostPath, ".git")
 			if err != nil {
 				return inst, fmt.Errorf("failed to find up .git: %w", err)
 			}
@@ -526,7 +526,7 @@ func (s *hostSchema) findUp(ctx context.Context, host dagql.ObjectResult[*core.H
 	if err != nil {
 		return i, fmt.Errorf("failed to get cwd: %w", err)
 	}
-	foundPath, found, err := findUp(ctx, core.NewCallerStatFS(bk), cwd, args.Name)
+	foundPath, found, err := host.Self().FindUp(ctx, core.NewCallerStatFS(bk), cwd, args.Name)
 	if err != nil {
 		return i, fmt.Errorf("failed to find %s: %w", args.Name, err)
 	}
