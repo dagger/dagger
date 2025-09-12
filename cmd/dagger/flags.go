@@ -6,17 +6,11 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
-	"net"
-	"net/url"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
 
 	"github.com/containerd/platforms"
-	"github.com/dagger/dagger/engine/client/pathutil"
-	"github.com/dagger/dagger/util/gitutil"
 	"github.com/spf13/pflag"
 
 	"dagger.io/dagger"
@@ -275,9 +269,6 @@ func (v *containerValue) Type() string {
 }
 
 func (v *containerValue) Set(s string) error {
-	if s == "" {
-		return fmt.Errorf("container address cannot be empty")
-	}
 	v.address = s
 	return nil
 }
@@ -287,10 +278,7 @@ func (v *containerValue) String() string {
 }
 
 func (v *containerValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	if v.address == "" {
-		return nil, fmt.Errorf("container address cannot be empty")
-	}
-	return c.Container().From(v.String()).Sync(ctx)
+	return c.Address(v.address).Container().Sync(ctx)
 }
 
 // directoryValue is a pflag.Value that builds a dagger.Directory from a host path.
@@ -303,9 +291,6 @@ func (v *directoryValue) Type() string {
 }
 
 func (v *directoryValue) Set(s string) error {
-	if s == "" {
-		return fmt.Errorf("directory address cannot be empty")
-	}
 	v.address = s
 	return nil
 }
@@ -315,70 +300,17 @@ func (v *directoryValue) String() string {
 }
 
 func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *dagger.ModuleSource, modArg *modFunctionArg) (any, error) {
-	if v.String() == "" {
-		return nil, fmt.Errorf("directory address cannot be empty")
-	}
-
-	// Try parsing as a Git URL
-	gitURL, err := parseGitURL(v.String())
-	if err == nil {
-		return dag.Directory().
-			WithDirectory(
-				"/",
-				makeGitDirectory(gitURL, dag),
-				dagger.DirectoryWithDirectoryOpts{
-					Exclude: modArg.Ignore,
-				}).
-			Sync(ctx)
-	}
-
-	// Otherwise it's a local dir path
-	path := v.String()
-	path, err = getLocalPath(path)
-	if err != nil {
-		return nil, err
-	}
-
-	return dag.Host().Directory(path, dagger.HostDirectoryOpts{
-		Exclude: modArg.Ignore,
-	}).Sync(ctx)
-}
-
-// makeGitDirectory creates a dagger.Directory object from a parsed gitutil.GitURL
-func makeGitDirectory(gitURL *gitutil.GitURL, dag *dagger.Client) *dagger.Directory {
-	gitOpts := dagger.GitOpts{
-		KeepGitDir: true,
-	}
-	git := dag.Git(gitURL.Remote(), gitOpts)
-	var gitRef *dagger.GitRef
-	if gitURL.Fragment.Ref == "" {
-		gitRef = git.Head()
-	} else {
-		gitRef = git.Ref(gitURL.Fragment.Ref)
-	}
-	gitDir := gitRef.Tree()
-	if subdir := gitURL.Fragment.Subdir; subdir != "" {
-		gitDir = gitDir.Directory(subdir)
-	}
-	return gitDir
-}
-
-func parseGitURL(url string) (*gitutil.GitURL, error) {
-	// FIXME: handle tarball-over-http (where http(s):// is scheme but not a git repo)
-	u, err := gitutil.ParseURL(url)
-	if err != nil {
-		return nil, err
-	}
-	// TODO: default scheme?
-	if u.Fragment == nil {
-		u.Fragment = &gitutil.GitURLFragment{}
-	}
-	return u, nil
+	return dag.Address(v.String()).
+		Directory(
+			dagger.AddressDirectoryOpts{
+				Exclude: modArg.Ignore,
+			},
+		).Sync(ctx)
 }
 
 // fileValue is a pflag.Value that builds a dagger.File from a host path.
 type fileValue struct {
-	path string
+	address string
 }
 
 func (v *fileValue) Type() string {
@@ -386,58 +318,22 @@ func (v *fileValue) Type() string {
 }
 
 func (v *fileValue) Set(s string) error {
-	if s == "" {
-		return fmt.Errorf("file path cannot be empty")
-	}
-	v.path = s
+	v.address = s
 	return nil
 }
 
 func (v *fileValue) String() string {
-	return v.path
+	return v.address
 }
 
-func (v *fileValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	if v.String() == "" {
-		return nil, fmt.Errorf("file path cannot be empty")
-	}
-
-	// Try parsing as a Git URL
-	parsedGit, err := parseGitURL(v.String())
-	if err == nil {
-		gitOpts := dagger.GitOpts{
-			KeepGitDir: true,
-		}
-		git := dag.Git(parsedGit.Remote(), gitOpts)
-		var gitRef *dagger.GitRef
-		if parsedGit.Fragment.Ref == "" {
-			gitRef = git.Head()
-		} else {
-			gitRef = git.Branch(parsedGit.Fragment.Ref)
-		}
-		gitDir := gitRef.Tree()
-		path := parsedGit.Fragment.Subdir
-		if path == "" {
-			return nil, fmt.Errorf("expected path selection for git repo")
-		}
-		return gitDir.File(path).Sync(ctx)
-	}
-
-	// Otherwise it's a local file path
-	path := v.String()
-	path, err = getLocalPath(path)
-	if err != nil {
-		return nil, err
-	}
-
-	return dag.Host().File(path).Sync(ctx)
+func (v *fileValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
+	return c.Address(v.address).File().Sync(ctx)
 }
 
 // secretValue is a pflag.Value that builds a dagger.Secret from a name and a
 // plaintext value.
 type secretValue struct {
-	uri      string
-	cacheKey string
+	address string
 }
 
 func (v *secretValue) Type() string {
@@ -445,59 +341,22 @@ func (v *secretValue) Type() string {
 }
 
 func (v *secretValue) Set(s string) error {
-	if !strings.Contains(s, ":") {
-		// case of e.g. `--token MY_ENV_SECRET`, which is shorthand for `--token env://MY_ENV_SECRET`
-		s = "env://" + s
-	}
-	// legacy secrets in the form of `--token env:MY_ENV_SECRET` instead of `env://MY_ENV_SECRET`
-	secretSource, val, _ := strings.Cut(s, ":")
-	if !strings.HasPrefix(val, "//") {
-		s = secretSource + "://" + val
-	}
-
-	sWithoutQuery, queryValsStr, ok := strings.Cut(s, "?")
-	if ok && len(queryValsStr) > 0 {
-		queryVals, err := url.ParseQuery(queryValsStr)
-		if err != nil {
-			return err
-		}
-		if cacheKey := queryVals.Get("cacheKey"); cacheKey != "" {
-			v.cacheKey = cacheKey
-			queryVals.Del("cacheKey")
-			queryValsStr = queryVals.Encode()
-			if len(queryValsStr) > 0 {
-				s = fmt.Sprintf("%s?%s", sWithoutQuery, queryValsStr)
-			} else {
-				s = sWithoutQuery
-			}
-		}
-	}
-
-	v.uri = s
-
+	v.address = s
 	return nil
 }
 
 func (v *secretValue) String() string {
-	return v.uri
+	return v.address
 }
 
 func (v *secretValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	var opts []dagger.SecretOpts
-	if v.cacheKey != "" {
-		opts = append(opts, dagger.SecretOpts{
-			CacheKey: v.cacheKey,
-		})
-	}
-	return c.Secret(v.uri, opts...), nil
+	return c.Address(v.address).Secret(), nil
 }
 
 // serviceValue is a pflag.Value that builds a dagger.Service from a host:port
 // combination.
 type serviceValue struct {
-	address string // for string representation
-	host    string
-	ports   []dagger.PortForward
+	address string
 }
 
 func (v *serviceValue) Type() string {
@@ -509,57 +368,12 @@ func (v *serviceValue) String() string {
 }
 
 func (v *serviceValue) Set(s string) error {
-	if s == "" {
-		return fmt.Errorf("service address cannot be empty")
-	}
-	u, err := url.Parse(s)
-	if err != nil {
-		return err
-	}
-	switch u.Scheme {
-	case "tcp":
-		host, port, err := net.SplitHostPort(u.Host)
-		if err != nil {
-			return err
-		}
-		nPort, err := strconv.Atoi(port)
-		if err != nil {
-			return err
-		}
-		v.host = host
-		v.ports = append(v.ports, dagger.PortForward{
-			Backend:  nPort,
-			Frontend: nPort,
-			Protocol: dagger.NetworkProtocolTcp,
-		})
-	case "udp":
-		host, port, err := net.SplitHostPort(u.Host)
-		if err != nil {
-			return err
-		}
-		nPort, err := strconv.Atoi(port)
-		if err != nil {
-			return err
-		}
-		v.host = host
-		v.ports = append(v.ports, dagger.PortForward{
-			Backend:  nPort,
-			Frontend: nPort,
-			Protocol: dagger.NetworkProtocolUdp,
-		})
-	default:
-		return fmt.Errorf("unsupported service address. Must be a valid tcp:// or udp:// URL")
-	}
 	v.address = s
 	return nil
 }
 
 func (v *serviceValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	svc, err := c.Host().Service(v.ports, dagger.HostServiceOpts{Host: v.host}).Start(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to start service: %w", err)
-	}
-	return svc, nil
+	return c.Address(v.address).Service().Start(ctx)
 }
 
 // portForwardValue is a pflag.Value that builds a dagger.
@@ -609,7 +423,7 @@ func (v *portForwardValue) Get(_ context.Context, c *dagger.Client, _ *dagger.Mo
 }
 
 type socketValue struct {
-	path string
+	address string
 }
 
 func (v *socketValue) Type() string {
@@ -617,20 +431,16 @@ func (v *socketValue) Type() string {
 }
 
 func (v *socketValue) String() string {
-	return v.path
+	return v.address
 }
 
 func (v *socketValue) Set(s string) error {
-	if s == "" {
-		return fmt.Errorf("socket path cannot be empty")
-	}
-	s = strings.TrimPrefix(s, "unix://") // allow unix:// scheme
-	v.path = s
+	v.address = s
 	return nil
 }
 
 func (v *socketValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	return c.Host().UnixSocket(v.path), nil
+	return c.Address(v.address).Socket(), nil
 }
 
 // cacheVolumeValue is a pflag.Value that builds a dagger.CacheVolume from a
@@ -796,38 +606,12 @@ func (v *gitRepositoryValue) String() string {
 }
 
 func (v *gitRepositoryValue) Set(s string) error {
-	if s == "" {
-		return fmt.Errorf("git repository address cannot be empty")
-	}
 	v.address = s
 	return nil
 }
 
-func (v *gitRepositoryValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	if v.String() == "" {
-		return nil, fmt.Errorf("git repository address cannot be empty")
-	}
-
-	// Try parsing as a Git URL
-	gitURL, err := parseGitURL(v.String())
-	if err == nil {
-		if gitURL.Fragment.Ref != "" {
-			return nil, fmt.Errorf("git repository cannot contain ref")
-		}
-		if gitURL.Fragment.Subdir != "" {
-			return nil, fmt.Errorf("git repository cannot contain subdir")
-		}
-		return dag.Git(gitURL.Remote()), nil
-	}
-
-	// Otherwise it's a local dir path
-	path := v.String()
-	path, err = getLocalPath(path)
-	if err != nil {
-		return nil, err
-	}
-
-	return dag.Host().Directory(path).AsGit(), nil
+func (v *gitRepositoryValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
+	return c.Address(v.address).GitRepository(), nil
 }
 
 type gitRefValue struct {
@@ -843,43 +627,12 @@ func (v *gitRefValue) String() string {
 }
 
 func (v *gitRefValue) Set(s string) error {
-	if s == "" {
-		return fmt.Errorf("git ref address cannot be empty")
-	}
 	v.address = s
 	return nil
 }
 
-func (v *gitRefValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	if v.String() == "" {
-		return nil, fmt.Errorf("git ref address cannot be empty")
-	}
-
-	// Try parsing as a Git URL
-	gitURL, err := parseGitURL(v.String())
-	if err == nil {
-		if gitURL.Fragment.Subdir != "" {
-			return nil, fmt.Errorf("git repository cannot contain subdir")
-		}
-		repo := dag.Git(gitURL.Remote())
-		if ref := gitURL.Fragment.Ref; ref != "" {
-			return repo.Ref(ref), nil
-		}
-		return repo.Head(), nil
-	}
-
-	// Otherwise it's a local dir path
-	path, ref, _ := strings.Cut(v.String(), "#")
-	path, err = getLocalPath(path)
-	if err != nil {
-		return nil, err
-	}
-
-	repo := dag.Host().Directory(path).AsGit()
-	if ref != "" {
-		return repo.Ref(ref), nil
-	}
-	return repo.Head(), nil
+func (v *gitRefValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
+	return c.Address(v.address).GitRef(), nil
 }
 
 // AddFlag adds a flag appropriate for the argument type. Should return a
@@ -1136,29 +889,4 @@ func writeAsCSV(vals []string) (string, error) {
 	}
 	w.Flush()
 	return strings.TrimSuffix(b.String(), "\n"), nil
-}
-
-func getLocalPath(path string) (string, error) {
-	// allow `file://` scheme or no scheme
-	path = strings.TrimPrefix(path, "file://")
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	path, err = pathutil.ExpandHomeDir(homeDir, path)
-	if err != nil {
-		return "", fmt.Errorf("failed to expand home directory: %w", err)
-	}
-	if !filepath.IsAbs(path) {
-		path, err = pathutil.Abs(path)
-		if err != nil {
-			return "", fmt.Errorf("failed to resolve absolute path: %w", err)
-		}
-	}
-
-	// make windows paths usable in the Linux engine container
-	path = filepath.ToSlash(path)
-
-	return path, nil
 }
