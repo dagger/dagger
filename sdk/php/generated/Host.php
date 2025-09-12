@@ -64,6 +64,19 @@ class Host extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null
+     */
+    public function findUp(string $name, ?bool $noCache = false): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('findUp');
+        $leafQueryBuilder->setArgument('name', $name);
+        if (null !== $noCache) {
+        $leafQueryBuilder->setArgument('noCache', $noCache);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'findUp');
+    }
+
+    /**
      * A unique identifier for this Host.
      */
     public function id(): HostId
