@@ -149,19 +149,20 @@ type ErrResponse struct {
 	Message string `json:"message"`
 }
 
-func (c *Client) Engine(ctx context.Context) (*EngineSpec, error) {
-	// Remote Engine version defaults to the CLI version - this guarantees the best compatibility
-	tag := engine.Tag
-	// Default to `main` when the CLI is a development version
-	if tag == "" {
-		tag = "main"
+func (c *Client) Engine(ctx context.Context, image string) (*EngineSpec, error) {
+	engineSpec := &EngineSpec{}
+	if image != "" {
+		engineSpec.Image = image
+	} else {
+		// Remote Engine version defaults to the CLI version - this guarantees the best compatibility
+		tag := engine.Tag
+		// Default to `main` when the CLI is a development version
+		if tag == "" {
+			tag = "main"
+		}
+		engineSpec.Image = "registry.dagger.io/engine:" + tag
 	}
 
-	// The only property that we can set is the Image tag.
-	// The rest will be handled by engine configs (follow-up).
-	engineSpec := &EngineSpec{
-		Image: "registry.dagger.io/engine:" + tag,
-	}
 	b, err := json.Marshal(engineSpec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to json marshal the EngineSpec: %w", err)
