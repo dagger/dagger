@@ -190,10 +190,9 @@ func (spec *parsedObjectType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, erro
 	if spec.doc != "" {
 		withObjectOpts.Description = strings.TrimSpace(spec.doc)
 	}
-	// todo(guillaume): add deprecated field to object
-	// if spec.deprecated != "" {
-	// 	withObjectOpts.Deprecated = strings.TrimSpace(spec.deprecated)
-	// }
+	if spec.deprecated != "" {
+		withObjectOpts.Deprecated = strings.TrimSpace(spec.deprecated)
+	}
 	if spec.sourceMap != nil {
 		withObjectOpts.SourceMap = spec.sourceMap.TypeDef(dag)
 	}
