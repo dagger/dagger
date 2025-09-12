@@ -563,6 +563,17 @@ func (file *File) Mount(ctx context.Context, f func(string) error) error {
 	})
 }
 
+// AsEnvFile converts a File to an EnvFile by parsing its contents
+func (file *File) AsEnvFile(ctx context.Context, expand bool) (*EnvFile, error) {
+	contents, err := file.Contents(ctx, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return (&EnvFile{
+		Expand: expand,
+	}).WithContents(string(contents))
+}
+
 // bkRef returns the buildkit reference from the solved def.
 func bkRef(ctx context.Context, bk *buildkit.Client, def *pb.Definition) (bkgw.Reference, error) {
 	res, err := bk.Solve(ctx, bkgw.SolveRequest{

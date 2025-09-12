@@ -118,6 +118,12 @@ func Env(opts ...dagger.EnvOpts) *dagger.Env {
 	return client.Env(opts...)
 }
 
+// Initialize an environment file
+func EnvFile(opts ...dagger.EnvFileOpts) *dagger.EnvFile {
+	client := initClient()
+	return client.EnvFile(opts...)
+}
+
 // Create a new error.
 func Error(message string) *dagger.Error {
 	client := initClient()
@@ -250,6 +256,12 @@ func LoadEnumTypeDefFromID(id dagger.EnumTypeDefID) *dagger.EnumTypeDef {
 func LoadEnumValueTypeDefFromID(id dagger.EnumValueTypeDefID) *dagger.EnumValueTypeDef {
 	client := initClient()
 	return client.LoadEnumValueTypeDefFromID(id)
+}
+
+// Load a EnvFile from its ID.
+func LoadEnvFileFromID(id dagger.EnvFileID) *dagger.EnvFile {
+	client := initClient()
+	return client.LoadEnvFileFromID(id)
 }
 
 // Load a Env from its ID.
