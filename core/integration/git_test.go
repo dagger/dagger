@@ -160,7 +160,7 @@ func (GitSuite) TestGitRefs(ctx context.Context, t *testctx.T) {
 
 		// $ git ls-remote https://github.com/dagger/dagger.git | grep pull/8735
 		// 318970484f692d7a76cfa533c5d47458631c9654	refs/pull/8735/head
-		byHiddenCommit := git.Tag("318970484f692d7a76cfa533c5d47458631c9654")
+		byHiddenCommit := git.Commit("318970484f692d7a76cfa533c5d47458631c9654")
 		commit, err = byHiddenCommit.Commit(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "318970484f692d7a76cfa533c5d47458631c9654", commit)
@@ -174,6 +174,29 @@ func (GitSuite) TestGitRefs(ctx context.Context, t *testctx.T) {
 		head, err = byHiddenCommit.Tree().File(".git/HEAD").Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, head, "318970484f692d7a76cfa533c5d47458631c9654")
+
+		// attempting to use lax refs should fail (see TestLegacyGitLaxRefs)
+		_, err = git.Commit("main").Commit(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "invalid commit SHA", "main is not a commit SHA")
+
+		_, err = git.Tag("main").Commit(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "repository does not contain", "main is not a tag")
+		requireErrOut(t, err, "refs/tags/main")
+		_, err = git.Tag("refs/heads/main").Commit(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "repository does not contain", "main is not a tag")
+		requireErrOut(t, err, "refs/tags/refs/heads/main")
+
+		_, err = git.Branch("v0.9.5").Commit(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "repository does not contain", "v0.9.5 is not a branch")
+		requireErrOut(t, err, "refs/heads/v0.9.5")
+		_, err = git.Branch("refs/tags/v0.9.5").Commit(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "repository does not contain", "v0.9.5 is not a branch")
+		requireErrOut(t, err, "refs/heads/refs/tags/v0.9.5")
 	}
 
 	testGitTags := func(ctx context.Context, t *testctx.T, git *dagger.GitRepository) {
