@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -597,8 +598,14 @@ type commitArgs struct {
 	ID string
 }
 
-func (s *gitSchema) commit(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args commitArgs) (dagql.Result[*core.GitRef], error) {
-	// TODO: should enforce gitutil.IsCommitSHA
+func supportsStrictRefs(ctx context.Context) bool {
+	return core.Supports(ctx, "v0.19.0")
+}
+
+func (s *gitSchema) commit(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args commitArgs) (inst dagql.Result[*core.GitRef], _ error) {
+	if supportsStrictRefs(ctx) && !gitutil.IsCommitSHA(args.ID) {
+		return inst, fmt.Errorf("invalid commit SHA: %q", args.ID)
+	}
 	return s.ref(ctx, parent, refArgs{Name: args.ID})
 }
 
@@ -607,7 +614,9 @@ type branchArgs struct {
 }
 
 func (s *gitSchema) branch(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args branchArgs) (dagql.Result[*core.GitRef], error) {
-	// TODO: should enforce refs/heads/ prefix
+	if supportsStrictRefs(ctx) {
+		args.Name = "refs/heads/" + strings.TrimPrefix(args.Name, "refs/heads/")
+	}
 	return s.ref(ctx, parent, refArgs(args))
 }
 
@@ -616,7 +625,9 @@ type tagArgs struct {
 }
 
 func (s *gitSchema) tag(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args tagArgs) (dagql.Result[*core.GitRef], error) {
-	// TODO: should enforce refs/tags/ prefix
+	if supportsStrictRefs(ctx) {
+		args.Name = "refs/tags/" + strings.TrimPrefix(args.Name, "refs/tags/")
+	}
 	return s.ref(ctx, parent, refArgs(args))
 }
 
