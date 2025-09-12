@@ -1403,6 +1403,21 @@ type Directory {
     sourceRootPath: String = "."
   ): ModuleSource!
 
+  """Change the owner of the directory contents recursively."""
+  chown(
+    """Path of the directory to change ownership of (e.g., "/")."""
+    path: String!
+
+    """
+    A user:group to set for the mounted directory and its contents.
+
+    The user and group must be an ID (1000:1000), not a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String!
+  ): Directory!
+
   """
   Return the difference between this directory and an another directory. The difference is encoded as a directory.
   """
@@ -1618,6 +1633,15 @@ type Directory {
     Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
     """
     include: [String!] = []
+
+    """
+    A user:group to set for the copied directory and its contents.
+
+    The user and group must be an ID (1000:1000), not a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String = ""
   ): Directory!
 
   """
@@ -1632,6 +1656,15 @@ type Directory {
 
     """Permission given to the copied file (e.g., 0600)."""
     permissions: Int
+
+    """
+    A user:group to set for the copied directory and its contents.
+
+    The user and group must be an ID (1000:1000), not a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String = ""
   ): Directory!
 
   """
@@ -2493,6 +2526,18 @@ type File {
     """Replace "${VAR}" or "$VAR" with the value of other vars"""
     expand: Boolean
   ): EnvFile!
+
+  """Change the owner of the file recursively."""
+  chown(
+    """
+    A user:group to set for the file.
+
+    The user and group must be an ID (1000:1000), not a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String!
+  ): File!
 
   """Retrieves the contents of the file."""
   contents(

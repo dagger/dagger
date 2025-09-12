@@ -4010,9 +4010,9 @@ func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
 		output1a := runCtrs(c1, hostDir1, subdirA)
 		// run an exec that has /tmpdir/b/f included
 		output1b := runCtrs(c1, hostDir1, subdirB)
-		// sanity check: those should be different execs, *not* cached
-		// (this happens because content-hashing doesn't occur on the root dir)
-		require.NotEqual(t, output1a, output1b)
+
+		// these should be cached execs, since f is the same in both a and b
+		require.Equal(t, output1a, output1b)
 
 		// change /tmpdir/b/f
 		require.NoError(t, os.WriteFile(filepath.Join(tmpDir, subdirB, subfileName), []byte("2"), 0o644))
@@ -4022,8 +4022,7 @@ func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
 		output2a := runCtrs(c2, hostDir2, subdirA)
 		// run an exec that has /tmpdir/b/f included
 		output2b := runCtrs(c2, hostDir2, subdirB)
-		// sanity check: those should be different execs, *not* cached
-		// (this happens because content-hashing doesn't occur on the root dir)
+		// sanity check: those should be different execs, *not* cached because f changed between a and b
 		require.NotEqual(t, output2a, output2b)
 
 		// we only changed /tmpdir/b/f, so the execs that included /tmpdir/a/f should be cached across clients
@@ -5105,4 +5104,43 @@ func (ContainerSuite) TestExists(ctx context.Context, t *testctx.T) {
 	exists, err := ctr.Exists(ctx, "subdir/data")
 	require.NoError(t, err)
 	require.Equal(t, true, exists)
+}
+
+func (ContainerSuite) TestWithoutFileOnMountedFile(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	f1 := c.File("f", "1")
+	f2 := c.File("f", "2")
+	ents, err := c.Container().
+		From(alpineImage).
+		WithFile("/mnt/f", f1).
+		WithMountedFile("/mnt/f", f2).
+		WithoutFile("/mnt/f").
+		Directory("/mnt").
+		Entries(ctx)
+	require.NoError(t, err)
+	require.Empty(t, ents)
+}
+
+func (ContainerSuite) TestWithFileOnMountedFile(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	d := c.Directory().WithNewFile("f1", "1").WithNewFile("f2", "2")
+	f3 := c.File("f3", "3")
+	ctr := c.Container().
+		From(alpineImage).
+		WithMountedDirectory("/mnt", d).
+		WithMountedFile("/mnt/f2", f3)
+
+	f1Contents, err := ctr.File("/mnt/f1").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "1", f1Contents)
+
+	f2Contents, err := ctr.File("/mnt/f2").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "3", f2Contents)
+
+	f4 := c.File("f4", "4")
+
+	f2Contents, err = ctr.WithFile("/mnt/f2", f4).File("/mnt/f2").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "4", f2Contents)
 }

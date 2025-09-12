@@ -182,12 +182,6 @@ func (q *Query) WithPipeline(name, desc string) *Query {
 	return q.Clone()
 }
 
-func (q *Query) NewContainer(platform Platform) *Container {
-	return &Container{
-		Platform: platform,
-	}
-}
-
 func (q *Query) NewHost() *Host {
 	return &Host{}
 }

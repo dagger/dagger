@@ -2811,6 +2811,17 @@ func (r *Directory) AsModuleSource(opts ...DirectoryAsModuleSourceOpts) *ModuleS
 	}
 }
 
+// Change the owner of the directory contents recursively.
+func (r *Directory) Chown(path string, owner string) *Directory {
+	q := r.query.Select("chown")
+	q = q.Arg("path", path)
+	q = q.Arg("owner", owner)
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // Return the difference between this directory and an another directory. The difference is encoded as a directory.
 func (r *Directory) Diff(other *Directory) *Directory {
 	assertNotNil("other", other)
@@ -3243,6 +3254,12 @@ type DirectoryWithDirectoryOpts struct {
 	Exclude []string
 	// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
 	Include []string
+	// A user:group to set for the copied directory and its contents.
+	//
+	// The user and group must be an ID (1000:1000), not a name (foo:bar).
+	//
+	// If the group is omitted, it defaults to the same as the user.
+	Owner string
 }
 
 // Return a snapshot with a directory added
@@ -3258,6 +3275,10 @@ func (r *Directory) WithDirectory(path string, directory *Directory, opts ...Dir
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
 		}
+		// `owner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Owner) {
+			q = q.Arg("owner", opts[i].Owner)
+		}
 	}
 	q = q.Arg("path", path)
 	q = q.Arg("directory", directory)
@@ -3271,6 +3292,12 @@ func (r *Directory) WithDirectory(path string, directory *Directory, opts ...Dir
 type DirectoryWithFileOpts struct {
 	// Permission given to the copied file (e.g., 0600).
 	Permissions int
+	// A user:group to set for the copied directory and its contents.
+	//
+	// The user and group must be an ID (1000:1000), not a name (foo:bar).
+	//
+	// If the group is omitted, it defaults to the same as the user.
+	Owner string
 }
 
 // Retrieves this directory plus the contents of the given file copied to the given path.
@@ -3281,6 +3308,10 @@ func (r *Directory) WithFile(path string, source *File, opts ...DirectoryWithFil
 		// `permissions` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Permissions) {
 			q = q.Arg("permissions", opts[i].Permissions)
+		}
+		// `owner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Owner) {
+			q = q.Arg("owner", opts[i].Owner)
 		}
 	}
 	q = q.Arg("path", path)
@@ -5370,6 +5401,16 @@ func (r *File) AsEnvFile(opts ...FileAsEnvFileOpts) *EnvFile {
 	}
 
 	return &EnvFile{
+		query: q,
+	}
+}
+
+// Change the owner of the file recursively.
+func (r *File) Chown(owner string) *File {
+	q := r.query.Select("chown")
+	q = q.Arg("owner", owner)
+
+	return &File{
 		query: q,
 	}
 }

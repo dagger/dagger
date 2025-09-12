@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/dagger/dagger/engine/cache"
-	"github.com/dagger/dagger/engine/slog"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -115,17 +114,12 @@ func (c *SessionCache) GetOrInitializeWithCallbacks(
 	fn func(context.Context) (*CacheValWithCallbacks, error),
 	opts ...CacheCallOpt,
 ) (res CacheResult, err error) {
-	releaseRef := false
-
 	// do a quick check to see if the cache is closed; we do another check
 	// at the end in case the cache is closed while we're waiting for the call
 	c.mu.Lock()
 	if c.isClosed {
-		// FIXME: this should be an error case, but tolerating temporarily while we
-		// update the codebase to handle always using open session caches
-		// return nil, errors.New("session cache is closed")
-		releaseRef = true
-		slog.Error("session cache is already closed", "key", key.String())
+		c.mu.Unlock()
+		return nil, errors.New("session cache is closed")
 	}
 	c.mu.Unlock()
 
@@ -169,19 +163,10 @@ func (c *SessionCache) GetOrInitializeWithCallbacks(
 	defer c.mu.Unlock()
 
 	// if the session cache is closed, ensure we release the result so it doesn't leak
-	if !releaseRef && c.isClosed {
-		// FIXME: this should be an error case, but tolerating temporarily while we
-		// update the codebase to handle always using open session caches
-		// err := errors.New("session cache was closed during execution")
-		// return nil, err
-		slog.Error("session cache was closed during execution", "key", key.String())
-		releaseRef = true
-	}
-
-	if releaseRef {
-		if err := res.Release(context.WithoutCancel(ctx)); err != nil {
-			return nil, err
-		}
+	if c.isClosed {
+		err := errors.New("session cache was closed during execution")
+		err = errors.Join(err, res.Release(context.WithoutCancel(ctx)))
+		return nil, err
 	}
 
 	if !isZero {
