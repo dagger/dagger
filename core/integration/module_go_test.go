@@ -596,6 +596,62 @@ func main() {
 		require.NoError(t, err)
 		require.Contains(t, daggerjson, "bar")
 	})
+
+	t.Run("from scratch with self calls", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=bare", "--sdk=go", "--with-self-calls"))
+
+		daggerjson, err := modGen.File("dagger.json").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, "\"SELF_CALLS\": true")
+	})
+
+	t.Run("enable self calls", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=bare", "--sdk=go"))
+
+		daggerjson, err := modGen.File("dagger.json").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, daggerjson, "SELF_CALLS")
+
+		modGen = modGen.With(daggerExec("develop", "--with-self-calls"))
+
+		daggerjson, err = modGen.File("dagger.json").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, "\"SELF_CALLS\": true")
+	})
+
+	t.Run("disable self calls", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=bare", "--sdk=go", "--with-self-calls"))
+
+		daggerjson, err := modGen.File("dagger.json").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, "\"SELF_CALLS\": true")
+
+		modGen = modGen.With(daggerExec("develop", "--without-self-calls"))
+
+		daggerjson, err = modGen.File("dagger.json").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, "\"SELF_CALLS\": false")
+	})
 }
 
 //go:embed testdata/modules/go/minimal/main.go

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+
 	"typescript-sdk/internal/dagger"
 )
 
@@ -30,6 +31,7 @@ const (
 	schemaPath             = "/schema.json"
 	dependenciesConfigPath = "/dependencies.json"
 	codegenBinPath         = "/codegen"
+	moduleIDPath           = "/module-id.json"
 )
 
 // ModuleRuntime implements the `ModuleRuntime` method from the SDK module interface.
@@ -60,6 +62,45 @@ func (t *TypescriptSdk) ModuleRuntime(
 		Container(), nil
 }
 
+func (t *TypescriptSdk) ModuleTypeDefs(
+	ctx context.Context,
+	modSource *dagger.ModuleSource,
+	introspectionJSON *dagger.File,
+) (*dagger.Module, error) {
+	cfg, err := analyzeModuleConfig(ctx, modSource)
+	if err != nil {
+		return nil, fmt.Errorf("failed to analyze module config: %w", err)
+	}
+
+	runtime := runtimeBaseContainer(cfg, t.SDKSourceDir).
+		withConfiguredRuntimeEnvironment().
+		withGeneratedSDK(introspectionJSON).
+		withSetupPackageManager().
+		withInstalledDependencies().
+		withUserSourceCode()
+
+	if runtime, err = runtime.addInitTemplateIfNoUserFile(ctx); err != nil {
+		return nil, err
+	}
+
+	modID, err := runtime.
+		Container().
+		WithMountedFile(runtime.cfg.entrypointPath(), entrypointFile()).
+		WithEnvVariable("REGISTER_TYPEDEF", "true").
+		WithEnvVariable("TYPEDEF_OUTPUT_FILE", moduleIDPath).
+		WithEnvVariable("MODULE_NAME", runtime.cfg.name).
+		WithExec(runtime.runtimeCmd(), dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		}).
+		File(moduleIDPath).
+		Contents(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module ID: %w", err)
+	}
+
+	return dag.LoadModuleFromID(dagger.ModuleID(modID)), nil
+}
+
 // Codegen implements the `Codegen` method from the SDK module interface.
 //
 // It returns the generated API client based on user's module as well as
@@ -81,15 +122,8 @@ func (t *TypescriptSdk) Codegen(
 		withGeneratedLockFile().
 		withUserSourceCode()
 
-	// Check if there's any user source files, if not, add the template file.
-	// NOTE: This should be moved in a `Init` function once we improve the SDK interface.
-	sourcesFiles, err := runtimeBaseCtr.Container().Directory(".").Glob(ctx, "src/**/*.ts")
-	if err != nil {
-		return nil, fmt.Errorf("failed to list user source files: %w", err)
-	}
-
-	if len(sourcesFiles) == 0 {
-		runtimeBaseCtr = runtimeBaseCtr.withInitTemplate()
+	if runtimeBaseCtr, err = runtimeBaseCtr.addInitTemplateIfNoUserFile(ctx); err != nil {
+		return nil, err
 	}
 
 	// Extract codegen directory
