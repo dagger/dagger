@@ -42,7 +42,7 @@ func New() *CI {
 	workflow := dag.Gha().Workflow("", dagger.GhaWorkflowOpts{
 		PullRequestConcurrency:      "preempt",
 		Permissions:                 []dagger.GhaPermission{dagger.GhaPermissionReadContents},
-		OnPushBranches:              []string{"main"},
+		OnPushBranches:              []string{"main", "releases/**"},
 		OnPullRequestOpened:         true,
 		OnPullRequestReopened:       true,
 		OnPullRequestSynchronize:    true,
