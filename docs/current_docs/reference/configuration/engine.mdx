@@ -345,9 +345,38 @@ redirected to a different one.
 <Tabs groupId="config">
 <TabItem value="engine.json">
 
-:::warning
-Custom registries cannot currently be configured from `engine.json`.
-:::
+For example, to mirror the default Docker Hub `docker.io` registry to `mirror.gcr.io`:
+
+```json
+{
+  "registries": {
+    "docker.io": {
+      "mirrors": ["mirror.gcr.io"]
+    }
+  }
+}
+```
+
+To test the configuration:
+
+```shell
+dagger query --progress=plain <<< '{ container { from(address:"hello-world") { stdout } } }'
+```
+
+The specified `hello-world` container will now be pulled from the mirror
+instead of from Docker Hub.
+
+If your registry needs custom ca certificates, you can configure them as explained [here](./custom-ca.mdx) and reference them:
+
+```json
+{
+  "registries": {
+	"my.custom.registry": {
+	  "ca": ["/usr/local/share/ca-certificates/my-custom-ca.crt"]
+	}
+  }
+}
+```
 
 </TabItem>
 <TabItem value="engine.toml">
