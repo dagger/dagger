@@ -106,14 +106,18 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("patterns").Doc(`Glob patterns (e.g., "refs/tags/v*").`),
 			),
+
+		// NOTE: these are deprecated+removed, but no longer work since we resolve a git repo
 		dagql.Func("withAuthToken", s.withAuthToken).
 			Doc(`Token to authenticate the remote with.`).
+			View(BeforeVersion("v0.19.0")).
 			Deprecated(`Use "httpAuthToken" in the constructor instead.`).
 			Args(
 				dagql.Arg("token").Doc(`Secret used to populate the password during basic HTTP Authorization`),
 			),
 		dagql.Func("withAuthHeader", s.withAuthHeader).
 			Doc(`Header to authenticate the remote with.`).
+			View(BeforeVersion("v0.19.0")).
 			Deprecated(`Use "httpAuthHeader" in the constructor instead.`).
 			Args(
 				dagql.Arg("header").Doc(`Secret used to populate the Authorization HTTP header`),
@@ -628,46 +632,16 @@ func (s *gitSchema) branches(ctx context.Context, parent *core.GitRepository, ar
 	return dagql.NewStringArray(parent.Branches(patterns)...), nil
 }
 
-func (s *gitSchema) withAuthToken(ctx context.Context, parent *core.GitRepository, args withAuthTokenArgs) (*core.GitRepository, error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
-	}
-
-	token, err := args.Token.Load(ctx, srv)
-	if err != nil {
-		return nil, err
-	}
-	repo := *parent
-	if remote, ok := repo.Backend.(*core.RemoteGitRepository); ok {
-		remote := *remote
-		remote.AuthToken = token
-		repo.Backend = &remote
-	}
-	return &repo, nil
+func (s *gitSchema) withAuthToken(ctx context.Context, parent *core.GitRepository, args struct {
+	Token core.SecretID
+}) (*core.GitRepository, error) {
+	return nil, errors.New("withAuthToken is no longer supported, use httpAuthToken in the constructor instead")
 }
 
-type withAuthHeaderArgs struct {
+func (s *gitSchema) withAuthHeader(ctx context.Context, parent *core.GitRepository, args struct {
 	Header core.SecretID
-}
-
-func (s *gitSchema) withAuthHeader(ctx context.Context, parent *core.GitRepository, args withAuthHeaderArgs) (*core.GitRepository, error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
-	}
-
-	header, err := args.Header.Load(ctx, srv)
-	if err != nil {
-		return nil, err
-	}
-	repo := *parent
-	if remote, ok := repo.Backend.(*core.RemoteGitRepository); ok {
-		remote := *remote
-		remote.AuthHeader = header
-		repo.Backend = &remote
-	}
-	return &repo, nil
+}) (*core.GitRepository, error) {
+	return nil, errors.New("withAuthToken is no longer supported, use httpAuthToken in the constructor instead")
 }
 
 type treeArgs struct {
