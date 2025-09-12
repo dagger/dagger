@@ -443,6 +443,7 @@ func main() {
 	opts.DotOutputFilePath = dotOutputFilePath
 	opts.DotFocusField = dotFocusField
 	opts.DotShowInternal = dotShowInternal
+	opts.CloudEngine = useCloudEngine || strings.HasPrefix(RunnerHost, "dagger-cloud://")
 	if progress == "auto" {
 		if env := os.Getenv("DAGGER_PROGRESS"); env != "" {
 			progress = env
