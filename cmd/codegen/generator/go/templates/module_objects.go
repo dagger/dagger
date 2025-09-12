@@ -233,7 +233,7 @@ func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 			withFieldOpts = append(withFieldOpts, Id("SourceMap").Op(":").Add(field.sourceMap.TypeDefCode()))
 		}
 		if field.deprecated != "" {
-			withFieldOpts = append(withFieldOpts, Id("Deprecated").Op(":").Lit(field.deprecated))
+			withFieldOpts = append(withFieldOpts, Id("Deprecated").Op(":").Lit(strings.TrimSpace(field.deprecated)))
 		}
 		if len(withFieldOpts) > 0 {
 			withFieldArgsCode = append(withFieldArgsCode,
