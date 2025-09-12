@@ -30,6 +30,8 @@ type Config struct {
 	// Security allows configuring various security settings for the engine.
 	Security *Security `json:"security,omitempty"`
 
+	// Registries configures custom registry mirrors, root CAs, and
+	// insecure/HTTP access.
 	Registries map[string]RegistryConfig `json:"registries,omitempty"`
 }
 
