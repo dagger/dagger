@@ -26,7 +26,7 @@ func TestGitIgnoreBasic(t *testing.T) {
 	fs, err := fsutil.NewFS(d)
 	require.NoError(t, err)
 
-	gfs, err := NewGitIgnoreFS(fs)
+	gfs, err := NewGitIgnoreFS(fs, nil)
 	require.NoError(t, err)
 
 	b := &bytes.Buffer{}
@@ -55,7 +55,7 @@ func TestGitIgnoreNestedGitIgnore(t *testing.T) {
 	fs, err := fsutil.NewFS(d)
 	require.NoError(t, err)
 
-	gfs, err := NewGitIgnoreFS(fs)
+	gfs, err := NewGitIgnoreFS(fs, nil)
 	require.NoError(t, err)
 
 	b := &bytes.Buffer{}
@@ -86,7 +86,7 @@ func TestGitIgnoreDirectoryOnly(t *testing.T) {
 	fs, err := fsutil.NewFS(d)
 	require.NoError(t, err)
 
-	gfs, err := NewGitIgnoreFS(fs)
+	gfs, err := NewGitIgnoreFS(fs, nil)
 	require.NoError(t, err)
 
 	b := &bytes.Buffer{}
@@ -119,7 +119,7 @@ func TestGitIgnoreNegationPrecedence(t *testing.T) {
 	fs, err := fsutil.NewFS(d)
 	require.NoError(t, err)
 
-	gfs, err := NewGitIgnoreFS(fs)
+	gfs, err := NewGitIgnoreFS(fs, nil)
 	require.NoError(t, err)
 
 	b := &bytes.Buffer{}
@@ -157,7 +157,7 @@ func TestGitIgnoreDoublestar(t *testing.T) {
 	fs, err := fsutil.NewFS(d)
 	require.NoError(t, err)
 
-	gfs, err := NewGitIgnoreFS(fs)
+	gfs, err := NewGitIgnoreFS(fs, nil)
 	require.NoError(t, err)
 
 	b := &bytes.Buffer{}
@@ -198,7 +198,7 @@ func TestGitIgnoreRelativePatterns(t *testing.T) {
 	fs, err := fsutil.NewFS(d)
 	require.NoError(t, err)
 
-	gfs, err := NewGitIgnoreFS(fs)
+	gfs, err := NewGitIgnoreFS(fs, nil)
 	require.NoError(t, err)
 
 	b := &bytes.Buffer{}
@@ -237,7 +237,7 @@ func TestGitIgnoreTrailingSlash(t *testing.T) {
 	fs, err := fsutil.NewFS(d)
 	require.NoError(t, err)
 
-	gfs, err := NewGitIgnoreFS(fs)
+	gfs, err := NewGitIgnoreFS(fs, nil)
 	require.NoError(t, err)
 
 	b := &bytes.Buffer{}
@@ -264,7 +264,7 @@ func TestGitIgnoreEmptyAndComments(t *testing.T) {
 	fs, err := fsutil.NewFS(d)
 	require.NoError(t, err)
 
-	gfs, err := NewGitIgnoreFS(fs)
+	gfs, err := NewGitIgnoreFS(fs, nil)
 	require.NoError(t, err)
 
 	b := &bytes.Buffer{}
@@ -291,7 +291,7 @@ func TestGitIgnoreNoGitIgnoreFile(t *testing.T) {
 	fs, err := fsutil.NewFS(d)
 	require.NoError(t, err)
 
-	gfs, err := NewGitIgnoreFS(fs)
+	gfs, err := NewGitIgnoreFS(fs, nil)
 	require.NoError(t, err)
 
 	b := &bytes.Buffer{}
@@ -320,7 +320,7 @@ func TestGitIgnoreOpen(t *testing.T) {
 	fs, err := fsutil.NewFS(d)
 	require.NoError(t, err)
 
-	gfs, err := NewGitIgnoreFS(fs)
+	gfs, err := NewGitIgnoreFS(fs, nil)
 	require.NoError(t, err)
 
 	// Should be able to open allowed file
@@ -359,7 +359,7 @@ func TestGitIgnoreComplexHierarchy(t *testing.T) {
 	fs, err := fsutil.NewFS(d)
 	require.NoError(t, err)
 
-	gfs, err := NewGitIgnoreFS(fs)
+	gfs, err := NewGitIgnoreFS(fs, nil)
 	require.NoError(t, err)
 
 	b := &bytes.Buffer{}
@@ -399,7 +399,7 @@ func TestGitIgnoreEdgeCasePatterns(t *testing.T) {
 	fs, err := fsutil.NewFS(d)
 	require.NoError(t, err)
 
-	gfs, err := NewGitIgnoreFS(fs)
+	gfs, err := NewGitIgnoreFS(fs, nil)
 	require.NoError(t, err)
 
 	b := &bytes.Buffer{}

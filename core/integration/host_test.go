@@ -326,8 +326,22 @@ func (HostSuite) TestDirectoryGitIgnore(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t)
 
-	t.Run("apply auto git ignore by default", func(ctx context.Context, t *testctx.T) {
-		hostDir := c.Host().Directory(dir)
+	t.Run("no git ignore by default", func(ctx context.Context, t *testctx.T) {
+		entries, err := c.Host().Directory(dir).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{".git/", ".gitignore", "b.md", "c.txt.rar", "subdir/", "subdir2/"}, entries)
+
+		subDirEntries, err := c.Host().Directory(filepath.Join(dir, "subdir")).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"b.md", "e.txt", "g.txt", "h.yaml"}, subDirEntries)
+
+		subDir2Entries, err := c.Host().Directory(filepath.Join(dir, "subdir2")).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{".gitignore", "bar.txt", "baz.md", "bool.yaml", "foo.go"}, subDir2Entries)
+	})
+
+	t.Run("apply git ignore", func(ctx context.Context, t *testctx.T) {
+		hostDir := c.Host().Directory(dir, dagger.HostDirectoryOpts{Gitignore: true})
 
 		rootHostDir, err := hostDir.Entries(ctx)
 		require.NoError(t, err)
@@ -343,7 +357,7 @@ func (HostSuite) TestDirectoryGitIgnore(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("correctly apply parent .gitignore when children path is given", func(ctx context.Context, t *testctx.T) {
-		subDirEntries, err := c.Host().Directory(filepath.Join(dir, "subdir")).Entries(ctx)
+		subDirEntries, err := c.Host().Directory(filepath.Join(dir, "subdir"), dagger.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"e.txt", "h.yaml"}, subDirEntries)
 	})
@@ -355,7 +369,7 @@ func (HostSuite) TestDirectoryGitIgnore(ctx context.Context, t *testctx.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "bar.txt"), []byte("1"), 0o600))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "foo.go"), []byte("1"), 0o600))
 
-		entries, err := c.Host().Directory(dir).Entries(ctx)
+		entries, err := c.Host().Directory(dir, dagger.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{".gitignore", "bar.txt", "foo.go"}, entries)
 	})
@@ -364,7 +378,7 @@ func (HostSuite) TestDirectoryGitIgnore(ctx context.Context, t *testctx.T) {
 		dir := t.TempDir()
 
 		require.NoError(t, os.MkdirAll(filepath.Join(dir, ".git"), 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("bar/\nbaz.txt\n"), 0o600)) // ignore everything
+		require.NoError(t, os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("bar/\nbaz.txt\n"), 0o600))
 		require.NoError(t, os.MkdirAll(filepath.Join(dir, "foo/"), 0o755))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "foo/foo.txt"), []byte("1"), 0o600))
 		require.NoError(t, os.MkdirAll(filepath.Join(dir, "bar/"), 0o755))
@@ -372,35 +386,32 @@ func (HostSuite) TestDirectoryGitIgnore(ctx context.Context, t *testctx.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "baz.txt"), []byte("1"), 0o600))
 
 		// sanity check!
-		entries, err := c.Host().Directory(filepath.Join(dir, "foo/")).Entries(ctx)
+		entries, err := c.Host().Directory(filepath.Join(dir, "foo/"), dagger.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"foo.txt"}, entries)
 
-		_, err = c.Host().Directory(filepath.Join(dir, "bar/")).Entries(ctx)
-		require.Error(t, err)
-		requireErrOut(t, err, "no such file or directory")
-
-		_, err = c.Host().File(filepath.Join(dir, "baz.txt")).Contents(ctx)
+		_, err = c.Host().Directory(filepath.Join(dir, "bar/"), dagger.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
 		require.Error(t, err)
 		requireErrOut(t, err, "no such file or directory")
 	})
 
-	t.Run("disable git auto ignore", func(ctx context.Context, t *testctx.T) {
-		entries, err := c.Host().Directory(dir, dagger.HostDirectoryOpts{NoGitAutoIgnore: true}).Entries(ctx)
-		require.NoError(t, err)
-		require.Equal(t, []string{".git/", ".gitignore", "b.md", "c.txt.rar", "subdir/", "subdir2/"}, entries)
+	t.Run("correctly handle excluded gitignore", func(ctx context.Context, t *testctx.T) {
+		hostDir := c.Host().Directory(dir, dagger.HostDirectoryOpts{
+			Gitignore: true,
+			Exclude:   []string{".gitignore"},
+		})
 
-		subDirEntries, err := c.Host().Directory(filepath.Join(dir, "subdir"),
-			dagger.HostDirectoryOpts{NoGitAutoIgnore: true},
-		).Entries(ctx)
+		rootHostDir, err := hostDir.Entries(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{"b.md", "e.txt", "g.txt", "h.yaml"}, subDirEntries)
+		require.Equal(t, []string{"c.txt.rar", "subdir/", "subdir2/"}, rootHostDir)
 
-		subDir2Entries, err := c.Host().Directory(filepath.Join(dir, "subdir2"),
-			dagger.HostDirectoryOpts{NoGitAutoIgnore: true},
-		).Entries(ctx)
+		subDirEntries, err := hostDir.Directory("subdir").Entries(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{".gitignore", "bar.txt", "baz.md", "bool.yaml", "foo.go"}, subDir2Entries)
+		require.Equal(t, []string{"e.txt", "h.yaml"}, subDirEntries)
+
+		subDir2Entries, err := hostDir.Directory("subdir2").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"foo.go"}, subDir2Entries)
 	})
 
 	t.Run("use gitignores after no git ignores", func(ctx context.Context, t *testctx.T) {
@@ -413,11 +424,11 @@ func (HostSuite) TestDirectoryGitIgnore(ctx context.Context, t *testctx.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("1"), 0o600))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "b.txt"), []byte("2"), 0o600))
 
-		entries, err := c.Host().Directory(dir, dagger.HostDirectoryOpts{NoGitAutoIgnore: true}).Entries(ctx)
+		entries, err := c.Host().Directory(dir).Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{".git/", ".gitignore", "a.txt", "b.txt"}, entries)
 
-		entries, err = c.Host().Directory(dir).Entries(ctx)
+		entries, err = c.Host().Directory(dir, dagger.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{".git/", ".gitignore", "b.txt"}, entries)
 	})

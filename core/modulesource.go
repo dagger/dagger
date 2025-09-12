@@ -14,7 +14,6 @@ import (
 	"github.com/opencontainers/go-digest"
 	fsutiltypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
-	"golang.org/x/mod/semver"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -352,9 +351,6 @@ func (src *ModuleSource) LoadContextDir(
 			return inst, fmt.Errorf("path %q is outside of context directory %q, path should be relative to the context directory", path, ctxPath)
 		}
 
-		// Ensure backward compatibility by not applying .gitignore rules if the engine version is less than v0.17.17
-		noGitIgnore := src.compareEngineVersion("v0.18.17") < 0
-
 		err = dag.Select(localSourceCtx, dag.Root(), &inst,
 			dagql.Selector{
 				Field: "host",
@@ -364,8 +360,6 @@ func (src *ModuleSource) LoadContextDir(
 				Args: append([]dagql.NamedInput{
 					{Name: "path", Value: dagql.String(path)},
 					{Name: "noCache", Value: dagql.Boolean(true)},
-					{Name: "noGitAutoIgnore", Value: dagql.Boolean(noGitIgnore)},
-					{Name: "gitIgnoreRoot", Value: dagql.String(ctxPath)},
 				}, filterInputs...),
 			},
 		)
@@ -514,10 +508,6 @@ func (src *ModuleSource) LoadContextGit(
 	}
 
 	return inst, nil
-}
-
-func (src *ModuleSource) compareEngineVersion(version string) int {
-	return semver.Compare(src.EngineVersion, version)
 }
 
 type LocalModuleSource struct {
