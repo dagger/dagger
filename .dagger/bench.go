@@ -265,7 +265,7 @@ func (b *Bench) notifyOnFailure(ctx context.Context, err error, discordWebhook *
 		return err
 	}
 
-	commit, err := b.Test.Dagger.Git.Head().Commit(ctx)
+	commit, err := b.Test.Dagger.Git.Commit(ctx)
 	if err != nil {
 		commit = "failed to find commit SHA"
 	}
