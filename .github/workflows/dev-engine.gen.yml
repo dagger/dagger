@@ -4,6 +4,7 @@ name: Dev Engine
     push:
         branches:
             - main
+            - releases/**
     pull_request:
         types:
             - opened
