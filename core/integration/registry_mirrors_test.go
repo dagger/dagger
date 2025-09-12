@@ -35,7 +35,7 @@ func (EngineSuite) TestRegistryMirrorsCustomCA(ctx context.Context, t *testctx.T
 		engineWithConfig(ctx, t, func(ctx context.Context, t *testctx.T, cfg config.Config) config.Config {
 			return config.Config{
 				Registries: map[string]config.RegistryConfig{
-					"ghcr.io": {
+					"docker.io": {
 						Mirrors: []string{"testreg:5000"},
 					},
 					"testreg:5000": {
@@ -62,7 +62,7 @@ func (EngineSuite) TestRegistryMirrorsHTTP(ctx context.Context, t *testctx.T) {
 	engine := devEngineContainer(c, engineWithConfig(ctx, t, func(ctx context.Context, t *testctx.T, cfg config.Config) config.Config {
 		return config.Config{
 			Registries: map[string]config.RegistryConfig{
-				"ghcr.io": {
+				"docker.io": {
 					Mirrors: []string{"testreg:5000"},
 				},
 				"testreg:5000": {
@@ -86,7 +86,7 @@ func testImagePull(ctx context.Context, t *testctx.T, c *dagger.Client, devEngin
 	require.NoError(t, err)
 	t.Cleanup(func() { c2.Close() })
 
-	out, err := c2.Container().From("ghcr.io/dagger/engine").WithExec([]string{"echo", "hello"}).Stdout(ctx)
+	out, err := c2.Container().From("alpine:3.22.1@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1").WithExec([]string{"echo", "hello"}).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "hello", strings.TrimSpace(out))
 
@@ -96,5 +96,5 @@ func testImagePull(ctx context.Context, t *testctx.T, c *dagger.Client, devEngin
 		WithExec([]string{"cat", "/cache/logs/registry.log"}).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.True(t, strings.Contains(out, "GET /v2/dagger/engine"))
+	require.True(t, strings.Contains(out, "GET /v2/library/alpine"))
 }
