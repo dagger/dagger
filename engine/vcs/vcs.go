@@ -666,7 +666,7 @@ var vcsPaths = []*vcsPath{
 	// HTTPS ref
 	{
 		prefix: "dev.azure.com/",
-		re:     `^(?P<root>dev\.azure\.com/(?P<account>[A-Za-z0-9_.\-]+)(/(?P<project>[A-Za-z0-9_.\-]+))?/_git/(?P<repo>[A-Za-z0-9_.\-]+)(\.git)?)(/[\p{L}0-9_.\-]+)*(/.*)?$`,
+		re:     `^(?P<root>dev\.azure\.com/(?P<account>[A-Za-z0-9_.%\-]+)(/(?P<project>[A-Za-z0-9_.%\-]+))?/_git/(?P<repo>[A-Za-z0-9_.%\-]+)(\.git)?)(/[\p{L}0-9_.\-]+)*(/.*)?$`,
 		vcs:    "git",
 		repo:   "https://{root}",
 		check: func(match map[string]string) error {
@@ -677,7 +677,7 @@ var vcsPaths = []*vcsPath{
 	// SSH ref
 	{
 		prefix: "ssh.dev.azure.com/",
-		re:     `^(?P<root>ssh\.dev\.azure\.com/v\d+/(?P<account>[A-Za-z0-9_.\-]+)/(?P<project>[A-Za-z0-9_.\-]+)/(?P<repo>[A-Za-z0-9_.\-]+))(/[\p{L}0-9_.\-]+)*(/.*)?$`,
+		re:     `^(?P<root>ssh\.dev\.azure\.com/v\d+/(?P<account>[A-Za-z0-9_.%\-]+)/(?P<project>[A-Za-z0-9_.%\-]+)/(?P<repo>[A-Za-z0-9_.%\-]+))(/[\p{L}0-9_.\-]+)*(/.*)?$`,
 		vcs:    "git",
 		repo:   "https://dev.azure.com/{account}/{project}/_git/{repo}",
 		check: func(match map[string]string) error {

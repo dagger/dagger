@@ -275,6 +275,14 @@ func TestRepoRootForImportPath(t *testing.T) {
 				Root: "dev.azure.com/daggere2e/public/_git/dagger-test-modules.git",
 			},
 		},
+		{
+			"dev.azure.com/dagger%20e2e/public/_git/dagger%20test%20modules.git/depth1/depth2",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://dev.azure.com/dagger%20e2e/public/_git/dagger%20test%20modules",
+				Root: "dev.azure.com/dagger%20e2e/public/_git/dagger%20test%20modules.git",
+			},
+		},
 
 		// SSH ref - new ref style
 		// https://learn.microsoft.com/en-us/azure/devops/repos/git/use-ssh-keys-to-authenticate?view=azure-devops
@@ -292,6 +300,14 @@ func TestRepoRootForImportPath(t *testing.T) {
 				VCS:  vcsGit,
 				Repo: "https://dev.azure.com/daggere2e/private/_git/dagger-test-modules",
 				Root: "ssh.dev.azure.com/v3/daggere2e/private/dagger-test-modules.git",
+			},
+		},
+		{
+			"ssh.dev.azure.com/v3/dagger%20e2e/private/dagger%20test%20modules.git/depth1/depth2",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://dev.azure.com/dagger%20e2e/private/_git/dagger%20test%20modules",
+				Root: "ssh.dev.azure.com/v3/dagger%20e2e/private/dagger%20test%20modules.git",
 			},
 		},
 		{
