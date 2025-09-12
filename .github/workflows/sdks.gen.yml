@@ -4,6 +4,7 @@ name: SDKs
     push:
         branches:
             - main
+            - releases/**
     pull_request:
         types:
             - opened
