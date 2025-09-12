@@ -342,13 +342,11 @@ func NewContainerDagOp(
 	id *call.ID,
 	argDigest digest.Digest,
 	ctr *Container,
-	extraInputs []llb.State,
 ) (*Container, error) {
 	mounts, inputs, _, outputCount, err := getAllContainerMounts(ctr)
 	if err != nil {
 		return nil, err
 	}
-	inputs = append(inputs, extraInputs...)
 
 	// NB: strip out the buildkit inputs! this is so that we rely entirely on
 	// the *buildkit* inputs.
