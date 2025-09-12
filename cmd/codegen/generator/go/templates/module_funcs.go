@@ -130,7 +130,7 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 		fnTypeDefCode = dotLine(fnTypeDefCode, "WithSourceMap").Call(spec.sourceMap.TypeDefCode())
 	}
 	if spec.deprecated != "" {
-		fnTypeDefCode = dotLine(fnTypeDefCode, "WithDeprecated").Call(Lit(spec.deprecated))
+		fnTypeDefCode = dotLine(fnTypeDefCode, "WithDeprecated").Call(Lit(strings.TrimSpace(spec.deprecated)))
 	}
 
 	for _, argSpec := range spec.argSpecs {
@@ -181,7 +181,7 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 		}
 
 		if argSpec.deprecated != "" {
-			argOptsCode = append(argOptsCode, Id("Deprecated").Op(":").Lit(argSpec.deprecated))
+			argOptsCode = append(argOptsCode, Id("Deprecated").Op(":").Lit(strings.TrimSpace(argSpec.deprecated)))
 		}
 
 		if len(argSpec.ignore) > 0 {
