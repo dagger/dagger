@@ -767,11 +767,9 @@ func (s *directorySchema) asGit(
 	dir dagql.ObjectResult[*core.Directory],
 	_ struct{},
 ) (*core.GitRepository, error) {
-	return &core.GitRepository{
-		Backend: &core.LocalGitRepository{
-			Directory: dir,
-		},
-	}, nil
+	return core.NewGitRepository(ctx, &core.LocalGitRepository{
+		Directory: dir,
+	})
 }
 
 type directoryWithSymlinkArgs struct {
