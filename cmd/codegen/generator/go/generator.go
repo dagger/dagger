@@ -29,7 +29,12 @@ const (
 	StarterTemplateFile = "main.go"
 )
 
+// goVersion is the current Go version
 var goVersion = strings.TrimPrefix(runtime.Version(), "go")
+
+// minGoVersion is the minimum required Go version for generated code
+// currently set to 1.22, see dagger/dagger#10987, which removed explicit loop captures
+const minGoVersion = "1.22"
 
 type GoGenerator struct {
 	Config generator.Config

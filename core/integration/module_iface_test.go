@@ -29,8 +29,6 @@ func (InterfaceSuite) TestIfaceBasic(ctx context.Context, t *testctx.T) {
 		{sdk: "typescript", path: "./testdata/modules/typescript/ifaces"},
 		{sdk: "python", path: "./testdata/modules/python/ifaces"},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -202,11 +200,7 @@ class Test:
 	}
 
 	for _, tc := range tests {
-		tc := tc
-
 		for _, rtc := range tests {
-			rtc := rtc
-
 			// No need for every permutation, just within the same SDK and
 			// with Go as a reference implementation.
 			if tc.sdk != "go" && rtc.sdk != "go" && tc.sdk != rtc.sdk {
