@@ -488,6 +488,11 @@ func (s *hostSchema) file(ctx context.Context, host dagql.ObjectResult[*core.Hos
 				Name:  "noCache",
 				Value: dagql.NewBoolean(args.NoCache),
 			},
+			// never use gitignore since an exact file path is being requested
+			{
+				Name:  "noGitAutoIgnore",
+				Value: dagql.NewBoolean(true),
+			},
 		},
 	}, dagql.Selector{
 		Field: "file",

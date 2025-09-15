@@ -379,10 +379,6 @@ func (HostSuite) TestDirectoryGitIgnore(ctx context.Context, t *testctx.T) {
 		_, err = c.Host().Directory(filepath.Join(dir, "bar/")).Entries(ctx)
 		require.Error(t, err)
 		requireErrOut(t, err, "no such file or directory")
-
-		_, err = c.Host().File(filepath.Join(dir, "baz.txt")).Contents(ctx)
-		require.Error(t, err)
-		requireErrOut(t, err, "no such file or directory")
 	})
 
 	t.Run("disable git auto ignore", func(ctx context.Context, t *testctx.T) {
@@ -421,6 +417,24 @@ func (HostSuite) TestDirectoryGitIgnore(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, []string{".git/", ".gitignore", "b.txt"}, entries)
 	})
+}
+
+func (HostSuite) TestFileNeverGitIgnored(ctx context.Context, t *testctx.T) {
+	dir := t.TempDir()
+	gitignore := strings.Join([]string{
+		"subdir",
+	}, "\n")
+
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".git"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(gitignore), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "subdir"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "subdir", "b.md"), []byte("1"), 0o600))
+
+	c := connect(ctx, t)
+
+	hostDir, err := c.Host().File(filepath.Join(dir, "subdir", "b.md")).Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "1", hostDir)
 }
 
 func (HostSuite) TestDirectoryCacheBehavior(ctx context.Context, t *testctx.T) {
