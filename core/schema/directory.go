@@ -321,7 +321,7 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.Object
 	if err != nil {
 		return res, err
 	}
-	with, err := parent.Self().WithDirectory(ctx, args.Path, dir.Self(), args.CopyFilter, nil)
+	with, err := parent.Self().WithDirectory(ctx, args.Path, dir.Self(), args.CopyFilter, "")
 	if err != nil {
 		return res, fmt.Errorf("failed to add directory %q: %w", args.Path, err)
 	}

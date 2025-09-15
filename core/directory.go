@@ -765,11 +765,12 @@ func (dir *Directory) WithDirectory(
 				if err != nil {
 					return err
 				}
-				if owner != nil {
-					err = os.Chown(resolvedCopyDest, owner.UID, owner.GID)
-					if err != nil {
-						return fmt.Errorf("failed to set chown %s: err", resolvedCopyDest)
-					}
+				if owner != "" {
+					panic("FIX REBASE")
+					//err = os.Chown(resolvedCopyDest, owner.UID, owner.GID)
+					//if err != nil {
+					//	return fmt.Errorf("failed to set chown %s: err", resolvedCopyDest)
+					//}
 				}
 			} else {
 				mounter, err := srcRef.Mount(ctx, true, nil)
@@ -793,8 +794,9 @@ func (dir *Directory) WithDirectory(
 				for _, pattern := range filter.Exclude {
 					opts = append(opts, copy.WithExcludePattern(pattern))
 				}
-				if owner != nil {
-					opts = append(opts, copy.WithChown(owner.UID, owner.GID))
+				if owner != "" {
+					panic("TODO -- fix rebase to use 27af6d5f493542723859499cc03a1a375778ef9b")
+					//opts = append(opts, copy.WithChown(owner.UID, owner.GID))
 				}
 				if err := copy.Copy(ctx, resolvedSrcPath, ".", resolvedCopyDest, ".", opts...); err != nil {
 					return fmt.Errorf("failed to copy source directory: %w", err)
