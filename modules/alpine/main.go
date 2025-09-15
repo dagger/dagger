@@ -189,7 +189,14 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 
 	if m.hasgo() {
 		fmt.Printf("ACB has go\n")
-		out, err := ctr.WithExec([]string{"sh", "-c", "echo ACB here I am && which go || (find / && echo no go found on path && exit 1)"}).Stdout(context.TODO())
+
+		size, err := ctr.File("/usr/lib/go/bin/go").Size(ctx)
+		if err != nil {
+			panic(fmt.Sprintf("ctr.File failed0 %v\n", err))
+		}
+		fmt.Printf("ACB ctr.File go size is %d\n", size)
+
+		out, err := ctr.WithExec([]string{"sh", "-c", "echo ACB here I am && which go || (find / | grep 'bin.*go' && echo no go found on path && exit 1)"}).Stdout(context.TODO())
 		if err != nil {
 			panic(fmt.Sprintf("ACB failed without having go %v\nmf=%+v", err, m))
 		}
