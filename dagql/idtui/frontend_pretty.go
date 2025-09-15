@@ -1311,11 +1311,11 @@ func (fe *frontendPretty) terminalCallback(span *dagui.Span) func() error {
 			break
 		}
 		return func() error {
-			id := loadIDFromSpan(span)
-			if id == "" {
-				return nil
+			id, err := loadIDFromSpan(span)
+			if err != nil {
+				return err
 			}
-			_, err := fe.dag.LoadContainerFromID(dagger.ContainerID(id)).Terminal().Sync(fe.runCtx)
+			_, err = fe.dag.LoadContainerFromID(dagger.ContainerID(id)).Terminal().Sync(fe.runCtx)
 			return err
 		}
 	case "Directory":
@@ -1323,20 +1323,20 @@ func (fe *frontendPretty) terminalCallback(span *dagui.Span) func() error {
 			break
 		}
 		return func() error {
-			id := loadIDFromSpan(span)
-			if id == "" {
-				return nil
+			id, err := loadIDFromSpan(span)
+			if err != nil {
+				return err
 			}
-			_, err := fe.dag.LoadDirectoryFromID(dagger.DirectoryID(id)).Terminal().Sync(fe.runCtx)
+			_, err = fe.dag.LoadDirectoryFromID(dagger.DirectoryID(id)).Terminal().Sync(fe.runCtx)
 			return err
 		}
 	case "Service":
 		return func() error {
-			id := loadIDFromSpan(span)
-			if id == "" {
-				return nil
+			id, err := loadIDFromSpan(span)
+			if err != nil {
+				return err
 			}
-			_, err := fe.dag.LoadServiceFromID(dagger.ServiceID(id)).Terminal().Sync(fe.runCtx)
+			_, err = fe.dag.LoadServiceFromID(dagger.ServiceID(id)).Terminal().Sync(fe.runCtx)
 			return err
 		}
 	}
@@ -1344,16 +1344,16 @@ func (fe *frontendPretty) terminalCallback(span *dagui.Span) func() error {
 	return nil
 }
 
-func loadIDFromSpan(span *dagui.Span) string {
+func loadIDFromSpan(span *dagui.Span) (string, error) {
 	callID, err := span.CallID()
 	if err != nil {
-		return ""
+		return "", err
 	}
 	id, err := callID.Encode()
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return id
+	return id, nil
 }
 
 func (fe *frontendPretty) handleEditlineKey(msg tea.KeyMsg) (cmd tea.Cmd) {
