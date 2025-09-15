@@ -288,6 +288,11 @@ func fetchKeys(branch goapk.ReleaseBranch, arch string) (map[string][]byte, erro
 		if err != nil {
 			return nil, fmt.Errorf("failed to read alpine key at %s: %w", u, err)
 		}
+
+		// URL may have %40 instead of @, which confuses later goapk code that looks for
+		// this key name
+		u = strings.ReplaceAll(u, "%40", "@")
+
 		keys[filepath.Base(u)] = keyBytes
 	}
 	return keys, nil
