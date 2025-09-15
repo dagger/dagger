@@ -279,17 +279,17 @@ func (m *Alpine) withPkgs(
 						WithDirectory("/lib", alpinePkg.dir.Directory("/lib64")).
 						WithoutDirectory("/lib64")
 				}
-				out, err := alpinePkg.dir.WithExec([]string{"sh", "-c", "echo ACB start && ls -la /usr/bin/go && ls -la /usr/lib/go/bin/go && echo ACB DONE HERE2 && false"}).Stdout(ctx)
+				size, err := alpinePkg.dir.File("/usr/lib/go/bin/go").Size(ctx)
 				if err != nil {
 					panic(fmt.Sprintf("failed1 %v\n", err))
 				}
-				fmt.Printf("WAT %s\n", out)
+				fmt.Printf("ACB go size1 is %d\n", size)
 			} else {
-				out, err := alpinePkg.dir.WithExec([]string{"sh", "-c", "echo ACB start && ls -la /usr/bin/go && ls -la /usr/lib/go/bin/go && echo ACB DONE HERE2 && false"}).Stdout(ctx)
+				size, err := alpinePkg.dir.File("/usr/lib/go/bin/go").Size(ctx)
 				if err != nil {
 					panic(fmt.Sprintf("failed2 %v\n", err))
 				}
-				fmt.Printf("WAT %s\n", out)
+				fmt.Printf("ACB go size2 is %d\n", size)
 			}
 
 			//if pkg.Name == "go" {
