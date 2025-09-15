@@ -255,11 +255,11 @@ func (m *Alpine) withPkgs(
 			fmt.Printf("ACB adding pkg %s\n", pkg.Name)
 			if strings.HasPrefix(pkg.Name, "go-") {
 				fmt.Printf("ACB go pkg entries %+v\n", entries) // ACB go pkg entries [usr/ var/]
-				out, err := unpacked.WithExec([]string{"sh", "-c", "find /out && ls -la /out/usr/bin/go && ls -la /out/usr/lib/go/bin/go && echo ACB DONE HERE && false"}).Stdout(ctx)
-				if err != nil {
-					panic(fmt.Sprintf("failed to get go size %v\n", err))
-				}
-				fmt.Printf("WAT %s\n", out)
+				//out, err := unpacked.WithExec([]string{"sh", "-c", "find /out && ls -la /out/usr/bin/go && ls -la /out/usr/lib/go/bin/go && echo ACB DONE HERE && false"}).Stdout(ctx)
+				//if err != nil {
+				//	panic(fmt.Sprintf("failed to get go size %v\n", err))
+				//}
+				//fmt.Printf("WAT %s\n", out)
 
 				//goSize, err := alpinePkg.dir.File("/usr/sbin/go").Size(ctx)
 				//if err != nil {
@@ -279,6 +279,17 @@ func (m *Alpine) withPkgs(
 						WithDirectory("/lib", alpinePkg.dir.Directory("/lib64")).
 						WithoutDirectory("/lib64")
 				}
+				out, err := alpinePkg.dir.WithExec([]string{"sh", "-c", "echo ACB start && ls -la /usr/bin/go && ls -la /usr/lib/go/bin/go && echo ACB DONE HERE2 && false"}).Stdout(ctx)
+				if err != nil {
+					panic(fmt.Sprintf("failed1 %v\n", err))
+				}
+				fmt.Printf("WAT %s\n", out)
+			} else {
+				out, err := alpinePkg.dir.WithExec([]string{"sh", "-c", "echo ACB start && ls -la /usr/bin/go && ls -la /usr/lib/go/bin/go && echo ACB DONE HERE2 && false"}).Stdout(ctx)
+				if err != nil {
+					panic(fmt.Sprintf("failed2 %v\n", err))
+				}
+				fmt.Printf("WAT %s\n", out)
 			}
 
 			//if pkg.Name == "go" {
@@ -307,6 +318,15 @@ func (m *Alpine) withPkgs(
 			// it will try to install in this container if/when the ca-certificates package is
 			// installed.
 			ctr = ctr.WithExec([]string{"/bin/busybox", "--install", "-s"})
+		}
+
+		if strings.HasPrefix(pkg.name, "go-") {
+			fmt.Printf("ACB found go here\n")
+			out, err := unpacked.WithExec([]string{"sh", "-c", "find /out && ls -la /out/usr/bin/go && ls -la /out/usr/lib/go/bin/go && echo ACB DONE HERE && false"}).Stdout(ctx)
+			if err != nil {
+				panic(fmt.Sprintf("failed to get go size %v\n", err))
+			}
+			fmt.Printf("WAT %s\n", out)
 		}
 	}
 
