@@ -2409,13 +2409,17 @@ func (DirectorySuite) TestDirCaching(ctx context.Context, t *testctx.T) {
 	// then this test will break.
 
 	c := connect(ctx, t)
-	d1 := c.Directory().
+	d1, err := c.Directory().
 		WithoutFile("non-existent").
-		WithNewFile("file", "data")
+		WithNewFile("file", "data").
+		Sync(ctx)
+	require.NoError(t, err)
 
-	d2 := c.Directory().
+	d2, err := c.Directory().
 		WithoutFile("also-non-existent").
-		WithNewFile("file", "data")
+		WithNewFile("file", "data").
+		Sync(ctx)
+	require.NoError(t, err)
 
 	out, err := c.Container().
 		From(alpineImage).

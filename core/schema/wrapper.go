@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -41,8 +42,12 @@ func DagOp[T dagql.Typed, A any, R dagql.Typed](
 	}
 	filename := "output.json"
 
+	curIDForRawDagOp, err := currentIDForRawDagOp(ctx, filename)
+	if err != nil {
+		return inst, err
+	}
 	return core.NewRawDagOp[R](ctx, srv, &core.RawDagOp{
-		ID:       currentIDForRawDagOp(ctx, filename),
+		ID:       curIDForRawDagOp,
 		Filename: filename,
 	}, deps)
 }
@@ -99,8 +104,12 @@ func DagOpFile[T dagql.Typed, A any](
 		}
 	}
 
+	curIDForFSDagOp, err := currentIDForFSDagOp(ctx, filename)
+	if err != nil {
+		return nil, err
+	}
 	return core.NewFileDagOp(ctx, srv, &core.FSDagOp{
-		ID:   currentIDForFSDagOp(ctx, filename),
+		ID:   curIDForFSDagOp,
 		Path: filename,
 	}, deps)
 }
@@ -126,6 +135,8 @@ func DagOpDirectoryWrapper[T dagql.Typed, A DagOpInternalArgsIface](
 
 type DagOpOpts[T dagql.Typed, A any] struct {
 	pfn PathFunc[T, A]
+
+	FSDagOpInternalArgs
 }
 
 type DagOpOptsFn[T dagql.Typed, A any] func(*DagOpOpts[T, A])
@@ -201,10 +212,14 @@ func DagOpDirectory[T dagql.Typed, A any](
 		}
 	}
 
+	curIDForFSDagOp, err := currentIDForFSDagOp(ctx, filename)
+	if err != nil {
+		return nil, err
+	}
 	return core.NewDirectoryDagOp(ctx, srv, &core.FSDagOp{
 		// FIXME: using this in the cache key means we effectively disable
 		// buildkit content caching
-		ID:   currentIDForFSDagOp(ctx, filename),
+		ID:   curIDForFSDagOp,
 		Path: filename,
 	}, deps, selfDigest, argDigest)
 }
@@ -241,7 +256,12 @@ func DagOpContainer[A any](
 	if err != nil {
 		return nil, err
 	}
-	return core.NewContainerDagOp(ctx, currentIDForContainerDagOp(ctx), argDigest, ctr, deps)
+
+	curIDForContainerDagOp, err := currentIDForContainerDagOp(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return core.NewContainerDagOp(ctx, curIDForContainerDagOp, argDigest, ctr, deps)
 }
 
 const (
@@ -274,20 +294,37 @@ type RawDagOpInternalArgs struct {
 func currentIDForRawDagOp(
 	ctx context.Context,
 	filename string,
-) *call.ID {
-	currentID := dagql.CurrentID(ctx)
+) (*call.ID, error) {
+	// we want to honor any custom digest on the currentID, but also need to modify it to
+	// indicate this is a dagOp.
+	newID := dagql.CurrentID(ctx)
+	dgstInputs := []string{newID.Digest().String()}
 
-	return currentID.
-		WithArgument(call.NewArgument(
+	args := []*call.Argument{
+		call.NewArgument(
 			IsDagOpArgName,
 			call.NewLiteralBool(true),
 			false,
-		)).
-		WithArgument(call.NewArgument(
+		),
+		call.NewArgument(
 			RawDagOpFilenameArgName,
 			call.NewLiteralString(filename),
 			false,
-		))
+		),
+	}
+
+	for _, arg := range args {
+		newID = newID.WithArgument(arg)
+		argBytes, err := call.AppendArgumentBytes(arg.PB(), nil)
+		if err != nil {
+			return nil, err
+		}
+		dgstInputs = append(dgstInputs, string(argBytes))
+	}
+
+	dgst := dagql.HashFrom(strings.Join(dgstInputs, "\x00"))
+
+	return newID.WithDigest(dgst), nil
 }
 
 const (
@@ -303,25 +340,38 @@ type FSDagOpInternalArgs struct {
 func currentIDForFSDagOp(
 	ctx context.Context,
 	path string,
-) *call.ID {
-	currentID := dagql.CurrentID(ctx)
+) (*call.ID, error) {
+	// we want to honor any custom digest on the currentID, but also need to modify it to
+	// indicate this is a dagOp.
+	newID := dagql.CurrentID(ctx)
+	dgstInputs := []string{newID.Digest().String()}
 
-	return currentID.
-		WithArgument(call.NewArgument(
+	args := []*call.Argument{
+		call.NewArgument(
 			IsDagOpArgName,
 			call.NewLiteralBool(true),
 			false,
-		)).
-		WithArgument(call.NewArgument(
+		),
+		call.NewArgument(
 			FSDagOpPathArgName,
 			call.NewLiteralString(path),
 			false,
-		))
-}
+		),
+	}
 
-const (
-	ContainerDagOpOutputCountArgName = "dagOpOutputCount"
-)
+	for _, arg := range args {
+		newID = newID.WithArgument(arg)
+		argBytes, err := call.AppendArgumentBytes(arg.PB(), nil)
+		if err != nil {
+			return nil, err
+		}
+		dgstInputs = append(dgstInputs, string(argBytes))
+	}
+
+	dgst := dagql.HashFrom(strings.Join(dgstInputs, "\x00"))
+
+	return newID.WithDigest(dgst), nil
+}
 
 type ContainerDagOpInternalArgs struct {
 	DagOpInternalArgs
@@ -329,15 +379,32 @@ type ContainerDagOpInternalArgs struct {
 
 func currentIDForContainerDagOp(
 	ctx context.Context,
-) *call.ID {
-	currentID := dagql.CurrentID(ctx)
+) (*call.ID, error) {
+	// we want to honor any custom digest on the currentID, but also need to modify it to
+	// indicate this is a dagOp.
+	newID := dagql.CurrentID(ctx)
+	dgstInputs := []string{newID.Digest().String()}
 
-	return currentID.
-		WithArgument(call.NewArgument(
+	args := []*call.Argument{
+		call.NewArgument(
 			IsDagOpArgName,
 			call.NewLiteralBool(true),
 			false,
-		))
+		),
+	}
+
+	for _, arg := range args {
+		newID = newID.WithArgument(arg)
+		argBytes, err := call.AppendArgumentBytes(arg.PB(), nil)
+		if err != nil {
+			return nil, err
+		}
+		dgstInputs = append(dgstInputs, string(argBytes))
+	}
+
+	dgst := dagql.HashFrom(strings.Join(dgstInputs, "\x00"))
+
+	return newID.WithDigest(dgst), nil
 }
 
 func extractLLBDependencies(ctx context.Context, val any) ([]llb.State, error) {

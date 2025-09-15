@@ -89,7 +89,6 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			defer layerRefs.Release(context.WithoutCancel(ctx))
 			var eg errgroup.Group
 			for _, layerRef := range layerRefs {
-				layerRef := layerRef
 				eg.Go(func() error {
 					// FileList is the secret method that actually forces an unlazy of blobs in the cases
 					// we want here...
@@ -104,7 +103,11 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			}
 
 			container := core.NewContainer(parent.Platform())
-			container.FS = ctrDef.ToPB()
+			rootfsDir := core.NewDirectory(ctrDef.ToPB(), "/", container.Platform, container.Services)
+			container.FS, err = core.UpdatedRootFS(ctx, rootfsDir)
+			if err != nil {
+				return nil, fmt.Errorf("failed to update rootfs: %w", err)
+			}
 
 			goSDKContentStore, err := local.NewStore(distconsts.EngineContainerBuiltinContentDir)
 			if err != nil {
@@ -142,8 +145,6 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Host]{
-		// NOTE: (for near future) we can support force reloading by adding a new arg to this function and providing
-		// a custom cache key function that uses a random value when that arg is true.
 		dagql.NodeFuncWithCacheKey("directory", s.directory, dagql.CacheAsRequested).
 			Doc(`Accesses a directory on the host.`).
 			Args(
@@ -388,11 +389,11 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	if err != nil {
 		return inst, err
 	}
-	inst, err = dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+	dirRes, err := dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 	if err != nil {
-		return inst, fmt.Errorf("failed to create instance: %w", err)
+		return inst, err
 	}
-	return core.MakeDirectoryContentHashed(ctx, bk, inst)
+	return core.MakeDirectoryContentHashed(ctx, bk, dirRes)
 }
 
 type hostSocketArgs struct {
