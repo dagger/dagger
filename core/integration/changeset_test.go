@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
@@ -454,6 +455,64 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		// Verify root.txt is NOT included (unchanged)
 		require.NotContains(t, entries, "root.txt")
 	})
+}
+
+func (s ChangesetSuite) TestExport(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", `package main
+
+import (
+	"dagger/test/internal/dagger"
+)
+
+func New() *Test {
+	return &Test{
+		Dir: dag.Directory().
+			WithNewFile("foo.txt", "foo\nbar\nbaz").
+			WithNewFile("bar.txt", "hey"),
+	}
+}
+
+type Test struct {
+	Dir *dagger.Directory
+}
+
+func (t *Test) Update() *dagger.Changeset {
+	return t.Dir.
+	  WithNewFile("baz.txt", "im new here").
+		WithoutFile("bar.txt").
+		WithNewFile("foo.txt", "foo\nbaz").
+		Changes(t.Dir)
+}
+`,
+		)
+
+	modGen, err := modGen.With(daggerCall("dir", "-o", "./outdir")).Sync(ctx)
+	require.NoError(t, err)
+
+	entries, err := modGen.Directory("./outdir").Entries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "bar.txt\nfoo.txt", strings.Join(entries, "\n"))
+
+	modGen, err = modGen.With(daggerCall("update", "-o", "./outdir")).Sync(ctx)
+	require.NoError(t, err)
+
+	entries, err = modGen.Directory("./outdir").Entries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "baz.txt\nfoo.txt", strings.Join(entries, "\n"))
+
+	contents, err := modGen.File("./outdir/foo.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "foo\nbaz", contents)
+
+	contents, err = modGen.File("./outdir/baz.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "im new here", contents)
 }
 
 func (s ChangesetSuite) TestWithChanges(ctx context.Context, t *testctx.T) {
