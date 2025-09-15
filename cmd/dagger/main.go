@@ -367,7 +367,7 @@ func disableFlagsInUseLine(cmd *cobra.Command) {
 func parseGlobalFlags() {
 	flags := pflag.NewFlagSet("global", pflag.ContinueOnError)
 	flags.Usage = func() {}
-	flags.ParseErrorsWhitelist.UnknownFlags = true
+	flags.ParseErrorsAllowlist.UnknownFlags = true
 	installGlobalFlags(flags)
 	if err := flags.Parse(os.Args[1:]); err != nil && !errors.Is(err, pflag.ErrHelp) {
 		fmt.Fprintln(stderr, err)

@@ -140,7 +140,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 				help := pflag.NewFlagSet("help", pflag.ContinueOnError)
 				help.AddFlag(c.Flags().Lookup("help"))
 
-				help.ParseErrorsWhitelist.UnknownFlags = true
+				help.ParseErrorsAllowlist.UnknownFlags = true
 				help.ParseAll(a, func(flag *pflag.Flag, value string) error {
 					fc.needsHelp = value == flag.NoOptDefVal
 					return nil
