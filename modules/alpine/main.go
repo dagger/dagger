@@ -322,11 +322,11 @@ func (m *Alpine) withPkgs(
 
 		if strings.HasPrefix(pkg.name, "go-") {
 			fmt.Printf("ACB found go here\n")
-			out, err := unpacked.WithExec([]string{"sh", "-c", "find /out && ls -la /out/usr/bin/go && ls -la /out/usr/lib/go/bin/go && echo ACB DONE HERE && false"}).Stdout(ctx)
-			if err != nil {
-				panic(fmt.Sprintf("failed to get go size %v\n", err))
-			}
-			fmt.Printf("WAT %s\n", out)
+			//out, err := unpacked.WithExec([]string{"sh", "-c", "find /out && ls -la /out/usr/bin/go && ls -la /out/usr/lib/go/bin/go && echo ACB DONE HERE && false"}).Stdout(ctx)
+			//if err != nil {
+			//	panic(fmt.Sprintf("failed to get go size %v\n", err))
+			//}
+			//fmt.Printf("WAT %s\n", out)
 		}
 	}
 
