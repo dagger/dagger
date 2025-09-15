@@ -695,6 +695,8 @@ func (m *Caller) Run(ctx context.Context) (string, error) {
 		WithDefaultArgs([]string{"sh", "-c", "echo started >> /cache/svc.txt && while true; do wc -l /cache/svc.txt && sleep 5; done"}).
 		AsService()
 
+	// we're passing the service to a different module that calls "up" on it so it's a different client
+	// which is what triggers the behavior this test is testing.
 	dag.Starter().Start(ctx, svc)
 
 	dag.Container().From("alpine").WithServiceBinding("db", svc).
