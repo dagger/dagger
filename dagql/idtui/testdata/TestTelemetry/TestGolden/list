@@ -11,6 +11,7 @@ golden_test.go
 huh.go
 multiprefixw/
 output.go
+patch.go
 symbols.go
 sys_unix.go
 sys_windows.go
@@ -51,6 +52,7 @@ Expected stderr:
 ┃ huh.go
 ┃ multiprefixw/
 ┃ output.go
+┃ patch.go
 ┃ symbols.go
 ┃ sys_unix.go
 ┃ sys_windows.go
