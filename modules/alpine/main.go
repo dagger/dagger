@@ -11,9 +11,12 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+
+	//"sync"
 	"time"
 
 	goapk "chainguard.dev/apko/pkg/apk/apk"
+	"dagger.io/dagger/dag"
 	"github.com/dagger/dagger/dev/alpine/internal/dagger"
 	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
@@ -89,11 +92,22 @@ type Alpine struct {
 	GoArch string
 }
 
+func (m *Alpine) hasgo() bool {
+	for _, p := range m.Packages {
+		if strings.HasPrefix(p, "go~") {
+			return true
+		}
+	}
+	return false
+}
+
 // Build an Alpine Linux container
 func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 	var branch *goapk.ReleaseBranch
 	var repos []string
 	var basePkgs []string
+
+	fmt.Printf("ACB alpine.Container with %+v\n", m)
 
 	switch m.Distro {
 	case DistroAlpine:
@@ -174,6 +188,15 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 		"/bin",
 	}, ":"))
 
+	if m.hasgo() {
+		fmt.Printf("ACB has go\n")
+		out, err := ctr.WithExec([]string{"sh", "-c", "echo ACB here I am && which go || (find / && echo no go found on path && exit 1)"}).Stdout(context.TODO())
+		if err != nil {
+			panic(fmt.Sprintf("ACB failed without having go %v\nmf=%+v", err, m))
+		}
+		fmt.Printf("ACB has go got %s\nm=%+v", out, m) // located in /usr/sbin/go
+	}
+
 	return ctr, nil
 }
 
@@ -201,10 +224,16 @@ func (m *Alpine) withPkgs(
 		dir  *dagger.Directory
 	}
 
+	fmt.Printf("ACB in Alpine.withPkgs got %+v\n", repoPkgs)
+
+	//var mu sync.Mutex
+
 	var eg errgroup.Group
 	alpinePkgs := make([]*apkPkg, len(repoPkgs))
 	for i, pkg := range repoPkgs {
+		//mu.Lock()
 		eg.Go(func() error {
+			//defer mu.Unlock()
 			url := pkg.URL()
 			mntPath := filepath.Join("/mnt", filepath.Base(url))
 			outDir := "/out"
@@ -224,6 +253,21 @@ func (m *Alpine) withPkgs(
 			if err != nil {
 				return fmt.Errorf("failed to get alpine package entries: %w", err)
 			}
+			fmt.Printf("ACB adding pkg %s\n", pkg.Name)
+			if strings.HasPrefix(pkg.Name, "go-") {
+				fmt.Printf("ACB go pkg entries %+v\n", entries) // ACB go pkg entries [usr/ var/]
+				out, err := unpacked.WithExec([]string{"sh", "-c", "find /out && ls -la /out/usr/bin/go && ls -la /out/usr/bin/go && echo ACB DONE HERE && false"}).Stdout(ctx)
+				if err != nil {
+					panic(fmt.Sprintf("failed to get go size %v\n", err))
+				}
+				fmt.Printf("WAT %s\n", out)
+
+				//goSize, err := alpinePkg.dir.File("/usr/sbin/go").Size(ctx)
+				//if err != nil {
+				//	panic(fmt.Sprintf("failed to get go size %v\n", err))
+				//}
+				//fmt.Printf("ACB got go size %d\n", goSize)
+			}
 
 			// HACK: /lib64 is a link, so don't overwrite it
 			// - wolfi-baselayout links /lib64 -> /lib
@@ -237,6 +281,10 @@ func (m *Alpine) withPkgs(
 						WithoutDirectory("/lib64")
 				}
 			}
+
+			//if pkg.Name == "go" {
+			//	alpinePkg.dir.Entries(ctx)
+			//}
 
 			alpinePkgs[i] = alpinePkg
 			return nil
