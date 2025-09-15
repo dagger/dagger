@@ -255,7 +255,7 @@ func (m *Alpine) withPkgs(
 			fmt.Printf("ACB adding pkg %s\n", pkg.Name)
 			if strings.HasPrefix(pkg.Name, "go-") {
 				fmt.Printf("ACB go pkg entries %+v\n", entries) // ACB go pkg entries [usr/ var/]
-				out, err := unpacked.WithExec([]string{"sh", "-c", "find /out && ls -la /out/usr/bin/go && ls -la /out/usr/bin/go && echo ACB DONE HERE && false"}).Stdout(ctx)
+				out, err := unpacked.WithExec([]string{"sh", "-c", "find /out && ls -la /out/usr/bin/go && ls -la /out/usr/lib/go/bin/go && echo ACB DONE HERE && false"}).Stdout(ctx)
 				if err != nil {
 					panic(fmt.Sprintf("failed to get go size %v\n", err))
 				}
