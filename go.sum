@@ -228,8 +228,8 @@ github.com/cyphar/filepath-securejoin v0.4.1 h1:JyxxyPEaktOD+GAnqIqTf9A8tHyAG22r
 github.com/cyphar/filepath-securejoin v0.4.1/go.mod h1:Sdj7gXlvMcPZsbhwhQ33GguGLDGQL7h7bg04C/+u9jI=
 github.com/dagger/buildkit v0.0.0-20250708131355-3c56a47e3f5c h1:TrAbk6/FNmgHjN4ozQoUA1JPSAQUvdxCXzrM1/cFWxk=
 github.com/dagger/buildkit v0.0.0-20250708131355-3c56a47e3f5c/go.mod h1:QLaQ4vyvIrzCaeg/4saPBcEibMXiGvIe+HaP5Ji0LCY=
-github.com/dagger/testctx v0.0.5 h1:XnWo/DSoubQbmCg8eTyHZGZhTWPppN7r4drfDNheAjc=
-github.com/dagger/testctx v0.0.5/go.mod h1:vfRtiq0HrtSux/H60iD1x7zYfrBgEtoDR1P3hJ523Oo=
+github.com/dagger/testctx v0.0.4 h1:In6AOkH1Q6LHWHAnMByViz9SFiXbYjKttGlO6GciE9s=
+github.com/dagger/testctx v0.0.4/go.mod h1:vfRtiq0HrtSux/H60iD1x7zYfrBgEtoDR1P3hJ523Oo=
 github.com/dagger/testctx/oteltest v0.0.3 h1:3a4u7S2HhQtUvZbRs+1WC4qWNCLlbcm2KoEK/Lhck/4=
 github.com/dagger/testctx/oteltest v0.0.3/go.mod h1:HOA6RdE7lWaawXCzI0jB0hJ+RhoXIgDoX6IB1dZGgtg=
 github.com/danielgatis/go-ansicode v1.0.7 h1:ozOFtNlQHgI3lMJFbT0CxqbbToqtT7mu8GXOwq10Xn0=
