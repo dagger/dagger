@@ -79,7 +79,7 @@ func (span *Span) CallID() (*call.ID, error) {
 		RootDigest:    spanCall.Digest,
 		CallsByDigest: map[string]*callpbv1.Call{},
 	}
-	extractIntoDAG(dag, span.db, spanCall)
+	extractIntoDAG(dag, span.db, spanCall.Digest)
 
 	var id call.ID
 	err := id.FromProto(dag)
