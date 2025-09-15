@@ -3508,20 +3508,20 @@ impl Container {
     /// # Arguments
     ///
     /// * `path` - Location of the written directory (e.g., "/tmp/directory").
-    /// * `directory` - Identifier of the directory to write
+    /// * `source` - Identifier of the directory to write
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_directory(
         &self,
         path: impl Into<String>,
-        directory: impl IntoID<DirectoryId>,
+        source: impl IntoID<DirectoryId>,
     ) -> Container {
         let mut query = self.selection.select("withDirectory");
         query = query.arg("path", path.into());
         query = query.arg_lazy(
-            "directory",
+            "source",
             Box::new(move || {
-                let directory = directory.clone();
-                Box::pin(async move { directory.into_id().await.unwrap().quote() })
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
             }),
         );
         Container {
@@ -3535,21 +3535,21 @@ impl Container {
     /// # Arguments
     ///
     /// * `path` - Location of the written directory (e.g., "/tmp/directory").
-    /// * `directory` - Identifier of the directory to write
+    /// * `source` - Identifier of the directory to write
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_directory_opts<'a>(
         &self,
         path: impl Into<String>,
-        directory: impl IntoID<DirectoryId>,
+        source: impl IntoID<DirectoryId>,
         opts: ContainerWithDirectoryOpts<'a>,
     ) -> Container {
         let mut query = self.selection.select("withDirectory");
         query = query.arg("path", path.into());
         query = query.arg_lazy(
-            "directory",
+            "source",
             Box::new(move || {
-                let directory = directory.clone();
-                Box::pin(async move { directory.into_id().await.unwrap().quote() })
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
             }),
         );
         if let Some(exclude) = opts.exclude {
@@ -5630,20 +5630,20 @@ impl Directory {
     /// # Arguments
     ///
     /// * `path` - Location of the written directory (e.g., "/src/").
-    /// * `directory` - Identifier of the directory to copy.
+    /// * `source` - Identifier of the directory to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_directory(
         &self,
         path: impl Into<String>,
-        directory: impl IntoID<DirectoryId>,
+        source: impl IntoID<DirectoryId>,
     ) -> Directory {
         let mut query = self.selection.select("withDirectory");
         query = query.arg("path", path.into());
         query = query.arg_lazy(
-            "directory",
+            "source",
             Box::new(move || {
-                let directory = directory.clone();
-                Box::pin(async move { directory.into_id().await.unwrap().quote() })
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
             }),
         );
         Directory {
@@ -5657,21 +5657,21 @@ impl Directory {
     /// # Arguments
     ///
     /// * `path` - Location of the written directory (e.g., "/src/").
-    /// * `directory` - Identifier of the directory to copy.
+    /// * `source` - Identifier of the directory to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_directory_opts<'a>(
         &self,
         path: impl Into<String>,
-        directory: impl IntoID<DirectoryId>,
+        source: impl IntoID<DirectoryId>,
         opts: DirectoryWithDirectoryOpts<'a>,
     ) -> Directory {
         let mut query = self.selection.select("withDirectory");
         query = query.arg("path", path.into());
         query = query.arg_lazy(
-            "directory",
+            "source",
             Box::new(move || {
-                let directory = directory.clone();
-                Box::pin(async move { directory.into_id().await.unwrap().quote() })
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
             }),
         );
         if let Some(exclude) = opts.exclude {

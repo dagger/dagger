@@ -440,7 +440,7 @@ func (s *moduleSourceSchema) localModuleSource(
 				Field: "withDirectory",
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String(localSrc.SourceRootSubpath)},
-					{Name: "directory", Value: dagql.NewID[*core.Directory](srcRootDir.ID())},
+					{Name: "source", Value: dagql.NewID[*core.Directory](srcRootDir.ID())},
 				},
 			},
 		)
@@ -961,7 +961,7 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 				Field: "withDirectory",
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String("/")},
-					{Name: "directory", Value: dagql.NewID[*core.Directory](src.Git.UnfilteredContextDir.ID())},
+					{Name: "source", Value: dagql.NewID[*core.Directory](src.Git.UnfilteredContextDir.ID())},
 					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(fullIncludePaths...))},
 				},
 			},
@@ -2120,7 +2120,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 					Value: dagql.String("/"),
 				},
 				{
-					Name:  "directory",
+					Name:  "source",
 					Value: dagql.NewID[*core.Directory](generatedClientDir.ID()),
 				},
 			},
