@@ -1,0 +1,7 @@
+kind: Fixed
+body: Fix regression where engine crashed after module function returned nil/null
+  values.
+time: 2025-09-15T10:59:47.9344593-07:00
+custom:
+  Author: sipsma
+  PR: "11056"

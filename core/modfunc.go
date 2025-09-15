@@ -494,38 +494,41 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("failed to convert return value: %w", err)
 	}
 
-	// Get the client ID actually used during the function call - this might not
-	// be the same as execMD.ClientID if the function call was cached at the
-	// buildkit level
-	clientID, err := ctr.Self().usedClientID(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("could not get used client id")
+	if returnValue != nil {
+		// Get the client ID actually used during the function call - this might not
+		// be the same as execMD.ClientID if the function call was cached at the
+		// buildkit level
+		clientID, err := ctr.Self().usedClientID(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("could not get used client id")
+		}
+
+		// If the function returned anything that's isolated per-client, this caller client should
+		// have access to it now since it was returned to them (i.e. secrets/sockets/etc).
+		returnedIDs := map[digest.Digest]*resource.ID{}
+		if err := fn.returnType.CollectCoreIDs(ctx, returnValue, returnedIDs); err != nil {
+			return nil, fmt.Errorf("failed to collect IDs: %w", err)
+		}
+
+		// NOTE: once generalized function caching is enabled we need to ensure that any non-reproducible
+		// cache entries are linked to the result of this call.
+		// See the previous implementation of this for a reference:
+		// https://github.com/dagger/dagger/blob/7c31db76e07c9a17fcdb3f3c4513c915344c1da8/core/modfunc.go#L483
+
+		// Function calls are cached per-session, but every client caller needs to add
+		// secret/socket/etc. resources from the result to their store.
+		returnedIDsList := make([]*resource.ID, 0, len(returnedIDs))
+		for _, id := range returnedIDs {
+			returnedIDsList = append(returnedIDsList, id)
+		}
+		secretTransferPostCall, err := ResourceTransferPostCall(ctx, query, clientID, returnedIDsList...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create secret transfer post call: %w", err)
+		}
+
+		returnValue = returnValue.WithPostCall(secretTransferPostCall)
 	}
 
-	// If the function returned anything that's isolated per-client, this caller client should
-	// have access to it now since it was returned to them (i.e. secrets/sockets/etc).
-	returnedIDs := map[digest.Digest]*resource.ID{}
-	if err := fn.returnType.CollectCoreIDs(ctx, returnValue, returnedIDs); err != nil {
-		return nil, fmt.Errorf("failed to collect IDs: %w", err)
-	}
-
-	// NOTE: once generalized function caching is enabled we need to ensure that any non-reproducible
-	// cache entries are linked to the result of this call.
-	// See the previous implementation of this for a reference:
-	// https://github.com/dagger/dagger/blob/7c31db76e07c9a17fcdb3f3c4513c915344c1da8/core/modfunc.go#L483
-
-	// Function calls are cached per-session, but every client caller needs to add
-	// secret/socket/etc. resources from the result to their store.
-	returnedIDsList := make([]*resource.ID, 0, len(returnedIDs))
-	for _, id := range returnedIDs {
-		returnedIDsList = append(returnedIDsList, id)
-	}
-	secretTransferPostCall, err := ResourceTransferPostCall(ctx, query, clientID, returnedIDsList...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create secret transfer post call: %w", err)
-	}
-
-	returnValue = returnValue.WithPostCall(secretTransferPostCall)
 	return returnValue, nil
 }
 
