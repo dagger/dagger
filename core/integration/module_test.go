@@ -4970,6 +4970,14 @@ func (m *Test) TestRepoLocal(
 	return m.commitAndRef(ctx, git.Head())
 }
 
+func (m *Test) TestRepoLocalAbs(
+	ctx context.Context,
+	// +defaultPath="/"
+	git *dagger.GitRepository,
+) (string, error) {
+	return m.commitAndRef(ctx, git.Head())
+}
+
 func (m *Test) TestRepoRemote(
 	ctx context.Context,
 	// +defaultPath="https://github.com/dagger/dagger.git"
@@ -5020,6 +5028,10 @@ class Test:
 		return await self.commit_and_ref(git.head())
 
 	@function
+	async def test_repo_local_abs(self, git: Annotated[dagger.GitRepository, DefaultPath("/")]) -> str:
+		return await self.commit_and_ref(git.head())
+
+	@function
 	async def test_repo_remote(self, git: Annotated[dagger.GitRepository, DefaultPath("https://github.com/dagger/dagger.git")]) -> str:
 		return await self.commit_and_ref(git.tag("v0.18.2"))
 
@@ -5046,6 +5058,13 @@ export class Test {
 	@func()
 	async testRepoLocal(
 		@argument({ defaultPath: "./.git" }) git: GitRepository,
+	): Promise<string> {
+		return await this.commitAndRef(git.head())
+	}
+
+	@func()
+	async testRepoLocalAbs(
+		@argument({ defaultPath: "/" }) git: GitRepository,
 	): Promise<string> {
 		return await this.commitAndRef(git.head())
 	}
@@ -5099,6 +5118,11 @@ public class Test {
     }
 
     @Function
+    public String testRepoLocalAbs(@DefaultPath("/") GitRepository git) throws ExecutionException, DaggerQueryException, InterruptedException {
+        return this.commitAndRef(git.head());
+    }
+
+    @Function
     public String testRepoRemote(@DefaultPath("https://github.com/dagger/dagger.git") GitRepository git) throws ExecutionException, DaggerQueryException, InterruptedException {
         return this.commitAndRef(git.tag("v0.18.2"));
     }
@@ -5135,6 +5159,12 @@ public class Test {
 
 			t.Run("repo local", func(ctx context.Context, t *testctx.T) {
 				out, err := modGen.With(daggerCall("test-repo-local")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "refs/heads/master@"+headCommit, out)
+			})
+
+			t.Run("repo local absolute", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-repo-local-abs")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "refs/heads/master@"+headCommit, out)
 			})
