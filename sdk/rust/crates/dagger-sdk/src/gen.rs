@@ -6282,14 +6282,6 @@ pub struct Env {
     pub graphql_client: DynGraphQLClient,
 }
 impl Env {
-    pub fn hostfs(&self) -> Directory {
-        let query = self.selection.select("hostfs");
-        Directory {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// A unique identifier for this Env.
     pub async fn id(&self) -> Result<EnvId, DaggerError> {
         let query = self.selection.select("id");
@@ -6864,26 +6856,6 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return a new environment with a new host filesystem
-    ///
-    /// # Arguments
-    ///
-    /// * `hostfs` - The directory to set as the host filesystem
-    pub fn with_hostfs(&self, hostfs: impl IntoID<DirectoryId>) -> Env {
-        let mut query = self.selection.select("withHostfs");
-        query = query.arg_lazy(
-            "hostfs",
-            Box::new(move || {
-                let hostfs = hostfs.clone();
-                Box::pin(async move { hostfs.into_id().await.unwrap().quote() })
-            }),
-        );
-        Env {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Create or update a binding of type JSONValue in the environment
     ///
     /// # Arguments
@@ -7384,10 +7356,38 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return a new environment with a new host filesystem
+    ///
+    /// # Arguments
+    ///
+    /// * `workspace` - The directory to set as the host filesystem
+    pub fn with_workspace(&self, workspace: impl IntoID<DirectoryId>) -> Env {
+        let mut query = self.selection.select("withWorkspace");
+        query = query.arg_lazy(
+            "workspace",
+            Box::new(move || {
+                let workspace = workspace.clone();
+                Box::pin(async move { workspace.into_id().await.unwrap().quote() })
+            }),
+        );
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return a new environment without any outputs
     pub fn without_outputs(&self) -> Env {
         let query = self.selection.select("withoutOutputs");
         Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    pub fn workspace(&self) -> Directory {
+        let query = self.selection.select("workspace");
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

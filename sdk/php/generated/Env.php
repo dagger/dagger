@@ -10,12 +10,6 @@ namespace Dagger;
 
 class Env extends Client\AbstractObject implements Client\IdAble
 {
-    public function hostfs(): Directory
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('hostfs');
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
     /**
      * A unique identifier for this Env.
      */
@@ -320,16 +314,6 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Return a new environment with a new host filesystem
-     */
-    public function withHostfs(DirectoryId|Directory $hostfs): Env
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withHostfs');
-        $innerQueryBuilder->setArgument('hostfs', $hostfs);
-        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Create or update a binding of type JSONValue in the environment
      */
     public function withJSONValueInput(string $name, JsonValueId|JsonValue $value, string $description): Env
@@ -576,11 +560,27 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return a new environment with a new host filesystem
+     */
+    public function withWorkspace(DirectoryId|Directory $workspace): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withWorkspace');
+        $innerQueryBuilder->setArgument('workspace', $workspace);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return a new environment without any outputs
      */
     public function withoutOutputs(): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutOutputs');
         return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    public function workspace(): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('workspace');
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

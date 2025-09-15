@@ -2056,8 +2056,6 @@ The `EnumValueTypeDefID` scalar type represents an identifier for an object of t
 scalar EnumValueTypeDefID
 
 type Env {
-  hostfs: Directory!
-
   """A unique identifier for this Env."""
   id: EnvID!
 
@@ -2306,12 +2304,6 @@ type Env {
     description: String!
   ): Env!
 
-  """Return a new environment with a new host filesystem"""
-  withHostfs(
-    """The directory to set as the host filesystem"""
-    hostfs: DirectoryID!
-  ): Env!
-
   """Create or update a binding of type JSONValue in the environment"""
   withJSONValueInput(
     """The name of the binding"""
@@ -2535,8 +2527,16 @@ type Env {
     description: String!
   ): Env!
 
+  """Return a new environment with a new host filesystem"""
+  withWorkspace(
+    """The directory to set as the host filesystem"""
+    workspace: DirectoryID!
+  ): Env!
+
   """Return a new environment without any outputs"""
   withoutOutputs: Env!
+
+  workspace: Directory!
 }
 
 """A collection of environment variables."""

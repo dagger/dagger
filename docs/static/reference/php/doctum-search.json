@@ -3085,12 +3085,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Env::hostfs",
-			"p": "Dagger/Env.html#method_hostfs",
-			"d": null
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Env::id",
 			"p": "Dagger/Env.html#method_id",
 			"d": "<p>A unique identifier for this Env.</p>"
@@ -3253,12 +3247,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Env::withHostfs",
-			"p": "Dagger/Env.html#method_withHostfs",
-			"d": "<p>Return a new environment with a new host filesystem</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Env::withJSONValueInput",
 			"p": "Dagger/Env.html#method_withJSONValueInput",
 			"d": "<p>Create or update a binding of type JSONValue in the environment</p>"
@@ -3385,9 +3373,21 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withWorkspace",
+			"p": "Dagger/Env.html#method_withWorkspace",
+			"d": "<p>Return a new environment with a new host filesystem</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withoutOutputs",
 			"p": "Dagger/Env.html#method_withoutOutputs",
 			"d": "<p>Return a new environment without any outputs</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::workspace",
+			"p": "Dagger/Env.html#method_workspace",
+			"d": null
 		},
 		{
 			"t": "M",
