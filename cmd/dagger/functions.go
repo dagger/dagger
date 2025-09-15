@@ -712,6 +712,7 @@ func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response a
 	changeset := dag.LoadChangesetFromID(dagger.ChangesetID(changesetID))
 
 	var summary strings.Builder
+	var noChanges bool
 	if err := (func() (rerr error) {
 		ctx, span := Tracer().Start(ctx, "analyzing changes")
 		defer telemetry.End(span, func() error { return rerr })
@@ -721,9 +722,19 @@ func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response a
 			return fmt.Errorf("get patch contents: %w", err)
 		}
 
+		noChanges = patch == ""
+		if noChanges {
+			slog.Info("no changes to apply")
+			return nil
+		}
+
 		return idtui.SummarizePatch(idtui.NewOutput(&summary), patch, -1)
 	})(); err != nil {
 		return err
+	}
+
+	if noChanges {
+		return nil
 	}
 
 	exportDest := outputPath

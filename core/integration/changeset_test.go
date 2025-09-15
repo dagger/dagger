@@ -489,6 +489,10 @@ func (t *Test) Update() *dagger.Changeset {
 		WithNewFile("foo.txt", "foo\nbaz").
 		Changes(t.Dir)
 }
+
+func (t *Test) NoChanges() *dagger.Changeset {
+	return t.Dir.Changes(t.Dir)
+}
 `,
 		)
 
@@ -513,6 +517,10 @@ func (t *Test) Update() *dagger.Changeset {
 	contents, err = modGen.File("./outdir/baz.txt").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "im new here", contents)
+
+	out, err := modGen.With(daggerCall("no-changes", "-o", "./outdir")).Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "no changes to apply")
 }
 
 func (s ChangesetSuite) TestWithChanges(ctx context.Context, t *testctx.T) {
