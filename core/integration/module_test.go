@@ -6378,6 +6378,32 @@ func (m *Test) RunNoisy(ctx context.Context) error {
 	require.Contains(t, execError.Stderr, "yyyyy")
 }
 
+func (ModuleSuite) TestReturnNil(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", `package main
+
+import (
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {
+}
+
+func (m *Test) Nothing() (*dagger.Directory, error) {
+	return nil, nil
+}
+`,
+		)
+
+	_, err := modGen.With(daggerQuery(`{test{nothing{id}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+}
+
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
