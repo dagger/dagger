@@ -255,11 +255,11 @@ func (m *Alpine) withPkgs(
 			fmt.Printf("ACB adding pkg %s\n", pkg.Name)
 			if strings.HasPrefix(pkg.Name, "go-") {
 				fmt.Printf("ACB go pkg entries %+v\n", entries) // ACB go pkg entries [usr/ var/]
-				//out, err := unpacked.WithExec([]string{"sh", "-c", "find /out && ls -la /out/usr/bin/go && ls -la /out/usr/lib/go/bin/go && echo ACB DONE HERE && false"}).Stdout(ctx)
-				//if err != nil {
-				//	panic(fmt.Sprintf("failed to get go size %v\n", err))
-				//}
-				//fmt.Printf("WAT %s\n", out)
+				out, err := unpacked.WithExec([]string{"sh", "-c", "find /out | grep bin.*go\\$ && ls -la /out/usr/bin/go && ls -la /out/usr/lib/go/bin/go && echo ACB DONE HERE"}).Stdout(ctx)
+				if err != nil {
+					panic(fmt.Sprintf("failed to get go size %v\n", err))
+				}
+				fmt.Printf("ACB it worked %s\n", out)
 
 				//goSize, err := alpinePkg.dir.File("/usr/sbin/go").Size(ctx)
 				//if err != nil {
@@ -274,7 +274,7 @@ func (m *Alpine) withPkgs(
 			// TODO: this should *probably* apply to /usr/lib64/ and
 			// /usr/local/lib64/ as well
 			if m.Distro == DistroWolfi && pkg.PackageName() != "wolfi-baselayout" {
-				size, err := alpinePkg.dir.File("/usr/lib/go/bin/go").Size(ctx)
+				size, err := alpinePkg.dir.File("/lib/go/bin/go").Size(ctx)
 				if err != nil {
 					panic(fmt.Sprintf("failed0 %v\n", err))
 				}
@@ -286,13 +286,13 @@ func (m *Alpine) withPkgs(
 						WithoutDirectory("/lib64")
 				}
 
-				size, err = alpinePkg.dir.File("/usr/lib/go/bin/go").Size(ctx)
+				size, err = alpinePkg.dir.File("/lib/go/bin/go").Size(ctx)
 				if err != nil {
 					panic(fmt.Sprintf("failed1 %v\n", err))
 				}
 				fmt.Printf("ACB go size1 is %d\n", size)
 			} else {
-				size, err := alpinePkg.dir.File("/usr/lib/go/bin/go").Size(ctx)
+				size, err := alpinePkg.dir.File("/lib/go/bin/go").Size(ctx)
 				if err != nil {
 					panic(fmt.Sprintf("failed2 %v\n", err))
 				}
