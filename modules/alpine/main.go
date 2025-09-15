@@ -274,7 +274,7 @@ func (m *Alpine) withPkgs(
 			// TODO: this should *probably* apply to /usr/lib64/ and
 			// /usr/local/lib64/ as well
 			if m.Distro == DistroWolfi && pkg.PackageName() != "wolfi-baselayout" {
-				size, err = alpinePkg.dir.File("/usr/lib/go/bin/go").Size(ctx)
+				size, err := alpinePkg.dir.File("/usr/lib/go/bin/go").Size(ctx)
 				if err != nil {
 					panic(fmt.Sprintf("failed0 %v\n", err))
 				}
