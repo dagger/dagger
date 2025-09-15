@@ -23,7 +23,7 @@ require (
 	github.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2
 	github.com/adrg/xdg v0.5.3
 	github.com/alecthomas/chroma/v2 v2.20.0
-	github.com/anthropics/anthropic-sdk-go v1.4.0
+	github.com/anthropics/anthropic-sdk-go v1.12.0
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/charmbracelet/bubbles v0.21.0
 	github.com/charmbracelet/bubbletea v1.3.9
@@ -73,7 +73,7 @@ require (
 	github.com/koron-go/prefixw v1.0.2
 	github.com/lmittmann/tint v1.1.2
 	github.com/mackerelio/go-osstat v0.2.6
-	github.com/mark3labs/mcp-go v0.33.0
+	github.com/mark3labs/mcp-go v0.39.1
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mitchellh/go-spdx v0.1.0
 	github.com/mitchellh/mapstructure v1.5.0
@@ -86,7 +86,7 @@ require (
 	github.com/moby/sys/userns v0.1.0
 	github.com/muesli/reflow v0.3.0
 	github.com/muesli/termenv v0.16.0
-	github.com/openai/openai-go v1.10.1
+	github.com/openai/openai-go v1.12.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/opencontainers/runtime-spec v1.2.1
@@ -138,7 +138,7 @@ require (
 	golang.org/x/term v0.35.0
 	golang.org/x/text v0.29.0
 	golang.org/x/tools v0.37.0
-	google.golang.org/genai v1.15.0
+	google.golang.org/genai v1.24.0
 	google.golang.org/grpc v1.75.0-dev
 	google.golang.org/protobuf v1.36.9
 	gopkg.in/yaml.v3 v3.0.1
