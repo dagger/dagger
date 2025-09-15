@@ -4628,14 +4628,6 @@ func (r *Env) WithGraphQLQuery(q *querybuilder.Selection) *Env {
 	}
 }
 
-func (r *Env) Hostfs() *Directory {
-	q := r.query.Select("hostfs")
-
-	return &Directory{
-		query: q,
-	}
-}
-
 // A unique identifier for this Env.
 func (r *Env) ID(ctx context.Context) (EnvID, error) {
 	if r.id != nil {
@@ -5026,17 +5018,6 @@ func (r *Env) WithGitRepositoryOutput(name string, description string) *Env {
 	}
 }
 
-// Return a new environment with a new host filesystem
-func (r *Env) WithHostfs(hostfs *Directory) *Env {
-	assertNotNil("hostfs", hostfs)
-	q := r.query.Select("withHostfs")
-	q = q.Arg("hostfs", hostfs)
-
-	return &Env{
-		query: q,
-	}
-}
-
 // Create or update a binding of type JSONValue in the environment
 func (r *Env) WithJSONValueInput(name string, value *JSONValue, description string) *Env {
 	assertNotNil("value", value)
@@ -5287,11 +5268,30 @@ func (r *Env) WithStringOutput(name string, description string) *Env {
 	}
 }
 
+// Return a new environment with a new host filesystem
+func (r *Env) WithWorkspace(workspace *Directory) *Env {
+	assertNotNil("workspace", workspace)
+	q := r.query.Select("withWorkspace")
+	q = q.Arg("workspace", workspace)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Return a new environment without any outputs
 func (r *Env) WithoutOutputs() *Env {
 	q := r.query.Select("withoutOutputs")
 
 	return &Env{
+		query: q,
+	}
+}
+
+func (r *Env) Workspace() *Directory {
+	q := r.query.Select("workspace")
+
+	return &Directory{
 		query: q,
 	}
 }

@@ -15,17 +15,6 @@ defmodule Dagger.Env do
 
   @type t() :: %__MODULE__{}
 
-  @spec hostfs(t()) :: Dagger.Directory.t()
-  def hostfs(%__MODULE__{} = env) do
-    query_builder =
-      env.query_builder |> QB.select("hostfs")
-
-    %Dagger.Directory{
-      query_builder: query_builder,
-      client: env.client
-    }
-  end
-
   @doc """
   A unique identifier for this Env.
   """
@@ -497,20 +486,6 @@ defmodule Dagger.Env do
   end
 
   @doc """
-  Return a new environment with a new host filesystem
-  """
-  @spec with_hostfs(t(), Dagger.Directory.t()) :: Dagger.Env.t()
-  def with_hostfs(%__MODULE__{} = env, hostfs) do
-    query_builder =
-      env.query_builder |> QB.select("withHostfs") |> QB.put_arg("hostfs", Dagger.ID.id!(hostfs))
-
-    %Dagger.Env{
-      query_builder: query_builder,
-      client: env.client
-    }
-  end
-
-  @doc """
   Create or update a binding of type JSONValue in the environment
   """
   @spec with_json_value_input(t(), String.t(), Dagger.JSONValue.t(), String.t()) :: Dagger.Env.t()
@@ -883,6 +858,22 @@ defmodule Dagger.Env do
   end
 
   @doc """
+  Return a new environment with a new host filesystem
+  """
+  @spec with_workspace(t(), Dagger.Directory.t()) :: Dagger.Env.t()
+  def with_workspace(%__MODULE__{} = env, workspace) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withWorkspace")
+      |> QB.put_arg("workspace", Dagger.ID.id!(workspace))
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
   Return a new environment without any outputs
   """
   @spec without_outputs(t()) :: Dagger.Env.t()
@@ -891,6 +882,17 @@ defmodule Dagger.Env do
       env.query_builder |> QB.select("withoutOutputs")
 
     %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @spec workspace(t()) :: Dagger.Directory.t()
+  def workspace(%__MODULE__{} = env) do
+    query_builder =
+      env.query_builder |> QB.select("workspace")
+
+    %Dagger.Directory{
       query_builder: query_builder,
       client: env.client
     }
