@@ -676,8 +676,8 @@ func (fn *ModuleFunction) loadContextualArg(
 	case "GitRepository", "GitRef":
 		var git dagql.ObjectResult[*GitRepository]
 
-		defaultPath := filepath.Clean(strings.Trim(arg.DefaultPath, "/"))
-		if defaultPath == "." || defaultPath == ".git" {
+		cleanedPath := filepath.Clean(strings.Trim(arg.DefaultPath, "/"))
+		if cleanedPath == "." || cleanedPath == ".git" {
 			// handle getting the git repo from the current module context
 			var err error
 			git, err = fn.mod.ContextSource.Value.Self().LoadContextGit(ctx, dag)
