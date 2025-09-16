@@ -93,6 +93,11 @@ function CacheSharingModeNameToValue(name: string): CacheSharingMode {
 export type CacheVolumeID = string & { __CacheVolumeID: never }
 
 /**
+ * The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
+ */
+export type ChangesetID = string & { __ChangesetID: never }
+
+/**
  * The `CloudID` scalar type represents an identifier for an object of type Cloud.
  */
 export type CloudID = string & { __CloudID: never }
@@ -2268,6 +2273,14 @@ export class Binding extends BaseClient {
   }
 
   /**
+   * Retrieve the binding value, as type Changeset
+   */
+  asChangeset = (): Changeset => {
+    const ctx = this._ctx.select("asChangeset")
+    return new Changeset(ctx)
+  }
+
+  /**
    * Retrieve the binding value, as type Cloud
    */
   asCloud = (): Cloud => {
@@ -2515,6 +2528,115 @@ export class CacheVolume extends BaseClient {
     const response: Awaited<CacheVolumeID> = await ctx.execute()
 
     return response
+  }
+}
+
+/**
+ * A comparison between two directories representing changes that can be applied.
+ */
+export class Changeset extends BaseClient {
+  private readonly _id?: ChangesetID = undefined
+  private readonly _sync?: ChangesetID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ChangesetID, _sync?: ChangesetID) {
+    super(ctx)
+
+    this._id = _id
+    this._sync = _sync
+  }
+
+  /**
+   * A unique identifier for this Changeset.
+   */
+  id = async (): Promise<ChangesetID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ChangesetID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Files and directories that were added in the newer directory.
+   */
+  addedPaths = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("addedPaths")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The newer/upper snapshot.
+   */
+  after = (): Directory => {
+    const ctx = this._ctx.select("after")
+    return new Directory(ctx)
+  }
+
+  /**
+   * Return a Git-compatible patch of the changes
+   */
+  asPatch = (): File => {
+    const ctx = this._ctx.select("asPatch")
+    return new File(ctx)
+  }
+
+  /**
+   * The older/lower snapshot to compare against.
+   */
+  before = (): Directory => {
+    const ctx = this._ctx.select("before")
+    return new Directory(ctx)
+  }
+
+  /**
+   * Return a snapshot containing only the created and modified files
+   */
+  layer = (): Directory => {
+    const ctx = this._ctx.select("layer")
+    return new Directory(ctx)
+  }
+
+  /**
+   * Files and directories that existed before and were updated in the newer directory.
+   */
+  modifiedPaths = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("modifiedPaths")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.
+   */
+  removedPaths = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("removedPaths")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Force evaluation in the engine.
+   */
+  sync = async (): Promise<Changeset> => {
+    const ctx = this._ctx.select("sync")
+
+    const response: Awaited<ChangesetID> = await ctx.execute()
+
+    return new Client(ctx.copy()).loadChangesetFromID(response)
   }
 }
 
@@ -4017,6 +4139,17 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Return the difference between this directory and another directory, typically an older snapshot.
+   *
+   * The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
+   * @param from The base directory snapshot to compare against
+   */
+  changes = (from: Directory): Changeset => {
+    const ctx = this._ctx.select("changes", { from })
+    return new Changeset(ctx)
+  }
+
+  /**
    * Change the owner of the directory contents recursively.
    * @param path Path of the directory to change ownership of (e.g., "/").
    * @param owner A user:group to set for the mounted directory and its contents.
@@ -4259,6 +4392,15 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Return a directory with changes from another directory applied to it.
+   * @param changes Changes to apply to the directory
+   */
+  withChanges = (changes: Changeset): Directory => {
+    const ctx = this._ctx.select("withChanges", { changes })
+    return new Directory(ctx)
+  }
+
+  /**
    * Return a snapshot with a directory added
    * @param path Location of the written directory (e.g., "/src/").
    * @param directory Identifier of the directory to copy.
@@ -4349,6 +4491,16 @@ export class Directory extends BaseClient {
    */
   withPatch = (patch: string): Directory => {
     const ctx = this._ctx.select("withPatch", { patch })
+    return new Directory(ctx)
+  }
+
+  /**
+   * Retrieves this directory with the given Git-compatible patch file applied.
+   * @param patch File containing the patch to apply
+   * @experimental
+   */
+  withPatchFile = (patch: File): Directory => {
+    const ctx = this._ctx.select("withPatchFile", { patch })
     return new Directory(ctx)
   }
 
@@ -5135,6 +5287,35 @@ export class Env extends BaseClient {
    */
   withCacheVolumeOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withCacheVolumeOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Changeset in the environment
+   * @param name The name of the binding
+   * @param value The Changeset value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withChangesetInput = (
+    name: string,
+    value: Changeset,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withChangesetInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Changeset output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withChangesetOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withChangesetOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -9516,6 +9697,14 @@ export class Client extends BaseClient {
   loadCacheVolumeFromID = (id: CacheVolumeID): CacheVolume => {
     const ctx = this._ctx.select("loadCacheVolumeFromID", { id })
     return new CacheVolume(ctx)
+  }
+
+  /**
+   * Load a Changeset from its ID.
+   */
+  loadChangesetFromID = (id: ChangesetID): Changeset => {
+    const ctx = this._ctx.select("loadChangesetFromID", { id })
+    return new Changeset(ctx)
   }
 
   /**

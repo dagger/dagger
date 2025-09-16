@@ -134,6 +134,9 @@ type BindingID string
 // The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
 type CacheVolumeID string
 
+// The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
+type ChangesetID string
+
 // The `CloudID` scalar type represents an identifier for an object of type Cloud.
 type CloudID string
 
@@ -340,6 +343,15 @@ func (r *Binding) AsCacheVolume() *CacheVolume {
 	q := r.query.Select("asCacheVolume")
 
 	return &CacheVolume{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Changeset
+func (r *Binding) AsChangeset() *Changeset {
+	q := r.query.Select("asChangeset")
+
+	return &Changeset{
 		query: q,
 	}
 }
@@ -662,6 +674,139 @@ func (r *CacheVolume) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// A comparison between two directories representing changes that can be applied.
+type Changeset struct {
+	query *querybuilder.Selection
+
+	id   *ChangesetID
+	sync *ChangesetID
+}
+
+func (r *Changeset) WithGraphQLQuery(q *querybuilder.Selection) *Changeset {
+	return &Changeset{
+		query: q,
+	}
+}
+
+// Files and directories that were added in the newer directory.
+func (r *Changeset) AddedPaths(ctx context.Context) ([]string, error) {
+	q := r.query.Select("addedPaths")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The newer/upper snapshot.
+func (r *Changeset) After() *Directory {
+	q := r.query.Select("after")
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Return a Git-compatible patch of the changes
+func (r *Changeset) AsPatch() *File {
+	q := r.query.Select("asPatch")
+
+	return &File{
+		query: q,
+	}
+}
+
+// The older/lower snapshot to compare against.
+func (r *Changeset) Before() *Directory {
+	q := r.query.Select("before")
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// A unique identifier for this Changeset.
+func (r *Changeset) ID(ctx context.Context) (ChangesetID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ChangesetID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Changeset) XXX_GraphQLType() string {
+	return "Changeset"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Changeset) XXX_GraphQLIDType() string {
+	return "ChangesetID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Changeset) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Changeset) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Return a snapshot containing only the created and modified files
+func (r *Changeset) Layer() *Directory {
+	q := r.query.Select("layer")
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Files and directories that existed before and were updated in the newer directory.
+func (r *Changeset) ModifiedPaths(ctx context.Context) ([]string, error) {
+	q := r.query.Select("modifiedPaths")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.
+func (r *Changeset) RemovedPaths(ctx context.Context) ([]string, error) {
+	q := r.query.Select("removedPaths")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Force evaluation in the engine.
+func (r *Changeset) Sync(ctx context.Context) (*Changeset, error) {
+	q := r.query.Select("sync")
+
+	var id ChangesetID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Changeset{
+		query: q.Root().Select("loadChangesetFromID").Arg("id", id),
+	}, nil
 }
 
 // Dagger Cloud configuration and state
@@ -2812,6 +2957,19 @@ func (r *Directory) AsModuleSource(opts ...DirectoryAsModuleSourceOpts) *ModuleS
 	}
 }
 
+// Return the difference between this directory and another directory, typically an older snapshot.
+//
+// The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
+func (r *Directory) Changes(from *Directory) *Changeset {
+	assertNotNil("from", from)
+	q := r.query.Select("changes")
+	q = q.Arg("from", from)
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // Change the owner of the directory contents recursively.
 func (r *Directory) Chown(path string, owner string) *Directory {
 	q := r.query.Select("chown")
@@ -3264,6 +3422,17 @@ func (r *Directory) Terminal(opts ...DirectoryTerminalOpts) *Directory {
 	}
 }
 
+// Return a directory with changes from another directory applied to it.
+func (r *Directory) WithChanges(changes *Changeset) *Directory {
+	assertNotNil("changes", changes)
+	q := r.query.Select("withChanges")
+	q = q.Arg("changes", changes)
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // DirectoryWithDirectoryOpts contains options for Directory.WithDirectory
 type DirectoryWithDirectoryOpts struct {
 	// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
@@ -3415,6 +3584,19 @@ func (r *Directory) WithNewFile(path string, contents string, opts ...DirectoryW
 // Experimental: This API is highly experimental and may be removed or replaced entirely.
 func (r *Directory) WithPatch(patch string) *Directory {
 	q := r.query.Select("withPatch")
+	q = q.Arg("patch", patch)
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Retrieves this directory with the given Git-compatible patch file applied.
+//
+// Experimental: This API is highly experimental and may be removed or replaced entirely.
+func (r *Directory) WithPatchFile(patch *File) *Directory {
+	assertNotNil("patch", patch)
+	q := r.query.Select("withPatchFile")
 	q = q.Arg("patch", patch)
 
 	return &Directory{
@@ -4376,6 +4558,30 @@ func (r *Env) WithCacheVolumeInput(name string, value *CacheVolume, description 
 // Declare a desired CacheVolume output to be assigned in the environment
 func (r *Env) WithCacheVolumeOutput(name string, description string) *Env {
 	q := r.query.Select("withCacheVolumeOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Changeset in the environment
+func (r *Env) WithChangesetInput(name string, value *Changeset, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withChangesetInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Changeset output to be assigned in the environment
+func (r *Env) WithChangesetOutput(name string, description string) *Env {
+	q := r.query.Select("withChangesetOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -9704,6 +9910,16 @@ func (r *Client) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
 	q = q.Arg("id", id)
 
 	return &CacheVolume{
+		query: q,
+	}
+}
+
+// Load a Changeset from its ID.
+func (r *Client) LoadChangesetFromID(id ChangesetID) *Changeset {
+	q := r.query.Select("loadChangesetFromID")
+	q = q.Arg("id", id)
+
+	return &Changeset{
 		query: q,
 	}
 }

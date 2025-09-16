@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/huh"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/spf13/cobra"
@@ -571,7 +572,7 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 		// else to sub-select. In that case `q` will be nil to signal that we
 		// just want to return the object's name, without making an API request.
 		if q == nil {
-			return handleResponse(fn.ReturnType, nil, o, e)
+			return handleResponse(ctx, fc.c.Dagger(), fn.ReturnType, nil, o, e)
 		}
 
 		var response any
@@ -580,7 +581,7 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 			return err
 		}
 
-		return handleResponse(fn.ReturnType, response, o, e)
+		return handleResponse(ctx, fc.c.Dagger(), fn.ReturnType, response, o, e)
 	}
 }
 
@@ -645,9 +646,14 @@ func makeRequest(ctx context.Context, q *querybuilder.Selection, response any) e
 	return nil
 }
 
-func handleResponse(returnType *modTypeDef, response any, o, e io.Writer) error {
+func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modTypeDef, response any, o, e io.Writer) error {
 	if returnType.Kind == dagger.TypeDefKindVoidKind {
 		return nil
+	}
+
+	// If the function returns a Changeset, apply it to the working directory.
+	if returnType.Name() == "Changeset" {
+		return handleChangesetResponse(ctx, dag, response)
 	}
 
 	// Handle the `export` convenience, i.e, -o,--output flag.
@@ -692,6 +698,90 @@ func handleResponse(returnType *modTypeDef, response any, o, e io.Writer) error 
 	}
 
 	return err
+}
+
+func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response any) (rerr error) {
+	var changesetID string
+	switch v := response.(type) {
+	case string:
+		changesetID = v
+	default:
+		return fmt.Errorf("unexpected response type for changeset: %T", v)
+	}
+
+	changeset := dag.LoadChangesetFromID(dagger.ChangesetID(changesetID))
+
+	var summary strings.Builder
+	var noChanges bool
+	if err := (func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "analyzing changes")
+		defer telemetry.End(span, func() error { return rerr })
+
+		patch, err := changeset.AsPatch().Contents(ctx)
+		if err != nil {
+			return fmt.Errorf("get patch contents: %w", err)
+		}
+
+		noChanges = patch == ""
+		if noChanges {
+			slog.Info("no changes to apply")
+			return nil
+		}
+
+		return idtui.SummarizePatch(idtui.NewOutput(&summary), patch, -1)
+	})(); err != nil {
+		return err
+	}
+
+	if noChanges {
+		return nil
+	}
+
+	exportDest := outputPath
+	if exportDest == "" {
+		exportDest = "."
+
+		var confirm bool
+		form := idtui.NewForm(
+			huh.NewGroup(
+				huh.NewConfirm().
+					Title("Apply changes?").
+					Description(summary.String()).
+					Affirmative("Apply").
+					Negative("Discard").
+					Value(&confirm),
+			),
+		)
+		if err := Frontend.HandleForm(ctx, form); err != nil {
+			return err
+		}
+		if !confirm {
+			return nil
+		}
+	}
+
+	ctx, span := Tracer().Start(ctx, "applying changes")
+	defer telemetry.End(span, func() error { return rerr })
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+
+	if _, err := changeset.Layer().Export(ctx, exportDest); err != nil {
+		return err
+	}
+
+	removed, err := changeset.RemovedPaths(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, filePath := range removed {
+		filePath = filepath.Join(exportDest, filePath)
+		slog.Info("removing file", "path", filePath)
+		if err := os.Remove(filePath); err != nil {
+			slog.Error("failed to remove file; ignoring", "path", filePath, "error", err)
+		}
+	}
+
+	return nil
 }
 
 func printID(w io.Writer, response any, typeDef *modTypeDef) error {
