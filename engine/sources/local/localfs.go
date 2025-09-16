@@ -75,19 +75,18 @@ func newLocalFS(sharedState *localFSSharedState, subdir string, includes, exclud
 		return nil, fmt.Errorf("failed to create base fs: %w", err)
 	}
 
-	if useGitIgnore {
-		baseFS, err = fsxutil.NewGitIgnoreFS(baseFS)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create gitignore fs: %w", err)
-		}
-	}
-
 	filterFS, err := fsutil.NewFilterFS(baseFS, &fsutil.FilterOpt{
 		IncludePatterns: includes,
 		ExcludePatterns: excludes,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create filter fs: %w", err)
+	}
+	if useGitIgnore {
+		filterFS, err = fsxutil.NewGitIgnoreFS(filterFS, fsxutil.NewGitIgnoreMatcher(baseFS))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &localFS{
@@ -171,6 +170,8 @@ func (local *localFS) Sync( //nolint:gocyclo
 		}
 	}()
 
+	only := map[string]struct{}{}
+
 	// Hardlinks are a bit hard; we can't create them until their source file exists but we sync in files asynchronously.
 	// To deal with this we keep track of the hardlinks we need to make and apply them all at once after everything else
 	// is done.
@@ -193,6 +194,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 				}
 				cachedResultsMu.Lock()
 				cachedResults = append(cachedResults, appliedChange)
+				only[path] = struct{}{}
 				cachedResultsMu.Unlock()
 				if cacheCtx != nil {
 					if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
@@ -215,6 +217,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 				}
 				cachedResultsMu.Lock()
 				cachedResults = append(cachedResults, appliedChange)
+				only[path] = struct{}{}
 				cachedResultsMu.Unlock()
 				if cacheCtx != nil {
 					if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
@@ -244,6 +247,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 					}
 					cachedResultsMu.Lock()
 					cachedResults = append(cachedResults, appliedChange)
+					only[path] = struct{}{}
 					cachedResultsMu.Unlock()
 					if cacheCtx != nil {
 						if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
@@ -263,6 +267,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 			}
 			cachedResultsMu.Lock()
 			cachedResults = append(cachedResults, appliedChange)
+			only[path] = struct{}{}
 			cachedResultsMu.Unlock()
 			// no need to apply removals to the cacheCtx since it starts empty every Sync call.
 			return nil
@@ -274,6 +279,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 			}
 			cachedResultsMu.Lock()
 			cachedResults = append(cachedResults, appliedChange)
+			only[path] = struct{}{}
 			cachedResultsMu.Unlock()
 			if cacheCtx != nil {
 				if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
@@ -299,6 +305,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 		}
 		cachedResultsMu.Lock()
 		cachedResults = append(cachedResults, appliedChange)
+		only[hardlink.path] = struct{}{}
 		cachedResultsMu.Unlock()
 		if cacheCtx != nil {
 			if err := cacheCtx.HandleChange(appliedChange.Result().kind, hardlink.path, appliedChange.Result().stat, nil); err != nil {
@@ -355,9 +362,8 @@ func (local *localFS) Sync( //nolint:gocyclo
 
 	copyOpts := []fscopy.Opt{
 		func(ci *fscopy.CopyInfo) {
-			ci.IncludePatterns = local.includes
-			ci.ExcludePatterns = local.excludes
-			ci.UseGitignore = local.useGitignore
+			// only copy files that we know about changes for
+			ci.Only = only
 			ci.CopyDirContents = true
 		},
 		fscopy.WithXAttrErrorHandler(func(dst, src, key string, err error) error {

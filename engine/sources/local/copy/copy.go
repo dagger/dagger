@@ -89,7 +89,7 @@ func Copy(ctx context.Context, srcRoot, src, dstRoot, dst string, opts ...Opt) e
 		return err
 	}
 
-	c, err := newCopier(dstRoot, ci.Chown, ci.Utime, ci.Mode, ci.XAttrErrorHandler, ci.IncludePatterns, ci.ExcludePatterns, ci.UseGitignore, ci.AlwaysReplaceExistingDestPaths, ci.ChangeFunc)
+	c, err := newCopier(dstRoot, ci.Chown, ci.Utime, ci.Mode, ci.XAttrErrorHandler, ci.Only, ci.IncludePatterns, ci.ExcludePatterns, ci.UseGitignore, ci.AlwaysReplaceExistingDestPaths, ci.ChangeFunc)
 	if err != nil {
 		return err
 	}
@@ -169,6 +169,8 @@ type CopyInfo struct {
 	XAttrErrorHandler XAttrErrorHandler
 	CopyDirContents   bool
 	FollowLinks       bool
+	// Only allows *only* these files/dirs to be copied
+	Only map[string]struct{}
 	// Include only files/dirs matching at least one of these patterns
 	IncludePatterns []string
 	// Exclude files/dir matching any of these patterns (even if they match an include pattern)
@@ -239,6 +241,7 @@ type copier struct {
 	mode                           *int
 	inodes                         map[uint64]string
 	xattrErrorHandler              XAttrErrorHandler
+	onlySet                        map[string]struct{}
 	includePatternMatcher          *patternmatcher.PatternMatcher
 	excludePatternMatcher          *patternmatcher.PatternMatcher
 	gitignoreMatcher               *fsxutil.GitignoreMatcher
@@ -254,7 +257,7 @@ type parentDir struct {
 	copied  bool
 }
 
-func newCopier(destRoot string, chown Chowner, tm *time.Time, mode *int, xeh XAttrErrorHandler, includePatterns, excludePatterns []string, useGitignore bool, alwaysReplaceExistingDestPaths bool, changeFunc fsutil.ChangeFunc) (*copier, error) {
+func newCopier(destRoot string, chown Chowner, tm *time.Time, mode *int, xeh XAttrErrorHandler, only map[string]struct{}, includePatterns, excludePatterns []string, useGitignore bool, alwaysReplaceExistingDestPaths bool, changeFunc fsutil.ChangeFunc) (*copier, error) {
 	if xeh == nil {
 		xeh = func(dst, src, key string, err error) error {
 			return err
@@ -295,6 +298,7 @@ func newCopier(destRoot string, chown Chowner, tm *time.Time, mode *int, xeh XAt
 		utime:                          tm,
 		xattrErrorHandler:              xeh,
 		mode:                           mode,
+		onlySet:                        only,
 		includePatternMatcher:          includePatternMatcher,
 		excludePatternMatcher:          excludePatternMatcher,
 		gitignoreMatcher:               gitignoreMatcher,
@@ -319,6 +323,12 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 			return errors.Wrapf(statErr, "failed to stat source path %s", src)
 		}
 		fi = nil
+	}
+
+	if c.onlySet != nil && srcComponents != "" {
+		if _, ok := c.onlySet[filepath.Clean(srcComponents)]; !ok {
+			return nil
+		}
 	}
 
 	include := true

@@ -8356,15 +8356,15 @@ pub struct HostDirectoryOpts<'a> {
     /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
     #[builder(setter(into, strip_option), default)]
     pub exclude: Option<Vec<&'a str>>,
+    /// Apply .gitignore filter rules inside the directory
+    #[builder(setter(into, strip_option), default)]
+    pub gitignore: Option<bool>,
     /// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
     /// If true, the directory will always be reloaded from the host.
     #[builder(setter(into, strip_option), default)]
     pub no_cache: Option<bool>,
-    /// Don't apply .gitignore filter rules inside the directory
-    #[builder(setter(into, strip_option), default)]
-    pub no_git_auto_ignore: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct HostFileOpts {
@@ -8448,8 +8448,8 @@ impl Host {
         if let Some(no_cache) = opts.no_cache {
             query = query.arg("noCache", no_cache);
         }
-        if let Some(no_git_auto_ignore) = opts.no_git_auto_ignore {
-            query = query.arg("noGitAutoIgnore", no_git_auto_ignore);
+        if let Some(gitignore) = opts.gitignore {
+            query = query.arg("gitignore", gitignore);
         }
         Directory {
             proc: self.proc.clone(),

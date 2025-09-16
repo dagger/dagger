@@ -609,3 +609,67 @@ func (c *changeCollector) String() string {
 	sort.Strings(c.changes)
 	return strings.Join(c.changes, ",")
 }
+
+func TestCopyOnly(t *testing.T) {
+	t1 := t.TempDir()
+
+	apply := fstest.Apply(
+		fstest.CreateDir("bar", 0755),
+		fstest.CreateFile("bar/foo", []byte("foo-contents"), 0755),
+		fstest.CreateDir("bar/baz", 0755),
+		fstest.CreateFile("bar/baz/foo3", []byte("foo3-contents"), 0755),
+		fstest.CreateFile("foo2", []byte("foo2-contents"), 0755),
+	)
+
+	require.NoError(t, apply.Apply(t1))
+
+	testCases := []struct {
+		name            string
+		only            []string
+		expectedResults []string
+		expectedChanges string
+	}{
+		{
+			name:            "include bar",
+			only:            []string{"bar"},
+			expectedResults: []string{"bar"},
+			expectedChanges: filepath.FromSlash("add:/bar"),
+		},
+		{
+			name:            "include bar and foo2",
+			only:            []string{"bar", "bar/foo"},
+			expectedResults: []string{"bar", "bar/foo"},
+			expectedChanges: filepath.FromSlash("add:/bar,add:/bar/foo"),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t2 := t.TempDir()
+
+			ch := &changeCollector{}
+
+			err := Copy(context.Background(), t1, "/", t2, "/", func(ci *CopyInfo) {
+				only := map[string]struct{}{}
+				for _, o := range tc.only {
+					only[o] = struct{}{}
+				}
+				ci.Only = only
+			}, WithChangeNotifier(ch.onChange))
+			require.NoError(t, err)
+
+			var results []string
+			for _, path := range []string{"bar", "bar/foo", "bar/baz", "bar/baz/asdf", "bar/baz/asdf/x", "bar/baz/foo3", "foo2"} {
+				_, err := os.Stat(filepath.Join(t2, path))
+				if err == nil {
+					results = append(results, path)
+				}
+			}
+			require.Equal(t, tc.expectedResults, results)
+
+			if tc.expectedChanges != "" {
+				require.Equal(t, tc.expectedChanges, ch.String())
+			}
+		})
+	}
+}
