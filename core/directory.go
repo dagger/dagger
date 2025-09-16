@@ -697,6 +697,28 @@ type CopyFilter struct {
 	Include []string `default:"[]"`
 }
 
+func walk(root, contains string) {
+	empty := true
+	fmt.Printf("ACB walk root=%s\n", root)
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if contains == "" || strings.Contains(path, contains) {
+			fmt.Printf("ACB walk %s\n", path)
+		}
+		empty = false
+		return nil
+	})
+	if err != nil {
+		fmt.Printf("ACB walk err=%v\n", err)
+		return
+	}
+	if empty {
+		fmt.Printf("ACB empty\n")
+	}
+}
+
 func (dir *Directory) WithDirectory(
 	ctx context.Context,
 	destDir string,
@@ -786,11 +808,21 @@ func (dir *Directory) WithDirectory(
 					return fmt.Errorf("failed to mount source directory: %w", err)
 				}
 				defer lm.Unmount()
-				resolvedSrcPath, err := containerdfs.RootPath(srcPath, src.Dir)
+				resolvedSrcPath, err := containerdfs.RootPath(srcPath, src.Dir) // TODO maybe RootPathWithoutFinalSymlink is needed instead?
 				if err != nil {
 					return err
 				}
 				var opts []copy.Opt
+
+				fmt.Printf("ACB copying from %s (resolved to %s) to %s (resolved to %s)\n", srcPath, resolvedSrcPath, destDir, resolvedCopyDest)
+				walk(resolvedSrcPath, "go")
+
+				opts = append(opts, copy.WithCopyInfo(copy.CopyInfo{
+					AlwaysReplaceExistingDestPaths: true,
+					CopyDirContents:                true,
+					FollowLinks:                    true,
+				}))
+
 				for _, pattern := range filter.Include {
 					opts = append(opts, copy.WithIncludePattern(pattern))
 				}
