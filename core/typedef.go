@@ -1139,24 +1139,7 @@ func (enumValue EnumMemberTypeDef) Clone() *EnumMemberTypeDef {
 }
 
 func (enumValue *EnumMemberTypeDef) EnumValueDirectives() []*ast.Directive {
-	if enumValue.Value == "" || enumValue.Value == enumValue.Name {
-		return nil
-	}
-
-	directives := []*ast.Directive{
-		{
-			Name: "enumValue",
-			Arguments: ast.ArgumentList{
-				&ast.Argument{
-					Name: "value",
-					Value: &ast.Value{
-						Kind: ast.StringValue,
-						Raw:  enumValue.Value,
-					},
-				},
-			},
-		},
-	}
+	directives := []*ast.Directive{}
 
 	if enumValue.Deprecated != "" {
 		directives = append(directives, &ast.Directive{
@@ -1167,6 +1150,21 @@ func (enumValue *EnumMemberTypeDef) EnumValueDirectives() []*ast.Directive {
 					Value: &ast.Value{
 						Kind: ast.StringValue,
 						Raw:  enumValue.Deprecated,
+					},
+				},
+			},
+		})
+	}
+
+	if enumValue.Value != "" && enumValue.Value != enumValue.Name {
+		directives = append(directives, &ast.Directive{
+			Name: "enumValue",
+			Arguments: ast.ArgumentList{
+				&ast.Argument{
+					Name: "value",
+					Value: &ast.Value{
+						Kind: ast.StringValue,
+						Raw:  enumValue.Value,
 					},
 				},
 			},
