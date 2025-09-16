@@ -84,16 +84,29 @@ func (mod *Module) GetSource() *ModuleSource {
 }
 
 // Return a reference to the module's main object
-func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
+func (mod *Module) MainObject(ctx context.Context) (*ObjectTypeDef, bool) {
+	debugSpan(ctx, "module [name=%q] [nameField=%q] [origName=%q] search for main object", mod.Name(), mod.NameField, mod.OriginalName)
 	for _, typeDef := range mod.ObjectDefs {
 		if typeDef.AsObject.Valid {
 			objDef := typeDef.AsObject.Value
+			debugSpan(ctx, "module [name=%q] [nameField=%q] [origName=%q] search for main object: is it object [name=%q] [origName=%q] ?", mod.Name(), mod.NameField, mod.OriginalName, objDef.Name, objDef.OriginalName)
 			if strings.EqualFold(objDef.OriginalName, mod.OriginalName) {
+				debugSpan(ctx, "module [name=%q] [nameField=%q] [origName=%q] MATCH! [name=%q] [origName=%q]", mod.Name(), mod.NameField, mod.OriginalName, objDef.Name, objDef.OriginalName)
+
 				return objDef, true
 			}
 		}
 	}
+	debugSpan(ctx, "module [name=%q] [nameField=%q] [origName=%q] NO MATCH...", mod.Name(), mod.NameField, mod.OriginalName)
+
 	return nil, false
+}
+
+// Emit a one-off span for debugging purposes
+// Easier for debugging, since you can see it in the TUI instead of navigating to the dev engine logs
+func debugSpan(ctx context.Context, msg string, args ...any) {
+	_, span := Tracer(ctx).Start(ctx, fmt.Sprintf(msg, args...))
+	span.End()
 }
 
 // Apply default arguments loaded from a local env file, not from the module's schema
@@ -110,7 +123,7 @@ func (mod *Module) ApplyLocalDefaults(ctx context.Context, defaults []EnvVariabl
 }
 
 func (mod *Module) ApplyLocalDefault(ctx context.Context, argNameAnyCase, prettyValue string) (string, error) {
-	mainObj, ok := mod.MainObject()
+	mainObj, ok := mod.MainObject(ctx)
 	if !ok {
 		return "", fmt.Errorf("error overriding args for module %q: can't load main object", mod.Name())
 	}

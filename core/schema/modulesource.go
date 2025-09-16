@@ -2525,7 +2525,77 @@ func getModuleDefaults(envFile *core.EnvFile, modName string) []core.EnvVariable
 	return defaults
 }
 
+// Load a .env file for a module, *reading only from the module root* (ignoring .env files higher in the repo root)
 func loadModuleEnvFile(ctx context.Context, src dagql.ObjectResult[*core.ModuleSource]) (*core.EnvFile, string, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	if src.Self().Kind != core.ModuleSourceKindLocal {
+		// We only allow loading an env file from local modules, for safety
+		return &core.EnvFile{}, "", nil
+	}
+	rootPath := dagql.String(src.Self().Local.ContextDirectoryPath)
+	startPath := dagql.String(src.Self().SourceRootSubpath)
+	var rootDir dagql.ObjectResult[*core.Directory]
+	if err := dag.Select(ctx, dag.Root(), &rootDir,
+		dagql.Selector{Field: "host"},
+		dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: rootPath},
+				{
+					Name: "include",
+					Value: dagql.ArrayInput[dagql.String]{
+						startPath + "/.env",
+					}},
+			},
+		},
+	); err != nil {
+		return nil, "", fmt.Errorf("failed to search %q: %s", rootPath, err.Error())
+	}
+	// We only look for .env at the module root
+	// FIXME: take into account workdir on the host, to honor .env in sub-directories
+	// of the module. This requires either 1) include/exclude support in host.findup(),
+	// or 2) host.workdir() so we can use it as a start for directory.findup()
+	envFilePath := startPath + "/.env"
+	var envFileExists dagql.Boolean
+	if err := dag.Select(ctx, rootDir, &envFileExists,
+		dagql.Selector{Field: "exists",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: envFilePath},
+			},
+		},
+	); err != nil {
+		return nil, "", fmt.Errorf("failed to search for .env: %s", err.Error())
+	}
+	if !envFileExists {
+		return &core.EnvFile{}, "", nil
+	}
+	var envFile *core.EnvFile
+	if err := dag.Select(ctx, rootDir, &envFile,
+		dagql.Selector{Field: "file",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: envFilePath},
+			},
+		},
+		dagql.Selector{Field: "asEnvFile",
+			Args: []dagql.NamedInput{
+				{Name: "expand", Value: dagql.Opt(dagql.NewBoolean(true))},
+			},
+		},
+	); err != nil {
+		return nil, envFilePath.String(), fmt.Errorf("failed to load env file from %s:%s: %s",
+			src.Self().AsString(),
+			envFilePath.String(),
+			err.Error(),
+		)
+	}
+	return envFile, envFilePath.String(), nil
+}
+
+// Load a .env file for a module, *searching all the way up to the module repo root*
+func loadModuleContextEnvFile(ctx context.Context, src dagql.ObjectResult[*core.ModuleSource]) (*core.EnvFile, string, error) {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, "", err
