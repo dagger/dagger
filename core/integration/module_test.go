@@ -6194,6 +6194,245 @@ func (m *Test) PrintDefault(ctx context.Context) (string, error) {
 	}
 }
 
+func (ModuleSuite) TestModuleDeprecationIntrospection(ctx context.Context, t *testctx.T) {
+	type sdkCase struct {
+		sdk        string
+		writeFiles func(dir string) error
+	}
+
+	goSrc := `package main
+
+import (
+	"context"
+)
+
+// +deprecated="This module is deprecated and will be removed in future versions."
+type Test struct {
+	LegacyField string // +deprecated="This field is deprecated and will be removed in future versions."
+}
+
+// +deprecated="This type is deprecated and kept only for retro-compatibility."
+type LegacyRecord struct {
+	// +deprecated="This field is deprecated and will be removed in future versions."
+	Note string
+}
+
+func (m *Test) EchoString(
+	ctx context.Context,
+	input string, // +deprecated="Use 'other' instead of 'input'."
+	other string,
+) (string, error) {
+	return input, nil
+}
+
+// +deprecated="Prefer EchoString instead."
+func (m *Test) LegacySummarize(note string) (LegacyRecord, error) {
+	return LegacyRecord{Note: note}, nil
+}
+
+type Mode string
+
+const (
+	ModeAlpha Mode = "alpha" // +deprecated="alpha is deprecated; use zeta instead"
+	// +deprecated="beta is deprecated; use zeta instead"
+	ModeBeta Mode = "beta"
+	ModeZeta Mode = "zeta"
+)
+
+// Reference the enum so it appears in the schema.
+func (m *Test) UseMode(mode Mode) Mode {
+	return mode
+}
+`
+	// tsSrc := `...` // wip
+	// pySrc := `...` // wip
+
+	cases := []sdkCase{
+		{
+			sdk: "go",
+			writeFiles: func(dir string) error {
+				return os.WriteFile(filepath.Join(dir, "main.go"), []byte(goSrc), 0o644)
+			},
+		},
+		// {
+		// 	sdk: "typescript",
+		// 	writeFiles: func(dir string) error {
+		// 		srcDir := filepath.Join(dir, "src")
+		// 		if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		// 			return err
+		// 		}
+		// 		return os.WriteFile(filepath.Join(srcDir, "index.ts"), []byte(tsSrc), 0o644)
+		// 	},
+		// },
+		// {
+		// 	sdk: "python",
+		// 	writeFiles: func(dir string) error {
+		// 		pyDir := filepath.Join(dir, "src", "test")
+		// 		if err := os.MkdirAll(pyDir, 0o755); err != nil {
+		// 			return err
+		// 		}
+		// 		return os.WriteFile(filepath.Join(pyDir, "__init__.py"), []byte(pySrc), 0o644)
+		// 	},
+		// },
+	}
+
+	const introspect = `
+query ModuleIntrospection($path: String!) {
+  host {
+    directory(path: $path, noGitAutoIgnore: true) {
+      asModule {
+        objects {
+          asObject {
+            name
+            deprecated
+            functions { name deprecated args { name deprecated } }
+            fields { name deprecated }
+          }
+        }
+        enums {
+          asEnum { name members { value deprecated } }
+        }
+      }
+    }
+  }
+}`
+
+	type Arg struct {
+		Name       string
+		Deprecated string
+	}
+	type Fn struct {
+		Name       string
+		Deprecated string
+		Args       []Arg
+	}
+	type Field struct {
+		Name       string
+		Deprecated string
+	}
+	type Obj struct {
+		Name       string
+		Deprecated string
+		Functions  []Fn
+		Fields     []Field
+	}
+	type EnumMember struct {
+		Value      string
+		Deprecated string
+	}
+	type Enum struct {
+		Name    string
+		Members []EnumMember
+	}
+	type Resp struct {
+		Host struct {
+			Directory struct {
+				AsModule struct {
+					Objects []struct{ AsObject Obj }
+					Enums   []struct{ AsEnum Enum }
+				}
+			}
+		}
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+			modDir := t.TempDir()
+
+			_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk="+tc.sdk)
+			require.NoError(t, err)
+			require.NoError(t, tc.writeFiles(modDir))
+
+			c := connect(ctx, t)
+
+			res, err := testutil.QueryWithClient[Resp](c, t, introspect, &testutil.QueryOptions{
+				Variables: map[string]any{"path": modDir},
+			})
+			require.NoError(t, err)
+
+			var testObj, legacyObj *Obj
+			for i := range res.Host.Directory.AsModule.Objects {
+				o := &res.Host.Directory.AsModule.Objects[i].AsObject
+				switch o.Name {
+				case "Test":
+					testObj = o
+				case "TestLegacyRecord":
+					legacyObj = o
+				}
+			}
+			require.NotNil(t, testObj, "Test object must be present")
+			require.Equal(t, "This module is deprecated and will be removed in future versions.", testObj.Deprecated, "Test object must be marked deprecated")
+
+			var legacyField *Field = &testObj.Fields[0]
+			require.NotNil(t, legacyField, "Test.LegacyField must be present")
+			require.Equal(t, "This field is deprecated and will be removed in future versions.", legacyField.Deprecated, "Test.LegacyField must be marked deprecated")
+
+			fnByName := map[string]Fn{}
+			for _, f := range testObj.Functions {
+				fnByName[f.Name] = f
+			}
+
+			ls, ok := fnByName["legacySummarize"]
+			require.True(t, ok, "legacySummarize function must be present")
+			require.Equal(t, "Prefer EchoString instead.", ls.Deprecated, "legacySummarize function must be marked deprecated")
+
+			ech, ok := fnByName["echoString"]
+			require.True(t, ok, "echoString function must be present")
+			require.Empty(t, ech.Deprecated, "echoString function must not be deprecated")
+
+			var inputArg, otherArg *Arg
+			for i := range ech.Args {
+				switch ech.Args[i].Name {
+				case "input":
+					inputArg = &ech.Args[i]
+				case "other":
+					otherArg = &ech.Args[i]
+				}
+			}
+			require.NotNil(t, inputArg, "echoString should have arg 'input'")
+			require.Equal(t, "Use 'other' instead of 'input'.", inputArg.Deprecated, "echoString.input should be marked deprecated")
+			require.NotNil(t, otherArg, "echoString should have arg 'other'")
+			require.Empty(t, otherArg.Deprecated, "echoString.other should NOT be deprecated")
+
+			// Secondary object type + field deprecation: LegacyRecord.note
+			require.NotNil(t, legacyObj, "LegacyRecord object must be present")
+			require.Equal(t, "This type is deprecated and kept only for retro-compatibility.", legacyObj.Deprecated, "LegacyRecord must be marked deprecated")
+
+			var noteField *Field
+			for i := range legacyObj.Fields {
+				if legacyObj.Fields[i].Name == "note" {
+					noteField = &legacyObj.Fields[i]
+					break
+				}
+			}
+			require.NotNil(t, noteField, "LegacyRecord should have field 'note'")
+			require.Equal(t, "This field is deprecated and will be removed in future versions.", noteField.Deprecated, "LegacyRecord.note must be marked deprecated")
+
+			var mode *struct{ AsEnum Enum } = &res.Host.Directory.AsModule.Enums[0]
+			require.NotNil(t, mode)
+
+			m := mode.AsEnum
+			var alpha, beta, zeta *EnumMember
+			for i := range m.Members {
+				switch m.Members[i].Value {
+				case "alpha":
+					alpha = &m.Members[i]
+				case "beta":
+					beta = &m.Members[i]
+				case "zeta":
+					zeta = &m.Members[i]
+				}
+			}
+			require.NotNil(t, alpha, "Mode should have member 'alpha'")
+			require.Equal(t, "alpha is deprecated; use zeta instead", alpha.Deprecated, "Mode.alpha must be marked deprecated")
+			require.NotNil(t, beta, "Mode should have member 'beta'")
+			require.Equal(t, "beta is deprecated; use zeta instead", beta.Deprecated, "Mode.beta must be marked deprecated")
+			require.NotNil(t, zeta, "Mode should have member 'zeta'")
+			require.Empty(t, zeta.Deprecated, "Mode.zeta should NOT be deprecated")
+		})
+	}
+}
+
 func (ModuleSuite) TestLoadWhenNoModule(ctx context.Context, t *testctx.T) {
 	// verify that if a module is loaded from a directory w/ no module we don't
 	// load extra files
