@@ -238,6 +238,7 @@ func (dev *DaggerDev) evaluator() *dagger.Evaluator {
 			dag.Evals().CoreAPI().AsEvaluatorEval(),
 			dag.Evals().ModuleDependencies().AsEvaluatorEval(),
 			dag.Evals().Responses().AsEvaluatorEval(),
+			dag.Evals().ModelContextProtocol().AsEvaluatorEval(),
 		})
 }
 
