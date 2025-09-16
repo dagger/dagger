@@ -1,6 +1,0 @@
-kind: Added
-body: 'feat: mount client ~/.config/dagger/ca-certificates to engine'
-time: 2025-09-12T10:55:51.819284273-03:00
-custom:
-    Author: jedevc
-    PR: "11019"
