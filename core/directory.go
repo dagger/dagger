@@ -731,15 +731,19 @@ func (dir *Directory) WithDirectory(
 ) (*Directory, error) {
 	dir = dir.Clone()
 
+	var dstFound bool
+	var srcFound bool
+	fmt.Printf("ACB withDirectory dest=%s started\n", destDir)
+
 	execInMount(ctx, dir, func(root string) error {
-		if walk(root, "bin/go") {
+		if walk(root, "/usr/lib/go/bin/go") {
 			dstFound = true
 		}
 		return nil
 	})
 
 	execInMount(ctx, src, func(root string) error {
-		if walk(root, "bin/go") {
+		if walk(root, "/usr/lib/go/bin/go") {
 			srcFound = true
 		}
 		return nil
@@ -876,6 +880,22 @@ func (dir *Directory) WithDirectory(
 		return nil, fmt.Errorf("failed to merge directories: %w", err)
 	}
 	dir.Result = ref
+
+	if srcFound {
+		var mergedFound bool
+		fmt.Printf("ACB go found in src; looking in merged result\n")
+		execInMount(ctx, dir, func(root string) error {
+			if walk(root, "/usr/lib/go/bin/go") {
+				mergedFound = true
+			}
+			return nil
+		})
+		fmt.Printf("ACB mergedFound=%v\n", mergedFound)
+		if !mergedFound {
+			panic("go was found in src but not merged")
+		}
+	}
+
 	return dir, nil
 }
 

@@ -26,6 +26,7 @@ import (
 	"github.com/moby/buildkit/client/llb/sourceresolver"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -1772,30 +1773,30 @@ func (s *containerSchema) withDirectoryCacheKey(ctx context.Context, parent dagq
 	}
 	_ = argDigest
 
-	doLoad := true
-	var dirDigest digest.Digest
-	if doLoad {
-		srv, err := core.CurrentDagqlServer(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get server: %w", err)
-		}
-		_ = srv
-		dir, err := args.Directory.Load(ctx, srv)
-		if err != nil {
-			return nil, err
-		}
+	//doLoad := true
+	//var dirDigest digest.Digest
+	//if doLoad {
+	//	srv, err := core.CurrentDagqlServer(ctx)
+	//	if err != nil {
+	//		return nil, fmt.Errorf("failed to get server: %w", err)
+	//	}
+	//	_ = srv
+	//	dir, err := args.Directory.Load(ctx, srv)
+	//	if err != nil {
+	//		return nil, err
+	//	}
 
-		// dirDigest, err = core.DigestOf(dir.Self().WithoutInputs())
-		// if err != nil {
-		// 	return nil, err
-		// }
+	//	// dirDigest, err = core.DigestOf(dir.Self().WithoutInputs())
+	//	// if err != nil {
+	//	// 	return nil, err
+	//	// }
 
-		dirDigestStr, err := dir.Self().Digest(ctx) // NOTE dir.Self().WithoutInputs().Digest(ctx) fails
-		if err != nil {
-			return nil, err
-		}
-		dirDigest = digest.Digest(dirDigestStr)
-	}
+	//	dirDigestStr, err := dir.Self().Digest(ctx) // NOTE dir.Self().WithoutInputs().Digest(ctx) fails
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//	dirDigest = digest.Digest(dirDigestStr)
+	//}
 
 	ctrDigest, err := core.DigestOf(parent.Self().WithoutInputs())
 	if err != nil {
@@ -1803,9 +1804,11 @@ func (s *containerSchema) withDirectoryCacheKey(ctx context.Context, parent dagq
 	}
 
 	cacheCfg.Digest = dagql.HashFrom(
-		string(dirDigest),
+		//string(dirDigest),
 		string(ctrDigest),
 		string(args.Path),
+		// TODO where does args.Directory get hashed?
+		string(fmt.Sprintf("hack %v %v", time.Now(), identity.NewID())),
 	)
 	return &cacheCfg, nil
 }
