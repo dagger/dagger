@@ -346,7 +346,7 @@ func (m *Alpine) withPkgs(
 			fmt.Printf("ACB found go here\n")
 			size, err := ctr.File("/usr/lib/go/bin/go").Size(ctx)
 			if err != nil {
-				panic(fmt.Sprintf("failed2 %v (foundgo=%d)\n", err, foundgo))
+				panic(fmt.Sprintf("failed2 %v (foundgo=%d)\n", err, foundGo))
 			}
 			fmt.Printf("ACB go size4 is %d (foundgo=%d)\n", size, foundGo)
 			foundGo++
