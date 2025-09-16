@@ -2578,14 +2578,12 @@ func (s *moduleSourceSchema) moduleSourceWithUpdatedClients(
 		// If the client is a builtin SDK, the version is tied to the engine so we skip it.
 		if sdk.IsModuleSDKBuiltin(client.Generator) {
 			newClientConfig[i] = client.Clone()
-
 			continue
 		}
 
 		// If there is an update request but the client is not in the input list, skip it
 		if _, ok := updateReqs[clientGeneratorSource]; !ok && len(updateReqs) > 0 {
 			newClientConfig[i] = client.Clone()
-
 			continue
 		}
 
