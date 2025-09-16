@@ -303,20 +303,25 @@ func (m *Alpine) withPkgs(
 						panic(fmt.Sprintf("failed1 %v\n", err))
 					}
 					fmt.Printf("ACB go size1 is %d\n", size)
+					foundGo = 1
 				}
 			} else {
 				if strings.HasPrefix(pkg.Name, "go-") {
 					size, err := alpinePkg.dir.File("/usr/lib/go/bin/go").Size(ctx)
 					if err != nil {
-						panic(fmt.Sprintf("failed2 %v\n", err))
+						panic(fmt.Sprintf("failed3 %v\n", err))
 					}
 					fmt.Printf("ACB go size3 is %d\n", size)
 				}
 			}
 
-			//if pkg.Name == "go" {
-			//	alpinePkg.dir.Entries(ctx)
-			//}
+			if foundGo > 0 {
+				size, err := alpinePkg.dir.File("/usr/lib/go/bin/go").Size(ctx)
+				if err != nil {
+					panic(fmt.Sprintf("failed4 %v (foundgo=%d)\n", err, foundGo))
+				}
+				fmt.Printf("ACB go size4 is %d (foundgo=%d)\n", size, foundGo)
+			}
 
 			alpinePkgs[i] = alpinePkg
 			return nil
@@ -326,9 +331,11 @@ func (m *Alpine) withPkgs(
 		return nil, fmt.Errorf("failed to get alpine packages: %w", err)
 	}
 
+	foundGo = 0
+
 	installBusyboxSymlinks := false
 	for _, pkg := range alpinePkgs {
-		ctr = ctr.WithDirectory("/", pkg.dir)
+		ctr = ctr.WithDirectory("/", pkg.dir) // this overwrites the root directory
 
 		if pkg.name == "busybox" || pkg.name == "busybox-full" {
 			// We copy apko and don't run scripts, but with a special exception for busybox,
@@ -346,9 +353,9 @@ func (m *Alpine) withPkgs(
 			fmt.Printf("ACB found go here\n")
 			size, err := ctr.File("/usr/lib/go/bin/go").Size(ctx)
 			if err != nil {
-				panic(fmt.Sprintf("failed2 %v (foundgo=%d)\n", err, foundGo))
+				panic(fmt.Sprintf("failed5 %v (foundgo=%d)\n", err, foundGo))
 			}
-			fmt.Printf("ACB go size4 is %d (foundgo=%d)\n", size, foundGo)
+			fmt.Printf("ACB go size5 is %d (foundgo=%d)\n", size, foundGo)
 			foundGo++
 		}
 	}
