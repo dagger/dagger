@@ -234,6 +234,8 @@ func (m *Alpine) withPkgs(
 
 	//var mu sync.Mutex
 
+	foundGo := 0
+
 	var eg errgroup.Group
 	alpinePkgs := make([]*apkPkg, len(repoPkgs))
 	for i, pkg := range repoPkgs {
@@ -340,13 +342,14 @@ func (m *Alpine) withPkgs(
 			ctr = ctr.WithExec([]string{"/bin/busybox", "--install", "-s"})
 		}
 
-		if strings.HasPrefix(pkg.name, "go-") {
+		if strings.HasPrefix(pkg.name, "go-") || foundGo > 0 {
 			fmt.Printf("ACB found go here\n")
 			size, err := ctr.File("/usr/lib/go/bin/go").Size(ctx)
 			if err != nil {
 				panic(fmt.Sprintf("failed2 %v\n", err))
 			}
-			fmt.Printf("ACB go size4 is %d\n", size)
+			fmt.Printf("ACB go size4 is %d (foundgo=%d)\n", size, foundgo)
+			foundGo++
 		}
 	}
 
