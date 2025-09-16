@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/sys/user"
@@ -143,6 +144,25 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 	absPath, err := Filesyncer(t).fullRootPathAndBaseName(opts.Path, false)
 	if err != nil {
 		return fmt.Errorf("get full root path: %w", err)
+	}
+
+	for _, removePath := range opts.RemovePaths {
+		isDir := strings.HasSuffix(removePath, "/")
+		if !filepath.IsAbs(removePath) {
+			removePath = filepath.Join(opts.Path, removePath)
+		}
+		if err != nil {
+			return fmt.Errorf("get full remove path: %w", err)
+		}
+		if isDir {
+			if err := os.RemoveAll(removePath); err != nil {
+				return fmt.Errorf("remove path %s: %w", removePath, err)
+			}
+		} else {
+			if err := os.Remove(removePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("remove path %s: %w", removePath, err)
+			}
+		}
 	}
 
 	if !opts.IsFileStream {

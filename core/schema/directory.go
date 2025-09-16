@@ -270,6 +270,12 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("asPatch", DagOpFileWrapper(srv, s.changesetAsPatch,
 			WithStaticPath[*core.Changeset, changesetAsPatchArgs](core.ChangesetPatchFilename))).
 			Doc(`Return a Git-compatible patch of the changes`),
+		dagql.Func("export", s.changesetExport).
+			DoNotCache("Writes to the local host.").
+			Doc(`Applies the diff represented by this changeset to a path on the host.`).
+			Args(
+				dagql.Arg("path").Doc(`Location of the copied directory (e.g., "logs/").`),
+			),
 	}.Install(srv)
 }
 
@@ -768,6 +774,30 @@ func (s *directorySchema) changesetAsPatch(ctx context.Context, parent dagql.Obj
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, file)
+}
+
+type changesetExportArgs struct {
+	Path string
+}
+
+func (s *directorySchema) changesetExport(ctx context.Context, parent *core.Changeset, args changesetExportArgs) (dagql.String, error) {
+	err := parent.Export(ctx, args.Path)
+	if err != nil {
+		return "", err
+	}
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return "", err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	stat, err := bk.StatCallerHostPath(ctx, args.Path, true)
+	if err != nil {
+		return "", err
+	}
+	return dagql.String(stat.Path), err
 }
 
 type dirExportArgs struct {

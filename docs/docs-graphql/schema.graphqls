@@ -192,6 +192,12 @@ type Changeset {
   """The older/lower snapshot to compare against."""
   before: Directory!
 
+  """Applies the diff represented by this changeset to a path on the host."""
+  export(
+    """Location of the copied directory (e.g., "logs/")."""
+    path: String!
+  ): String!
+
   """A unique identifier for this Changeset."""
   id: ChangesetID!
 

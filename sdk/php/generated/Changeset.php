@@ -50,6 +50,16 @@ class Changeset extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Applies the diff represented by this changeset to a path on the host.
+     */
+    public function export(string $path): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('export');
+        $leafQueryBuilder->setArgument('path', $path);
+        return (string)$this->queryLeaf($leafQueryBuilder, 'export');
+    }
+
+    /**
      * A unique identifier for this Changeset.
      */
     public function id(): ChangesetId

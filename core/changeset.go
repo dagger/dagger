@@ -17,6 +17,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
+	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
@@ -321,4 +322,44 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 		File:     ChangesetPatchFilename,
 		Platform: query.Platform(),
 	}, nil
+}
+
+func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
+	dir, err := ch.Before.Self().Diff(ctx, ch.After.Self())
+	if err != nil {
+		return err
+	}
+
+	var defPB *pb.Definition
+	if dir.Dir != "" && dir.Dir != "/" {
+		src, err := dir.State()
+		if err != nil {
+			return err
+		}
+		src = llb.Scratch().File(llb.Copy(src, dir.Dir, ".", &llb.CopyInfo{
+			CopyDirContentsOnly: true,
+		}))
+
+		def, err := src.Marshal(ctx, llb.Platform(dir.Platform.Spec()))
+		if err != nil {
+			return err
+		}
+		defPB = def.ToPB()
+	} else {
+		defPB = dir.LLB
+	}
+
+	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("export directory %s to host %s", dir.Dir, destPath))
+	defer telemetry.End(span, func() error { return rerr })
+
+	return bk.LocalDirExport(ctx, defPB, destPath, true, ch.RemovedPaths)
 }

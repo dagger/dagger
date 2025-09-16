@@ -1567,6 +1567,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Changeset::export",
+			"p": "Dagger/Changeset.html#method_export",
+			"d": "<p>Applies the diff represented by this changeset to a path on the host.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Changeset::id",
 			"p": "Dagger/Changeset.html#method_id",
 			"d": "<p>A unique identifier for this Changeset.</p>"

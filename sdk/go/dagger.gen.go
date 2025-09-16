@@ -877,8 +877,9 @@ func (r *CacheVolume) MarshalJSON() ([]byte, error) {
 type Changeset struct {
 	query *querybuilder.Selection
 
-	id   *ChangesetID
-	sync *ChangesetID
+	export *string
+	id     *ChangesetID
+	sync   *ChangesetID
 }
 
 func (r *Changeset) WithGraphQLQuery(q *querybuilder.Selection) *Changeset {
@@ -922,6 +923,20 @@ func (r *Changeset) Before() *Directory {
 	return &Directory{
 		query: q,
 	}
+}
+
+// Applies the diff represented by this changeset to a path on the host.
+func (r *Changeset) Export(ctx context.Context, path string) (string, error) {
+	if r.export != nil {
+		return *r.export, nil
+	}
+	q := r.query.Select("export")
+	q = q.Arg("path", path)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A unique identifier for this Changeset.
