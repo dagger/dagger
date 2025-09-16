@@ -246,6 +246,7 @@ func (m *Alpine) withPkgs(
 		return nil, fmt.Errorf("failed to get alpine packages: %w", err)
 	}
 
+	foundGo := 0
 	installBusyboxSymlinks := false
 	for _, pkg := range alpinePkgs {
 		ctr = ctr.WithDirectory("/", pkg.dir)
@@ -260,6 +261,17 @@ func (m *Alpine) withPkgs(
 			// it will try to install in this container if/when the ca-certificates package is
 			// installed.
 			ctr = ctr.WithExec([]string{"/bin/busybox", "--install", "-s"})
+		}
+		if strings.HasPrefix(pkg.name, "go-") || foundGo > 0 {
+			out, _ := ctr.WithExec([]string{"sh", "-c", "find / | grep -w go | grep -w bin | gzip | base64 -w0"}).Stdout(ctx)
+
+			fmt.Printf("ACB found go here; pkg=%s foundGo=%d out=%s\n", pkg.name, foundGo, out)
+			size, err := ctr.File("/usr/lib/go/bin/go").Size(ctx)
+			if err != nil {
+				panic(fmt.Sprintf("failed5 %v (foundGo=%d)\n", err, foundGo))
+			}
+			fmt.Printf("ACB go size5 is %d (foundGo=%d)\n", size, foundGo)
+			foundGo++
 		}
 	}
 

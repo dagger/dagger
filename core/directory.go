@@ -697,7 +697,8 @@ type CopyFilter struct {
 	Include []string `default:"[]"`
 }
 
-func walk(root, contains string) {
+func walk(root, contains string) bool {
+	found := false
 	empty := true
 	fmt.Printf("ACB walk root=%s\n", root)
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
@@ -706,17 +707,19 @@ func walk(root, contains string) {
 		}
 		if contains == "" || strings.Contains(path, contains) {
 			fmt.Printf("ACB walk %s\n", path)
+			found = true
 		}
 		empty = false
 		return nil
 	})
 	if err != nil {
 		fmt.Printf("ACB walk err=%v\n", err)
-		return
+		return false
 	}
 	if empty {
 		fmt.Printf("ACB empty\n")
 	}
+	return found
 }
 
 func (dir *Directory) WithDirectory(
@@ -727,6 +730,21 @@ func (dir *Directory) WithDirectory(
 	owner string,
 ) (*Directory, error) {
 	dir = dir.Clone()
+
+	execInMount(ctx, dir, func(root string) error {
+		if walk(root, "bin/go") {
+			dstFound = true
+		}
+		return nil
+	})
+
+	execInMount(ctx, src, func(root string) error {
+		if walk(root, "bin/go") {
+			srcFound = true
+		}
+		return nil
+	})
+	fmt.Printf("ACB withDirectory dest=%s; dstFound=%v srcFound=%v\n", destDir, dstFound, srcFound)
 
 	destDir = path.Join(dir.Dir, destDir)
 
@@ -815,7 +833,7 @@ func (dir *Directory) WithDirectory(
 				var opts []copy.Opt
 
 				fmt.Printf("ACB copying from %s (resolved to %s) to %s (resolved to %s)\n", srcPath, resolvedSrcPath, destDir, resolvedCopyDest)
-				walk(resolvedSrcPath, "go")
+				walk(resolvedSrcPath, "bin/go")
 
 				opts = append(opts, copy.WithCopyInfo(copy.CopyInfo{
 					AlwaysReplaceExistingDestPaths: true,
