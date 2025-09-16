@@ -31,7 +31,8 @@ import (
 )
 
 const (
-	hashXattrKey = "user.daggerContentHash"
+	hashXattrKey        = "user.daggerContentHash"
+	cacheConcurrencyKey = "y" // arbitrary non-"" value
 )
 
 // localFSSharedState is the state shared between all syncs for a given client
@@ -104,7 +105,7 @@ func newLocalFS(sharedState *localFSSharedState, subdir string, includes, exclud
 //
 // If forParents is true, only the parent directories are synced and no cache ref is returned.
 //
-// To handle concurrent syncs, this relies on the local.g singleflight group:
+// To handle concurrent syncs, this relies on the local.changeCache singleflight group:
 //   - Equivalent operations on the same path running in parallel will be deduped
 //   - The caching of results of mutations saves repeating work and allows us to identify when the client
 //     filesystem is changing in the middle of a sync in such a way that we'd potentially create inconsistent
@@ -151,13 +152,13 @@ func (local *localFS) Sync( //nolint:gocyclo
 
 	eg, egCtx := errgroup.WithContext(ctx)
 
-	// When a file or dir is added, modified, or deleted, we need to apply the change to the local fs. The local.g
+	// When a file or dir is added, modified, or deleted, we need to apply the change to the local fs. The local.changeCache
 	// keeps track of which modifications we have made during this sync on a per-path basis. This is shared between
 	// all syncs to the local fs cache ref. That allows us to both de-dupe equivalent changes and to know when
 	// conflicting changes are being applied (due to the client filesystem changing during this sync), which would
 	// otherwise create inconsistent synced filesystems.
 	//
-	// We need to release all the cache results from local.g once we are done here to indicate that we no longer
+	// We need to release all the cache results from local.changeCache once we are done here to indicate that we no longer
 	// care about any future changes made to the paths we hit during the sync, allowing any future changes made
 	// on the client filesystem to be synced in without a conflict error.
 	var cachedResults []CachedChange
@@ -452,6 +453,14 @@ func (local *localFS) toRootPath(path string) string {
 	return filepath.Join(local.subdir, path)
 }
 
+// the cache key to use for an operation on a given path (where path is relative to local.subdir)
+func (local *localFS) cacheKey(path string) cache.CacheKey[string] {
+	return cache.CacheKey[string]{
+		ResultKey:      local.toRootPath(path),
+		ConcurrencyKey: cacheConcurrencyKey,
+	}
+}
+
 // GetPreviousChange is called when the differ identifies that our cache and the client's filesystem match at this path.
 // We still need to put this into the cacheCtx object we are accumulating so that the path contributes to the content
 // hash.
@@ -463,8 +472,7 @@ func (local *localFS) toRootPath(path string) string {
 //
 // Unlike other methods below, we don't need to verifyExpectedChange since there was no change applied to the path.
 func (local *localFS) GetPreviousChange(ctx context.Context, path string, stat *types.Stat) (CachedChange, error) {
-	rootPath := local.toRootPath(path)
-	return local.changeCache.GetOrInitialize(ctx, rootPath, func(_ context.Context) (*ChangeWithStat, error) {
+	return local.changeCache.GetOrInitialize(ctx, local.cacheKey(path), func(_ context.Context) (*ChangeWithStat, error) {
 		fullPath := local.toFullPath(path)
 
 		isRegular := stat.Mode&uint32(os.ModeType) == 0
@@ -493,7 +501,7 @@ func (local *localFS) GetPreviousChange(ctx context.Context, path string, stat *
 }
 
 func (local *localFS) RemoveAll(ctx context.Context, path string) (CachedChange, error) {
-	appliedChange, err := local.changeCache.GetOrInitialize(ctx, local.toRootPath(path), func(ctx context.Context) (*ChangeWithStat, error) {
+	appliedChange, err := local.changeCache.GetOrInitialize(ctx, local.cacheKey(path), func(ctx context.Context) (*ChangeWithStat, error) {
 		fullPath := local.toFullPath(path)
 		if err := os.RemoveAll(fullPath); err != nil {
 			return nil, err
@@ -512,7 +520,7 @@ func (local *localFS) RemoveAll(ctx context.Context, path string) (CachedChange,
 }
 
 func (local *localFS) Mkdir(ctx context.Context, expectedChangeKind ChangeKind, path string, upperStat *types.Stat) (CachedChange, error) {
-	appliedChange, err := local.changeCache.GetOrInitialize(ctx, local.toRootPath(path), func(ctx context.Context) (*ChangeWithStat, error) {
+	appliedChange, err := local.changeCache.GetOrInitialize(ctx, local.cacheKey(path), func(ctx context.Context) (*ChangeWithStat, error) {
 		fullPath := local.toFullPath(path)
 
 		lowerStat, err := os.Lstat(fullPath)
@@ -559,7 +567,7 @@ func (local *localFS) Mkdir(ctx context.Context, expectedChangeKind ChangeKind, 
 }
 
 func (local *localFS) Symlink(ctx context.Context, expectedChangeKind ChangeKind, path string, upperStat *types.Stat) (CachedChange, error) {
-	appliedChange, err := local.changeCache.GetOrInitialize(ctx, local.toRootPath(path), func(ctx context.Context) (*ChangeWithStat, error) {
+	appliedChange, err := local.changeCache.GetOrInitialize(ctx, local.cacheKey(path), func(ctx context.Context) (*ChangeWithStat, error) {
 		fullPath := local.toFullPath(path)
 
 		lowerStat, err := os.Lstat(fullPath)
@@ -599,7 +607,7 @@ func (local *localFS) Symlink(ctx context.Context, expectedChangeKind ChangeKind
 }
 
 func (local *localFS) Hardlink(ctx context.Context, expectedChangeKind ChangeKind, path string, upperStat *types.Stat) (CachedChange, error) {
-	appliedChange, err := local.changeCache.GetOrInitialize(ctx, local.toRootPath(path), func(ctx context.Context) (*ChangeWithStat, error) {
+	appliedChange, err := local.changeCache.GetOrInitialize(ctx, local.cacheKey(path), func(ctx context.Context) (*ChangeWithStat, error) {
 		fullPath := local.toFullPath(path)
 
 		lowerStat, err := os.Lstat(fullPath)
@@ -646,7 +654,7 @@ var copyBufferPool = &sync.Pool{
 }
 
 func (local *localFS) WriteFile(ctx context.Context, expectedChangeKind ChangeKind, path string, upperStat *types.Stat, upperFS ReadFS) (CachedChange, error) {
-	appliedChange, err := local.changeCache.GetOrInitialize(ctx, local.toRootPath(path), func(ctx context.Context) (*ChangeWithStat, error) {
+	appliedChange, err := local.changeCache.GetOrInitialize(ctx, local.cacheKey(path), func(ctx context.Context) (*ChangeWithStat, error) {
 		reader, err := upperFS.ReadFile(ctx, path)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file %q: %w", path, err)

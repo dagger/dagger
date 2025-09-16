@@ -9,13 +9,13 @@ import (
 type Cache[K comparable, V any] interface {
 	// Using the given key, either return an already cached value for that key or initialize
 	// an entry in the cache with the given value for that key.
-	GetOrInitializeValue(context.Context, K, V) (Result[K, V], error)
+	GetOrInitializeValue(context.Context, CacheKey[K], V) (Result[K, V], error)
 
 	// Using the given key, either return an already cached value for that key or initialize a
 	// new value using the given function. If the function returns an error, the error is returned.
 	GetOrInitialize(
 		context.Context,
-		K,
+		CacheKey[K],
 		func(context.Context) (V, error),
 	) (Result[K, V], error)
 
@@ -25,8 +25,7 @@ type Cache[K comparable, V any] interface {
 	// any additional callbacks for various parts of the cache lifecycle.
 	GetOrInitializeWithCallbacks(
 		context.Context,
-		K,
-		bool,
+		CacheKey[K],
 		func(context.Context) (*ValueWithCallbacks[V], error),
 	) (Result[K, V], error)
 
@@ -39,6 +38,25 @@ type Result[K comparable, V any] interface {
 	Release(context.Context) error
 	PostCall(context.Context) error
 	HitCache() bool
+}
+
+type CacheKey[K comparable] struct {
+	// ResultKey is identifies the completed result of this call. If a call has already
+	// been completed with this ResultKey, its cached result will be returned.
+	//
+	// If ResultKey is the zero value for K, the call will not be cached and will always
+	// run.
+	ResultKey K
+
+	// ConcurrencyKey is used to determine whether *in-progress* calls should be deduplicated.
+	// If a call with a given (ResultKey, ConcurrencyKey) pair is already in progress, and
+	// another one comes in with the same pair, the second caller will wait for the first
+	// to complete and receive the same result.
+	//
+	// If two calls have the same ResultKey but different ConcurrencyKeys, they will not be deduped.
+	//
+	// If ConcurrencyKey is the zero value for K, no deduplication of in-progress calls will be done.
+	ConcurrencyKey K
 }
 
 type PostCallFunc = func(context.Context) error
@@ -61,8 +79,13 @@ func NewCache[K comparable, V any]() Cache[K, V] {
 }
 
 type cache[K comparable, V any] struct {
-	mu             sync.Mutex
-	ongoingCalls   map[K]*result[K, V]
+	mu sync.Mutex
+
+	// calls that are in progress, keyed by a combination of the result key and the concurrency key
+	// two calls with the same result+concurrency key will be "single-flighted" (only one will actually run)
+	ongoingCalls map[CacheKey[K]]*result[K, V]
+
+	// calls that have completed successfully and are cached, keyed just by the result key
 	completedCalls map[K]*result[K, V]
 }
 
@@ -71,7 +94,7 @@ var _ Cache[int, int] = &cache[int, int]{}
 type result[K comparable, V any] struct {
 	cache *cache[K, V]
 
-	key K
+	key CacheKey[K]
 	val V
 	err error
 
@@ -114,7 +137,7 @@ func (c *cache[K, V]) Size() int {
 
 func (c *cache[K, V]) GetOrInitializeValue(
 	ctx context.Context,
-	key K,
+	key CacheKey[K],
 	val V,
 ) (Result[K, V], error) {
 	return c.GetOrInitialize(ctx, key, func(_ context.Context) (V, error) {
@@ -124,10 +147,10 @@ func (c *cache[K, V]) GetOrInitializeValue(
 
 func (c *cache[K, V]) GetOrInitialize(
 	ctx context.Context,
-	key K,
+	key CacheKey[K],
 	fn func(context.Context) (V, error),
 ) (Result[K, V], error) {
-	return c.GetOrInitializeWithCallbacks(ctx, key, false, func(ctx context.Context) (*ValueWithCallbacks[V], error) {
+	return c.GetOrInitializeWithCallbacks(ctx, key, func(ctx context.Context) (*ValueWithCallbacks[V], error) {
 		val, err := fn(ctx)
 		if err != nil {
 			return nil, err
@@ -138,12 +161,11 @@ func (c *cache[K, V]) GetOrInitialize(
 
 func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 	ctx context.Context,
-	key K,
-	skipDedupe bool,
+	key CacheKey[K],
 	fn func(context.Context) (*ValueWithCallbacks[V], error),
 ) (Result[K, V], error) {
 	var zeroKey K
-	if key == zeroKey {
+	if key.ResultKey == zeroKey {
 		// don't cache, don't dedupe calls, just call it
 		valWithCallbacks, err := fn(ctx)
 		if err != nil {
@@ -158,19 +180,19 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 		return res, nil
 	}
 
-	if ctx.Value(cacheContextKey[K, V]{key, c}) != nil {
+	if ctx.Value(cacheContextKey[K, V]{key.ResultKey, c}) != nil {
 		return nil, ErrCacheRecursiveCall
 	}
 
 	c.mu.Lock()
 	if c.ongoingCalls == nil {
-		c.ongoingCalls = make(map[K]*result[K, V])
+		c.ongoingCalls = make(map[CacheKey[K]]*result[K, V])
 	}
 	if c.completedCalls == nil {
 		c.completedCalls = make(map[K]*result[K, V])
 	}
 
-	if res, ok := c.completedCalls[key]; ok {
+	if res, ok := c.completedCalls[key.ResultKey]; ok {
 		res.refCount++
 		c.mu.Unlock()
 		return &perCallResult[K, V]{
@@ -179,17 +201,17 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 		}, nil
 	}
 
-	if !skipDedupe {
+	if key.ConcurrencyKey != zeroKey {
 		if res, ok := c.ongoingCalls[key]; ok {
 			// already an ongoing call
 			res.waiters++
 			c.mu.Unlock()
-			return c.wait(ctx, key, res)
+			return c.wait(ctx, res)
 		}
 	}
 
 	// make a new call with ctx that's only canceled when all caller contexts are canceled
-	callCtx := context.WithValue(ctx, cacheContextKey[K, V]{key, c}, struct{}{})
+	callCtx := context.WithValue(ctx, cacheContextKey[K, V]{key.ResultKey, c}, struct{}{})
 	callCtx, cancel := context.WithCancelCause(context.WithoutCancel(callCtx))
 	res := &result[K, V]{
 		cache: c,
@@ -201,7 +223,7 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 		waiters: 1,
 	}
 
-	if !skipDedupe {
+	if key.ConcurrencyKey != zeroKey {
 		c.ongoingCalls[key] = res
 	}
 
@@ -217,7 +239,7 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 	}()
 
 	c.mu.Unlock()
-	perCallRes, err := c.wait(ctx, key, res)
+	perCallRes, err := c.wait(ctx, res)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +250,7 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 	return perCallRes, nil
 }
 
-func (c *cache[K, V]) wait(ctx context.Context, key K, res *result[K, V]) (*perCallResult[K, V], error) {
+func (c *cache[K, V]) wait(ctx context.Context, res *result[K, V]) (*perCallResult[K, V], error) {
 	var hitCache bool
 	var err error
 
@@ -258,11 +280,11 @@ func (c *cache[K, V]) wait(ctx context.Context, key K, res *result[K, V]) (*perC
 	}
 
 	if err == nil {
-		delete(c.ongoingCalls, key)
-		if existingRes, ok := c.completedCalls[key]; ok {
+		delete(c.ongoingCalls, res.key)
+		if existingRes, ok := c.completedCalls[res.key.ResultKey]; ok {
 			res = existingRes
 		} else {
-			c.completedCalls[key] = res
+			c.completedCalls[res.key.ResultKey] = res
 		}
 
 		res.refCount++
@@ -274,8 +296,8 @@ func (c *cache[K, V]) wait(ctx context.Context, key K, res *result[K, V]) (*perC
 
 	if res.refCount == 0 && res.waiters == 0 {
 		// error happened and no refs left, delete it now
-		delete(c.ongoingCalls, key)
-		delete(c.completedCalls, key)
+		delete(c.ongoingCalls, res.key)
+		delete(c.completedCalls, res.key.ResultKey)
 	}
 	return nil, err
 }
@@ -300,7 +322,7 @@ func (res *result[K, V]) Release(ctx context.Context) error {
 	if res.refCount == 0 && res.waiters == 0 {
 		// no refs left and no one waiting on it, delete from cache
 		delete(res.cache.ongoingCalls, res.key)
-		delete(res.cache.completedCalls, res.key)
+		delete(res.cache.completedCalls, res.key.ResultKey)
 		onRelease = res.onRelease
 	}
 	res.cache.mu.Unlock()
