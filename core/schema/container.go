@@ -1838,7 +1838,7 @@ func (s *containerSchema) withDirectory(ctx context.Context, parent dagql.Object
 		return inst, err
 	}
 
-	ctr, err := parent.Self().WithDirectory(ctx, path, dir.Self(), args.CopyFilter, args.Owner)
+	ctr, err := parent.Self().WithDirectory(ctx, path, dir, args.CopyFilter, args.Owner)
 	if err != nil {
 		return inst, err
 	}

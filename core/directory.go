@@ -765,8 +765,12 @@ func (dir *Directory) WithDirectory(
 				if err != nil {
 					return err
 				}
-				if owner != nil {
-					err = os.Chown(resolvedCopyDest, owner.UID, owner.GID)
+				if owner != "" {
+					ownership, err := parseDirectoryOwner(owner)
+					if err != nil {
+						return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+					}
+					err = os.Chown(resolvedCopyDest, ownership.UID, ownership.GID)
 					if err != nil {
 						return fmt.Errorf("failed to set chown %s: err", resolvedCopyDest)
 					}
@@ -793,8 +797,12 @@ func (dir *Directory) WithDirectory(
 				for _, pattern := range filter.Exclude {
 					opts = append(opts, copy.WithExcludePattern(pattern))
 				}
-				if owner != nil {
-					opts = append(opts, copy.WithChown(owner.UID, owner.GID))
+				if owner != "" {
+					ownership, err := parseDirectoryOwner(owner)
+					if err != nil {
+						return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+					}
+					opts = append(opts, copy.WithChown(ownership.UID, ownership.GID))
 				}
 				if err := copy.Copy(ctx, resolvedSrcPath, ".", resolvedCopyDest, ".", opts...); err != nil {
 					return fmt.Errorf("failed to copy source directory: %w", err)
