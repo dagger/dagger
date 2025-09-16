@@ -288,6 +288,55 @@ func (DirectorySuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (DirectorySuite) TestWithDirectoryUnion(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	dir1 := c.Directory().
+		WithNewFile("some-file", "some-content", dagger.DirectoryWithNewFileOpts{Permissions: 0o777})
+
+	dir2 := c.Directory().
+		WithNewFile("some-other-file", "some-other-content")
+
+	d := c.Directory().
+		WithDirectory("/", dir1).
+		WithDirectory("/", dir2)
+
+	contents, err := d.File("some-file").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-content", contents)
+
+	contents, err = d.File("some-other-file").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-other-content", contents)
+
+	// verify the permissions of some-file
+	ctr := c.Container().From(alpineImage).WithDirectory("/", d)
+
+	stdout, err := ctr.WithExec([]string{"ls", "-l", "/some-file"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stdout, "rwxrwxrwx")
+
+	// update some-file with new content, and verify it is overwritten
+	dir3 := c.Directory().
+		WithNewFile("some-file", "some-updated-content")
+
+	d = d.WithDirectory("/", dir3)
+	contents, err = d.File("some-file").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-updated-content", contents)
+
+	contents, err = d.File("some-other-file").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-other-content", contents)
+
+	// verify the old permissions from the original file do not persist
+	ctr = c.Container().From(alpineImage).WithDirectory("/", d)
+
+	stdout, err = ctr.WithExec([]string{"ls", "-l", "/some-file"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stdout, "-rw-r--r--") // this should be the default of the new some-file
+}
+
 func (DirectorySuite) TestDirectoryFilterIncludeExclude(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
