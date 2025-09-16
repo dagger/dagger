@@ -11,11 +11,13 @@ import (
 	"github.com/muesli/termenv"
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
 	debugBaggageKey   = "debug"
 	noColorBaggageKey = "no-color"
+	globalLogsSpan    = "global-logs-span"
 )
 
 // ContextWithDebugMode enables or disables debug mode in the given context's
@@ -55,6 +57,41 @@ func SpanLogger(ctx context.Context, name string, attrs ...log.KeyValue) *Logger
 		profile,
 		level,
 	)
+}
+
+// ContextWithGlobalSpan makes the current span the target for global logs, by
+// storing it in OpenTelemetry baggage.
+func ContextWithGlobalSpan(ctx context.Context) context.Context {
+	bag := baggage.FromContext(ctx)
+	m, err := baggage.NewMember(globalLogsSpan,
+		trace.SpanContextFromContext(ctx).SpanID().String())
+	if err != nil {
+		// value would have to be invalid, but it ain't
+		panic(err)
+	}
+	bag, err = bag.SetMember(m)
+	if err != nil {
+		// member would have to be invalid, but it ain't
+		panic(err)
+	}
+	return baggage.ContextWithBaggage(ctx, bag)
+}
+
+// GlobalLogger returns a Logger that sends logs to the global span, or the
+// current span if none is configured.
+func GlobalLogger(ctx context.Context, name string, attrs ...log.KeyValue) *Logger {
+	bag := baggage.FromContext(ctx)
+	spanCtx := trace.SpanContextFromContext(ctx)
+	if spanIDHex := bag.Member(globalLogsSpan).Value(); spanIDHex != "" {
+		spanID, err := trace.SpanIDFromHex(spanIDHex)
+		if err != nil {
+			slog.Warn("invalid span ID hex for global logs", "spanIDHex", spanIDHex, "error", err)
+		} else {
+			spanCtx = spanCtx.WithSpanID(spanID)
+			ctx = trace.ContextWithSpanContext(ctx, spanCtx)
+		}
+	}
+	return SpanLogger(ctx, name, attrs...)
 }
 
 func PrettyLogger(dest io.Writer, profile termenv.Profile, level slog.Level) *Logger {
