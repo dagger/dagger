@@ -348,7 +348,7 @@ func (m *Alpine) withPkgs(
 			if err != nil {
 				panic(fmt.Sprintf("failed2 %v\n", err))
 			}
-			fmt.Printf("ACB go size4 is %d (foundgo=%d)\n", size, foundgo)
+			fmt.Printf("ACB go size4 is %d (foundgo=%d)\n", size, foundGo)
 			foundGo++
 		}
 	}
