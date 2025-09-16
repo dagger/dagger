@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/dag"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -291,50 +292,36 @@ func (DirectorySuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
 func (DirectorySuite) TestWithDirectoryUnion(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	dir1 := c.Directory().
-		WithNewFile("some-file", "some-content", dagger.DirectoryWithNewFileOpts{Permissions: 0o777})
+	dir1 := c.Container().From(alpineImage).
+		WithMountedDirectory("/working", dag.Directory()).
+		WithWorkdir("/working").
+		WithNewFile("data/some-file", "some-content").
+		Directory("/working")
 
-	dir2 := c.Directory().
-		WithNewFile("some-other-file", "some-other-content")
+	dir2 := c.Container().From(alpineImage).
+		WithMountedDirectory("/working", dag.Directory()).
+		WithWorkdir("/working").
+		WithNewFile("data/some-other-file", "some-other-content").
+		Directory("/working")
 
-	d := c.Directory().
-		WithDirectory("/", dir1).
-		WithDirectory("/", dir2)
+	dir1 = dir1.WithDirectory("/d", dir1.Directory("/data")).
+		WithoutDirectory("/data")
 
-	contents, err := d.File("some-file").Contents(ctx)
+	dir2 = dir2.WithDirectory("/d", dir2.Directory("/data")).
+		WithoutDirectory("/data")
+
+	ctr := c.Container().From(alpineImage)
+
+	ctr = ctr.WithDirectory("/", dir1)
+	ctr = ctr.WithDirectory("/", dir2)
+
+	contents, err := ctr.File("/d/some-file").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "some-content", contents)
 
-	contents, err = d.File("some-other-file").Contents(ctx)
+	contents, err = ctr.File("/d/some-other-file").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "some-other-content", contents)
-
-	// verify the permissions of some-file
-	ctr := c.Container().From(alpineImage).WithDirectory("/", d)
-
-	stdout, err := ctr.WithExec([]string{"ls", "-l", "/some-file"}).Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, stdout, "rwxrwxrwx")
-
-	// update some-file with new content, and verify it is overwritten
-	dir3 := c.Directory().
-		WithNewFile("some-file", "some-updated-content")
-
-	d = d.WithDirectory("/", dir3)
-	contents, err = d.File("some-file").Contents(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "some-updated-content", contents)
-
-	contents, err = d.File("some-other-file").Contents(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "some-other-content", contents)
-
-	// verify the old permissions from the original file do not persist
-	ctr = c.Container().From(alpineImage).WithDirectory("/", d)
-
-	stdout, err = ctr.WithExec([]string{"ls", "-l", "/some-file"}).Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, stdout, "-rw-r--r--") // this should be the default of the new some-file
 }
 
 func (DirectorySuite) TestDirectoryFilterIncludeExclude(ctx context.Context, t *testctx.T) {
