@@ -308,7 +308,7 @@ func (m *Alpine) withPkgs(
 					if err != nil {
 						panic(fmt.Sprintf("failed2 %v\n", err))
 					}
-					fmt.Printf("ACB go size2 is %d\n", size)
+					fmt.Printf("ACB go size3 is %d\n", size)
 				}
 			}
 
@@ -342,11 +342,11 @@ func (m *Alpine) withPkgs(
 
 		if strings.HasPrefix(pkg.name, "go-") {
 			fmt.Printf("ACB found go here\n")
-			//out, err := unpacked.WithExec([]string{"sh", "-c", "find /out && ls -la /out/usr/bin/go && ls -la /out/usr/lib/go/bin/go && echo ACB DONE HERE && false"}).Stdout(ctx)
-			//if err != nil {
-			//	panic(fmt.Sprintf("failed to get go size %v\n", err))
-			//}
-			//fmt.Printf("WAT %s\n", out)
+			size, err := ctr.File("/usr/lib/go/bin/go").Size(ctx)
+			if err != nil {
+				panic(fmt.Sprintf("failed2 %v\n", err))
+			}
+			fmt.Printf("ACB go size4 is %d\n", size)
 		}
 	}
 
