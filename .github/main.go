@@ -315,7 +315,7 @@ func (ci *CI) withEvalsWorkflow() *CI {
 		},
 	}).WithJob(gha.Job(
 		"testdev",
-		"check",
+		"--allow-llm github.com/dagger/dagger/modules/evals check",
 		dagger.GhaJobOpts{
 			Module:    module("modules/evals"),
 			DaggerDev: "${{ github.sha }}", // testdev, so run against local dagger

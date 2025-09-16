@@ -182,7 +182,7 @@ jobs:
                 cat $tmp/stdout.txt
                 exit $EXIT_CODE
               env:
-                COMMAND: dagger call check
+                COMMAND: dagger call --allow-llm github.com/dagger/dagger/modules/evals check
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 DAGGER_MODULE: github.com/${{ github.repository }}/modules/evals@${{ github.sha }}
                 DOTENV: |-
