@@ -106,6 +106,19 @@ func (PHPSuite) TestDefaultValue(_ context.Context, t *testctx.T) {
 	})
 }
 
+func (PHPSuite) TestEnumKind(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	module := phpModule(t, c, "enum-kind")
+
+	t.Run("built-in", func(ctx context.Context, t *testctx.T) {
+		out, err := module.
+			With(daggerCall("opposite-network-protocol", "--arg=TCP")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "UDP", out)
+	})
+}
+
 func (PHPSuite) TestScalarKind(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	module := phpModule(t, c, "scalar-kind")

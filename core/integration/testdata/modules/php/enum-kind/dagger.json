@@ -1,0 +1,7 @@
+{
+  "name": "enum-kind",
+  "engineVersion": "v0.18.7",
+  "sdk": {
+    "source": "../../sdk/php"
+  }
+}
