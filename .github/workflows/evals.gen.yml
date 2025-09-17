@@ -1,12 +1,7 @@
 # This file was generated. See https://daggerverse.dev/mod/github.com/dagger/dagger/modules/gha
 name: evals
 "on":
-    pull_request:
-        types:
-            - opened
-            - reopened
-            - synchronize
-            - ready_for_review
+    push:
         paths:
             - core/llm.go
             - core/mcp.go
@@ -19,7 +14,7 @@ name: evals
     workflow_dispatch: {}
 jobs:
     testdev:
-        if: ${{ github.repository == 'dagger/dagger' }}
+        if: ${{ (github.repository == 'dagger/dagger') && (github.actor != 'dependabot[bot]') }}
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
         name: testdev
