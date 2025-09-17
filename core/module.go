@@ -91,16 +91,16 @@ func debugSpan(ctx context.Context, msg string, args ...any) {
 }
 
 // Apply default arguments loaded from a local env file, not from the module's schema
-func (mod *Module) ApplyLocalDefaults(ctx context.Context, defaults *EnvFile) error {
+func (mod *Module) MergeDefaults(ctx context.Context, defaults *EnvFile) error {
 	debugSpan(ctx, "%q: applying defaults %v", mod.GetSource().AsString(), defaults.Environ)
 	for _, typeDef := range mod.ObjectDefs {
 		if typeDef.AsObject.Valid {
 			objType := typeDef.AsObject.Value
 			objName := objType.OriginalName
 			// Apply defaults matching explicit type prefix: `MYTYPE_FOO=BAR` -> `FOO=BAR`
-			objDefaults := defaults.FilterPrefix(objName)
+			objDefaults := defaults.LookupPrefix(objName)
 			debugSpan(ctx, "module=%q object=%q applying defaults=%v", mod.Name(), objName, objDefaults.Environ)
-			if err := objType.ApplyLocalDefaults(ctx, objDefaults); err != nil {
+			if err := objType.MergeDefaults(ctx, objDefaults); err != nil {
 				return fmt.Errorf("failed to apply local defaults to type %q of module %q: %w", objType.Name, mod.Name(), err)
 			}
 			// FIXME: naive comparison, has false positives,
@@ -108,7 +108,7 @@ func (mod *Module) ApplyLocalDefaults(ctx context.Context, defaults *EnvFile) er
 			// Main object? Apply defaults without prefix
 			if strings.EqualFold(objName, strings.ReplaceAll(mod.Name(), "-", "")) {
 				debugSpan(ctx, "module=%q object=%q applying defaults=%v", mod.Name(), objName, defaults.Environ)
-				if err := objType.ApplyLocalDefaults(ctx, defaults); err != nil {
+				if err := objType.MergeDefaults(ctx, defaults); err != nil {
 					return fmt.Errorf("failed to apply local defaults to entrypoint type %q of module %q: %w", objType.Name, mod.Name(), err)
 				}
 			}

@@ -2448,12 +2448,12 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		// NOTE: we don't change OriginalName, that's used internally at runtime
 		mod.NameField = originalSrc.Self().ModuleName
 		// Apply defaults using the blueprint name
-		if err := mod.ApplyLocalDefaults(ctx, envFile.FilterPrefix(bp.ModuleName)); err != nil {
+		if err := mod.MergeDefaults(ctx, envFile.LookupPrefix(bp.ModuleName)); err != nil {
 			return inst, fmt.Errorf("failed to apply local defaults for %q from %q: %w", bp.ModuleName, envFilePath, err)
 		}
 	}
 	// Always apply defaults using the original name
-	if err := mod.ApplyLocalDefaults(ctx, envFile.FilterPrefix(mod.Name())); err != nil {
+	if err := mod.MergeDefaults(ctx, envFile.LookupPrefix(mod.Name())); err != nil {
 		return inst, fmt.Errorf("failed to apply local defaults for %q from %q: %w", mod.Name(), envFilePath, err)
 	}
 
@@ -2467,7 +2467,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 			return inst, fmt.Errorf("failed to load .env from %q: %w", src.AsString(), err)
 		}
 		debugSpan(ctx, "DEBUG: searching for .env in %q returned %q", src.ModuleName, modEnvFilePath)
-		if err := mod.ApplyLocalDefaults(ctx, modEnvFile); err != nil {
+		if err := mod.MergeDefaults(ctx, modEnvFile); err != nil {
 			debugSpan(ctx, "DEBUG: apply local defaults from %q: %#v", modEnvFilePath, modEnvFile.Variables())
 			return inst, fmt.Errorf("failed to apply local defaults for %q from %q: %w", mod.Name(), modEnvFilePath, err)
 		}

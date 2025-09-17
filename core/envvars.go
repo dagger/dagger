@@ -121,7 +121,7 @@ func (ef *EnvFile) Variables() []EnvVariable {
 //
 // Note: case-insensitive search will be needed to match the resulting variables
 // against variable names
-func (ef *EnvFile) FilterPrefix(prefix string) *EnvFile {
+func (ef *EnvFile) LookupPrefix(prefix string) *EnvFile {
 	result := &EnvFile{
 		Expand: ef.Expand,
 	}

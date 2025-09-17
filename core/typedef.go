@@ -210,7 +210,7 @@ func (fn *Function) LookupArg(nameAnyCase string) (*FunctionArg, bool) {
 	return nil, false
 }
 
-func (fn *Function) ApplyLocalDefaults(ctx context.Context, defaults *EnvFile) error {
+func (fn *Function) MergeDefaults(ctx context.Context, defaults *EnvFile) error {
 	for _, arg := range fn.Args {
 		if prettyValue, found := defaults.LookupCaseInsensitive(arg.Name); found {
 			debugSpan(ctx, "MATCH! argument %q of function %q: applying default %q", arg.Name, fn.Name, prettyValue)
@@ -229,7 +229,7 @@ func (fn *Function) ApplyLocalDefaults(ctx context.Context, defaults *EnvFile) e
 				}
 			case TypeDefKindObject:
 				srv := dagql.CurrentDagqlServer(ctx)
-				// eg. "secret", "gitRef", "directory"...
+				// "Secret" -> "secret", "GitRef" -> "gitRef", etc
 				typename := arg.TypeDef.ToType().Name()
 				typename = strings.ToLower(typename[0:1]) + typename[1:]
 				var result dagql.AnyResult
@@ -854,18 +854,18 @@ func (obj *ObjectTypeDef) IsSubtypeOf(iface *InterfaceTypeDef) bool {
 	return true
 }
 
-func (obj *ObjectTypeDef) ApplyLocalDefaults(ctx context.Context, defaults *EnvFile) error {
+func (obj *ObjectTypeDef) MergeDefaults(ctx context.Context, defaults *EnvFile) error {
 	debugSpan(ctx, "object %q: applying defaults %v", obj.Name, defaults.Environ)
 	if constructor := obj.Constructor.Value; constructor != nil {
 		debugSpan(ctx, "constructor of object %q: applying defaults %v", obj.Name, defaults.Environ)
-		if err := constructor.ApplyLocalDefaults(ctx, defaults); err != nil {
+		if err := constructor.MergeDefaults(ctx, defaults); err != nil {
 			return fmt.Errorf("failed to apply local defaults to constructor of type %q: %w", obj.Name, err)
 		}
 	}
 	for _, fn := range obj.Functions {
-		fnDefaults := defaults.FilterPrefix(fn.Name)
+		fnDefaults := defaults.LookupPrefix(fn.Name)
 		debugSpan(ctx, "function %q of object %q: applying defaults %v", fn.Name, obj.Name, fnDefaults.Environ)
-		if err := fn.ApplyLocalDefaults(ctx, fnDefaults); err != nil {
+		if err := fn.MergeDefaults(ctx, fnDefaults); err != nil {
 			return fmt.Errorf("failed to apply local defaults to function %q of type %q: %w", fn.Name, obj.Name, err)
 		}
 	}
