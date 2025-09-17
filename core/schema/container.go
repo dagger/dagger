@@ -26,6 +26,7 @@ import (
 	"github.com/moby/buildkit/client/llb/sourceresolver"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -404,7 +405,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
 
-		dagql.Func("withDirectory", s.withDirectory).
+		dagql.NodeFuncWithCacheKey("withDirectory", s.withDirectory, s.withDirectoryCacheKey).
 			Doc(`Return a new container snapshot, with a directory added to its filesystem`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the written directory (e.g., "/tmp/directory").`),
@@ -1765,23 +1766,107 @@ type containerWithDirectoryArgs struct {
 	Expand bool   `default:"false"`
 }
 
-func (s *containerSchema) withDirectory(ctx context.Context, parent *core.Container, args containerWithDirectoryArgs) (*core.Container, error) {
+func (s *containerSchema) withDirectoryCacheKey(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithDirectoryArgs, cacheCfg dagql.CacheConfig) (cc *dagql.CacheConfig, err error) {
+
+	hereStr := "top"
+
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("got an panic after %s: %v", hereStr, r)
+		}
+	}()
+	argDigest, err := core.DigestOf(args)
+	if err != nil {
+		return nil, err
+	}
+	_ = argDigest
+
+	hereStr = "here1"
+
+	//doLoad := true
+	//var dirDigest digest.Digest
+	//if doLoad {
+	//	srv, err := core.CurrentDagqlServer(ctx)
+	//	if err != nil {
+	//		return nil, fmt.Errorf("failed to get server: %w", err)
+	//	}
+	//	_ = srv
+	//	dir, err := args.Directory.Load(ctx, srv)
+	//	if err != nil {
+	//		return nil, err
+	//	}
+
+	//	// dirDigest, err = core.DigestOf(dir.Self().WithoutInputs())
+	//	// if err != nil {
+	//	// 	return nil, err
+	//	// }
+
+	//	dirDigestStr, err := dir.Self().Digest(ctx) // NOTE dir.Self().WithoutInputs().Digest(ctx) fails
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//	dirDigest = digest.Digest(dirDigestStr)
+	//}
+
+	ctrDigest, err := core.DigestOf(parent.Self()) // Self().WithoutInputs()
+	if err != nil {
+		return nil, err
+	}
+
+	hereStr = "here2"
+
+	dirID := args.Directory.ID().Digest()
+	hereStr = "here3"
+	dirStr := args.Directory.String()
+	fmt.Printf("ACB args.Directory is str=%s idDigest=%s\n", dirStr, dirID)
+
+	hereStr = "here4"
+	cacheCfg.Digest = dagql.HashFrom(
+		string(ctrDigest),
+		string(argDigest),
+		string(args.Path),
+		string(args.Directory.ID().Digest()),
+
+		string(fmt.Sprintf("hack %v %v", time.Now(), identity.NewID())),
+	)
+	hereStr = "end"
+	return &cacheCfg, nil
+}
+
+func (s *containerSchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithDirectoryArgs) (inst dagql.ObjectResult[*core.Container], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get server: %w", err)
+		return inst, fmt.Errorf("failed to get server: %w", err)
+	}
+
+	if !args.IsDagOp {
+		ctr := parent.Self().Clone()
+		ctr.Meta = nil
+		ctr, err := DagOpContainer(ctx, srv, ctr, args, s.withDirectory)
+		if err != nil {
+			return inst, err
+		}
+
+		ctr.ImageRef = ""
+		return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
 	}
 
 	dir, err := args.Directory.Load(ctx, srv)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
-	path, err := expandEnvVar(ctx, parent, args.Path, args.Expand)
+	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
-	return parent.WithDirectory(ctx, path, dir, args.CopyFilter, args.Owner)
+	ctr, err := parent.Self().WithDirectory(ctx, path, dir, args.CopyFilter, args.Owner)
+	if err != nil {
+		return inst, err
+	}
+
+	return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
 }
 
 type containerWithFileArgs struct {

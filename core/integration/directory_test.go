@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/dag"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -286,6 +287,41 @@ func (DirectorySuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Contains(t, stdout, "-r--r--r--")
 	})
+}
+
+func (DirectorySuite) TestWithDirectoryUnion(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	dir1 := c.Container().From(alpineImage).
+		WithMountedDirectory("/working", dag.Directory()).
+		WithWorkdir("/working").
+		WithNewFile("data/some-file", "some-content").
+		Directory("/working")
+
+	dir2 := c.Container().From(alpineImage).
+		WithMountedDirectory("/working", dag.Directory()).
+		WithWorkdir("/working").
+		WithNewFile("data/some-other-file", "some-other-content").
+		Directory("/working")
+
+	dir1 = dir1.WithDirectory("/d", dir1.Directory("/data")).
+		WithoutDirectory("/data")
+
+	dir2 = dir2.WithDirectory("/d", dir2.Directory("/data")).
+		WithoutDirectory("/data")
+
+	ctr := c.Container().From(alpineImage)
+
+	ctr = ctr.WithDirectory("/", dir1)
+	ctr = ctr.WithDirectory("/", dir2)
+
+	contents, err := ctr.File("/d/some-file").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-content", contents)
+
+	contents, err = ctr.File("/d/some-other-file").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-other-content", contents)
 }
 
 func (DirectorySuite) TestDirectoryFilterIncludeExclude(ctx context.Context, t *testctx.T) {
