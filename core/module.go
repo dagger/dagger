@@ -96,13 +96,18 @@ func (mod *Module) ApplyLocalDefaults(ctx context.Context, defaults *EnvFile) er
 	for _, typeDef := range mod.ObjectDefs {
 		if typeDef.AsObject.Valid {
 			objType := typeDef.AsObject.Value
-			objDefaults := defaults.FilterPrefix(objType.Name)
+			objName := objType.OriginalName
+			// Apply defaults matching explicit type prefix: `MYTYPE_FOO=BAR` -> `FOO=BAR`
+			objDefaults := defaults.FilterPrefix(objName)
+			debugSpan(ctx, "module=%q object=%q applying defaults=%v", mod.Name(), objName, objDefaults.Environ)
 			if err := objType.ApplyLocalDefaults(ctx, objDefaults); err != nil {
 				return fmt.Errorf("failed to apply local defaults to type %q of module %q: %w", objType.Name, mod.Name(), err)
 			}
 			// FIXME: naive comparison, has false positives,
 			// for example module name 'dagger-dev'<->object name 'DaggerDev'
-			if objType.OriginalName == mod.OriginalName {
+			// Main object? Apply defaults without prefix
+			if strings.EqualFold(objName, strings.ReplaceAll(mod.Name(), "-", "")) {
+				debugSpan(ctx, "module=%q object=%q applying defaults=%v", mod.Name(), objName, defaults.Environ)
 				if err := objType.ApplyLocalDefaults(ctx, defaults); err != nil {
 					return fmt.Errorf("failed to apply local defaults to entrypoint type %q of module %q: %w", objType.Name, mod.Name(), err)
 				}
