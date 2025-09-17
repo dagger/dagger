@@ -45,6 +45,13 @@ func (r *Ref) ShortName() string {
 	return r.Name
 }
 
+func (r *Ref) Digest() digest.Digest {
+	return digest.FromString(strings.Join([]string{
+		r.Name,
+		r.SHA,
+	}, "\x00"))
+}
+
 func (cli *GitCLI) LsRemote(ctx context.Context, remote string) (*Remote, error) {
 	out, err := cli.Run(ctx,
 		"ls-remote",
@@ -145,6 +152,14 @@ func (remote *Remote) Filter(patterns []string) *Remote {
 		}
 	}
 	return remote.withRefs(refs)
+}
+
+func (remote *Remote) ShortNames() []string {
+	names := make([]string, len(remote.Refs))
+	for i, ref := range remote.Refs {
+		names[i] = ref.ShortName()
+	}
+	return names
 }
 
 func (remote *Remote) Lookup(target string) (*Ref, error) {
