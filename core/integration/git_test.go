@@ -592,6 +592,71 @@ func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (GitSuite) TestGitCheckedTags(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	requireGitTagsExist := func(t *testctx.T, git *dagger.GitRef) {
+		ctr := c.Container().
+			From("alpine").
+			WithExec([]string{"apk", "add", "git"}).
+			WithWorkdir("/src").
+			WithMountedDirectory(".", git.Tree(dagger.GitRefTreeOpts{Depth: -1}))
+
+			// check tag existence
+		out, err := ctr.WithExec([]string{"git", "tag", "-l"}).Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.Split(strings.TrimSpace(out), "\n")
+		require.Contains(t, lines, "v0.11.8", "v0.11.8 was tagged on main")
+		require.NotContains(t, lines, "v0.11.9", "v0.11.9 was tagged off a branch, so shouldn't appear")
+
+		// make sure no dangling tmp refs exist
+		// (internal impl detail, but good to check they don't leak out)
+		out, err = ctr.WithExec([]string{"git", "ls-remote", "file:///src"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, out, "dagger.tmp")
+	}
+
+	runCheckedTags := func(t *testctx.T, git *dagger.GitRepository, desc string) {
+		t.Run(desc+"/branch", func(ctx context.Context, t *testctx.T) {
+			requireGitTagsExist(t, git.Branch("main"))
+		})
+
+		t.Run(desc+"/tag", func(ctx context.Context, t *testctx.T) {
+			requireGitTagsExist(t, git.Tag("v0.12.0"))
+		})
+
+		t.Run(desc+"/commit", func(ctx context.Context, t *testctx.T) {
+			// v0.12.0 => 133917c6f9ce36d8cfdc595d9b7bd2c14cbc2c20
+			requireGitTagsExist(t, git.Commit("133917c6f9ce36d8cfdc595d9b7bd2c14cbc2c20"))
+		})
+
+		t.Run(desc+"/head", func(ctx context.Context, t *testctx.T) {
+			requireGitTagsExist(t, git.Head())
+		})
+	}
+
+	remotes := []*dagger.GitRepository{
+		c.Git("https://github.com/dagger/dagger.git"),
+	}
+
+	localClone := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "clone", "https://github.com/dagger/dagger", "."}).
+		Directory(".")
+
+	remotes = append(remotes, localClone.AsGit())
+
+	for i, git := range remotes {
+		desc := "remote"
+		if i == 1 {
+			desc = "local AsGit"
+		}
+		runCheckedTags(t, git, desc)
+	}
+}
+
 func (GitSuite) TestGitTagsSSH(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
