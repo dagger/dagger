@@ -1765,12 +1765,22 @@ type containerWithDirectoryArgs struct {
 	Expand bool   `default:"false"`
 }
 
-func (s *containerSchema) withDirectoryCacheKey(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithDirectoryArgs, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
+func (s *containerSchema) withDirectoryCacheKey(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithDirectoryArgs, cacheCfg dagql.CacheConfig) (cc *dagql.CacheConfig, err error) {
+
+	hereStr := "top"
+
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("got an panic after %s: %v", hereStr, r)
+		}
+	}()
 	argDigest, err := core.DigestOf(args)
 	if err != nil {
 		return nil, err
 	}
 	_ = argDigest
+
+	hereStr = "here1"
 
 	//doLoad := true
 	//var dirDigest digest.Digest
@@ -1802,10 +1812,14 @@ func (s *containerSchema) withDirectoryCacheKey(ctx context.Context, parent dagq
 		return nil, err
 	}
 
+	hereStr = "here2"
+
 	dirID := args.Directory.ID().Digest()
+	hereStr = "here3"
 	dirStr := args.Directory.String()
 	fmt.Printf("ACB args.Directory is str=%s idDigest=%s\n", dirStr, dirID)
 
+	hereStr = "here4"
 	cacheCfg.Digest = dagql.HashFrom(
 		string(ctrDigest),
 		string(argDigest),
@@ -1814,6 +1828,7 @@ func (s *containerSchema) withDirectoryCacheKey(ctx context.Context, parent dagq
 
 		//string(fmt.Sprintf("hack %v %v", time.Now(), identity.NewID())),
 	)
+	hereStr = "end"
 	return &cacheCfg, nil
 }
 
