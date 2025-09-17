@@ -69,6 +69,8 @@ export class Registry {
   /**
    * The definition of the @enum decorator that should be on top of any
    * class module that must be exposed to the Dagger API as enumeration.
+   *
+   * @deprecated In favor of using TypeScript `enum` types.
    */
   enumType = (): (<T extends Class>(constructor: T) => T) => {
     return <T extends Class>(constructor: T): T => {
