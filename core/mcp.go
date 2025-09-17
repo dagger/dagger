@@ -26,6 +26,7 @@ import (
 	"github.com/iancoleman/strcase"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/opencontainers/go-digest"
+	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
@@ -47,6 +48,8 @@ type LLMTool struct {
 	// Whether the tool schema is strict.
 	// https://platform.openai.com/docs/guides/structured-outputs?api-mode=chat
 	Strict bool `json:"-"`
+	// Whether the tool is read-only (from MCP ReadOnlyHint annotation)
+	ReadOnly bool `json:"-"`
 	// GraphQL API field that this tool corresponds to
 	Field *ast.FieldDefinition `json:"-"`
 	// Function implementing the tool.
@@ -292,11 +295,16 @@ func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
 			if err != nil {
 				return nil, err
 			}
+
+			// Check if the tool is read-only from MCP annotations
+			isReadOnly := tool.Annotations != nil && tool.Annotations.ReadOnlyHint
+
 			tools = append(tools, LLMTool{
 				Name:        name + "_" + tool.Name,
 				Server:      name,
 				Description: tool.Description,
 				Schema:      anied,
+				ReadOnly:    isReadOnly,
 				Call: func(ctx context.Context, args any) (any, error) {
 					mcpSrv, ok := m.mcpServers[name]
 					if !ok {
@@ -308,7 +316,7 @@ func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
 
 					var res *mcp.CallToolResult
 					if ctr.Config.WorkingDir == "" || ctr.Config.WorkingDir == "/" {
-						// Container has no workdir, play it safe and just call the tool
+						// Container has no workdir, just call the tool directly
 						res, err = sess.CallTool(ctx, &mcp.CallToolParams{
 							Name:      tool.Name,
 							Arguments: args,
@@ -317,29 +325,14 @@ func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
 							return nil, fmt.Errorf("call tool %q on mcp %q: %w", tool.Name, name, err)
 						}
 					} else {
-						// If the container has a working directory, sync the workspace to it
-						// and snapshot any changes it makes
-						snapshot, hasChanges, err := mcpSrv.Service.Self().runAndSnapshotChanges(
-							ctx,
-							sess.ID(), // container id
-							ctr.Config.WorkingDir,
-							m.env.Self().Workspace.Self(),
-							func() error {
-								var err error
-								res, err = sess.CallTool(ctx, &mcp.CallToolParams{
-									Name:      tool.Name,
-									Arguments: args,
-								})
-								return err
-							})
+						// For containers with working directories, the tool expects the workspace
+						// to already be synced by the batch call mechanism. Just call the tool.
+						res, err = sess.CallTool(ctx, &mcp.CallToolParams{
+							Name:      tool.Name,
+							Arguments: args,
+						})
 						if err != nil {
-							return nil, fmt.Errorf("remount workspace for mcp %q: %w", name, err)
-						}
-						if hasChanges {
-							// If the tool modified the workspace, update the Env.workspace
-							if err := m.updateEnvWorkspace(ctx, snapshot); err != nil {
-								return nil, fmt.Errorf("update workspace for mcp %q: %w", name, err)
-							}
+							return nil, fmt.Errorf("call tool %q on mcp %q: %w", tool.Name, name, err)
 						}
 					}
 
@@ -1051,6 +1044,127 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 		}
 		return string(jsonBytes), false
 	}
+}
+
+// CallBatch executes a batch of tool calls, handling MCP server syncing efficiently by
+// grouping calls by destructiveness and server to avoid workspace conflicts
+func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToolCall) []*ModelMessage {
+	// Group tool calls by their characteristics
+	readOnlyMCPCalls := make(map[string][]LLMToolCall)    // server -> read-only calls
+	destructiveMCPCalls := make(map[string][]LLMToolCall) // server -> destructive calls
+	regularCalls := make([]LLMToolCall, 0)
+
+	// Build a lookup map for tools
+	toolMap := make(map[string]*LLMTool)
+	for i := range tools {
+		toolMap[tools[i].Name] = &tools[i]
+	}
+
+	for _, toolCall := range toolCalls {
+		tool := toolMap[toolCall.Function.Name]
+		if tool == nil || tool.Server == "" {
+			// Regular tool call (not MCP)
+			regularCalls = append(regularCalls, toolCall)
+			continue
+		}
+
+		// This is an MCP tool call - check if it's read-only using the stored field
+		if tool.ReadOnly {
+			readOnlyMCPCalls[tool.Server] = append(readOnlyMCPCalls[tool.Server], toolCall)
+		} else {
+			destructiveMCPCalls[tool.Server] = append(destructiveMCPCalls[tool.Server], toolCall)
+		}
+	}
+
+	var allResults []*ModelMessage
+
+	// 1. Execute all regular (non-MCP) calls in parallel
+	if len(regularCalls) > 0 {
+		allResults = append(allResults, m.callBatchRegular(ctx, tools, regularCalls)...)
+	}
+
+	// 2. Execute all read-only MCP calls in parallel (safe across servers)
+	var readOnlyToolCalls []LLMToolCall
+	for _, calls := range readOnlyMCPCalls {
+		readOnlyToolCalls = append(readOnlyToolCalls, calls...)
+	}
+	if len(readOnlyToolCalls) > 0 {
+		allResults = append(allResults, m.callBatchRegular(ctx, tools, readOnlyToolCalls)...)
+	}
+
+	// 3. Execute destructive MCP calls one server at a time to avoid workspace conflicts
+	for serverName, calls := range destructiveMCPCalls {
+		serverResults := m.callBatchMCPServer(ctx, tools, calls, serverName)
+		allResults = append(allResults, serverResults...)
+	}
+
+	return allResults
+}
+
+// callBatchMCPServer executes a batch of calls for a single MCP server with proper workspace syncing
+func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls []LLMToolCall, serverName string) []*ModelMessage {
+	mcpSrv, ok := m.mcpServers[serverName]
+	if !ok {
+		// Fall back to individual calls if server not found
+		return m.callBatchRegular(ctx, tools, toolCalls)
+	}
+
+	sess, ok := m.mcpSessions[serverName]
+	if !ok {
+		// Fall back to individual calls if session not found
+		return m.callBatchRegular(ctx, tools, toolCalls)
+	}
+
+	ctr := mcpSrv.Service.Self().Container
+	if ctr.Config.WorkingDir == "" || ctr.Config.WorkingDir == "/" {
+		// No workspace syncing needed - execute normally
+		return m.callBatchRegular(ctx, tools, toolCalls)
+	}
+
+	// Use runAndSnapshotChanges to sync workspace and execute all tool calls atomically
+	var results []*ModelMessage
+	snapshot, hasChanges, err := mcpSrv.Service.Self().runAndSnapshotChanges(
+		ctx,
+		sess.ID(),
+		ctr.Config.WorkingDir,
+		m.env.Self().Workspace.Self(),
+		func() error {
+			// Execute all tool calls for this server in parallel within the synced context
+			results = m.callBatchRegular(ctx, tools, toolCalls)
+			return nil
+		})
+
+	if err != nil {
+		// Fall back to individual calls if sync fails
+		return m.callBatchRegular(ctx, tools, toolCalls)
+	}
+
+	// Apply workspace changes if any were made
+	if hasChanges {
+		if err := m.updateEnvWorkspace(ctx, snapshot); err != nil {
+			slog.Error("failed to update workspace after MCP server batch", "server", serverName, "error", err)
+		}
+	}
+
+	return results
+}
+
+// callBatchRegular is the original parallel execution logic without MCP-specific syncing
+func (m *MCP) callBatchRegular(ctx context.Context, tools []LLMTool, toolCalls []LLMToolCall) []*ModelMessage {
+	// Run tool calls in parallel using the existing pool logic
+	toolCallsPool := pool.NewWithResults[*ModelMessage]()
+	for _, toolCall := range toolCalls {
+		toolCallsPool.Go(func() *ModelMessage {
+			content, isError := m.Call(ctx, tools, toolCall)
+			return &ModelMessage{
+				Role:        "user", // Anthropic only allows tool call results in user messages
+				Content:     content,
+				ToolCallID:  toolCall.ID,
+				ToolErrored: isError,
+			}
+		})
+	}
+	return toolCallsPool.Wait()
 }
 
 // sync this with idtui.llmLogsLastLines to ensure user and LLM sees the same
