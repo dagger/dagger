@@ -3,7 +3,7 @@ syntax = "proto3";
 package moby.buildkit.v1.types;
 
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
-import "github.com/dagger/dagger/internal/buildkit/solver/pb/ops.proto";
+import "internal/buildkit/solver/pb/ops.proto";
 
 option (gogoproto.sizer_all) = true;
 option (gogoproto.marshaler_all) = true;

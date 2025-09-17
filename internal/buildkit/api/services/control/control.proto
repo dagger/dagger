@@ -5,9 +5,9 @@ package moby.buildkit.v1;
 // import "github.com/containerd/containerd/api/types/descriptor.proto";
 import "github.com/gogo/googleapis/google/rpc/status.proto";
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
-import "github.com/dagger/dagger/internal/buildkit/api/types/worker.proto";
-import "github.com/dagger/dagger/internal/buildkit/solver/pb/ops.proto";
-import "github.com/dagger/dagger/internal/buildkit/sourcepolicy/pb/policy.proto";
+import "internal/buildkit/api/types/worker.proto";
+import "internal/buildkit/solver/pb/ops.proto";
+import "internal/buildkit/sourcepolicy/pb/policy.proto";
 import "google/protobuf/timestamp.proto";
 
 option (gogoproto.sizer_all) = true;

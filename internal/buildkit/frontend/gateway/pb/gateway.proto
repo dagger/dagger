@@ -4,10 +4,10 @@ package moby.buildkit.v1.frontend;
 
 import "github.com/gogo/googleapis/google/rpc/status.proto";
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
-import "github.com/dagger/dagger/internal/buildkit/api/types/worker.proto";
-import "github.com/dagger/dagger/internal/buildkit/solver/pb/ops.proto";
-import "github.com/dagger/dagger/internal/buildkit/sourcepolicy/pb/policy.proto";
-import "github.com/dagger/dagger/internal/buildkit/util/apicaps/pb/caps.proto";
+import "internal/buildkit/api/types/worker.proto";
+import "internal/buildkit/solver/pb/ops.proto";
+import "internal/buildkit/sourcepolicy/pb/policy.proto";
+import "internal/buildkit/util/apicaps/pb/caps.proto";
 import "github.com/tonistiigi/fsutil/types/stat.proto";
 
 option (gogoproto.sizer_all) = true;

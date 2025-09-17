@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package errdefs;
 
-import "github.com/dagger/dagger/internal/buildkit/solver/pb/ops.proto";
+import "internal/buildkit/solver/pb/ops.proto";
 
 message Vertex {
 	string digest = 1;
