@@ -979,11 +979,32 @@ func (m *MCP) BlockFunction(ctx context.Context, typeName, funcName string) erro
 
 func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (res string, failed bool) {
 	var tool *LLMTool
+	var ambiguousTools []*LLMTool
 	for _, t := range tools {
 		if t.Name == toolCall.Function.Name {
 			tool = &t
 			break
 		}
+		if t.Server != "" && strings.TrimPrefix(t.Name, t.Server+"_") == toolCall.Function.Name {
+			ambiguousTools = append(ambiguousTools, &t)
+		}
+	}
+
+	switch len(ambiguousTools) {
+	case 0:
+		// no ambiguous tools, nothing to do
+	case 1:
+		// exactly one ambiguous tool, use it
+		tool = ambiguousTools[0]
+	default:
+		// multiple ambiguous tools, error out
+		return fmt.Sprintf("Tool name '%s' is ambiguous. Please specify one of: %s", toolCall.Function.Name, func() string {
+			var names []string
+			for _, t := range ambiguousTools {
+				names = append(names, t.Name)
+			}
+			return strings.Join(names, ", ")
+		}()), true
 	}
 
 	if tool == nil {
