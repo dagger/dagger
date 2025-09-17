@@ -7,7 +7,7 @@ import (
 	"strconv"
 
 	"dagger.io/dagger"
-	"github.com/moby/buildkit/identity"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"golang.org/x/sync/errgroup"
 )
 

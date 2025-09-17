@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/moby/buildkit/identity"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/opencontainers/go-digest"
 	"github.com/zeebo/xxh3"
 

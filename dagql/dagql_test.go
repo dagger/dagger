@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/99designs/gqlgen/client"
-	"github.com/moby/buildkit/identity"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"

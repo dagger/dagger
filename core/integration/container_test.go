@@ -21,9 +21,9 @@ import (
 	"time"
 
 	"github.com/containerd/platforms"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/moby/buildkit/identity"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"

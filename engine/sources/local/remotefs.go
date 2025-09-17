@@ -11,8 +11,8 @@ import (
 	"syscall"
 
 	"github.com/dagger/dagger/engine"
-	"github.com/moby/buildkit/session"
-	"github.com/moby/buildkit/session/filesync"
+	"github.com/dagger/dagger/internal/buildkit/session"
+	"github.com/dagger/dagger/internal/buildkit/session/filesync"
 	"github.com/tonistiigi/fsutil/types"
 )
 

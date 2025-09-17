@@ -294,7 +294,7 @@ func (ModuleSuite) BenchmarkCallSameModuleInParallel(ctx context.Context, b *tes
 			With(sdkSource("go", `package main
 
 import (
-	"github.com/moby/buildkit/identity"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"dagger/dep/internal/dagger"
 )
 

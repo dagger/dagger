@@ -7,11 +7,11 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
-	"github.com/moby/buildkit/client/llb"
-	"github.com/moby/buildkit/frontend"
-	bksession "github.com/moby/buildkit/session"
-	"github.com/moby/buildkit/solver"
-	"github.com/moby/buildkit/worker"
+	"github.com/dagger/dagger/internal/buildkit/client/llb"
+	"github.com/dagger/dagger/internal/buildkit/frontend"
+	bksession "github.com/dagger/dagger/internal/buildkit/session"
+	"github.com/dagger/dagger/internal/buildkit/solver"
+	"github.com/dagger/dagger/internal/buildkit/worker"
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/trace"
 )

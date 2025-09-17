@@ -7,8 +7,8 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/client/secretprovider"
-	bksession "github.com/moby/buildkit/session"
-	"github.com/moby/buildkit/session/secrets"
+	bksession "github.com/dagger/dagger/internal/buildkit/session"
+	"github.com/dagger/dagger/internal/buildkit/session/secrets"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"google.golang.org/grpc/codes"

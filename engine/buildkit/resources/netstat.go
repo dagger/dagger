@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"dagger.io/dagger/telemetry"
-	resourcestypes "github.com/moby/buildkit/executor/resources/types"
+	resourcestypes "github.com/dagger/dagger/internal/buildkit/executor/resources/types"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )

@@ -4,9 +4,9 @@ import (
 	"os"
 	"path/filepath"
 
-	bkconfig "github.com/moby/buildkit/cmd/buildkitd/config"
-	"github.com/moby/buildkit/util/appdefaults"
-	"github.com/moby/buildkit/util/archutil"
+	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
+	"github.com/dagger/dagger/internal/buildkit/util/appdefaults"
+	"github.com/dagger/dagger/internal/buildkit/util/archutil"
 	"github.com/moby/sys/userns"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"

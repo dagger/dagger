@@ -10,8 +10,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/util/cleanups"
-	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sourcegraph/conc/pool"
 	"golang.org/x/sys/unix"

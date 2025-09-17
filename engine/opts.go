@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"unicode"
 
-	controlapi "github.com/moby/buildkit/api/services/control"
+	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
 	"google.golang.org/grpc/metadata"
 )
 

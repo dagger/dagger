@@ -14,8 +14,8 @@ import (
 
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/engine/distconsts"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
-	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"

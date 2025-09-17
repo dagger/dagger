@@ -8,7 +8,7 @@ import (
 	"os"
 
 	"github.com/dagger/dagger/engine"
-	"github.com/moby/buildkit/session/sshforward"
+	"github.com/dagger/dagger/internal/buildkit/session/sshforward"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"

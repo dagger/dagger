@@ -4,7 +4,7 @@ import (
 	"context"
 	"slices"
 
-	"github.com/moby/buildkit/solver/pb"
+	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"

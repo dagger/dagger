@@ -9,7 +9,7 @@ import (
 	"math/rand/v2"
 	"runtime"
 
-	"github.com/moby/buildkit/identity"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/tidwall/gjson"
 	"golang.org/x/mod/semver"
 )

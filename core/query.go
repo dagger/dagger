@@ -6,11 +6,11 @@ import (
 	"net/http"
 
 	"github.com/containerd/containerd/content"
-	bkcache "github.com/moby/buildkit/cache"
-	bkclient "github.com/moby/buildkit/client"
-	"github.com/moby/buildkit/executor/oci"
-	bksession "github.com/moby/buildkit/session"
-	"github.com/moby/buildkit/util/leaseutil"
+	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/dagger/dagger/internal/buildkit/executor/oci"
+	bksession "github.com/dagger/dagger/internal/buildkit/session"
+	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/moby/locker"
 	"github.com/vektah/gqlparser/v2/ast"
 

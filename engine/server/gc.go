@@ -6,11 +6,11 @@ import (
 	"sync"
 
 	"github.com/dagger/dagger/engine/config"
-	bkclient "github.com/moby/buildkit/client"
-	bkconfig "github.com/moby/buildkit/cmd/buildkitd/config"
-	"github.com/moby/buildkit/util/bklog"
-	"github.com/moby/buildkit/util/disk"
-	"github.com/moby/buildkit/util/imageutil"
+	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	"github.com/dagger/dagger/internal/buildkit/util/disk"
+	"github.com/dagger/dagger/internal/buildkit/util/imageutil"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/core"

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/moby/buildkit/solver/pb"
-	"github.com/moby/buildkit/util/bklog"
+	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 

@@ -14,7 +14,7 @@ import (
 	ptypes "github.com/containerd/containerd/protobuf/types"
 	"github.com/containerd/containerd/services/content/contentserver"
 	"github.com/dagger/dagger/engine/client/imageload"
-	"github.com/moby/buildkit/session"
+	"github.com/dagger/dagger/internal/buildkit/session"
 	grpc "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
