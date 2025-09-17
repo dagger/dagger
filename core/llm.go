@@ -18,7 +18,6 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/iancoleman/strcase"
 	"github.com/joho/godotenv"
-	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
@@ -956,20 +955,8 @@ func (llm *LLM) loop(ctx context.Context) error {
 			break
 		}
 
-		// Run tool calls in parallel
-		toolCalls := pool.NewWithResults[*ModelMessage]()
-		for _, toolCall := range res.ToolCalls {
-			toolCalls.Go(func() *ModelMessage {
-				content, isError := llm.mcp.Call(ctx, tools, toolCall)
-				return &ModelMessage{
-					Role:        "user", // Anthropic only allows tool call results in user messages
-					Content:     content,
-					ToolCallID:  toolCall.ID,
-					ToolErrored: isError,
-				}
-			})
-		}
-		llm.messages = append(llm.messages, toolCalls.Wait()...)
+		// Run tool calls in batch with efficient MCP syncing
+		llm.messages = append(llm.messages, llm.mcp.CallBatch(ctx, tools, res.ToolCalls)...)
 
 		if llm.mcp.Returned() {
 			// we returned; exit the loop, since some models just keep going

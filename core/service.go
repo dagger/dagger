@@ -1108,7 +1108,7 @@ func (svc *Service) runAndSnapshotChanges(
 
 	// ensure we actually run the __immutableRef DagOp that does a Clone()
 	if _, err := snapshot.Self().Evaluate(ctx); err != nil {
-		return res, false, fmt.Errorf("sync snapshot directory: %w", err)
+		return res, false, fmt.Errorf("failed to evaluate snapshot: %w", err)
 	}
 
 	return snapshot, true, nil
