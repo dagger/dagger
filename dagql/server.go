@@ -26,20 +26,6 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 )
 
-func init() {
-	// HACK: these rules are disabled because some clients don't send the right
-	// types:
-	//   - PHP + Elixir SDKs send enums quoted
-	//   - The shell sends enums quoted, and ints/floats as strings
-	//   - etc
-	validator.RemoveRule(rules.ValuesOfCorrectTypeRule.Name)
-	validator.RemoveRule(rules.ValuesOfCorrectTypeRuleWithoutSuggestions.Name)
-
-	// HACK: this rule is disabled because PHP modules <=v0.15.2 query
-	// inputArgs incorrectly.
-	validator.RemoveRule(rules.ScalarLeafsRule.Name)
-}
-
 // Server represents a GraphQL server whose schema is dynamically modified at
 // runtime.
 type Server struct {
@@ -161,7 +147,27 @@ func (s *Server) invalidateSchemaCache() {
 
 func NewDefaultHandler(es graphql.ExecutableSchema) *handler.Server {
 	// TODO: avoid this deprecated method, and customize the options
-	return handler.NewDefaultServer(es) //nolint: staticcheck
+	srv := handler.NewDefaultServer(es)
+
+	srv.SetValidationRulesFn(func() *rules.Rules {
+		validationRules := rules.NewDefaultRules()
+
+		// HACK: these rules are disabled because some clients don't send the right
+		// types:
+		//   - PHP + Elixir SDKs send enums quoted
+		//   - The shell sends enums quoted, and ints/floats as strings
+		//   - etc
+		validationRules.RemoveRule(rules.ValuesOfCorrectTypeRule.Name)
+		validationRules.RemoveRule(rules.ValuesOfCorrectTypeRuleWithoutSuggestions.Name)
+
+		// HACK: this rule is disabled because PHP modules <=v0.15.2 query
+		// inputArgs incorrectly.
+		validationRules.RemoveRule(rules.ScalarLeafsRule.Name)
+
+		return validationRules
+	})
+
+	return srv
 }
 
 var coreScalars = []ScalarType{
@@ -559,6 +565,21 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (m
 // Each selection is resolved in parallel, and the results are returned in a
 // map whose keys correspond to the selection's field name or alias.
 func (s *Server) Resolve(ctx context.Context, self AnyObjectResult, sels ...Selection) (map[string]any, error) {
+	if len(sels) == 0 {
+		return nil, nil
+	}
+
+	if len(sels) == 1 {
+		sel := sels[0]
+		// Resolve is in the hot path, so avoiding overhead of goroutines, sync.Map, etc. when there's only
+		// one selection (probably the most common case) likely pays off.
+		res, err := s.resolvePath(ctx, self, sel)
+		if err != nil {
+			return nil, gqlErrs(err)
+		}
+		return map[string]any{sel.Name(): res}, nil
+	}
+
 	results := new(sync.Map)
 
 	pool := pool.New().WithErrors()

@@ -563,6 +563,47 @@ func (file *File) Mount(ctx context.Context, f func(string) error) error {
 	})
 }
 
+// AsEnvFile converts a File to an EnvFile by parsing its contents
+func (file *File) AsEnvFile(ctx context.Context, expand bool) (*EnvFile, error) {
+	contents, err := file.Contents(ctx, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return (&EnvFile{
+		Expand: expand,
+	}).WithContents(string(contents))
+}
+
+func (file *File) Chown(ctx context.Context, owner string) (*File, error) {
+	ownership, err := parseDirectoryOwner(owner)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+	}
+
+	file = file.Clone()
+	return execInMount(ctx, file, func(root string) error {
+		chownPath := file.File
+		chownPath, err := containerdfs.RootPath(root, chownPath)
+		if err != nil {
+			return err
+		}
+
+		err = filepath.WalkDir(chownPath, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if err := os.Lchown(path, ownership.UID, ownership.GID); err != nil {
+				return fmt.Errorf("failed to set chown %s: %w", path, err)
+			}
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("failed to walk %s: %w", chownPath, err)
+		}
+		return nil
+	}, withSavedSnapshot("chown %s %s", file.File, owner))
+}
+
 // bkRef returns the buildkit reference from the solved def.
 func bkRef(ctx context.Context, bk *buildkit.Client, def *pb.Definition) (bkgw.Reference, error) {
 	res, err := bk.Solve(ctx, bkgw.SolveRequest{

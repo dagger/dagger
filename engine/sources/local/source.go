@@ -173,7 +173,7 @@ func (ls *localSourceHandler) CacheKey(ctx context.Context, g session.Group, ind
 		return "", "", nil, false, err
 	}
 	digestString := digest.FromBytes(dt).String()
-	return "session:" + ls.src.Name + ":" + digestString, digestString, nil, true, nil
+	return ls.src.Name + ":" + digestString, digestString, nil, true, nil
 }
 
 func (ls *localSourceHandler) Snapshot(ctx context.Context, g session.Group) (bkcache.ImmutableRef, error) {
@@ -313,13 +313,16 @@ func (ls *localSourceHandler) syncParentDirs(
 		WithField("parentSync", "y"),
 	)
 
-	// include *just* the parent dirs, nothing else
+	// include the parent dirs, and all the gitignores
+	// the gitignores are needed to ensure that the local gitignore state matches the remote gitignore state
 	// TODO: the client side implementation of all this isn't incredibly efficient, it stats every dirent under the
 	// the root rather than just sending us the stats of the parent dirs. Not a huge bottleneck most likely.
 	include := strings.TrimPrefix(strings.TrimSuffix(clientPath, "/"), "/")
 	includes := []string{include}
-	exclude := include + "/*"
-	excludes := []string{exclude}
+	excludes := []string{include + "/*"}
+	if ls.gitIgnore {
+		excludes = append(excludes, "!"+include+"/**/.gitignore", include+"/**/.git")
+	}
 
 	root := "/"
 	if drive != "" {

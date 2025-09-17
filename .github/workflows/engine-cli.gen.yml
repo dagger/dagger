@@ -20,7 +20,7 @@ jobs:
     cli-test-publish:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.17' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.18' || 'ubuntu-24.04' }}
         name: cli-test-publish
         steps:
             - name: scripts/install-dagger.sh
@@ -48,7 +48,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.17
+                DAGGER_VERSION: v0.18.18
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -177,7 +177,7 @@ jobs:
     engine-test-publish:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-4x8' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.17' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.18' || 'ubuntu-24.04' }}
         name: engine-test-publish
         steps:
             - name: scripts/install-dagger.sh
@@ -205,7 +205,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.17
+                DAGGER_VERSION: v0.18.18
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -334,7 +334,7 @@ jobs:
     lint:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-32x64' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.17' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.18' || 'ubuntu-24.04' }}
         name: lint
         steps:
             - name: scripts/install-dagger.sh
@@ -362,7 +362,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.17
+                DAGGER_VERSION: v0.18.18
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -491,7 +491,7 @@ jobs:
     scan-engine:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-4x8' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.17' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.18' || 'ubuntu-24.04' }}
         name: scan-engine
         steps:
             - name: scripts/install-dagger.sh
@@ -519,7 +519,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.17
+                DAGGER_VERSION: v0.18.18
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -648,7 +648,7 @@ jobs:
     scripts:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-4x8' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.17' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.18' || 'ubuntu-24.04' }}
         name: scripts
         steps:
             - name: scripts/install-dagger.sh
@@ -676,7 +676,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.17
+                DAGGER_VERSION: v0.18.18
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -832,7 +832,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.17
+                DAGGER_VERSION: v0.18.18
               shell: bash
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger
@@ -1024,7 +1024,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.17
+                DAGGER_VERSION: v0.18.18
               shell: bash
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger
@@ -1216,7 +1216,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.17
+                DAGGER_VERSION: v0.18.18
               shell: bash
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger
@@ -1408,7 +1408,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.17
+                DAGGER_VERSION: v0.18.18
               shell: bash
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger
@@ -1600,7 +1600,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.17
+                DAGGER_VERSION: v0.18.18
               shell: bash
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger
@@ -1792,7 +1792,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.17
+                DAGGER_VERSION: v0.18.18
               shell: bash
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger
@@ -1984,7 +1984,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.17
+                DAGGER_VERSION: v0.18.18
               shell: bash
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger
@@ -2176,7 +2176,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.17
+                DAGGER_VERSION: v0.18.18
               shell: bash
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger
@@ -2368,7 +2368,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.17
+                DAGGER_VERSION: v0.18.18
               shell: bash
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger
@@ -2560,7 +2560,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.17
+                DAGGER_VERSION: v0.18.18
               shell: bash
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger

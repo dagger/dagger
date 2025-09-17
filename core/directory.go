@@ -111,8 +111,12 @@ func NewDirectorySt(ctx context.Context, st llb.State, dir string, platform Plat
 // Clone returns a deep copy of the container suitable for modifying in a
 // WithXXX method.
 func (dir *Directory) Clone() *Directory {
+	if dir == nil {
+		return nil
+	}
 	cp := *dir
 	cp.Services = slices.Clone(cp.Services)
+
 	return &cp
 }
 
@@ -241,7 +245,7 @@ func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, src string)
 		Path: src,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to stat file %s: %w", src, err)
+		return nil, err
 	}
 	return st, nil
 }
@@ -502,7 +506,7 @@ func (dir *Directory) WithPatch(ctx context.Context, patch string) (*Directory, 
 		if err != nil {
 			return err
 		}
-		apply := exec.Command("git", "apply", "-")
+		apply := exec.Command("git", "apply", "--allow-empty", "-")
 		apply.Dir = resolvedDir
 		apply.Stdin = strings.NewReader(patch)
 		apply.Stdout = stdio.Stdout
@@ -621,10 +625,22 @@ func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory,
 	}
 
 	if !info.IsDir() {
-		return nil, fmt.Errorf("path %s is a file, not a directory", subdir)
+		return nil, notADirectoryError{fmt.Errorf("path %s is a file, not a directory", subdir)}
 	}
 
 	return dir, nil
+}
+
+type notADirectoryError struct {
+	inner error
+}
+
+func (e notADirectoryError) Error() string {
+	return e.inner.Error()
+}
+
+func (e notADirectoryError) Unwrap() error {
+	return e.inner
 }
 
 func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
@@ -650,7 +666,7 @@ func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
 	}
 
 	if info.IsDir() {
-		return nil, fmt.Errorf("path %s is a directory, not a file", file)
+		return nil, notAFileError{fmt.Errorf("path %s is a directory, not a file", file)}
 	}
 
 	return &File{
@@ -662,12 +678,30 @@ func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
 	}, nil
 }
 
+type notAFileError struct {
+	inner error
+}
+
+func (e notAFileError) Error() string {
+	return e.inner.Error()
+}
+
+func (e notAFileError) Unwrap() error {
+	return e.inner
+}
+
 type CopyFilter struct {
 	Exclude []string `default:"[]"`
 	Include []string `default:"[]"`
 }
 
-func (dir *Directory) WithDirectory(ctx context.Context, destDir string, src *Directory, filter CopyFilter, owner *Ownership) (*Directory, error) {
+func (dir *Directory) WithDirectory(
+	ctx context.Context,
+	destDir string,
+	src *Directory,
+	filter CopyFilter,
+	owner string,
+) (*Directory, error) {
 	dir = dir.Clone()
 
 	destSt, err := dir.State()
@@ -680,6 +714,14 @@ func (dir *Directory) WithDirectory(ctx context.Context, destDir string, src *Di
 		return nil, err
 	}
 
+	var ownership *Ownership
+	if owner != "" {
+		ownership, err = parseDirectoryOwner(owner)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+		}
+	}
+
 	if err := dir.SetState(ctx, mergeStates(mergeStateInput{
 		Dest:            destSt,
 		DestDir:         path.Join(dir.Dir, destDir),
@@ -687,7 +729,7 @@ func (dir *Directory) WithDirectory(ctx context.Context, destDir string, src *Di
 		SrcDir:          src.Dir,
 		IncludePatterns: filter.Include,
 		ExcludePatterns: filter.Exclude,
-		Owner:           owner,
+		Owner:           ownership,
 	})); err != nil {
 		return nil, err
 	}
@@ -752,7 +794,7 @@ func (dir *Directory) WithFile(
 	destPath string,
 	src *File,
 	permissions *int,
-	owner *Ownership,
+	owner string,
 ) (*Directory, error) {
 	dir = dir.Clone()
 
@@ -815,8 +857,12 @@ func (dir *Directory) WithFile(
 				return fmt.Errorf("failed to set chmod %s: err", destPath)
 			}
 		}
-		if owner != nil {
-			if err := os.Chown(destPath, owner.UID, owner.GID); err != nil {
+		if owner != "" {
+			ownership, err := parseDirectoryOwner(owner)
+			if err != nil {
+				return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+			}
+			if err := os.Chown(destPath, ownership.UID, ownership.GID); err != nil {
 				return fmt.Errorf("failed to set chown %s: err", destPath)
 			}
 		}
@@ -840,7 +886,6 @@ func (dir *Directory) WithFiles(
 	destDir string,
 	src []*File,
 	permissions *int,
-	owner *Ownership,
 ) (*Directory, error) {
 	dir = dir.Clone()
 
@@ -852,7 +897,7 @@ func (dir *Directory) WithFiles(
 			path.Join(destDir, path.Base(file.File)),
 			file,
 			permissions,
-			owner,
+			"",
 		)
 		if err != nil {
 			return nil, err
@@ -1006,6 +1051,81 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 	return dir, nil
 }
 
+func (dir *Directory) FindUp(ctx context.Context, name string, start string) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("name cannot be empty")
+	}
+
+	// Start from the given path or current directory
+	searchPath := start
+	if searchPath == "" {
+		searchPath = "."
+	}
+
+	// Clean the search path
+	searchPath = path.Clean(searchPath)
+	if strings.HasPrefix(searchPath, "../") {
+		return "", fmt.Errorf("cannot search outside parent: %s", searchPath)
+	}
+
+	currentPath := searchPath
+
+	for {
+		currentDir, err := dir.Directory(ctx, currentPath)
+		if err != nil {
+			return "", err
+		}
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return "", err
+		}
+		exists, err := currentDir.Exists(ctx, srv, name, "", true)
+		if err != nil {
+			return "", err
+		}
+		if exists {
+			return path.Clean(path.Join(currentPath, name)), nil
+		}
+		parentPath := path.Dir(currentPath)
+		if parentPath == currentPath {
+			break
+		}
+		currentPath = parentPath
+	}
+	return "", nil
+}
+
+func (dir *Directory) WithChanges(ctx context.Context, changes *Changeset) (*Directory, error) {
+	dir = dir.Clone()
+
+	// First, get the diff directory from Changes.before.diff(Changes.after)
+	diffDir, err := changes.Before.Self().Diff(ctx, changes.After.Self())
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute diff between before and after directories: %w", err)
+	}
+
+	// Apply the diff (added + changed files) using WithDirectory
+	dir, err = dir.WithDirectory(ctx, "/", diffDir, CopyFilter{}, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to apply diff directory: %w", err)
+	}
+
+	// Remove all the paths in Changes.removedPaths using Without
+	if len(changes.RemovedPaths) > 0 {
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get dagql server: %w", err)
+		}
+
+		dir, err = dir.Without(ctx, srv, changes.RemovedPaths...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to remove paths: %w", err)
+		}
+	}
+
+	return dir, nil
+}
+
 func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...string) (*Directory, error) {
 	dir = dir.Clone()
 	return execInMount(ctx, dir, func(root string) error {
@@ -1124,7 +1244,7 @@ func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("export directory %s to host %s", dir.Dir, destPath))
 	defer telemetry.End(span, func() error { return rerr })
 
-	return bk.LocalDirExport(ctx, defPB, destPath, merge)
+	return bk.LocalDirExport(ctx, defPB, destPath, merge, nil)
 }
 
 // Root removes any relative path from the directory.
@@ -1160,6 +1280,59 @@ func (dir *Directory) Mount(ctx context.Context, f func(string) error) error {
 		}
 		return f(src)
 	})
+}
+
+func parseDirectoryOwner(owner string) (*Ownership, error) {
+	uidStr, gidStr, hasGroup := strings.Cut(owner, ":")
+	var uid, gid int
+	uid, err := parseUID(uidStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid uid %q: %w", uidStr, err)
+	}
+	if hasGroup {
+		gid, err = parseUID(gidStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid gid %q: %w", gidStr, err)
+		}
+	}
+	if !hasGroup {
+		gid = uid
+	}
+
+	return &Ownership{
+		UID: uid,
+		GID: gid,
+	}, nil
+}
+
+func (dir *Directory) Chown(ctx context.Context, chownPath string, owner string) (*Directory, error) {
+	ownership, err := parseDirectoryOwner(owner)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+	}
+
+	dir = dir.Clone()
+	return execInMount(ctx, dir, func(root string) error {
+		chownPath := path.Join(dir.Dir, chownPath)
+		chownPath, err := containerdfs.RootPath(root, chownPath)
+		if err != nil {
+			return err
+		}
+
+		err = filepath.WalkDir(chownPath, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if err := os.Lchown(path, ownership.UID, ownership.GID); err != nil {
+				return fmt.Errorf("failed to set chown %s: %w", path, err)
+			}
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("failed to walk %s: %w", chownPath, err)
+		}
+		return nil
+	}, withSavedSnapshot("chown %s %s", chownPath, owner))
 }
 
 func validateFileName(file string) error {

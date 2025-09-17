@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/core"
@@ -15,7 +14,7 @@ import (
 func TestCoreModTypeDefs(t *testing.T) {
 	ctx := context.Background()
 	root := &core.Query{}
-	dag := dagql.NewServer(root, dagql.NewSessionCache(cache.NewCache[digest.Digest, dagql.AnyResult]()))
+	dag := dagql.NewServer(root, dagql.NewSessionCache(cache.NewCache[string, dagql.AnyResult]()))
 	coreMod := &CoreMod{Dag: dag}
 	coreModDeps := core.NewModDeps(root, []core.Mod{coreMod})
 	require.NoError(t, coreMod.Install(ctx, dag))

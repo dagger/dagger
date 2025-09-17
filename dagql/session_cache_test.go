@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine/cache"
-	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 )
@@ -15,22 +14,22 @@ func TestSessionCacheReleaseAndClose(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		ctx := t.Context()
 
-		c := cache.NewCache[digest.Digest, AnyResult]()
+		c := cache.NewCache[string, AnyResult]()
 		sc1 := NewSessionCache(c)
 		sc2 := NewSessionCache(c)
 
-		_, err := sc1.GetOrInitializeValue(ctx, "1", nil)
+		_, err := sc1.GetOrInitializeValue(ctx, cache.CacheKey[string]{ResultKey: "1"}, nil)
 		require.NoError(t, err)
 
-		_, err = sc1.GetOrInitializeValue(ctx, "2", nil)
+		_, err = sc1.GetOrInitializeValue(ctx, cache.CacheKey[string]{ResultKey: "2"}, nil)
 		require.NoError(t, err)
 
 		require.Equal(t, 2, c.Size())
 
-		_, err = sc2.GetOrInitializeValue(ctx, "2", nil)
+		_, err = sc2.GetOrInitializeValue(ctx, cache.CacheKey[string]{ResultKey: "2"}, nil)
 		require.NoError(t, err)
 
-		_, err = sc2.GetOrInitializeValue(ctx, "3", nil)
+		_, err = sc2.GetOrInitializeValue(ctx, cache.CacheKey[string]{ResultKey: "3"}, nil)
 		require.NoError(t, err)
 
 		require.Equal(t, 3, c.Size())
@@ -40,9 +39,8 @@ func TestSessionCacheReleaseAndClose(t *testing.T) {
 
 		require.Equal(t, 2, c.Size())
 
-		// FIXME: re-enable this once we make this an error case again
-		// _, err = sc1.GetOrInitializeValue(ctx, "x", nil)
-		// require.Error(t, err)
+		_, err = sc1.GetOrInitializeValue(ctx, cache.CacheKey[string]{ResultKey: "x"}, nil)
+		require.Error(t, err)
 
 		require.Equal(t, 2, c.Size())
 
@@ -53,15 +51,12 @@ func TestSessionCacheReleaseAndClose(t *testing.T) {
 	})
 
 	t.Run("close while running", func(t *testing.T) {
-		// FIXME: re-enable once this is an error case again
-		t.Skip("close while running is only logged right now")
-
 		ctx := t.Context()
 
-		c := cache.NewCache[digest.Digest, AnyResult]()
+		c := cache.NewCache[string, AnyResult]()
 		sc := NewSessionCache(c)
 
-		_, err := sc.GetOrInitializeValue(ctx, "1", nil)
+		_, err := sc.GetOrInitializeValue(ctx, cache.CacheKey[string]{ResultKey: "1"}, nil)
 		require.NoError(t, err)
 		require.Equal(t, 1, c.Size())
 
@@ -69,7 +64,7 @@ func TestSessionCacheReleaseAndClose(t *testing.T) {
 		startCh := make(chan struct{})
 		stopCh := make(chan struct{})
 		eg.Go(func() error {
-			_, err := sc.GetOrInitialize(ctx, "2", func(ctx context.Context) (AnyResult, error) {
+			_, err := sc.GetOrInitialize(ctx, cache.CacheKey[string]{ResultKey: "2"}, func(ctx context.Context) (AnyResult, error) {
 				close(startCh)
 				<-stopCh
 				return nil, nil

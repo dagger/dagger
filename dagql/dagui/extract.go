@@ -1,17 +1,36 @@
 package dagui
 
-import "github.com/dagger/dagger/dagql/call/callpbv1"
+import (
+	"github.com/dagger/dagger/dagql/call/callpbv1"
+)
 
 // extractIntoDAG recursively populates dag.CallsByDigest from the call and its dependencies.
-func extractIntoDAG(dag *callpbv1.DAG, db *DB, call *callpbv1.Call) {
-	if _, exists := dag.CallsByDigest[call.Digest]; exists {
+func extractIntoDAG(dag *callpbv1.DAG, db *DB, callDigest string) {
+	if callDigest == "" {
 		return
 	}
-	dag.CallsByDigest[call.Digest] = call
+	if _, exists := dag.CallsByDigest[callDigest]; exists {
+		return
+	}
+
+	call := db.Call(callDigest)
+	if call == nil {
+		return
+	}
+	call = &callpbv1.Call{
+		ReceiverDigest: call.ReceiverDigest,
+		Type:           call.Type,
+		Field:          call.Field,
+		Args:           call.Args,
+		Nth:            call.Nth,
+		Module:         call.Module,
+		Digest:         callDigest,
+		View:           call.View,
+	}
+	dag.CallsByDigest[callDigest] = call
+
 	if call.ReceiverDigest != "" {
-		if recv := db.Call(call.ReceiverDigest); recv != nil {
-			extractIntoDAG(dag, db, recv)
-		}
+		extractIntoDAG(dag, db, call.ReceiverDigest)
 	}
 	for _, arg := range call.Args {
 		if arg.Value != nil {
@@ -19,9 +38,7 @@ func extractIntoDAG(dag *callpbv1.DAG, db *DB, call *callpbv1.Call) {
 		}
 	}
 	if call.Module != nil && call.Module.CallDigest != "" {
-		if mod := db.Call(call.Module.CallDigest); mod != nil {
-			extractIntoDAG(dag, db, mod)
-		}
+		extractIntoDAG(dag, db, call.Module.CallDigest)
 	}
 }
 
@@ -29,11 +46,7 @@ func extractIntoDAG(dag *callpbv1.DAG, db *DB, call *callpbv1.Call) {
 func extractLitIntoDAG(dag *callpbv1.DAG, db *DB, lit *callpbv1.Literal) {
 	switch v := lit.Value.(type) {
 	case *callpbv1.Literal_CallDigest:
-		if v.CallDigest != "" {
-			if call := db.Call(v.CallDigest); call != nil {
-				extractIntoDAG(dag, db, call)
-			}
-		}
+		extractIntoDAG(dag, db, v.CallDigest)
 	case *callpbv1.Literal_List:
 		if v.List != nil {
 			for _, val := range v.List.Values {

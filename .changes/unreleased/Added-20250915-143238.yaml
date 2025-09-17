@@ -1,0 +1,7 @@
+kind: Added
+body: |
+    address(): a unified address to load containers, directories, secrets, etc.
+time: 2025-09-15T14:32:38.71814-07:00
+custom:
+    Author: shykes
+    PR: "10770"

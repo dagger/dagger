@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -19,6 +21,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/opencontainers/go-digest"
@@ -208,6 +211,12 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("outputDir").Doc(`The output directory for the generated client.`),
 			),
 
+		dagql.Func("withUpdatedClients", s.moduleSourceWithUpdatedClients).
+			Doc(`Update one or more clients.`).
+			Args(
+				dagql.Arg("clients").Doc(`The clients to update`),
+			),
+
 		dagql.Func("withoutClient", s.moduleSourceWithoutClient).
 			Doc(`Remove a client from the module source.`).
 			Args(
@@ -314,7 +323,7 @@ func (s *moduleSourceSchema) localModuleSource(
 		if err != nil {
 			return inst, fmt.Errorf("failed to get cwd: %w", err)
 		}
-		defaultFindUpSourceRootDir, defaultFindUpExists, err := findUp(ctx, core.NewCallerStatFS(bk), cwd, modules.Filename)
+		defaultFindUpSourceRootDir, defaultFindUpExists, err := core.Host{}.FindUp(ctx, core.NewCallerStatFS(bk), cwd, modules.Filename)
 		if err != nil {
 			return inst, fmt.Errorf("failed to find up root: %w", err)
 		}
@@ -370,7 +379,7 @@ func (s *moduleSourceSchema) localModuleSource(
 
 	// We always find-up the context dir. When doFindUp is true, we also try a find-up for the source root.
 	const dotGit = ".git"
-	foundPaths, err := findUpAll(ctx, core.NewCallerStatFS(bk), localAbsPath, map[string]struct{}{
+	foundPaths, err := core.Host{}.FindUpAll(ctx, core.NewCallerStatFS(bk), localAbsPath, map[string]struct{}{
 		modules.Filename: {}, // dagger.json, the directory containing this is the source root
 		dotGit:           {}, // the context dir is the git repo root, if it exists
 	})
@@ -570,7 +579,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 			return inst, fmt.Errorf("failed to stat git module source: %w", err)
 		}
 
-		configDir, found, err := findUp(ctx, statFS,
+		configDir, found, err := core.Host{}.FindUp(ctx, statFS,
 			filepath.Join("/", gitSrc.SourceRootSubpath),
 			modules.Filename,
 		)
@@ -944,6 +953,7 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String(src.Local.ContextDirectoryPath)},
 					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(fullIncludePaths...))},
+					{Name: "gitignore", Value: dagql.NewBoolean(true)},
 				},
 			},
 		)
@@ -1915,7 +1925,10 @@ func (s *moduleSourceSchema) runCodegen(
 	// cache the current source instance by it's digest before passing to codegen
 	// this scopes the cache key of codegen calls to an exact content hash detached
 	// from irrelevant details like specific host paths, specific git repos+commits, etc.
-	_, err = dag.Cache.GetOrInitializeValue(ctx, digest.Digest(srcInst.Self().Digest), srcInst)
+	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
+		ResultKey: srcInst.Self().Digest,
+	}
+	_, err = dag.Cache.GetOrInitializeValue(ctx, cacheKey, srcInst)
 	if err != nil {
 		return res, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
@@ -2237,7 +2250,10 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary module instance: %w", err)
 	}
-	_, err = dag.Cache.GetOrInitializeValue(ctx, tmpModInst.ID().Digest(), tmpModInst)
+	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
+		ResultKey: string(tmpModInst.ID().Digest()),
+	}
+	_, err = dag.Cache.GetOrInitializeValue(ctx, cacheKey, tmpModInst)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
@@ -2377,7 +2393,10 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	// cache the current source instance by it's digest before passing to codegen
 	// this scopes the cache key of codegen calls to an exact content hash detached
 	// from irrelevant details like specific host paths, specific git repos+commits, etc.
-	_, err = dag.Cache.GetOrInitializeValue(ctx, digest.Digest(src.Self().Digest), src)
+	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
+		ResultKey: src.Self().Digest,
+	}
+	_, err = dag.Cache.GetOrInitializeValue(ctx, cacheKey, src)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
@@ -2505,9 +2524,151 @@ func (s *moduleSourceSchema) moduleSourceWithClient(
 		}
 	}
 
+	// Verify that the generator can be loaded as a module and clean
+	// the generator path if it's a local path.
+	if !sdk.IsModuleSDKBuiltin(moduleConfigClient.Generator) {
+		dag, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get dag server: %w", err)
+		}
+
+		query, err := core.CurrentQuery(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current query: %w", err)
+		}
+
+		bk, err := query.Buildkit(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+		}
+
+		clientModule, err := core.ResolveDepToSource(ctx, bk, dag, src, moduleConfigClient.Generator, "", "")
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve client module source: %w", err)
+		}
+
+		if clientModule.Self().Kind == core.ModuleSourceKindLocal {
+			moduleConfigClient.Generator = filepath.Clean(moduleConfigClient.Generator)
+		}
+	}
+
 	src.ConfigClients = append(src.ConfigClients, moduleConfigClient)
 
 	src.Digest = src.CalcDigest().String()
+
+	return src, nil
+}
+
+func (s *moduleSourceSchema) moduleSourceWithUpdatedClients(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct {
+		Clients []string
+	},
+) (*core.ModuleSource, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current query: %w", err)
+	}
+
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
+	updateReqs := make(map[string]string, len(args.Clients))
+	for _, updateArg := range args.Clients {
+		source, version, _ := strings.Cut(updateArg, "@")
+		updateReqs[source] = version
+	}
+
+	src = src.Clone()
+	newClientConfig := make([]*modules.ModuleConfigClient, len(src.ConfigClients))
+	for i, client := range src.ConfigClients {
+		clientGeneratorSource, _, _ := strings.Cut(client.Generator, "@")
+
+		// If the client is a builtin SDK, the version is tied to the engine so we skip it.
+		if sdk.IsModuleSDKBuiltin(client.Generator) {
+			newClientConfig[i] = client.Clone()
+			continue
+		}
+
+		// If there is an update request but the client is not in the input list, skip it
+		if _, ok := updateReqs[clientGeneratorSource]; !ok && len(updateReqs) > 0 {
+			newClientConfig[i] = client.Clone()
+			continue
+		}
+
+		// At that point, we know that the client must be updated either with a given version
+		// or for a global update.
+		var clientModule dagql.ObjectResult[*core.ModuleSource]
+		clientModule, err = core.ResolveDepToSource(ctx, bk, dag, src, client.Generator, "", "")
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve client module source: %w", err)
+		}
+
+		// Ignore local dependency except if it's in the list of update then we throw an error
+		if clientModule.Self().Kind == core.ModuleSourceKindLocal {
+			if _, ok := updateReqs[filepath.Clean(clientGeneratorSource)]; ok {
+				return nil, fmt.Errorf("cannot update local client %s", clientGeneratorSource)
+			}
+
+			newClientConfig[i] = client.Clone()
+
+			continue
+		}
+
+		// If the client generator is a git module, we fetch the latest commit and
+		// reconstruct the git ref with it or use the given version.
+		repo := clientModule.Self().Git.CloneRef
+		var updatedVersion string
+
+		if version, ok := updateReqs[clientGeneratorSource]; ok && version != "" {
+			updatedVersion = version
+		} else {
+			var latestCommit dagql.String
+			err = dag.Select(ctx, dag.Root(), &latestCommit,
+				dagql.Selector{
+					Field: "git",
+					Args: []dagql.NamedInput{
+						{Name: "url", Value: dagql.String(repo)},
+					},
+				},
+				dagql.Selector{
+					Field: "head",
+				},
+				dagql.Selector{
+					Field: "commit",
+				},
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get git module (%s) latest commit: %w", repo, err)
+			}
+
+			updatedVersion = latestCommit.String()
+		}
+
+		newClientConfig[i] = client.Clone()
+		newClientConfig[i].Generator = fmt.Sprintf("%s@%s", clientModule.Self().Git.Symbolic, updatedVersion)
+
+		// Remove the update request from the map
+		delete(updateReqs, clientGeneratorSource)
+	}
+
+	// Verify that all updateReq has been processed, otherwise there's a
+	// invalid update request.
+	if len(updateReqs) > 0 {
+		deps := slices.Collect(maps.Keys(updateReqs))
+
+		return nil, fmt.Errorf("client(s) %q were requested to be updated, but were not found in the clients list", strings.Join(deps, ","))
+	}
+
+	src.ConfigClients = newClientConfig
 
 	return src, nil
 }
@@ -2537,63 +2698,6 @@ func (s *moduleSourceSchema) moduleSourceWithoutClient(
 	src.Digest = src.CalcDigest().String()
 
 	return src, nil
-}
-
-// find-up a given soughtName in curDirPath and its parent directories, return the dir
-// it was found in, if any
-func findUp(
-	ctx context.Context,
-	statFS core.StatFS,
-	curDirPath string,
-	soughtName string,
-) (string, bool, error) {
-	found, err := findUpAll(ctx, statFS, curDirPath, map[string]struct{}{soughtName: {}})
-	if err != nil {
-		return "", false, err
-	}
-	p, ok := found[soughtName]
-	return p, ok, nil
-}
-
-// find-up a set of soughtNames in curDirPath and its parent directories return what
-// was found (name -> absolute path of dir containing it)
-func findUpAll(
-	ctx context.Context,
-	statFS core.StatFS,
-	curDirPath string,
-	soughtNames map[string]struct{},
-) (map[string]string, error) {
-	found := make(map[string]string, len(soughtNames))
-	for {
-		for soughtName := range soughtNames {
-			stat, err := statFS.Stat(ctx, filepath.Join(curDirPath, soughtName))
-			if err == nil {
-				delete(soughtNames, soughtName)
-				// NOTE: important that we use stat.Path here rather than curDirPath since the stat also
-				// does some normalization of paths when the client is using case-insensitive filesystems
-				// and we are stat'ing caller host filesystems
-				found[soughtName] = filepath.Dir(stat.Path)
-				continue
-			}
-			if !errors.Is(err, os.ErrNotExist) {
-				return nil, fmt.Errorf("failed to lstat %s: %w", soughtName, err)
-			}
-		}
-
-		if len(soughtNames) == 0 {
-			// found everything
-			break
-		}
-
-		nextDirPath := filepath.Dir(curDirPath)
-		if curDirPath == nextDirPath {
-			// hit root, nowhere else to look
-			break
-		}
-		curDirPath = nextDirPath
-	}
-
-	return found, nil
 }
 
 func rebasePatterns(patterns []string, base string) ([]string, error) {

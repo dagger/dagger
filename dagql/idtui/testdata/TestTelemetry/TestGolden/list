@@ -8,8 +8,10 @@ frontend_dots.go
 frontend_plain.go
 frontend_pretty.go
 golden_test.go
+huh.go
 multiprefixw/
 output.go
+patch.go
 symbols.go
 sys_unix.go
 sys_windows.go
@@ -37,7 +39,7 @@ Expected stderr:
 
 ● viztest: Viztest! X.Xs
 ▼ .list(
-│ ┆ dir: Host.directory(path: "/app/dagql/idtui"): Directory!
+│ ┆ dir: Address.directory: Directory!
 │ ): String! X.Xs
 ┃ .git/
 ┃ debug.go
@@ -47,8 +49,10 @@ Expected stderr:
 ┃ frontend_plain.go
 ┃ frontend_pretty.go
 ┃ golden_test.go
+┃ huh.go
 ┃ multiprefixw/
 ┃ output.go
+┃ patch.go
 ┃ symbols.go
 ┃ sys_unix.go
 ┃ sys_windows.go

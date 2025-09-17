@@ -1304,8 +1304,6 @@ export class Test {
 		},
 	}
 	for _, tc := range tcs {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -1321,44 +1319,4 @@ export class Test {
 			require.Equal(t, "there", gjson.Get(out, "test.inactive").String())
 		})
 	}
-}
-
-// Verify that we do not apply .gitignore rules automatically for defaultPath
-// if engine is older than v0.18.17
-func (LegacySuite) TestLegacyNoGitAutoIgnore(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	sourceCode := `package main
-
-import (
-  "dagger/test/internal/dagger"
-)
-
-type Test struct{}
-
-func (m *Test) Repo(
-  //+defaultPath="/"
-  dir *dagger.Directory,
-) *dagger.Directory {
-  return dir
-}`
-
-	modGen := daggerCliBase(t, c).
-		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-		WithWorkdir("/work").
-		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.18.16"}`).
-		WithNewFile("main.go", sourceCode).
-		WithNewFile(".gitignore", `/dagger.gen.go
-/internal/dagger
-/internal/querybuilder
-/internal/telemetry
-/.env
-LICENSE
-*.json
-internal/
-.gitattributes`)
-
-	out, err := modGen.With(daggerCall("repo", "entries")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, ".gitattributes\n.gitignore\nLICENSE\ndagger.gen.go\ndagger.json\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
 }

@@ -769,7 +769,7 @@ func (ContainerSuite) TestVariables(ctx context.Context, t *testctx.T) {
 	res, err := testutil.Query[struct {
 		Container struct {
 			From struct {
-				EnvVariables []schema.EnvVariable
+				EnvVariables []core.EnvVariable
 				WithExec     struct {
 					Stdout string
 				}
@@ -790,7 +790,7 @@ func (ContainerSuite) TestVariables(ctx context.Context, t *testctx.T) {
 			}
 		}`, nil)
 	require.NoError(t, err)
-	require.Equal(t, []schema.EnvVariable{
+	require.Equal(t, []core.EnvVariable{
 		{Name: "PATH", Value: "/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"},
 		{Name: "GOLANG_VERSION", Value: "1.18.2"},
 		{Name: "GOPATH", Value: "/go"},
@@ -841,7 +841,7 @@ func (ContainerSuite) TestWithoutVariable(ctx context.Context, t *testctx.T) {
 		Container struct {
 			From struct {
 				WithoutEnvVariable struct {
-					EnvVariables []schema.EnvVariable
+					EnvVariables []core.EnvVariable
 					WithExec     struct {
 						Stdout string
 					}
@@ -865,7 +865,7 @@ func (ContainerSuite) TestWithoutVariable(ctx context.Context, t *testctx.T) {
 			}
 		}`, nil)
 	require.NoError(t, err)
-	require.Equal(t, res.Container.From.WithoutEnvVariable.EnvVariables, []schema.EnvVariable{
+	require.Equal(t, res.Container.From.WithoutEnvVariable.EnvVariables, []core.EnvVariable{
 		{Name: "PATH", Value: "/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"},
 		{Name: "GOPATH", Value: "/go"},
 	})
@@ -877,7 +877,7 @@ func (ContainerSuite) TestEnvVariablesReplace(ctx context.Context, t *testctx.T)
 		Container struct {
 			From struct {
 				WithEnvVariable struct {
-					EnvVariables []schema.EnvVariable
+					EnvVariables []core.EnvVariable
 					WithExec     struct {
 						Stdout string
 					}
@@ -901,7 +901,7 @@ func (ContainerSuite) TestEnvVariablesReplace(ctx context.Context, t *testctx.T)
 			}
 		}`, nil)
 	require.NoError(t, err)
-	require.Equal(t, res.Container.From.WithEnvVariable.EnvVariables, []schema.EnvVariable{
+	require.Equal(t, res.Container.From.WithEnvVariable.EnvVariables, []core.EnvVariable{
 		{Name: "PATH", Value: "/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"},
 		{Name: "GOLANG_VERSION", Value: "1.18.2"},
 		{Name: "GOPATH", Value: "/gone"},
@@ -3717,7 +3717,6 @@ func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 	} {
-		tc := tc
 		t.Run(string(tc.compression), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -3789,7 +3788,6 @@ func (ContainerSuite) TestMediaTypes(ctx context.Context, t *testctx.T) {
 			"application/vnd.docker.image.rootfs.diff.tar.gzip",
 		},
 	} {
-		tc := tc
 		t.Run(string(tc.mediaTypes), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -3817,7 +3815,6 @@ func (ContainerSuite) TestMediaTypes(ctx context.Context, t *testctx.T) {
 			}
 
 			for _, useAsTarball := range []bool{true, false} {
-				useAsTarball := useAsTarball
 				t.Run(fmt.Sprintf("useAsTarball=%t", useAsTarball), func(ctx context.Context, t *testctx.T) {
 					tarPath := filepath.Join(t.TempDir(), "export.tar")
 					if useAsTarball {
@@ -3904,9 +3901,7 @@ func (ContainerSuite) TestImageLoadCompatibility(ctx context.Context, t *testctx
 	for _, dockerVersion := range []string{"20.10", "23.0", "24.0"} {
 		dockerc := dockerSetup(ctx, t, c, containerSetupOpts{name: t.Name(), version: dockerVersion})
 		for _, mediaType := range []dagger.ImageMediaTypes{dagger.ImageMediaTypesOcimediaTypes, dagger.ImageMediaTypesDockerMediaTypes} {
-			mediaType := mediaType
 			for _, compression := range []dagger.ImageLayerCompression{dagger.ImageLayerCompressionGzip, dagger.ImageLayerCompressionZstd, dagger.ImageLayerCompressionUncompressed} {
-				compression := compression
 				t.Run(fmt.Sprintf("%s-%s-%s-%s", t.Name(), dockerVersion, mediaType, compression), func(ctx context.Context, t *testctx.T) {
 					tmpdir := t.TempDir()
 					tmpfile := filepath.Join(tmpdir, fmt.Sprintf("test-%s-%s-%s.tar", dockerVersion, mediaType, compression))
@@ -4010,9 +4005,9 @@ func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
 		output1a := runCtrs(c1, hostDir1, subdirA)
 		// run an exec that has /tmpdir/b/f included
 		output1b := runCtrs(c1, hostDir1, subdirB)
-		// sanity check: those should be different execs, *not* cached
-		// (this happens because content-hashing doesn't occur on the root dir)
-		require.NotEqual(t, output1a, output1b)
+
+		// these should be cached execs, since f is the same in both a and b
+		require.Equal(t, output1a, output1b)
 
 		// change /tmpdir/b/f
 		require.NoError(t, os.WriteFile(filepath.Join(tmpDir, subdirB, subfileName), []byte("2"), 0o644))
@@ -4022,8 +4017,7 @@ func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
 		output2a := runCtrs(c2, hostDir2, subdirA)
 		// run an exec that has /tmpdir/b/f included
 		output2b := runCtrs(c2, hostDir2, subdirB)
-		// sanity check: those should be different execs, *not* cached
-		// (this happens because content-hashing doesn't occur on the root dir)
+		// sanity check: those should be different execs, *not* cached because f changed between a and b
 		require.NotEqual(t, output2a, output2b)
 
 		// we only changed /tmpdir/b/f, so the execs that included /tmpdir/a/f should be cached across clients
@@ -5105,4 +5099,43 @@ func (ContainerSuite) TestExists(ctx context.Context, t *testctx.T) {
 	exists, err := ctr.Exists(ctx, "subdir/data")
 	require.NoError(t, err)
 	require.Equal(t, true, exists)
+}
+
+func (ContainerSuite) TestWithoutFileOnMountedFile(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	f1 := c.File("f", "1")
+	f2 := c.File("f", "2")
+	ents, err := c.Container().
+		From(alpineImage).
+		WithFile("/mnt/f", f1).
+		WithMountedFile("/mnt/f", f2).
+		WithoutFile("/mnt/f").
+		Directory("/mnt").
+		Entries(ctx)
+	require.NoError(t, err)
+	require.Empty(t, ents)
+}
+
+func (ContainerSuite) TestWithFileOnMountedFile(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	d := c.Directory().WithNewFile("f1", "1").WithNewFile("f2", "2")
+	f3 := c.File("f3", "3")
+	ctr := c.Container().
+		From(alpineImage).
+		WithMountedDirectory("/mnt", d).
+		WithMountedFile("/mnt/f2", f3)
+
+	f1Contents, err := ctr.File("/mnt/f1").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "1", f1Contents)
+
+	f2Contents, err := ctr.File("/mnt/f2").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "3", f2Contents)
+
+	f4 := c.File("f4", "4")
+
+	f2Contents, err = ctr.WithFile("/mnt/f2", f4).File("/mnt/f2").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "4", f2Contents)
 }

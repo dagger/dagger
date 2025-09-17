@@ -9,6 +9,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/opencontainers/go-digest"
@@ -143,7 +144,10 @@ func ResourceTransferPostCall(
 			// The longer term fix for this type of issue is to have more dagql awareness of edges between
 			// cache results such that a function call return value result inherently results in any referenced
 			// secrets also staying in cache.
-			_, err = destDag.Cache.GetOrInitializeWithCallbacks(ctx, secret.inst.ID().Digest(), true,
+			cacheKey := cache.CacheKey[dagql.CacheKeyType]{
+				ResultKey: string(secret.inst.ID().Digest()),
+			}
+			_, err = destDag.Cache.GetOrInitializeWithCallbacks(ctx, cacheKey,
 				func(ctx context.Context) (*dagql.CacheValWithCallbacks, error) {
 					return &dagql.CacheValWithCallbacks{
 						Value:    secret.inst,

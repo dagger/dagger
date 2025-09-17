@@ -2,7 +2,6 @@ package schema
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -11,6 +10,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	dagqlintrospection "github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/opencontainers/go-digest"
@@ -63,6 +63,8 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
 		&cloudSchema{},
 		&llmSchema{dag},
 		&jsonvalueSchema{},
+		&envfileSchema{},
+		&addressSchema{},
 	} {
 		schema.Install(dag)
 	}
@@ -193,15 +195,17 @@ func (m *CoreMod) typedefs(ctx context.Context) ([]*core.TypeDef, error) {
 func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.TypeDef, error) {
 	initialSchema := m.Dag.Schema()
 
-	introspectionJSON, err := SchemaIntrospectionJSON(ctx, dag)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get schema introspection JSON for core: %w", err)
+	dagqlSchema := dagqlintrospection.WrapSchema(dag.Schema())
+	schema := &introspection.Schema{}
+	if queryName := dagqlSchema.QueryType().Name(); queryName != nil {
+		schema.QueryType.Name = *queryName
 	}
-	var schemaResp introspection.Response
-	if err := json.Unmarshal([]byte(introspectionJSON), &schemaResp); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal introspection JSON: %w", err)
+	for _, dagqlType := range dagqlSchema.Types() {
+		schema.Types = append(schema.Types, dagqlToCodegenType(dagqlType))
 	}
-	schema := schemaResp.Schema
+	for _, dagqlDirective := range dagqlSchema.Directives() {
+		schema.Directives = append(schema.Directives, dagqlToCodegenDirectiveDef(dagqlDirective))
+	}
 
 	typeDefs := make([]*core.TypeDef, 0, len(schema.Types))
 	for _, introspectionType := range schema.Types {

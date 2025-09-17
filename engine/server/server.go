@@ -65,7 +65,6 @@ import (
 	"github.com/moby/buildkit/worker/base"
 	wlabel "github.com/moby/buildkit/worker/label"
 	"github.com/moby/locker"
-	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
 	bolt "go.etcd.io/bbolt"
@@ -166,7 +165,7 @@ type Server struct {
 	//
 	// dagql cache
 	//
-	baseDagqlCache cache.Cache[digest.Digest, dagql.AnyResult]
+	baseDagqlCache cache.Cache[string, dagql.AnyResult]
 
 	//
 	// session+client state
@@ -210,7 +209,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			SearchDomains: bkcfg.DNS.SearchDomains,
 		},
 
-		baseDagqlCache: cache.NewCache[digest.Digest, dagql.AnyResult](),
+		baseDagqlCache: cache.NewCache[string, dagql.AnyResult](),
 		daggerSessions: make(map[string]*daggerSession),
 		locker:         locker.New(),
 	}

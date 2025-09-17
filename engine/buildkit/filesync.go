@@ -92,6 +92,7 @@ func (c *Client) LocalDirExport(
 	def *bksolverpb.Definition,
 	destPath string,
 	merge bool,
+	removePaths []string,
 ) (rerr error) {
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("export_path", destPath))
 	bklog.G(ctx).Debug("exporting local dir")
@@ -137,8 +138,9 @@ func (c *Client) LocalDirExport(
 	}
 
 	ctx = engine.LocalExportOpts{
-		Path:  destPath,
-		Merge: merge,
+		Path:        destPath,
+		Merge:       merge,
+		RemovePaths: removePaths,
 	}.AppendToOutgoingContext(ctx)
 
 	_, descRef, err := expResult.Export(ctx, cacheRes, nil, clientMetadata.ClientID)

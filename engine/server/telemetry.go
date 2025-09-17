@@ -507,7 +507,7 @@ func insertLogRecord(ctx context.Context, queries *clientdb.Queries, rec *sdklog
 	}
 
 	res := rec.Resource()
-	resource, err := protojson.Marshal(telemetry.ResourceToPB(res))
+	resource, err := protojson.Marshal(telemetry.ResourcePtrToPB(res))
 	if err != nil {
 		return fmt.Errorf("marshal log record resource: %w", err)
 	}

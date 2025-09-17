@@ -378,7 +378,7 @@ func (svc *Service) startContainer(
 	cache := query.BuildkitCache()
 	session := query.BuildkitSession()
 
-	pbmounts, states, refs, _, err := getAllContainerMounts(ctr)
+	pbmounts, states, _, refs, _, err := getAllContainerMounts(ctx, ctr)
 	if err != nil {
 		return nil, fmt.Errorf("could not get mounts: %w", err)
 	}
@@ -777,7 +777,7 @@ func (svc *Service) startTunnel(ctx context.Context) (running *RunningService, r
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	upstream, err := svcs.Start(svcCtx, svc.TunnelUpstream.ID(), svc.TunnelUpstream.Self(), true)
+	upstream, err := svcs.Start(svcCtx, svc.TunnelUpstream.ID(), svc.TunnelUpstream.Self(), svc.TunnelUpstream.Self().TunnelUpstream.Self() != nil)
 	if err != nil {
 		return nil, fmt.Errorf("start upstream: %w", err)
 	}

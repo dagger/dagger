@@ -20,7 +20,7 @@ jobs:
     dotnet-dev:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.17' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.18' || 'ubuntu-24.04' }}
         name: dotnet-dev
         steps:
             - name: scripts/install-dagger.sh
@@ -48,7 +48,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.17
+                DAGGER_VERSION: v0.18.18
               shell: bash
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger
@@ -194,7 +194,7 @@ jobs:
     elixir-dev:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.17' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.18' || 'ubuntu-24.04' }}
         name: elixir-dev
         steps:
             - name: scripts/install-dagger.sh
@@ -222,7 +222,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.17
+                DAGGER_VERSION: v0.18.18
               shell: bash
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger
@@ -368,7 +368,7 @@ jobs:
     go-dev:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.17' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.18' || 'ubuntu-24.04' }}
         name: go-dev
         steps:
             - name: scripts/install-dagger.sh
@@ -396,7 +396,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.17
+                DAGGER_VERSION: v0.18.18
               shell: bash
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger
@@ -542,7 +542,7 @@ jobs:
     java-dev:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.17' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.18' || 'ubuntu-24.04' }}
         name: java-dev
         steps:
             - name: scripts/install-dagger.sh
@@ -570,7 +570,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.17
+                DAGGER_VERSION: v0.18.18
               shell: bash
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger
@@ -716,7 +716,7 @@ jobs:
     php-dev:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.17' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.18' || 'ubuntu-24.04' }}
         name: php-dev
         steps:
             - name: scripts/install-dagger.sh
@@ -744,7 +744,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.17
+                DAGGER_VERSION: v0.18.18
               shell: bash
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger
@@ -890,7 +890,7 @@ jobs:
     python-dev:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.17' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.18' || 'ubuntu-24.04' }}
         name: python-dev
         steps:
             - name: scripts/install-dagger.sh
@@ -918,7 +918,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.17
+                DAGGER_VERSION: v0.18.18
               shell: bash
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger
@@ -1064,7 +1064,7 @@ jobs:
     rust-dev:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.17' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.18' || 'ubuntu-24.04' }}
         name: rust-dev
         steps:
             - name: scripts/install-dagger.sh
@@ -1092,7 +1092,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.17
+                DAGGER_VERSION: v0.18.18
               shell: bash
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger
@@ -1238,7 +1238,7 @@ jobs:
     typescript-dev:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.17' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.18' || 'ubuntu-24.04' }}
         name: typescript-dev
         steps:
             - name: scripts/install-dagger.sh
@@ -1266,7 +1266,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.18.17
+                DAGGER_VERSION: v0.18.18
               shell: bash
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger

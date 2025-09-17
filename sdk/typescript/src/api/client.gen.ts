@@ -17,6 +17,23 @@ class BaseClient {
   constructor(protected _ctx: Context = new Context()) {}
 }
 
+export type AddressDirectoryOpts = {
+  exclude?: string[]
+  include?: string[]
+  noCache?: boolean
+}
+
+export type AddressFileOpts = {
+  exclude?: string[]
+  include?: string[]
+  noCache?: boolean
+}
+
+/**
+ * The `AddressID` scalar type represents an identifier for an object of type Address.
+ */
+export type AddressID = string & { __AddressID: never }
+
 /**
  * The `BindingID` scalar type represents an identifier for an object of type Binding.
  */
@@ -91,6 +108,11 @@ function CacheSharingModeNameToValue(name: string): CacheSharingMode {
  * The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
  */
 export type CacheVolumeID = string & { __CacheVolumeID: never }
+
+/**
+ * The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
+ */
+export type ChangesetID = string & { __ChangesetID: never }
 
 /**
  * The `CloudID` scalar type represents an identifier for an object of type Cloud.
@@ -926,6 +948,15 @@ export type DirectoryWithDirectoryOpts = {
    * Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    */
   include?: string[]
+
+  /**
+   * A user:group to set for the copied directory and its contents.
+   *
+   * The user and group must be an ID (1000:1000), not a name (foo:bar).
+   *
+   * If the group is omitted, it defaults to the same as the user.
+   */
+  owner?: string
 }
 
 export type DirectoryWithFileOpts = {
@@ -933,6 +964,15 @@ export type DirectoryWithFileOpts = {
    * Permission given to the copied file (e.g., 0600).
    */
   permissions?: number
+
+  /**
+   * A user:group to set for the copied directory and its contents.
+   *
+   * The user and group must be an ID (1000:1000), not a name (foo:bar).
+   *
+   * If the group is omitted, it defaults to the same as the user.
+   */
+  owner?: string
 }
 
 export type DirectoryWithFilesOpts = {
@@ -1001,6 +1041,11 @@ export type EnumTypeDefID = string & { __EnumTypeDefID: never }
  * The `EnumValueTypeDefID` scalar type represents an identifier for an object of type EnumValueTypeDef.
  */
 export type EnumValueTypeDefID = string & { __EnumValueTypeDefID: never }
+
+/**
+ * The `EnvFileID` scalar type represents an identifier for an object of type EnvFile.
+ */
+export type EnvFileID = string & { __EnvFileID: never }
 
 /**
  * The `EnvID` scalar type represents an identifier for an object of type Env.
@@ -1079,6 +1124,13 @@ function ExistsTypeNameToValue(name: string): ExistsType {
  * The `FieldTypeDefID` scalar type represents an identifier for an object of type FieldTypeDef.
  */
 export type FieldTypeDefID = string & { __FieldTypeDefID: never }
+
+export type FileAsEnvFileOpts = {
+  /**
+   * Replace "${VAR}" or "$VAR" with the value of other vars
+   */
+  expand?: boolean
+}
 
 export type FileContentsOpts = {
   /**
@@ -1274,15 +1326,19 @@ export type HostDirectoryOpts = {
   noCache?: boolean
 
   /**
-   * Don't apply .gitignore filter rules inside the directory
+   * Apply .gitignore filter rules inside the directory
    */
-  noGitAutoIgnore?: boolean
+  gitignore?: boolean
 }
 
 export type HostFileOpts = {
   /**
    * If true, the file will always be reloaded from the host.
    */
+  noCache?: boolean
+}
+
+export type HostFindUpOpts = {
   noCache?: boolean
 }
 
@@ -1626,6 +1682,13 @@ export type ClientEnvOpts = {
    * Allow new outputs to be declared and saved in the environment
    */
   writable?: boolean
+}
+
+export type ClientEnvFileOpts = {
+  /**
+   * Replace "${VAR}" or "$VAR" with the value of other vars
+   */
+  expand?: boolean
 }
 
 export type ClientFileOpts = {
@@ -2173,6 +2236,118 @@ export type __TypeInputFieldsOpts = {
   includeDeprecated?: boolean
 }
 
+/**
+ * A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.
+ */
+export class Address extends BaseClient {
+  private readonly _id?: AddressID = undefined
+  private readonly _value?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: AddressID, _value?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._value = _value
+  }
+
+  /**
+   * A unique identifier for this Address.
+   */
+  id = async (): Promise<AddressID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<AddressID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Load a container from the address.
+   */
+  container = (): Container => {
+    const ctx = this._ctx.select("container")
+    return new Container(ctx)
+  }
+
+  /**
+   * Load a directory from the address.
+   */
+  directory = (opts?: AddressDirectoryOpts): Directory => {
+    const ctx = this._ctx.select("directory", { ...opts })
+    return new Directory(ctx)
+  }
+
+  /**
+   * Load a file from the address.
+   */
+  file = (opts?: AddressFileOpts): File => {
+    const ctx = this._ctx.select("file", { ...opts })
+    return new File(ctx)
+  }
+
+  /**
+   * Load a git ref (branch, tag or commit) from the address.
+   */
+  gitRef = (): GitRef => {
+    const ctx = this._ctx.select("gitRef")
+    return new GitRef(ctx)
+  }
+
+  /**
+   * Load a git repository from the address.
+   */
+  gitRepository = (): GitRepository => {
+    const ctx = this._ctx.select("gitRepository")
+    return new GitRepository(ctx)
+  }
+
+  /**
+   * Load a secret from the address.
+   */
+  secret = (): Secret => {
+    const ctx = this._ctx.select("secret")
+    return new Secret(ctx)
+  }
+
+  /**
+   * Load a service from the address.
+   */
+  service = (): Service => {
+    const ctx = this._ctx.select("service")
+    return new Service(ctx)
+  }
+
+  /**
+   * Load a local socket from the address.
+   */
+  socket = (): Socket => {
+    const ctx = this._ctx.select("socket")
+    return new Socket(ctx)
+  }
+
+  /**
+   * The address value
+   */
+  value = async (): Promise<string> => {
+    if (this._value) {
+      return this._value
+    }
+
+    const ctx = this._ctx.select("value")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
 export class Binding extends BaseClient {
   private readonly _id?: BindingID = undefined
   private readonly _asString?: string = undefined
@@ -2219,11 +2394,27 @@ export class Binding extends BaseClient {
   }
 
   /**
+   * Retrieve the binding value, as type Address
+   */
+  asAddress = (): Address => {
+    const ctx = this._ctx.select("asAddress")
+    return new Address(ctx)
+  }
+
+  /**
    * Retrieve the binding value, as type CacheVolume
    */
   asCacheVolume = (): CacheVolume => {
     const ctx = this._ctx.select("asCacheVolume")
     return new CacheVolume(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type Changeset
+   */
+  asChangeset = (): Changeset => {
+    const ctx = this._ctx.select("asChangeset")
+    return new Changeset(ctx)
   }
 
   /**
@@ -2256,6 +2447,14 @@ export class Binding extends BaseClient {
   asEnv = (): Env => {
     const ctx = this._ctx.select("asEnv")
     return new Env(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type EnvFile
+   */
+  asEnvFile = (): EnvFile => {
+    const ctx = this._ctx.select("asEnvFile")
+    return new EnvFile(ctx)
   }
 
   /**
@@ -2466,6 +2665,138 @@ export class CacheVolume extends BaseClient {
     const response: Awaited<CacheVolumeID> = await ctx.execute()
 
     return response
+  }
+}
+
+/**
+ * A comparison between two directories representing changes that can be applied.
+ */
+export class Changeset extends BaseClient {
+  private readonly _id?: ChangesetID = undefined
+  private readonly _export?: string = undefined
+  private readonly _sync?: ChangesetID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ChangesetID,
+    _export?: string,
+    _sync?: ChangesetID,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._export = _export
+    this._sync = _sync
+  }
+
+  /**
+   * A unique identifier for this Changeset.
+   */
+  id = async (): Promise<ChangesetID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ChangesetID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Files and directories that were added in the newer directory.
+   */
+  addedPaths = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("addedPaths")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The newer/upper snapshot.
+   */
+  after = (): Directory => {
+    const ctx = this._ctx.select("after")
+    return new Directory(ctx)
+  }
+
+  /**
+   * Return a Git-compatible patch of the changes
+   */
+  asPatch = (): File => {
+    const ctx = this._ctx.select("asPatch")
+    return new File(ctx)
+  }
+
+  /**
+   * The older/lower snapshot to compare against.
+   */
+  before = (): Directory => {
+    const ctx = this._ctx.select("before")
+    return new Directory(ctx)
+  }
+
+  /**
+   * Applies the diff represented by this changeset to a path on the host.
+   * @param path Location of the copied directory (e.g., "logs/").
+   */
+  export = async (path: string): Promise<string> => {
+    if (this._export) {
+      return this._export
+    }
+
+    const ctx = this._ctx.select("export", { path })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return a snapshot containing only the created and modified files
+   */
+  layer = (): Directory => {
+    const ctx = this._ctx.select("layer")
+    return new Directory(ctx)
+  }
+
+  /**
+   * Files and directories that existed before and were updated in the newer directory.
+   */
+  modifiedPaths = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("modifiedPaths")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.
+   */
+  removedPaths = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("removedPaths")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Force evaluation in the engine.
+   */
+  sync = async (): Promise<Changeset> => {
+    const ctx = this._ctx.select("sync")
+
+    const response: Awaited<ChangesetID> = await ctx.execute()
+
+    return new Client(ctx.copy()).loadChangesetFromID(response)
   }
 }
 
@@ -3894,6 +4225,7 @@ export class Directory extends BaseClient {
   private readonly _digest?: string = undefined
   private readonly _exists?: boolean = undefined
   private readonly _export?: string = undefined
+  private readonly _findUp?: string = undefined
   private readonly _name?: string = undefined
   private readonly _sync?: DirectoryID = undefined
 
@@ -3906,6 +4238,7 @@ export class Directory extends BaseClient {
     _digest?: string,
     _exists?: boolean,
     _export?: string,
+    _findUp?: string,
     _name?: string,
     _sync?: DirectoryID,
   ) {
@@ -3915,6 +4248,7 @@ export class Directory extends BaseClient {
     this._digest = _digest
     this._exists = _exists
     this._export = _export
+    this._findUp = _findUp
     this._name = _name
     this._sync = _sync
   }
@@ -3962,6 +4296,31 @@ export class Directory extends BaseClient {
   asModuleSource = (opts?: DirectoryAsModuleSourceOpts): ModuleSource => {
     const ctx = this._ctx.select("asModuleSource", { ...opts })
     return new ModuleSource(ctx)
+  }
+
+  /**
+   * Return the difference between this directory and another directory, typically an older snapshot.
+   *
+   * The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
+   * @param from The base directory snapshot to compare against
+   */
+  changes = (from: Directory): Changeset => {
+    const ctx = this._ctx.select("changes", { from })
+    return new Changeset(ctx)
+  }
+
+  /**
+   * Change the owner of the directory contents recursively.
+   * @param path Path of the directory to change ownership of (e.g., "/").
+   * @param owner A user:group to set for the mounted directory and its contents.
+   *
+   * The user and group must be an ID (1000:1000), not a name (foo:bar).
+   *
+   * If the group is omitted, it defaults to the same as the user.
+   */
+  chown = (path: string, owner: string): Directory => {
+    const ctx = this._ctx.select("chown", { path, owner })
+    return new Directory(ctx)
   }
 
   /**
@@ -4096,6 +4455,23 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Search up the directory tree for a file or directory, and return its path. If no match, return null
+   * @param name The name of the file or directory to search for
+   * @param start The path to start the search from
+   */
+  findUp = async (name: string, start: string): Promise<string> => {
+    if (this._findUp) {
+      return this._findUp
+    }
+
+    const ctx = this._ctx.select("findUp", { name, start })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Returns a list of files and directories that matche the given pattern.
    * @param pattern Pattern to match (e.g., "*.md").
    */
@@ -4176,11 +4552,25 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Return a directory with changes from another directory applied to it.
+   * @param changes Changes to apply to the directory
+   */
+  withChanges = (changes: Changeset): Directory => {
+    const ctx = this._ctx.select("withChanges", { changes })
+    return new Directory(ctx)
+  }
+
+  /**
    * Return a snapshot with a directory added
    * @param path Location of the written directory (e.g., "/src/").
    * @param directory Identifier of the directory to copy.
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+   * @param opts.owner A user:group to set for the copied directory and its contents.
+   *
+   * The user and group must be an ID (1000:1000), not a name (foo:bar).
+   *
+   * If the group is omitted, it defaults to the same as the user.
    */
   withDirectory = (
     path: string,
@@ -4196,6 +4586,11 @@ export class Directory extends BaseClient {
    * @param path Location of the copied file (e.g., "/file.txt").
    * @param source Identifier of the file to copy.
    * @param opts.permissions Permission given to the copied file (e.g., 0600).
+   * @param opts.owner A user:group to set for the copied directory and its contents.
+   *
+   * The user and group must be an ID (1000:1000), not a name (foo:bar).
+   *
+   * If the group is omitted, it defaults to the same as the user.
    */
   withFile = (
     path: string,
@@ -4256,6 +4651,16 @@ export class Directory extends BaseClient {
    */
   withPatch = (patch: string): Directory => {
     const ctx = this._ctx.select("withPatch", { patch })
+    return new Directory(ctx)
+  }
+
+  /**
+   * Retrieves this directory with the given Git-compatible patch file applied.
+   * @param patch File containing the patch to apply
+   * @experimental
+   */
+  withPatchFile = (patch: File): Directory => {
+    const ctx = this._ctx.select("withPatchFile", { patch })
     return new Directory(ctx)
   }
 
@@ -5017,6 +5422,35 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Create or update a binding of type Address in the environment
+   * @param name The name of the binding
+   * @param value The Address value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withAddressInput = (
+    name: string,
+    value: Address,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withAddressInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Address output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withAddressOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withAddressOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
    * Create or update a binding of type CacheVolume in the environment
    * @param name The name of the binding
    * @param value The CacheVolume value to assign to the binding
@@ -5042,6 +5476,35 @@ export class Env extends BaseClient {
    */
   withCacheVolumeOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withCacheVolumeOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Changeset in the environment
+   * @param name The name of the binding
+   * @param value The Changeset value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withChangesetInput = (
+    name: string,
+    value: Changeset,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withChangesetInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Changeset output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withChangesetOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withChangesetOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -5121,6 +5584,35 @@ export class Env extends BaseClient {
    */
   withDirectoryOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withDirectoryOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type EnvFile in the environment
+   * @param name The name of the binding
+   * @param value The EnvFile value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withEnvFileInput = (
+    name: string,
+    value: EnvFile,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withEnvFileInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired EnvFile output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withEnvFileOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withEnvFileOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -5545,6 +6037,131 @@ export class Env extends BaseClient {
 }
 
 /**
+ * A collection of environment variables.
+ */
+export class EnvFile extends BaseClient {
+  private readonly _id?: EnvFileID = undefined
+  private readonly _exists?: boolean = undefined
+  private readonly _get?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: EnvFileID,
+    _exists?: boolean,
+    _get?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._exists = _exists
+    this._get = _get
+  }
+
+  /**
+   * A unique identifier for this EnvFile.
+   */
+  id = async (): Promise<EnvFileID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<EnvFileID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return as a file
+   */
+  asFile = (): File => {
+    const ctx = this._ctx.select("asFile")
+    return new File(ctx)
+  }
+
+  /**
+   * Check if a variable exists
+   * @param name Variable name
+   */
+  exists = async (name: string): Promise<boolean> => {
+    if (this._exists) {
+      return this._exists
+    }
+
+    const ctx = this._ctx.select("exists", { name })
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Lookup a variable (last occurrence wins) and return its value, or an empty string
+   * @param name Variable name
+   */
+  get = async (name: string): Promise<string> => {
+    if (this._get) {
+      return this._get
+    }
+
+    const ctx = this._ctx.select("get", { name })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return all variables
+   */
+  variables = async (): Promise<EnvVariable[]> => {
+    type variables = {
+      id: EnvVariableID
+    }
+
+    const ctx = this._ctx.select("variables").select("id")
+
+    const response: Awaited<variables[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadEnvVariableFromID(r.id),
+    )
+  }
+
+  /**
+   * Add a variable
+   * @param name Variable name
+   * @param value Variable value
+   */
+  withVariable = (name: string, value: string): EnvFile => {
+    const ctx = this._ctx.select("withVariable", { name, value })
+    return new EnvFile(ctx)
+  }
+
+  /**
+   * Remove all occurrences of the named variable
+   * @param name Variable name
+   */
+  withoutVariable = (name: string): EnvFile => {
+    const ctx = this._ctx.select("withoutVariable", { name })
+    return new EnvFile(ctx)
+  }
+
+  /**
+   * Call the provided function with current EnvFile.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: EnvFile) => EnvFile) => {
+    return arg(this)
+  }
+}
+
+/**
  * An environment variable name and value.
  */
 export class EnvVariable extends BaseClient {
@@ -5899,6 +6516,28 @@ export class File extends BaseClient {
     const response: Awaited<FileID> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Parse as an env file
+   * @param opts.expand Replace "${VAR}" or "$VAR" with the value of other vars
+   */
+  asEnvFile = (opts?: FileAsEnvFileOpts): EnvFile => {
+    const ctx = this._ctx.select("asEnvFile", { ...opts })
+    return new EnvFile(ctx)
+  }
+
+  /**
+   * Change the owner of the file recursively.
+   * @param owner A user:group to set for the file.
+   *
+   * The user and group must be an ID (1000:1000), not a name (foo:bar).
+   *
+   * If the group is omitted, it defaults to the same as the user.
+   */
+  chown = (owner: string): File => {
+    const ctx = this._ctx.select("chown", { owner })
+    return new File(ctx)
   }
 
   /**
@@ -6913,14 +7552,16 @@ export class GitRepository extends BaseClient {
  */
 export class Host extends BaseClient {
   private readonly _id?: HostID = undefined
+  private readonly _findUp?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: HostID) {
+  constructor(ctx?: Context, _id?: HostID, _findUp?: string) {
     super(ctx)
 
     this._id = _id
+    this._findUp = _findUp
   }
 
   /**
@@ -6953,7 +7594,7 @@ export class Host extends BaseClient {
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    * @param opts.noCache If true, the directory will always be reloaded from the host.
-   * @param opts.noGitAutoIgnore Don't apply .gitignore filter rules inside the directory
+   * @param opts.gitignore Apply .gitignore filter rules inside the directory
    */
   directory = (path: string, opts?: HostDirectoryOpts): Directory => {
     const ctx = this._ctx.select("directory", { path, ...opts })
@@ -6968,6 +7609,22 @@ export class Host extends BaseClient {
   file = (path: string, opts?: HostFileOpts): File => {
     const ctx = this._ctx.select("file", { path, ...opts })
     return new File(ctx)
+  }
+
+  /**
+   * Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null
+   * @param name name of the file or directory to search for
+   */
+  findUp = async (name: string, opts?: HostFindUpOpts): Promise<string> => {
+    if (this._findUp) {
+      return this._findUp
+    }
+
+    const ctx = this._ctx.select("findUp", { name, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -8708,6 +9365,15 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * Update one or more clients.
+   * @param clients The clients to update
+   */
+  withUpdatedClients = (clients: string[]): ModuleSource => {
+    const ctx = this._ctx.select("withUpdatedClients", { clients })
+    return new ModuleSource(ctx)
+  }
+
+  /**
    * Remove the current blueprint from the module source.
    */
   withoutBlueprint = (): ModuleSource => {
@@ -9010,6 +9676,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * initialize an address to load directories, containers, secrets or other object types.
+   */
+  address = (value: string): Address => {
+    const ctx = this._ctx.select("address", { value })
+    return new Address(ctx)
+  }
+
+  /**
    * Constructs a cache volume for a given cache key.
    * @param key A string identifier to target this cache volume (e.g., "modules-cache").
    */
@@ -9106,6 +9780,15 @@ export class Client extends BaseClient {
   env = (opts?: ClientEnvOpts): Env => {
     const ctx = this._ctx.select("env", { ...opts })
     return new Env(ctx)
+  }
+
+  /**
+   * Initialize an environment file
+   * @param opts.expand Replace "${VAR}" or "$VAR" with the value of other vars
+   */
+  envFile = (opts?: ClientEnvFileOpts): EnvFile => {
+    const ctx = this._ctx.select("envFile", { ...opts })
+    return new EnvFile(ctx)
   }
 
   /**
@@ -9207,6 +9890,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a Address from its ID.
+   */
+  loadAddressFromID = (id: AddressID): Address => {
+    const ctx = this._ctx.select("loadAddressFromID", { id })
+    return new Address(ctx)
+  }
+
+  /**
    * Load a Binding from its ID.
    */
   loadBindingFromID = (id: BindingID): Binding => {
@@ -9220,6 +9911,14 @@ export class Client extends BaseClient {
   loadCacheVolumeFromID = (id: CacheVolumeID): CacheVolume => {
     const ctx = this._ctx.select("loadCacheVolumeFromID", { id })
     return new CacheVolume(ctx)
+  }
+
+  /**
+   * Load a Changeset from its ID.
+   */
+  loadChangesetFromID = (id: ChangesetID): Changeset => {
+    const ctx = this._ctx.select("loadChangesetFromID", { id })
+    return new Changeset(ctx)
   }
 
   /**
@@ -9302,6 +10001,14 @@ export class Client extends BaseClient {
   loadEnumValueTypeDefFromID = (id: EnumValueTypeDefID): EnumValueTypeDef => {
     const ctx = this._ctx.select("loadEnumValueTypeDefFromID", { id })
     return new EnumValueTypeDef(ctx)
+  }
+
+  /**
+   * Load a EnvFile from its ID.
+   */
+  loadEnvFileFromID = (id: EnvFileID): EnvFile => {
+    const ctx = this._ctx.select("loadEnvFileFromID", { id })
+    return new EnvFile(ctx)
   }
 
   /**

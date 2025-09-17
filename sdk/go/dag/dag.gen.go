@@ -46,6 +46,12 @@ func Close() error {
 	return err
 }
 
+// initialize an address to load directories, containers, secrets or other object types.
+func Address(value string) *dagger.Address {
+	client := initClient()
+	return client.Address(value)
+}
+
 // Constructs a cache volume for a given cache key.
 func CacheVolume(key string) *dagger.CacheVolume {
 	client := initClient()
@@ -112,6 +118,12 @@ func Env(opts ...dagger.EnvOpts) *dagger.Env {
 	return client.Env(opts...)
 }
 
+// Initialize an environment file
+func EnvFile(opts ...dagger.EnvFileOpts) *dagger.EnvFile {
+	client := initClient()
+	return client.EnvFile(opts...)
+}
+
 // Create a new error.
 func Error(message string) *dagger.Error {
 	client := initClient()
@@ -168,6 +180,12 @@ func LLM(opts ...dagger.LLMOpts) *dagger.LLM {
 	return client.LLM(opts...)
 }
 
+// Load a Address from its ID.
+func LoadAddressFromID(id dagger.AddressID) *dagger.Address {
+	client := initClient()
+	return client.LoadAddressFromID(id)
+}
+
 // Load a Binding from its ID.
 func LoadBindingFromID(id dagger.BindingID) *dagger.Binding {
 	client := initClient()
@@ -178,6 +196,12 @@ func LoadBindingFromID(id dagger.BindingID) *dagger.Binding {
 func LoadCacheVolumeFromID(id dagger.CacheVolumeID) *dagger.CacheVolume {
 	client := initClient()
 	return client.LoadCacheVolumeFromID(id)
+}
+
+// Load a Changeset from its ID.
+func LoadChangesetFromID(id dagger.ChangesetID) *dagger.Changeset {
+	client := initClient()
+	return client.LoadChangesetFromID(id)
 }
 
 // Load a Cloud from its ID.
@@ -238,6 +262,12 @@ func LoadEnumTypeDefFromID(id dagger.EnumTypeDefID) *dagger.EnumTypeDef {
 func LoadEnumValueTypeDefFromID(id dagger.EnumValueTypeDefID) *dagger.EnumValueTypeDef {
 	client := initClient()
 	return client.LoadEnumValueTypeDefFromID(id)
+}
+
+// Load a EnvFile from its ID.
+func LoadEnvFileFromID(id dagger.EnvFileID) *dagger.EnvFile {
+	client := initClient()
+	return client.LoadEnvFileFromID(id)
 }
 
 // Load a Env from its ID.

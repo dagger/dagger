@@ -92,8 +92,6 @@ main()`))
 		}
 
 		for _, tc := range testCases {
-			tc := tc
-
 			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -210,8 +208,6 @@ main()
 		}
 
 		for _, tc := range testCases {
-			tc := tc
-
 			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -337,8 +333,6 @@ main()
 		}
 
 		for _, tc := range testCases {
-			tc := tc
-
 			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -476,8 +470,6 @@ main()
 		}
 
 		for _, tc := range testCases {
-			tc := tc
-
 			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -584,8 +576,6 @@ main()
 		}
 
 		for _, tc := range testCases {
-			tc := tc
-
 			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -720,8 +710,6 @@ main()
 		}
 
 		for _, tc := range testCases {
-			tc := tc
-
 			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -854,8 +842,6 @@ main()`))
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(fmt.Sprintf("%s %q", tc.name, tc.outputDir), func(ctx context.Context, t *testctx.T) {
 			for _, ts := range []testSetup{
 				goTestSetup(tc.outputDir),
@@ -955,8 +941,6 @@ main()`))
 		}
 
 		for _, tc := range testCases {
-			tc := tc
-
 			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -1050,8 +1034,6 @@ main()`))
 		}
 
 		for _, tc := range testCases {
-			tc := tc
-
 			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -1143,8 +1125,6 @@ export class Generator {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.generatorSDK, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -1284,18 +1264,187 @@ func main() {
 	})
 
 	t.Run("uninstall client", func(ctx context.Context, t *testctx.T) {
-		ctr := moduleSrc.WithExec([]string{"dagger", "client", "uninstall", "./dagger"})
+		ctr := moduleSrc.WithExec([]string{"dagger", "client", "uninstall", "dagger"})
 
 		out, err := ctr.Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Contains(t, out, "Client at ./dagger removed from config.\n")
+		require.Contains(t, out, "Client at dagger removed from config.\n")
 
 		out, err = ctr.WithExec([]string{"dagger", "client", "list", "--json"}).Stdout(ctx)
 
 		require.NoError(t, err)
 		require.JSONEq(t, `[{"Generator":"go","Directory":"./dagger2"}]`, out)
 	})
+}
+
+func (ClientGeneratorTest) TestClientUpdate(ctx context.Context, t *testctx.T) {
+	const (
+		// pins from github.com/dagger/client-generator-test module
+		// to test the update command
+		latestPin = "d76af75d104a2777bcd7dc6d240966760801b81f"
+		v01Pin    = "446f2691deba58f99b55b86430fade1c773e486f"
+	)
+
+	// dagger.json files to use for initial setup
+	noClient := `{
+	"name": "test",
+	"clients": []
+}`
+
+	clientwithOldVersion := `{
+	"name": "test",
+	"clients": [
+		{
+			"generator": "github.com/dagger/client-generator-test@` + v01Pin + `",
+			"directory": "dagger"
+		}
+	]
+}`
+
+	clientwithBranch := `{
+	"name": "test",
+	"clients": [
+		{
+			"generator": "github.com/dagger/client-generator-test@main",
+			"directory": "dagger"
+		}
+	]
+}`
+
+	clientWithNoVersion := `{
+	"name": "test",
+	"clients": [
+		{
+			"generator": "github.com/dagger/client-generator-test",
+			"directory": "dagger"
+		}
+	]
+}`
+
+	type testCase struct {
+		name          string
+		daggerjson    string
+		updateCmd     []string
+		contains      []string
+		notContains   []string
+		expectedError string
+	}
+
+	testCases := []testCase{
+		{
+			name:        "existing client has version, update cmd has version",
+			daggerjson:  clientwithOldVersion,
+			updateCmd:   []string{"client", "update", "github.com/dagger/client-generator-test@v0.0.2"},
+			contains:    []string{"github.com/dagger/client-generator-test@v0.0.2"},
+			notContains: []string{fmt.Sprintf("github.com/dagger/client-generator-test@%s", v01Pin)},
+		},
+		{
+			name:        "existing client has branch, update cmd has version",
+			daggerjson:  clientwithBranch,
+			updateCmd:   []string{"client", "update", "github.com/dagger/client-generator-test@v0.0.2"},
+			contains:    []string{"github.com/dagger/client-generator-test@v0.0.2"},
+			notContains: []string{"github.com/dagger/client-generator-test@main"},
+		},
+		{
+			name:        "existing client dont have version, update cmd has version",
+			daggerjson:  clientWithNoVersion,
+			updateCmd:   []string{"client", "update", "github.com/dagger/client-generator-test@v0.0.2"},
+			contains:    []string{"github.com/dagger/client-generator-test@v0.0.2"},
+			notContains: []string{"github.com/dagger/client-generator-test\""},
+		},
+		{
+			name:       "existing client has version, update cmd has no version",
+			daggerjson: clientwithOldVersion,
+			updateCmd:  []string{"client", "update", "github.com/dagger/client-generator-test"},
+			contains:   []string{fmt.Sprintf("github.com/dagger/client-generator-test@%s", latestPin)},
+			notContains: []string{
+				"github.com/dagger/client-generator-test@v0.0.2",
+				"github.com/dagger/client-generator-test@main",
+			},
+		},
+		{
+			name:       "existing client has no version, update cmd has no version",
+			daggerjson: clientWithNoVersion,
+			updateCmd:  []string{"client", "update", "github.com/dagger/client-generator-test"},
+			contains:   []string{fmt.Sprintf("github.com/dagger/client-generator-test@%s", latestPin)},
+			notContains: []string{
+				"github.com/dagger/client-generator-test\"",
+			},
+		},
+		{
+			name:       "existing client has branch, update cmd has no version",
+			daggerjson: clientwithBranch,
+			updateCmd:  []string{"client", "update", "github.com/dagger/client-generator-test"},
+			contains:   []string{fmt.Sprintf("github.com/dagger/client-generator-test@%s", latestPin)},
+			notContains: []string{
+				"github.com/dagger/client-generator-test@main",
+			},
+		},
+		{
+			name:       "existing client has version, update cmd has branch",
+			daggerjson: clientwithOldVersion,
+			updateCmd:  []string{"client", "update", "github.com/dagger/client-generator-test@main"},
+			contains:   []string{"github.com/dagger/client-generator-test@main"},
+			notContains: []string{
+				fmt.Sprintf("github.com/dagger/client-generator-test@%s", v01Pin),
+			},
+		},
+		{
+			name:       "existing client has no version, update cmd has branch",
+			daggerjson: clientWithNoVersion,
+			updateCmd:  []string{"client", "update", "github.com/dagger/client-generator-test@main"},
+			contains:   []string{"github.com/dagger/client-generator-test@main"},
+			notContains: []string{
+				"github.com/dagger/client-generator-test\"",
+			},
+		},
+		{
+			name:          "update a client not in the dagger.json",
+			daggerjson:    noClient,
+			updateCmd:     []string{"client", "update", "github.com/dagger/client-generator-test@v0.0.2"},
+			expectedError: `client(s) "github.com/dagger/client-generator-test" were requested to be updated, but were not found in the clients list`,
+		},
+		{
+			name:       "can update all clients",
+			daggerjson: clientwithOldVersion,
+			updateCmd:  []string{"client", "update"},
+			contains:   []string{fmt.Sprintf("github.com/dagger/client-generator-test@%s", latestPin)},
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			modCtr := c.Container().From("alpine:3.20.2").
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("init")).
+				WithNewFile("/work/dagger.json", tc.daggerjson)
+
+			daggerjson, err := modCtr.
+				With(daggerExec(tc.updateCmd...)).
+				File("dagger.json").
+				Contents(ctx)
+
+			if tc.expectedError != "" {
+				requireErrOut(t, err, tc.expectedError)
+			} else {
+				require.NoError(t, err)
+
+				for _, s := range tc.contains {
+					require.Contains(t, daggerjson, s)
+				}
+
+				for _, s := range tc.notContains {
+					require.NotContains(t, daggerjson, s)
+				}
+			}
+		})
+	}
 }
 
 func (ClientGeneratorTest) TestHostCall(ctx context.Context, t *testctx.T) {
@@ -1365,8 +1514,6 @@ main()`))
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 

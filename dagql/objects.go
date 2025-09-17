@@ -16,6 +16,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -655,18 +656,32 @@ func (r ObjectResult[T]) call(
 ) (AnyResult, error) {
 	ctx = idToContext(ctx, newID)
 	ctx = srvToContext(ctx, s)
-	callCacheKey := newID.Digest()
-	if doNotCache {
-		callCacheKey = ""
-	}
-
 	var opts []CacheCallOpt
 	if s.telemetry != nil {
 		opts = append(opts, WithTelemetry(func(ctx context.Context) (context.Context, func(AnyResult, bool, error)) {
 			return s.telemetry(ctx, r, newID)
 		}))
 	}
-	res, err := s.Cache.GetOrInitializeWithCallbacks(ctx, callCacheKey, true, func(ctx context.Context) (*CacheValWithCallbacks, error) {
+
+	cacheKey := cache.CacheKey[CacheKeyType]{
+		ResultKey: string(newID.Digest()),
+	}
+	if doNotCache {
+		cacheKey.ResultKey = ""
+	}
+	// dedupe concurrent calls only if the ID digest is the same and if the two calls are from the same client
+	// we don't want to dedupe across clients since:
+	// 1. it creates problems when one clients closes and others were waiting on the result
+	// 2. it makes it easy to accidentally leak clients specific information that isn't yet precisely scoped in the ID
+	clientMD, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		// not expected to happen, fallback behavior is just that there's no deduping of concurrent calls
+		slog.Warn("failed to get client metadata from context for call", "err", err)
+	} else {
+		cacheKey.ConcurrencyKey = clientMD.ClientID
+	}
+
+	res, err := s.Cache.GetOrInitializeWithCallbacks(ctx, cacheKey, func(ctx context.Context) (*CacheValWithCallbacks, error) {
 		valWithCallbacks, err := r.class.Call(ctx, s, r, newID.Field(), newID.View(), inputArgs)
 		if err != nil {
 			return nil, err
@@ -714,6 +729,9 @@ func (r ObjectResult[T]) call(
 	// values that have a pure content-based cache key different from the call-chain ID digest.
 	if idable, ok := val.(IDable); ok && idable != nil && !doNotCache {
 		valID := idable.ID()
+		if valID == nil {
+			return nil, fmt.Errorf("impossible: nil ID returned for value: %+v (%T)", val, val)
+		}
 
 		// only need to add a new cache key if the returned val has a different custom digest than the original
 		digestChanged := valID.Digest() != newID.Digest()
@@ -726,7 +744,9 @@ func (r ObjectResult[T]) call(
 
 		if digestChanged && matchesType {
 			newID = valID
-			_, err := s.Cache.GetOrInitializeValue(ctx, valID.Digest(), val)
+			_, err := s.Cache.GetOrInitializeValue(ctx, cache.CacheKey[CacheKeyType]{
+				ResultKey: string(valID.Digest()),
+			}, val)
 			if err != nil {
 				return nil, err
 			}

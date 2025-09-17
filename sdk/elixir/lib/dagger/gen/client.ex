@@ -14,6 +14,20 @@ defmodule Dagger.Client do
   @type t() :: %__MODULE__{}
 
   @doc """
+  initialize an address to load directories, containers, secrets or other object types.
+  """
+  @spec address(t(), String.t()) :: Dagger.Address.t()
+  def address(%__MODULE__{} = client, value) do
+    query_builder =
+      client.query_builder |> QB.select("address") |> QB.put_arg("value", value)
+
+    %Dagger.Address{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Constructs a cache volume for a given cache key.
   """
   @spec cache_volume(t(), String.t()) :: Dagger.CacheVolume.t()
@@ -166,6 +180,22 @@ defmodule Dagger.Client do
       |> QB.maybe_put_arg("writable", optional_args[:writable])
 
     %Dagger.Env{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Initialize an environment file
+  """
+  @spec env_file(t(), [{:expand, boolean() | nil}]) :: Dagger.EnvFile.t()
+  def env_file(%__MODULE__{} = client, optional_args \\ []) do
+    query_builder =
+      client.query_builder
+      |> QB.select("envFile")
+      |> QB.maybe_put_arg("expand", optional_args[:expand])
+
+    %Dagger.EnvFile{
       query_builder: query_builder,
       client: client.client
     }
@@ -343,6 +373,20 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Load a Address from its ID.
+  """
+  @spec load_address_from_id(t(), Dagger.AddressID.t()) :: Dagger.Address.t()
+  def load_address_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadAddressFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Address{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Load a Binding from its ID.
   """
   @spec load_binding_from_id(t(), Dagger.BindingID.t()) :: Dagger.Binding.t()
@@ -365,6 +409,20 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("loadCacheVolumeFromID") |> QB.put_arg("id", id)
 
     %Dagger.CacheVolume{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a Changeset from its ID.
+  """
+  @spec load_changeset_from_id(t(), Dagger.ChangesetID.t()) :: Dagger.Changeset.t()
+  def load_changeset_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadChangesetFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Changeset{
       query_builder: query_builder,
       client: client.client
     }
@@ -508,6 +566,20 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("loadEnumValueTypeDefFromID") |> QB.put_arg("id", id)
 
     %Dagger.EnumValueTypeDef{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a EnvFile from its ID.
+  """
+  @spec load_env_file_from_id(t(), Dagger.EnvFileID.t()) :: Dagger.EnvFile.t()
+  def load_env_file_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadEnvFileFromID") |> QB.put_arg("id", id)
+
+    %Dagger.EnvFile{
       query_builder: query_builder,
       client: client.client
     }

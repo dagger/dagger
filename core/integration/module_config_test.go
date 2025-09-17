@@ -511,7 +511,6 @@ func (ConfigSuite) TestDaggerConfig(ctx context.Context, t *testctx.T) {
 			modFlagVal: "..",
 		},
 	} {
-		tc := tc
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			out, err := ctr.
 				WithWorkdir(tc.workdir).
@@ -903,7 +902,6 @@ func (m *Coolsdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dag
 `,
 		},
 	} {
-		tc := tc
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -1257,7 +1255,6 @@ var vcsTestCases = []vcsTestCase{
 
 func testOnMultipleVCS(t *testctx.T, testFunc func(ctx context.Context, t *testctx.T, tc vcsTestCase)) {
 	for _, tc := range vcsTestCases {
-		tc := tc
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			testFunc(ctx, t, tc)
 		})
@@ -1389,7 +1386,6 @@ func (ConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 func (ConfigSuite) TestDaggerGitWithSources(ctx context.Context, t *testctx.T) {
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 		for _, modSubpath := range []string{"samedir", "subdir"} {
-			modSubpath := modSubpath
 			t.Run(modSubpath, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 				privateSetup, cleanup := privateRepoSetup(c, t, tc)

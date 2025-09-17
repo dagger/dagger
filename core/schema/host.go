@@ -89,7 +89,6 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			defer layerRefs.Release(context.WithoutCancel(ctx))
 			var eg errgroup.Group
 			for _, layerRef := range layerRefs {
-				layerRef := layerRef
 				eg.Go(func() error {
 					// FileList is the secret method that actually forces an unlazy of blobs in the cases
 					// we want here...
@@ -104,7 +103,11 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			}
 
 			container := core.NewContainer(parent.Platform())
-			container.FS = ctrDef.ToPB()
+			rootfsDir := core.NewDirectory(ctrDef.ToPB(), "/", container.Platform, container.Services)
+			container.FS, err = core.UpdatedRootFS(ctx, rootfsDir)
+			if err != nil {
+				return nil, fmt.Errorf("failed to update rootfs: %w", err)
+			}
 
 			goSDKContentStore, err := local.NewStore(distconsts.EngineContainerBuiltinContentDir)
 			if err != nil {
@@ -142,8 +145,6 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Host]{
-		// NOTE: (for near future) we can support force reloading by adding a new arg to this function and providing
-		// a custom cache key function that uses a random value when that arg is true.
 		dagql.NodeFuncWithCacheKey("directory", s.directory, dagql.CacheAsRequested).
 			Doc(`Accesses a directory on the host.`).
 			Args(
@@ -151,7 +152,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 				dagql.Arg("noCache").Doc(`If true, the directory will always be reloaded from the host.`),
-				dagql.Arg("noGitAutoIgnore").Doc(`Don't apply .gitignore filter rules inside the directory`),
+				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory`),
 			),
 
 		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CacheAsRequested).
@@ -159,6 +160,12 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
 				dagql.Arg("noCache").Doc(`If true, the file will always be reloaded from the host.`),
+			),
+
+		dagql.NodeFuncWithCacheKey("findUp", s.findUp, dagql.CacheAsRequested).
+			Doc(`Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null`).
+			Args(
+				dagql.Arg("name").Doc(`name of the file or directory to search for`),
 			),
 
 		dagql.NodeFuncWithCacheKey("unixSocket", s.socket, s.socketCacheKey).
@@ -250,8 +257,8 @@ type hostDirectoryArgs struct {
 	core.CopyFilter
 	HostDirCacheConfig
 
-	GitIgnoreRoot   string `internal:"true" default:""`
-	NoGitAutoIgnore bool   `default:"false"`
+	GitIgnoreRoot string `internal:"true" default:""`
+	Gitignore     bool   `default:"false"`
 }
 
 func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
@@ -280,9 +287,9 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 
 	relPath := "."
 
-	// If NoGitAutoIgnore is not set, we load all the .gitgnore patterns inside the context directory
-	// (if ContextDirectoryPath is set) or the git repo if .git is found.
-	if !args.NoGitAutoIgnore {
+	if args.Gitignore {
+		// load all the .gitgnore patterns inside the context directory (if
+		// ContextDirectoryPath is set) or the git repo if .git is found.
 		originalPath := hostPath
 		if args.GitIgnoreRoot != "" {
 			hostPath = args.GitIgnoreRoot
@@ -291,7 +298,7 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 				return inst, fmt.Errorf("failed to get absolute path from git ignore root %s: %w", hostPath, err)
 			}
 		} else {
-			dotGitPath, found, err := findUp(ctx, core.NewCallerStatFS(bk), hostPath, ".git")
+			dotGitPath, found, err := host.Self().FindUp(ctx, core.NewCallerStatFS(bk), hostPath, ".git")
 			if err != nil {
 				return inst, fmt.Errorf("failed to find up .git: %w", err)
 			}
@@ -304,8 +311,6 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 			return inst, fmt.Errorf("failed to get relative path from %q: %w", originalPath, err)
 		}
 	}
-
-	fmt.Println("loading host directory", "hostPath", hostPath, "relPath", relPath, "noGitAutoIgnore", args.NoGitAutoIgnore)
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
@@ -348,7 +353,7 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	excludePatterns := make([]string, 0, len(args.Exclude))
 	// HACK: to bust the cache and pass custom options, we put them in
 	// excludePatterns. we filter them out later.
-	if !args.NoGitAutoIgnore {
+	if args.Gitignore {
 		excludePatterns = append(excludePatterns, "[dagger.gitignore]")
 	}
 	if args.NoCache {
@@ -370,7 +375,7 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		localName += fmt.Sprintf(" (exclude: %s)", strings.Join(args.Exclude, ", "))
 	}
 
-	if !args.NoGitAutoIgnore {
+	if args.Gitignore {
 		localName += " (with gitignore)"
 	}
 
@@ -388,11 +393,11 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	if err != nil {
 		return inst, err
 	}
-	inst, err = dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+	dirRes, err := dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 	if err != nil {
-		return inst, fmt.Errorf("failed to create instance: %w", err)
+		return inst, err
 	}
-	return core.MakeDirectoryContentHashed(ctx, bk, inst)
+	return core.MakeDirectoryContentHashed(ctx, bk, dirRes)
 }
 
 type hostSocketArgs struct {
@@ -500,6 +505,39 @@ func (s *hostSchema) file(ctx context.Context, host dagql.ObjectResult[*core.Hos
 		return i, err
 	}
 	return i, nil
+}
+
+type hostFindUpArgs struct {
+	Name string
+	HostDirCacheConfig
+}
+
+func (s *hostSchema) findUp(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostFindUpArgs) (i dagql.Nullable[dagql.String], err error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return i, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return i, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	cwd, err := bk.AbsPath(ctx, ".")
+	if err != nil {
+		return i, fmt.Errorf("failed to get cwd: %w", err)
+	}
+	foundPath, found, err := host.Self().FindUp(ctx, core.NewCallerStatFS(bk), cwd, args.Name)
+	if err != nil {
+		return i, fmt.Errorf("failed to find %s: %w", args.Name, err)
+	}
+	if !found {
+		return dagql.Null[dagql.String](), nil
+	}
+	foundPath = path.Join(foundPath, args.Name)
+	relPath, err := filepath.Rel(cwd, foundPath)
+	if err != nil {
+		return i, fmt.Errorf("failed to make path relative to cwd: %w", err)
+	}
+	return dagql.NonNull(dagql.NewString(relPath)), nil
 }
 
 type hostTunnelArgs struct {

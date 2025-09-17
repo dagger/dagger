@@ -11,6 +11,11 @@ from dagger.client._guards import typecheck
 from dagger.client.base import Enum, Input, Root, Scalar, Type
 
 
+class AddressID(Scalar):
+    """The `AddressID` scalar type represents an identifier for an object
+    of type Address."""
+
+
 class BindingID(Scalar):
     """The `BindingID` scalar type represents an identifier for an object
     of type Binding."""
@@ -19,6 +24,11 @@ class BindingID(Scalar):
 class CacheVolumeID(Scalar):
     """The `CacheVolumeID` scalar type represents an identifier for an
     object of type CacheVolume."""
+
+
+class ChangesetID(Scalar):
+    """The `ChangesetID` scalar type represents an identifier for an
+    object of type Changeset."""
 
 
 class CloudID(Scalar):
@@ -69,6 +79,11 @@ class EnumTypeDefID(Scalar):
 class EnumValueTypeDefID(Scalar):
     """The `EnumValueTypeDefID` scalar type represents an identifier for
     an object of type EnumValueTypeDef."""
+
+
+class EnvFileID(Scalar):
+    """The `EnvFileID` scalar type represents an identifier for an object
+    of type EnvFile."""
 
 
 class EnvID(Scalar):
@@ -481,12 +496,144 @@ class PortForward(Input):
 
 
 @typecheck
+class Address(Type):
+    """A standardized address to load containers, directories, secrets,
+    and other object types. Address format depends on the type, and is
+    validated at type selection."""
+
+    def container(self) -> "Container":
+        """Load a container from the address."""
+        _args: list[Arg] = []
+        _ctx = self._select("container", _args)
+        return Container(_ctx)
+
+    def directory(
+        self,
+        *,
+        exclude: list[str] | None = None,
+        include: list[str] | None = None,
+        no_cache: bool | None = False,
+    ) -> "Directory":
+        """Load a directory from the address."""
+        _args = [
+            Arg("exclude", [] if exclude is None else exclude, []),
+            Arg("include", [] if include is None else include, []),
+            Arg("noCache", no_cache, False),
+        ]
+        _ctx = self._select("directory", _args)
+        return Directory(_ctx)
+
+    def file(
+        self,
+        *,
+        exclude: list[str] | None = None,
+        include: list[str] | None = None,
+        no_cache: bool | None = False,
+    ) -> "File":
+        """Load a file from the address."""
+        _args = [
+            Arg("exclude", [] if exclude is None else exclude, []),
+            Arg("include", [] if include is None else include, []),
+            Arg("noCache", no_cache, False),
+        ]
+        _ctx = self._select("file", _args)
+        return File(_ctx)
+
+    def git_ref(self) -> "GitRef":
+        """Load a git ref (branch, tag or commit) from the address."""
+        _args: list[Arg] = []
+        _ctx = self._select("gitRef", _args)
+        return GitRef(_ctx)
+
+    def git_repository(self) -> "GitRepository":
+        """Load a git repository from the address."""
+        _args: list[Arg] = []
+        _ctx = self._select("gitRepository", _args)
+        return GitRepository(_ctx)
+
+    async def id(self) -> AddressID:
+        """A unique identifier for this Address.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        AddressID
+            The `AddressID` scalar type represents an identifier for an object
+            of type Address.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(AddressID)
+
+    def secret(self) -> "Secret":
+        """Load a secret from the address."""
+        _args: list[Arg] = []
+        _ctx = self._select("secret", _args)
+        return Secret(_ctx)
+
+    def service(self) -> "Service":
+        """Load a service from the address."""
+        _args: list[Arg] = []
+        _ctx = self._select("service", _args)
+        return Service(_ctx)
+
+    def socket(self) -> "Socket":
+        """Load a local socket from the address."""
+        _args: list[Arg] = []
+        _ctx = self._select("socket", _args)
+        return Socket(_ctx)
+
+    async def value(self) -> str:
+        """The address value
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("value", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
 class Binding(Type):
+    def as_address(self) -> Address:
+        """Retrieve the binding value, as type Address"""
+        _args: list[Arg] = []
+        _ctx = self._select("asAddress", _args)
+        return Address(_ctx)
+
     def as_cache_volume(self) -> "CacheVolume":
         """Retrieve the binding value, as type CacheVolume"""
         _args: list[Arg] = []
         _ctx = self._select("asCacheVolume", _args)
         return CacheVolume(_ctx)
+
+    def as_changeset(self) -> "Changeset":
+        """Retrieve the binding value, as type Changeset"""
+        _args: list[Arg] = []
+        _ctx = self._select("asChangeset", _args)
+        return Changeset(_ctx)
 
     def as_cloud(self) -> "Cloud":
         """Retrieve the binding value, as type Cloud"""
@@ -511,6 +658,12 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asEnv", _args)
         return Env(_ctx)
+
+    def as_env_file(self) -> "EnvFile":
+        """Retrieve the binding value, as type EnvFile"""
+        _args: list[Arg] = []
+        _ctx = self._select("asEnvFile", _args)
+        return EnvFile(_ctx)
 
     def as_file(self) -> "File":
         """Retrieve the binding value, as type File"""
@@ -745,6 +898,169 @@ class CacheVolume(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(CacheVolumeID)
+
+
+@typecheck
+class Changeset(Type):
+    """A comparison between two directories representing changes that can
+    be applied."""
+
+    async def added_paths(self) -> list[str]:
+        """Files and directories that were added in the newer directory.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("addedPaths", _args)
+        return await _ctx.execute(list[str])
+
+    def after(self) -> "Directory":
+        """The newer/upper snapshot."""
+        _args: list[Arg] = []
+        _ctx = self._select("after", _args)
+        return Directory(_ctx)
+
+    def as_patch(self) -> "File":
+        """Return a Git-compatible patch of the changes"""
+        _args: list[Arg] = []
+        _ctx = self._select("asPatch", _args)
+        return File(_ctx)
+
+    def before(self) -> "Directory":
+        """The older/lower snapshot to compare against."""
+        _args: list[Arg] = []
+        _ctx = self._select("before", _args)
+        return Directory(_ctx)
+
+    async def export(self, path: str) -> str:
+        """Applies the diff represented by this changeset to a path on the host.
+
+        Parameters
+        ----------
+        path:
+            Location of the copied directory (e.g., "logs/").
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("export", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> ChangesetID:
+        """A unique identifier for this Changeset.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        ChangesetID
+            The `ChangesetID` scalar type represents an identifier for an
+            object of type Changeset.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(ChangesetID)
+
+    def layer(self) -> "Directory":
+        """Return a snapshot containing only the created and modified files"""
+        _args: list[Arg] = []
+        _ctx = self._select("layer", _args)
+        return Directory(_ctx)
+
+    async def modified_paths(self) -> list[str]:
+        """Files and directories that existed before and were updated in the
+        newer directory.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("modifiedPaths", _args)
+        return await _ctx.execute(list[str])
+
+    async def removed_paths(self) -> list[str]:
+        """Files and directories that were removed. Directories are indicated by
+        a trailing slash, and their child paths are not included.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("removedPaths", _args)
+        return await _ctx.execute(list[str])
+
+    async def sync(self) -> Self:
+        """Force evaluation in the engine.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "sync", _args)
+
+    def __await__(self):
+        return self.sync().__await__()
 
 
 @typecheck
@@ -3011,6 +3327,44 @@ class Directory(Type):
         _ctx = self._select("asModuleSource", _args)
         return ModuleSource(_ctx)
 
+    def changes(self, from_: Self) -> Changeset:
+        """Return the difference between this directory and another directory,
+        typically an older snapshot.
+
+        The difference is encoded as a changeset, which also tracks removed
+        files, and can be applied to other directories.
+
+        Parameters
+        ----------
+        from_:
+            The base directory snapshot to compare against
+        """
+        _args = [
+            Arg("from", from_),
+        ]
+        _ctx = self._select("changes", _args)
+        return Changeset(_ctx)
+
+    def chown(self, path: str, owner: str) -> Self:
+        """Change the owner of the directory contents recursively.
+
+        Parameters
+        ----------
+        path:
+            Path of the directory to change ownership of (e.g., "/").
+        owner:
+            A user:group to set for the mounted directory and its contents.
+            The user and group must be an ID (1000:1000), not a name
+            (foo:bar).
+            If the group is omitted, it defaults to the same as the user.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("owner", owner),
+        ]
+        _ctx = self._select("chown", _args)
+        return Directory(_ctx)
+
     def diff(self, other: Self) -> Self:
         """Return the difference between this directory and an another directory.
         The difference is encoded as a directory.
@@ -3256,6 +3610,38 @@ class Directory(Type):
         _ctx = self._select("filter", _args)
         return Directory(_ctx)
 
+    async def find_up(self, name: str, start: str) -> str | None:
+        """Search up the directory tree for a file or directory, and return its
+        path. If no match, return null
+
+        Parameters
+        ----------
+        name:
+            The name of the file or directory to search for
+        start:
+            The path to start the search from
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("start", start),
+        ]
+        _ctx = self._select("findUp", _args)
+        return await _ctx.execute(str | None)
+
     async def glob(self, pattern: str) -> list[str]:
         """Returns a list of files and directories that matche the given pattern.
 
@@ -3446,6 +3832,20 @@ class Directory(Type):
         _ctx = self._select("terminal", _args)
         return Directory(_ctx)
 
+    def with_changes(self, changes: Changeset) -> Self:
+        """Return a directory with changes from another directory applied to it.
+
+        Parameters
+        ----------
+        changes:
+            Changes to apply to the directory
+        """
+        _args = [
+            Arg("changes", changes),
+        ]
+        _ctx = self._select("withChanges", _args)
+        return Directory(_ctx)
+
     def with_directory(
         self,
         path: str,
@@ -3453,6 +3853,7 @@ class Directory(Type):
         *,
         exclude: list[str] | None = None,
         include: list[str] | None = None,
+        owner: str | None = "",
     ) -> Self:
         """Return a snapshot with a directory added
 
@@ -3468,12 +3869,18 @@ class Directory(Type):
         include:
             Include only artifacts that match the given pattern (e.g.,
             ["app/", "package.*"]).
+        owner:
+            A user:group to set for the copied directory and its contents.
+            The user and group must be an ID (1000:1000), not a name
+            (foo:bar).
+            If the group is omitted, it defaults to the same as the user.
         """
         _args = [
             Arg("path", path),
             Arg("directory", directory),
             Arg("exclude", [] if exclude is None else exclude, []),
             Arg("include", [] if include is None else include, []),
+            Arg("owner", owner, ""),
         ]
         _ctx = self._select("withDirectory", _args)
         return Directory(_ctx)
@@ -3484,6 +3891,7 @@ class Directory(Type):
         source: "File",
         *,
         permissions: int | None = None,
+        owner: str | None = "",
     ) -> Self:
         """Retrieves this directory plus the contents of the given file copied to
         the given path.
@@ -3496,11 +3904,17 @@ class Directory(Type):
             Identifier of the file to copy.
         permissions:
             Permission given to the copied file (e.g., 0600).
+        owner:
+            A user:group to set for the copied directory and its contents.
+            The user and group must be an ID (1000:1000), not a name
+            (foo:bar).
+            If the group is omitted, it defaults to the same as the user.
         """
         _args = [
             Arg("path", path),
             Arg("source", source),
             Arg("permissions", permissions, None),
+            Arg("owner", owner, ""),
         ]
         _ctx = self._select("withFile", _args)
         return Directory(_ctx)
@@ -3599,6 +4013,25 @@ class Directory(Type):
             Arg("patch", patch),
         ]
         _ctx = self._select("withPatch", _args)
+        return Directory(_ctx)
+
+    def with_patch_file(self, patch: "File") -> Self:
+        """Retrieves this directory with the given Git-compatible patch file
+        applied.
+
+        .. caution::
+            Experimental: This API is highly experimental and may be removed
+            or replaced entirely.
+
+        Parameters
+        ----------
+        patch:
+            File containing the patch to apply
+        """
+        _args = [
+            Arg("patch", patch),
+        ]
+        _ctx = self._select("withPatchFile", _args)
         return Directory(_ctx)
 
     def with_symlink(self, target: str, link_name: str) -> Self:
@@ -4384,6 +4817,48 @@ class Env(Type):
         _ctx = self._select("outputs", _args)
         return await _ctx.execute_object_list(Binding)
 
+    def with_address_input(
+        self,
+        name: str,
+        value: Address,
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type Address in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The Address value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withAddressInput", _args)
+        return Env(_ctx)
+
+    def with_address_output(self, name: str, description: str) -> Self:
+        """Declare a desired Address output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withAddressOutput", _args)
+        return Env(_ctx)
+
     def with_cache_volume_input(
         self,
         name: str,
@@ -4424,6 +4899,48 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withCacheVolumeOutput", _args)
+        return Env(_ctx)
+
+    def with_changeset_input(
+        self,
+        name: str,
+        value: Changeset,
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type Changeset in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The Changeset value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withChangesetInput", _args)
+        return Env(_ctx)
+
+    def with_changeset_output(self, name: str, description: str) -> Self:
+        """Declare a desired Changeset output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withChangesetOutput", _args)
         return Env(_ctx)
 
     def with_cloud_input(
@@ -4550,6 +5067,48 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withDirectoryOutput", _args)
+        return Env(_ctx)
+
+    def with_env_file_input(
+        self,
+        name: str,
+        value: "EnvFile",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type EnvFile in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The EnvFile value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withEnvFileInput", _args)
+        return Env(_ctx)
+
+    def with_env_file_output(self, name: str, description: str) -> Self:
+        """Declare a desired EnvFile output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withEnvFileOutput", _args)
         return Env(_ctx)
 
     def with_env_input(
@@ -5197,6 +5756,140 @@ class Env(Type):
 
 
 @typecheck
+class EnvFile(Type):
+    """A collection of environment variables."""
+
+    def as_file(self) -> "File":
+        """Return as a file"""
+        _args: list[Arg] = []
+        _ctx = self._select("asFile", _args)
+        return File(_ctx)
+
+    async def exists(self, name: str) -> bool:
+        """Check if a variable exists
+
+        Parameters
+        ----------
+        name:
+            Variable name
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("exists", _args)
+        return await _ctx.execute(bool)
+
+    async def get(self, name: str) -> str:
+        """Lookup a variable (last occurrence wins) and return its value, or an
+        empty string
+
+        Parameters
+        ----------
+        name:
+            Variable name
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("get", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> EnvFileID:
+        """A unique identifier for this EnvFile.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        EnvFileID
+            The `EnvFileID` scalar type represents an identifier for an object
+            of type EnvFile.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(EnvFileID)
+
+    async def variables(self) -> list["EnvVariable"]:
+        """Return all variables"""
+        _args: list[Arg] = []
+        _ctx = self._select("variables", _args)
+        return await _ctx.execute_object_list(EnvVariable)
+
+    def with_variable(self, name: str, value: str) -> Self:
+        """Add a variable
+
+        Parameters
+        ----------
+        name:
+            Variable name
+        value:
+            Variable value
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+        ]
+        _ctx = self._select("withVariable", _args)
+        return EnvFile(_ctx)
+
+    def without_variable(self, name: str) -> Self:
+        """Remove all occurrences of the named variable
+
+        Parameters
+        ----------
+        name:
+            Variable name
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withoutVariable", _args)
+        return EnvFile(_ctx)
+
+    def with_(self, cb: Callable[["EnvFile"], "EnvFile"]) -> "EnvFile":
+        """Call the provided callable with current EnvFile.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
+@typecheck
 class EnvVariable(Type):
     """An environment variable name and value."""
 
@@ -5501,6 +6194,37 @@ class FieldTypeDef(Type):
 @typecheck
 class File(Type):
     """A file."""
+
+    def as_env_file(self, *, expand: bool | None = None) -> EnvFile:
+        """Parse as an env file
+
+        Parameters
+        ----------
+        expand:
+            Replace "${VAR}" or "$VAR" with the value of other vars
+        """
+        _args = [
+            Arg("expand", expand, None),
+        ]
+        _ctx = self._select("asEnvFile", _args)
+        return EnvFile(_ctx)
+
+    def chown(self, owner: str) -> Self:
+        """Change the owner of the file recursively.
+
+        Parameters
+        ----------
+        owner:
+            A user:group to set for the file.
+            The user and group must be an ID (1000:1000), not a name
+            (foo:bar).
+            If the group is omitted, it defaults to the same as the user.
+        """
+        _args = [
+            Arg("owner", owner),
+        ]
+        _ctx = self._select("chown", _args)
+        return File(_ctx)
 
     async def contents(
         self,
@@ -6852,7 +7576,7 @@ class Host(Type):
         exclude: list[str] | None = None,
         include: list[str] | None = None,
         no_cache: bool | None = False,
-        no_git_auto_ignore: bool | None = False,
+        gitignore: bool | None = False,
     ) -> Directory:
         """Accesses a directory on the host.
 
@@ -6868,15 +7592,15 @@ class Host(Type):
             ["app/", "package.*"]).
         no_cache:
             If true, the directory will always be reloaded from the host.
-        no_git_auto_ignore:
-            Don't apply .gitignore filter rules inside the directory
+        gitignore:
+            Apply .gitignore filter rules inside the directory
         """
         _args = [
             Arg("path", path),
             Arg("exclude", [] if exclude is None else exclude, []),
             Arg("include", [] if include is None else include, []),
             Arg("noCache", no_cache, False),
-            Arg("noGitAutoIgnore", no_git_auto_ignore, False),
+            Arg("gitignore", gitignore, False),
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
@@ -6902,6 +7626,42 @@ class Host(Type):
         ]
         _ctx = self._select("file", _args)
         return File(_ctx)
+
+    async def find_up(
+        self,
+        name: str,
+        *,
+        no_cache: bool | None = False,
+    ) -> str | None:
+        """Search for a file or directory by walking up the tree from system
+        workdir. Return its relative path. If no match, return null
+
+        Parameters
+        ----------
+        name:
+            name of the file or directory to search for
+        no_cache:
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("noCache", no_cache, False),
+        ]
+        _ctx = self._select("findUp", _args)
+        return await _ctx.execute(str | None)
 
     async def id(self) -> HostID:
         """A unique identifier for this Host.
@@ -8870,6 +9630,20 @@ class ModuleSource(Type):
         _ctx = self._select("withUpdateDependencies", _args)
         return ModuleSource(_ctx)
 
+    def with_updated_clients(self, clients: list[str]) -> Self:
+        """Update one or more clients.
+
+        Parameters
+        ----------
+        clients:
+            The clients to update
+        """
+        _args = [
+            Arg("clients", clients),
+        ]
+        _ctx = self._select("withUpdatedClients", _args)
+        return ModuleSource(_ctx)
+
     def without_blueprint(self) -> Self:
         """Remove the current blueprint from the module source."""
         _args: list[Arg] = []
@@ -9143,6 +9917,16 @@ class Port(Type):
 class Client(Root):
     """The root of the DAG."""
 
+    def address(self, value: str) -> Address:
+        """initialize an address to load directories, containers, secrets or
+        other object types.
+        """
+        _args = [
+            Arg("value", value),
+        ]
+        _ctx = self._select("address", _args)
+        return Address(_ctx)
+
     def cache_volume(self, key: str) -> CacheVolume:
         """Constructs a cache volume for a given cache key.
 
@@ -9268,6 +10052,20 @@ class Client(Root):
         ]
         _ctx = self._select("env", _args)
         return Env(_ctx)
+
+    def env_file(self, *, expand: bool | None = None) -> EnvFile:
+        """Initialize an environment file
+
+        Parameters
+        ----------
+        expand:
+            Replace "${VAR}" or "$VAR" with the value of other vars
+        """
+        _args = [
+            Arg("expand", expand, None),
+        ]
+        _ctx = self._select("envFile", _args)
+        return EnvFile(_ctx)
 
     def error(self, message: str) -> Error:
         """Create a new error.
@@ -9460,6 +10258,14 @@ class Client(Root):
         _ctx = self._select("llm", _args)
         return LLM(_ctx)
 
+    def load_address_from_id(self, id: AddressID) -> Address:
+        """Load a Address from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadAddressFromID", _args)
+        return Address(_ctx)
+
     def load_binding_from_id(self, id: BindingID) -> Binding:
         """Load a Binding from its ID."""
         _args = [
@@ -9475,6 +10281,14 @@ class Client(Root):
         ]
         _ctx = self._select("loadCacheVolumeFromID", _args)
         return CacheVolume(_ctx)
+
+    def load_changeset_from_id(self, id: ChangesetID) -> Changeset:
+        """Load a Changeset from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadChangesetFromID", _args)
+        return Changeset(_ctx)
 
     def load_cloud_from_id(self, id: CloudID) -> Cloud:
         """Load a Cloud from its ID."""
@@ -9561,6 +10375,14 @@ class Client(Root):
         ]
         _ctx = self._select("loadEnumValueTypeDefFromID", _args)
         return EnumValueTypeDef(_ctx)
+
+    def load_env_file_from_id(self, id: EnvFileID) -> EnvFile:
+        """Load a EnvFile from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadEnvFileFromID", _args)
+        return EnvFile(_ctx)
 
     def load_env_from_id(self, id: EnvID) -> Env:
         """Load a Env from its ID."""
@@ -11228,12 +12050,16 @@ __all__ = [
     "JSON",
     "LLM",
     "LLMID",
+    "Address",
+    "AddressID",
     "Binding",
     "BindingID",
     "BuildArg",
     "CacheSharingMode",
     "CacheVolume",
     "CacheVolumeID",
+    "Changeset",
+    "ChangesetID",
     "Client",
     "Cloud",
     "CloudID",
@@ -11256,6 +12082,8 @@ __all__ = [
     "EnumValueTypeDef",
     "EnumValueTypeDefID",
     "Env",
+    "EnvFile",
+    "EnvFileID",
     "EnvID",
     "EnvVariable",
     "EnvVariableID",

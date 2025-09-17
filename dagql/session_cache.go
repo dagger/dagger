@@ -6,11 +6,9 @@ import (
 	"sync"
 
 	"github.com/dagger/dagger/engine/cache"
-	"github.com/dagger/dagger/engine/slog"
-	"github.com/opencontainers/go-digest"
 )
 
-type CacheKeyType = digest.Digest
+type CacheKeyType = string
 type CacheValueType = AnyResult
 
 type CacheResult = cache.Result[CacheKeyType, CacheValueType]
@@ -66,7 +64,7 @@ func WithTelemetry(telemetry TelemetryFunc) CacheCallOpt {
 
 func (c *SessionCache) GetOrInitializeValue(
 	ctx context.Context,
-	key CacheKeyType,
+	key cache.CacheKey[CacheKeyType],
 	val CacheValueType,
 	opts ...CacheCallOpt,
 ) (CacheResult, error) {
@@ -77,11 +75,11 @@ func (c *SessionCache) GetOrInitializeValue(
 
 func (c *SessionCache) GetOrInitialize(
 	ctx context.Context,
-	key CacheKeyType,
+	key cache.CacheKey[CacheKeyType],
 	fn func(context.Context) (CacheValueType, error),
 	opts ...CacheCallOpt,
 ) (CacheResult, error) {
-	return c.GetOrInitializeWithCallbacks(ctx, key, false, func(ctx context.Context) (*CacheValWithCallbacks, error) {
+	return c.GetOrInitializeWithCallbacks(ctx, key, func(ctx context.Context) (*CacheValWithCallbacks, error) {
 		val, err := fn(ctx)
 		if err != nil {
 			return nil, err
@@ -110,22 +108,16 @@ func telemetryKeys(ctx context.Context) *sync.Map {
 
 func (c *SessionCache) GetOrInitializeWithCallbacks(
 	ctx context.Context,
-	key CacheKeyType,
-	skipDedupe bool,
+	key cache.CacheKey[CacheKeyType],
 	fn func(context.Context) (*CacheValWithCallbacks, error),
 	opts ...CacheCallOpt,
 ) (res CacheResult, err error) {
-	releaseRef := false
-
 	// do a quick check to see if the cache is closed; we do another check
 	// at the end in case the cache is closed while we're waiting for the call
 	c.mu.Lock()
 	if c.isClosed {
-		// FIXME: this should be an error case, but tolerating temporarily while we
-		// update the codebase to handle always using open session caches
-		// return nil, errors.New("session cache is closed")
-		releaseRef = true
-		slog.Error("session cache is already closed", "key", key.String())
+		c.mu.Unlock()
+		return nil, errors.New("session cache is closed")
 	}
 	c.mu.Unlock()
 
@@ -135,17 +127,17 @@ func (c *SessionCache) GetOrInitializeWithCallbacks(
 	}
 
 	var zeroKey CacheKeyType
-	isZero := key == zeroKey
+	isZero := key.ResultKey == zeroKey
 
 	keys := telemetryKeys(ctx)
 	if keys == nil {
 		keys = &c.seenKeys
 	}
-	_, seen := keys.LoadOrStore(key, struct{}{})
+	_, seen := keys.LoadOrStore(key.ResultKey, struct{}{})
 	if o.Telemetry != nil && (!seen || isZero) {
 		// track keys globally in addition to any local key stores, otherwise we'll
 		// see dupes when e.g. IDs returned out of the "bubble" are loaded
-		c.seenKeys.Store(key, struct{}{})
+		c.seenKeys.Store(key.ResultKey, struct{}{})
 
 		telemetryCtx, done := o.Telemetry(ctx)
 		defer func() {
@@ -160,7 +152,7 @@ func (c *SessionCache) GetOrInitializeWithCallbacks(
 		ctx = telemetryCtx
 	}
 
-	res, err = c.cache.GetOrInitializeWithCallbacks(ctx, key, skipDedupe, fn)
+	res, err = c.cache.GetOrInitializeWithCallbacks(ctx, key, fn)
 	if err != nil {
 		return nil, err
 	}
@@ -169,19 +161,10 @@ func (c *SessionCache) GetOrInitializeWithCallbacks(
 	defer c.mu.Unlock()
 
 	// if the session cache is closed, ensure we release the result so it doesn't leak
-	if !releaseRef && c.isClosed {
-		// FIXME: this should be an error case, but tolerating temporarily while we
-		// update the codebase to handle always using open session caches
-		// err := errors.New("session cache was closed during execution")
-		// return nil, err
-		slog.Error("session cache was closed during execution", "key", key.String())
-		releaseRef = true
-	}
-
-	if releaseRef {
-		if err := res.Release(context.WithoutCancel(ctx)); err != nil {
-			return nil, err
-		}
+	if c.isClosed {
+		err := errors.New("session cache was closed during execution")
+		err = errors.Join(err, res.Release(context.WithoutCancel(ctx)))
+		return nil, err
 	}
 
 	if !isZero {

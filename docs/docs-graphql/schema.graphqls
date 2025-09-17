@@ -12,9 +12,57 @@ directive @experimental(
 """Indicates the source information for where a given field is defined."""
 directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!, url: String!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
 
+"""
+A standardized address to load containers, directories, secrets, and other
+object types. Address format depends on the type, and is validated at type
+selection.
+"""
+type Address {
+  """Load a container from the address."""
+  container: Container!
+
+  """Load a directory from the address."""
+  directory(exclude: [String!] = [], include: [String!] = [], noCache: Boolean = false): Directory!
+
+  """Load a file from the address."""
+  file(exclude: [String!] = [], include: [String!] = [], noCache: Boolean = false): File!
+
+  """Load a git ref (branch, tag or commit) from the address."""
+  gitRef: GitRef!
+
+  """Load a git repository from the address."""
+  gitRepository: GitRepository!
+
+  """A unique identifier for this Address."""
+  id: AddressID!
+
+  """Load a secret from the address."""
+  secret: Secret!
+
+  """Load a service from the address."""
+  service: Service!
+
+  """Load a local socket from the address."""
+  socket: Socket!
+
+  """The address value"""
+  value: String!
+}
+
+"""
+The `AddressID` scalar type represents an identifier for an object of type Address.
+"""
+scalar AddressID
+
 type Binding {
+  """Retrieve the binding value, as type Address"""
+  asAddress: Address!
+
   """Retrieve the binding value, as type CacheVolume"""
   asCacheVolume: CacheVolume!
+
+  """Retrieve the binding value, as type Changeset"""
+  asChangeset: Changeset!
 
   """Retrieve the binding value, as type Cloud"""
   asCloud: Cloud!
@@ -27,6 +75,9 @@ type Binding {
 
   """Retrieve the binding value, as type Env"""
   asEnv: Env!
+
+  """Retrieve the binding value, as type EnvFile"""
+  asEnvFile: EnvFile!
 
   """Retrieve the binding value, as type File"""
   asFile: File!
@@ -124,6 +175,54 @@ type CacheVolume {
 The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
 """
 scalar CacheVolumeID
+
+"""
+A comparison between two directories representing changes that can be applied.
+"""
+type Changeset {
+  """Files and directories that were added in the newer directory."""
+  addedPaths: [String!]!
+
+  """The newer/upper snapshot."""
+  after: Directory!
+
+  """Return a Git-compatible patch of the changes"""
+  asPatch: File!
+
+  """The older/lower snapshot to compare against."""
+  before: Directory!
+
+  """Applies the diff represented by this changeset to a path on the host."""
+  export(
+    """Location of the copied directory (e.g., "logs/")."""
+    path: String!
+  ): String!
+
+  """A unique identifier for this Changeset."""
+  id: ChangesetID!
+
+  """Return a snapshot containing only the created and modified files"""
+  layer: Directory!
+
+  """
+  Files and directories that existed before and were updated in the newer directory.
+  """
+  modifiedPaths: [String!]!
+
+  """
+  Files and directories that were removed. Directories are indicated by a
+  trailing slash, and their child paths are not included.
+  """
+  removedPaths: [String!]!
+
+  """Force evaluation in the engine."""
+  sync: ChangesetID!
+}
+
+"""
+The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
+"""
+scalar ChangesetID
 
 """Dagger Cloud configuration and state"""
 type Cloud {
@@ -1401,6 +1500,31 @@ type Directory {
   ): ModuleSource!
 
   """
+  Return the difference between this directory and another directory, typically an older snapshot.
+
+  The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
+  """
+  changes(
+    """The base directory snapshot to compare against"""
+    from: DirectoryID!
+  ): Changeset!
+
+  """Change the owner of the directory contents recursively."""
+  chown(
+    """Path of the directory to change ownership of (e.g., "/")."""
+    path: String!
+
+    """
+    A user:group to set for the mounted directory and its contents.
+
+    The user and group must be an ID (1000:1000), not a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String!
+  ): Directory!
+
+  """
   Return the difference between this directory and an another directory. The difference is encoded as a directory.
   """
   diff(
@@ -1516,6 +1640,17 @@ type Directory {
     include: [String!] = []
   ): Directory!
 
+  """
+  Search up the directory tree for a file or directory, and return its path. If no match, return null
+  """
+  findUp(
+    """The name of the file or directory to search for"""
+    name: String!
+
+    """The path to start the search from"""
+    start: String!
+  ): String
+
   """Returns a list of files and directories that matche the given pattern."""
   glob(
     """Pattern to match (e.g., "*.md")."""
@@ -1598,6 +1733,12 @@ type Directory {
     insecureRootCapabilities: Boolean = false
   ): Directory!
 
+  """Return a directory with changes from another directory applied to it."""
+  withChanges(
+    """Changes to apply to the directory"""
+    changes: ChangesetID!
+  ): Directory!
+
   """Return a snapshot with a directory added"""
   withDirectory(
     """Location of the written directory (e.g., "/src/")."""
@@ -1615,6 +1756,15 @@ type Directory {
     Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
     """
     include: [String!] = []
+
+    """
+    A user:group to set for the copied directory and its contents.
+
+    The user and group must be an ID (1000:1000), not a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String = ""
   ): Directory!
 
   """
@@ -1629,6 +1779,15 @@ type Directory {
 
     """Permission given to the copied file (e.g., 0600)."""
     permissions: Int
+
+    """
+    A user:group to set for the copied directory and its contents.
+
+    The user and group must be an ID (1000:1000), not a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String = ""
   ): Directory!
 
   """
@@ -1680,6 +1839,14 @@ type Directory {
     @@\n-Hello\n+World\n").
     """
     patch: String!
+  ): Directory! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
+
+  """
+  Retrieves this directory with the given Git-compatible patch file applied.
+  """
+  withPatchFile(
+    """File containing the patch to apply"""
+    patch: FileID!
   ): Directory! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
   """Return a snapshot with a symlink"""
@@ -1901,6 +2068,27 @@ type Env {
   """return all output values for the environment"""
   outputs: [Binding!]!
 
+  """Create or update a binding of type Address in the environment"""
+  withAddressInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Address value to assign to the binding"""
+    value: AddressID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Address output to be assigned in the environment"""
+  withAddressOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Create or update a binding of type CacheVolume in the environment"""
   withCacheVolumeInput(
     """The name of the binding"""
@@ -1915,6 +2103,27 @@ type Env {
 
   """Declare a desired CacheVolume output to be assigned in the environment"""
   withCacheVolumeOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type Changeset in the environment"""
+  withChangesetInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Changeset value to assign to the binding"""
+    value: ChangesetID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Changeset output to be assigned in the environment"""
+  withChangesetOutput(
     """The name of the binding"""
     name: String!
 
@@ -1978,6 +2187,27 @@ type Env {
 
   """Declare a desired Directory output to be assigned in the environment"""
   withDirectoryOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type EnvFile in the environment"""
+  withEnvFileInput(
+    """The name of the binding"""
+    name: String!
+
+    """The EnvFile value to assign to the binding"""
+    value: EnvFileID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired EnvFile output to be assigned in the environment"""
+  withEnvFileOutput(
     """The name of the binding"""
     name: String!
 
@@ -2313,6 +2543,52 @@ type Env {
   ): Env!
 }
 
+"""A collection of environment variables."""
+type EnvFile {
+  """Return as a file"""
+  asFile: File!
+
+  """Check if a variable exists"""
+  exists(
+    """Variable name"""
+    name: String!
+  ): Boolean!
+
+  """
+  Lookup a variable (last occurrence wins) and return its value, or an empty string
+  """
+  get(
+    """Variable name"""
+    name: String!
+  ): String!
+
+  """A unique identifier for this EnvFile."""
+  id: EnvFileID!
+
+  """Return all variables"""
+  variables: [EnvVariable!]!
+
+  """Add a variable"""
+  withVariable(
+    """Variable name"""
+    name: String!
+
+    """Variable value"""
+    value: String!
+  ): EnvFile!
+
+  """Remove all occurrences of the named variable"""
+  withoutVariable(
+    """Variable name"""
+    name: String!
+  ): EnvFile!
+}
+
+"""
+The `EnvFileID` scalar type represents an identifier for an object of type EnvFile.
+"""
+scalar EnvFileID
+
 """
 The `EnvID` scalar type represents an identifier for an object of type Env.
 """
@@ -2418,6 +2694,24 @@ scalar FieldTypeDefID
 
 """A file."""
 type File {
+  """Parse as an env file"""
+  asEnvFile(
+    """Replace "${VAR}" or "$VAR" with the value of other vars"""
+    expand: Boolean
+  ): EnvFile!
+
+  """Change the owner of the file recursively."""
+  chown(
+    """
+    A user:group to set for the file.
+
+    The user and group must be an ID (1000:1000), not a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String!
+  ): File!
+
   """Retrieves the contents of the file."""
   contents(
     """Start reading after this line"""
@@ -2881,8 +3175,8 @@ type Host {
     """If true, the directory will always be reloaded from the host."""
     noCache: Boolean = false
 
-    """Don't apply .gitignore filter rules inside the directory"""
-    noGitAutoIgnore: Boolean = false
+    """Apply .gitignore filter rules inside the directory"""
+    gitignore: Boolean = false
   ): Directory!
 
   """Accesses a file on the host."""
@@ -2893,6 +3187,17 @@ type Host {
     """If true, the file will always be reloaded from the host."""
     noCache: Boolean = false
   ): File!
+
+  """
+  Search for a file or directory by walking up the tree from system workdir.
+  Return its relative path. If no match, return null
+  """
+  findUp(
+    """name of the file or directory to search for"""
+    name: String!
+
+    noCache: Boolean = false
+  ): String
 
   """A unique identifier for this Host."""
   id: HostID!
@@ -3523,6 +3828,12 @@ type ModuleSource {
     dependencies: [String!]!
   ): ModuleSource!
 
+  """Update one or more clients."""
+  withUpdatedClients(
+    """The clients to update"""
+    clients: [String!]!
+  ): ModuleSource!
+
   """Remove the current blueprint from the module source."""
   withoutBlueprint: ModuleSource!
 
@@ -3649,6 +3960,11 @@ scalar PortID
 
 """The root of the DAG."""
 type Query {
+  """
+  initialize an address to load directories, containers, secrets or other object types.
+  """
+  address(value: String!): Address!
+
   """Constructs a cache volume for a given cache key."""
   cacheVolume(
     """
@@ -3706,6 +4022,12 @@ type Query {
     """Allow new outputs to be declared and saved in the environment"""
     writable: Boolean = false
   ): Env! @experimental(reason: "Environments are not yet stabilized")
+
+  """Initialize an environment file"""
+  envFile(
+    """Replace "${VAR}" or "$VAR" with the value of other vars"""
+    expand: Boolean
+  ): EnvFile!
 
   """Create a new error."""
   error(
@@ -3811,11 +4133,17 @@ type Query {
     maxAPICalls: Int
   ): LLM! @experimental(reason: "LLM support is not yet stabilized")
 
+  """Load a Address from its ID."""
+  loadAddressFromID(id: AddressID!): Address!
+
   """Load a Binding from its ID."""
   loadBindingFromID(id: BindingID!): Binding!
 
   """Load a CacheVolume from its ID."""
   loadCacheVolumeFromID(id: CacheVolumeID!): CacheVolume!
+
+  """Load a Changeset from its ID."""
+  loadChangesetFromID(id: ChangesetID!): Changeset!
 
   """Load a Cloud from its ID."""
   loadCloudFromID(id: CloudID!): Cloud!
@@ -3846,6 +4174,9 @@ type Query {
 
   """Load a EnumValueTypeDef from its ID."""
   loadEnumValueTypeDefFromID(id: EnumValueTypeDefID!): EnumValueTypeDef!
+
+  """Load a EnvFile from its ID."""
+  loadEnvFileFromID(id: EnvFileID!): EnvFile!
 
   """Load a Env from its ID."""
   loadEnvFromID(id: EnvID!): Env!

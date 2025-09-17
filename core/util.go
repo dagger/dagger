@@ -314,9 +314,47 @@ func ptr[T any](v T) *T {
 	return &v
 }
 
-// MountRef is a utility for easily mounting a ref
+// MountRef is a utility for easily mounting a ref.
+//
+// To simplify external logic, when the ref is nil, i.e. scratch, the callback
+// just receives a tmpdir that gets deleted when the function completes.
 func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(string) error) error {
+	if ref == nil {
+		dir, err := os.MkdirTemp("", "readonly-scratch")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(dir)
+		return f(dir)
+	}
 	mount, err := ref.Mount(ctx, false, g)
+	if err != nil {
+		return err
+	}
+	lm := snapshot.LocalMounter(mount)
+	defer lm.Unmount()
+
+	dir, err := lm.Mount()
+	if err != nil {
+		return err
+	}
+	return f(dir)
+}
+
+// ReadonlyMountRef is a utility for easily mounting a ref read-only.
+//
+// To simplify external logic, when the ref is nil, i.e. scratch, the callback
+// just receives a tmpdir that gets deleted when the function completes.
+func ReadonlyMountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(string) error) error {
+	if ref == nil {
+		dir, err := os.MkdirTemp("", "readonly-scratch")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(dir)
+		return f(dir)
+	}
+	mount, err := ref.Mount(ctx, true, g)
 	if err != nil {
 		return err
 	}
@@ -520,4 +558,12 @@ func getRefOrEvaluate[T fileOrDirectory](ctx context.Context, t T) (bkcache.Immu
 		return nil, nil
 	}
 	return cacheRef.CacheRef(ctx)
+}
+
+func asArrayInput[T any, I dagql.Input](ts []T, conv func(T) I) dagql.ArrayInput[I] {
+	ins := make(dagql.ArrayInput[I], len(ts))
+	for i, v := range ts {
+		ins[i] = conv(v)
+	}
+	return ins
 }

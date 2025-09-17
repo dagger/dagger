@@ -219,7 +219,8 @@ type LocalExportOpts struct {
 	// whether to just merge in contents of a directory to the target on the host
 	// or to replace the target entirely such that it matches the source directory,
 	// which includes deleting any files that are not in the source directory
-	Merge bool
+	Merge       bool
+	RemovePaths []string `json:"remove_paths"`
 }
 
 func (o LocalExportOpts) ToGRPCMD() metadata.MD {

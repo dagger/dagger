@@ -66,7 +66,7 @@ func LogsToPB(sdl []sdklog.Record) []*otlplogsv1.ResourceLogs {
 			resources++
 			// The resource was unknown.
 			rs = &otlplogsv1.ResourceLogs{
-				Resource:  ResourceToPB(res),
+				Resource:  ResourcePtrToPB(res),
 				ScopeLogs: []*otlplogsv1.ScopeLogs{scopeLog},
 				SchemaUrl: res.SchemaURL(),
 			}
