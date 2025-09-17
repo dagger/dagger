@@ -955,15 +955,23 @@ func (m *MCP) BlockFunction(ctx context.Context, typeName, funcName string) erro
 	return nil
 }
 
-func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (res string, failed bool) {
+// LookupTool looks for a tool identified by a name, which may be qualified
+// (claude_Read) or unqualified (Read).
+//
+// This handles the case where a tool's description or MCP server's instructions
+// mentions tools by unqualified name. Some models will try to call those
+// directly even though they have been provided with a qualified name. Annoying
+// to deal with, but we can try to be durable to it as long as it's not
+// ambiguous.
+func (m *MCP) LookupTool(name string, tools []LLMTool) (*LLMTool, error) {
 	var tool *LLMTool
 	var ambiguousTools []*LLMTool
 	for _, t := range tools {
-		if t.Name == toolCall.Function.Name {
+		if t.Name == name {
 			tool = &t
 			break
 		}
-		if t.Server != "" && strings.TrimPrefix(t.Name, t.Server+"_") == toolCall.Function.Name {
+		if t.Server != "" && strings.TrimPrefix(t.Name, t.Server+"_") == name {
 			ambiguousTools = append(ambiguousTools, &t)
 		}
 	}
@@ -976,23 +984,26 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 		tool = ambiguousTools[0]
 	default:
 		// multiple ambiguous tools, error out
-		return fmt.Sprintf("Tool name '%s' is ambiguous. Please specify one of: %s", toolCall.Function.Name, func() string {
+		return nil, fmt.Errorf("tool name '%s' is ambiguous; please specify one of: %s", name, func() string {
 			var names []string
 			for _, t := range ambiguousTools {
 				names = append(names, t.Name)
 			}
 			return strings.Join(names, ", ")
-		}()), true
+		}())
 	}
 
 	if tool == nil {
-		res, err := toolStructuredResponse(map[string]any{
-			"error": fmt.Sprintf("Tool '%s' is not available.", toolCall.Function.Name),
-		})
-		if err != nil {
-			return fmt.Sprintf("marshal error: %v", err), false
-		}
-		return res, true
+		return nil, fmt.Errorf("tool %q is not available", name)
+	}
+
+	return tool, nil
+}
+
+func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (res string, failed bool) {
+	tool, err := m.LookupTool(toolCall.Function.Name, tools)
+	if err != nil {
+		return err.Error(), true
 	}
 
 	args := toolCall.Function.Arguments
@@ -1073,15 +1084,16 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToo
 	destructiveMCPCalls := make(map[string][]LLMToolCall) // server -> destructive calls
 	regularCalls := make([]LLMToolCall, 0)
 
-	// Build a lookup map for tools
-	toolMap := make(map[string]*LLMTool)
-	for i := range tools {
-		toolMap[tools[i].Name] = &tools[i]
-	}
-
 	for _, toolCall := range toolCalls {
-		tool := toolMap[toolCall.Function.Name]
-		if tool == nil || tool.Server == "" {
+		tool, err := m.LookupTool(toolCall.Function.Name, tools)
+		if err != nil {
+			// Couldn't find the tool, just call it regularly and let it fail with the
+			// tool not found (or ambiguous) error
+			regularCalls = append(regularCalls, toolCall)
+			continue
+		}
+
+		if tool.Server == "" {
 			// Regular tool call (not MCP)
 			regularCalls = append(regularCalls, toolCall)
 			continue
