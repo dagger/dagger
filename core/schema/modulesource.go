@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -2646,10 +2648,8 @@ func (s *moduleSourceSchema) moduleSourceWithUpdatedClients(
 	// Verify that all updateReq has been processed, otherwise there's a
 	// invalid update request.
 	if len(updateReqs) > 0 {
-		deps := make([]string, 0, len(updateReqs))
-		for updateReq := range updateReqs {
-			deps = append(deps, updateReq)
-		}
+		deps := slices.Collect(maps.Keys(updateReqs))
+
 		return nil, fmt.Errorf("client(s) %q were requested to be updated, but were not found in the clients list", strings.Join(deps, ","))
 	}
 

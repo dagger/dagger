@@ -1300,7 +1300,7 @@ func main() {
 
 func (ClientGeneratorTest) TestClientUpdate(ctx context.Context, t *testctx.T) {
 	const (
-		// pins from github.com/TomChv/dagger-client-generator module
+		// pins from github.com/dagger/client-generator-test module
 		// to test the update command
 		latestPin = "d76af75d104a2777bcd7dc6d240966760801b81f"
 		v01Pin    = "446f2691deba58f99b55b86430fade1c773e486f"
@@ -1316,7 +1316,7 @@ func (ClientGeneratorTest) TestClientUpdate(ctx context.Context, t *testctx.T) {
 	"name": "test",
 	"clients": [
 		{
-			"generator": "github.com/TomChv/dagger-client-generator@` + v01Pin + `",
+			"generator": "github.com/dagger/client-generator-test@` + v01Pin + `",
 			"directory": "dagger"
 		}
 	]
@@ -1326,7 +1326,7 @@ func (ClientGeneratorTest) TestClientUpdate(ctx context.Context, t *testctx.T) {
 	"name": "test",
 	"clients": [
 		{
-			"generator": "github.com/TomChv/dagger-client-generator@main",
+			"generator": "github.com/dagger/client-generator-test@main",
 			"directory": "dagger"
 		}
 	]
@@ -1336,7 +1336,7 @@ func (ClientGeneratorTest) TestClientUpdate(ctx context.Context, t *testctx.T) {
 	"name": "test",
 	"clients": [
 		{
-			"generator": "github.com/TomChv/dagger-client-generator",
+			"generator": "github.com/dagger/client-generator-test",
 			"directory": "dagger"
 		}
 	]
@@ -1355,81 +1355,81 @@ func (ClientGeneratorTest) TestClientUpdate(ctx context.Context, t *testctx.T) {
 		{
 			name:        "existing client has version, update cmd has version",
 			daggerjson:  clientwithOldVersion,
-			updateCmd:   []string{"client", "update", "github.com/TomChv/dagger-client-generator@v0.0.2"},
-			contains:    []string{"github.com/TomChv/dagger-client-generator@v0.0.2"},
-			notContains: []string{fmt.Sprintf("github.com/TomChv/dagger-client-generator@%s", v01Pin)},
+			updateCmd:   []string{"client", "update", "github.com/dagger/client-generator-test@v0.0.2"},
+			contains:    []string{"github.com/dagger/client-generator-test@v0.0.2"},
+			notContains: []string{fmt.Sprintf("github.com/dagger/client-generator-test@%s", v01Pin)},
 		},
 		{
 			name:        "existing client has branch, update cmd has version",
 			daggerjson:  clientwithBranch,
-			updateCmd:   []string{"client", "update", "github.com/TomChv/dagger-client-generator@v0.0.2"},
-			contains:    []string{"github.com/TomChv/dagger-client-generator@v0.0.2"},
-			notContains: []string{"github.com/TomChv/dagger-client-generator@main"},
+			updateCmd:   []string{"client", "update", "github.com/dagger/client-generator-test@v0.0.2"},
+			contains:    []string{"github.com/dagger/client-generator-test@v0.0.2"},
+			notContains: []string{"github.com/dagger/client-generator-test@main"},
 		},
 		{
 			name:        "existing client dont have version, update cmd has version",
 			daggerjson:  clientWithNoVersion,
-			updateCmd:   []string{"client", "update", "github.com/TomChv/dagger-client-generator@v0.0.2"},
-			contains:    []string{"github.com/TomChv/dagger-client-generator@v0.0.2"},
-			notContains: []string{"github.com/TomChv/dagger-client-generator\""},
+			updateCmd:   []string{"client", "update", "github.com/dagger/client-generator-test@v0.0.2"},
+			contains:    []string{"github.com/dagger/client-generator-test@v0.0.2"},
+			notContains: []string{"github.com/dagger/client-generator-test\""},
 		},
 		{
 			name:       "existing client has version, update cmd has no version",
 			daggerjson: clientwithOldVersion,
-			updateCmd:  []string{"client", "update", "github.com/TomChv/dagger-client-generator"},
-			contains:   []string{fmt.Sprintf("github.com/TomChv/dagger-client-generator@%s", latestPin)},
+			updateCmd:  []string{"client", "update", "github.com/dagger/client-generator-test"},
+			contains:   []string{fmt.Sprintf("github.com/dagger/client-generator-test@%s", latestPin)},
 			notContains: []string{
-				"github.com/TomChv/dagger-client-generator@v0.0.2",
-				"github.com/TomChv/dagger-client-generator@main",
+				"github.com/dagger/client-generator-test@v0.0.2",
+				"github.com/dagger/client-generator-test@main",
 			},
 		},
 		{
 			name:       "existing client has no version, update cmd has no version",
 			daggerjson: clientWithNoVersion,
-			updateCmd:  []string{"client", "update", "github.com/TomChv/dagger-client-generator"},
-			contains:   []string{fmt.Sprintf("github.com/TomChv/dagger-client-generator@%s", latestPin)},
+			updateCmd:  []string{"client", "update", "github.com/dagger/client-generator-test"},
+			contains:   []string{fmt.Sprintf("github.com/dagger/client-generator-test@%s", latestPin)},
 			notContains: []string{
-				"github.com/TomChv/dagger-client-generator\"",
+				"github.com/dagger/client-generator-test\"",
 			},
 		},
 		{
 			name:       "existing client has branch, update cmd has no version",
 			daggerjson: clientwithBranch,
-			updateCmd:  []string{"client", "update", "github.com/TomChv/dagger-client-generator"},
-			contains:   []string{fmt.Sprintf("github.com/TomChv/dagger-client-generator@%s", latestPin)},
+			updateCmd:  []string{"client", "update", "github.com/dagger/client-generator-test"},
+			contains:   []string{fmt.Sprintf("github.com/dagger/client-generator-test@%s", latestPin)},
 			notContains: []string{
-				"github.com/TomChv/dagger-client-generator@main",
+				"github.com/dagger/client-generator-test@main",
 			},
 		},
 		{
 			name:       "existing client has version, update cmd has branch",
 			daggerjson: clientwithOldVersion,
-			updateCmd:  []string{"client", "update", "github.com/TomChv/dagger-client-generator@main"},
-			contains:   []string{"github.com/TomChv/dagger-client-generator@main"},
+			updateCmd:  []string{"client", "update", "github.com/dagger/client-generator-test@main"},
+			contains:   []string{"github.com/dagger/client-generator-test@main"},
 			notContains: []string{
-				fmt.Sprintf("github.com/TomChv/dagger-client-generator@%s", v01Pin),
+				fmt.Sprintf("github.com/dagger/client-generator-test@%s", v01Pin),
 			},
 		},
 		{
 			name:       "existing client has no version, update cmd has branch",
 			daggerjson: clientWithNoVersion,
-			updateCmd:  []string{"client", "update", "github.com/TomChv/dagger-client-generator@main"},
-			contains:   []string{"github.com/TomChv/dagger-client-generator@main"},
+			updateCmd:  []string{"client", "update", "github.com/dagger/client-generator-test@main"},
+			contains:   []string{"github.com/dagger/client-generator-test@main"},
 			notContains: []string{
-				"github.com/TomChv/dagger-client-generator\"",
+				"github.com/dagger/client-generator-test\"",
 			},
 		},
 		{
 			name:          "update a client not in the dagger.json",
 			daggerjson:    noClient,
-			updateCmd:     []string{"client", "update", "github.com/TomChv/dagger-client-generator@v0.0.2"},
-			expectedError: `client(s) "github.com/TomChv/dagger-client-generator" were requested to be updated, but were not found in the clients list`,
+			updateCmd:     []string{"client", "update", "github.com/dagger/client-generator-test@v0.0.2"},
+			expectedError: `client(s) "github.com/dagger/client-generator-test" were requested to be updated, but were not found in the clients list`,
 		},
 		{
 			name:       "can update all clients",
 			daggerjson: clientwithOldVersion,
 			updateCmd:  []string{"client", "update"},
-			contains:   []string{fmt.Sprintf("github.com/TomChv/dagger-client-generator@%s", latestPin)},
+			contains:   []string{fmt.Sprintf("github.com/dagger/client-generator-test@%s", latestPin)},
 		},
 	}
 
