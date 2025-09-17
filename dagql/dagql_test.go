@@ -66,7 +66,7 @@ func reqFail(t *testing.T, gql *client.Client, query string, substring string) {
 }
 
 func newCache() *dagql.SessionCache {
-	return dagql.NewSessionCache(cache.NewCache[digest.Digest, dagql.AnyResult]())
+	return dagql.NewSessionCache(cache.NewCache[string, dagql.AnyResult]())
 }
 
 func TestBasic(t *testing.T) {

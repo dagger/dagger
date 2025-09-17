@@ -21,6 +21,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/opencontainers/go-digest"
@@ -1924,7 +1925,10 @@ func (s *moduleSourceSchema) runCodegen(
 	// cache the current source instance by it's digest before passing to codegen
 	// this scopes the cache key of codegen calls to an exact content hash detached
 	// from irrelevant details like specific host paths, specific git repos+commits, etc.
-	_, err = dag.Cache.GetOrInitializeValue(ctx, digest.Digest(srcInst.Self().Digest), srcInst)
+	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
+		ResultKey: srcInst.Self().Digest,
+	}
+	_, err = dag.Cache.GetOrInitializeValue(ctx, cacheKey, srcInst)
 	if err != nil {
 		return res, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
@@ -2246,7 +2250,10 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary module instance: %w", err)
 	}
-	_, err = dag.Cache.GetOrInitializeValue(ctx, tmpModInst.ID().Digest(), tmpModInst)
+	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
+		ResultKey: string(tmpModInst.ID().Digest()),
+	}
+	_, err = dag.Cache.GetOrInitializeValue(ctx, cacheKey, tmpModInst)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
@@ -2386,7 +2393,10 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	// cache the current source instance by it's digest before passing to codegen
 	// this scopes the cache key of codegen calls to an exact content hash detached
 	// from irrelevant details like specific host paths, specific git repos+commits, etc.
-	_, err = dag.Cache.GetOrInitializeValue(ctx, digest.Digest(src.Self().Digest), src)
+	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
+		ResultKey: src.Self().Digest,
+	}
+	_, err = dag.Cache.GetOrInitializeValue(ctx, cacheKey, src)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
