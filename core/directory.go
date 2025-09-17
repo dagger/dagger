@@ -776,6 +776,22 @@ func (dir *Directory) WithDirectory(
 			destDir == "/" &&
 			src.Dir == "/"
 
+	if dirRef == nil {
+		tmpRef, err := query.BuildkitCache().New(ctx, nil, nil,
+			bkcache.CachePolicyRetain,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription("Directory.withDirectory source"))
+		if err != nil {
+			return nil, fmt.Errorf("buildkitcache.New failed: %w", err)
+		}
+		dirRef, err = tmpRef.Commit(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to commit copied directory: %w", err)
+		}
+		defer dirRef.Release(ctx) // release; the merge should keep it alive
+	}
+
+	fmt.Printf("ACB creating merge refs with %+v\n", dirRef)
 	mergeRefs := []bkcache.ImmutableRef{dirRef}
 
 	if canDoDirectMerge {
@@ -783,8 +799,11 @@ func (dir *Directory) WithDirectory(
 		// copies and caches inputs individually instead of invalidating the whole
 		// chain following any modified input.
 		if srcRef == nil {
+			dir.Result = dirRef
+			fmt.Printf("ACB canDoDirectMerge got srcRef=nil, returning %+v\n", dir)
 			return dir, nil
 		}
+		fmt.Printf("ACB canDoDirectMerge srcRef=%+v\n", srcRef)
 		mergeRefs = append(mergeRefs, srcRef)
 	} else {
 		// Even if we can't merge directly, we can still get some optimization by
@@ -875,11 +894,26 @@ func (dir *Directory) WithDirectory(
 		mergeRefs = append(mergeRefs, copiedRef)
 	}
 
+	for _, x := range mergeRefs {
+		if x == nil {
+			panic("got a nil ref to merge")
+		}
+	}
+
 	ref, err := cache.Merge(ctx, mergeRefs, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to merge directories: %w", err)
 	}
+	err = ref.Finalize(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Printf("ACB merge returned %+v\n", ref)
 	dir.Result = ref
+
+	if ref == nil {
+		panic("why did Merge return nil")
+	}
 
 	if srcFound {
 		var mergedFound bool

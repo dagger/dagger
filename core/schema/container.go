@@ -26,6 +26,7 @@ import (
 	"github.com/moby/buildkit/client/llb/sourceresolver"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -1826,7 +1827,7 @@ func (s *containerSchema) withDirectoryCacheKey(ctx context.Context, parent dagq
 		string(args.Path),
 		string(args.Directory.ID().Digest()),
 
-		//string(fmt.Sprintf("hack %v %v", time.Now(), identity.NewID())),
+		string(fmt.Sprintf("hack %v %v", time.Now(), identity.NewID())),
 	)
 	hereStr = "end"
 	return &cacheCfg, nil
