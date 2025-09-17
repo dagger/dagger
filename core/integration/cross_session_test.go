@@ -872,8 +872,7 @@ type Secreter struct {}
 
 func (*Secreter) Fn(cacheBust string, tokenPlaintext string) *dagger.Container {
 	authSecret := dag.SetSecret("GIT_AUTH", tokenPlaintext)
-	gitRepo := dag.Git("https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private").
-		WithAuthToken(authSecret).
+	gitRepo := dag.Git("https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private", dagger.GitOpts{HTTPAuthToken: authSecret}).
 		Branch("main").
 		Tree()
 

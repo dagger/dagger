@@ -1,8 +1,6 @@
 package core
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -23,6 +21,7 @@ import (
 type GitRepository struct {
 	URL     dagql.Nullable[dagql.String] `field:"true" doc:"The URL of the git repository."`
 	Backend GitRepositoryBackend
+	Remote  *gitutil.Remote
 
 	DiscardGitDir bool
 }
@@ -30,16 +29,44 @@ type GitRepository struct {
 type GitRepositoryBackend interface {
 	HasPBDefinitions
 
-	// Ref returns a reference to a specific git ref (branch, tag, or commit).
-	Ref(ctx context.Context, ref string) (GitRefBackend, error)
-	// Tags lists tags in the repository matching the given patterns.
-	Tags(ctx context.Context, patterns []string, sort string) (tags []string, err error)
-	// Branches lists branches in the repository matching the given patterns.
-	Branches(ctx context.Context, patterns []string, sort string) (branches []string, err error)
+	// Get returns a reference to a specific git ref (branch, tag, or commit).
+	Get(ctx context.Context, ref *gitutil.Ref) (GitRefBackend, error)
+	// Remote returns information about the git remote.
+	Remote(ctx context.Context) (*gitutil.Remote, error)
 
 	mount(ctx context.Context, depth int, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error
+}
 
-	equivalent(GitRepositoryBackend) bool
+type GitRef struct {
+	Repo    dagql.ObjectResult[*GitRepository]
+	Backend GitRefBackend
+	Ref     *gitutil.Ref
+}
+
+type GitRefBackend interface {
+	HasPBDefinitions
+
+	Tree(ctx context.Context, srv *dagql.Server, discard bool, depth int) (checkout *Directory, err error)
+
+	mount(ctx context.Context, depth int, fn func(*gitutil.GitCLI) error) error
+}
+
+func NewGitRepository(ctx context.Context, backend GitRepositoryBackend) (*GitRepository, error) {
+	repo := &GitRepository{
+		Backend: backend,
+	}
+
+	remote, err := backend.Remote(ctx)
+	if err != nil {
+		return nil, err
+	}
+	repo.Remote = remote
+
+	if remoteBackend, ok := backend.(*RemoteGitRepository); ok {
+		repo.URL = dagql.NonNull(dagql.String(remoteBackend.URL.String()))
+	}
+
+	return repo, nil
 }
 
 func (*GitRepository) Type() *ast.Type {
@@ -57,36 +84,20 @@ func (repo *GitRepository) PBDefinitions(ctx context.Context) ([]*pb.Definition,
 	return repo.Backend.PBDefinitions(ctx)
 }
 
-func (repo *GitRepository) Ref(ctx context.Context, name string) (*GitRef, error) {
-	ref, err := repo.Backend.Ref(ctx, name)
-	if err != nil {
-		return nil, err
+func (repo *GitRepository) Tags(patterns []string) []string {
+	var names []string
+	for _, tag := range repo.Remote.Tags().Filter(patterns).Refs {
+		names = append(names, tag.ShortName())
 	}
-	return &GitRef{repo, ref}, nil
+	return names
 }
 
-func (repo *GitRepository) Tags(ctx context.Context, patterns []string, sort string) ([]string, error) {
-	return repo.Backend.Tags(ctx, patterns, sort)
-}
-
-func (repo *GitRepository) Branches(ctx context.Context, patterns []string, sort string) ([]string, error) {
-	return repo.Backend.Branches(ctx, patterns, sort)
-}
-
-type GitRef struct {
-	Repo    *GitRepository
-	Backend GitRefBackend
-}
-
-type GitRefBackend interface {
-	HasPBDefinitions
-
-	Repo() GitRepositoryBackend
-
-	Resolve(ctx context.Context) (commit string, ref string, err error)
-	Tree(ctx context.Context, srv *dagql.Server, discard bool, depth int) (checkout *Directory, err error)
-
-	mount(ctx context.Context, depth int, fn func(*gitutil.GitCLI) error) error
+func (repo *GitRepository) Branches(patterns []string) []string {
+	var names []string
+	for _, branch := range repo.Remote.Branches().Filter(patterns).Refs {
+		names = append(names, branch.ShortName())
+	}
+	return names
 }
 
 func (*GitRef) Type() *ast.Type {
@@ -104,12 +115,8 @@ func (ref *GitRef) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) 
 	return ref.Backend.PBDefinitions(ctx)
 }
 
-func (ref *GitRef) Resolve(ctx context.Context) (string, string, error) {
-	return ref.Backend.Resolve(ctx)
-}
-
 func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int) (*Directory, error) {
-	return ref.Backend.Tree(ctx, srv, ref.Repo.DiscardGitDir || discardGitDir, depth)
+	return ref.Backend.Tree(ctx, srv, ref.Repo.Self().DiscardGitDir || discardGitDir, depth)
 }
 
 func doGitCheckout(
@@ -135,6 +142,9 @@ func doGitCheckout(
 	if depth > 0 {
 		args = append(args, fmt.Sprintf("--depth=%d", depth))
 	}
+	// TODO: maybe this should use --no-tags by default, but that's a breaking change :(
+	// alos, we currently don't do any special work to ensure that the fetched
+	// tags are consistent with the GitRepository.Remote (oops)
 	args = append(args, cloneURL, pullref)
 	_, err = checkoutGit.Run(ctx, args...)
 	if err != nil {
@@ -187,70 +197,11 @@ func doGitCheckout(
 	return nil
 }
 
-func (ref *RemoteGitRef) resolve(ctx context.Context, refstr string) (commit string, fullref string, err error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return "", "", err
-	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to get services: %w", err)
-	}
-	detach, _, err := svcs.StartBindings(ctx, ref.repo.Services)
-	if err != nil {
-		return "", "", err
-	}
-	defer detach()
-
-	git, cleanup, err := ref.repo.setup(ctx)
-	if err != nil {
-		return "", "", err
-	}
-	defer cleanup()
-
-	target := refstr
-	if gitutil.IsCommitSHA(refstr) {
-		// even when we already know the commit, we should still access the
-		// remote ref, to confirm it's actually real
-		target = "HEAD"
-	}
-
-	out, err := git.Run(ctx,
-		"ls-remote",
-		"--symref",
-		ref.repo.URL.Remote(),
-		target,
-		target+"^{}",
-	)
-	if err != nil {
-		return "", "", fmt.Errorf("cannot resolve %q: %w", ref.repo.URL.Remote(), err)
-	}
-
-	if gitutil.IsCommitSHA(refstr) {
-		return refstr, refstr, nil
-	}
-
-	return parseLsRemote(refstr, string(out))
-}
-
-func (ref *RemoteGitRef) Resolve(ctx context.Context) (commit string, fullref string, _ error) {
-	return ref.Commit, ref.FullRef, nil
-}
-
-func MergeBase(ctx context.Context, ref1 GitRefBackend, ref2 GitRefBackend) (GitRefBackend, error) {
-	if ref1.Repo().equivalent(ref2.Repo()) { // fast-path, just grab both refs from the same repo
-		repo := ref1.Repo()
-		commit1, _, err := ref1.Resolve(ctx)
-		if err != nil {
-			return nil, err
-		}
-		commit2, _, err := ref2.Resolve(ctx)
-		if err != nil {
-			return nil, err
-		}
+func MergeBase(ctx context.Context, ref1 *GitRef, ref2 *GitRef) (*GitRef, error) {
+	if ref1.Repo.ID() == ref2.Repo.ID() { // fast-path, just grab both refs from the same repo
 		var mergeBase string
-		err = repo.mount(ctx, 0, []GitRefBackend{ref1, ref2}, func(git *gitutil.GitCLI) error {
-			out, err := git.Run(ctx, "merge-base", commit1, commit2)
+		err := ref1.Repo.Self().Backend.mount(ctx, 0, []GitRefBackend{ref1.Backend, ref2.Backend}, func(git *gitutil.GitCLI) error {
+			out, err := git.Run(ctx, "merge-base", ref1.Ref.SHA, ref2.Ref.SHA)
 			if err != nil {
 				return fmt.Errorf("git merge-base failed: %w", err)
 			}
@@ -261,10 +212,15 @@ func MergeBase(ctx context.Context, ref1 GitRefBackend, ref2 GitRefBackend) (Git
 			return nil, err
 		}
 
-		return repo.Ref(ctx, mergeBase)
+		ref := &gitutil.Ref{SHA: mergeBase, Name: mergeBase}
+		backend, err := ref1.Repo.Self().Backend.Get(ctx, ref)
+		if err != nil {
+			return nil, err
+		}
+		return &GitRef{Repo: ref1.Repo, Backend: backend, Ref: ref}, nil
 	}
 
-	git, commits, cleanup, err := refJoin(ctx, []GitRefBackend{ref1, ref2})
+	git, commits, cleanup, err := refJoin(ctx, []*GitRef{ref1, ref2})
 	if err != nil {
 		return nil, err
 	}
@@ -275,12 +231,18 @@ func MergeBase(ctx context.Context, ref1 GitRefBackend, ref2 GitRefBackend) (Git
 		return nil, fmt.Errorf("git merge-base failed: %w", err)
 	}
 	mergeBase := strings.TrimSpace(string(out))
-	return ref1.Repo().Ref(ctx, mergeBase)
+
+	ref := &gitutil.Ref{SHA: mergeBase, Name: mergeBase}
+	backend, err := ref1.Repo.Self().Backend.Get(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	return &GitRef{Repo: ref1.Repo, Backend: backend, Ref: ref}, nil
 }
 
 // refJoin creates a temporary git repository, adds the given refs as remotes,
 // fetches them, and returns a GitCLI instance.
-func refJoin(ctx context.Context, refs []GitRefBackend) (_ *gitutil.GitCLI, _ []string, _ func() error, rerr error) {
+func refJoin(ctx context.Context, refs []*GitRef) (_ *gitutil.GitCLI, _ []string, _ func() error, rerr error) {
 	tmpDir, err := os.MkdirTemp("", "dagger-mergebase")
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to create temp dir: %w", err)
@@ -307,12 +269,8 @@ func refJoin(ctx context.Context, refs []GitRefBackend) (_ *gitutil.GitCLI, _ []
 
 	for i, ref := range refs {
 		eg.Go(func() error {
-			commit, _, err := ref.Resolve(egCtx)
-			if err != nil {
-				return err
-			}
-			commits[i] = commit
-			return ref.mount(egCtx, 0, func(gitN *gitutil.GitCLI) error {
+			commits[i] = ref.Ref.SHA
+			return ref.Backend.mount(egCtx, 0, func(gitN *gitutil.GitCLI) error {
 				remoteURL, err := gitN.URL(egCtx)
 				if err != nil {
 					return err
@@ -323,7 +281,7 @@ func refJoin(ctx context.Context, refs []GitRefBackend) (_ *gitutil.GitCLI, _ []
 				if _, err := git.Run(egCtx, "remote", "add", remoteName, remoteURL); err != nil {
 					return fmt.Errorf("failed to add remote %s: %w", remoteName, err)
 				}
-				if _, err := git.Run(egCtx, "fetch", "--no-tags", remoteName, commit); err != nil {
+				if _, err := git.Run(egCtx, "fetch", "--no-tags", remoteName, ref.Ref.SHA); err != nil {
 					return fmt.Errorf("failed to fetch ref %d: %w", i+1, err)
 				}
 				return nil
@@ -335,109 +293,4 @@ func refJoin(ctx context.Context, refs []GitRefBackend) (_ *gitutil.GitCLI, _ []
 		return nil, nil, nil, err
 	}
 	return git, commits, cleanup, nil
-}
-
-// run git-ls-remote on a git repo with a target remote
-func runLsRemote(ctx context.Context, git *gitutil.GitCLI, remote string, args []string, patterns []string, sort string) ([]string, error) {
-	queryArgs := []string{
-		"ls-remote",
-		"--refs", // we don't want to include ^{} entries for annotated tags
-	}
-	if sort != "" {
-		queryArgs = append(queryArgs, "--sort="+sort)
-	}
-	queryArgs = append(queryArgs, args...)
-	queryArgs = append(queryArgs, remote)
-	if len(patterns) > 0 {
-		queryArgs = append(queryArgs, "--")
-		queryArgs = append(queryArgs, patterns...)
-	}
-
-	out, err := git.Run(ctx, queryArgs...)
-	if err != nil {
-		return nil, err
-	}
-
-	results := []string{}
-	scanner := bufio.NewScanner(bytes.NewReader(out))
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		if len(fields) < 2 {
-			continue
-		}
-
-		results = append(results, fields[1])
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error scanning git output: %w", err)
-	}
-
-	return results, nil
-}
-
-// parseLsRemote parses output from git-ls-remote to find the correctly
-// matching ref and commit for a target
-func parseLsRemote(target string, out string) (commit string, ref string, err error) {
-	lines := strings.Split(out, "\n")
-
-	symrefs := make(map[string]string)
-
-	// simulate git-checkout semantics, and make sure to select exactly the right ref
-	var (
-		partialRef      = "refs/" + strings.TrimPrefix(target, "refs/")
-		headRef         = "refs/heads/" + strings.TrimPrefix(target, "refs/heads/")
-		tagRef          = "refs/tags/" + strings.TrimPrefix(target, "refs/tags/")
-		annotatedTagRef = tagRef + "^{}"
-	)
-	type reference struct {
-		sha string
-		ref string
-	}
-	var match, headMatch, tagMatch *reference
-
-	for _, line := range lines {
-		fields := strings.Split(line, "\t")
-		if len(fields) < 2 {
-			continue
-		}
-		lineMatch := &reference{sha: fields[0], ref: fields[1]}
-
-		if ref, ok := strings.CutPrefix(lineMatch.sha, "ref: "); ok {
-			// this is a symref, record it for later
-			symrefs[lineMatch.ref] = ref
-			continue
-		}
-
-		switch lineMatch.ref {
-		case headRef:
-			headMatch = lineMatch
-		case tagRef, annotatedTagRef:
-			tagMatch = lineMatch
-			tagMatch.ref = tagRef
-		case partialRef:
-			match = lineMatch
-		case target:
-			match = lineMatch
-		}
-	}
-	// git-checkout prefers branches in case of ambiguity
-	if match == nil {
-		match = headMatch
-	}
-	if match == nil {
-		match = tagMatch
-	}
-	if match == nil {
-		return "", "", fmt.Errorf("repository does not contain ref %q, output: %q", target, out)
-	}
-	if !gitutil.IsCommitSHA(match.sha) {
-		return "", "", fmt.Errorf("invalid commit sha %q for %q", match.sha, match.ref)
-	}
-
-	// resolve symrefs to get the right ref result
-	if ref, ok := symrefs[match.ref]; ok {
-		match.ref = ref
-	}
-	return match.sha, match.ref, nil
 }
