@@ -4591,6 +4591,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::withUpdatedClients",
+			"p": "Dagger/ModuleSource.html#method_withUpdatedClients",
+			"d": "<p>Update one or more clients.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::withoutBlueprint",
 			"p": "Dagger/ModuleSource.html#method_withoutBlueprint",
 			"d": "<p>Remove the current blueprint from the module source.</p>"

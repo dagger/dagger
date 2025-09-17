@@ -367,6 +367,16 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Update one or more clients.
+     */
+    public function withUpdatedClients(array $clients): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpdatedClients');
+        $innerQueryBuilder->setArgument('clients', $clients);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Remove the current blueprint from the module source.
      */
     public function withoutBlueprint(): ModuleSource

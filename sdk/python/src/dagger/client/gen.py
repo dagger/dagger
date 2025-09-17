@@ -9602,6 +9602,20 @@ class ModuleSource(Type):
         _ctx = self._select("withUpdateDependencies", _args)
         return ModuleSource(_ctx)
 
+    def with_updated_clients(self, clients: list[str]) -> Self:
+        """Update one or more clients.
+
+        Parameters
+        ----------
+        clients:
+            The clients to update
+        """
+        _args = [
+            Arg("clients", clients),
+        ]
+        _ctx = self._select("withUpdatedClients", _args)
+        return ModuleSource(_ctx)
+
     def without_blueprint(self) -> Self:
         """Remove the current blueprint from the module source."""
         _args: list[Arg] = []

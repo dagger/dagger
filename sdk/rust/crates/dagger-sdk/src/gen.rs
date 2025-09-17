@@ -9966,6 +9966,26 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Update one or more clients.
+    ///
+    /// # Arguments
+    ///
+    /// * `clients` - The clients to update
+    pub fn with_updated_clients(&self, clients: Vec<impl Into<String>>) -> ModuleSource {
+        let mut query = self.selection.select("withUpdatedClients");
+        query = query.arg(
+            "clients",
+            clients
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Remove the current blueprint from the module source.
     pub fn without_blueprint(&self) -> ModuleSource {
         let query = self.selection.select("withoutBlueprint");
