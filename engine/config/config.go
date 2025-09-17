@@ -29,6 +29,10 @@ type Config struct {
 
 	// Security allows configuring various security settings for the engine.
 	Security *Security `json:"security,omitempty"`
+
+	// Registries configures custom registry mirrors, root CAs, and
+	// insecure/HTTP access.
+	Registries map[string]RegistryConfig `json:"registries,omitempty"`
 }
 
 type LogLevel string
@@ -76,6 +80,13 @@ func (ll LogLevel) ToLogrusLevel() (logrus.Level, error) {
 		return logrus.TraceLevel, nil
 	}
 	return logrus.Level(0), fmt.Errorf("unknown log level %q", ll)
+}
+
+type RegistryConfig struct {
+	Mirrors   []string `json:"mirrors"`
+	PlainHTTP *bool    `json:"http"`
+	Insecure  *bool    `json:"insecure"`
+	RootCAs   []string `json:"ca"`
 }
 
 type GCConfig struct {
