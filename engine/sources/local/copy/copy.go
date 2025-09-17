@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/containerd/continuity/fs"
+	"github.com/dagger/dagger/util/fsxutil"
 	"github.com/moby/patternmatcher"
 	"github.com/pkg/errors"
 	"github.com/tonistiigi/fsutil"
@@ -88,7 +89,7 @@ func Copy(ctx context.Context, srcRoot, src, dstRoot, dst string, opts ...Opt) e
 		return err
 	}
 
-	c, err := newCopier(dstRoot, ci.Chown, ci.Utime, ci.Mode, ci.XAttrErrorHandler, ci.IncludePatterns, ci.ExcludePatterns, ci.AlwaysReplaceExistingDestPaths, ci.ChangeFunc)
+	c, err := newCopier(dstRoot, ci.Chown, ci.Utime, ci.Mode, ci.XAttrErrorHandler, ci.Only, ci.IncludePatterns, ci.ExcludePatterns, ci.UseGitignore, ci.AlwaysReplaceExistingDestPaths, ci.ChangeFunc)
 	if err != nil {
 		return err
 	}
@@ -168,10 +169,14 @@ type CopyInfo struct {
 	XAttrErrorHandler XAttrErrorHandler
 	CopyDirContents   bool
 	FollowLinks       bool
+	// Only allows *only* these files/dirs to be copied
+	Only map[string]struct{}
 	// Include only files/dirs matching at least one of these patterns
 	IncludePatterns []string
 	// Exclude files/dir matching any of these patterns (even if they match an include pattern)
 	ExcludePatterns []string
+	// UseGitignore indicates that .gitignore files should be respected
+	UseGitignore bool
 	// If true, any source path that overwrite existing destination paths will always replace
 	// the existing destination path, even if they are of different types (e.g. a directory will
 	// replace any existing symlink or file)
@@ -236,11 +241,13 @@ type copier struct {
 	mode                           *int
 	inodes                         map[uint64]string
 	xattrErrorHandler              XAttrErrorHandler
+	onlySet                        map[string]struct{}
 	includePatternMatcher          *patternmatcher.PatternMatcher
 	excludePatternMatcher          *patternmatcher.PatternMatcher
+	gitignoreMatcher               *fsxutil.GitignoreMatcher
 	parentDirs                     []parentDir
 	changefn                       fsutil.ChangeFunc
-	root                           string
+	destRoot                       string
 	alwaysReplaceExistingDestPaths bool
 }
 
@@ -250,7 +257,7 @@ type parentDir struct {
 	copied  bool
 }
 
-func newCopier(root string, chown Chowner, tm *time.Time, mode *int, xeh XAttrErrorHandler, includePatterns, excludePatterns []string, alwaysReplaceExistingDestPaths bool, changeFunc fsutil.ChangeFunc) (*copier, error) {
+func newCopier(destRoot string, chown Chowner, tm *time.Time, mode *int, xeh XAttrErrorHandler, only map[string]struct{}, includePatterns, excludePatterns []string, useGitignore bool, alwaysReplaceExistingDestPaths bool, changeFunc fsutil.ChangeFunc) (*copier, error) {
 	if xeh == nil {
 		xeh = func(dst, src, key string, err error) error {
 			return err
@@ -275,15 +282,26 @@ func newCopier(root string, chown Chowner, tm *time.Time, mode *int, xeh XAttrEr
 		}
 	}
 
+	var gitignoreMatcher *fsxutil.GitignoreMatcher
+	if useGitignore {
+		fs, err := fsutil.NewFS("/")
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create fs for gitignore matcher")
+		}
+		gitignoreMatcher = fsxutil.NewGitIgnoreMatcher(fs)
+	}
+
 	return &copier{
-		root:                           root,
+		destRoot:                       destRoot,
 		inodes:                         map[uint64]string{},
 		chown:                          chown,
 		utime:                          tm,
 		xattrErrorHandler:              xeh,
 		mode:                           mode,
+		onlySet:                        only,
 		includePatternMatcher:          includePatternMatcher,
 		excludePatternMatcher:          excludePatternMatcher,
+		gitignoreMatcher:               gitignoreMatcher,
 		changefn:                       changeFunc,
 		alwaysReplaceExistingDestPaths: alwaysReplaceExistingDestPaths,
 	}, nil
@@ -297,6 +315,20 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 	case <-ctx.Done():
 		return ctx.Err()
 	default:
+	}
+
+	fi, statErr := os.Lstat(src)
+	if statErr != nil {
+		if !os.IsNotExist(statErr) {
+			return errors.Wrapf(statErr, "failed to stat source path %s", src)
+		}
+		fi = nil
+	}
+
+	if c.onlySet != nil && srcComponents != "" {
+		if _, ok := c.onlySet[filepath.Clean(srcComponents)]; !ok {
+			return nil
+		}
 	}
 
 	include := true
@@ -321,23 +353,32 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 		if matchesExcludePattern {
 			include = false
 		}
+
+		if c.gitignoreMatcher != nil {
+			isDir := fi == nil || fi.IsDir()
+			matchesGitignore, err := c.gitignoreMatcher.Matches(src, isDir)
+			if err != nil {
+				return err
+			}
+			if matchesGitignore {
+				include = false
+			}
+		}
 	}
 
-	fi, err := os.Lstat(src)
-	switch {
-	case err == nil:
-	case os.IsNotExist(err) && !include:
-		// If the source does not exist and we are not including it, then nothing to do here.
-		//
-		// Tricky case: if this is a directory which isn't included but there are sub files/dirs
-		// that do end up being included, it will be skipped here. We rely on the caller performing
-		// synchronization to ensure that directories which will end up being included are not
-		// modified during this call.
-		// Handling this case only saves the caller from trying to lock modifications to *files* that
-		// are not included in the copy, which they shouldn't be responsible for anyways.
-		return nil
-	default:
-		return errors.Wrapf(err, "failed to stat source path %s", src)
+	if fi == nil {
+		if !include {
+			// If the source does not exist and we are not including it, then nothing to do here.
+			//
+			// Tricky case: if this is a directory which isn't included but there are sub files/dirs
+			// that do end up being included, it will be skipped here. We rely on the caller performing
+			// synchronization to ensure that directories which will end up being included are not
+			// modified during this call.
+			// Handling this case only saves the caller from trying to lock modifications to *files* that
+			// are not included in the copy, which they shouldn't be responsible for anyways.
+			return nil
+		}
+		return errors.Wrapf(statErr, "failed to stat source path %s", src)
 	}
 
 	targetFi, err := os.Lstat(target)
@@ -432,7 +473,7 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 
 func (c *copier) notifyChange(target string, fi os.FileInfo) error {
 	if c.changefn != nil {
-		if err := c.changefn(fsutil.ChangeKindAdd, path.Clean(strings.TrimPrefix(target, c.root)), fi, nil); err != nil {
+		if err := c.changefn(fsutil.ChangeKindAdd, path.Clean(strings.TrimPrefix(target, c.destRoot)), fi, nil); err != nil {
 			return errors.Wrap(err, "failed to notify file change")
 		}
 	}

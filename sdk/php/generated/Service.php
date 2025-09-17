@@ -83,6 +83,24 @@ class Service extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Forces evaluation of the pipeline in the engine.
+     */
+    public function sync(): ServiceId
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
+        return new \Dagger\ServiceId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+    }
+
+    public function terminal(?array $cmd = null): Service
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
+        if (null !== $cmd) {
+        $innerQueryBuilder->setArgument('cmd', $cmd);
+        }
+        return new \Dagger\Service($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Creates a tunnel that forwards traffic from the caller's network to this service.
      */
     public function up(?array $ports = null, ?bool $random = false): void

@@ -244,7 +244,7 @@ func (src *ModuleSource) Pin() string {
 	case ModuleSourceKindLocal:
 		return ""
 	case ModuleSourceKindGit:
-		return src.Git.Pin
+		return src.Git.Commit
 	default:
 		return ""
 	}
@@ -285,13 +285,14 @@ func (src *ModuleSource) CalcDigest() digest.Digest {
 	return dagql.HashFrom(inputs...)
 }
 
-// LoadContext loads addition files+directories from the module source's context, including those that
+// LoadContextDir loads addition files+directories from the module source's context, including those that
 // may have not been included in the original module source load.
-func (src *ModuleSource) LoadContext(
+func (src *ModuleSource) LoadContextDir(
 	ctx context.Context,
 	dag *dagql.Server,
 	path string,
-	ignore []string,
+	include []string,
+	exclude []string,
 ) (inst dagql.ObjectResult[*Directory], err error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -300,6 +301,20 @@ func (src *ModuleSource) LoadContext(
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get buildkit api: %w", err)
+	}
+
+	filterInputs := []dagql.NamedInput{}
+	if len(include) > 0 {
+		filterInputs = append(filterInputs, dagql.NamedInput{
+			Name:  "include",
+			Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(include...)),
+		})
+	}
+	if len(exclude) > 0 {
+		filterInputs = append(filterInputs, dagql.NamedInput{
+			Name:  "exclude",
+			Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(exclude...)),
+		})
 	}
 
 	switch src.Kind {
@@ -342,11 +357,10 @@ func (src *ModuleSource) LoadContext(
 			},
 			dagql.Selector{
 				Field: "directory",
-				Args: []dagql.NamedInput{
+				Args: append([]dagql.NamedInput{
 					{Name: "path", Value: dagql.String(path)},
-					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(ignore...))},
-					{Name: "noCache", Value: dagql.NewBoolean(true)},
-				},
+					{Name: "noCache", Value: dagql.Boolean(true)},
+				}, filterInputs...),
 			},
 		)
 		if err != nil {
@@ -376,18 +390,17 @@ func (src *ModuleSource) LoadContext(
 			}
 		}
 
-		if len(ignore) > 0 {
+		if len(filterInputs) > 0 {
 			if err := dag.Select(ctx, dag.Root(), &ctxDir,
 				dagql.Selector{
 					Field: "directory",
 				},
 				dagql.Selector{
 					Field: "withDirectory",
-					Args: []dagql.NamedInput{
+					Args: append([]dagql.NamedInput{
 						{Name: "path", Value: dagql.String("/")},
 						{Name: "directory", Value: dagql.NewID[*Directory](ctxDir.ID())},
-						{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(ignore...))},
-					},
+					}, filterInputs...),
 				},
 			); err != nil {
 				return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
@@ -417,18 +430,17 @@ func (src *ModuleSource) LoadContext(
 			}
 		}
 
-		if len(ignore) > 0 {
+		if len(filterInputs) > 0 {
 			if err := dag.Select(ctx, dag.Root(), &ctxDir,
 				dagql.Selector{
 					Field: "directory",
 				},
 				dagql.Selector{
 					Field: "withDirectory",
-					Args: []dagql.NamedInput{
+					Args: append([]dagql.NamedInput{
 						{Name: "path", Value: dagql.String("/")},
 						{Name: "directory", Value: dagql.NewID[*Directory](ctxDir.ID())},
-						{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(ignore...))},
-					},
+					}, filterInputs...),
 				},
 			); err != nil {
 				return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
@@ -450,6 +462,49 @@ func (src *ModuleSource) LoadContext(
 	}
 	if err := query.AddClientResourcesFromID(ctx, &resource.ID{ID: *inst.ID()}, mainClientMetadata.ClientID, false); err != nil {
 		return inst, fmt.Errorf("failed to add client resources from directory source: %w", err)
+	}
+
+	return inst, nil
+}
+
+func (src *ModuleSource) LoadContextGit(
+	ctx context.Context,
+	dag *dagql.Server,
+) (inst dagql.ObjectResult[*GitRepository], err error) {
+	if src.Kind == ModuleSourceKindGit {
+		// easy, we're running a git repo
+		err := dag.Select(ctx, dag.Root(), &inst,
+			dagql.Selector{
+				Field: "git",
+				Args: []dagql.NamedInput{
+					{Name: "url", Value: dagql.String(src.Git.CloneRef)},
+					// NOTE: pin HEAD to the module's git commit and ref
+					// this matches the behavior of calling a checked out local source module
+					{Name: "commit", Value: dagql.String(src.Git.Commit)},
+					{Name: "ref", Value: dagql.String(src.Git.Ref)},
+				},
+			},
+		)
+
+		if err != nil {
+			return inst, fmt.Errorf("failed to load contextual git repository: %w", err)
+		}
+		return inst, nil
+	}
+
+	// bit harder, this is actually a local directory
+	dir, err := src.LoadContextDir(ctx, dag, "/", []string{".git"}, nil)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load contextual git: %w", err)
+	}
+
+	err = dag.Select(ctx, dir, &inst,
+		dagql.Selector{
+			Field: "asGit",
+		},
+	)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load contextual git repository: %w", err)
 	}
 
 	return inst, nil
@@ -484,7 +539,8 @@ type GitModuleSource struct {
 
 	// The resolved commit hash of the source
 	Commit string
-	Pin    string
+	// The fully resolved git ref string of the source
+	Ref string
 
 	// The full git repo for the module source without any include filtering
 	UnfilteredContextDir dagql.ObjectResult[*Directory]

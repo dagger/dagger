@@ -46,6 +46,12 @@ func Close() error {
 	return err
 }
 
+// initialize an address to load directories, containers, secrets or other object types.
+func Address(value string) *dagger.Address {
+	client := initClient()
+	return client.Address(value)
+}
+
 // Constructs a cache volume for a given cache key.
 func CacheVolume(key string) *dagger.CacheVolume {
 	client := initClient()
@@ -112,6 +118,12 @@ func Env(opts ...dagger.EnvOpts) *dagger.Env {
 	return client.Env(opts...)
 }
 
+// Initialize an environment file
+func EnvFile(opts ...dagger.EnvFileOpts) *dagger.EnvFile {
+	client := initClient()
+	return client.EnvFile(opts...)
+}
+
 // Create a new error.
 func Error(message string) *dagger.Error {
 	client := initClient()
@@ -154,12 +166,24 @@ func HTTP(url string, opts ...dagger.HTTPOpts) *dagger.File {
 	return client.HTTP(url, opts...)
 }
 
+// Initialize a JSON value
+func JSON() *dagger.JSONValue {
+	client := initClient()
+	return client.JSON()
+}
+
 // Initialize a Large Language Model (LLM)
 //
 // Experimental: LLM support is not yet stabilized
 func LLM(opts ...dagger.LLMOpts) *dagger.LLM {
 	client := initClient()
 	return client.LLM(opts...)
+}
+
+// Load a Address from its ID.
+func LoadAddressFromID(id dagger.AddressID) *dagger.Address {
+	client := initClient()
+	return client.LoadAddressFromID(id)
 }
 
 // Load a Binding from its ID.
@@ -172,6 +196,12 @@ func LoadBindingFromID(id dagger.BindingID) *dagger.Binding {
 func LoadCacheVolumeFromID(id dagger.CacheVolumeID) *dagger.CacheVolume {
 	client := initClient()
 	return client.LoadCacheVolumeFromID(id)
+}
+
+// Load a Changeset from its ID.
+func LoadChangesetFromID(id dagger.ChangesetID) *dagger.Changeset {
+	client := initClient()
+	return client.LoadChangesetFromID(id)
 }
 
 // Load a Cloud from its ID.
@@ -232,6 +262,12 @@ func LoadEnumTypeDefFromID(id dagger.EnumTypeDefID) *dagger.EnumTypeDef {
 func LoadEnumValueTypeDefFromID(id dagger.EnumValueTypeDefID) *dagger.EnumValueTypeDef {
 	client := initClient()
 	return client.LoadEnumValueTypeDefFromID(id)
+}
+
+// Load a EnvFile from its ID.
+func LoadEnvFileFromID(id dagger.EnvFileID) *dagger.EnvFile {
+	client := initClient()
+	return client.LoadEnvFileFromID(id)
 }
 
 // Load a Env from its ID.
@@ -330,6 +366,12 @@ func LoadInterfaceTypeDefFromID(id dagger.InterfaceTypeDefID) *dagger.InterfaceT
 	return client.LoadInterfaceTypeDefFromID(id)
 }
 
+// Load a JSONValue from its ID.
+func LoadJSONValueFromID(id dagger.JSONValueID) *dagger.JSONValue {
+	client := initClient()
+	return client.LoadJSONValueFromID(id)
+}
+
 // Load a LLM from its ID.
 func LoadLLMFromID(id dagger.LLMID) *dagger.LLM {
 	client := initClient()
@@ -394,6 +436,18 @@ func LoadSDKConfigFromID(id dagger.SDKConfigID) *dagger.SDKConfig {
 func LoadScalarTypeDefFromID(id dagger.ScalarTypeDefID) *dagger.ScalarTypeDef {
 	client := initClient()
 	return client.LoadScalarTypeDefFromID(id)
+}
+
+// Load a SearchResult from its ID.
+func LoadSearchResultFromID(id dagger.SearchResultID) *dagger.SearchResult {
+	client := initClient()
+	return client.LoadSearchResultFromID(id)
+}
+
+// Load a SearchSubmatch from its ID.
+func LoadSearchSubmatchFromID(id dagger.SearchSubmatchID) *dagger.SearchSubmatch {
+	client := initClient()
+	return client.LoadSearchSubmatchFromID(id)
 }
 
 // Load a Secret from its ID.

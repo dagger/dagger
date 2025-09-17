@@ -24,9 +24,9 @@ export type ArgumentOptions = {
   /**
    * The contextual value to use for the argument.
    *
-   * This should only be used for Directory or File types.
+   * This should only be used for Directory/File or GitRepository/GitRef types.
    *
-   * An abslute path would be related to the context source directory (the git repo root or the module source root).
+   * An absolute path would be related to the context source directory (the git repo root or the module source root).
    * A relative path would be relative to the module source root.
    */
   defaultPath?: string

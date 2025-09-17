@@ -4,11 +4,13 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
+import gql
 import graphql
 import httpx
 from gql.client import AsyncClientSession
 from gql.client import Client as GraphQLClient
 from gql.transport.exceptions import (
+    TransportConnectionFailed,
     TransportProtocolError,
     TransportQueryError,
     TransportServerError,
@@ -100,12 +102,8 @@ class ClientSession(ResourceManager):
 
             try:
                 session = await stack.enter_async_context(self.client)
-            except TimeoutError as e:
-                msg = f"Failed to connect to engine: {e}"
-                raise ClientConnectionError(msg) from e
-            except httpx.RequestError as e:
-                msg = f"Could not make request: {e}"
-                raise ClientConnectionError(msg) from e
+            except TransportConnectionFailed as e:
+                raise ClientConnectionError(str(e)) from e
             except (TransportProtocolError, TransportServerError) as e:
                 msg = f"Got unexpected response from engine: {e}"
                 raise ClientConnectionError(msg) from e
@@ -135,7 +133,7 @@ class ClientSession(ResourceManager):
             raise ClientConnectionError(msg)
         return client.schema
 
-    async def execute(self, query: graphql.DocumentNode) -> Any:
+    async def execute(self, query: gql.GraphQLRequest) -> Any:
         return await (await self.get_session()).execute(query)
 
     async def close(self) -> None:

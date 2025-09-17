@@ -1,0 +1,73 @@
+---
+slug: /examples
+title: "Examples"
+description: Explore real-world examples of Dagger in action, from AI agents to CI/CD implementations.
+---
+
+# Examples
+
+This page showcases real-world examples of Dagger in action, with a focus on working implementations you can study and adapt.
+
+## Agents and agentic CI
+
+:::info
+Watch a [livestream of building an AI agent with Dagger](https://www.youtube.com/watch?v=1rDcyiR0wZE).
+:::
+
+- [Toy Programmer](https://github.com/shykes/toy-programmer): A simple programmer micro-agent for demonstration purposes
+
+- [Multi-Agent Demo](https://github.com/kpenfound/agents/tree/main/multiagent-demo): A demonstration using multiple LLMs to collaboratively solve a problem
+
+- [Go Coder](https://github.com/kpenfound/agents/tree/main/go-coder): A Go programmer agent that receives assignments from GitHub issues and creates PRs with solutions
+
+- [Cypress Test Writer](https://github.com/jpadams/cypress-test-writer): An agent that compares two git branches for UI changes and creates Cypress tests to cover the differences
+
+- [Tic Tac Toe](https://github.com/kpenfound/agents/tree/main/tictactoe): An agent that plays Tic Tac Toe with a human player
+
+- [Dockerfile Optimizer](https://github.com/samalba/agents/tree/main/dockerfile-optimizer): An agent that analyzes Dockerfiles and suggests improvements for better efficiency, security, and best practices
+
+- [Test Debugger](https://github.com/kpenfound/greetings-api/blob/main/DEBUGGER_AGENT.md): An agent that automatically debugs failing tests in CI
+
+- [Technical Content Summarizer](https://github.com/jasonmccallister/technical-content-summarizer): An agent that summarizes technical content from a URL for a non-technical audience
+
+- [SWE Agent](https://github.com/kpenfound/greetings-api/blob/main/SWE_AGENT.md): An agent that gets assigned GitHub issues and solves them with pull requests
+
+- [Database Agent](https://github.com/jasonmccallister/database-agent): An agent that connects to an existing database and allows the user to ask plain language questions to explore and query a database.
+
+## Portable CI
+
+- [cdebug](https://github.com/iximiuz/cdebug/tree/main/ci): A pipeline with `containerd` tests
+
+- [Runme](https://github.com/runmedev/runme/tree/main/.dagger): A pipeline to test, build, and release a Go application
+
+- [Blip](https://github.com/bliporg/blip/tree/main/dagger): A pipeline to lint, format and test a C++ application
+
+- [Greetings API](https://github.com/kpenfound/greetings-api/tree/main/.dagger): A pipeline to lint, test, build and release a Go API service
+
+- [Books API](https://github.com/vikram-dagger/fastapi-sample-app/tree/main/.dagger): A pipeline to test a Python API service
+
+- [Symfony Demo Application](https://github.com/vikram-dagger/symfony-sample-app/tree/main/.dagger): A pipeline to lint, test and perform static analysis on a Symfony application
+
+## Monorepos
+
+- [Dagger](https://github.com/openmeterio/openmeter/tree/main/.dagger): Dagger's own CI pipelines, used to test, lint, build, and release multiple assets, includings the Dagger CLI, Dagger SDKs, and Dagger documentation.
+
+- [OpenMeter](https://github.com/openmeterio/openmeter/tree/main/.dagger): A set of pipelines to test, lint, scan, publish and release multiple assets, includings SDKs, binaries, Helm charts and container images
+
+## Cookbook
+
+The [Dagger Cookbook](cookbook/index.mdx) contains practical code examples for common tasks:
+
+- [Filesystem operations](cookbook/filesystems.mdx): Working with files and directories
+- [Build operations](cookbook/builds.mdx): Building applications and container images
+- [Agentic operations](cookbook/agents.mdx): Working with agents and environments
+- [Service management](cookbook/services.mdx): Working with services and networking
+- [Secret management](cookbook/secrets.mdx): Managing sensitive data securely
+- [Troubleshooting](cookbook/errors.mdx): Handling and debugging errors
+
+## Contribute examples
+
+Have you created a Dagger example you'd like to share?
+
+- Share it on our [Discord](https://discord.gg/dagger-io)
+- Share it on X (Twitter) and tag [@dagger_io](https://twitter.com/dagger_io)

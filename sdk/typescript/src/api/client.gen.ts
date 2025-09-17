@@ -17,6 +17,23 @@ class BaseClient {
   constructor(protected _ctx: Context = new Context()) {}
 }
 
+export type AddressDirectoryOpts = {
+  exclude?: string[]
+  include?: string[]
+  noCache?: boolean
+}
+
+export type AddressFileOpts = {
+  exclude?: string[]
+  include?: string[]
+  noCache?: boolean
+}
+
+/**
+ * The `AddressID` scalar type represents an identifier for an object of type Address.
+ */
+export type AddressID = string & { __AddressID: never }
+
 /**
  * The `BindingID` scalar type represents an identifier for an object of type Binding.
  */
@@ -91,6 +108,11 @@ function CacheSharingModeNameToValue(name: string): CacheSharingMode {
  * The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
  */
 export type CacheVolumeID = string & { __CacheVolumeID: never }
+
+/**
+ * The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
+ */
+export type ChangesetID = string & { __ChangesetID: never }
 
 /**
  * The `CloudID` scalar type represents an identifier for an object of type Cloud.
@@ -837,6 +859,63 @@ export type DirectoryFilterOpts = {
   include?: string[]
 }
 
+export type DirectorySearchOpts = {
+  /**
+   * Directory or file paths to search
+   */
+  paths?: string[]
+
+  /**
+   * Glob patterns to match (e.g., "*.md")
+   */
+  globs?: string[]
+
+  /**
+   * The text to match.
+   */
+  pattern: string
+
+  /**
+   * Interpret the pattern as a literal string instead of a regular expression.
+   */
+  literal?: boolean
+
+  /**
+   * Enable searching across multiple lines.
+   */
+  multiline?: boolean
+
+  /**
+   * Allow the . pattern to match newlines in multiline mode.
+   */
+  dotall?: boolean
+
+  /**
+   * Enable case-insensitive matching.
+   */
+  insensitive?: boolean
+
+  /**
+   * Honor .gitignore, .ignore, and .rgignore files.
+   */
+  skipIgnored?: boolean
+
+  /**
+   * Skip hidden files (files starting with .).
+   */
+  skipHidden?: boolean
+
+  /**
+   * Only return matching files, not lines and content
+   */
+  filesOnly?: boolean
+
+  /**
+   * Limit the number of results to return
+   */
+  limit?: number
+}
+
 export type DirectoryTerminalOpts = {
   /**
    * If set, override the default container used for the terminal.
@@ -869,6 +948,15 @@ export type DirectoryWithDirectoryOpts = {
    * Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    */
   include?: string[]
+
+  /**
+   * A user:group to set for the copied directory and its contents.
+   *
+   * The user and group must be an ID (1000:1000), not a name (foo:bar).
+   *
+   * If the group is omitted, it defaults to the same as the user.
+   */
+  owner?: string
 }
 
 export type DirectoryWithFileOpts = {
@@ -876,6 +964,15 @@ export type DirectoryWithFileOpts = {
    * Permission given to the copied file (e.g., 0600).
    */
   permissions?: number
+
+  /**
+   * A user:group to set for the copied directory and its contents.
+   *
+   * The user and group must be an ID (1000:1000), not a name (foo:bar).
+   *
+   * If the group is omitted, it defaults to the same as the user.
+   */
+  owner?: string
 }
 
 export type DirectoryWithFilesOpts = {
@@ -944,6 +1041,11 @@ export type EnumTypeDefID = string & { __EnumTypeDefID: never }
  * The `EnumValueTypeDefID` scalar type represents an identifier for an object of type EnumValueTypeDef.
  */
 export type EnumValueTypeDefID = string & { __EnumValueTypeDefID: never }
+
+/**
+ * The `EnvFileID` scalar type represents an identifier for an object of type EnvFile.
+ */
+export type EnvFileID = string & { __EnvFileID: never }
 
 /**
  * The `EnvID` scalar type represents an identifier for an object of type Env.
@@ -1023,6 +1125,25 @@ function ExistsTypeNameToValue(name: string): ExistsType {
  */
 export type FieldTypeDefID = string & { __FieldTypeDefID: never }
 
+export type FileAsEnvFileOpts = {
+  /**
+   * Replace "${VAR}" or "$VAR" with the value of other vars
+   */
+  expand?: boolean
+}
+
+export type FileContentsOpts = {
+  /**
+   * Start reading after this line
+   */
+  offsetLines?: number
+
+  /**
+   * Maximum number of lines to read
+   */
+  limitLines?: number
+}
+
 export type FileDigestOpts = {
   /**
    * If true, exclude metadata from the digest.
@@ -1035,6 +1156,62 @@ export type FileExportOpts = {
    * If allowParentDirPath is true, the path argument can be a directory path, in which case the file will be created in that directory.
    */
   allowParentDirPath?: boolean
+}
+
+export type FileSearchOpts = {
+  /**
+   * Interpret the pattern as a literal string instead of a regular expression.
+   */
+  literal?: boolean
+
+  /**
+   * Enable searching across multiple lines.
+   */
+  multiline?: boolean
+
+  /**
+   * Allow the . pattern to match newlines in multiline mode.
+   */
+  dotall?: boolean
+
+  /**
+   * Enable case-insensitive matching.
+   */
+  insensitive?: boolean
+
+  /**
+   * Honor .gitignore, .ignore, and .rgignore files.
+   */
+  skipIgnored?: boolean
+
+  /**
+   * Skip hidden files (files starting with .).
+   */
+  skipHidden?: boolean
+
+  /**
+   * Only return matching files, not lines and content
+   */
+  filesOnly?: boolean
+
+  /**
+   * Limit the number of results to return
+   */
+  limit?: number
+  paths?: string[]
+  globs?: string[]
+}
+
+export type FileWithReplacedOpts = {
+  /**
+   * Replace all occurrences of the pattern.
+   */
+  all?: boolean
+
+  /**
+   * Replace the first match starting from the specified line.
+   */
+  firstFrom?: number
 }
 
 /**
@@ -1147,12 +1324,21 @@ export type HostDirectoryOpts = {
    * If true, the directory will always be reloaded from the host.
    */
   noCache?: boolean
+
+  /**
+   * Apply .gitignore filter rules inside the directory
+   */
+  gitignore?: boolean
 }
 
 export type HostFileOpts = {
   /**
    * If true, the file will always be reloaded from the host.
    */
+  noCache?: boolean
+}
+
+export type HostFindUpOpts = {
   noCache?: boolean
 }
 
@@ -1291,6 +1477,23 @@ export type InterfaceTypeDefID = string & { __InterfaceTypeDefID: never }
  * An arbitrary JSON-encoded value.
  */
 export type JSON = string & { __JSON: never }
+
+export type JSONValueContentsOpts = {
+  /**
+   * Pretty-print
+   */
+  pretty?: boolean
+
+  /**
+   * Optional line prefix
+   */
+  indent?: string
+}
+
+/**
+ * The `JSONValueID` scalar type represents an identifier for an object of type JSONValue.
+ */
+export type JSONValueID = string & { __JSONValueID: never }
 
 /**
  * The `LLMID` scalar type represents an identifier for an object of type LLM.
@@ -1481,6 +1684,13 @@ export type ClientEnvOpts = {
   writable?: boolean
 }
 
+export type ClientEnvFileOpts = {
+  /**
+   * Replace "${VAR}" or "$VAR" with the value of other vars
+   */
+  expand?: boolean
+}
+
 export type ClientFileOpts = {
   /**
    * Permissions of the new file. Example: 0600
@@ -1656,6 +1866,16 @@ export type SDKConfigID = string & { __SDKConfigID: never }
 export type ScalarTypeDefID = string & { __ScalarTypeDefID: never }
 
 /**
+ * The `SearchResultID` scalar type represents an identifier for an object of type SearchResult.
+ */
+export type SearchResultID = string & { __SearchResultID: never }
+
+/**
+ * The `SearchSubmatchID` scalar type represents an identifier for an object of type SearchSubmatch.
+ */
+export type SearchSubmatchID = string & { __SearchSubmatchID: never }
+
+/**
  * The `SecretID` scalar type represents an identifier for an object of type Secret.
  */
 export type SecretID = string & { __SecretID: never }
@@ -1677,6 +1897,10 @@ export type ServiceStopOpts = {
    * Immediately kill the service without waiting for a graceful exit
    */
   kill?: boolean
+}
+
+export type ServiceTerminalOpts = {
+  cmd?: string[]
 }
 
 export type ServiceUpOpts = {
@@ -2012,6 +2236,118 @@ export type __TypeInputFieldsOpts = {
   includeDeprecated?: boolean
 }
 
+/**
+ * A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.
+ */
+export class Address extends BaseClient {
+  private readonly _id?: AddressID = undefined
+  private readonly _value?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: AddressID, _value?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._value = _value
+  }
+
+  /**
+   * A unique identifier for this Address.
+   */
+  id = async (): Promise<AddressID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<AddressID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Load a container from the address.
+   */
+  container = (): Container => {
+    const ctx = this._ctx.select("container")
+    return new Container(ctx)
+  }
+
+  /**
+   * Load a directory from the address.
+   */
+  directory = (opts?: AddressDirectoryOpts): Directory => {
+    const ctx = this._ctx.select("directory", { ...opts })
+    return new Directory(ctx)
+  }
+
+  /**
+   * Load a file from the address.
+   */
+  file = (opts?: AddressFileOpts): File => {
+    const ctx = this._ctx.select("file", { ...opts })
+    return new File(ctx)
+  }
+
+  /**
+   * Load a git ref (branch, tag or commit) from the address.
+   */
+  gitRef = (): GitRef => {
+    const ctx = this._ctx.select("gitRef")
+    return new GitRef(ctx)
+  }
+
+  /**
+   * Load a git repository from the address.
+   */
+  gitRepository = (): GitRepository => {
+    const ctx = this._ctx.select("gitRepository")
+    return new GitRepository(ctx)
+  }
+
+  /**
+   * Load a secret from the address.
+   */
+  secret = (): Secret => {
+    const ctx = this._ctx.select("secret")
+    return new Secret(ctx)
+  }
+
+  /**
+   * Load a service from the address.
+   */
+  service = (): Service => {
+    const ctx = this._ctx.select("service")
+    return new Service(ctx)
+  }
+
+  /**
+   * Load a local socket from the address.
+   */
+  socket = (): Socket => {
+    const ctx = this._ctx.select("socket")
+    return new Socket(ctx)
+  }
+
+  /**
+   * The address value
+   */
+  value = async (): Promise<string> => {
+    if (this._value) {
+      return this._value
+    }
+
+    const ctx = this._ctx.select("value")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
 export class Binding extends BaseClient {
   private readonly _id?: BindingID = undefined
   private readonly _asString?: string = undefined
@@ -2058,11 +2394,27 @@ export class Binding extends BaseClient {
   }
 
   /**
+   * Retrieve the binding value, as type Address
+   */
+  asAddress = (): Address => {
+    const ctx = this._ctx.select("asAddress")
+    return new Address(ctx)
+  }
+
+  /**
    * Retrieve the binding value, as type CacheVolume
    */
   asCacheVolume = (): CacheVolume => {
     const ctx = this._ctx.select("asCacheVolume")
     return new CacheVolume(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type Changeset
+   */
+  asChangeset = (): Changeset => {
+    const ctx = this._ctx.select("asChangeset")
+    return new Changeset(ctx)
   }
 
   /**
@@ -2098,6 +2450,14 @@ export class Binding extends BaseClient {
   }
 
   /**
+   * Retrieve the binding value, as type EnvFile
+   */
+  asEnvFile = (): EnvFile => {
+    const ctx = this._ctx.select("asEnvFile")
+    return new EnvFile(ctx)
+  }
+
+  /**
    * Retrieve the binding value, as type File
    */
   asFile = (): File => {
@@ -2119,6 +2479,14 @@ export class Binding extends BaseClient {
   asGitRepository = (): GitRepository => {
     const ctx = this._ctx.select("asGitRepository")
     return new GitRepository(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type JSONValue
+   */
+  asJSONValue = (): JSONValue => {
+    const ctx = this._ctx.select("asJSONValue")
+    return new JSONValue(ctx)
   }
 
   /**
@@ -2151,6 +2519,22 @@ export class Binding extends BaseClient {
   asModuleSource = (): ModuleSource => {
     const ctx = this._ctx.select("asModuleSource")
     return new ModuleSource(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type SearchResult
+   */
+  asSearchResult = (): SearchResult => {
+    const ctx = this._ctx.select("asSearchResult")
+    return new SearchResult(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type SearchSubmatch
+   */
+  asSearchSubmatch = (): SearchSubmatch => {
+    const ctx = this._ctx.select("asSearchSubmatch")
+    return new SearchSubmatch(ctx)
   }
 
   /**
@@ -2285,6 +2669,138 @@ export class CacheVolume extends BaseClient {
 }
 
 /**
+ * A comparison between two directories representing changes that can be applied.
+ */
+export class Changeset extends BaseClient {
+  private readonly _id?: ChangesetID = undefined
+  private readonly _export?: string = undefined
+  private readonly _sync?: ChangesetID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ChangesetID,
+    _export?: string,
+    _sync?: ChangesetID,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._export = _export
+    this._sync = _sync
+  }
+
+  /**
+   * A unique identifier for this Changeset.
+   */
+  id = async (): Promise<ChangesetID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ChangesetID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Files and directories that were added in the newer directory.
+   */
+  addedPaths = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("addedPaths")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The newer/upper snapshot.
+   */
+  after = (): Directory => {
+    const ctx = this._ctx.select("after")
+    return new Directory(ctx)
+  }
+
+  /**
+   * Return a Git-compatible patch of the changes
+   */
+  asPatch = (): File => {
+    const ctx = this._ctx.select("asPatch")
+    return new File(ctx)
+  }
+
+  /**
+   * The older/lower snapshot to compare against.
+   */
+  before = (): Directory => {
+    const ctx = this._ctx.select("before")
+    return new Directory(ctx)
+  }
+
+  /**
+   * Applies the diff represented by this changeset to a path on the host.
+   * @param path Location of the copied directory (e.g., "logs/").
+   */
+  export = async (path: string): Promise<string> => {
+    if (this._export) {
+      return this._export
+    }
+
+    const ctx = this._ctx.select("export", { path })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return a snapshot containing only the created and modified files
+   */
+  layer = (): Directory => {
+    const ctx = this._ctx.select("layer")
+    return new Directory(ctx)
+  }
+
+  /**
+   * Files and directories that existed before and were updated in the newer directory.
+   */
+  modifiedPaths = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("modifiedPaths")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.
+   */
+  removedPaths = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("removedPaths")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Force evaluation in the engine.
+   */
+  sync = async (): Promise<Changeset> => {
+    const ctx = this._ctx.select("sync")
+
+    const response: Awaited<ChangesetID> = await ctx.execute()
+
+    return new Client(ctx.copy()).loadChangesetFromID(response)
+  }
+}
+
+/**
  * Dagger Cloud configuration and state
  */
 export class Cloud extends BaseClient {
@@ -2337,6 +2853,7 @@ export class Cloud extends BaseClient {
  */
 export class Container extends BaseClient {
   private readonly _id?: ContainerID = undefined
+  private readonly _combinedOutput?: string = undefined
   private readonly _envVariable?: string = undefined
   private readonly _exists?: boolean = undefined
   private readonly _exitCode?: number = undefined
@@ -2359,6 +2876,7 @@ export class Container extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: ContainerID,
+    _combinedOutput?: string,
     _envVariable?: string,
     _exists?: boolean,
     _exitCode?: number,
@@ -2378,6 +2896,7 @@ export class Container extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._combinedOutput = _combinedOutput
     this._envVariable = _envVariable
     this._exists = _exists
     this._exitCode = _exitCode
@@ -2474,6 +2993,23 @@ export class Container extends BaseClient {
   build = (context: Directory, opts?: ContainerBuildOpts): Container => {
     const ctx = this._ctx.select("build", { context, ...opts })
     return new Container(ctx)
+  }
+
+  /**
+   * The combined buffered standard output and standard error stream of the last executed command
+   *
+   * Returns an error if no command was executed
+   */
+  combinedOutput = async (): Promise<string> => {
+    if (this._combinedOutput) {
+      return this._combinedOutput
+    }
+
+    const ctx = this._ctx.select("combinedOutput")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -3689,6 +4225,7 @@ export class Directory extends BaseClient {
   private readonly _digest?: string = undefined
   private readonly _exists?: boolean = undefined
   private readonly _export?: string = undefined
+  private readonly _findUp?: string = undefined
   private readonly _name?: string = undefined
   private readonly _sync?: DirectoryID = undefined
 
@@ -3701,6 +4238,7 @@ export class Directory extends BaseClient {
     _digest?: string,
     _exists?: boolean,
     _export?: string,
+    _findUp?: string,
     _name?: string,
     _sync?: DirectoryID,
   ) {
@@ -3710,6 +4248,7 @@ export class Directory extends BaseClient {
     this._digest = _digest
     this._exists = _exists
     this._export = _export
+    this._findUp = _findUp
     this._name = _name
     this._sync = _sync
   }
@@ -3757,6 +4296,31 @@ export class Directory extends BaseClient {
   asModuleSource = (opts?: DirectoryAsModuleSourceOpts): ModuleSource => {
     const ctx = this._ctx.select("asModuleSource", { ...opts })
     return new ModuleSource(ctx)
+  }
+
+  /**
+   * Return the difference between this directory and another directory, typically an older snapshot.
+   *
+   * The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
+   * @param from The base directory snapshot to compare against
+   */
+  changes = (from: Directory): Changeset => {
+    const ctx = this._ctx.select("changes", { from })
+    return new Changeset(ctx)
+  }
+
+  /**
+   * Change the owner of the directory contents recursively.
+   * @param path Path of the directory to change ownership of (e.g., "/").
+   * @param owner A user:group to set for the mounted directory and its contents.
+   *
+   * The user and group must be an ID (1000:1000), not a name (foo:bar).
+   *
+   * If the group is omitted, it defaults to the same as the user.
+   */
+  chown = (path: string, owner: string): Directory => {
+    const ctx = this._ctx.select("chown", { path, owner })
+    return new Directory(ctx)
   }
 
   /**
@@ -3891,6 +4455,23 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Search up the directory tree for a file or directory, and return its path. If no match, return null
+   * @param name The name of the file or directory to search for
+   * @param start The path to start the search from
+   */
+  findUp = async (name: string, start: string): Promise<string> => {
+    if (this._findUp) {
+      return this._findUp
+    }
+
+    const ctx = this._ctx.select("findUp", { name, start })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Returns a list of files and directories that matche the given pattern.
    * @param pattern Pattern to match (e.g., "*.md").
    */
@@ -3918,6 +4499,36 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Searches for content matching the given regular expression or literal string.
+   *
+   * Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+   * @param opts.paths Directory or file paths to search
+   * @param opts.globs Glob patterns to match (e.g., "*.md")
+   * @param opts.pattern The text to match.
+   * @param opts.literal Interpret the pattern as a literal string instead of a regular expression.
+   * @param opts.multiline Enable searching across multiple lines.
+   * @param opts.dotall Allow the . pattern to match newlines in multiline mode.
+   * @param opts.insensitive Enable case-insensitive matching.
+   * @param opts.skipIgnored Honor .gitignore, .ignore, and .rgignore files.
+   * @param opts.skipHidden Skip hidden files (files starting with .).
+   * @param opts.filesOnly Only return matching files, not lines and content
+   * @param opts.limit Limit the number of results to return
+   */
+  search = async (opts?: DirectorySearchOpts): Promise<SearchResult[]> => {
+    type search = {
+      id: SearchResultID
+    }
+
+    const ctx = this._ctx.select("search", { ...opts }).select("id")
+
+    const response: Awaited<search[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadSearchResultFromID(r.id),
+    )
+  }
+
+  /**
    * Force evaluation in the engine.
    */
   sync = async (): Promise<Directory> => {
@@ -3941,11 +4552,25 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Return a directory with changes from another directory applied to it.
+   * @param changes Changes to apply to the directory
+   */
+  withChanges = (changes: Changeset): Directory => {
+    const ctx = this._ctx.select("withChanges", { changes })
+    return new Directory(ctx)
+  }
+
+  /**
    * Return a snapshot with a directory added
    * @param path Location of the written directory (e.g., "/src/").
    * @param directory Identifier of the directory to copy.
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+   * @param opts.owner A user:group to set for the copied directory and its contents.
+   *
+   * The user and group must be an ID (1000:1000), not a name (foo:bar).
+   *
+   * If the group is omitted, it defaults to the same as the user.
    */
   withDirectory = (
     path: string,
@@ -3961,6 +4586,11 @@ export class Directory extends BaseClient {
    * @param path Location of the copied file (e.g., "/file.txt").
    * @param source Identifier of the file to copy.
    * @param opts.permissions Permission given to the copied file (e.g., 0600).
+   * @param opts.owner A user:group to set for the copied directory and its contents.
+   *
+   * The user and group must be an ID (1000:1000), not a name (foo:bar).
+   *
+   * If the group is omitted, it defaults to the same as the user.
    */
   withFile = (
     path: string,
@@ -4021,6 +4651,16 @@ export class Directory extends BaseClient {
    */
   withPatch = (patch: string): Directory => {
     const ctx = this._ctx.select("withPatch", { patch })
+    return new Directory(ctx)
+  }
+
+  /**
+   * Retrieves this directory with the given Git-compatible patch file applied.
+   * @param patch File containing the patch to apply
+   * @experimental
+   */
+  withPatchFile = (patch: File): Directory => {
+    const ctx = this._ctx.select("withPatchFile", { patch })
     return new Directory(ctx)
   }
 
@@ -4782,6 +5422,35 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Create or update a binding of type Address in the environment
+   * @param name The name of the binding
+   * @param value The Address value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withAddressInput = (
+    name: string,
+    value: Address,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withAddressInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Address output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withAddressOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withAddressOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
    * Create or update a binding of type CacheVolume in the environment
    * @param name The name of the binding
    * @param value The CacheVolume value to assign to the binding
@@ -4807,6 +5476,35 @@ export class Env extends BaseClient {
    */
   withCacheVolumeOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withCacheVolumeOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Changeset in the environment
+   * @param name The name of the binding
+   * @param value The Changeset value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withChangesetInput = (
+    name: string,
+    value: Changeset,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withChangesetInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Changeset output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withChangesetOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withChangesetOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -4886,6 +5584,35 @@ export class Env extends BaseClient {
    */
   withDirectoryOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withDirectoryOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type EnvFile in the environment
+   * @param name The name of the binding
+   * @param value The EnvFile value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withEnvFileInput = (
+    name: string,
+    value: EnvFile,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withEnvFileInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired EnvFile output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withEnvFileOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withEnvFileOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -4985,6 +5712,35 @@ export class Env extends BaseClient {
       name,
       description,
     })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type JSONValue in the environment
+   * @param name The name of the binding
+   * @param value The JSONValue value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withJSONValueInput = (
+    name: string,
+    value: JSONValue,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withJSONValueInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired JSONValue output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withJSONValueOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withJSONValueOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -5103,6 +5859,70 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Create or update a binding of type SearchResult in the environment
+   * @param name The name of the binding
+   * @param value The SearchResult value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withSearchResultInput = (
+    name: string,
+    value: SearchResult,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withSearchResultInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired SearchResult output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withSearchResultOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withSearchResultOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type SearchSubmatch in the environment
+   * @param name The name of the binding
+   * @param value The SearchSubmatch value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withSearchSubmatchInput = (
+    name: string,
+    value: SearchSubmatch,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withSearchSubmatchInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired SearchSubmatch output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withSearchSubmatchOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withSearchSubmatchOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
    * Create or update a binding of type Secret in the environment
    * @param name The name of the binding
    * @param value The Secret value to assign to the binding
@@ -5212,6 +6032,131 @@ export class Env extends BaseClient {
    * This is useful for reusability and readability by not breaking the calling chain.
    */
   with = (arg: (param: Env) => Env) => {
+    return arg(this)
+  }
+}
+
+/**
+ * A collection of environment variables.
+ */
+export class EnvFile extends BaseClient {
+  private readonly _id?: EnvFileID = undefined
+  private readonly _exists?: boolean = undefined
+  private readonly _get?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: EnvFileID,
+    _exists?: boolean,
+    _get?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._exists = _exists
+    this._get = _get
+  }
+
+  /**
+   * A unique identifier for this EnvFile.
+   */
+  id = async (): Promise<EnvFileID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<EnvFileID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return as a file
+   */
+  asFile = (): File => {
+    const ctx = this._ctx.select("asFile")
+    return new File(ctx)
+  }
+
+  /**
+   * Check if a variable exists
+   * @param name Variable name
+   */
+  exists = async (name: string): Promise<boolean> => {
+    if (this._exists) {
+      return this._exists
+    }
+
+    const ctx = this._ctx.select("exists", { name })
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Lookup a variable (last occurrence wins) and return its value, or an empty string
+   * @param name Variable name
+   */
+  get = async (name: string): Promise<string> => {
+    if (this._get) {
+      return this._get
+    }
+
+    const ctx = this._ctx.select("get", { name })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return all variables
+   */
+  variables = async (): Promise<EnvVariable[]> => {
+    type variables = {
+      id: EnvVariableID
+    }
+
+    const ctx = this._ctx.select("variables").select("id")
+
+    const response: Awaited<variables[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadEnvVariableFromID(r.id),
+    )
+  }
+
+  /**
+   * Add a variable
+   * @param name Variable name
+   * @param value Variable value
+   */
+  withVariable = (name: string, value: string): EnvFile => {
+    const ctx = this._ctx.select("withVariable", { name, value })
+    return new EnvFile(ctx)
+  }
+
+  /**
+   * Remove all occurrences of the named variable
+   * @param name Variable name
+   */
+  withoutVariable = (name: string): EnvFile => {
+    const ctx = this._ctx.select("withoutVariable", { name })
+    return new EnvFile(ctx)
+  }
+
+  /**
+   * Call the provided function with current EnvFile.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: EnvFile) => EnvFile) => {
     return arg(this)
   }
 }
@@ -5574,14 +6519,38 @@ export class File extends BaseClient {
   }
 
   /**
-   * Retrieves the contents of the file.
+   * Parse as an env file
+   * @param opts.expand Replace "${VAR}" or "$VAR" with the value of other vars
    */
-  contents = async (): Promise<string> => {
+  asEnvFile = (opts?: FileAsEnvFileOpts): EnvFile => {
+    const ctx = this._ctx.select("asEnvFile", { ...opts })
+    return new EnvFile(ctx)
+  }
+
+  /**
+   * Change the owner of the file recursively.
+   * @param owner A user:group to set for the file.
+   *
+   * The user and group must be an ID (1000:1000), not a name (foo:bar).
+   *
+   * If the group is omitted, it defaults to the same as the user.
+   */
+  chown = (owner: string): File => {
+    const ctx = this._ctx.select("chown", { owner })
+    return new File(ctx)
+  }
+
+  /**
+   * Retrieves the contents of the file.
+   * @param opts.offsetLines Start reading after this line
+   * @param opts.limitLines Maximum number of lines to read
+   */
+  contents = async (opts?: FileContentsOpts): Promise<string> => {
     if (this._contents) {
       return this._contents
     }
 
-    const ctx = this._ctx.select("contents")
+    const ctx = this._ctx.select("contents", { ...opts })
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -5637,6 +6606,37 @@ export class File extends BaseClient {
   }
 
   /**
+   * Searches for content matching the given regular expression or literal string.
+   *
+   * Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+   * @param pattern The text to match.
+   * @param opts.literal Interpret the pattern as a literal string instead of a regular expression.
+   * @param opts.multiline Enable searching across multiple lines.
+   * @param opts.dotall Allow the . pattern to match newlines in multiline mode.
+   * @param opts.insensitive Enable case-insensitive matching.
+   * @param opts.skipIgnored Honor .gitignore, .ignore, and .rgignore files.
+   * @param opts.skipHidden Skip hidden files (files starting with .).
+   * @param opts.filesOnly Only return matching files, not lines and content
+   * @param opts.limit Limit the number of results to return
+   */
+  search = async (
+    pattern: string,
+    opts?: FileSearchOpts,
+  ): Promise<SearchResult[]> => {
+    type search = {
+      id: SearchResultID
+    }
+
+    const ctx = this._ctx.select("search", { pattern, ...opts }).select("id")
+
+    const response: Awaited<search[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadSearchResultFromID(r.id),
+    )
+  }
+
+  /**
    * Retrieves the size of the file, in bytes.
    */
   size = async (): Promise<number> => {
@@ -5668,6 +6668,34 @@ export class File extends BaseClient {
    */
   withName = (name: string): File => {
     const ctx = this._ctx.select("withName", { name })
+    return new File(ctx)
+  }
+
+  /**
+   * Retrieves the file with content replaced with the given text.
+   *
+   * If 'all' is true, all occurrences of the pattern will be replaced.
+   *
+   * If 'firstAfter' is specified, only the first match starting at the specified line will be replaced.
+   *
+   * If neither are specified, and there are multiple matches for the pattern, this will error.
+   *
+   * If there are no matches for the pattern, this will error.
+   * @param search The text to match.
+   * @param replacement The text to match.
+   * @param opts.all Replace all occurrences of the pattern.
+   * @param opts.firstFrom Replace the first match starting from the specified line.
+   */
+  withReplaced = (
+    search: string,
+    replacement: string,
+    opts?: FileWithReplacedOpts,
+  ): File => {
+    const ctx = this._ctx.select("withReplaced", {
+      search,
+      replacement,
+      ...opts,
+    })
     return new File(ctx)
   }
 
@@ -6371,14 +7399,16 @@ export class GitRef extends BaseClient {
  */
 export class GitRepository extends BaseClient {
   private readonly _id?: GitRepositoryID = undefined
+  private readonly _url?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: GitRepositoryID) {
+  constructor(ctx?: Context, _id?: GitRepositoryID, _url?: string) {
     super(ctx)
 
     this._id = _id
+    this._url = _url
   }
 
   /**
@@ -6473,6 +7503,21 @@ export class GitRepository extends BaseClient {
   }
 
   /**
+   * The URL of the git repository.
+   */
+  url = async (): Promise<string> => {
+    if (this._url) {
+      return this._url
+    }
+
+    const ctx = this._ctx.select("url")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Header to authenticate the remote with.
    * @param header Secret used to populate the Authorization HTTP header
    * @deprecated Use "httpAuthHeader" in the constructor instead.
@@ -6507,14 +7552,16 @@ export class GitRepository extends BaseClient {
  */
 export class Host extends BaseClient {
   private readonly _id?: HostID = undefined
+  private readonly _findUp?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: HostID) {
+  constructor(ctx?: Context, _id?: HostID, _findUp?: string) {
     super(ctx)
 
     this._id = _id
+    this._findUp = _findUp
   }
 
   /**
@@ -6533,11 +7580,21 @@ export class Host extends BaseClient {
   }
 
   /**
+   * Accesses a container image on the host.
+   * @param name Name of the image to access.
+   */
+  containerImage = (name: string): Container => {
+    const ctx = this._ctx.select("containerImage", { name })
+    return new Container(ctx)
+  }
+
+  /**
    * Accesses a directory on the host.
    * @param path Location of the directory to access (e.g., ".").
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    * @param opts.noCache If true, the directory will always be reloaded from the host.
+   * @param opts.gitignore Apply .gitignore filter rules inside the directory
    */
   directory = (path: string, opts?: HostDirectoryOpts): Directory => {
     const ctx = this._ctx.select("directory", { path, ...opts })
@@ -6552,6 +7609,22 @@ export class Host extends BaseClient {
   file = (path: string, opts?: HostFileOpts): File => {
     const ctx = this._ctx.select("file", { path, ...opts })
     return new File(ctx)
+  }
+
+  /**
+   * Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null
+   * @param name name of the file or directory to search for
+   */
+  findUp = async (name: string, opts?: HostFindUpOpts): Promise<string> => {
+    if (this._findUp) {
+      return this._findUp
+    }
+
+    const ctx = this._ctx.select("findUp", { name, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -6786,6 +7859,201 @@ export class InterfaceTypeDef extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+}
+
+export class JSONValue extends BaseClient {
+  private readonly _id?: JSONValueID = undefined
+  private readonly _asBoolean?: boolean = undefined
+  private readonly _asInteger?: number = undefined
+  private readonly _asString?: string = undefined
+  private readonly _contents?: JSON = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: JSONValueID,
+    _asBoolean?: boolean,
+    _asInteger?: number,
+    _asString?: string,
+    _contents?: JSON,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._asBoolean = _asBoolean
+    this._asInteger = _asInteger
+    this._asString = _asString
+    this._contents = _contents
+  }
+
+  /**
+   * A unique identifier for this JSONValue.
+   */
+  id = async (): Promise<JSONValueID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<JSONValueID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Decode an array from json
+   */
+  asArray = async (): Promise<JSONValue[]> => {
+    type asArray = {
+      id: JSONValueID
+    }
+
+    const ctx = this._ctx.select("asArray").select("id")
+
+    const response: Awaited<asArray[]> = await ctx.execute()
+
+    return response.map((r) => new Client(ctx.copy()).loadJSONValueFromID(r.id))
+  }
+
+  /**
+   * Decode a boolean from json
+   */
+  asBoolean = async (): Promise<boolean> => {
+    if (this._asBoolean) {
+      return this._asBoolean
+    }
+
+    const ctx = this._ctx.select("asBoolean")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Decode an integer from json
+   */
+  asInteger = async (): Promise<number> => {
+    if (this._asInteger) {
+      return this._asInteger
+    }
+
+    const ctx = this._ctx.select("asInteger")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Decode a string from json
+   */
+  asString = async (): Promise<string> => {
+    if (this._asString) {
+      return this._asString
+    }
+
+    const ctx = this._ctx.select("asString")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return the value encoded as json
+   * @param opts.pretty Pretty-print
+   * @param opts.indent Optional line prefix
+   */
+  contents = async (opts?: JSONValueContentsOpts): Promise<JSON> => {
+    if (this._contents) {
+      return this._contents
+    }
+
+    const ctx = this._ctx.select("contents", { ...opts })
+
+    const response: Awaited<JSON> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Lookup the field at the given path, and return its value.
+   * @param path Path of the field to lookup, encoded as an array of field names
+   */
+  field = (path: string[]): JSONValue => {
+    const ctx = this._ctx.select("field", { path })
+    return new JSONValue(ctx)
+  }
+
+  /**
+   * List fields of the encoded object
+   */
+  fields = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("fields")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Encode a boolean to json
+   * @param value New boolean value
+   */
+  newBoolean = (value: boolean): JSONValue => {
+    const ctx = this._ctx.select("newBoolean", { value })
+    return new JSONValue(ctx)
+  }
+
+  /**
+   * Encode an integer to json
+   * @param value New integer value
+   */
+  newInteger = (value: number): JSONValue => {
+    const ctx = this._ctx.select("newInteger", { value })
+    return new JSONValue(ctx)
+  }
+
+  /**
+   * Encode a string to json
+   * @param value New string value
+   */
+  newString = (value: string): JSONValue => {
+    const ctx = this._ctx.select("newString", { value })
+    return new JSONValue(ctx)
+  }
+
+  /**
+   * Return a new json value, decoded from the given content
+   * @param contents New JSON-encoded contents
+   */
+  withContents = (contents: JSON): JSONValue => {
+    const ctx = this._ctx.select("withContents", { contents })
+    return new JSONValue(ctx)
+  }
+
+  /**
+   * Set a new field at the given path
+   * @param path Path of the field to set, encoded as an array of field names
+   * @param value The new value of the field
+   */
+  withField = (path: string[], value: JSONValue): JSONValue => {
+    const ctx = this._ctx.select("withField", { path, value })
+    return new JSONValue(ctx)
+  }
+
+  /**
+   * Call the provided function with current JSONValue.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: JSONValue) => JSONValue) => {
+    return arg(this)
   }
 }
 
@@ -8097,6 +9365,15 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * Update one or more clients.
+   * @param clients The clients to update
+   */
+  withUpdatedClients = (clients: string[]): ModuleSource => {
+    const ctx = this._ctx.select("withUpdatedClients", { clients })
+    return new ModuleSource(ctx)
+  }
+
+  /**
    * Remove the current blueprint from the module source.
    */
   withoutBlueprint = (): ModuleSource => {
@@ -8399,6 +9676,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * initialize an address to load directories, containers, secrets or other object types.
+   */
+  address = (value: string): Address => {
+    const ctx = this._ctx.select("address", { value })
+    return new Address(ctx)
+  }
+
+  /**
    * Constructs a cache volume for a given cache key.
    * @param key A string identifier to target this cache volume (e.g., "modules-cache").
    */
@@ -8498,6 +9783,15 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Initialize an environment file
+   * @param opts.expand Replace "${VAR}" or "$VAR" with the value of other vars
+   */
+  envFile = (opts?: ClientEnvFileOpts): EnvFile => {
+    const ctx = this._ctx.select("envFile", { ...opts })
+    return new EnvFile(ctx)
+  }
+
+  /**
    * Create a new error.
    * @param message A brief description of the error.
    */
@@ -8577,6 +9871,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Initialize a JSON value
+   */
+  json = (): JSONValue => {
+    const ctx = this._ctx.select("json")
+    return new JSONValue(ctx)
+  }
+
+  /**
    * Initialize a Large Language Model (LLM)
    * @param opts.model Model to use
    * @param opts.maxAPICalls Cap the number of API calls for this LLM
@@ -8585,6 +9887,14 @@ export class Client extends BaseClient {
   llm = (opts?: ClientLlmOpts): LLM => {
     const ctx = this._ctx.select("llm", { ...opts })
     return new LLM(ctx)
+  }
+
+  /**
+   * Load a Address from its ID.
+   */
+  loadAddressFromID = (id: AddressID): Address => {
+    const ctx = this._ctx.select("loadAddressFromID", { id })
+    return new Address(ctx)
   }
 
   /**
@@ -8601,6 +9911,14 @@ export class Client extends BaseClient {
   loadCacheVolumeFromID = (id: CacheVolumeID): CacheVolume => {
     const ctx = this._ctx.select("loadCacheVolumeFromID", { id })
     return new CacheVolume(ctx)
+  }
+
+  /**
+   * Load a Changeset from its ID.
+   */
+  loadChangesetFromID = (id: ChangesetID): Changeset => {
+    const ctx = this._ctx.select("loadChangesetFromID", { id })
+    return new Changeset(ctx)
   }
 
   /**
@@ -8683,6 +10001,14 @@ export class Client extends BaseClient {
   loadEnumValueTypeDefFromID = (id: EnumValueTypeDefID): EnumValueTypeDef => {
     const ctx = this._ctx.select("loadEnumValueTypeDefFromID", { id })
     return new EnumValueTypeDef(ctx)
+  }
+
+  /**
+   * Load a EnvFile from its ID.
+   */
+  loadEnvFileFromID = (id: EnvFileID): EnvFile => {
+    const ctx = this._ctx.select("loadEnvFileFromID", { id })
+    return new EnvFile(ctx)
   }
 
   /**
@@ -8816,6 +10142,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a JSONValue from its ID.
+   */
+  loadJSONValueFromID = (id: JSONValueID): JSONValue => {
+    const ctx = this._ctx.select("loadJSONValueFromID", { id })
+    return new JSONValue(ctx)
+  }
+
+  /**
    * Load a LLM from its ID.
    */
   loadLLMFromID = (id: LLMID): LLM => {
@@ -8903,6 +10237,22 @@ export class Client extends BaseClient {
   loadScalarTypeDefFromID = (id: ScalarTypeDefID): ScalarTypeDef => {
     const ctx = this._ctx.select("loadScalarTypeDefFromID", { id })
     return new ScalarTypeDef(ctx)
+  }
+
+  /**
+   * Load a SearchResult from its ID.
+   */
+  loadSearchResultFromID = (id: SearchResultID): SearchResult => {
+    const ctx = this._ctx.select("loadSearchResultFromID", { id })
+    return new SearchResult(ctx)
+  }
+
+  /**
+   * Load a SearchSubmatch from its ID.
+   */
+  loadSearchSubmatchFromID = (id: SearchSubmatchID): SearchSubmatch => {
+    const ctx = this._ctx.select("loadSearchSubmatchFromID", { id })
+    return new SearchSubmatch(ctx)
   }
 
   /**
@@ -9181,6 +10531,211 @@ export class ScalarTypeDef extends BaseClient {
   }
 }
 
+export class SearchResult extends BaseClient {
+  private readonly _id?: SearchResultID = undefined
+  private readonly _absoluteOffset?: number = undefined
+  private readonly _filePath?: string = undefined
+  private readonly _lineNumber?: number = undefined
+  private readonly _matchedLines?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: SearchResultID,
+    _absoluteOffset?: number,
+    _filePath?: string,
+    _lineNumber?: number,
+    _matchedLines?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._absoluteOffset = _absoluteOffset
+    this._filePath = _filePath
+    this._lineNumber = _lineNumber
+    this._matchedLines = _matchedLines
+  }
+
+  /**
+   * A unique identifier for this SearchResult.
+   */
+  id = async (): Promise<SearchResultID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<SearchResultID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The byte offset of this line within the file.
+   */
+  absoluteOffset = async (): Promise<number> => {
+    if (this._absoluteOffset) {
+      return this._absoluteOffset
+    }
+
+    const ctx = this._ctx.select("absoluteOffset")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The path to the file that matched.
+   */
+  filePath = async (): Promise<string> => {
+    if (this._filePath) {
+      return this._filePath
+    }
+
+    const ctx = this._ctx.select("filePath")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The first line that matched.
+   */
+  lineNumber = async (): Promise<number> => {
+    if (this._lineNumber) {
+      return this._lineNumber
+    }
+
+    const ctx = this._ctx.select("lineNumber")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The line content that matched.
+   */
+  matchedLines = async (): Promise<string> => {
+    if (this._matchedLines) {
+      return this._matchedLines
+    }
+
+    const ctx = this._ctx.select("matchedLines")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Sub-match positions and content within the matched lines.
+   */
+  submatches = async (): Promise<SearchSubmatch[]> => {
+    type submatches = {
+      id: SearchSubmatchID
+    }
+
+    const ctx = this._ctx.select("submatches").select("id")
+
+    const response: Awaited<submatches[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadSearchSubmatchFromID(r.id),
+    )
+  }
+}
+
+export class SearchSubmatch extends BaseClient {
+  private readonly _id?: SearchSubmatchID = undefined
+  private readonly _end?: number = undefined
+  private readonly _start?: number = undefined
+  private readonly _text?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: SearchSubmatchID,
+    _end?: number,
+    _start?: number,
+    _text?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._end = _end
+    this._start = _start
+    this._text = _text
+  }
+
+  /**
+   * A unique identifier for this SearchSubmatch.
+   */
+  id = async (): Promise<SearchSubmatchID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<SearchSubmatchID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The match's end offset within the matched lines.
+   */
+  end = async (): Promise<number> => {
+    if (this._end) {
+      return this._end
+    }
+
+    const ctx = this._ctx.select("end")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The match's start offset within the matched lines.
+   */
+  start = async (): Promise<number> => {
+    if (this._start) {
+      return this._start
+    }
+
+    const ctx = this._ctx.select("start")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The matched text.
+   */
+  text = async (): Promise<string> => {
+    if (this._text) {
+      return this._text
+    }
+
+    const ctx = this._ctx.select("text")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
 /**
  * A reference to a secret value, which can be handled more safely than the value itself.
  */
@@ -9278,6 +10833,7 @@ export class Service extends BaseClient {
   private readonly _hostname?: string = undefined
   private readonly _start?: ServiceID = undefined
   private readonly _stop?: ServiceID = undefined
+  private readonly _sync?: ServiceID = undefined
   private readonly _up?: Void = undefined
 
   /**
@@ -9290,6 +10846,7 @@ export class Service extends BaseClient {
     _hostname?: string,
     _start?: ServiceID,
     _stop?: ServiceID,
+    _sync?: ServiceID,
     _up?: Void,
   ) {
     super(ctx)
@@ -9299,6 +10856,7 @@ export class Service extends BaseClient {
     this._hostname = _hostname
     this._start = _start
     this._stop = _stop
+    this._sync = _sync
     this._up = _up
   }
 
@@ -9391,6 +10949,21 @@ export class Service extends BaseClient {
     const response: Awaited<ServiceID> = await ctx.execute()
 
     return new Client(ctx.copy()).loadServiceFromID(response)
+  }
+
+  /**
+   * Forces evaluation of the pipeline in the engine.
+   */
+  sync = async (): Promise<Service> => {
+    const ctx = this._ctx.select("sync")
+
+    const response: Awaited<ServiceID> = await ctx.execute()
+
+    return new Client(ctx.copy()).loadServiceFromID(response)
+  }
+  terminal = (opts?: ServiceTerminalOpts): Service => {
+    const ctx = this._ctx.select("terminal", { ...opts })
+    return new Service(ctx)
   }
 
   /**

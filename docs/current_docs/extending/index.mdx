@@ -1,4 +1,5 @@
 ---
+slug: /extending
 title: "Overview"
 description: "In addition to providing a set of core functions and types, the Dagger API can also be extended with custom Dagger Functions and custom types."
 ---
@@ -6,7 +7,7 @@ description: "In addition to providing a set of core functions and types, the Da
 The Dagger API is extensible and shareable by design.
 
 - You can extend the [Dagger API](../getting-started/api.mdx) by creating Dagger modules
-- You can also embed a [Dagger SDK](../extending/clients-sdk.mdx) directly into your application
+- You can also embed a [Dagger SDK](../getting-started/api/clients-sdk.mdx) directly into your application
 
 Both approaches let you access Dagger features for container operations, secret management, and more.
 
@@ -38,9 +39,9 @@ The following SDKs are available for embedding Dagger into your application:
 
 Here is a quick summary of differences between these two approaches.
 
-|  | Dagger modules | Custom applications |
-|:---|:---|:---|
-| Pre-initialized Dagger API client | Y | N |
-| Direct host access | N | Y |
-| Direct third-party module access | Y | N |
-| Cross-language interoperability | Y | N |
+| Capability | Dagger modules | Custom applications |
+|:---|---:|---:|
+| Pre-initialized Dagger API client | ✅ | 🚫 |
+| Direct host access | 🚫 | ✅ |
+| Direct third-party module access | ✅ | 🚫 |
+| Cross-language interoperability | ✅ | 🚫 |

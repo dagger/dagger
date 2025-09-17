@@ -8,6 +8,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Address",
+			"p": "Dagger/Address.html",
+			"d": "<p>A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\AddressId",
+			"p": "Dagger/AddressId.html",
+			"d": "<p>The <code>AddressID</code> scalar type represents an identifier for an object of type Address.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Attribute\\Argument",
 			"p": "Dagger/Attribute/Argument.html",
 			"d": "",
@@ -131,6 +151,26 @@
 			"n": "Dagger\\CacheVolumeId",
 			"p": "Dagger/CacheVolumeId.html",
 			"d": "<p>The <code>CacheVolumeID</code> scalar type represents an identifier for an object of type CacheVolume.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\Changeset",
+			"p": "Dagger/Changeset.html",
+			"d": "<p>A comparison between two directories representing changes that can be applied.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\ChangesetId",
+			"p": "Dagger/ChangesetId.html",
+			"d": "<p>The <code>ChangesetID</code> scalar type represents an identifier for an object of type Changeset.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -441,6 +481,26 @@
 			"n": "Dagger\\Env",
 			"p": "Dagger/Env.html",
 			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\EnvFile",
+			"p": "Dagger/EnvFile.html",
+			"d": "<p>A collection of environment variables.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\EnvFileId",
+			"p": "Dagger/EnvFileId.html",
+			"d": "<p>The <code>EnvFileID</code> scalar type represents an identifier for an object of type EnvFile.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -768,6 +828,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\JsonValue",
+			"p": "Dagger/JsonValue.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\JsonValueId",
+			"p": "Dagger/JsonValueId.html",
+			"d": "<p>The <code>JSONValueID</code> scalar type represents an identifier for an object of type JSONValue.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\LLM",
 			"p": "Dagger/LLM.html",
 			"d": null,
@@ -1018,6 +1098,46 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\SearchResult",
+			"p": "Dagger/SearchResult.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\SearchResultId",
+			"p": "Dagger/SearchResultId.html",
+			"d": "<p>The <code>SearchResultID</code> scalar type represents an identifier for an object of type SearchResult.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\SearchSubmatch",
+			"p": "Dagger/SearchSubmatch.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\SearchSubmatchId",
+			"p": "Dagger/SearchSubmatchId.html",
+			"d": "<p>The <code>SearchSubmatchID</code> scalar type represents an identifier for an object of type SearchSubmatch.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Secret",
 			"p": "Dagger/Secret.html",
 			"d": "<p>A reference to a secret value, which can be handled more safely than the value itself.</p>",
@@ -1147,6 +1267,66 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Address::container",
+			"p": "Dagger/Address.html#method_container",
+			"d": "<p>Load a container from the address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::directory",
+			"p": "Dagger/Address.html#method_directory",
+			"d": "<p>Load a directory from the address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::file",
+			"p": "Dagger/Address.html#method_file",
+			"d": "<p>Load a file from the address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::gitRef",
+			"p": "Dagger/Address.html#method_gitRef",
+			"d": "<p>Load a git ref (branch, tag or commit) from the address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::gitRepository",
+			"p": "Dagger/Address.html#method_gitRepository",
+			"d": "<p>Load a git repository from the address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::id",
+			"p": "Dagger/Address.html#method_id",
+			"d": "<p>A unique identifier for this Address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::secret",
+			"p": "Dagger/Address.html#method_secret",
+			"d": "<p>Load a secret from the address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::service",
+			"p": "Dagger/Address.html#method_service",
+			"d": "<p>Load a service from the address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::socket",
+			"p": "Dagger/Address.html#method_socket",
+			"d": "<p>Load a local socket from the address.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Address::value",
+			"p": "Dagger/Address.html#method_value",
+			"d": "<p>The address value</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Attribute\\Argument::__construct",
 			"p": "Dagger/Attribute/Argument.html#method___construct",
 			"d": null
@@ -1189,9 +1369,21 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Binding::asAddress",
+			"p": "Dagger/Binding.html#method_asAddress",
+			"d": "<p>Retrieve the binding value, as type Address</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Binding::asCacheVolume",
 			"p": "Dagger/Binding.html#method_asCacheVolume",
 			"d": "<p>Retrieve the binding value, as type CacheVolume</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asChangeset",
+			"p": "Dagger/Binding.html#method_asChangeset",
+			"d": "<p>Retrieve the binding value, as type Changeset</p>"
 		},
 		{
 			"t": "M",
@@ -1219,6 +1411,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Binding::asEnvFile",
+			"p": "Dagger/Binding.html#method_asEnvFile",
+			"d": "<p>Retrieve the binding value, as type EnvFile</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Binding::asFile",
 			"p": "Dagger/Binding.html#method_asFile",
 			"d": "<p>Retrieve the binding value, as type File</p>"
@@ -1234,6 +1432,12 @@
 			"n": "Dagger\\Binding::asGitRepository",
 			"p": "Dagger/Binding.html#method_asGitRepository",
 			"d": "<p>Retrieve the binding value, as type GitRepository</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asJSONValue",
+			"p": "Dagger/Binding.html#method_asJSONValue",
+			"d": "<p>Retrieve the binding value, as type JSONValue</p>"
 		},
 		{
 			"t": "M",
@@ -1258,6 +1462,18 @@
 			"n": "Dagger\\Binding::asModuleSource",
 			"p": "Dagger/Binding.html#method_asModuleSource",
 			"d": "<p>Retrieve the binding value, as type ModuleSource</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asSearchResult",
+			"p": "Dagger/Binding.html#method_asSearchResult",
+			"d": "<p>Retrieve the binding value, as type SearchResult</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asSearchSubmatch",
+			"p": "Dagger/Binding.html#method_asSearchSubmatch",
+			"d": "<p>Retrieve the binding value, as type SearchSubmatch</p>"
 		},
 		{
 			"t": "M",
@@ -1327,6 +1543,72 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Changeset::addedPaths",
+			"p": "Dagger/Changeset.html#method_addedPaths",
+			"d": "<p>Files and directories that were added in the newer directory.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Changeset::after",
+			"p": "Dagger/Changeset.html#method_after",
+			"d": "<p>The newer/upper snapshot.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Changeset::asPatch",
+			"p": "Dagger/Changeset.html#method_asPatch",
+			"d": "<p>Return a Git-compatible patch of the changes</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Changeset::before",
+			"p": "Dagger/Changeset.html#method_before",
+			"d": "<p>The older/lower snapshot to compare against.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Changeset::export",
+			"p": "Dagger/Changeset.html#method_export",
+			"d": "<p>Applies the diff represented by this changeset to a path on the host.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Changeset::id",
+			"p": "Dagger/Changeset.html#method_id",
+			"d": "<p>A unique identifier for this Changeset.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Changeset::layer",
+			"p": "Dagger/Changeset.html#method_layer",
+			"d": "<p>Return a snapshot containing only the created and modified files</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Changeset::modifiedPaths",
+			"p": "Dagger/Changeset.html#method_modifiedPaths",
+			"d": "<p>Files and directories that existed before and were updated in the newer directory.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Changeset::removedPaths",
+			"p": "Dagger/Changeset.html#method_removedPaths",
+			"d": "<p>Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Changeset::sync",
+			"p": "Dagger/Changeset.html#method_sync",
+			"d": "<p>Force evaluation in the engine.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::address",
+			"p": "Dagger/Client.html#method_address",
+			"d": "<p>initialize an address to load directories, containers, secrets or other object types.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::cacheVolume",
 			"p": "Dagger/Client.html#method_cacheVolume",
 			"d": "<p>Constructs a cache volume for a given cache key.</p>"
@@ -1387,6 +1669,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::envFile",
+			"p": "Dagger/Client.html#method_envFile",
+			"d": "<p>Initialize an environment file</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::error",
 			"p": "Dagger/Client.html#method_error",
 			"d": "<p>Create a new error.</p>"
@@ -1429,9 +1717,21 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::json",
+			"p": "Dagger/Client.html#method_json",
+			"d": "<p>Initialize a JSON value</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::llm",
 			"p": "Dagger/Client.html#method_llm",
 			"d": "<p>Initialize a Large Language Model (LLM)</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadAddressFromID",
+			"p": "Dagger/Client.html#method_loadAddressFromID",
+			"d": "<p>Load a Address from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -1444,6 +1744,12 @@
 			"n": "Dagger\\Client::loadCacheVolumeFromID",
 			"p": "Dagger/Client.html#method_loadCacheVolumeFromID",
 			"d": "<p>Load a CacheVolume from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadChangesetFromID",
+			"p": "Dagger/Client.html#method_loadChangesetFromID",
+			"d": "<p>Load a Changeset from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -1504,6 +1810,12 @@
 			"n": "Dagger\\Client::loadEnumValueTypeDefFromID",
 			"p": "Dagger/Client.html#method_loadEnumValueTypeDefFromID",
 			"d": "<p>Load a EnumValueTypeDef from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadEnvFileFromID",
+			"p": "Dagger/Client.html#method_loadEnvFileFromID",
+			"d": "<p>Load a EnvFile from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -1603,6 +1915,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::loadJSONValueFromID",
+			"p": "Dagger/Client.html#method_loadJSONValueFromID",
+			"d": "<p>Load a JSONValue from its ID.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::loadLLMFromID",
 			"p": "Dagger/Client.html#method_loadLLMFromID",
 			"d": "<p>Load a LLM from its ID.</p>"
@@ -1666,6 +1984,18 @@
 			"n": "Dagger\\Client::loadScalarTypeDefFromID",
 			"p": "Dagger/Client.html#method_loadScalarTypeDefFromID",
 			"d": "<p>Load a ScalarTypeDef from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadSearchResultFromID",
+			"p": "Dagger/Client.html#method_loadSearchResultFromID",
+			"d": "<p>Load a SearchResult from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadSearchSubmatchFromID",
+			"p": "Dagger/Client.html#method_loadSearchSubmatchFromID",
+			"d": "<p>Load a SearchSubmatch from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -1882,6 +2212,12 @@
 			"n": "Dagger\\Container::build",
 			"p": "Dagger/Container.html#method_build",
 			"d": "<p>Initializes this container from a Dockerfile build.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Container::combinedOutput",
+			"p": "Dagger/Container.html#method_combinedOutput",
+			"d": "<p>The combined buffered standard output and standard error stream of the last executed command</p>"
 		},
 		{
 			"t": "M",
@@ -2365,6 +2701,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Directory::changes",
+			"p": "Dagger/Directory.html#method_changes",
+			"d": "<p>Return the difference between this directory and another directory, typically an older snapshot.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Directory::chown",
+			"p": "Dagger/Directory.html#method_chown",
+			"d": "<p>Change the owner of the directory contents recursively.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Directory::diff",
 			"p": "Dagger/Directory.html#method_diff",
 			"d": "<p>Return the difference between this directory and an another directory. The difference is encoded as a directory.</p>"
@@ -2419,6 +2767,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Directory::findUp",
+			"p": "Dagger/Directory.html#method_findUp",
+			"d": "<p>Search up the directory tree for a file or directory, and return its path. If no match, return null</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Directory::glob",
 			"p": "Dagger/Directory.html#method_glob",
 			"d": "<p>Returns a list of files and directories that matche the given pattern.</p>"
@@ -2437,6 +2791,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Directory::search",
+			"p": "Dagger/Directory.html#method_search",
+			"d": "<p>Searches for content matching the given regular expression or literal string.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Directory::sync",
 			"p": "Dagger/Directory.html#method_sync",
 			"d": "<p>Force evaluation in the engine.</p>"
@@ -2446,6 +2806,12 @@
 			"n": "Dagger\\Directory::terminal",
 			"p": "Dagger/Directory.html#method_terminal",
 			"d": "<p>Opens an interactive terminal in new container with this directory mounted inside.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Directory::withChanges",
+			"p": "Dagger/Directory.html#method_withChanges",
+			"d": "<p>Return a directory with changes from another directory applied to it.</p>"
 		},
 		{
 			"t": "M",
@@ -2482,6 +2848,12 @@
 			"n": "Dagger\\Directory::withPatch",
 			"p": "Dagger/Directory.html#method_withPatch",
 			"d": "<p>Retrieves this directory with the given Git-compatible patch applied.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Directory::withPatchFile",
+			"p": "Dagger/Directory.html#method_withPatchFile",
+			"d": "<p>Retrieves this directory with the given Git-compatible patch file applied.</p>"
 		},
 		{
 			"t": "M",
@@ -2737,6 +3109,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withAddressInput",
+			"p": "Dagger/Env.html#method_withAddressInput",
+			"d": "<p>Create or update a binding of type Address in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withAddressOutput",
+			"p": "Dagger/Env.html#method_withAddressOutput",
+			"d": "<p>Declare a desired Address output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withCacheVolumeInput",
 			"p": "Dagger/Env.html#method_withCacheVolumeInput",
 			"d": "<p>Create or update a binding of type CacheVolume in the environment</p>"
@@ -2746,6 +3130,18 @@
 			"n": "Dagger\\Env::withCacheVolumeOutput",
 			"p": "Dagger/Env.html#method_withCacheVolumeOutput",
 			"d": "<p>Declare a desired CacheVolume output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withChangesetInput",
+			"p": "Dagger/Env.html#method_withChangesetInput",
+			"d": "<p>Create or update a binding of type Changeset in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withChangesetOutput",
+			"p": "Dagger/Env.html#method_withChangesetOutput",
+			"d": "<p>Declare a desired Changeset output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",
@@ -2782,6 +3178,18 @@
 			"n": "Dagger\\Env::withDirectoryOutput",
 			"p": "Dagger/Env.html#method_withDirectoryOutput",
 			"d": "<p>Declare a desired Directory output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withEnvFileInput",
+			"p": "Dagger/Env.html#method_withEnvFileInput",
+			"d": "<p>Create or update a binding of type EnvFile in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withEnvFileOutput",
+			"p": "Dagger/Env.html#method_withEnvFileOutput",
+			"d": "<p>Declare a desired EnvFile output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",
@@ -2833,6 +3241,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withJSONValueInput",
+			"p": "Dagger/Env.html#method_withJSONValueInput",
+			"d": "<p>Create or update a binding of type JSONValue in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withJSONValueOutput",
+			"p": "Dagger/Env.html#method_withJSONValueOutput",
+			"d": "<p>Declare a desired JSONValue output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withLLMInput",
 			"p": "Dagger/Env.html#method_withLLMInput",
 			"d": "<p>Create or update a binding of type LLM in the environment</p>"
@@ -2881,6 +3301,30 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withSearchResultInput",
+			"p": "Dagger/Env.html#method_withSearchResultInput",
+			"d": "<p>Create or update a binding of type SearchResult in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withSearchResultOutput",
+			"p": "Dagger/Env.html#method_withSearchResultOutput",
+			"d": "<p>Declare a desired SearchResult output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withSearchSubmatchInput",
+			"p": "Dagger/Env.html#method_withSearchSubmatchInput",
+			"d": "<p>Create or update a binding of type SearchSubmatch in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withSearchSubmatchOutput",
+			"p": "Dagger/Env.html#method_withSearchSubmatchOutput",
+			"d": "<p>Declare a desired SearchSubmatch output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withSecretInput",
 			"p": "Dagger/Env.html#method_withSecretInput",
 			"d": "<p>Create or update a binding of type Secret in the environment</p>"
@@ -2926,6 +3370,48 @@
 			"n": "Dagger\\Env::withStringOutput",
 			"p": "Dagger/Env.html#method_withStringOutput",
 			"d": "<p>Create or update an input value of type string</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\EnvFile::asFile",
+			"p": "Dagger/EnvFile.html#method_asFile",
+			"d": "<p>Return as a file</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\EnvFile::exists",
+			"p": "Dagger/EnvFile.html#method_exists",
+			"d": "<p>Check if a variable exists</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\EnvFile::get",
+			"p": "Dagger/EnvFile.html#method_get",
+			"d": "<p>Lookup a variable (last occurrence wins) and return its value, or an empty string</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\EnvFile::id",
+			"p": "Dagger/EnvFile.html#method_id",
+			"d": "<p>A unique identifier for this EnvFile.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\EnvFile::variables",
+			"p": "Dagger/EnvFile.html#method_variables",
+			"d": "<p>Return all variables</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\EnvFile::withVariable",
+			"p": "Dagger/EnvFile.html#method_withVariable",
+			"d": "<p>Add a variable</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\EnvFile::withoutVariable",
+			"p": "Dagger/EnvFile.html#method_withoutVariable",
+			"d": "<p>Remove all occurrences of the named variable</p>"
 		},
 		{
 			"t": "M",
@@ -3019,6 +3505,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\File::asEnvFile",
+			"p": "Dagger/File.html#method_asEnvFile",
+			"d": "<p>Parse as an env file</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\File::chown",
+			"p": "Dagger/File.html#method_chown",
+			"d": "<p>Change the owner of the file recursively.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\File::contents",
 			"p": "Dagger/File.html#method_contents",
 			"d": "<p>Retrieves the contents of the file.</p>"
@@ -3049,6 +3547,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\File::search",
+			"p": "Dagger/File.html#method_search",
+			"d": "<p>Searches for content matching the given regular expression or literal string.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\File::size",
 			"p": "Dagger/File.html#method_size",
 			"d": "<p>Retrieves the size of the file, in bytes.</p>"
@@ -3064,6 +3568,12 @@
 			"n": "Dagger\\File::withName",
 			"p": "Dagger/File.html#method_withName",
 			"d": "<p>Retrieves this file with its name set to the given name.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\File::withReplaced",
+			"p": "Dagger/File.html#method_withReplaced",
+			"d": "<p>Retrieves the file with content replaced with the given text.</p>"
 		},
 		{
 			"t": "M",
@@ -3355,6 +3865,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\GitRepository::url",
+			"p": "Dagger/GitRepository.html#method_url",
+			"d": "<p>The URL of the git repository.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\GitRepository::withAuthHeader",
 			"p": "Dagger/GitRepository.html#method_withAuthHeader",
 			"d": "<p>Header to authenticate the remote with.</p>"
@@ -3367,6 +3883,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Host::containerImage",
+			"p": "Dagger/Host.html#method_containerImage",
+			"d": "<p>Accesses a container image on the host.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Host::directory",
 			"p": "Dagger/Host.html#method_directory",
 			"d": "<p>Accesses a directory on the host.</p>"
@@ -3376,6 +3898,12 @@
 			"n": "Dagger\\Host::file",
 			"p": "Dagger/Host.html#method_file",
 			"d": "<p>Accesses a file on the host.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Host::findUp",
+			"p": "Dagger/Host.html#method_findUp",
+			"d": "<p>Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null</p>"
 		},
 		{
 			"t": "M",
@@ -3460,6 +3988,84 @@
 			"n": "Dagger\\InterfaceTypeDef::sourceModuleName",
 			"p": "Dagger/InterfaceTypeDef.html#method_sourceModuleName",
 			"d": "<p>If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::asArray",
+			"p": "Dagger/JsonValue.html#method_asArray",
+			"d": "<p>Decode an array from json</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::asBoolean",
+			"p": "Dagger/JsonValue.html#method_asBoolean",
+			"d": "<p>Decode a boolean from json</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::asInteger",
+			"p": "Dagger/JsonValue.html#method_asInteger",
+			"d": "<p>Decode an integer from json</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::asString",
+			"p": "Dagger/JsonValue.html#method_asString",
+			"d": "<p>Decode a string from json</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::contents",
+			"p": "Dagger/JsonValue.html#method_contents",
+			"d": "<p>Return the value encoded as json</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::field",
+			"p": "Dagger/JsonValue.html#method_field",
+			"d": "<p>Lookup the field at the given path, and return its value.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::fields",
+			"p": "Dagger/JsonValue.html#method_fields",
+			"d": "<p>List fields of the encoded object</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::id",
+			"p": "Dagger/JsonValue.html#method_id",
+			"d": "<p>A unique identifier for this JSONValue.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::newBoolean",
+			"p": "Dagger/JsonValue.html#method_newBoolean",
+			"d": "<p>Encode a boolean to json</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::newInteger",
+			"p": "Dagger/JsonValue.html#method_newInteger",
+			"d": "<p>Encode an integer to json</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::newString",
+			"p": "Dagger/JsonValue.html#method_newString",
+			"d": "<p>Encode a string to json</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::withContents",
+			"p": "Dagger/JsonValue.html#method_withContents",
+			"d": "<p>Return a new json value, decoded from the given content</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\JsonValue::withField",
+			"p": "Dagger/JsonValue.html#method_withField",
+			"d": "<p>Set a new field at the given path</p>"
 		},
 		{
 			"t": "M",
@@ -3991,6 +4597,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::withUpdatedClients",
+			"p": "Dagger/ModuleSource.html#method_withUpdatedClients",
+			"d": "<p>Update one or more clients.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::withoutBlueprint",
 			"p": "Dagger/ModuleSource.html#method_withoutBlueprint",
 			"d": "<p>Remove the current blueprint from the module source.</p>"
@@ -4135,6 +4747,66 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\SearchResult::absoluteOffset",
+			"p": "Dagger/SearchResult.html#method_absoluteOffset",
+			"d": "<p>The byte offset of this line within the file.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\SearchResult::filePath",
+			"p": "Dagger/SearchResult.html#method_filePath",
+			"d": "<p>The path to the file that matched.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\SearchResult::id",
+			"p": "Dagger/SearchResult.html#method_id",
+			"d": "<p>A unique identifier for this SearchResult.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\SearchResult::lineNumber",
+			"p": "Dagger/SearchResult.html#method_lineNumber",
+			"d": "<p>The first line that matched.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\SearchResult::matchedLines",
+			"p": "Dagger/SearchResult.html#method_matchedLines",
+			"d": "<p>The line content that matched.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\SearchResult::submatches",
+			"p": "Dagger/SearchResult.html#method_submatches",
+			"d": "<p>Sub-match positions and content within the matched lines.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\SearchSubmatch::end",
+			"p": "Dagger/SearchSubmatch.html#method_end",
+			"d": "<p>The match's end offset within the matched lines.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\SearchSubmatch::id",
+			"p": "Dagger/SearchSubmatch.html#method_id",
+			"d": "<p>A unique identifier for this SearchSubmatch.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\SearchSubmatch::start",
+			"p": "Dagger/SearchSubmatch.html#method_start",
+			"d": "<p>The match's start offset within the matched lines.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\SearchSubmatch::text",
+			"p": "Dagger/SearchSubmatch.html#method_text",
+			"d": "<p>The matched text.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Secret::id",
 			"p": "Dagger/Secret.html#method_id",
 			"d": "<p>A unique identifier for this Secret.</p>"
@@ -4192,6 +4864,18 @@
 			"n": "Dagger\\Service::stop",
 			"p": "Dagger/Service.html#method_stop",
 			"d": "<p>Stop the service.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Service::sync",
+			"p": "Dagger/Service.html#method_sync",
+			"d": "<p>Forces evaluation of the pipeline in the engine.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Service::terminal",
+			"p": "Dagger/Service.html#method_terminal",
+			"d": null
 		},
 		{
 			"t": "M",

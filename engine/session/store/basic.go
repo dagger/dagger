@@ -9,17 +9,20 @@ import (
 	"github.com/dagger/dagger/engine/client/imageload"
 	grpc "google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 type basicStoreAttachable struct {
-	load imageload.TarballLoader
+	write imageload.TarballWriter
+	read  imageload.TarballReader
 
 	UnimplementedBasicStoreServer
 }
 
 var _ BasicStoreServer = (*basicStoreAttachable)(nil)
 
-const ImageLoadTag = "dagger.imageload"
+// TODO: should be "dagger.store.tag" but breaks client<->server compat
+const ImageTagKey = "dagger.imageload"
 
 func (loader basicStoreAttachable) Register(srv *grpc.Server) {
 	RegisterBasicStoreServer(srv, loader)
@@ -33,23 +36,46 @@ func (loader basicStoreAttachable) LoadTarball(srv BasicStore_LoadTarballServer)
 		return fmt.Errorf("request lacks metadata: %w", cerrdefs.ErrInvalidArgument)
 	}
 
-	values := md[ImageLoadTag]
+	values := md[ImageTagKey]
 	if len(values) == 0 {
-		return fmt.Errorf("request lacks metadata %q: %w", ImageLoadTag, cerrdefs.ErrInvalidArgument)
+		return fmt.Errorf("request lacks metadata %q: %w", ImageTagKey, cerrdefs.ErrInvalidArgument)
 	}
 	tag := values[0]
 
-	reader := &TarballReader{GRPC: srv}
-	err := loader.load(srv.Context(), tag, reader)
+	reader := &TarballReader{ReadF: srv.Recv, CloseF: func() error {
+		return srv.SendAndClose(&LoadResponse{})
+	}}
+	err := loader.write(srv.Context(), tag, reader)
 	if err != nil {
 		return err
 	}
 	return srv.SendAndClose(&LoadResponse{})
 }
 
+func (loader basicStoreAttachable) ReadTarball(req *emptypb.Empty, srv BasicStore_ReadTarballServer) error {
+	md, ok := metadata.FromIncomingContext(srv.Context())
+	if !ok {
+		return fmt.Errorf("request lacks metadata: %w", cerrdefs.ErrInvalidArgument)
+	}
+
+	values := md[ImageTagKey]
+	if len(values) == 0 {
+		return fmt.Errorf("request lacks metadata %q: %w", ImageTagKey, cerrdefs.ErrInvalidArgument)
+	}
+	tag := values[0]
+
+	writer := &TarballWriter{SendF: srv.Send}
+	err := loader.read(srv.Context(), tag, writer)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 type TarballReader struct {
-	GRPC BasicStore_LoadTarballServer
-	rem  []byte // remainder buffer
+	ReadF  func() (*Data, error)
+	CloseF func() error
+	rem    []byte // remainder buffer
 }
 
 func (pio *TarballReader) Read(p []byte) (n int, err error) {
@@ -59,7 +85,7 @@ func (pio *TarballReader) Read(p []byte) (n int, err error) {
 	if len(p) == 0 || n != 0 {
 		return n, nil
 	}
-	req, err := pio.GRPC.Recv()
+	req, err := pio.ReadF()
 	if errors.Is(err, io.EOF) {
 		return 0, io.EOF
 	}
@@ -72,12 +98,20 @@ func (pio *TarballReader) Read(p []byte) (n int, err error) {
 	return n, nil
 }
 
+func (pio *TarballReader) Close() error {
+	if pio.CloseF != nil {
+		return pio.CloseF()
+	}
+	return nil
+}
+
 type TarballWriter struct {
-	GRPC BasicStore_LoadTarballClient
+	SendF  func(*Data) error
+	CloseF func() error
 }
 
 func (pio *TarballWriter) Write(p []byte) (n int, err error) {
-	err = pio.GRPC.Send(&Data{Data: p})
+	err = pio.SendF(&Data{Data: p})
 	if err != nil {
 		return 0, fmt.Errorf("error writing dagger tarball: %w", err)
 	}
@@ -85,9 +119,8 @@ func (pio *TarballWriter) Write(p []byte) (n int, err error) {
 }
 
 func (pio *TarballWriter) Close() error {
-	_, err := pio.GRPC.CloseAndRecv()
-	if err != nil {
-		return err
+	if pio.CloseF != nil {
+		return pio.CloseF()
 	}
 	return nil
 }

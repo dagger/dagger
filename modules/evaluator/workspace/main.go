@@ -1,3 +1,9 @@
+// A workspace for managing and running LLM evaluations.
+//
+// This module provides the core workspace functionality for running evaluations
+// against various AI models, managing system prompts, and analyzing results.
+//
+// It is intended for internal use within the Evaluator.
 package main
 
 import (
@@ -31,6 +37,10 @@ type Workspace struct {
 	Findings []string
 }
 
+// Eval represents a single evaluation that can be run against an LLM.
+//
+// Implementations must provide a name, a method to generate a prompt,
+// and a check function to validate the LLM's response.
 type Eval interface {
 	Name(context.Context) (string, error)
 	Prompt(base *dagger.LLM) *dagger.LLM
@@ -54,13 +64,20 @@ func (w *Workspace) WithoutDefaultSystemPrompt() *Workspace {
 }
 
 // Set the system prompt for future evaluations.
-func (w *Workspace) WithSystemPrompt(prompt string) *Workspace {
+func (w *Workspace) WithSystemPrompt(
+	// The system prompt to use for evaluations.
+	prompt string,
+) *Workspace {
 	w.SystemPrompt = prompt
 	return w
 }
 
 // Set the system prompt for future evaluations.
-func (w *Workspace) WithSystemPromptFile(ctx context.Context, file *dagger.File) (*Workspace, error) {
+func (w *Workspace) WithSystemPromptFile(
+	ctx context.Context,
+	// The file containing the system prompt to use.
+	file *dagger.File,
+) (*Workspace, error) {
 	content, err := file.Contents(ctx)
 	if err != nil {
 		return nil, err
@@ -72,22 +89,29 @@ func (w *Workspace) WithSystemPromptFile(ctx context.Context, file *dagger.File)
 // Backoff sleeps for the given duration in seconds.
 //
 // Use this if you're getting rate limited and have nothing better to do.
-func (w *Workspace) Backoff(seconds int) *Workspace {
+func (w *Workspace) Backoff(
+	// Number of seconds to sleep.
+	seconds int,
+) *Workspace {
 	time.Sleep(time.Duration(seconds) * time.Second)
 	return w
 }
 
 // Register an eval to perform.
-func (w *Workspace) WithEval(eval Eval) *Workspace {
+func (w *Workspace) WithEval(
+	// The evaluation to add to the workspace.
+	eval Eval,
+) *Workspace {
 	w.Evals = append(w.Evals, eval)
 	return w
 }
 
 // Register evals to perform.
-func (w *Workspace) WithEvals(evals []Eval) *Workspace {
-	for _, eval := range evals {
-		w.Evals = append(w.Evals, eval)
-	}
+func (w *Workspace) WithEvals(
+	// The list of evaluations to add to the workspace.
+	evals []Eval,
+) *Workspace {
+	w.Evals = append(w.Evals, evals...)
 	return w
 }
 
@@ -111,7 +135,10 @@ func (w *Workspace) KnownModels() []string {
 }
 
 // Record an interesting finding after performing evaluations.
-func (w *Workspace) WithFinding(finding string) *Workspace {
+func (w *Workspace) WithFinding(
+	// The finding or observation to record.
+	finding string,
+) *Workspace {
 	w.Findings = append(w.Findings, finding)
 	return w
 }
@@ -122,7 +149,7 @@ func (*Workspace) defaultAttempts(provider string) int {
 	switch strings.ToLower(provider) {
 	case "google":
 		// Gemini has no token usage limit, just an API rate limit.
-		return 10
+		return 3
 	case "openai":
 		// OpenAI is more sensitive to token usage.
 		return 5
@@ -135,6 +162,7 @@ func (*Workspace) defaultAttempts(provider string) int {
 	}
 }
 
+// AttemptsReport contains the aggregated results from multiple evaluation attempts.
 type AttemptsReport struct {
 	Report            string
 	SuccessRate       float64
@@ -310,6 +338,7 @@ func (w *Workspace) Evaluate(
 	}, nil
 }
 
+// baseLLM configures a base LLM instance with the workspace's settings.
 func (w *Workspace) baseLLM(base *dagger.LLM, modelOverride string) *dagger.LLM {
 	if base == nil {
 		base = dag.LLM()

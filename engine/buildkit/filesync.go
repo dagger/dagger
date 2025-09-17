@@ -9,7 +9,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 
 	"github.com/containerd/continuity/fs"
 	bkclient "github.com/moby/buildkit/client"
@@ -93,6 +92,7 @@ func (c *Client) LocalDirExport(
 	def *bksolverpb.Definition,
 	destPath string,
 	merge bool,
+	removePaths []string,
 ) (rerr error) {
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("export_path", destPath))
 	bklog.G(ctx).Debug("exporting local dir")
@@ -111,9 +111,6 @@ func (c *Client) LocalDirExport(
 	defer cancel(errors.New("local dir export done"))
 
 	destPath = path.Clean(destPath)
-	if destPath == ".." || strings.HasPrefix(destPath, "../") {
-		return fmt.Errorf("path %q escapes workdir; use an absolute path instead", destPath)
-	}
 
 	res, err := c.Solve(ctx, bkgw.SolveRequest{Definition: def})
 	if err != nil {
@@ -141,8 +138,9 @@ func (c *Client) LocalDirExport(
 	}
 
 	ctx = engine.LocalExportOpts{
-		Path:  destPath,
-		Merge: merge,
+		Path:        destPath,
+		Merge:       merge,
+		RemovePaths: removePaths,
 	}.AppendToOutgoingContext(ctx)
 
 	_, descRef, err := expResult.Export(ctx, cacheRes, nil, clientMetadata.ClientID)
@@ -183,9 +181,6 @@ func (c *Client) LocalFileExport(
 	defer cancel(errors.New("local file export done"))
 
 	destPath = path.Clean(destPath)
-	if destPath == ".." || strings.HasPrefix(destPath, "../") {
-		return fmt.Errorf("path %q escapes workdir; use an absolute path instead", destPath)
-	}
 
 	res, err := c.Solve(ctx, bkgw.SolveRequest{Definition: def, Evaluate: true})
 	if err != nil {

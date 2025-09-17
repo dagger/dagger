@@ -29,7 +29,11 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 		Syncer[*core.File]().
 			Doc(`Force evaluation in the engine.`),
 		dagql.Func("contents", s.contents).
-			Doc(`Retrieves the contents of the file.`),
+			Doc(`Retrieves the contents of the file.`).
+			Args(
+				dagql.Arg("offsetLines").Doc(`Start reading after this line`),
+				dagql.Arg("limitLines").Doc(`Maximum number of lines to read`),
+			),
 		dagql.Func("size", s.size).
 			Doc(`Retrieves the size of the file, in bytes.`),
 		dagql.Func("name", s.name).
@@ -47,6 +51,29 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 			Doc(`Retrieves this file with its name set to the given name.`).
 			Args(
 				dagql.Arg("name").Doc(`Name to set file to.`),
+			),
+		dagql.NodeFunc("search", DagOpWrapper(srv, s.search)).
+			Doc(
+				// NOTE: sync with Directory.search
+				`Searches for content matching the given regular expression or literal string.`,
+				`Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.`,
+			).
+			Args((core.SearchOpts{}).Args()...),
+		dagql.NodeFunc("withReplaced",
+			DagOpFileWrapper(srv, s.withReplaced,
+				WithPathFn(keepParentFile[fileReplaceArgs]))).
+			Doc(
+				`Retrieves the file with content replaced with the given text.`,
+				`If 'all' is true, all occurrences of the pattern will be replaced.`,
+				`If 'firstAfter' is specified, only the first match starting at the specified line will be replaced.`,
+				`If neither are specified, and there are multiple matches for the pattern, this will error.`,
+				`If there are no matches for the pattern, this will error.`,
+			).
+			Args(
+				dagql.Arg("search").Doc(`The text to match.`),
+				dagql.Arg("replacement").Doc(`The text to match.`),
+				dagql.Arg("all").Doc(`Replace all occurrences of the pattern.`),
+				dagql.Arg("firstFrom").Doc(`Replace the first match starting from the specified line.`),
 			),
 		dagql.Func("export", s.export).
 			View(AllVersion).
@@ -67,6 +94,13 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 				dagql.Arg("timestamp").Doc(`Timestamp to set dir/files in.`,
 					`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
 			),
+		dagql.NodeFunc("chown", DagOpFileWrapper(srv, s.chown, WithPathFn(keepParentFile[fileChownArgs]))).
+			Doc(`Change the owner of the file recursively.`).
+			Args(
+				dagql.Arg("owner").Doc(`A user:group to set for the file.`,
+					`The user and group must be an ID (1000:1000), not a name (foo:bar).`,
+					`If the group is omitted, it defaults to the same as the user.`),
+			),
 	}.Install(srv)
 }
 
@@ -78,8 +112,11 @@ func (s *fileSchema) file(ctx context.Context, parent *core.Query, args struct {
 	return core.NewFileWithContents(ctx, args.Name, []byte(args.Contents), fs.FileMode(args.Permissions), nil, parent.Platform())
 }
 
-func (s *fileSchema) contents(ctx context.Context, file *core.File, args struct{}) (dagql.String, error) {
-	content, err := file.Contents(ctx)
+func (s *fileSchema) contents(ctx context.Context, file *core.File, args struct {
+	OffsetLines *int
+	LimitLines  *int
+}) (dagql.String, error) {
+	content, err := file.Contents(ctx, args.OffsetLines, args.LimitLines)
 	if err != nil {
 		return "", err
 	}
@@ -124,6 +161,33 @@ func (s *fileSchema) withName(ctx context.Context, parent *core.File, args fileW
 type fileExportArgs struct {
 	Path               string
 	AllowParentDirPath bool `default:"false"`
+}
+
+func (s *fileSchema) search(ctx context.Context, parent dagql.ObjectResult[*core.File], args searchArgs) (dagql.Array[*core.SearchResult], error) {
+	return parent.Self().Search(ctx, args.SearchOpts)
+}
+
+type fileReplaceArgs struct {
+	Search      string
+	Replacement string
+	All         bool `default:"false"`
+	FirstFrom   *int
+
+	FSDagOpInternalArgs
+}
+
+func (s *fileSchema) withReplaced(ctx context.Context, parent dagql.ObjectResult[*core.File], args fileReplaceArgs) (inst dagql.ObjectResult[*core.File], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	file, err := parent.Self().WithReplaced(ctx, args.Search, args.Replacement, args.FirstFrom, args.All)
+	if err != nil {
+		return inst, err
+	}
+
+	return dagql.NewObjectResultForCurrentID(ctx, srv, file)
 }
 
 func (s *fileSchema) export(ctx context.Context, parent *core.File, args fileExportArgs) (dagql.String, error) {
@@ -175,4 +239,27 @@ func (s *fileSchema) withTimestamps(ctx context.Context, parent dagql.ObjectResu
 
 func keepParentFile[A any](_ context.Context, val *core.File, _ A) (string, error) {
 	return val.File, nil
+}
+
+type fileChownArgs struct {
+	Owner string
+
+	FSDagOpInternalArgs
+}
+
+func (s *fileSchema) chown(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.File],
+	args fileChownArgs,
+) (inst dagql.ObjectResult[*core.File], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	f, err := parent.Self().Chown(ctx, args.Owner)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, f)
 }

@@ -146,10 +146,8 @@ export class Register {
         }
 
         // Check if both values are used, return an error if so.
-        if (arg.defaultValue && arg.defaultPath) {
-          throw new Error(
-            "cannot set both default value and default path from context",
-          )
+        if ([arg.defaultValue, arg.defaultPath].filter((v) => v).length > 1) {
+          throw new Error("cannot set multiple defaults")
         }
 
         // We do not set the default value if it's not a primitive type, we let TypeScript

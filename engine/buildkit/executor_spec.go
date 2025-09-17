@@ -424,6 +424,16 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 	if releaseRootMount != nil {
 		state.cleanups.Add("release rootfs mount", releaseRootMount)
 	}
+	// TODO: is this robust? the one for submounts is very complicated
+	if state.rootMount.Selector != "" {
+		for i, mnt := range rootMnts {
+			mnt.Source, err = fs.RootPath(mnt.Source, state.rootMount.Selector)
+			if err != nil {
+				return fmt.Errorf("root mount %s points to invalid source: %w", state.rootMount.Selector, err)
+			}
+			rootMnts[i] = mnt
+		}
+	}
 	if err := mount.All(rootMnts, state.rootfsPath); err != nil {
 		return fmt.Errorf("mount rootfs: %w", err)
 	}
@@ -559,6 +569,13 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 		return nil
 	}
 
+	combinedOutputPath := filepath.Join(state.metaMount.Source, MetaMountCombinedOutputPath)
+	combinedOutputFile, err := os.OpenFile(combinedOutputPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return fmt.Errorf("open combined output file: %w", err)
+	}
+	state.cleanups.Add("close container combined output file", combinedOutputFile.Close)
+
 	var stdoutWriters []io.Writer
 	if state.procInfo.Stdout != nil {
 		stdoutWriters = append(stdoutWriters, state.procInfo.Stdout)
@@ -570,6 +587,7 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 	}
 	state.cleanups.Add("close container stdout file", stdoutFile.Close)
 	stdoutWriters = append(stdoutWriters, stdoutFile)
+	stdoutWriters = append(stdoutWriters, combinedOutputFile)
 
 	var stderrWriters []io.Writer
 	if state.procInfo.Stderr != nil {
@@ -582,6 +600,7 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 	}
 	state.cleanups.Add("close container stderr file", stderrFile.Close)
 	stderrWriters = append(stderrWriters, stderrFile)
+	stderrWriters = append(stderrWriters, combinedOutputFile)
 
 	if w.execMD != nil && (w.execMD.RedirectStdinPath != "" || w.execMD.RedirectStdoutPath != "" || w.execMD.RedirectStderrPath != "") {
 		ctrFS, err := containerfs.NewContainerFS(state.spec, nil)

@@ -108,7 +108,7 @@ func TestBackendImageLoadAndExists(t *testing.T) {
 			loader, err := loadBackend.Loader(ctx)
 			require.NoError(t, err)
 
-			err = loader.TarballLoader(ctx, loadedImageName, bytes.NewReader(tarballBuffer.Bytes()))
+			err = loader.TarballWriter(ctx, loadedImageName, bytes.NewReader(tarballBuffer.Bytes()))
 			require.NoError(t, err)
 			t.Cleanup(func() {
 				ctx := context.WithoutCancel(ctx)

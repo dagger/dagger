@@ -3,7 +3,6 @@ package cachemanager
 import (
 	"context"
 	"os"
-	"time"
 
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/moby/buildkit/solver"
@@ -16,15 +15,11 @@ type ManagerConfig struct {
 	ResultStore  solver.CacheResultStorage
 	Worker       worker.Worker
 	MountManager *mounts.MountManager
-	ServiceURL   string
-	Token        string
 	EngineID     string
 }
 
 const (
-	LocalCacheID            = "local"
-	startupImportTimeout    = 1 * time.Minute
-	backgroundImportTimeout = 10 * time.Minute
+	LocalCacheID = "local"
 )
 
 var contentStoreLayers = map[string]struct{}{}

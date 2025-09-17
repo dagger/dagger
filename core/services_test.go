@@ -2,13 +2,11 @@ package core_test
 
 import (
 	"context"
-	"io"
 	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
@@ -305,7 +303,7 @@ func (f *fakeStartable) ID() *call.ID {
 	return id
 }
 
-func (f *fakeStartable) Start(context.Context, *call.ID, bool, func(io.Writer, bkgw.ContainerProcess), func(io.Reader), func(io.Reader)) (*core.RunningService, error) {
+func (f *fakeStartable) Start(context.Context, *call.ID, *core.ServiceIO) (*core.RunningService, error) {
 	atomic.AddInt32(&f.starts, 1)
 	res := <-f.startResults
 	return res.Started, res.Failed

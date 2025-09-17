@@ -3,8 +3,8 @@ package core
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -41,6 +41,7 @@ import (
 )
 
 type GitRepository struct {
+	URL     dagql.Nullable[dagql.String] `field:"true" doc:"The URL of the git repository."`
 	Backend GitRepositoryBackend
 
 	DiscardGitDir bool
@@ -49,8 +50,11 @@ type GitRepository struct {
 type GitRepositoryBackend interface {
 	HasPBDefinitions
 
+	// Ref returns a reference to a specific git ref (branch, tag, or commit).
 	Ref(ctx context.Context, ref string) (GitRefBackend, error)
+	// Tags lists tags in the repository matching the given patterns.
 	Tags(ctx context.Context, patterns []string, sort string) (tags []string, err error)
+	// Branches lists branches in the repository matching the given patterns.
 	Branches(ctx context.Context, patterns []string, sort string) (branches []string, err error)
 
 	mount(ctx context.Context, depth int, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error
@@ -129,7 +133,9 @@ func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bo
 }
 
 type RemoteGitRepository struct {
-	URL *gitutil.GitURL
+	URL        *gitutil.GitURL
+	HeadCommit string
+	HeadRef    string
 
 	SSHKnownHosts string
 	SSHAuthSocket dagql.ObjectResult[*Socket]
@@ -148,9 +154,34 @@ func (repo *RemoteGitRepository) PBDefinitions(ctx context.Context) ([]*pb.Defin
 	return nil, nil
 }
 
+func (repo *RemoteGitRepository) CheckAuth(ctx context.Context) error {
+	_, err := repo.lsRemote(ctx, []string{}, nil, "")
+	return err
+}
+
 func (repo *RemoteGitRepository) Ref(ctx context.Context, refstr string) (GitRefBackend, error) {
 	ref := &RemoteGitRef{
 		repo: repo,
+	}
+
+	if refstr == "HEAD" {
+		if repo.HeadCommit != "" {
+			_, resolvedRef, err := ref.resolve(ctx, repo.HeadCommit)
+			if err != nil {
+				return nil, err
+			}
+			ref.Commit = repo.HeadCommit
+			ref.FullRef = cmp.Or(repo.HeadRef, resolvedRef)
+			return ref, nil
+		}
+		if repo.HeadRef != "" {
+			var err error
+			ref.Commit, ref.FullRef, err = ref.resolve(ctx, repo.HeadRef)
+			if err != nil {
+				return nil, err
+			}
+			return ref, nil
+		}
 	}
 
 	// force resolution now, since the remote might change, and we don't want inconsistencies
@@ -234,47 +265,6 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 		}
 	}()
 
-	if repo.AuthToken.Self() != nil {
-		// caller-supplied username takes priority; otherwise pick a host-specific default
-		username := repo.AuthUsername
-		switch {
-		case username != "":
-			// explicit override – use as-is
-		case repo.URL.Host == "bitbucket.org":
-			// NOTE: bitbucket.org is picky, and needs *this* username
-			username = "x-token-auth"
-		default:
-			username = "x-access-token"
-		}
-
-		secretStore, err := query.Secrets(ctx)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
-		}
-		password, err := secretStore.GetSecretPlaintext(ctx, repo.AuthToken.ID().Digest())
-		if err != nil {
-			return nil, nil, err
-		}
-		authHeader := "basic " + base64.StdEncoding.EncodeToString(
-			fmt.Appendf(nil, "%s:%s", username, password),
-		)
-		opts = append(opts, gitutil.WithArgs(
-			"-c", "http."+repo.URL.Remote()+".extraheader=Authorization: "+authHeader,
-		))
-	} else if repo.AuthHeader.Self() != nil {
-		secretStore, err := query.Secrets(ctx)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
-		}
-		authHeader, err := secretStore.GetSecretPlaintext(ctx, repo.AuthHeader.ID().Digest())
-		if err != nil {
-			return nil, nil, err
-		}
-		opts = append(opts, gitutil.WithArgs(
-			"-c", "http."+repo.URL.Remote()+".extraheader=Authorization: "+string(authHeader),
-		))
-	}
-
 	if repo.SSHAuthSocket.Self() != nil {
 		socketStore, err := query.Sockets(ctx)
 		if err == nil {
@@ -304,18 +294,44 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 	if err != nil {
 		return nil, nil, err
 	}
+
+	var resolvPath string
 	if netConf != nil {
-		resolvPath, err := mountResolv(netConf)
+		var err error
+		resolvPath, err = mountResolv(netConf)
 		if err != nil {
 			return nil, nil, err
 		}
-		opts = append(opts, gitutil.WithExec(func(ctx context.Context, cmd *exec.Cmd) error {
-			return runWithStandardUmaskAndNetOverride(ctx, cmd, "", resolvPath)
-		}))
 		cleanups.Add("remove updated /etc/resolv", func() error {
 			return os.Remove(resolvPath)
 		})
 	}
+
+	if repo.AuthToken.Self() != nil {
+		secretStore, err := query.Secrets(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
+		}
+		password, err := secretStore.GetSecretPlaintext(ctx, repo.AuthToken.ID().Digest())
+		if err != nil {
+			return nil, nil, err
+		}
+		opts = append(opts, gitutil.WithHTTPTokenAuth(repo.URL, string(password), repo.AuthUsername))
+	} else if repo.AuthHeader.Self() != nil {
+		secretStore, err := query.Secrets(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get secret store: %w", err)
+		}
+		byteAuthHeader, err := secretStore.GetSecretPlaintext(ctx, repo.AuthHeader.ID().Digest())
+		if err != nil {
+			return nil, nil, err
+		}
+		opts = append(opts, gitutil.WithHTTPAuthorizationHeader(repo.URL, string(byteAuthHeader)))
+	}
+
+	opts = append(opts, gitutil.WithExec(func(ctx context.Context, cmd *exec.Cmd) error {
+		return runWithStandardUmaskAndNetOverride(ctx, cmd, "", resolvPath)
+	}))
 
 	return gitutil.NewGitCLI(opts...), cleanups.Run, nil
 }
@@ -512,7 +528,7 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 	defer detach()
 
 	if _, err := git.Run(ctx, args...); err != nil {
-		if strings.Contains(err.Error(), "does not support shallow") {
+		if errors.Is(err, gitutil.ErrShallowNotSupported) {
 			// fallback to full fetch
 			args = slices.DeleteFunc(args, func(s string) bool {
 				return strings.HasPrefix(s, "--depth")
@@ -696,12 +712,12 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			if err != nil {
 				return err
 			}
-			_, err = checkoutGit.Run(ctx, "remote", "add", "origin", gitURL)
+
+			err := doGitCheckout(ctx, checkoutGit, ref.repo.URL.Remote(), gitURL, ref.FullRef, ref.Commit, depth, discardGitDir)
 			if err != nil {
 				return err
 			}
-
-			return doGitCheckout(ctx, checkoutGit, ref.repo.URL.Remote(), ref.FullRef, ref.Commit, depth, discardGitDir)
+			return nil
 		})
 		if err != nil {
 			return fmt.Errorf("failed to checkout %s in %s: %w", ref.FullRef, ref.repo.URL.Remote(), err)
@@ -741,7 +757,8 @@ func (ref *RemoteGitRef) mount(ctx context.Context, depth int, fn func(*gitutil.
 func doGitCheckout(
 	ctx context.Context,
 	checkoutGit *gitutil.GitCLI,
-	remote string,
+	remoteURL string,
+	cloneURL string,
 	fullref string, commit string,
 	depth int,
 	discardGitDir bool,
@@ -760,42 +777,52 @@ func doGitCheckout(
 	if depth > 0 {
 		args = append(args, fmt.Sprintf("--depth=%d", depth))
 	}
-	args = append(args, "origin", pullref)
+	args = append(args, cloneURL, pullref)
 	_, err = checkoutGit.Run(ctx, args...)
 	if err != nil {
 		return err
 	}
 	_, err = checkoutGit.Run(ctx, "checkout", strings.TrimPrefix(fullref, "refs/heads/"))
 	if err != nil {
-		return fmt.Errorf("failed to checkout remote %s: %w", remote, err)
+		return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
 	}
 	_, err = checkoutGit.Run(ctx, "reset", "--hard", commit)
 	if err != nil {
-		return fmt.Errorf("failed to reset ref %s: %w", remote, err)
+		return fmt.Errorf("failed to reset ref: %w", err)
 	}
-	_, err = checkoutGit.Run(ctx, "remote", "set-url", "origin", remote)
-	if err != nil {
-		return fmt.Errorf("failed to set remote origin to %s: %w", remote, err)
+	if remoteURL != "" {
+		_, err = checkoutGit.Run(ctx, "remote", "add", "origin", remoteURL)
+		if err != nil {
+			return fmt.Errorf("failed to set remote origin to %s: %w", remoteURL, err)
+		}
 	}
 	_, err = checkoutGit.Run(ctx, "reflog", "expire", "--all", "--expire=now")
 	if err != nil {
-		return fmt.Errorf("failed to expire reflog for remote %s: %w", remote, err)
+		return fmt.Errorf("failed to expire reflog: %w", err)
 	}
 
 	if err := os.Remove(filepath.Join(checkoutDirGit, "FETCH_HEAD")); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("failed to remove FETCH_HEAD for remote %s: %w", remote, err)
+		return fmt.Errorf("failed to remove FETCH_HEAD: %w", err)
 	}
 
 	// TODO: this feels completely out-of-sync from how we do the rest
 	// of the clone - caching will not be as great here
-	_, err = checkoutGit.Run(ctx, "submodule", "update", "--init", "--recursive", "--depth=1")
-	if err != nil {
-		return fmt.Errorf("failed to update submodules for %s: %w", remote, err)
+	subArgs := []string{"submodule", "update", "--init", "--recursive", "--depth=1"}
+	if _, err := checkoutGit.Run(ctx, subArgs...); err != nil {
+		if errors.Is(err, gitutil.ErrShallowNotSupported) {
+			subArgs = slices.DeleteFunc(subArgs, func(s string) bool {
+				return strings.HasPrefix(s, "--depth")
+			})
+			_, err = checkoutGit.Run(ctx, subArgs...)
+		}
+		if err != nil {
+			return fmt.Errorf("failed to update submodules: %w", err)
+		}
 	}
 
 	if discardGitDir {
 		if err := os.RemoveAll(checkoutDirGit); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("failed to remove .git for remote %s: %w", remote, err)
+			return fmt.Errorf("failed to remove .git: %w", err)
 		}
 	}
 
@@ -1014,12 +1041,7 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 			if err != nil {
 				return err
 			}
-			_, err = checkoutGit.Run(ctx, "remote", "add", "origin", gitURL)
-			if err != nil {
-				return err
-			}
-
-			return doGitCheckout(ctx, checkoutGit, gitURL, fullref, commit, depth, discardGitDir)
+			return doGitCheckout(ctx, checkoutGit, "", gitURL, fullref, commit, depth, discardGitDir)
 		})
 	})
 	if err != nil {

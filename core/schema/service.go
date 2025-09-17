@@ -94,6 +94,9 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Service]{
+		Syncer[*core.Service]().
+			Doc(`Forces evaluation of the pipeline in the engine.`),
+
 		dagql.NodeFunc("hostname", s.hostname).
 			Doc(`Retrieves a hostname which can be used by clients to reach this container.`),
 
@@ -137,6 +140,9 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("kill").Doc(`Immediately kill the service without waiting for a graceful exit`),
 			),
+
+		dagql.NodeFunc("terminal", s.terminal).
+			DoNotCache("Imperatively mutates runtime state."),
 	}.Install(srv)
 }
 
@@ -172,7 +178,7 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 	}
 
 	// extract the withExec args
-	withExecField, ok := ctr.ObjectType().FieldSpec(id.Field(), dagql.View(id.View()))
+	withExecField, ok := ctr.ObjectType().FieldSpec(id.Field(), id.View())
 	if !ok {
 		return inst, fmt.Errorf("could not find %s on %s", id.Field(), ctr.Type().NamedType)
 	}
@@ -181,7 +187,7 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 		return inst, err
 	}
 	var withExecArgs containerExecArgs
-	err = withExecField.Args.Decode(inputs, &withExecArgs, dagql.View(id.View()))
+	err = withExecField.Args.Decode(inputs, &withExecArgs, id.View())
 	if err != nil {
 		return inst, err
 	}
@@ -266,7 +272,7 @@ func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.ObjectResult[
 	err = srv.Select(ctx, ctr, &svc,
 		dagql.Selector{
 			Field: "asService",
-			View:  dagql.View(dagql.CurrentID(ctx).View()),
+			View:  dagql.CurrentID(ctx).View(),
 			Args:  inputs,
 		},
 	)
@@ -287,7 +293,7 @@ func (s *serviceSchema) containerUpLegacy(ctx context.Context, ctr dagql.ObjectR
 	err = srv.Select(ctx, ctr, &svc,
 		dagql.Selector{
 			Field: "asService",
-			View:  dagql.View(dagql.CurrentID(ctx).View()),
+			View:  dagql.CurrentID(ctx).View(),
 		},
 	)
 	if err != nil {
@@ -358,6 +364,31 @@ func (s *serviceSchema) stop(ctx context.Context, parent dagql.ObjectResult[*cor
 	}
 	id := dagql.NewID[*core.Service](parent.ID())
 	return dagql.NewResultForCurrentID(ctx, id)
+}
+
+type serviceTerminalArgs struct {
+	core.ExecTerminalArgs
+}
+
+func (s *serviceSchema) terminal(ctx context.Context, parent dagql.ObjectResult[*core.Service], args serviceTerminalArgs) (res dagql.ObjectResult[*core.Service], _ error) {
+	ctr := parent.Self().Container
+	if ctr == nil {
+		return res, fmt.Errorf("terminal not supported on non-container services")
+	}
+
+	if len(args.Cmd) == 0 {
+		args.Cmd = ctr.DefaultTerminalCmd.Args
+	}
+	if len(args.Cmd) == 0 {
+		args.Cmd = []string{"sh"}
+	}
+
+	err := parent.Self().Terminal(ctx, parent, &args.ExecTerminalArgs)
+	if err != nil {
+		return res, err
+	}
+
+	return parent, nil
 }
 
 type UpArgs struct {

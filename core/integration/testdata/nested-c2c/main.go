@@ -36,7 +36,6 @@ func main() {
 
 	eg := new(errgroup.Group)
 	for _, u := range svcURLs {
-		u := u
 		eg.Go(func() error {
 			out, err := fetch(ctx, c, mode, u)
 			if err != nil {
@@ -85,7 +84,7 @@ func weHaveToGoDeeper(ctx context.Context, c *dagger.Client, depth int, mode str
 	args = append(args, mirrorURL)
 
 	out, err := c.Container().
-		From("golang:1.24.4-alpine").
+		From("golang:1.25.1-alpine").
 		WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
 		WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
 		WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).

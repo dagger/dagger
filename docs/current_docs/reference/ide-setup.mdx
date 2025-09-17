@@ -1,5 +1,5 @@
 ---
-slug: /ide-setup
+slug: /reference/ide-setup
 title: "IDE Setup"
 description: "Set up your IDE (GoLand, Visual Studio Code, Zed) to work with Dagger"
 ---
@@ -12,7 +12,7 @@ The `dagger init` command bootstraps a Dagger module template in the selected pr
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
-To get your IDE to recognize a Dagger Go module, [configure your `go.work` file](../extending/modules.mdx#language-native-packaging) to include the path to your module.
+To get your IDE to recognize a Dagger Go module, [configure your `go.work` file](../extending/modules/modules.mdx#language-native-packaging) to include the path to your module.
 
 When you generate a Dagger module for the first time, Dagger will create a `go.mod` file just for the module. If the module exists in a sub-directory of an outer Go project (such as `dagger/`, the default), this might confuse the IDE.
 
@@ -99,10 +99,10 @@ uv pip install -r requirements.lock -e ./sdk -e .
 ```
 
 :::note
-By default, `uv venv` will create an environment with Python 3.12. To pin Python 3.11 both locally and in Dagger, run this first:
+By default, `uv venv` will create an environment with Python 3.13. To pin Python 3.12 both locally and in Dagger, run this first:
 
 ```shell
-echo 3.11 > .python-version
+echo 3.12 > .python-version
 ```
 
 :::
@@ -110,7 +110,7 @@ echo 3.11 > .python-version
 </TabItem>
 <TabItem value="pip">
 
-Make sure you have the same Python version that Dagger uses first. By default it's Python 3.12, unless it's overridden in `pyproject.toml` or in `.python-version`.
+Make sure you have the same Python version that Dagger uses first. By default it's Python 3.13, unless it's overridden in `pyproject.toml` or in `.python-version`.
 
 ```shell
 python -m venv .venv

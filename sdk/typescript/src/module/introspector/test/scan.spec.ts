@@ -119,7 +119,7 @@ describe("scan by reference TypeScript", function () {
           `
 Expected:
 ${expected}
-Got: 
+Got:
 ${jsonResult}
         `,
         )
@@ -138,19 +138,6 @@ ${jsonResult}
         assert.fail("Should throw an error")
       } catch (e: any) {
         assert.equal(e.message, "no files to introspect found")
-      }
-    })
-
-    it("Should throw an error if the module is invalid", async function () {
-      this.timeout(60000)
-
-      try {
-        const files = await listFiles(`${rootDirectory}/invalid`)
-
-        await scan(files, "invalid")
-        assert.fail("Should throw an error")
-      } catch (e: any) {
-        assert.match(e.message, /could not find main object Invalid/)
       }
     })
 

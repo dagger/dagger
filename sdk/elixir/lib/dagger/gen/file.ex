@@ -16,12 +16,46 @@ defmodule Dagger.File do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Parse as an env file
+  """
+  @spec as_env_file(t(), [{:expand, boolean() | nil}]) :: Dagger.EnvFile.t()
+  def as_env_file(%__MODULE__{} = file, optional_args \\ []) do
+    query_builder =
+      file.query_builder
+      |> QB.select("asEnvFile")
+      |> QB.maybe_put_arg("expand", optional_args[:expand])
+
+    %Dagger.EnvFile{
+      query_builder: query_builder,
+      client: file.client
+    }
+  end
+
+  @doc """
+  Change the owner of the file recursively.
+  """
+  @spec chown(t(), String.t()) :: Dagger.File.t()
+  def chown(%__MODULE__{} = file, owner) do
+    query_builder =
+      file.query_builder |> QB.select("chown") |> QB.put_arg("owner", owner)
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: file.client
+    }
+  end
+
+  @doc """
   Retrieves the contents of the file.
   """
-  @spec contents(t()) :: {:ok, String.t()} | {:error, term()}
-  def contents(%__MODULE__{} = file) do
+  @spec contents(t(), [{:offset_lines, integer() | nil}, {:limit_lines, integer() | nil}]) ::
+          {:ok, String.t()} | {:error, term()}
+  def contents(%__MODULE__{} = file, optional_args \\ []) do
     query_builder =
-      file.query_builder |> QB.select("contents")
+      file.query_builder
+      |> QB.select("contents")
+      |> QB.maybe_put_arg("offsetLines", optional_args[:offset_lines])
+      |> QB.maybe_put_arg("limitLines", optional_args[:limit_lines])
 
     Client.execute(file.client, query_builder)
   end
@@ -78,6 +112,54 @@ defmodule Dagger.File do
   end
 
   @doc """
+  Searches for content matching the given regular expression or literal string.
+
+  Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
+  """
+  @spec search(t(), String.t(), [
+          {:literal, boolean() | nil},
+          {:multiline, boolean() | nil},
+          {:dotall, boolean() | nil},
+          {:insensitive, boolean() | nil},
+          {:skip_ignored, boolean() | nil},
+          {:skip_hidden, boolean() | nil},
+          {:files_only, boolean() | nil},
+          {:limit, integer() | nil},
+          {:paths, [String.t()]},
+          {:globs, [String.t()]}
+        ]) :: {:ok, [Dagger.SearchResult.t()]} | {:error, term()}
+  def search(%__MODULE__{} = file, pattern, optional_args \\ []) do
+    query_builder =
+      file.query_builder
+      |> QB.select("search")
+      |> QB.put_arg("pattern", pattern)
+      |> QB.maybe_put_arg("literal", optional_args[:literal])
+      |> QB.maybe_put_arg("multiline", optional_args[:multiline])
+      |> QB.maybe_put_arg("dotall", optional_args[:dotall])
+      |> QB.maybe_put_arg("insensitive", optional_args[:insensitive])
+      |> QB.maybe_put_arg("skipIgnored", optional_args[:skip_ignored])
+      |> QB.maybe_put_arg("skipHidden", optional_args[:skip_hidden])
+      |> QB.maybe_put_arg("filesOnly", optional_args[:files_only])
+      |> QB.maybe_put_arg("limit", optional_args[:limit])
+      |> QB.maybe_put_arg("paths", optional_args[:paths])
+      |> QB.maybe_put_arg("globs", optional_args[:globs])
+      |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(file.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.SearchResult{
+           query_builder:
+             QB.query()
+             |> QB.select("loadSearchResultFromID")
+             |> QB.put_arg("id", id),
+           client: file.client
+         }
+       end}
+    end
+  end
+
+  @doc """
   Retrieves the size of the file, in bytes.
   """
   @spec size(t()) :: {:ok, integer()} | {:error, term()}
@@ -115,6 +197,36 @@ defmodule Dagger.File do
   def with_name(%__MODULE__{} = file, name) do
     query_builder =
       file.query_builder |> QB.select("withName") |> QB.put_arg("name", name)
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: file.client
+    }
+  end
+
+  @doc """
+  Retrieves the file with content replaced with the given text.
+
+  If 'all' is true, all occurrences of the pattern will be replaced.
+
+  If 'firstAfter' is specified, only the first match starting at the specified line will be replaced.
+
+  If neither are specified, and there are multiple matches for the pattern, this will error.
+
+  If there are no matches for the pattern, this will error.
+  """
+  @spec with_replaced(t(), String.t(), String.t(), [
+          {:all, boolean() | nil},
+          {:first_from, integer() | nil}
+        ]) :: Dagger.File.t()
+  def with_replaced(%__MODULE__{} = file, search, replacement, optional_args \\ []) do
+    query_builder =
+      file.query_builder
+      |> QB.select("withReplaced")
+      |> QB.put_arg("search", search)
+      |> QB.put_arg("replacement", replacement)
+      |> QB.maybe_put_arg("all", optional_args[:all])
+      |> QB.maybe_put_arg("firstFrom", optional_args[:first_from])
 
     %Dagger.File{
       query_builder: query_builder,

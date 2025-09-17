@@ -11,11 +11,15 @@ import (
 	"strings"
 	"sync"
 
+	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui/multiprefixw"
+	"github.com/dagger/dagger/util/cleanups"
 	"github.com/muesli/termenv"
+	"github.com/vito/go-interact/interact"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -69,13 +73,16 @@ func NewDots(output io.Writer) Frontend {
 	}
 }
 
-func (fe *frontendDots) Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) error) error {
+func (fe *frontendDots) SetClient(client *dagger.Client) {
+}
+
+func (fe *frontendDots) Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) (cleanups.CleanupF, error)) error {
 	fe.opts = opts
-	return fe.reporter.Run(ctx, opts, func(ctx context.Context) error {
-		err := f(ctx)
+	return fe.reporter.Run(ctx, opts, func(ctx context.Context) (cleanups.CleanupF, error) {
+		cleanup, err := f(ctx)
 		fmt.Fprintln(fe.out)
 		fmt.Fprintln(fe.out)
-		return err
+		return cleanup, err
 	})
 }
 
@@ -130,8 +137,12 @@ func (fe *frontendDots) Shell(ctx context.Context, handler ShellHandler) {
 	// Dots frontend doesn't support shell
 }
 
-func (fe *frontendDots) HandlePrompt(ctx context.Context, prompt string, dest any) error {
-	return fmt.Errorf("prompts not supported in dots frontend")
+func (fe *frontendDots) HandlePrompt(ctx context.Context, _, prompt string, dest any) error {
+	return interact.NewInteraction(prompt).Resolve(dest)
+}
+
+func (fe *frontendDots) HandleForm(ctx context.Context, form *huh.Form) error {
+	return form.RunWithContext(ctx)
 }
 
 // dotsSpanExporter implements trace.SpanExporter for the dots frontend

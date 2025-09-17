@@ -17,8 +17,26 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// CSV exports evaluation results to CSV format for analysis and comparison.
+//
+// This function generates a CSV representation of all evaluation results across
+// models, including performance metrics, token usage, and trace information for
+// debugging. The CSV includes the following columns:
+//
+// - model: The name of the AI model tested
+// - eval: The name of the evaluation that was run
+// - input_tokens: Number of input tokens used
+// - output_tokens: Number of output tokens generated
+// - total_attempts: Total number of evaluation attempts made
+// - success_rate: Success rate as a decimal (0.0 to 1.0)
+// - trace_id: Unique identifier for the trace
+// - model_span_id: Span ID for the model execution
+// - eval_span_id: Span ID for the specific evaluation
+//
+// The CSV format makes it easy to import results into spreadsheet applications,
+// databases, or data analysis tools for further processing.
 func (result *EvalsAcrossModels) CSV(
-	// Don't include a header.
+	// Don't include a header row in the CSV output.
 	// +default=false
 	noHeader bool,
 ) string {
@@ -56,9 +74,20 @@ func (result *EvalsAcrossModels) CSV(
 	return buf.String()
 }
 
+// Compare two CSV evaluation reports and generate an analysis.
+//
+// This function takes two CSV files containing evaluation results (typically from
+// different runs or with different system prompts) and generates a detailed
+// comparison report. The comparison includes success rate changes, token usage
+// differences, and trace links for debugging.
+//
+// The generated report is analyzed by an LLM to provide insights into the differences
+// and their potential causes.
 func (m *Evaluator) Compare(
 	ctx context.Context,
+	// The CSV file containing the baseline evaluation results.
 	before *dagger.File,
+	// The CSV file containing the new evaluation results to compare against.
 	after *dagger.File,
 ) (string, error) {
 	// Parse the before and after CSV files to extract data

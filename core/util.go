@@ -28,7 +28,7 @@ import (
 
 	"github.com/dagger/dagger/core/reffs"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -314,9 +314,47 @@ func ptr[T any](v T) *T {
 	return &v
 }
 
-// MountRef is a utility for easily mounting a ref
+// MountRef is a utility for easily mounting a ref.
+//
+// To simplify external logic, when the ref is nil, i.e. scratch, the callback
+// just receives a tmpdir that gets deleted when the function completes.
 func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(string) error) error {
+	if ref == nil {
+		dir, err := os.MkdirTemp("", "readonly-scratch")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(dir)
+		return f(dir)
+	}
 	mount, err := ref.Mount(ctx, false, g)
+	if err != nil {
+		return err
+	}
+	lm := snapshot.LocalMounter(mount)
+	defer lm.Unmount()
+
+	dir, err := lm.Mount()
+	if err != nil {
+		return err
+	}
+	return f(dir)
+}
+
+// ReadonlyMountRef is a utility for easily mounting a ref read-only.
+//
+// To simplify external logic, when the ref is nil, i.e. scratch, the callback
+// just receives a tmpdir that gets deleted when the function completes.
+func ReadonlyMountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(string) error) error {
+	if ref == nil {
+		dir, err := os.MkdirTemp("", "readonly-scratch")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(dir)
+		return f(dir)
+	}
+	mount, err := ref.Mount(ctx, true, g)
 	if err != nil {
 		return err
 	}
@@ -363,9 +401,10 @@ func mountLLB(ctx context.Context, llb *pb.Definition, f func(string) error) err
 	return ref.Mount(ctx, f)
 }
 
-func Supports(ctx context.Context, minVersion string) (bool, error) {
-	id := dagql.CurrentID(ctx)
-	return engine.CheckVersionCompatibility(id.View(), minVersion), nil
+func Supports(ctx context.Context, minVersion string) bool {
+	return AfterVersion(minVersion).Contains(
+		dagql.CurrentID(ctx).View(),
+	)
 }
 
 // AllVersion is a view that contains all versions.
@@ -377,7 +416,7 @@ type AfterVersion string
 
 var _ dagql.ViewFilter = AfterVersion("")
 
-func (minVersion AfterVersion) Contains(version dagql.View) bool {
+func (minVersion AfterVersion) Contains(version call.View) bool {
 	if version == "" {
 		return true
 	}
@@ -390,7 +429,7 @@ type BeforeVersion string
 
 var _ dagql.ViewFilter = BeforeVersion("")
 
-func (maxVersion BeforeVersion) Contains(version dagql.View) bool {
+func (maxVersion BeforeVersion) Contains(version call.View) bool {
 	if version == "" {
 		return false
 	}
@@ -417,8 +456,9 @@ func RootPathWithoutFinalSymlink(root, containerPath string) (string, error) {
 }
 
 type execInMountOpt struct {
-	commitSnapshot bool
-	cacheDesc      string
+	commitSnapshot          bool
+	cacheDesc               string
+	allowNilBuildkitSession bool
 }
 
 type execInMountOptFn func(opt *execInMountOpt)
@@ -430,6 +470,10 @@ func withSavedSnapshot(format string, a ...any) execInMountOptFn {
 	}
 }
 
+func allowNilBuildkitSession(opt *execInMountOpt) {
+	opt.allowNilBuildkitSession = true
+}
+
 type fileOrDirectory interface {
 	*File | *Directory
 	getResult() bkcache.ImmutableRef
@@ -439,9 +483,9 @@ type fileOrDirectory interface {
 
 // execInMount is a helper used by Directory.execInMount and File.execInMount
 func execInMount[T fileOrDirectory](ctx context.Context, obj T, f func(string) error, optFns ...execInMountOptFn) (T, error) {
-	var saveOpt execInMountOpt
+	var opt execInMountOpt
 	for _, optFn := range optFns {
-		optFn(&saveOpt)
+		optFn(&opt)
 	}
 
 	parentRef, err := getRefOrEvaluate(ctx, obj)
@@ -451,7 +495,9 @@ func execInMount[T fileOrDirectory](ctx context.Context, obj T, f func(string) e
 
 	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
 	if !ok {
-		return nil, fmt.Errorf("no buildkit session group in context")
+		if !opt.allowNilBuildkitSession {
+			return nil, fmt.Errorf("no buildkit session group in context")
+		}
 	}
 
 	query, err := CurrentQuery(ctx)
@@ -461,12 +507,12 @@ func execInMount[T fileOrDirectory](ctx context.Context, obj T, f func(string) e
 
 	var mountRef bkcache.Ref
 	var newRef bkcache.MutableRef
-	if saveOpt.commitSnapshot {
-		if saveOpt.cacheDesc == "" {
+	if opt.commitSnapshot {
+		if opt.cacheDesc == "" {
 			return nil, fmt.Errorf("execInMount saveSnapshotOpt missing cache description")
 		}
 		newRef, err = query.BuildkitCache().New(ctx, parentRef, bkSessionGroup,
-			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular), bkcache.WithDescription(saveOpt.cacheDesc))
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular), bkcache.WithDescription(opt.cacheDesc))
 		if err != nil {
 			return nil, err
 		}
@@ -481,7 +527,7 @@ func execInMount[T fileOrDirectory](ctx context.Context, obj T, f func(string) e
 	if err != nil {
 		return nil, err
 	}
-	if saveOpt.commitSnapshot {
+	if opt.commitSnapshot {
 		snap, err := newRef.Commit(ctx)
 		if err != nil {
 			return nil, err
@@ -512,4 +558,12 @@ func getRefOrEvaluate[T fileOrDirectory](ctx context.Context, t T) (bkcache.Immu
 		return nil, nil
 	}
 	return cacheRef.CacheRef(ctx)
+}
+
+func asArrayInput[T any, I dagql.Input](ts []T, conv func(T) I) dagql.ArrayInput[I] {
+	ins := make(dagql.ArrayInput[I], len(ts))
+	for i, v := range ts {
+		ins[i] = conv(v)
+	}
+	return ins
 }

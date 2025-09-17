@@ -23,6 +23,27 @@ defmodule PrimitiveTypeArgs do
   end
 end
 
+defmodule PrimitiveTypeDefaultArgs do
+  @moduledoc false
+  use Dagger.Mod.Object, name: "PrimitiveTypeDefaultArgs"
+
+  defn accept_default_string(name: {String.t(), default: "Foo"}) :: String.t() do
+    "Hello #{name}"
+  end
+
+  defn accept_default_integer(value: {integer(), default: 42}) :: integer() do
+    value
+  end
+
+  defn accept_default_float(value: {float(), default: 1.6180342}) :: float() do
+    value
+  end
+
+  defn accept_default_boolean(value: {boolean(), default: false}) :: boolean() do
+    value
+  end
+end
+
 defmodule EmptyArgs do
   @moduledoc false
   use Dagger.Mod.Object, name: "EmptyArgs"

@@ -1,38 +1,30 @@
 ---
 title: "Overview"
 description: "Dagger Reference Documentation"
+slug: /reference/
 ---
 
-This section provides comprehensive reference documentation for configuring, deploying, and managing Dagger. 
+This section provides comprehensive reference documentation for configuring, deploying, and managing Dagger.
 
-## Quick Reference
+## Quick reference
 
 - [Glossary](glossary.mdx) - Definitions of key Dagger terminology and concepts
 - [CLI Reference](cli/index.mdx) - Documentation for the Dagger command-line interface
-- [IDE Setup](ide-setup.mdx) - Instructions for configuring your development environment
+- [IDE Setup](./ide-setup.mdx) - Instructions for configuring your development environment
 - [Troubleshooting](troubleshooting.mdx) - Solving common problems with Dagger
 
 ## Configuration
 
 Dagger offers multiple configuration options to customize your experience:
 
-- [Cloud Configuration](./configuration/cloud.mdx) - Settings for Dagger Cloud
-- [Cache Management](./configuration/cache.mdx) - Optimize performance with caching
-- [Engine Configuration](./configuration/engine.mdx) - Configure the Dagger engine
-- [LLM Integration](./configuration/llm.mdx) - Large Language Model configuration
-- [Module Configuration](./configuration/modules.mdx) - Working with Dagger modules
-- [Custom Runner](./configuration/custom-runner.mdx) - Custom execution environments
+- [Cloud configuration](./configuration/cloud.mdx) - Settings for Dagger Cloud
+- [Cache management](./configuration/cache.mdx) - Optimize performance with caching
+- [Engine configuration](./configuration/engine.mdx) - Configure the Dagger Engine
+- [LLM integration](./configuration/llm.mdx) - Large Language Model configuration
+- [Module configuration](./configuration/modules.mdx) - Working with Dagger modules
+- [Custom runner](./configuration/custom-runner.mdx) - Custom execution environments
 - [Custom CA](./configuration/custom-ca.mdx) - Certificate authority configuration
-- [Proxy Configuration](./configuration/proxy.mdx) - Network proxy settings
-
-## Container Runtimes
-
-Dagger supports various container runtimes:
-
-- [Kubernetes](./container-runtimes/kubernetes.mdx) - Running Dagger with Kubernetes
-- [Podman](./container-runtimes/podman.mdx) - Using Dagger with Podman
-- [Nerdctl](./container-runtimes/nerdctl.mdx) - Working with Nerdctl
-- [Apple Container](./container-runtimes/apple-container.mdx) - Using Apple's container runtime
+- [Proxy configuration](./configuration/proxy.mdx) - Network proxy settings
 
 ## API and SDKs
 
@@ -44,10 +36,20 @@ Access Dagger programmatically through various interfaces:
 - [Python SDK Reference](https://dagger-io.readthedocs.org/) - Python language bindings
 - [TypeScript SDK Reference](/reference/typescript/modules) - TypeScript/JavaScript bindings
 
-## Engine and Runtime
+## Container runtimes
 
-Understanding the core of Dagger:
+Dagger supports various container runtimes:
 
-- [Engine Overview](./configuration/engine.mdx) - Core concepts of the Dagger engine
-- [Performance and Caching](./configuration/cache.mdx) - Optimizing execution
-- [Engine Configuration Schema](https://docs.dagger.io/engine.schema.json) - JSON schema for engine configuration
+- [Kubernetes](./container-runtimes/kubernetes.mdx) - Running Dagger with Kubernetes
+- [Podman](./container-runtimes/podman.mdx) - Using Dagger with Podman
+- [Nerdctl](./container-runtimes/nerdctl.mdx) - Working with Nerdctl
+- [Apple Container](./container-runtimes/apple-container.mdx) - Using Apple's container runtime
+
+## Best practices
+
+Learn best practices for using, adopting and contributing to Dagger:
+
+- [Modules](./best-practices/modules.mdx) - Testing and publishing modules
+- [Monorepos](./best-practices/monorepos.mdx) - Using Dagger in monorepos
+- [Adopting Dagger](./best-practices/adopting.mdx) - Adopting Dagger in your project, team or organization
+- [Contributing to Dagger](./best-practices/contributing.mdx) - Contributing to Dagger's open source repository

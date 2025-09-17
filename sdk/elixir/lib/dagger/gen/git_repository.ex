@@ -136,6 +136,17 @@ defmodule Dagger.GitRepository do
     Client.execute(git_repository.client, query_builder)
   end
 
+  @doc """
+  The URL of the git repository.
+  """
+  @spec url(t()) :: {:ok, String.t() | nil} | {:error, term()}
+  def url(%__MODULE__{} = git_repository) do
+    query_builder =
+      git_repository.query_builder |> QB.select("url")
+
+    Client.execute(git_repository.client, query_builder)
+  end
+
   @deprecated """
   Use \\"httpAuthHeader\\" in the constructor instead.
   """

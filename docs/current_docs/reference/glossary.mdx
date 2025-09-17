@@ -1,6 +1,7 @@
 ---
 title: "Glossary"
 description: "A glossary of terms used in Dagger documentation"
+slug: /reference/glossary
 ---
 
 In order to help you navigate the Dagger documentation, we have compiled a glossary of terms that are frequently used. This glossary will help you understand the key concepts and terminology used throughout the documentation.
@@ -64,9 +65,3 @@ A Service is a core type in Dagger that represents a network service exposed by 
 
 ### Session
 A Session in Dagger is a temporary environment that serves the GraphQL API to clients, manages the synchronization of local directories into pipeline containers, and handles the proxying of local sockets to exec containers. Sessions are created for the duration of a `dagger.Connect` call or a `dagger run` command.
-
-### Typed Object
-A Typed Object is a specific type of data structure in Dagger that represents a particular kind of data, such as a `Container`, `Directory`, or `LLM`. Typed Objects have associated functions that allow you to manipulate and interact with the data they represent.
-
-### Workflow
-A Workflow in Dagger is a sequence of connected functions that form a pipeline to accomplish a specific task. Workflows can be expressed by chaining functions together, with each function passing its output to the next function in the sequence.

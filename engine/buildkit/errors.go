@@ -2,24 +2,18 @@ package buildkit
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
-	"github.com/dagger/dagger/dagql/idtui"
 	bkexecutor "github.com/moby/buildkit/executor"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	bkgwpb "github.com/moby/buildkit/frontend/gateway/pb"
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/snapshot"
 	bksolver "github.com/moby/buildkit/solver"
 	"github.com/moby/buildkit/solver/llbsolver/errdefs"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	bkworker "github.com/moby/buildkit/worker"
-	"github.com/muesli/termenv"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger/telemetry"
 )
@@ -74,9 +68,10 @@ type RichError struct {
 	Mounts []*bksolverpb.Mount
 
 	// optional info about the execution that failed
-	ExecMD    *ExecutionMetadata
-	Meta      *bkexecutor.Meta
-	Secretenv []*bksolverpb.SecretEnv
+	ExecMD *ExecutionMetadata
+	Meta   *bkexecutor.Meta
+
+	Terminal func(ctx context.Context, richErr *RichError) error
 }
 
 func (e RichError) Unwrap() error {
@@ -138,137 +133,14 @@ func (e RichError) DebugTerminal(ctx context.Context, client *Client) error {
 		return nil
 	}
 
-	// relevant buildkit code we need to contend with here:
-	// https://github.com/moby/buildkit/blob/44504feda1ce39bb8578537a6e6a93f90bdf4220/solver/llbsolver/ops/exec.go#L386-L409
-	mounts := []ContainerMount{}
-	for i, m := range e.Mounts {
-		if m.Input == bksolverpb.Empty {
-			mounts = append(mounts, ContainerMount{
-				Mount: &bkgw.Mount{
-					Dest:      m.Dest,
-					Selector:  m.Selector,
-					Readonly:  m.Readonly,
-					MountType: m.MountType,
-					CacheOpt:  m.CacheOpt,
-					SecretOpt: m.SecretOpt,
-					SSHOpt:    m.SSHOpt,
-				},
-			})
-			continue
-		}
-
-		// sanity check we don't panic
-		if i >= len(e.Mounts) {
-			return fmt.Errorf("exec error mount index out of bounds: %d", i)
-		}
-		errMnt := e.ExecError.Mounts[i]
-		if errMnt == nil {
-			continue
-		}
-		workerRef, ok := errMnt.Sys().(*bkworker.WorkerRef)
-		if !ok {
-			continue
-		}
-
-		mounts = append(mounts, ContainerMount{
-			WorkerRef: workerRef,
-			Mount: &bkgw.Mount{
-				Dest:      m.Dest,
-				Selector:  m.Selector,
-				Readonly:  m.Readonly,
-				MountType: m.MountType,
-				CacheOpt:  m.CacheOpt,
-				SecretOpt: m.SecretOpt,
-				SSHOpt:    m.SSHOpt,
-				ResultID:  errMnt.ID(),
-			},
-		})
-	}
-
-	dbgCtr, err := client.NewContainer(ctx, NewContainerRequest{
-		Hostname: e.Meta.Hostname,
-		Mounts:   mounts,
-	})
-	if err != nil {
-		return err
-	}
-	term, err := client.OpenTerminal(ctx)
-	if err != nil {
-		return err
-	}
-	// always close term; it's wrapped in a once so it won't be called multiple times
-	defer term.Close(bkgwpb.UnknownExitStatus)
-
-	output := idtui.NewOutput(term.Stderr)
-	fmt.Fprint(term.Stderr,
-		output.String(idtui.IconFailure).Foreground(termenv.ANSIRed).String()+" Exec failed, attaching terminal: ")
-	dump := idtui.Dump{Newline: "\r\n", Prefix: "    "}
-	fmt.Fprint(term.Stderr, dump.Newline)
-	if err := dump.DumpID(output, execMD.CallID); err != nil {
-		return fmt.Errorf("failed to serialize service ID: %w", err)
-	}
-	fmt.Fprint(term.Stderr, dump.Newline)
-	fmt.Fprintf(term.Stderr,
-		output.String("! %s").Foreground(termenv.ANSIYellow).String(), e.Error())
-	fmt.Fprint(term.Stderr, dump.Newline)
-
-	// We default to "/bin/sh" if the client doesn't provide a command.
-	debugCommand := []string{"/bin/sh"}
+	meta := *e.Meta
+	meta.Args = []string{"/bin/sh"}
 	if len(client.InteractiveCommand) > 0 {
-		debugCommand = client.InteractiveCommand
+		meta.Args = client.InteractiveCommand
 	}
+	e.Meta = &meta
 
-	eg, ctx := errgroup.WithContext(ctx)
-
-	dbgShell, err := dbgCtr.Start(ctx, bkgw.StartRequest{
-		Args: debugCommand,
-
-		Env:          e.Meta.Env,
-		Cwd:          e.Meta.Cwd,
-		User:         e.Meta.User,
-		SecurityMode: e.Meta.SecurityMode,
-		SecretEnv:    e.Secretenv,
-
-		Tty:    true,
-		Stdin:  term.Stdin,
-		Stdout: term.Stdout,
-		Stderr: term.Stderr,
-	})
-	if err != nil {
-		return err
-	}
-
-	eg.Go(func() error {
-		err := <-term.ErrCh
-		if err != nil {
-			return fmt.Errorf("terminal error: %w", err)
-		}
-		return nil
-	})
-	eg.Go(func() error {
-		for resize := range term.ResizeCh {
-			err := dbgShell.Resize(ctx, resize)
-			if err != nil {
-				return fmt.Errorf("failed to resize terminal: %w", err)
-			}
-		}
-		return nil
-	})
-	eg.Go(func() error {
-		waitErr := dbgShell.Wait()
-		termExitCode := 0
-		if waitErr != nil {
-			termExitCode = 1
-			var exitErr *bkgwpb.ExitError
-			if errors.As(waitErr, &exitErr) {
-				termExitCode = int(exitErr.ExitCode)
-			}
-		}
-
-		return term.Close(termExitCode)
-	})
-
-	return eg.Wait()
+	return e.Terminal(ctx, &e)
 }
 
 func getExecMeta(ctx context.Context, client *Client, metaMount bksolver.Result) (stdout []byte, stderr []byte, exitCode int, _ error) {

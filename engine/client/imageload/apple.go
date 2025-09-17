@@ -20,7 +20,8 @@ func init() {
 
 func (loader Apple) Loader(ctx context.Context) (*Loader, error) {
 	return &Loader{
-		TarballLoader: loader.loadTarball,
+		TarballWriter: loader.loadTarball,
+		TarballReader: loader.saveTarball,
 	}, nil
 }
 
@@ -44,6 +45,20 @@ func (loader Apple) loadTarball(ctx context.Context, name string, tarball io.Rea
 	err = traceexec.Exec(ctx, exec.CommandContext(ctx, "container", "image", "tag", imageID, name), telemetry.Encapsulated())
 	if err != nil {
 		return fmt.Errorf("docker tag failed: %w", err)
+	}
+
+	return nil
+}
+
+func (loader Apple) saveTarball(ctx context.Context, name string, tarball io.Writer) (rerr error) {
+	ctx, span := otel.Tracer("").Start(ctx, "save "+name)
+	defer telemetry.End(span, func() error { return rerr })
+
+	cmd := exec.CommandContext(ctx, "container", "image", "save", name)
+	cmd.Stdout = tarball
+	err := traceexec.Exec(ctx, cmd, telemetry.Encapsulated())
+	if err != nil {
+		return fmt.Errorf("docker save failed: %w", err)
 	}
 
 	return nil

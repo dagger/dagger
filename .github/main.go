@@ -9,13 +9,22 @@ import (
 )
 
 const (
-	daggerVersion      = "v0.18.14"
+	daggerVersion      = "v0.18.18"
 	upstreamRepository = "dagger/dagger"
 	ubuntuVersion      = "24.04"
 	defaultRunner      = "ubuntu-" + ubuntuVersion
 	publicToken        = "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 	timeoutMinutes     = 20
 )
+
+func module(paths ...string) string {
+	path := strings.Join(paths, "/")
+	path = strings.TrimPrefix(path, "/")
+	if path != "" {
+		path = "/" + path
+	}
+	return "github.com/${{ github.repository }}" + path + "@${{ github.sha }}"
+}
 
 type CI struct {
 	// Workflows collects all the workflows together, and applies some defaults
@@ -43,6 +52,7 @@ func New() *CI {
 	ci := &CI{
 		Workflows: dag.Gha(dagger.GhaOpts{
 			JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
+				Module:        module(),
 				PublicToken:   publicToken,
 				DaggerVersion: daggerVersion,
 			}),
@@ -81,7 +91,7 @@ func New() *CI {
 	return ci.
 		withModuleWorkflow(
 			ci.AltRunnerWithCache,
-			".github",
+			module(".github"),
 			"Github",
 			"check",
 		).
@@ -140,7 +150,7 @@ func (ci *CI) Check(ctx context.Context,
 func (ci *CI) withWorkflow(runner *dagger.Gha, devEngine bool, name string, command string) *CI {
 	jobOpts := dagger.GhaJobOpts{}
 	if devEngine {
-		jobOpts.DaggerVersion = "."
+		jobOpts.DaggerDev = "${{ github.sha }}"
 	}
 	w := runner.
 		Workflow(name).
@@ -168,7 +178,7 @@ func (ci *CI) withSDKWorkflows(runner *dagger.Gha, name string, sdks ...string) 
 		command := daggerCommand("check --targets=sdk/" + sdk)
 		w = w.
 			WithJob(runner.Job(sdk+"-dev", command, dagger.GhaJobOpts{
-				DaggerVersion: ".",
+				DaggerDev: "${{ github.sha }}",
 			}))
 	}
 
@@ -186,11 +196,11 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 			Runner: AltBronzeRunnerWithCache(),
 		})).
 		WithJob(runner.Job("cli-test-publish", "test-publish", dagger.GhaJobOpts{
-			Module: "cmd/dagger",
+			Module: module("cmd/dagger"),
 			Runner: AltGoldRunnerWithCache(),
 		})).
 		WithJob(runner.Job("engine-test-publish", "publish --image=dagger-engine.dev --tag=main --dry-run", dagger.GhaJobOpts{
-			Module: "cmd/engine",
+			Module: module("cmd/engine"),
 			Runner: AltBronzeRunnerWithCache(),
 		})).
 		WithJob(runner.Job("scan-engine", "scan", dagger.GhaJobOpts{
@@ -243,7 +253,7 @@ func splitTests(runner *dagger.Gha, name string, dev bool, splits []testSplit) d
 			opts.TimeoutMinutes = 30
 			opts.UploadLogs = true
 			if dev {
-				opts.DaggerVersion = "."
+				opts.DaggerDev = "${{ github.sha }}"
 			}
 			w = w.WithJob(runner.Job(name+split.name, command, opts))
 		}
@@ -308,8 +318,8 @@ func (ci *CI) withEvalsWorkflow() *CI {
 		"testdev",
 		"evals",
 		dagger.GhaJobOpts{
-			DaggerVersion: ".", // testdev, so run against local dagger
-			Runner:        AltGoldRunner(),
+			DaggerDev: "${{ github.sha }}", // testdev, so run against local dagger
+			Runner:    AltGoldRunner(),
 			// NOTE: avoid running for forks
 			Condition: fmt.Sprintf(`${{ github.repository == '%s' }}`, upstreamRepository),
 			Secrets:   []string{"OP_SERVICE_ACCOUNT_TOKEN"},

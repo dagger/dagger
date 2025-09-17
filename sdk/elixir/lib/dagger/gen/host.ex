@@ -16,12 +16,27 @@ defmodule Dagger.Host do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Accesses a container image on the host.
+  """
+  @spec container_image(t(), String.t()) :: Dagger.Container.t()
+  def container_image(%__MODULE__{} = host, name) do
+    query_builder =
+      host.query_builder |> QB.select("containerImage") |> QB.put_arg("name", name)
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: host.client
+    }
+  end
+
+  @doc """
   Accesses a directory on the host.
   """
   @spec directory(t(), String.t(), [
           {:exclude, [String.t()]},
           {:include, [String.t()]},
-          {:no_cache, boolean() | nil}
+          {:no_cache, boolean() | nil},
+          {:gitignore, boolean() | nil}
         ]) :: Dagger.Directory.t()
   def directory(%__MODULE__{} = host, path, optional_args \\ []) do
     query_builder =
@@ -31,6 +46,7 @@ defmodule Dagger.Host do
       |> QB.maybe_put_arg("exclude", optional_args[:exclude])
       |> QB.maybe_put_arg("include", optional_args[:include])
       |> QB.maybe_put_arg("noCache", optional_args[:no_cache])
+      |> QB.maybe_put_arg("gitignore", optional_args[:gitignore])
 
     %Dagger.Directory{
       query_builder: query_builder,
@@ -53,6 +69,21 @@ defmodule Dagger.Host do
       query_builder: query_builder,
       client: host.client
     }
+  end
+
+  @doc """
+  Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null
+  """
+  @spec find_up(t(), String.t(), [{:no_cache, boolean() | nil}]) ::
+          {:ok, String.t() | nil} | {:error, term()}
+  def find_up(%__MODULE__{} = host, name, optional_args \\ []) do
+    query_builder =
+      host.query_builder
+      |> QB.select("findUp")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg("noCache", optional_args[:no_cache])
+
+    Client.execute(host.client, query_builder)
   end
 
   @doc """

@@ -45,7 +45,7 @@ This example calls multiple functions from the Dagger API in sequence to create 
 
 Like regular functions, Dagger functions can accept arguments. You can see this in the previous example: the `from` function accepts a container image address (`--address`) as argument, the file function accepts a filesystem location (`--path`) as argument, and so on.
 
-In addition to supporting basic types (string, boolean, integer, array...), the Dagger API also provides [powerful types](../types/index.mdx) for working with workflows, such as `Container`, `GitRepository`, `Directory`, `Service`, `Secret`. You can use these types as arguments to Dagger functions.
+In addition to supporting basic types (string, boolean, integer, array...), the Dagger API also provides [powerful types](../getting-started/types/index.mdx) for working with workflows, such as `Container`, `GitRepository`, `Directory`, `Service`, `Secret`. You can use these types as arguments to Dagger functions.
 
 Here's an example:
 
@@ -135,30 +135,30 @@ This example chains multiple function calls into a workflow that builds the Dagg
 - `file` returns the built binary as a `File` type
 - `export` exports the binary artifact to the Dagger host as `./dagger.bin`
 
-Functions can be chained with the CLI, or programmatically in a [custom Dagger function](../extending/functions.mdx) using a Dagger SDK. The following are equivalent:
+Functions can be chained with the CLI, or programmatically in a [custom Dagger function](../extending/modules/functions.mdx) using a Dagger SDK. The following are equivalent:
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
 
-```go file=../extending/snippets/chaining/go/main.go
+```go file=../extending/modules/snippets/chaining/go/main.go
 ```
 
 </TabItem>
 <TabItem value="python" label="Python">
 
-```python file=../extending/snippets/chaining/python/main.py
+```python file=../extending/modules/snippets/chaining/python/main.py
 ```
 
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-```typescript file=../extending/snippets/chaining/typescript/index.ts
+```typescript file=../extending/modules/snippets/chaining/typescript/index.ts
 ```
 
 </TabItem>
 <TabItem value="php" label="PHP">
 
-```php file=../extending/snippets/chaining/php/src/MyModule.php
+```php file=../extending/modules/snippets/chaining/php/src/MyModule.php
 ```
 
 </TabItem>
@@ -189,11 +189,11 @@ dagger core container from --address="alpine:latest" \
 </TabItem>
 </Tabs>
 
-As these example illustrate, function chaining is extremely powerful. See [more examples](../extending/chaining.mdx) of it in action.
+As these example illustrate, function chaining is extremely powerful. See [more examples](../extending/modules/chaining.mdx) of it in action.
 
 ## Modules
 
-Dagger [modules](../extending/modules.mdx) are collections of Dagger functions, packaged together for easy sharing and consumption. They are portable and reusable across languages.
+Dagger [modules](../extending/modules/modules.mdx) are collections of Dagger Functions, packaged together for easy sharing and consumption. They are portable and reusable across languages.
 
 ## Calling the Dagger API
 
@@ -202,13 +202,13 @@ You can call the Dagger API from code using a type-safe Dagger SDK, or from the 
 The different ways to call the Dagger API are:
 
 - From the Dagger CLI
-  - [`dagger`, `dagger core` and `dagger call`](../extending/clients-cli.mdx)
+  - [`dagger`, `dagger core` and `dagger call`](./api/clients-cli.mdx)
 - From a custom application created with a Dagger SDK
   - [`dagger run`](../extending/custom-applications/go.mdx)
-- From a [language-native GraphQL client](../extending/clients-http.mdx#language-native-http-clients)
+- From a [language-native GraphQL client](./api/clients-http.mdx#language-native-http-clients)
 - From a command-line HTTP or GraphQL client
-  - [`curl`](../extending/clients-http.mdx#command-line-http-clients)
-  - [`dagger query`](../extending/clients-http.mdx#dagger-cli)
+  - [`curl`](./api/clients-http.mdx#command-line-http-clients)
+  - [`dagger query`](./api/clients-http.mdx#dagger-cli)
 
 :::note
 The Dagger CLI can call any Dagger function, either from your local filesystem or from a remote Git repository. They can be used interactively, from a shell script, or from a CI configuration. Apart from the Dagger CLI, no other infrastructure or tooling is required to call Dagger functions.
@@ -216,7 +216,7 @@ The Dagger CLI can call any Dagger function, either from your local filesystem o
 
 ## Extending the Dagger API
 
-The Dagger API is extensible and shareable by design. You can extend the API by creating Dagger [modules](../extending/modules.mdx).You are encouraged to write your own Dagger modules and share them with others.
+The Dagger API is extensible and shareable by design. You can extend the API by creating Dagger [modules](../extending/modules/modules.mdx).You are encouraged to write your own Dagger modules and share them with others.
 
 Dagger also lets you import and reuse modules developed by your team, your organization or the broader Dagger community. The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules and Dagger functions, and lets you easily search and consume them.
 

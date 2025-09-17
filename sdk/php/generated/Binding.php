@@ -11,12 +11,30 @@ namespace Dagger;
 class Binding extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * Retrieve the binding value, as type Address
+     */
+    public function asAddress(): Address
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asAddress');
+        return new \Dagger\Address($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type CacheVolume
      */
     public function asCacheVolume(): CacheVolume
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asCacheVolume');
         return new \Dagger\CacheVolume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type Changeset
+     */
+    public function asChangeset(): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asChangeset');
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -56,6 +74,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the binding value, as type EnvFile
+     */
+    public function asEnvFile(): EnvFile
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asEnvFile');
+        return new \Dagger\EnvFile($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type File
      */
     public function asFile(): File
@@ -80,6 +107,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asGitRepository');
         return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type JSONValue
+     */
+    public function asJSONValue(): JsonValue
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asJSONValue');
+        return new \Dagger\JsonValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -116,6 +152,24 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asModuleSource');
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type SearchResult
+     */
+    public function asSearchResult(): SearchResult
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asSearchResult');
+        return new \Dagger\SearchResult($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type SearchSubmatch
+     */
+    public function asSearchSubmatch(): SearchSubmatch
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asSearchSubmatch');
+        return new \Dagger\SearchSubmatch($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

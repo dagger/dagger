@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/huh"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/spf13/cobra"
@@ -37,6 +38,7 @@ var (
 
 const (
 	Directory     string = "Directory"
+	Changeset     string = "Changeset"
 	Container     string = "Container"
 	File          string = "File"
 	Secret        string = "Secret"
@@ -139,7 +141,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 				help := pflag.NewFlagSet("help", pflag.ContinueOnError)
 				help.AddFlag(c.Flags().Lookup("help"))
 
-				help.ParseErrorsWhitelist.UnknownFlags = true
+				help.ParseErrorsAllowlist.UnknownFlags = true
 				help.ParseAll(a, func(flag *pflag.Flag, value string) error {
 					fc.needsHelp = value == flag.NoOptDefVal
 					return nil
@@ -571,7 +573,7 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 		// else to sub-select. In that case `q` will be nil to signal that we
 		// just want to return the object's name, without making an API request.
 		if q == nil {
-			return handleResponse(fn.ReturnType, nil, o, e)
+			return handleResponse(ctx, fc.c.Dagger(), fn.ReturnType, nil, o, e)
 		}
 
 		var response any
@@ -580,7 +582,7 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 			return err
 		}
 
-		return handleResponse(fn.ReturnType, response, o, e)
+		return handleResponse(ctx, fc.c.Dagger(), fn.ReturnType, response, o, e)
 	}
 }
 
@@ -645,13 +647,18 @@ func makeRequest(ctx context.Context, q *querybuilder.Selection, response any) e
 	return nil
 }
 
-func handleResponse(returnType *modTypeDef, response any, o, e io.Writer) error {
+func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modTypeDef, response any, o, e io.Writer) error {
 	if returnType.Kind == dagger.TypeDefKindVoidKind {
 		return nil
 	}
 
 	// Handle the `export` convenience, i.e, -o,--output flag.
 	switch returnType.Name() {
+	case Changeset:
+		if outputPath == "" {
+			return handleChangesetResponse(ctx, dag, response)
+		}
+		fallthrough
 	case Container, Directory, File:
 		if outputPath != "" {
 			respPath, ok := response.(string)
@@ -692,6 +699,69 @@ func handleResponse(returnType *modTypeDef, response any, o, e io.Writer) error 
 	}
 
 	return err
+}
+
+func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response any) (rerr error) {
+	var changesetID string
+	switch v := response.(type) {
+	case string:
+		changesetID = v
+	default:
+		return fmt.Errorf("unexpected response type for changeset: %T", v)
+	}
+
+	changeset := dag.LoadChangesetFromID(dagger.ChangesetID(changesetID))
+
+	var summary strings.Builder
+	var noChanges bool
+	if err := (func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "analyzing changes")
+		defer telemetry.End(span, func() error { return rerr })
+
+		patch, err := changeset.AsPatch().Contents(ctx)
+		if err != nil {
+			return fmt.Errorf("get patch contents: %w", err)
+		}
+
+		noChanges = patch == ""
+		if noChanges {
+			slog.Info("no changes to apply")
+			return nil
+		}
+
+		return idtui.SummarizePatch(idtui.NewOutput(&summary), patch, -1)
+	})(); err != nil {
+		return err
+	}
+
+	if noChanges {
+		return nil
+	}
+
+	var confirm bool
+	form := idtui.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Apply changes?").
+				Description(summary.String()).
+				Affirmative("Apply").
+				Negative("Discard").
+				Value(&confirm),
+		),
+	)
+	if err := Frontend.HandleForm(ctx, form); err != nil {
+		return err
+	}
+	if !confirm {
+		return nil
+	}
+
+	ctx, span := Tracer().Start(ctx, "applying changes")
+	defer telemetry.End(span, func() error { return rerr })
+	if _, err := changeset.Export(ctx, "."); err != nil {
+		return err
+	}
+	return nil
 }
 
 func printID(w io.Writer, response any, typeDef *modTypeDef) error {

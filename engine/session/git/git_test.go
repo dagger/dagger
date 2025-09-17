@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"dagger.io/dagger"
@@ -65,7 +66,7 @@ echo "password=testpass"
 			// Test case 3: Environment check - Git not available
 			// Verifies that the service properly handles cases where Git is not
 			// installed or not in PATH
-			name: "NO_GIT",
+			name: "NOT_FOUND",
 			setup: func(c *dagger.Container) *dagger.Container {
 				return c.WithExec([]string{"mv", "/usr/bin/git", "/usr/bin/git_temp"})
 			},
@@ -73,7 +74,7 @@ echo "password=testpass"
 				Protocol: "https",
 				Host:     "github.com",
 			},
-			expectedError:  NO_GIT,
+			expectedError:  NOT_FOUND,
 			expectedReason: "Git is not installed or not in PATH",
 		},
 		{
@@ -158,6 +159,26 @@ sleep 31
 			expectedError:  TIMEOUT,
 			expectedReason: "Git credential command timed out",
 		},
+		{
+			name: "netrc",
+			setup: func(c *dagger.Container) *dagger.Container {
+				return c.WithNewFile("/root/.netrc", `
+machine github.com
+login netrcuser
+password netrcpass
+`)
+			},
+			request: &GitCredentialRequest{
+				Protocol: "https",
+				Host:     "github.com",
+			},
+			expectedResponse: &CredentialInfo{
+				Protocol: "https",
+				Host:     "github.com",
+				Username: "netrcuser",
+				Password: "netrcpass",
+			},
+		},
 	}
 
 	// setup dagger
@@ -166,9 +187,12 @@ sleep 31
 	require.NoError(t, err)
 	defer client.Close()
 
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+
 	// Create base container with all dependencies
 	baseContainer := client.Container().
-		From("golang:1.21").
+		From("golang:1.25").
 		WithExec([]string{"apt-get", "update"}).
 		WithExec([]string{"apt-get", "install", "-y", "git"}).
 		WithExec([]string{"mkdir", "-p", "/app/git"}).
@@ -183,11 +207,12 @@ require (
     github.com/gogo/protobuf v1.3.2
     google.golang.org/grpc v1.59.0
 )
+
+replace github.com/dagger/dagger => .
 `).
 		// Mount git implementation as the session pkg
-		WithMountedFile("/app/git/git.pb.go", client.Host().File("./git.pb.go")).
-		WithMountedFile("/app/git/git.go", client.Host().File("./git.go")).
-		WithNewFile("/app/git/package.go", `package git`).
+		WithMountedDirectory("./git/", client.Host().Directory(".")).
+		WithMountedDirectory("./util/netrc/", client.Host().Directory(filepath.Join(wd, "../../../util/netrc"))).
 
 		// Create test harness that:
 		// 1. Reads request from JSON file

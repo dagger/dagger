@@ -11,6 +11,7 @@ class MyModule:
         self,
         source: Annotated[dagger.Directory, Ignore(["*", "!*.md"])],
     ) -> dagger.Container:
+        """Return a container with a filtered directory"""
         return await (
             dag.container().from_("alpine:latest").with_directory("/src", source).sync()
         )

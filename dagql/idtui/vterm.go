@@ -253,10 +253,14 @@ func (m *Markdown) View() string {
 			st.Document.BackgroundColor = &bg
 		}
 	}
-	renderer, err := glamour.NewTermRenderer(
-		glamour.WithWordWrap(m.Width-lipgloss.Width(m.Prefix)),
+	glamourOpts := []glamour.TermRendererOption{
 		glamour.WithStyles(st),
-	)
+	}
+	if m.Width != 0 {
+		glamourOpts = append(glamourOpts,
+			glamour.WithWordWrap(m.Width-lipgloss.Width(m.Prefix)))
+	}
+	renderer, err := glamour.NewTermRenderer(glamourOpts...)
 	if err != nil {
 		return fmt.Sprintf("Error rendering Markdown: %s\n", err)
 	}
@@ -264,7 +268,7 @@ func (m *Markdown) View() string {
 	rendered, err := renderer.Render(m.Content)
 	if err != nil {
 		return fmt.Sprintf("Error rendering Markdown: %s\n", err)
-	} else {
+	} else if m.Prefix != "" {
 		// Remove leading and trailing newlines
 		rendered = strings.TrimSpace(rendered)
 		// Add prefix to each line of rendered Markdown
@@ -276,6 +280,8 @@ func (m *Markdown) View() string {
 			m.viewBuf.WriteString(line)
 			m.viewBuf.WriteString("\n")
 		}
+	} else {
+		m.viewBuf.WriteString(rendered)
 	}
 	return m.viewBuf.String()
 }

@@ -3,11 +3,9 @@ package core
 import (
 	"context"
 	"fmt"
-	"io"
 	"sync"
 	"time"
 
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
@@ -65,8 +63,12 @@ type RunningService struct {
 	// have detached, but may also be called manually by the user.
 	Stop func(ctx context.Context, force bool) error
 
-	// Block until the service has exited or the provided context is canceled.
+	// Wait blocks until the service has exited or the provided context is canceled.
 	Wait func(ctx context.Context) error
+
+	// Exec runs a command in the service. It is only supported for services
+	// with a backing container.
+	Exec func(ctx context.Context, cmd []string, env []string, io *ServiceIO) error
 }
 
 // ServiceKey is a unique identifier for a service.
@@ -128,10 +130,7 @@ type Startable interface {
 	Start(
 		ctx context.Context,
 		id *call.ID,
-		interactive bool,
-		forwardStdin func(io.Writer, bkgw.ContainerProcess),
-		forwardStdout func(io.Reader),
-		forwardStderr func(io.Reader),
+		io *ServiceIO,
 	) (*RunningService, error)
 }
 
@@ -182,7 +181,7 @@ dance:
 
 	svcCtx, stop := context.WithCancelCause(context.WithoutCancel(ctx))
 
-	running, err := svc.Start(svcCtx, id, false, nil, nil, nil)
+	running, err := svc.Start(svcCtx, id, nil)
 	if err != nil {
 		stop(err)
 		ss.l.Lock()

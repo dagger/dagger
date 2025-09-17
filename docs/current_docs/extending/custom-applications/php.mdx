@@ -1,6 +1,7 @@
 ---
 title: "PHP Custom Application"
 sidebar_label: "PHP"
+slug: /extending/custom-applications/php
 description: "Learn how to use the Dagger SDK to embed into PHP applications."
 ---
 
@@ -28,7 +29,7 @@ cd Slim-Skeleton
 
 Create a new file named `test.php` in the project directory and add the following code to it.
 
-```php file=../snippets/clients-sdk/php/test.php
+```php file=./snippets/clients-sdk/php/test.php
 ```
 
 This PHP program imports the Dagger SDK and defines a function named `test()`. This `test()` function creates a Dagger client, which provides an interface to the Dagger API. It also defines the test matrix, consisting of PHP versions `8.2` to `8.4` and iterates over this matrix, downloading a PHP container image for each specified version and testing the source application in that version.

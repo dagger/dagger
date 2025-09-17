@@ -168,14 +168,14 @@ const config: Config = {
   themes: ["@docusaurus/theme-mermaid"],
   themeConfig: {
     // (jasonmccallister) leaving this in place for future use and reference
-    // announcementBar: {
-    //   id: "agentic-ci-banner",
-    //   content:
-    //     'Engineering deep dive on Agentic CI — <a href="https://dagger.io/agentic-ci">Register Now</a>',
-    //   backgroundColor: "#131126",
-    //   textColor: "#ffffff",
-    //   isCloseable: true,
-    // },
+    announcementBar: {
+      id: "new-docs-published-2025",
+      content:
+        `We've launched a brand-new docs site! 🎉 Still want the previous one? You can <a href="https://archive.docs.dagger.io/0.18/">find it in our archive</a>.`,
+      backgroundColor: "#131126",
+      textColor: "#ffffff",
+      isCloseable: true,
+    },
     sidebar: {
       autoCollapseCategories: false,
       hideable: false,
@@ -195,7 +195,7 @@ const config: Config = {
       {
         name: "image",
         property: "og:image",
-        content: `${url}/img/current_docs/index/daggernaut-carpenter-robots-share.jpg`,
+        content: `${url}/img/daggernaut-carpenter-robots-share.jpg`,
       },
       {
         name: "author",
@@ -203,7 +203,7 @@ const config: Config = {
       },
       {
         property: "twitter:image",
-        content: `${url}/img/current_docs/index/daggernaut-carpenter-robots-share.jpg`,
+        content: `${url}/img/daggernaut-carpenter-robots-share.jpg`,
       },
     ],
     prism: {
@@ -265,19 +265,20 @@ const config: Config = {
           className: "navbar-blog-link",
           activeBaseRegex: "^/cookbook/?.*",
         },
-        {
-          position: "right",
-          href: "https://github.com/dagger/dagger",
-          html: '<div class="github-stars"><iframe src="https://ghbtns.com/github-btn.html?user=dagger&repo=dagger&type=star&count=true" frameborder="0" scrolling="0" width="120" height="20" title="GitHub Stars"></iframe></div>',
-          className: "navbar-github-stars",
-        },
+        // TODO(jasonmccallister): Add these items back in the nav or possible swizzle into a sidebar or toc?
+        // {
+        //   position: "right",
+        //   href: "https://github.com/dagger/dagger",
+        //   html: '<div class="github-stars"><iframe src="https://ghbtns.com/github-btn.html?user=dagger&repo=dagger&type=star&count=true" frameborder="0" scrolling="0" width="120" height="20" title="GitHub Stars"></iframe></div>',
+        //   className: "navbar-github-stars",
+        // },
         // add the icon and link to join discord
-        {
-          position: "right",
-          href: "https://discord.gg/dagger-io",
-          html: '<div class="discord-icon"><img src="img/discord-icon.svg" alt="Join Discord" /></div>',
-          className: "navbar-discord-link",
-        },
+        // {
+        //   position: "right",
+        //   href: "https://discord.gg/dagger-io",
+        //   html: '<div class="discord-icon"><img src="img/discord-icon.svg" alt="Join Discord" /></div>',
+        //   className: "navbar-discord-link",
+        // },
         {
           position: "right",
           label: "Try Dagger Cloud",

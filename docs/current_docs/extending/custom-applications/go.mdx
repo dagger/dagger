@@ -34,7 +34,7 @@ go mod init multibuild
 
 Create a new file in the `multibuild` directory named `main.go` and add the following code to it:
 
-```go file=../snippets/clients-sdk/go/main.go
+```go file=./snippets/clients-sdk/go/main.go
 ```
 
 This Go program imports the Dagger SDK and defines two functions. The `build()` function represents the workflow and creates a Dagger client, which provides an interface to the Dagger API. It also defines the build matrix, consisting of two OSs (`darwin` and `linux`) and two architectures (`amd64` and `arm64`), and builds the Go application for each combination. The Go build process is instructed via the `GOOS` and `GOARCH` build variables, which are reset for each case.
@@ -73,5 +73,5 @@ build
         ├── amd64
         │   └── hello
         └── arm64
-            └── hello   
-```            
+            └── hello
+```

@@ -527,6 +527,22 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
+  Update one or more clients.
+  """
+  @spec with_updated_clients(t(), [String.t()]) :: Dagger.ModuleSource.t()
+  def with_updated_clients(%__MODULE__{} = module_source, clients) do
+    query_builder =
+      module_source.query_builder
+      |> QB.select("withUpdatedClients")
+      |> QB.put_arg("clients", clients)
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
   Remove the current blueprint from the module source.
   """
   @spec without_blueprint(t()) :: Dagger.ModuleSource.t()

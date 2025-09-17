@@ -143,7 +143,7 @@ func (e *ModuleEnum) TypeDescription() string {
 	return formatGqlDescription(e.TypeDef.Description)
 }
 
-func (e *ModuleEnum) TypeDefinition(view dagql.View) *ast.Definition {
+func (e *ModuleEnum) TypeDefinition(view call.View) *ast.Definition {
 	def := &ast.Definition{
 		Kind:        ast.Enum,
 		Name:        e.TypeName(),

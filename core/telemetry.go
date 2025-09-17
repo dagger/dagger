@@ -248,9 +248,12 @@ func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cac
 	}
 
 	if err != nil {
-		// append id.Display() instead of setting it as a field to avoid double
-		// quoting
-		slog.Warn("error resolving "+id.Display(), "error", err)
+		var receiver *string
+		if id.Receiver() != nil {
+			recv := id.Receiver().Type().ToAST().String()
+			receiver = &recv
+		}
+		slog.Warn("error resolving", "receiver", receiver, "field", id.Field(), "error", err)
 	}
 }
 
@@ -258,7 +261,7 @@ func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cac
 func logResult(ctx context.Context, res dagql.AnyResult, self dagql.AnyObjectResult, id *call.ID) {
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
 	defer stdio.Close()
-	fieldSpec, ok := self.ObjectType().FieldSpec(id.Field(), dagql.View(id.View()))
+	fieldSpec, ok := self.ObjectType().FieldSpec(id.Field(), id.View())
 	if !ok {
 		return
 	}
@@ -283,6 +286,9 @@ func collectEffects(ctx context.Context, res dagql.AnyResult, span trace.Span, s
 	// only see new ones.
 	seenEffects := make(map[digest.Digest]bool)
 	for _, def := range collectDefs(ctx, self) {
+		if def == nil {
+			continue
+		}
 		for _, op := range def.Def {
 			seenEffects[digest.FromBytes(op)] = true
 		}
@@ -290,6 +296,9 @@ func collectEffects(ctx context.Context, res dagql.AnyResult, span trace.Span, s
 
 	var effectIDs []string
 	for _, def := range collectDefs(ctx, res) {
+		if def == nil {
+			continue
+		}
 		for _, opBytes := range def.Def {
 			dig := digest.FromBytes(opBytes)
 			if seenEffects[dig] {

@@ -39,7 +39,7 @@ func SpanContextFromDescription(desc map[string]string) trace.SpanContext {
 	return trace.SpanContextFromContext(ContextFromDescription(context.Background(), desc))
 }
 
-// buildkitTelemetryContext returns a context with a wrapped span that has a
+// buildkitTelemetryProvider returns a context with a wrapped span that has a
 // TracerProvider that can process spans produced by buildkit. This works,
 // because of how buildkit heavily relies on trace.SpanFromContext.
 func buildkitTelemetryProvider(ctx context.Context) context.Context {

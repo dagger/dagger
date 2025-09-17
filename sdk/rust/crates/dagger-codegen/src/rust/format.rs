@@ -27,7 +27,7 @@ impl FormatTypeFuncs for FormatTypeFunc {
 
     fn format_kind_scalar_float(&self, representation: &str) -> String {
         let mut rep = representation.to_string();
-        rep.push_str("float");
+        rep.push_str("f64");
         rep
     }
 

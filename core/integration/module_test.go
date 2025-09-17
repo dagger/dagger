@@ -262,8 +262,6 @@ export class Test {
 			},
 		},
 	} {
-		tc := tc
-
 		t.Run(fmt.Sprintf("%s with %d files (#%d)", tc.sdk, len(tc.sources), i+1), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -272,7 +270,6 @@ export class Test {
 				WithWorkdir("/work")
 
 			for _, src := range tc.sources {
-				src := src
 				modGen = modGen.WithNewFile(src.file, heredoc.Doc(src.contents))
 			}
 
@@ -369,8 +366,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 			modGen := modInit(t, c, tc.sdk, tc.source)
@@ -472,8 +467,6 @@ export class Test {
 			expected: "\"test\", , \"foo\", null, \"bar\"",
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -620,8 +613,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -689,8 +680,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -930,8 +919,6 @@ func (ModuleSuite) TestUseLocal(ctx context.Context, t *testctx.T) {
 			source: useTSOuter,
 		},
 	} {
-		tc := tc
-
 		t.Run(fmt.Sprintf("%s uses go", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -985,8 +972,6 @@ func (ModuleSuite) TestCodegenOnDepChange(ctx context.Context, t *testctx.T) {
 			changed:  strings.ReplaceAll(useTSOuter, `.hello()`, `.hellov2()`),
 		},
 	} {
-		tc := tc
-
 		t.Run(fmt.Sprintf("%s uses go", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -1046,8 +1031,6 @@ func (ModuleSuite) TestSyncDeps(ctx context.Context, t *testctx.T) {
 			source: useTSOuter,
 		},
 	} {
-		tc := tc
-
 		t.Run(fmt.Sprintf("%s uses go", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -1139,8 +1122,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(fmt.Sprintf("%s uses go", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -1321,8 +1302,6 @@ export class Test {
 `,
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 				ctr := modInit(t, c, tc.sdk, tc.source)
@@ -1432,8 +1411,6 @@ export class Test {
 `,
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -1498,8 +1475,6 @@ export class Test {
 `,
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				var logs safeBuffer
 				c := connect(ctx, t, dagger.WithLogOutput(&logs))
@@ -1686,8 +1661,6 @@ export class Test {
 `,
 		},
 	} {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -1798,8 +1771,6 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 					source: goodIDArgTSSrc,
 				},
 			} {
-				tc := tc
-
 				t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 					c := connect(ctx, t)
 
@@ -1823,8 +1794,6 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 					source: badIDFieldTSSrc,
 				},
 			} {
-				tc := tc
-
 				t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 					c := connect(ctx, t)
 
@@ -1856,8 +1825,6 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 					source: badIDFnTSSrc,
 				},
 			} {
-				tc := tc
-
 				t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 					c := connect(ctx, t)
 
@@ -3921,8 +3888,6 @@ class Test:
 `,
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -4229,8 +4194,6 @@ export class Test {
 `,
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -4494,8 +4457,6 @@ export class Test {
 `,
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -4664,8 +4625,6 @@ export class Test {
 `,
 			},
 		} {
-			tc := tc
-
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -4945,6 +4904,297 @@ func (ModuleSuite) TestContextDirectoryGit(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (ModuleSuite) TestContextGit(ctx context.Context, t *testctx.T) {
+	type testCase struct {
+		sdk    string
+		source string
+	}
+	tcs := []testCase{
+		{
+			sdk: "go",
+			source: `package main
+
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) TestRepoLocal(
+	ctx context.Context,
+	// +defaultPath="./.git"
+	git *dagger.GitRepository,
+) (string, error) {
+	return m.commitAndRef(ctx, git.Head())
+}
+
+func (m *Test) TestRepoLocalAbs(
+	ctx context.Context,
+	// +defaultPath="/"
+	git *dagger.GitRepository,
+) (string, error) {
+	return m.commitAndRef(ctx, git.Head())
+}
+
+func (m *Test) TestRepoRemote(
+	ctx context.Context,
+	// +defaultPath="https://github.com/dagger/dagger.git"
+	git *dagger.GitRepository,
+) (string, error) {
+	return m.commitAndRef(ctx, git.Tag("v0.18.2"))
+}
+
+func (m *Test) TestRefLocal(
+	ctx context.Context,
+	// +defaultPath="./.git"
+	git *dagger.GitRef,
+) (string, error) {
+	return m.commitAndRef(ctx, git)
+}
+
+func (m *Test) TestRefRemote(
+	ctx context.Context,
+	// +defaultPath="https://github.com/dagger/dagger.git#v0.18.3"
+	git *dagger.GitRef,
+) (string, error) {
+	return m.commitAndRef(ctx, git)
+}
+
+func (m *Test) commitAndRef(ctx context.Context, ref *dagger.GitRef) (string, error) {
+	commit, err := ref.Commit(ctx)
+	if err != nil {
+		return "", err
+	}
+	reference, err := ref.Ref(ctx)
+	if err != nil {
+		return "", err
+	}
+	return reference + "@" + commit, nil
+}
+`,
+		},
+		{
+			sdk: "python",
+			source: `from typing import Annotated
+import dagger
+from dagger import DefaultPath, function, object_type
+
+@object_type
+class Test:
+	@function
+	async def test_repo_local(self, git: Annotated[dagger.GitRepository, DefaultPath("./.git")]) -> str:
+		return await self.commit_and_ref(git.head())
+
+	@function
+	async def test_repo_local_abs(self, git: Annotated[dagger.GitRepository, DefaultPath("/")]) -> str:
+		return await self.commit_and_ref(git.head())
+
+	@function
+	async def test_repo_remote(self, git: Annotated[dagger.GitRepository, DefaultPath("https://github.com/dagger/dagger.git")]) -> str:
+		return await self.commit_and_ref(git.tag("v0.18.2"))
+
+	@function
+	async def test_ref_local(self, git: Annotated[dagger.GitRef, DefaultPath("./.git")]) -> str:
+		return await self.commit_and_ref(git)
+
+	@function
+	async def test_ref_remote(self, git: Annotated[dagger.GitRef, DefaultPath("https://github.com/dagger/dagger.git#v0.18.3")]) -> str:
+		return await self.commit_and_ref(git)
+
+	async def commit_and_ref(self, ref: dagger.GitRef) -> str:
+		commit = await ref.commit()
+		reference = await ref.ref()
+		return f"{reference}@{commit}"
+`,
+		},
+		{
+			sdk: "typescript",
+			source: `import { GitRepository, GitRef, object, func, argument } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+	@func()
+	async testRepoLocal(
+		@argument({ defaultPath: "./.git" }) git: GitRepository,
+	): Promise<string> {
+		return await this.commitAndRef(git.head())
+	}
+
+	@func()
+	async testRepoLocalAbs(
+		@argument({ defaultPath: "/" }) git: GitRepository,
+	): Promise<string> {
+		return await this.commitAndRef(git.head())
+	}
+
+	@func()
+	async testRepoRemote(
+		@argument({ defaultPath: "https://github.com/dagger/dagger.git" }) git: GitRepository,
+	): Promise<string> {
+		return await this.commitAndRef(git.tag("v0.18.2"))
+	}
+
+	@func()
+	async testRefLocal(
+		@argument({ defaultPath: "./.git" }) git: GitRef,
+	): Promise<string> {
+		return await this.commitAndRef(git)
+	}
+
+	@func()
+	async testRefRemote(
+		@argument({ defaultPath: "https://github.com/dagger/dagger.git#v0.18.3" }) git: GitRef,
+	): Promise<string> {
+		return await this.commitAndRef(git)
+	}
+
+	async commitAndRef(git: GitRef): Promise<string> {
+		const commit = await git.commit()
+		const reference = await git.ref()
+		return reference + "@" + commit
+	}
+}`,
+		},
+		{
+			sdk: "java",
+			source: `package io.dagger.modules.test;
+
+
+import io.dagger.client.GitRef;
+import io.dagger.client.GitRepository;
+import io.dagger.client.exception.DaggerQueryException;
+import io.dagger.module.annotation.DefaultPath;
+import io.dagger.module.annotation.Function;
+import io.dagger.module.annotation.Object;
+import java.util.concurrent.ExecutionException;
+
+@Object
+public class Test {
+    @Function
+    public String testRepoLocal(@DefaultPath("./.git") GitRepository git) throws ExecutionException, DaggerQueryException, InterruptedException {
+        return this.commitAndRef(git.head());
+    }
+
+    @Function
+    public String testRepoLocalAbs(@DefaultPath("/") GitRepository git) throws ExecutionException, DaggerQueryException, InterruptedException {
+        return this.commitAndRef(git.head());
+    }
+
+    @Function
+    public String testRepoRemote(@DefaultPath("https://github.com/dagger/dagger.git") GitRepository git) throws ExecutionException, DaggerQueryException, InterruptedException {
+        return this.commitAndRef(git.tag("v0.18.2"));
+    }
+
+    @Function
+    public String testRefLocal(@DefaultPath("./.git") GitRef git) throws ExecutionException, DaggerQueryException, InterruptedException {
+        return this.commitAndRef(git);
+    }
+
+    @Function
+    public String testRefRemote(@DefaultPath("https://github.com/dagger/dagger.git#v0.18.3") GitRef git) throws ExecutionException, DaggerQueryException, InterruptedException {
+        return this.commitAndRef(git);
+    }
+
+    private String commitAndRef(GitRef git) throws ExecutionException, DaggerQueryException, InterruptedException {
+        var commit = git.commit();
+        var reference = git.ref();
+        return "%s@%s".formatted(reference, commit);
+    }
+}
+`,
+		},
+	}
+	for _, tc := range tcs {
+		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			modGen := modInit(t, c, tc.sdk, tc.source).
+				WithExec([]string{"sh", "-c", `git init && git add . && git commit -m "initial commit"`}).
+				WithExec([]string{"git", "clean", "-fdx"})
+			headCommit, err := modGen.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+			require.NoError(t, err)
+			headCommit = strings.TrimSpace(headCommit)
+
+			t.Run("repo local", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-repo-local")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "refs/heads/master@"+headCommit, out)
+			})
+
+			t.Run("repo local absolute", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-repo-local-abs")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "refs/heads/master@"+headCommit, out)
+			})
+
+			t.Run("repo remote", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-repo-remote")).Stdout(ctx)
+				require.NoError(t, err)
+				// dagger/dagger v0.18.2 => 0b46ea3c49b5d67509f67747742e5d8b24be9ef7
+				require.Equal(t, "refs/tags/v0.18.2@0b46ea3c49b5d67509f67747742e5d8b24be9ef7", out)
+			})
+
+			t.Run("ref local", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-ref-local")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "refs/heads/master@"+headCommit, out)
+			})
+
+			t.Run("ref remote", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-ref-remote")).Stdout(ctx)
+				require.NoError(t, err)
+				// dagger/dagger v0.18.3 => 6f7af26f18061c6f575eda774f44aa7d314af4ce
+				require.Equal(t, "refs/tags/v0.18.3@6f7af26f18061c6f575eda774f44aa7d314af4ce", out)
+			})
+		})
+	}
+}
+
+func (ModuleSuite) TestContextGitRemote(ctx context.Context, t *testctx.T) {
+	// pretty much exactly the same test as above, but calling a remote git repo instead
+
+	c := connect(ctx, t)
+
+	modGen := goGitBase(t, c)
+
+	remoteModule := "github.com/jedevc/dagger-test-modules"
+	remoteRef := "context-git"
+	g := c.Git(remoteModule).Ref(remoteRef)
+	commit, err := g.Commit(ctx)
+	require.NoError(t, err)
+	fullref, err := g.Ref(ctx)
+	require.NoError(t, err)
+
+	modPath := "github.com/jedevc/dagger-test-modules/context-git@" + remoteRef
+
+	t.Run("repo local", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCallAt(modPath, "test-repo-local")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, fullref+"@"+commit, out)
+	})
+
+	t.Run("repo remote", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCallAt(modPath, "test-repo-remote")).Stdout(ctx)
+		require.NoError(t, err)
+		// dagger/dagger v0.18.2 => 0b46ea3c49b5d67509f67747742e5d8b24be9ef7
+		require.Equal(t, "refs/tags/v0.18.2@0b46ea3c49b5d67509f67747742e5d8b24be9ef7", out)
+	})
+
+	t.Run("ref local", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCallAt(modPath, "test-ref-local")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, fullref+"@"+commit, out)
+	})
+
+	t.Run("ref remote", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCallAt(modPath, "test-ref-remote")).Stdout(ctx)
+		require.NoError(t, err)
+		// dagger/dagger v0.18.3 => 6f7af26f18061c6f575eda774f44aa7d314af4ce
+		require.Equal(t, "refs/tags/v0.18.3@6f7af26f18061c6f575eda774f44aa7d314af4ce", out)
+	})
+}
+
 func (ModuleSuite) TestIgnore(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -5029,76 +5279,125 @@ func (t *Test) IgnoreEveryGoFileExceptMainGo(
 }
 
 func (t *Test) IgnoreDirButKeepFileInSubdir(
-  // +ignore=["internal/telemetry", "!internal/telemetry/proxy.go"]
+  // +ignore=["internal/foo", "!internal/foo/bar.go"]
   // +defaultPath="./dagger"
   dir *dagger.Directory,
 ) *dagger.Directory {
   return dir
 }`)).
+		WithDirectory("./internal/foo", c.Directory().
+			WithNewFile("bar.go", "package foo").
+			WithNewFile("baz.go", "package foo"),
+		).
 		WithWorkdir("/work")
 
 	t.Run("ignore with context directory", func(ctx context.Context, t *testctx.T) {
 		t.Run("ignore all", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-all", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "", out)
+			require.Equal(t, "", strings.TrimSpace(out))
 		})
 
 		t.Run("ignore all then reverse ignore all", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-then-reverse-ignore", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
+			require.Equal(t, strings.Join([]string{
+				".gitattributes",
+				".gitignore",
+				"dagger.gen.go",
+				"go.mod",
+				"go.sum",
+				"internal/",
+				"main.go",
+			}, "\n"), strings.TrimSpace(out))
 		})
 
 		t.Run("ignore all then reverse ignore then exclude files", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-then-reverse-ignore-then-exclude-git-files", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "dagger.gen.go\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
+			require.Equal(t, strings.Join([]string{
+				"dagger.gen.go",
+				"go.mod",
+				"go.sum",
+				"internal/",
+				"main.go",
+			}, "\n"), strings.TrimSpace(out))
 		})
 
 		t.Run("ignore all then exclude files then reverse ignore", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-then-exclude-files-then-reverse-ignore", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
+			require.Equal(t, strings.Join([]string{
+				".gitattributes",
+				".gitignore",
+				"dagger.gen.go",
+				"go.mod",
+				"go.sum",
+				"internal/",
+				"main.go",
+			}, "\n"), strings.TrimSpace(out))
 		})
 
 		t.Run("ignore dir", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-dir", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\nmain.go\n", out)
+			require.Equal(t, strings.Join([]string{
+				".gitattributes",
+				".gitignore",
+				"dagger.gen.go",
+				"go.mod",
+				"go.sum",
+				"main.go",
+			}, "\n"), strings.TrimSpace(out))
 		})
 
 		t.Run("ignore everything but main.go", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-everything-but-main-go", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "main.go\n", out)
+			require.Equal(t, "main.go", strings.TrimSpace(out))
 		})
 
 		t.Run("no ignore", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("no-ignore", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
+			require.Equal(t, strings.Join([]string{
+				".gitattributes",
+				".gitignore",
+				"dagger.gen.go",
+				"go.mod",
+				"go.sum",
+				"internal/",
+				"main.go",
+			}, "\n"), strings.TrimSpace(out))
 		})
 
 		t.Run("ignore every go files except main.go", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-every-go-file-except-main-go", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
+			require.Equal(t, strings.Join([]string{
+				".gitattributes",
+				".gitignore",
+				"go.mod",
+				"go.sum",
+				"internal/",
+				"main.go",
+			}, "\n"), strings.TrimSpace(out))
 
-			// Verify the directories exist but files are correctlyignored
+			// Verify the directories exist but files are correctly ignored (including the .gitiginore exclusion)
 			out, err = modGen.With(daggerCall("ignore-every-go-file-except-main-go", "directory", "--path", "internal", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "dagger/\nquerybuilder/\ntelemetry/\n", out)
-
-			out, err = modGen.With(daggerCall("ignore-every-go-file-except-main-go", "directory", "--path", "internal/telemetry", "entries")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "", out)
+			require.Equal(t, strings.Join([]string{
+				"dagger/",
+				"foo/",
+				"querybuilder/",
+				"telemetry/",
+			}, "\n"), strings.TrimSpace(out))
 		})
 
 		t.Run("ignore dir but keep file in subdir", func(ctx context.Context, t *testctx.T) {
-			out, err := modGen.With(daggerCall("ignore-dir-but-keep-file-in-subdir", "directory", "--path", "internal/telemetry", "entries")).Stdout(ctx)
+			out, err := modGen.With(daggerCall("ignore-dir-but-keep-file-in-subdir", "directory", "--path", "internal/foo", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "proxy.go\n", out)
+			require.Equal(t, "bar.go", strings.TrimSpace(out))
 		})
 	})
 
@@ -5108,14 +5407,94 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 		t.Run("ignore all", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-all", "--dir", ".", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "", out)
+			require.Equal(t, "", strings.TrimSpace(out))
 		})
 
 		t.Run("ignore all then reverse ignore all with different dir than the one set in context", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-then-reverse-ignore", "--dir", "/work", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".git/\nLICENSE\nbackend/\ndagger/\ndagger.json\nfrontend/\n", out)
+			require.Equal(t, strings.Join([]string{
+				".git/",
+				"LICENSE",
+				"backend/",
+				"dagger/",
+				"dagger.json",
+				"frontend/",
+			}, "\n"), strings.TrimSpace(out))
 		})
+	})
+}
+
+func (ModuleSuite) TestGitignore(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := goGitBase(t, c).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/dagger").
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+		WithDirectory("./backend", c.Directory().WithNewFile("foo.txt", "foo")).
+		WithDirectory("./frontend", c.Directory().WithNewFile("bar.txt", "bar")).
+		WithNewFile("./.gitignore", "frontend/*.txt\n").
+		With(sdkSource("go", `
+package main
+
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (t *Test) GetFile(ctx context.Context, filename string) (string, error) {
+	return dag.CurrentModule().Source().File(filename).Contents(ctx)
+}
+
+func (t *Test) GetFileAt(ctx context.Context, filename string, dir *dagger.Directory) (string, error) {
+	return dir.File(filename).Contents(ctx)
+}
+
+func (t *Test) GetFileContext(
+	ctx context.Context,
+	filename string,
+	// +defaultPath="."
+	dir *dagger.Directory,
+) (string, error) {
+	return dir.File(filename).Contents(ctx)
+}
+		`))
+
+	t.Run("gitignore applies to loaded module", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall("get-file", "--filename", "backend/foo.txt")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foo", out)
+
+		_, err = modGen.With(daggerCall("get-file", "--filename", "frontend/bar.txt")).Stdout(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "no such file or directory")
+	})
+
+	t.Run("gitignore doesn't apply to manual args", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall("get-file-at", "--dir", "./backend", "--filename", "foo.txt")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foo", out)
+
+		// NOTE: we disabled this in dagger/dagger#11017
+		// args passed via function arguments do not automatically have gitignore applied
+		out, err = modGen.With(daggerCall("get-file-at", "--dir", "./frontend", "--filename", "bar.txt")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "bar", out)
+	})
+
+	t.Run("gitignore doesn't apply to context directory", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall("get-file-context", "--filename", "backend/foo.txt")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foo", out)
+
+		// NOTE: we disabled this in dagger/dagger#11017
+		// context arguments do not automatically have gitignore applied
+		out, err = modGen.With(daggerCall("get-file-context", "--filename", "frontend/bar.txt")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "bar", out)
 	})
 }
 
@@ -5200,8 +5579,6 @@ class Test:
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -5859,6 +6236,32 @@ func (m *Test) RunNoisy(ctx context.Context) error {
 	require.Contains(t, execError.Stderr, "yyyyy")
 }
 
+func (ModuleSuite) TestReturnNil(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", `package main
+
+import (
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {
+}
+
+func (m *Test) Nothing() (*dagger.Directory, error) {
+	return nil, nil
+}
+`,
+		)
+
+	_, err := modGen.With(daggerQuery(`{test{nothing{id}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+}
+
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
@@ -6074,6 +6477,8 @@ func sdkSourceFile(sdk string) string {
 		return "src/test/__init__.py"
 	case "typescript":
 		return "src/index.ts"
+	case "java", "./sdk/java":
+		return "src/main/java/io/dagger/modules/test/Test.java"
 	default:
 		panic(fmt.Errorf("unknown sdk %q", sdk))
 	}
@@ -6097,7 +6502,18 @@ func sdkCodegenFile(t *testctx.T, sdk string) string {
 
 func modInit(t *testctx.T, c *dagger.Client, sdk, contents string) *dagger.Container {
 	t.Helper()
-	return goGitBase(t, c).With(withModInit(sdk, contents))
+	return goGitBase(t, c).
+		With(func(ctr *dagger.Container) *dagger.Container {
+			if sdk == "java" {
+				// use the local SDK so that we can test non-released changes
+				sdkSrc, err := filepath.Abs("../../sdk/java")
+				require.NoError(t, err)
+				ctr = ctr.WithMountedDirectory("sdk/java", c.Host().Directory(sdkSrc))
+				sdk = "./sdk/java"
+			}
+			return ctr
+		}).
+		With(withModInit(sdk, contents))
 }
 
 func withModInit(sdk, contents string) dagger.WithContainerFunc {

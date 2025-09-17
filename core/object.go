@@ -186,7 +186,7 @@ type Callable interface {
 	Call(context.Context, *CallOpts) (dagql.AnyResult, error)
 	ReturnType() (ModType, error)
 	ArgType(argName string) (ModType, error)
-	CacheConfigForCall(context.Context, dagql.AnyResult, map[string]dagql.Input, dagql.View, dagql.CacheConfig) (*dagql.CacheConfig, error)
+	CacheConfigForCall(context.Context, dagql.AnyResult, map[string]dagql.Input, call.View, dagql.CacheConfig) (*dagql.CacheConfig, error)
 }
 
 func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callable, error) {
@@ -283,7 +283,7 @@ func (obj *ModuleObject) TypeDescription() string {
 	return formatGqlDescription(obj.TypeDef.Description)
 }
 
-func (obj *ModuleObject) TypeDefinition(view dagql.View) *ast.Definition {
+func (obj *ModuleObject) TypeDefinition(view call.View) *ast.Definition {
 	def := &ast.Definition{
 		Kind: ast.Object,
 		Name: obj.Type().Name(),
@@ -437,7 +437,7 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 	}
 	return dagql.Field[*ModuleObject]{
 		Spec: spec,
-		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], _ map[string]dagql.Input, view dagql.View) (dagql.AnyResult, error) {
+		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], _ map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
 			modType, ok, err := mod.ModTypeFor(ctx, field.TypeDef, true)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get mod type for field %q: %w", field.Name, err)
@@ -479,7 +479,7 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 
 	return dagql.Field[*ModuleObject]{
 		Spec: &spec,
-		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view dagql.View) (dagql.AnyResult, error) {
+		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
 			opts := &CallOpts{
 				ParentTyped:  obj,
 				ParentFields: obj.Self().Fields,
@@ -540,7 +540,7 @@ func (f *CallableField) CacheConfigForCall(
 	ctx context.Context,
 	parent dagql.AnyResult,
 	args map[string]dagql.Input,
-	view dagql.View,
+	view call.View,
 	inputCfg dagql.CacheConfig,
 ) (*dagql.CacheConfig, error) {
 	return f.Module.CacheConfigForCall(ctx, parent, args, view, inputCfg)

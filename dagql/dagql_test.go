@@ -66,7 +66,7 @@ func reqFail(t *testing.T, gql *client.Client, query string, substring string) {
 }
 
 func newCache() *dagql.SessionCache {
-	return dagql.NewSessionCache(cache.NewCache[digest.Digest, dagql.AnyResult]())
+	return dagql.NewSessionCache(cache.NewCache[string, dagql.AnyResult]())
 }
 
 func TestBasic(t *testing.T) {
@@ -2766,7 +2766,7 @@ func InstallTestTypes(srv *dagql.Server) {
 				Name: "value",
 				Type: dagql.Int(0),
 			},
-			Func: func(ctx context.Context, self dagql.ObjectResult[*TestObject], args map[string]dagql.Input, view dagql.View) (dagql.AnyResult, error) {
+			Func: func(ctx context.Context, self dagql.ObjectResult[*TestObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
 				return dagql.NewResultForCurrentID(ctx, dagql.Int(self.Self().Value))
 			},
 		},
@@ -2775,7 +2775,7 @@ func InstallTestTypes(srv *dagql.Server) {
 				Name: "text",
 				Type: dagql.String(""),
 			},
-			Func: func(ctx context.Context, self dagql.ObjectResult[*TestObject], args map[string]dagql.Input, view dagql.View) (dagql.AnyResult, error) {
+			Func: func(ctx context.Context, self dagql.ObjectResult[*TestObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
 				return dagql.NewResultForCurrentID(ctx, dagql.String(self.Self().Text))
 			},
 		},
@@ -2784,7 +2784,7 @@ func InstallTestTypes(srv *dagql.Server) {
 				Name: "nullableField",
 				Type: dagql.Null[dagql.String](),
 			},
-			Func: func(ctx context.Context, self dagql.ObjectResult[*TestObject], args map[string]dagql.Input, view dagql.View) (dagql.AnyResult, error) {
+			Func: func(ctx context.Context, self dagql.ObjectResult[*TestObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
 				if self.Self().NullableField == nil {
 					return dagql.NewResultForCurrentID(ctx, dagql.Null[dagql.String]())
 				}
@@ -2805,7 +2805,7 @@ func InstallTestTypes(srv *dagql.Server) {
 				Name: "name",
 				Type: dagql.String(""),
 			},
-			Func: func(ctx context.Context, self dagql.ObjectResult[*NestedObject], args map[string]dagql.Input, view dagql.View) (dagql.AnyResult, error) {
+			Func: func(ctx context.Context, self dagql.ObjectResult[*NestedObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
 				return dagql.NewResultForCurrentID(ctx, dagql.String(self.Self().Name))
 			},
 		},
@@ -2814,7 +2814,7 @@ func InstallTestTypes(srv *dagql.Server) {
 				Name: "inner",
 				Type: &TestObject{},
 			},
-			Func: func(ctx context.Context, self dagql.ObjectResult[*NestedObject], args map[string]dagql.Input, view dagql.View) (dagql.AnyResult, error) {
+			Func: func(ctx context.Context, self dagql.ObjectResult[*NestedObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
 				return dagql.NewResultForCurrentID(ctx, self.Self().Inner)
 			},
 		},

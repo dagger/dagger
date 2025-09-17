@@ -125,10 +125,10 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 			// ld-linux, specifies a dependency on an exact version that is not present.
 			// This resolves itself usually within an hour, but to avoid fundamental breakage of
 			// builds we are currently pinning these packages for now.
-			"busybox",
-			"glibc=2.41-r51",
-			"ld-linux=2.41-r51",
-			"libcrypt1=2.41-r51",
+			"busybox=1.37.0-r49",
+			"glibc=2.42-r0",
+			"ld-linux=2.42-r0",
+			"libcrypt1=2.42-r0",
 		}
 	default:
 		return nil, fmt.Errorf("unknown distro %q", m.Distro)
@@ -288,6 +288,11 @@ func fetchKeys(branch goapk.ReleaseBranch, arch string) (map[string][]byte, erro
 		if err != nil {
 			return nil, fmt.Errorf("failed to read alpine key at %s: %w", u, err)
 		}
+
+		// URL may have %40 instead of @, which confuses later goapk code that looks for
+		// this key name
+		u = strings.ReplaceAll(u, "%40", "@")
+
 		keys[filepath.Base(u)] = keyBytes
 	}
 	return keys, nil

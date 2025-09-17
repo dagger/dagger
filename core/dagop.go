@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -39,7 +38,25 @@ func NewDirectoryDagOp(
 	srv *dagql.Server,
 	dagop *FSDagOp,
 	inputs []llb.State,
+	selfDigest digest.Digest,
+	argDigest digest.Digest,
 ) (*Directory, error) {
+	if selfDigest == "" || argDigest == "" {
+		// fall back to using op ID (which will return a different CacheMap value for each op
+		dagop.CacheKey = digest.FromString(
+			strings.Join([]string{
+				dagop.ID.Digest().String(),
+				dagop.Path,
+			}, "\x00"))
+	} else {
+		dagop.CacheKey = digest.FromString(
+			strings.Join([]string{
+				selfDigest.String(),
+				argDigest.String(),
+			}, "\x00"),
+		)
+	}
+
 	st, err := newFSDagOp[*Directory](ctx, dagop, inputs)
 	if err != nil {
 		return nil, err
@@ -96,6 +113,8 @@ type FSDagOp struct {
 	// (except for contributing to the cache key). However, it can be used by
 	// dagql running inside a dagop to determine where it should write data.
 	Path string
+
+	CacheKey digest.Digest
 }
 
 func (op FSDagOp) Name() string {
@@ -115,11 +134,21 @@ func (op FSDagOp) Digest() (digest.Digest, error) {
 }
 
 func (op FSDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
-	cm.Digest = digest.FromString(strings.Join([]string{
-		engine.BaseVersion(engine.Version),
-		op.ID.Digest().String(),
-		op.Path,
-	}, "\x00"))
+	var inputs []string
+	if op.CacheKey.String() == "" {
+		// TODO replace this with a panic("this shouldnt happen") once all FSDagOps are correctly created
+		inputs = []string{
+			engine.BaseVersion(engine.Version),
+			op.ID.Digest().String(),
+			op.Path,
+		}
+	} else {
+		inputs = []string{
+			engine.BaseVersion(engine.Version),
+			op.CacheKey.String(),
+		}
+	}
+	cm.Digest = digest.FromString(strings.Join(inputs, "\x00"))
 	return cm, nil
 }
 
@@ -128,7 +157,8 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 	if !ok {
 		return nil, fmt.Errorf("server root was %T", opt.Server.Root())
 	}
-	obj, err := opt.Server.LoadType(ContextWithQuery(ctx, query), op.ID)
+	ctx = ContextWithQuery(ctx, query)
+	obj, err := opt.Server.LoadType(ctx, op.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +227,7 @@ func NewRawDagOp[T dagql.Typed](
 	if err != nil {
 		return t, err
 	}
-	dt, err := f.Contents(ctx)
+	dt, err := f.Contents(ctx, nil, nil)
 	if err != nil {
 		return t, err
 	}
@@ -313,29 +343,23 @@ func NewContainerDagOp(
 	ctr *Container,
 	extraInputs []llb.State,
 ) (*Container, error) {
-	mounts, inputs, outputCount, err := getAllContainerMounts(ctr)
+	mounts, inputs, dgsts, _, outputCount, err := getAllContainerMounts(ctx, ctr)
 	if err != nil {
 		return nil, err
 	}
 	inputs = append(inputs, extraInputs...)
 
-	// NB: strip out the buildkit inputs! this is so that we rely entirely on
-	// the *buildkit* inputs.
-	ctrDigest, err := DigestOf(ctr.WithoutInputs())
-	if err != nil {
-		return nil, err
-	}
-
 	dagop := &ContainerDagOp{
 		ID: id,
 		CacheKey: digest.FromString(
 			strings.Join([]string{
-				ctrDigest.String(),
-				argDigest.String(),
+				id.Digest().String(),
+				engine.BaseVersion(engine.Version),
 			}, "\x00"),
 		),
 		ContainerMountData: ContainerMountData{
 			Mounts:      mounts,
+			Digests:     dgsts,
 			OutputCount: outputCount,
 		},
 	}
@@ -403,6 +427,9 @@ type ContainerMountData struct {
 	// - secret/socket mounts are at the very end
 	Mounts []*pb.Mount
 
+	// The digests corresponding to each Mount, or "" if no digest available.
+	Digests []digest.Digest
+
 	// the number of outputs produced
 	OutputCount int
 }
@@ -435,96 +462,32 @@ func (op ContainerDagOp) Backend() buildkit.CustomOpBackend {
 }
 
 func (op ContainerDagOp) Digest() (digest.Digest, error) {
-	mountsData, err := json.Marshal(op.Mounts)
-	if err != nil {
-		return "", err
-	}
-
-	return digest.FromString(strings.Join([]string{
-		engine.BaseVersion(engine.Version),
-		op.ID.Digest().String(),
-		op.CacheKey.String(),
-		fmt.Sprint(op.OutputCount),
-		string(mountsData),
-	}, "\x00")), nil
+	return op.CacheKey, nil
 }
 
 func (op ContainerDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
-	inputs := []string{
-		engine.BaseVersion(engine.Version),
-		op.CacheKey.String(),
-	}
-
-	// mount data
-	mountsData, err := json.Marshal(op.Mounts)
-	if err != nil {
-		return nil, err
-	}
-	inputs = append(inputs, string(mountsData))
-	inputs = append(inputs, fmt.Sprint(op.OutputCount))
-
-	cm.Digest = digest.FromString(strings.Join(inputs, "\x00"))
-
-	// Logic imported from buildkit for handling content caching of mounts
-	// NOTE: this probably can be significantly improved in the future.
-	for mountIdx, mount := range op.Mounts {
+	// Use our precomputed cache key and additional content-hashing for mounts that are associated with
+	// a known digest.
+	cm.Digest = op.CacheKey
+	for i, mount := range op.Mounts {
 		if mount.Input == pb.Empty {
 			// No inputs, so no content-caching to apply.
 			continue
 		}
+		cm.Deps[mount.Input].PreprocessFunc = nil
 
-		// Assume we *cannot* perform
-		// content-based caching, and then enable it selectively only for cases
-		// where we want to
-		contentBasedCache := false
-
-		// Allow content-based cached where safe - these are enforced to avoid
-		// the following case:
-		// - A "snapshot" contains "foo/a.txt" and "bar/b.txt"
-		// - "RUN --mount from=snapshot,src=bar touch bar/c.txt" creates a new
-		//   file in bar
-		// - If we run again, but this time "snapshot" contains a new
-		//   "foo/sneaky.txt", the content-based cache matches the previous
-		//   run, since we only select "bar"
-		// - But this cached result is incorrect - "foo/sneaky.txt" isn't in
-		//   our cached result, but it is in our input.
-		if mount.Output == pb.SkipOutput {
-			// if the mount has no outputs, it's safe to enable content-based
-			// caching, since it's guaranteed to not be used as an input for
-			// any future steps
-			contentBasedCache = true
-		} else if mount.Readonly {
-			// if the mount is read-only, then it's also safe, since it can't
-			// be modified by the operation
-			contentBasedCache = true
-		} else if path.Join("/", mount.Selector) == pb.RootMount {
-			// if the mount mounts the entire source, then it's also safe,
-			// since there are no unselected "sneaky" files
-			contentBasedCache = true
-		}
-
-		// Now apply the user-specified option.
-		switch mount.ContentCache {
-		case pb.MountContentCache_OFF:
-			contentBasedCache = false
-		case pb.MountContentCache_ON:
-			if !contentBasedCache {
-				// If we can't enable cache for safety, then force-enabling it is invalid
-				return nil, fmt.Errorf("invalid mount cache content %v", mount)
+		if dgst := op.Digests[i]; dgst != "" {
+			cm.Deps[mount.Input].ComputeDigestFunc = func(
+				context.Context,
+				solver.Result,
+				bksession.Group,
+			) (digest.Digest, error) {
+				return dgst, nil
 			}
-		case pb.MountContentCache_DEFAULT:
-			if mountIdx == 0 {
-				// we explicitly choose to not implement it on the root mount,
-				// since this is likely very expensive (and not incredibly useful)
-				contentBasedCache = false
-			}
-		}
-
-		if !contentBasedCache {
+		} else {
 			cm.Deps[mount.Input].ComputeDigestFunc = nil
 		}
 	}
-
 	return cm, nil
 }
 
@@ -563,91 +526,155 @@ func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 // getAllContainerMounts gets the list of all mounts for a container, as well as all the
 // inputs that are part of it, and the total number of outputs. Each mount's
 // Input maps to an index in the returned states.
-func getAllContainerMounts(container *Container) (mounts []*pb.Mount, states []llb.State, outputCount int, _ error) {
+func getAllContainerMounts(ctx context.Context, container *Container) (
+	mounts []*pb.Mount,
+	states []llb.State,
+	dgsts []digest.Digest,
+	refs []bkcache.ImmutableRef,
+	outputCount int,
+	_ error,
+) {
 	outputIdx := 0
-	inputIdxs := map[digest.Digest]pb.InputIndex{}
+	inputIdxs := map[string]pb.InputIndex{}
 
 	// addMount converts a ContainerMount and creates a corresponding buildkit
 	// mount, creating an input if required
 	addMount := func(mnt ContainerMount) error {
-		st, err := defToState(mnt.Source)
+		mount := &pb.Mount{
+			Dest:         mnt.Target,
+			Input:        pb.Empty,
+			Output:       pb.OutputIndex(outputIdx),
+			ContentCache: pb.MountContentCache_DEFAULT,
+		}
+		if mnt.Readonly {
+			mount.Readonly = true
+			mount.Output = pb.SkipOutput
+		}
+
+		var llb *pb.Definition
+		var res bkcache.ImmutableRef
+		var dgst digest.Digest
+		handleMount(mnt,
+			func(dirMnt *dagql.ObjectResult[*Directory]) {
+				mount.Selector = dirMnt.Self().Dir
+				llb = dirMnt.Self().LLB
+				res = dirMnt.Self().Result
+				dgst = dirMnt.ID().Digest()
+			},
+			func(fileMnt *dagql.ObjectResult[*File]) {
+				mount.Selector = fileMnt.Self().File
+				llb = fileMnt.Self().LLB
+				res = fileMnt.Self().Result
+				dgst = fileMnt.ID().Digest()
+			},
+			func(cache *CacheMountSource) {
+				mount.Selector = cache.BasePath
+				llb = cache.Base
+				mount.Output = pb.SkipOutput
+				mount.MountType = pb.MountType_CACHE
+				mount.CacheOpt = &pb.CacheOpt{
+					ID: cache.ID,
+				}
+				switch cache.SharingMode {
+				case CacheSharingModeShared:
+					mount.CacheOpt.Sharing = pb.CacheSharingOpt_SHARED
+				case CacheSharingModePrivate:
+					mount.CacheOpt.Sharing = pb.CacheSharingOpt_PRIVATE
+				case CacheSharingModeLocked:
+					mount.CacheOpt.Sharing = pb.CacheSharingOpt_LOCKED
+				}
+			},
+			func(tmpfs *TmpfsMountSource) {
+				mount.Output = pb.SkipOutput
+				mount.MountType = pb.MountType_TMPFS
+				mount.TmpfsOpt = &pb.TmpfsOpt{
+					Size_: int64(tmpfs.Size),
+				}
+			},
+		)
+
+		st, err := defToState(llb)
 		if err != nil {
 			return err
 		}
 
-		mount := &pb.Mount{
-			Dest:         mnt.Target,
-			Selector:     mnt.SourcePath,
-			Output:       pb.OutputIndex(outputIdx),
-			ContentCache: pb.MountContentCache_DEFAULT,
-		}
-		if st.Output() == nil {
-			mount.Input = pb.Empty
-		} else {
-			dag, err := buildkit.DefToDAG(mnt.Source)
+		// track and cache this input index, since duplicates are unnecessary
+		// also buildkit's FileOp (which is underlying our DagOp) will
+		// remove them if we don't, which results in significant confusion
+		switch {
+		case res != nil:
+			indexKey := res.ID()
+			if idx, ok := inputIdxs[indexKey]; ok {
+				// we already track this input, reuse the index
+				mount.Input = idx
+			} else {
+				mount.Input = pb.InputIndex(len(states))
+				inputIdxs[indexKey] = mount.Input
+				states = append(states, st)
+				refs = append(refs, res)
+			}
+		case st.Output() != nil:
+			dag, err := buildkit.DefToDAG(llb)
 			if err != nil {
 				return err
 			}
-
-			if idx, ok := inputIdxs[*dag.OpDigest]; ok {
+			indexKey := dag.OpDigest.String()
+			if idx, ok := inputIdxs[indexKey]; ok {
+				// we already track this input, reuse the index
 				mount.Input = idx
 			} else {
-				// track and cache this input index, since duplicates are unnecessary
-				// also buildkit's FileOp (which is underlying our DagOp) will
-				// remove them if we don't, which results in significant confusion
 				mount.Input = pb.InputIndex(len(states))
-				inputIdxs[*dag.OpDigest] = mount.Input
+				inputIdxs[indexKey] = mount.Input
 				states = append(states, st)
-			}
-		}
-
-		if mnt.Readonly {
-			mount.Output = pb.SkipOutput
-			mount.Readonly = true
-		}
-
-		if mnt.CacheVolumeID != "" {
-			mount.Output = pb.SkipOutput
-			mount.MountType = pb.MountType_CACHE
-			mount.CacheOpt = &pb.CacheOpt{
-				ID: mnt.CacheVolumeID,
-			}
-			switch mnt.CacheSharingMode {
-			case CacheSharingModeShared:
-				mount.CacheOpt.Sharing = pb.CacheSharingOpt_SHARED
-			case CacheSharingModePrivate:
-				mount.CacheOpt.Sharing = pb.CacheSharingOpt_PRIVATE
-			case CacheSharingModeLocked:
-				mount.CacheOpt.Sharing = pb.CacheSharingOpt_LOCKED
-			}
-		}
-
-		if mnt.Tmpfs {
-			mount.Output = pb.SkipOutput
-			mount.MountType = pb.MountType_TMPFS
-			mount.TmpfsOpt = &pb.TmpfsOpt{
-				Size_: int64(mnt.Size),
+				refs = append(refs, res)
 			}
 		}
 
 		mounts = append(mounts, mount)
+		dgsts = append(dgsts, dgst)
 		if mount.Output != pb.SkipOutput {
 			outputIdx++
 		}
-
 		return nil
 	}
 
-	// handle our normal mounts
-	if err := addMount(ContainerMount{Source: container.FS, Target: "/"}); err != nil {
-		return nil, nil, 0, err
+	// root mount
+	if err := addMount(ContainerMount{
+		Target:          "/",
+		DirectorySource: container.FS,
+	}); err != nil {
+		return nil, nil, nil, nil, 0, err
 	}
-	if err := addMount(ContainerMount{Source: container.Meta, Target: buildkit.MetaMountDestPath}); err != nil {
-		return nil, nil, 0, err
+
+	// meta mount
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, nil, nil, nil, 0, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
+	metaDir := &Directory{
+		Dir:      "/",
+		Platform: container.Platform,
+		Services: container.Services,
+	}
+	if container.Meta != nil {
+		metaDir.LLB = container.Meta.LLB
+		metaDir.Result = container.Meta.Result
+	}
+	metaDirRes, err := dagql.NewObjectResultForCurrentID(ctx, srv, metaDir)
+	if err != nil {
+		return nil, nil, nil, nil, 0, fmt.Errorf("failed to create meta directory: %w", err)
+	}
+	if err := addMount(ContainerMount{
+		Target:          buildkit.MetaMountDestPath,
+		DirectorySource: &metaDirRes,
+	}); err != nil {
+		return nil, nil, nil, nil, 0, err
+	}
+
+	// other normal mounts
 	for _, mount := range container.Mounts {
 		if err := addMount(mount); err != nil {
-			return nil, nil, 0, err
+			return nil, nil, nil, nil, 0, err
 		}
 	}
 
@@ -678,7 +705,7 @@ func getAllContainerMounts(container *Container) (mounts []*pb.Mount, states []l
 	// handle socket mounts
 	for _, socket := range container.Sockets {
 		if socket.ContainerPath == "" {
-			return nil, nil, 0, fmt.Errorf("unsupported socket: only unix paths are implemented")
+			return nil, nil, nil, nil, 0, fmt.Errorf("unsupported socket: only unix paths are implemented")
 		}
 		uid, gid := 0, 0
 		if socket.Owner != nil {
@@ -699,12 +726,16 @@ func getAllContainerMounts(container *Container) (mounts []*pb.Mount, states []l
 		mounts = append(mounts, mount)
 	}
 
-	return mounts, states, outputIdx, nil
+	return mounts, states, dgsts, refs, outputIdx, nil
 }
 
 // setAllContainerMounts is the reverse of getAllContainerMounts, and rewrites
 // the container mounts to the given states.
-func (op *ContainerDagOp) setAllContainerMounts(ctx context.Context, container *Container, outputs []llb.State) error {
+func (op *ContainerDagOp) setAllContainerMounts(
+	ctx context.Context,
+	container *Container,
+	outputs []llb.State,
+) error {
 	for mountIdx, mount := range op.Mounts {
 		if mount.Output == pb.SkipOutput {
 			continue
@@ -717,11 +748,65 @@ func (op *ContainerDagOp) setAllContainerMounts(ctx context.Context, container *
 
 		switch mountIdx {
 		case 0:
-			container.FS = def.ToPB()
+			rootfsDir := &Directory{
+				LLB: def.ToPB(),
+			}
+			if container.FS != nil {
+				rootfsDir.Dir = container.FS.Self().Dir
+				rootfsDir.Platform = container.FS.Self().Platform
+				rootfsDir.Services = container.FS.Self().Services
+			}
+			container.FS, err = UpdatedRootFS(ctx, rootfsDir)
+			if err != nil {
+				return fmt.Errorf("failed to update rootfs: %w", err)
+			}
+
 		case 1:
-			container.Meta = def.ToPB()
+			container.Meta = &Directory{
+				LLB: def.ToPB(),
+			}
+
 		default:
-			container.Mounts[mountIdx-2].Source = def.ToPB()
+			ctrMnt := container.Mounts[mountIdx-2]
+			err := handleMountValue(ctrMnt,
+				func(dirMnt *dagql.ObjectResult[*Directory]) error {
+					dir := &Directory{
+						LLB:      def.ToPB(),
+						Dir:      ctrMnt.DirectorySource.Self().Dir,
+						Platform: ctrMnt.DirectorySource.Self().Platform,
+						Services: ctrMnt.DirectorySource.Self().Services,
+					}
+					ctrMnt.DirectorySource, err = updatedDirMount(ctx, dir, ctrMnt.Target)
+					if err != nil {
+						return fmt.Errorf("failed to update directory mount: %w", err)
+					}
+					container.Mounts[mountIdx-2] = ctrMnt
+					return nil
+				},
+				func(fileMnt *dagql.ObjectResult[*File]) error {
+					file := &File{
+						LLB:      def.ToPB(),
+						File:     ctrMnt.FileSource.Self().File,
+						Platform: ctrMnt.FileSource.Self().Platform,
+						Services: ctrMnt.FileSource.Self().Services,
+					}
+					ctrMnt.FileSource, err = updatedFileMount(ctx, file, ctrMnt.Target)
+					if err != nil {
+						return fmt.Errorf("failed to update file mount: %w", err)
+					}
+					container.Mounts[mountIdx-2] = ctrMnt
+					return nil
+				},
+				func(cache *CacheMountSource) error {
+					return fmt.Errorf("unhandled cache mount source type for mount %d", mountIdx)
+				},
+				func(tmpfs *TmpfsMountSource) error {
+					return fmt.Errorf("unhandled tmpfs mount source type for mount %d", mountIdx)
+				},
+			)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -763,12 +848,23 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 		var err error
 		switch mountIdx {
 		case 0:
-			ref, err = getResult(container.FS, container.FSResult)
+			ref, err = getResult(container.FS.Self().LLB, container.FS.Self().Result)
 		case 1:
-			ref, err = getResult(container.Meta, container.MetaResult)
+			var llb *pb.Definition
+			var res bkcache.ImmutableRef
+			if container.Meta != nil {
+				llb = container.Meta.LLB
+				res = container.Meta.Result
+			}
+			ref, err = getResult(llb, res)
 		default:
 			mnt := container.Mounts[mountIdx-2]
-			ref, err = getResult(mnt.Source, mnt.Result)
+			switch {
+			case mnt.DirectorySource != nil:
+				ref, err = getResult(mnt.DirectorySource.Self().LLB, mnt.DirectorySource.Self().Result)
+			case mnt.FileSource != nil:
+				ref, err = getResult(mnt.FileSource.Self().LLB, mnt.FileSource.Self().Result)
+			}
 		}
 		if err != nil {
 			return nil, err
@@ -793,5 +889,6 @@ func newDagOpLLB(ctx context.Context, dagOp buildkit.CustomOp, id *call.ID, inpu
 		llb.WithCustomNamef("%s %s", dagOp.Name(), id.Name()),
 		buildkit.WithTracePropagation(ctx),
 		buildkit.WithPassthrough(),
+		llb.SkipEdgeMerge,
 	)
 }

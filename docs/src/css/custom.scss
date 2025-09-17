@@ -1,4 +1,5 @@
 @use "sass:meta";
+@use "sass:color";
 $mobile-width: 480px;
 $tablet-width: 1180px;
 $desktop-width: 1200px;
@@ -96,14 +97,41 @@ html[data-theme="dark"] {
   padding-top: 1.75rem !important;
   padding-bottom: 1.75rem !important;
   font-weight: 500 !important;
+  display: flex !important;
+  align-items: center !important;
+  position: relative !important;
+
+  /* Content container alignment - preserve normal text flow */
+  .announcementBarContent_xLdY {
+    flex: 1 !important;
+    text-align: center !important;
+    padding-right: 3rem !important; /* Add padding to account for button space */
+  }
 
   /* Button styling for announcement bar */
-  button {
+  button,
+  .closeButton_CVFx,
+  .announcementBarClose_gvF7 {
     color: white !important;
     font-size: 0.875rem !important; /* 14px relative */
     background-color: transparent !important;
     transition: all 0.2s ease-in-out !important;
-    margin-right: 1rem !important; /* Add margin to the right */
+    position: absolute !important;
+    right: 1rem !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 24px !important;
+    height: 24px !important;
+    padding: 0 !important;
+    margin: 0 !important; /* Reset margin */
+
+    svg {
+      width: 14px !important;
+      height: 14px !important;
+    }
   }
 }
 
@@ -125,7 +153,7 @@ html[data-theme="dark"] {
   }
 }
 
-/* Docs Sidebar Styling - Remove all borders and extend full height */
+/* Docs Sidebar Styling - Remove all borders and improve scrolling */
 .theme-doc-sidebar-container,
 div[class*="docSidebarContainer"],
 .docs-sidebar,
@@ -136,10 +164,13 @@ aside[class*="docSidebarContainer"] {
   box-shadow: none !important;
 
   @include desktop {
-    height: 100vh !important;
-    min-height: 100vh !important;
-    position: sticky !important;
-    top: 0 !important;
+    height: calc(
+      100vh - var(--ifm-navbar-height)
+    ) !important; /* Account for navbar height */
+    min-height: calc(100vh - var(--ifm-navbar-height)) !important;
+    // position: sticky !important;
+    top: var(--ifm-navbar-height) !important; /* Start below navbar */
+    // overflow: auto !important; /* Prevent container from scrolling */
   }
 
   @include tablet {
@@ -158,12 +189,43 @@ aside[class*="docSidebarContainer"] {
     overflow-y: auto !important;
     padding-bottom: 2rem !important;
 
-    /* Hide scrollbar but keep scroll functionality */
-    scrollbar-width: none !important; /* Firefox */
-    -ms-overflow-style: none !important; /* Internet Explorer 10+ */
+    /* Custom scrollbar styling for better UX */
+    scrollbar-width: thin !important; /* Firefox - show thin scrollbar */
+    scrollbar-color: rgba(0, 0, 0, 0.2) transparent !important; /* Firefox scrollbar colors */
 
+    /* WebKit browsers (Chrome, Safari, Edge) - show minimal scrollbar */
     &::-webkit-scrollbar {
-      display: none !important; /* WebKit browsers (Chrome, Safari, Edge) */
+      width: 6px !important;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: transparent !important;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.2) !important;
+      border-radius: 3px !important;
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+      background: rgba(0, 0, 0, 0.4) !important;
+    }
+  }
+}
+
+/* Dark mode scrollbar styling */
+html[data-theme="dark"] {
+  .menu {
+    @include desktop {
+      scrollbar-color: rgba(255, 255, 255, 0.3) transparent !important; /* Firefox dark scrollbar */
+
+      &::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.3) !important;
+      }
+
+      &::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.5) !important;
+      }
     }
   }
 }
@@ -188,28 +250,51 @@ div[class*="docSidebarMenu"],
   color: var(--ifm-navbar-link-color) !important;
   font-size: 00.8175rem;
   font-weight: normal !important; /* Normal weight for inactive items */
-  padding-left: 0.5rem !important;
-  padding-right: 0.5rem !important;
+  padding: 0.5rem 0.5rem !important; /* Increased vertical padding for consistent height */
   border-bottom: 3px solid transparent !important; /* Add transparent border to prevent layout shift */
+  height: 36px !important; /* Set consistent height */
+  display: flex !important;
+  align-items: center !important;
+  transition: border-bottom-color 0.2s;
   // make sure the ipad width of 1180 has the same padding as mobile
   @include tablet {
-    padding-left: 0.5rem !important;
-    padding-right: 0.5rem !important;
+    padding: 0.5rem 0.5rem !important;
   }
-  transition: border-bottom-color 0.2s;
+}
+
+/* Add margin to navbar items except the last one */
+.navbar__items .navbar__item:not(:last-child) {
+  margin-right: 3px;
+}
+
+/* Hide specific navbar navigation links on mobile - keep hamburger, logo, search, theme toggle */
+@include mobile {
+  .navbar__item.navbar__link {
+    display: none !important;
+  }
 }
 
 // Navbar hover underline effect (matches TOC opacity)
 html[data-theme="light"] {
-  .navbar__items .navbar__item .navbar__link:not(.navbar__link--active):hover,
-  .navbar__items .navbar-blog-link:not(.navbar__link--active):hover {
+  .navbar__items
+    .navbar__item
+    .navbar__link:not(.navbar__link--active):not(.dagger-cloud-button):hover,
+  .navbar__items
+    .navbar-blog-link:not(.navbar__link--active):not(
+      .dagger-cloud-button
+    ):hover {
     border-bottom: 3px solid rgba(239, 123, 26, 0.5) !important; // tangerine, 50% opacity
   }
 }
 
 html[data-theme="dark"] {
-  .navbar__items .navbar__item .navbar__link:not(.navbar__link--active):hover,
-  .navbar__items .navbar-blog-link:not(.navbar__link--active):hover {
+  .navbar__items
+    .navbar__item
+    .navbar__link:not(.navbar__link--active):not(.dagger-cloud-button):hover,
+  .navbar__items
+    .navbar-blog-link:not(.navbar__link--active):not(
+      .dagger-cloud-button
+    ):hover {
     border-bottom: 3px solid rgba(190, 29, 67, 0.5) !important; // crimson, 50% opacity
   }
 }
@@ -293,14 +378,14 @@ html[data-theme="dark"] {
 }
 
 .theme-doc-sidebar-item-category {
-  font-weight: bold;
+  font-weight: 600;
   color: var(--ifm-menu-color);
   // no hover effect
   &:hover {
     color: var(--ifm-menu-color);
     background: none !important;
   }
-  margin-bottom: 2rem;
+  margin-bottom: 1.25rem;
 }
 
 .menu__list-item-collapsible {
@@ -323,7 +408,7 @@ html[data-theme="dark"] {
 
 .theme-doc-sidebar-item-category .menu__link--active {
   color: var(--ifm-menu-color);
-  font-weight: bold;
+  font-weight: 600;
   &:hover {
     color: var(--ifm-menu-color);
   }
@@ -358,10 +443,23 @@ body {
 
 /* Dagger Cloud button styling */
 .dagger-cloud-button {
-  padding: 0.5rem 1rem !important;
+  padding: 0.375rem 1rem !important; /* Reduced vertical padding for consistent height */
   border-radius: 8px !important; /* More rounded edges */
   font-weight: 600 !important;
   transition: all 0.2s ease-in-out !important;
+  height: 36px !important; /* Match navbar links height */
+  display: flex !important;
+  align-items: center !important;
+  margin-bottom: 3px transparent;
+
+  // Hide on tablet resolutions
+  @include tablet {
+    display: none !important;
+  }
+
+  @include mobile {
+    display: none !important;
+  }
 }
 
 /* Light mode styling for Dagger Cloud button */
@@ -369,7 +467,7 @@ html[data-theme="light"] {
   .dagger-cloud-button {
     background-color: #{$plum-color} !important; /* Dark blue/purple color */
     color: white !important;
-    border: 1px solid #{$inkberry-color} !important;
+    border: 1px solid #{$plum-color} !important; /* Use same color for consistent border */
 
     &:hover {
       background-color: rgb(
@@ -378,6 +476,7 @@ html[data-theme="light"] {
         56
       ) !important; /* Slightly lighter on hover */
       border-color: rgb(29, 26, 56) !important;
+      transform: none !important; /* Prevent any transform effects */
     }
   }
 }
@@ -397,6 +496,7 @@ html[data-theme="dark"] {
         0.8
       ) !important; /* Slightly lighter plum on hover */
       border-color: rgba(62, 59, 107, 0.8) !important;
+      transform: none !important; /* Prevent any transform effects */
     }
   }
 }
@@ -451,6 +551,11 @@ h4 {
     background-color: white;
     mask-image: url("/img/discord-icon.svg");
     mask-size: 100%;
+
+    // Hide on tablet resolutions
+    @include tablet {
+      display: none !important;
+    }
   }
   // Footer social icon links
   .footer-discord-link,
@@ -467,19 +572,19 @@ h4 {
     /* No global filter, set per icon below */
   }
   .footer-discord-link {
-    background-image: url('/img/discord-icon.svg');
+    background-image: url("/img/discord-icon.svg");
     /* Discord icon is often black, so force it to white */
     filter: invert(1) brightness(2) drop-shadow(0 0 2px #000);
   }
   .footer-x-link {
-    background-image: url('/img/x-icon.svg');
+    background-image: url("/img/x-icon.svg");
     /* X icon should display as provided, no filter */
     filter: none;
   }
   .footer-discord-link:hover,
   .footer-x-link:hover {
     opacity: 1;
-    background-color: rgba(255,255,255,0.08);
+    background-color: rgba(255, 255, 255, 0.08);
     border-radius: 6px;
   }
 }
@@ -521,7 +626,7 @@ html[data-theme="dark"] .footer-x-link {
   }
 
   // hide on tablet and tablet large
-  @include tablet  {
+  @include tablet {
     display: none;
   }
 
@@ -564,9 +669,11 @@ html[data-theme="light"] .DocSearch.DocSearch-Button {
   border: none !important;
   box-shadow: none !important;
   border-radius: 8px !important; /* Match Dagger Cloud button radius */
+  height: 36px !important; /* Match navbar links height */
+  padding: 0 0.75rem !important; /* Adjusted padding for consistent height */
 
   &:hover {
-    background-color: darken(#fff, 3%) !important;
+    background-color: #f7f7f7 !important;
   }
 }
 
@@ -574,13 +681,61 @@ html[data-theme="dark"] .DocSearch.DocSearch-Button {
   background-color: #{$obsidian-color} !important;
   border: none !important;
   border-radius: 8px !important; /* Match Dagger Cloud button radius */
+  height: 36px !important; /* Match navbar links height */
+  padding: 0 0.75rem !important; /* Adjusted padding for consistent height */
 
   &:hover {
-    background-color: lighten($inkberry-color, 5%) !important;
+    background-color: color.adjust($inkberry-color, $lightness: 5%) !important;
   }
-  
+
   @include mobile {
     background-color: #{$plum-color} !important; /* Match announcement bar color in dark mode */
+  }
+}
+
+/* Dark mode toggle button consistent height */
+.navbar__item--right .react-toggle,
+.navbar__item--right .navbar__toggle {
+  height: 36px !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+// Use mobile-style search (magnifying glass only) on tablet screens
+@include tablet {
+  .DocSearch-Button {
+    width: 48px !important;
+    min-width: 48px !important;
+    padding: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+
+    .DocSearch-Button-Container {
+      justify-content: center !important;
+      align-items: center !important;
+      display: flex !important;
+    }
+
+    .DocSearch-Search-Icon {
+      width: 20px !important;
+      height: 20px !important;
+      margin: 0 !important;
+    }
+
+    .DocSearch-Button-Placeholder,
+    .DocSearch-Button-Keys {
+      display: none !important;
+    }
+  }
+
+  // Apply mobile hover effect for dark theme on tablet
+  html[data-theme="dark"] .DocSearch.DocSearch-Button {
+    background-color: #{$plum-color} !important;
+
+    &:hover {
+      background-color: rgba(62, 59, 107, 0.8) !important;
+    }
   }
 }
 
@@ -614,8 +769,12 @@ ul.tabs {
 // Make tab items 2px smaller than body font size with padding half of base font size (top and bottom only)
 .tabs__item {
   font-size: calc(var(--ifm-font-size-base) - 2px) !important;
-  padding-top: calc(var(--ifm-font-size-base) / 2) !important; // Half of 18px = 9px
-  padding-bottom: calc(var(--ifm-font-size-base) / 2) !important; // Half of 18px = 9px
+  padding-top: calc(
+    var(--ifm-font-size-base) / 2
+  ) !important; // Half of 18px = 9px
+  padding-bottom: calc(
+    var(--ifm-font-size-base) / 2
+  ) !important; // Half of 18px = 9px
 }
 
 html[data-theme="light"] {
@@ -636,7 +795,7 @@ html[data-theme="light"] {
 
 html[data-theme="dark"] {
   .tabs__item:hover {
-    background-color: rgba(208, 224, 249, 0.15) !important;
+    background-color: rgba(208, 224, 249, 0.1) !important;
     color: var(--ifm-menu-color-active);
     border-bottom-left-radius: 0 !important;
     border-bottom-right-radius: 0 !important;
@@ -772,6 +931,11 @@ html[data-theme="dark"] {
   display: flex;
   align-items: center;
   margin-right: 0.5rem;
+
+  // Hide on tablet resolutions
+  @include tablet {
+    display: none !important;
+  }
 }
 
 // GitHub Stars Button Styling

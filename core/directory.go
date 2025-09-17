@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -24,7 +25,6 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
-	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
@@ -111,9 +111,22 @@ func NewDirectorySt(ctx context.Context, st llb.State, dir string, platform Plat
 // Clone returns a deep copy of the container suitable for modifying in a
 // WithXXX method.
 func (dir *Directory) Clone() *Directory {
+	if dir == nil {
+		return nil
+	}
 	cp := *dir
 	cp.Services = slices.Clone(cp.Services)
+
 	return &cp
+}
+
+func (dir *Directory) WithoutInputs() *Directory {
+	dir = dir.Clone()
+
+	dir.LLB = nil
+	dir.Result = nil
+
+	return dir
 }
 
 var _ dagql.OnReleaser = (*Directory)(nil)
@@ -232,7 +245,7 @@ func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, src string)
 		Path: src,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to stat file %s: %w", src, err)
+		return nil, err
 	}
 	return st, nil
 }
@@ -240,11 +253,8 @@ func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, src string)
 func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error) {
 	src = path.Join(dir.Dir, src)
 	paths := []string{}
-	useSlash, err := SupportsDirSlash(ctx)
-	if err != nil {
-		return nil, err
-	}
-	_, err = execInMount(ctx, dir, func(root string) error {
+	useSlash := SupportsDirSlash(ctx)
+	_, err := execInMount(ctx, dir, func(root string) error {
 		resolvedDir, err := containerdfs.RootPath(root, src)
 		if err != nil {
 			return err
@@ -302,10 +312,7 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 	}
 	onlyPrefixIncludes := !strings.ContainsAny(patternWithoutTrailingGlob(pat), patternChars)
 
-	useSlash, err := SupportsDirSlash(ctx)
-	if err != nil {
-		return nil, err
-	}
+	useSlash := SupportsDirSlash(ctx)
 	_, err = execInMount(ctx, dir, func(root string) error {
 		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
 		if err != nil {
@@ -499,7 +506,7 @@ func (dir *Directory) WithPatch(ctx context.Context, patch string) (*Directory, 
 		if err != nil {
 			return err
 		}
-		apply := exec.Command("git", "apply", "-")
+		apply := exec.Command("git", "apply", "--allow-empty", "-")
 		apply.Dir = resolvedDir
 		apply.Stdin = strings.NewReader(patch)
 		apply.Stdout = stdio.Stdout
@@ -521,6 +528,79 @@ func (dir *Directory) WithPatch(ctx context.Context, patch string) (*Directory, 
 	}
 	dir.Result = snap
 	return dir, nil
+}
+
+func (dir *Directory) Search(ctx context.Context, opts SearchOpts, paths []string, globs []string) ([]*SearchResult, error) {
+	// Validate and normalize paths to prevent directory traversal attacks
+	for i, p := range paths {
+		// If absolute, make it relative to the directory
+		if filepath.IsAbs(p) {
+			paths[i] = strings.TrimPrefix(p, "/")
+		}
+
+		// Clean the path (e.g., remove ../, ./, etc.)
+		paths[i] = filepath.Clean(paths[i])
+
+		// Check if the normalized path would escape the directory
+		if !filepath.IsLocal(paths[i]) {
+			return nil, fmt.Errorf("path cannot escape directory: %s", p)
+		}
+	}
+
+	ref, err := getRefOrEvaluate(ctx, dir)
+	if err != nil {
+		return nil, err
+	}
+	if ref == nil {
+		// empty directory, i.e. llb.Scratch()
+		return []*SearchResult{}, nil
+	}
+
+	opt, ok := buildkit.CurrentOpOpts(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit opts in context")
+	}
+	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	results := []*SearchResult{}
+	err = MountRef(ctx, ref, bkSessionGroup, func(root string) error {
+		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)
+		if err != nil {
+			return err
+		}
+		rgArgs := opts.RipgrepArgs()
+		for _, glob := range globs {
+			rgArgs = append(rgArgs, "--glob="+glob)
+		}
+		if len(paths) > 0 {
+			rgArgs = append(rgArgs, "--")
+			for _, p := range paths {
+				resolved, err := containerdfs.RootPath(resolvedDir, p)
+				if err != nil {
+					return err
+				}
+				// make it relative, now that it's safe, just for less obtuse errors
+				resolved, err = filepath.Rel(resolvedDir, resolved)
+				if err != nil {
+					return err
+				}
+				rgArgs = append(rgArgs, resolved)
+			}
+		}
+		rg := exec.Command("rg", rgArgs...)
+		rg.Dir = resolvedDir
+		results, err = opts.RunRipgrep(ctx, rg)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return results, nil
 }
 
 func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory, error) {
@@ -545,10 +625,22 @@ func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory,
 	}
 
 	if !info.IsDir() {
-		return nil, fmt.Errorf("path %s is a file, not a directory", subdir)
+		return nil, notADirectoryError{fmt.Errorf("path %s is a file, not a directory", subdir)}
 	}
 
 	return dir, nil
+}
+
+type notADirectoryError struct {
+	inner error
+}
+
+func (e notADirectoryError) Error() string {
+	return e.inner.Error()
+}
+
+func (e notADirectoryError) Unwrap() error {
+	return e.inner
 }
 
 func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
@@ -574,7 +666,7 @@ func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
 	}
 
 	if info.IsDir() {
-		return nil, fmt.Errorf("path %s is a directory, not a file", file)
+		return nil, notAFileError{fmt.Errorf("path %s is a directory, not a file", file)}
 	}
 
 	return &File{
@@ -586,12 +678,30 @@ func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
 	}, nil
 }
 
+type notAFileError struct {
+	inner error
+}
+
+func (e notAFileError) Error() string {
+	return e.inner.Error()
+}
+
+func (e notAFileError) Unwrap() error {
+	return e.inner
+}
+
 type CopyFilter struct {
 	Exclude []string `default:"[]"`
 	Include []string `default:"[]"`
 }
 
-func (dir *Directory) WithDirectory(ctx context.Context, destDir string, src *Directory, filter CopyFilter, owner *Ownership) (*Directory, error) {
+func (dir *Directory) WithDirectory(
+	ctx context.Context,
+	destDir string,
+	src *Directory,
+	filter CopyFilter,
+	owner string,
+) (*Directory, error) {
 	dir = dir.Clone()
 
 	destSt, err := dir.State()
@@ -604,6 +714,14 @@ func (dir *Directory) WithDirectory(ctx context.Context, destDir string, src *Di
 		return nil, err
 	}
 
+	var ownership *Ownership
+	if owner != "" {
+		ownership, err = parseDirectoryOwner(owner)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+		}
+	}
+
 	if err := dir.SetState(ctx, mergeStates(mergeStateInput{
 		Dest:            destSt,
 		DestDir:         path.Join(dir.Dir, destDir),
@@ -611,7 +729,7 @@ func (dir *Directory) WithDirectory(ctx context.Context, destDir string, src *Di
 		SrcDir:          src.Dir,
 		IncludePatterns: filter.Include,
 		ExcludePatterns: filter.Exclude,
-		Owner:           owner,
+		Owner:           ownership,
 	})); err != nil {
 		return nil, err
 	}
@@ -676,7 +794,7 @@ func (dir *Directory) WithFile(
 	destPath string,
 	src *File,
 	permissions *int,
-	owner *Ownership,
+	owner string,
 ) (*Directory, error) {
 	dir = dir.Clone()
 
@@ -739,8 +857,12 @@ func (dir *Directory) WithFile(
 				return fmt.Errorf("failed to set chmod %s: err", destPath)
 			}
 		}
-		if owner != nil {
-			if err := os.Chown(destPath, owner.UID, owner.GID); err != nil {
+		if owner != "" {
+			ownership, err := parseDirectoryOwner(owner)
+			if err != nil {
+				return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+			}
+			if err := os.Chown(destPath, ownership.UID, ownership.GID); err != nil {
 				return fmt.Errorf("failed to set chown %s: err", destPath)
 			}
 		}
@@ -764,7 +886,6 @@ func (dir *Directory) WithFiles(
 	destDir string,
 	src []*File,
 	permissions *int,
-	owner *Ownership,
 ) (*Directory, error) {
 	dir = dir.Clone()
 
@@ -776,7 +897,7 @@ func (dir *Directory) WithFiles(
 			path.Join(destDir, path.Base(file.File)),
 			file,
 			permissions,
-			owner,
+			"",
 		)
 		if err != nil {
 			return nil, err
@@ -930,6 +1051,81 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 	return dir, nil
 }
 
+func (dir *Directory) FindUp(ctx context.Context, name string, start string) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("name cannot be empty")
+	}
+
+	// Start from the given path or current directory
+	searchPath := start
+	if searchPath == "" {
+		searchPath = "."
+	}
+
+	// Clean the search path
+	searchPath = path.Clean(searchPath)
+	if strings.HasPrefix(searchPath, "../") {
+		return "", fmt.Errorf("cannot search outside parent: %s", searchPath)
+	}
+
+	currentPath := searchPath
+
+	for {
+		currentDir, err := dir.Directory(ctx, currentPath)
+		if err != nil {
+			return "", err
+		}
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return "", err
+		}
+		exists, err := currentDir.Exists(ctx, srv, name, "", true)
+		if err != nil {
+			return "", err
+		}
+		if exists {
+			return path.Clean(path.Join(currentPath, name)), nil
+		}
+		parentPath := path.Dir(currentPath)
+		if parentPath == currentPath {
+			break
+		}
+		currentPath = parentPath
+	}
+	return "", nil
+}
+
+func (dir *Directory) WithChanges(ctx context.Context, changes *Changeset) (*Directory, error) {
+	dir = dir.Clone()
+
+	// First, get the diff directory from Changes.before.diff(Changes.after)
+	diffDir, err := changes.Before.Self().Diff(ctx, changes.After.Self())
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute diff between before and after directories: %w", err)
+	}
+
+	// Apply the diff (added + changed files) using WithDirectory
+	dir, err = dir.WithDirectory(ctx, "/", diffDir, CopyFilter{}, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to apply diff directory: %w", err)
+	}
+
+	// Remove all the paths in Changes.removedPaths using Without
+	if len(changes.RemovedPaths) > 0 {
+		srv, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get dagql server: %w", err)
+		}
+
+		dir, err = dir.Without(ctx, srv, changes.RemovedPaths...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to remove paths: %w", err)
+		}
+	}
+
+	return dir, nil
+}
+
 func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...string) (*Directory, error) {
 	dir = dir.Clone()
 	return execInMount(ctx, dir, func(root string) error {
@@ -1048,7 +1244,7 @@ func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("export directory %s to host %s", dir.Dir, destPath))
 	defer telemetry.End(span, func() error { return rerr })
 
-	return bk.LocalDirExport(ctx, defPB, destPath, merge)
+	return bk.LocalDirExport(ctx, defPB, destPath, merge, nil)
 }
 
 // Root removes any relative path from the directory.
@@ -1086,15 +1282,68 @@ func (dir *Directory) Mount(ctx context.Context, f func(string) error) error {
 	})
 }
 
+func parseDirectoryOwner(owner string) (*Ownership, error) {
+	uidStr, gidStr, hasGroup := strings.Cut(owner, ":")
+	var uid, gid int
+	uid, err := parseUID(uidStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid uid %q: %w", uidStr, err)
+	}
+	if hasGroup {
+		gid, err = parseUID(gidStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid gid %q: %w", gidStr, err)
+		}
+	}
+	if !hasGroup {
+		gid = uid
+	}
+
+	return &Ownership{
+		UID: uid,
+		GID: gid,
+	}, nil
+}
+
+func (dir *Directory) Chown(ctx context.Context, chownPath string, owner string) (*Directory, error) {
+	ownership, err := parseDirectoryOwner(owner)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+	}
+
+	dir = dir.Clone()
+	return execInMount(ctx, dir, func(root string) error {
+		chownPath := path.Join(dir.Dir, chownPath)
+		chownPath, err := containerdfs.RootPath(root, chownPath)
+		if err != nil {
+			return err
+		}
+
+		err = filepath.WalkDir(chownPath, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if err := os.Lchown(path, ownership.UID, ownership.GID); err != nil {
+				return fmt.Errorf("failed to set chown %s: %w", path, err)
+			}
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("failed to walk %s: %w", chownPath, err)
+		}
+		return nil
+	}, withSavedSnapshot("chown %s %s", chownPath, owner))
+}
+
 func validateFileName(file string) error {
 	baseFileName := filepath.Base(file)
 	if len(baseFileName) > 255 {
-		return errors.Errorf("File name length exceeds the maximum supported 255 characters")
+		return errors.New("File name length exceeds the maximum supported 255 characters")
 	}
 	return nil
 }
 
-func SupportsDirSlash(ctx context.Context) (bool, error) {
+func SupportsDirSlash(ctx context.Context) bool {
 	return Supports(ctx, "v0.17.0")
 }
 

@@ -1,7 +1,0 @@
-{
-  "name": "my-module",
-  "engineVersion": "v0.16.2-010101000000-dev-c2115bbbe885",
-  "sdk": {
-    "source": "java"
-  }
-}

@@ -13,6 +13,9 @@ import (
 
 func ReexportMetricsFromPB(ctx context.Context, exps []sdkmetric.Exporter, req *colmetricspb.ExportMetricsServiceRequest) error {
 	for _, reqResourceMetrics := range req.GetResourceMetrics() {
+		if len(reqResourceMetrics.GetScopeMetrics()) == 0 {
+			continue
+		}
 		var eg errgroup.Group
 		for _, exp := range exps {
 			eg.Go(func() error {

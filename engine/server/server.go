@@ -65,7 +65,6 @@ import (
 	"github.com/moby/buildkit/worker/base"
 	wlabel "github.com/moby/buildkit/worker/label"
 	"github.com/moby/locker"
-	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
 	bolt "go.etcd.io/bbolt"
@@ -80,10 +79,6 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/sources/blob"
 	"github.com/dagger/dagger/engine/sources/local"
-)
-
-const (
-	daggerCacheServiceURL = "https://api.dagger.cloud/magicache"
 )
 
 type Server struct {
@@ -170,7 +165,7 @@ type Server struct {
 	//
 	// dagql cache
 	//
-	baseDagqlCache cache.Cache[digest.Digest, dagql.AnyResult]
+	baseDagqlCache cache.Cache[string, dagql.AnyResult]
 
 	//
 	// session+client state
@@ -214,7 +209,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			SearchDomains: bkcfg.DNS.SearchDomains,
 		},
 
-		baseDagqlCache: cache.NewCache[digest.Digest, dagql.AnyResult](),
+		baseDagqlCache: cache.NewCache[string, dagql.AnyResult](),
 		daggerSessions: make(map[string]*daggerSession),
 		locker:         locker.New(),
 	}
@@ -489,24 +484,11 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, err
 	}
 
-	cacheServiceURL := os.Getenv("_EXPERIMENTAL_DAGGER_CACHESERVICE_URL")
-	cacheServiceToken := os.Getenv("_EXPERIMENTAL_DAGGER_CACHESERVICE_TOKEN")
-	// add DAGGER_CLOUD_TOKEN in a backwards compat way.
-	// TODO: deprecate in a future release
-	if v, ok := os.LookupEnv("DAGGER_CLOUD_TOKEN"); ok {
-		cacheServiceToken = v
-	}
-
-	if cacheServiceURL == "" {
-		cacheServiceURL = daggerCacheServiceURL
-	}
 	srv.SolverCache, err = daggercache.NewManager(ctx, daggercache.ManagerConfig{
 		KeyStore:     srv.solverCacheDB,
 		ResultStore:  bkworker.NewCacheResultStorage(baseWorkerController),
 		Worker:       srv.baseWorker,
 		MountManager: mounts.NewMountManager("dagger-cache", srv.workerCache, srv.bkSessionManager),
-		ServiceURL:   cacheServiceURL,
-		Token:        cacheServiceToken,
 		EngineID:     opts.Name,
 	})
 	if err != nil {

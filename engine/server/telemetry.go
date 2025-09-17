@@ -507,7 +507,7 @@ func insertLogRecord(ctx context.Context, queries *clientdb.Queries, rec *sdklog
 	}
 
 	res := rec.Resource()
-	resource, err := protojson.Marshal(telemetry.ResourceToPB(res))
+	resource, err := protojson.Marshal(telemetry.ResourcePtrToPB(res))
 	if err != nil {
 		return fmt.Errorf("marshal log record resource: %w", err)
 	}
@@ -549,10 +549,11 @@ type clientMetrics struct {
 }
 
 func (ps clientMetrics) Export(ctx context.Context, metrics *metricdata.ResourceMetrics) error {
-	slog.ExtraDebug("pubsub exporting metrics", "client", ps.client.clientID, "count", len(metrics.ScopeMetrics))
 	if len(metrics.ScopeMetrics) == 0 {
 		return nil
 	}
+
+	slog.ExtraDebug("pubsub exporting metrics", "client", ps.client.clientID, "count", len(metrics.ScopeMetrics))
 
 	tx, err := ps.client.db.Begin()
 	if err != nil {

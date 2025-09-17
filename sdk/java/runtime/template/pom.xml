@@ -12,7 +12,7 @@
     <properties>
         <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <dagger.module.deps>0.18.15-template-module</dagger.module.deps>
+        <dagger.module.deps>0.18.18-template-module</dagger.module.deps>
     </properties>
 
     <dependencies>
@@ -42,7 +42,7 @@
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-handler</artifactId>
-            <version>4.1.118.Final</version>
+            <version>4.1.125.Final</version>
         </dependency>
         <dependency>
             <groupId>net.minidev</groupId>

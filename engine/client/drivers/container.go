@@ -76,7 +76,8 @@ var (
 )
 
 var (
-	engineConfigPath = filepath.Join(xdg.ConfigHome, "dagger", "engine.json")
+	engineConfigPath       = filepath.Join(xdg.ConfigHome, "dagger", "engine.json")
+	engineCertificatesPath = filepath.Join(xdg.ConfigHome, "dagger", "ca-certificates")
 )
 
 // containerBackend is a generic backend for containers that can be plugged
@@ -291,6 +292,12 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 		runOptions.volumes = append(runOptions.volumes, engineConfigPath+":"+config.DefaultConfigPath())
 	} else if !errors.Is(err, os.ErrNotExist) {
 		slog.Warn("could not stat config", "path", engineConfigPath, "error", err)
+	}
+	// mount the certificates path
+	if _, err := os.Stat(engineCertificatesPath); err == nil {
+		runOptions.volumes = append(runOptions.volumes, engineCertificatesPath+":"+distconsts.EngineCustomCACertsDir)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		slog.Warn("could not stat certificates", "path", engineCertificatesPath, "error", err)
 	}
 
 	if dopts.DaggerCloudToken != "" {

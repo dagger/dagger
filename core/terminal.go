@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkgwpb "github.com/moby/buildkit/frontend/gateway/pb"
 	"github.com/muesli/termenv"
 	"golang.org/x/sync/errgroup"
@@ -14,6 +12,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
 )
 
@@ -21,8 +20,12 @@ const (
 	defaultTerminalImage = distconsts.AlpineImage
 )
 
-type TerminalArgs struct {
+type ExecTerminalArgs struct {
 	Cmd []string `default:"[]"`
+}
+
+type TerminalArgs struct {
+	ExecTerminalArgs
 
 	// Provide dagger access to the executed command
 	ExperimentalPrivilegedNesting dagql.Optional[dagql.Boolean] `default:"false"`
@@ -36,6 +39,23 @@ func (container *Container) Terminal(
 	svcID *call.ID,
 	args *TerminalArgs,
 ) error {
+	return container.terminal(ctx, svcID, args, nil)
+}
+
+func (container *Container) TerminalError(
+	ctx context.Context,
+	svcID *call.ID,
+	richErr *buildkit.RichError,
+) error {
+	return container.terminal(ctx, svcID, nil, richErr)
+}
+
+func (container *Container) terminal(
+	ctx context.Context,
+	svcID *call.ID,
+	args *TerminalArgs,
+	richErr *buildkit.RichError,
+) error {
 	container = container.Clone()
 
 	// HACK: ensure that container is entirely built before interrupting nice
@@ -45,99 +65,37 @@ func (container *Container) Terminal(
 		return fmt.Errorf("failed to evaluate container: %w", err)
 	}
 
-	query, err := CurrentQuery(ctx)
+	term, output, err := prepTerminal(ctx, svcID, richErr)
 	if err != nil {
-		return fmt.Errorf("failed to get current query: %w", err)
+		return err
 	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get buildkit client: %w", err)
+	defer term.Close(bkgwpb.UnknownExitStatus) // always close term; it's wrapped in a once so it won't be called multiple times
+	container.Config.Env = prepTerminalEnv(output, container.Config.Env)
+
+	var svc *Service
+	if richErr == nil {
+		svc, err = container.AsService(ctx, ContainerAsServiceArgs{
+			Args:                          args.Cmd,
+			ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting.Value.Bool(),
+			InsecureRootCapabilities:      args.InsecureRootCapabilities.Value.Bool(),
+		})
+	} else {
+		svc, err = container.AsRecoveredService(ctx, richErr)
 	}
-
-	term, err := bk.OpenTerminal(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to open terminal: %w", err)
-	}
-	// always close term; it's wrapped in a once so it won't be called multiple times
-	defer term.Close(bkgwpb.UnknownExitStatus)
-
-	output := idtui.NewOutput(term.Stderr)
-	fmt.Fprint(
-		term.Stderr,
-		output.String(idtui.DotFilled).Foreground(termenv.ANSIYellow).String()+" Attaching terminal: ",
-	)
-	dump := idtui.Dump{Newline: "\r\n", Prefix: "    "}
-	fmt.Fprint(term.Stderr, dump.Newline)
-	if err := dump.DumpID(output, svcID); err != nil {
-		return fmt.Errorf("failed to serialize service ID: %w", err)
-	}
-	fmt.Fprint(term.Stderr, dump.Newline)
-
-	// Inject a custom shell prompt `dagger:<cwd>$`
-	container.Config.Env = append(container.Config.Env, fmt.Sprintf("PS1=%s %s $ ",
-		output.String("dagger").Foreground(termenv.ANSIYellow).String(),
-		output.String(`$(pwd | sed "s|^$HOME|~|")`).Faint().String(),
-	))
-
-	svc, err := container.AsService(ctx, ContainerAsServiceArgs{
-		Args:                          args.Cmd,
-		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting.Value.Bool(),
-		InsecureRootCapabilities:      args.InsecureRootCapabilities.Value.Bool(),
-	})
 	if err != nil {
 		return fmt.Errorf("failed to create service for interactive terminal: %w", err)
 	}
+
 	eg, egctx := errgroup.WithContext(ctx)
 	runningSvc, err := svc.Start(
 		ctx,
 		svcID,
-		true,
-		func(stdin io.Writer, svcProc bkgw.ContainerProcess) {
-			eg.Go(func() error {
-				_, err := io.Copy(stdin, term.Stdin)
-				if err != nil {
-					if errors.Is(err, io.ErrClosedPipe) {
-						return nil
-					}
-					return fmt.Errorf("error forwarding terminal stdin to container: %w", err)
-				}
-				return nil
-			})
-			eg.Go(func() error {
-				for resize := range term.ResizeCh {
-					err := svcProc.Resize(egctx, resize)
-					if err != nil {
-						return fmt.Errorf("failed to resize terminal: %w", err)
-					}
-				}
-				return nil
-			})
-		},
-		func(stdout io.Reader) {
-			eg.Go(func() error {
-				defer term.Stdout.Close()
-				_, err := io.Copy(term.Stdout, stdout)
-				if err != nil {
-					if errors.Is(err, io.ErrClosedPipe) {
-						return nil
-					}
-					return fmt.Errorf("error forwarding container stdout to terminal: %w", err)
-				}
-				return nil
-			})
-		},
-		func(stderr io.Reader) {
-			eg.Go(func() error {
-				defer term.Stderr.Close()
-				_, err := io.Copy(term.Stderr, stderr)
-				if err != nil {
-					if errors.Is(err, io.ErrClosedPipe) {
-						return nil
-					}
-					return fmt.Errorf("error forwarding container stderr to terminal: %w", err)
-				}
-				return nil
-			})
+		&ServiceIO{
+			Stdin:       term.Stdin,
+			Stdout:      term.Stdout,
+			Stderr:      term.Stderr,
+			ResizeCh:    term.ResizeCh,
+			Interactive: true,
 		},
 	)
 	if err != nil {
@@ -179,14 +137,12 @@ func (dir *Directory) Terminal(
 	svcID *call.ID,
 	ctr *Container,
 	args *TerminalArgs,
+	parent dagql.ObjectResult[*Directory],
 ) error {
 	var err error
 
 	if ctr == nil {
-		ctr, err = NewContainer(dir.Platform)
-		if err != nil {
-			return fmt.Errorf("failed to create terminal container: %w", err)
-		}
+		ctr = NewContainer(dir.Platform)
 		ctr, err = ctr.FromRefString(ctx, defaultTerminalImage)
 		if err != nil {
 			return fmt.Errorf("failed to create terminal container: %w", err)
@@ -195,9 +151,100 @@ func (dir *Directory) Terminal(
 
 	ctr = ctr.Clone()
 	ctr.Config.WorkingDir = "/src"
-	ctr, err = ctr.WithMountedDirectory(ctx, "/src", dir, "", true)
+	ctr, err = ctr.WithMountedDirectory(ctx, "/src", parent, "", true)
 	if err != nil {
 		return fmt.Errorf("failed to create terminal container: %w", err)
 	}
 	return ctr.Terminal(ctx, svcID, args)
+}
+
+func (*Service) Terminal(
+	ctx context.Context,
+	svc dagql.ObjectResult[*Service],
+	args *ExecTerminalArgs,
+) error {
+	term, output, err := prepTerminal(ctx, svc.ID(), nil)
+	if err != nil {
+		return err
+	}
+	defer term.Close(bkgwpb.UnknownExitStatus) // always close term; it's wrapped in a once so it won't be called multiple times
+
+	env := prepTerminalEnv(output, nil)
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return err
+	}
+	detach, runnings, err := svcs.StartBindings(ctx, ServiceBindings{{Service: svc}})
+	if err != nil {
+		return err
+	}
+	defer detach()
+
+	running := runnings[0]
+	if running.Exec == nil {
+		return fmt.Errorf("service %s does not support terminal", svc.ID().Digest())
+	}
+	return running.Exec(ctx, args.Cmd, env, &ServiceIO{
+		Stdin:       term.Stdin,
+		Stdout:      term.Stdout,
+		Stderr:      term.Stderr,
+		ResizeCh:    term.ResizeCh,
+		Interactive: true,
+	})
+}
+
+func prepTerminal(ctx context.Context, svcID *call.ID, richErr *buildkit.RichError) (*buildkit.TerminalClient, *termenv.Output, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get current query: %w", err)
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
+	term, err := bk.OpenTerminal(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to open terminal: %w", err)
+	}
+
+	output := idtui.NewOutput(term.Stderr)
+	if richErr == nil {
+		fmt.Fprint(
+			term.Stderr,
+			output.String(idtui.DotFilled).Foreground(termenv.ANSIYellow).String()+" Attaching terminal: ",
+		)
+	} else {
+		fmt.Fprint(
+			term.Stderr,
+			output.String(idtui.IconFailure).Foreground(termenv.ANSIRed).String()+" Exec failed, attaching terminal: ",
+		)
+	}
+	dump := idtui.Dump{Newline: "\r\n", Prefix: "    "}
+	fmt.Fprint(term.Stderr, dump.Newline)
+	if err := dump.DumpID(output, svcID); err != nil {
+		return nil, nil, fmt.Errorf("failed to serialize service ID: %w", err)
+	}
+	fmt.Fprint(term.Stderr, dump.Newline)
+	if richErr != nil {
+		fmt.Fprintf(term.Stderr,
+			output.String("! %s").Foreground(termenv.ANSIYellow).String(), richErr.Error())
+		fmt.Fprint(term.Stderr, dump.Newline)
+	}
+
+	return term, output, nil
+}
+
+// prepTerminalEnv creates a custom shell prompt `dagger:<cwd>$`
+func prepTerminalEnv(output *termenv.Output, env []string) []string {
+	env = append(env, fmt.Sprintf("PS1=%s %s $ ",
+		output.String("dagger").Foreground(termenv.ANSIYellow).String(),
+		output.String(`$(pwd | sed "s|^$HOME|~|")`).Faint().String(),
+	))
+	return env
 }

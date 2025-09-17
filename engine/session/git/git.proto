@@ -52,7 +52,7 @@ message ErrorInfo {
   enum ErrorType {
     UNKNOWN = 0;
     INVALID_REQUEST = 1;
-    NO_GIT = 2;
+    NOT_FOUND = 2;
     TIMEOUT = 3;
     CREDENTIAL_RETRIEVAL_FAILED = 4;
     CONFIG_RETRIEVAL_FAILED = 5;

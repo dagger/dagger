@@ -14,6 +14,16 @@ namespace Dagger;
 class Host extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * Accesses a container image on the host.
+     */
+    public function containerImage(string $name): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('containerImage');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Accesses a directory on the host.
      */
     public function directory(
@@ -21,6 +31,7 @@ class Host extends Client\AbstractObject implements Client\IdAble
         ?array $exclude = null,
         ?array $include = null,
         ?bool $noCache = false,
+        ?bool $gitignore = false,
     ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
         $innerQueryBuilder->setArgument('path', $path);
@@ -32,6 +43,9 @@ class Host extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $noCache) {
         $innerQueryBuilder->setArgument('noCache', $noCache);
+        }
+        if (null !== $gitignore) {
+        $innerQueryBuilder->setArgument('gitignore', $gitignore);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -47,6 +61,19 @@ class Host extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder->setArgument('noCache', $noCache);
         }
         return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Search for a file or directory by walking up the tree from system workdir. Return its relative path. If no match, return null
+     */
+    public function findUp(string $name, ?bool $noCache = false): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('findUp');
+        $leafQueryBuilder->setArgument('name', $name);
+        if (null !== $noCache) {
+        $leafQueryBuilder->setArgument('noCache', $noCache);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'findUp');
     }
 
     /**

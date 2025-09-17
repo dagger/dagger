@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/sys/user"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	"github.com/dagger/dagger/util/fsxutil"
 )
 
 type Filesyncer struct {
@@ -104,7 +106,7 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 		if err != nil {
 			return err
 		}
-		fs, err = fsutil.NewFilterFS(fs, &fsutil.FilterOpt{
+		filteredFS, err := fsutil.NewFilterFS(fs, &fsutil.FilterOpt{
 			IncludePatterns: opts.IncludePatterns,
 			ExcludePatterns: opts.ExcludePatterns,
 			FollowPaths:     opts.FollowPaths,
@@ -114,10 +116,16 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 				return fsutil.MapResultKeep
 			},
 		})
+		if opts.UseGitIgnore {
+			filteredFS, err = fsxutil.NewGitIgnoreFS(filteredFS, fsxutil.NewGitIgnoreMatcher(fs))
+			if err != nil {
+				return err
+			}
+		}
 		if err != nil {
 			return err
 		}
-		return fsutil.Send(stream.Context(), stream, fs, nil)
+		return fsutil.Send(stream.Context(), stream, filteredFS, nil)
 	}
 }
 
@@ -136,6 +144,25 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 	absPath, err := Filesyncer(t).fullRootPathAndBaseName(opts.Path, false)
 	if err != nil {
 		return fmt.Errorf("get full root path: %w", err)
+	}
+
+	for _, removePath := range opts.RemovePaths {
+		isDir := strings.HasSuffix(removePath, "/")
+		if !filepath.IsAbs(removePath) {
+			removePath = filepath.Join(opts.Path, removePath)
+		}
+		if err != nil {
+			return fmt.Errorf("get full remove path: %w", err)
+		}
+		if isDir {
+			if err := os.RemoveAll(removePath); err != nil {
+				return fmt.Errorf("remove path %s: %w", removePath, err)
+			}
+		} else {
+			if err := os.Remove(removePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("remove path %s: %w", removePath, err)
+			}
+		}
 	}
 
 	if !opts.IsFileStream {

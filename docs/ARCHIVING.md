@@ -251,6 +251,66 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
   - Perform a search over the `docs` directory tree to confirm that there are no orphaned `<Embed` directives
 - Run `npm run build` and store the `build/` directory as `site/0.9`
 
+## Build 0.18 sub-site
+
+- Clone repository at the point before the new docs structure was merged, commit id b264263641
+- In `docusaurus.config.js`:
+  - Set `url: 'https://archive.docs.dagger.io'`
+  - Set `baseUrl: "/0.18/"`
+  - Add announcement bar in `themeConfig` object
+
+        themeConfig: {
+          //
+          announcementBar: {
+            id: 'unmaintained_docs',
+            content:
+              'This is a snapshot of the previous documentation website for Dagger 0.18.x. For up-to-date documentation, visit <a target="_blank" rel="noopener noreferrer" href="https://docs.dagger.io">docs.dagger.io</a>.',
+            backgroundColor: '#fcc009',
+            textColor: '#000000',
+            isCloseable: false,
+          },
+        }
+
+  - Delete search bar
+
+        {
+          type: "search",
+          position: "right",
+          className: "header-searchbar",
+        },
+
+  - Delete Algolia search config
+
+        algolia: {
+          apiKey: "bffda1490c07dcce81a26a144115cc02",
+          indexName: "dagger",
+          appId: "XEIYPBWGOI",
+        },
+
+  - Delete edit URL
+
+          editUrl: "https://github.com/dagger/dagger/edit/main/website",
+
+  - Add noindex metadata in `themeConfig` object
+
+        metadata: [
+          { name: 'robots', content: 'noindex, nofollow' },
+        ]
+
+  - Update path to `commonroom.js`
+
+        scripts: [
+          {
+            src: "/0.18/js/commonroom.js",
+            async: true,
+          },
+        ],
+
+- In `docs/current_docs/` sub-directory:
+  - Replace `<VideoPlayer src="/img/current_docs` URL links with `<VideoPlayer src="/0.18/img/current_docs` URL links
+
+- Run `npm run build` and store the `build/` directory as `site/0.18`
+
 ## Build top-level site (archive.docs.dagger.io)
 
 - Obtain the index page template from `archived_docs/index.html.tmpl` and modify as needed.
@@ -261,5 +321,6 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
         0.1/
         0.2/
         0.9/
+        0.18/
         index.html
         netlify.toml

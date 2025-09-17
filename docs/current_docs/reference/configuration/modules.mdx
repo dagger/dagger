@@ -3,6 +3,7 @@ title: "Module Configuration"
 description: "Learn how to configure Dagger modules, including TypeScript SDK settings, file filters, and alternative runtimes."
 keywords: ["dagger", "module", "configuration", "typescript", "sdk", "runtime", "package manager"]
 sidebar_label: "Modules"
+slug: /reference/configuration/modules
 ---
 
 
@@ -14,7 +15,7 @@ For more information, refer to the [JSON schema for the Dagger module configurat
 
 The JSON schema for the Dagger module configuration file `dagger.json` supports an `include` field. It tells the Dagger Engine of additional files to include or exclude when loading the module itself. By default, only `dagger.json` and all files under the module's source directory are included.
 
-Notably, these filters only apply to loading the Dagger module. They do not apply to any directories passed as arguments to the Dagger module's functions ([pre- and post-call filtering](../../types/directory.mdx#filters) is separately available for directory arguments).
+Notably, these filters only apply to loading the Dagger module. They do not apply to any directories passed as arguments to the Dagger module's functions ([pre- and post-call filtering](../../getting-started/types/directory.mdx#filters) is separately available for directory arguments).
 
 :::tip
 Adding excluding patterns prefixed with `!` is particularly useful during local module development, to avoid uploading large cache or generated files that the Dagger Engine doesn't need.

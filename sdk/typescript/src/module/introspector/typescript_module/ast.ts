@@ -93,6 +93,51 @@ export class AST {
     return result
   }
 
+  public findAllDeclarations<T extends keyof DeclarationsMap>(
+    kind: T,
+  ): ResolvedNodeWithSymbol<T>[] {
+    const results: ResolvedNodeWithSymbol<T>[] = []
+
+    for (const sourceFile of this.sourceFiles) {
+      ts.forEachChild(sourceFile, (node) => {
+        // Skip if it's not from the client gen nor the user module
+        if (
+          !sourceFile.fileName.endsWith(CLIENT_GEN_FILE) &&
+          !this.files.includes(sourceFile.fileName)
+        ) {
+          return
+        }
+
+        if (kind !== undefined && node.kind === kind) {
+          const isDeclarationValid = isDeclarationOf[kind](node)
+          if (!isDeclarationValid) return
+
+          const convertedNode = node as DeclarationsMap[typeof kind]
+          if (!convertedNode.name) {
+            return
+          }
+
+          const symbol = this.checker.getSymbolAtLocation(convertedNode.name)
+          if (!symbol) {
+            console.debug(
+              `missing symbol for ${convertedNode.name.getText()} at ${sourceFile.fileName}:${node.pos}`,
+            )
+            return
+          }
+
+          results.push({
+            type: kind,
+            node: convertedNode,
+            symbol: symbol,
+            file: sourceFile,
+          })
+        }
+      })
+    }
+
+    return results
+  }
+
   public getTypeFromTypeAlias(typeAlias: ts.TypeAliasDeclaration): ts.Type {
     const symbol = this.getSymbolOrThrow(typeAlias.name)
 

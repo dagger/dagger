@@ -1,25 +1,31 @@
 package core
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/moby/buildkit/cache"
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core/reffs"
@@ -156,57 +162,261 @@ func (file *File) Evaluate(ctx context.Context) (*buildkit.Result, error) {
 }
 
 // Contents handles file content retrieval
-func (file *File) Contents(ctx context.Context) ([]byte, error) {
+func (file *File) Contents(ctx context.Context, offset, limit *int) ([]byte, error) {
+	if limit != nil && *limit == 0 {
+		// edge case: 0 limit, possibly from maths, just don't do anything
+		return nil, nil
+	}
+
+	var buf bytes.Buffer
+	w := &limitedWriter{
+		Limit:  buildkit.MaxFileContentsSize,
+		Writer: &buf,
+	}
+
+	_, err := execInMount(ctx, file, func(root string) error {
+		fullPath, err := containerdfs.RootPath(root, file.File)
+		if err != nil {
+			return err
+		}
+
+		r, err := os.Open(fullPath)
+		if err != nil {
+			return err
+		}
+		defer r.Close()
+
+		if offset != nil || limit != nil {
+			br := bufio.NewReader(r)
+			lineNum := 1
+			readLines := 0
+			for {
+				line, err := br.ReadBytes('\n')
+				if err != nil && err != io.EOF {
+					return err
+				}
+
+				if offset == nil || lineNum > *offset {
+					w.Write(line)
+					readLines++
+					if limit != nil && readLines == *limit {
+						break
+					}
+				}
+
+				if err == io.EOF {
+					break
+				}
+
+				lineNum++
+			}
+		} else {
+			_, err := io.Copy(w, r)
+			if err != nil {
+				return err
+			}
+		}
+		return err
+	}, allowNilBuildkitSession)
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+type limitedWriter struct {
+	Limit int
+	io.Writer
+	wrote int
+}
+
+func (cw *limitedWriter) Write(p []byte) (int, error) {
+	if cw.wrote+len(p) > cw.Limit {
+		return 0, fmt.Errorf("file size %d exceeds limit %d", cw.wrote+len(p), buildkit.MaxFileContentsSize)
+	}
+	n, err := cw.Writer.Write(p)
+	if err != nil {
+		return n, err
+	}
+	cw.wrote += n
+	return n, nil
+}
+
+func (file *File) Search(ctx context.Context, opts SearchOpts) ([]*SearchResult, error) {
+	ref, err := getRefOrEvaluate(ctx, file)
+	if err != nil {
+		return nil, err
+	}
+	if ref == nil {
+		// empty directory, i.e. llb.Scratch()
+		return []*SearchResult{}, nil
+	}
+
+	opt, ok := buildkit.CurrentOpOpts(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit opts in context")
+	}
+
+	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	results := []*SearchResult{}
+	err = MountRef(ctx, ref, bkSessionGroup, func(root string) error {
+		resolvedDir, err := containerdfs.RootPath(root, filepath.Dir(file.File))
+		if err != nil {
+			return err
+		}
+		rgArgs := opts.RipgrepArgs()
+		rgArgs = append(rgArgs, "--", filepath.Base(file.File))
+		rg := exec.Command("rg", rgArgs...)
+		rg.Dir = resolvedDir
+		results, err = opts.RunRipgrep(ctx, rg)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+func (file *File) WithReplaced(ctx context.Context, searchStr, replacementStr string, firstFrom *int, all bool) (*File, error) {
+	opt, ok := buildkit.CurrentOpOpts(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit opts in context")
+	}
+	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close()
+
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
 
-	ref, err := bkRef(ctx, bk, file.LLB)
+	parentRef, err := getRefOrEvaluate(ctx, file)
 	if err != nil {
 		return nil, err
 	}
 
-	// Stat the file and preallocate file contents buffer:
-	st, err := file.Stat(ctx)
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	// reuse Search internally so we get convenient line numbers for an error if
+	// there are multiple matches
+	matches, err := file.Search(ctx, SearchOpts{
+		Pattern:   searchStr,
+		Literal:   true,
+		Multiline: strings.ContainsRune(searchStr, '\n'),
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	// Error on files that exceed MaxFileContentsSize:
-	fileSize := int(st.GetSize_())
-	if fileSize > buildkit.MaxFileContentsSize {
-		// TODO: move to proper error structure
-		return nil, fmt.Errorf("file size %d exceeds limit %d", fileSize, buildkit.MaxFileContentsSize)
+	// Drop any matches before *firstFrom
+	if firstFrom != nil {
+		var matchesFrom []*SearchResult
+		for _, match := range matches {
+			if match.LineNumber >= *firstFrom {
+				matchesFrom = append(matchesFrom, match)
+			}
+		}
+		matches = matchesFrom
 	}
 
-	// Allocate buffer with the given file size:
-	contents := make([]byte, fileSize)
+	// Check for matches
+	if len(matches) == 0 {
+		if all {
+			// If we're replacing all, it's not an error if there are no matches
+			// (just a no-op)
+			return file, nil
+		}
+		return nil, fmt.Errorf("search string not found")
+	}
 
-	// Use a chunked reader to overcome issues when
-	// the input file exceeds MaxFileContentsChunkSize:
-	var offset int
-	for offset < fileSize {
-		chunk, err := ref.ReadFile(ctx, bkgw.ReadRequest{
-			Filename: file.File,
-			Range: &bkgw.FileRange{
-				Offset: offset,
-				Length: buildkit.MaxFileContentsChunkSize,
-			},
-		})
+	var matchedLocs []string
+	for _, match := range matches {
+		for _, sub := range match.Submatches {
+			matchedLocs = append(matchedLocs, fmt.Sprintf("line %d (%d-%d)", match.LineNumber, sub.Start, sub.End))
+		}
+	}
+
+	// Load content into memory for simple bytes.Replace
+	//
+	// This is obviously less efficient than streaming, but:
+	// 1. it is far simpler (I tried streaming text/transform and hit cryptic errors),
+	// 2. we already faced the music on that with File.contents,
+	// 3. this will mainly be used for code which is fine to hold in memory, and
+	// 4. it is far simpler.
+	var offset *int
+	if firstFrom != nil {
+		o := *firstFrom - 1
+		offset = &o
+	}
+	contents, err := file.Contents(ctx, offset, nil)
+	if err != nil {
+		return nil, err
+	}
+	search := []byte(searchStr)
+	replacement := []byte(replacementStr)
+	if all {
+		contents = bytes.ReplaceAll(contents, search, replacement)
+	} else if firstFrom != nil || len(matchedLocs) == 1 {
+		contents = bytes.Replace(contents, search, replacement, 1)
+	} else if len(matchedLocs) > 0 {
+		return nil, fmt.Errorf("search string found multiple times: %s", strings.Join(matchedLocs, ", "))
+	}
+
+	// If we replaced after a certain line, bring the content before it back
+	if offset != nil && *offset > 0 {
+		previous, err := file.Contents(ctx, nil, offset)
 		if err != nil {
 			return nil, err
 		}
-
-		// Copy the chunk and increment offset for subsequent reads:
-		copy(contents[offset:], chunk)
-		offset += len(chunk)
+		contents = append(previous, contents...)
 	}
-	return contents, nil
+
+	// Create a new layer for the replaced content
+	newRef, err := query.BuildkitCache().New(ctx, parentRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("patch"))
+	if err != nil {
+		return nil, err
+	}
+	err = MountRef(ctx, newRef, bkSessionGroup, func(root string) (rerr error) {
+		resolvedPath, err := containerdfs.RootPath(root, file.File)
+		if err != nil {
+			return err
+		}
+		// We're in a new copy-on-write layer, so truncating and rewriting in-place
+		// should be fine; we don't need to worry about atomic writes, and this way
+		// we preserve permissions and other metadata.
+		if err := os.Truncate(resolvedPath, 0); err != nil {
+			return err
+		}
+		f, err := os.OpenFile(resolvedPath, os.O_WRONLY, 0)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		_, err = f.Write(contents)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	snap, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	file = file.Clone()
+	file.LLB = nil
+	file.Result = snap
+	return file, nil
 }
 
 func (file *File) Digest(ctx context.Context, excludeMetadata bool) (string, error) {
@@ -351,6 +561,47 @@ func (file *File) Mount(ctx context.Context, f func(string) error) error {
 		}
 		return f(src)
 	})
+}
+
+// AsEnvFile converts a File to an EnvFile by parsing its contents
+func (file *File) AsEnvFile(ctx context.Context, expand bool) (*EnvFile, error) {
+	contents, err := file.Contents(ctx, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return (&EnvFile{
+		Expand: expand,
+	}).WithContents(string(contents))
+}
+
+func (file *File) Chown(ctx context.Context, owner string) (*File, error) {
+	ownership, err := parseDirectoryOwner(owner)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+	}
+
+	file = file.Clone()
+	return execInMount(ctx, file, func(root string) error {
+		chownPath := file.File
+		chownPath, err := containerdfs.RootPath(root, chownPath)
+		if err != nil {
+			return err
+		}
+
+		err = filepath.WalkDir(chownPath, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if err := os.Lchown(path, ownership.UID, ownership.GID); err != nil {
+				return fmt.Errorf("failed to set chown %s: %w", path, err)
+			}
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("failed to walk %s: %w", chownPath, err)
+		}
+		return nil
+	}, withSavedSnapshot("chown %s %s", file.File, owner))
 }
 
 // bkRef returns the buildkit reference from the solved def.

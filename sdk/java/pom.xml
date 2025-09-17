@@ -6,7 +6,7 @@
 
     <groupId>io.dagger</groupId>
     <artifactId>dagger-sdk-parent</artifactId>
-    <version>0.18.15</version>
+    <version>0.18.18</version>
     <packaging>pom</packaging>
 
     <modules>
@@ -284,7 +284,7 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <daggerengine.version>0.18.15</daggerengine.version>
+        <daggerengine.version>0.18.18</daggerengine.version>
         <daggerengine.schema></daggerengine.schema>
 
         <assertj-core.version>3.27.4</assertj-core.version>
@@ -312,7 +312,7 @@
         <maven-shade-plugin.version>3.6.0</maven-shade-plugin.version>
         <maven-source-plugin.version>3.3.1</maven-source-plugin.version>
         <versions-maven-plugin.version>2.18.0</versions-maven-plugin.version>
-        <mockito-core.version>5.18.0</mockito-core.version>
+        <mockito-core.version>5.19.0</mockito-core.version>
         <slf4j-api.version>2.0.17</slf4j-api.version>
         <slf4j-simple.version>2.0.17</slf4j-simple.version>
         <smallrye-graphql.version>2.14.0</smallrye-graphql.version>

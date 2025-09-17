@@ -1,0 +1,19 @@
+{
+  "name": "examples",
+  "engineVersion": "v0.18.16",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "evals",
+      "source": "github.com/dagger/dagger/modules/evals",
+      "pin": "4a76c3f8c6d9715e34f8be5f795bb95362171ee5"
+    },
+    {
+      "name": "evaluator",
+      "source": "github.com/dagger/dagger/modules/evaluator",
+      "pin": "4a76c3f8c6d9715e34f8be5f795bb95362171ee5"
+    }
+  ]
+}

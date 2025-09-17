@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/sdk"
@@ -402,17 +403,13 @@ func (s *moduleSchema) typeDefWithEnumMember(ctx context.Context, def *core.Type
 		return nil, err
 	}
 
-	supports, err := supportEnumMembers(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if !supports {
+	if !supportEnumMembers(ctx) {
 		return def.WithEnumValue(args.Name, args.Value, args.Description, sourceMap)
 	}
 	return def.WithEnumMember(args.Name, args.Value, args.Description, sourceMap)
 }
 
-func supportEnumMembers(ctx context.Context) (bool, error) {
+func supportEnumMembers(ctx context.Context) bool {
 	return core.Supports(ctx, "v0.18.11")
 }
 
@@ -494,20 +491,40 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 	}
 
 	// Check if both values are used, return an error if so.
-	if args.DefaultValue != nil && args.DefaultPath != "" {
-		return nil, fmt.Errorf("cannot set both default value and default path from context")
+	defaultSet := []bool{
+		args.DefaultValue != nil,
+		args.DefaultPath != "",
+	}
+	defaultCount := 0
+	for _, v := range defaultSet {
+		if v {
+			defaultCount++
+		}
+	}
+	if defaultCount > 1 {
+		return nil, fmt.Errorf("cannot set more than one default value")
 	}
 
-	// Check if default path from context is set for non-directory or non-file type
-	if argType.Self().Kind == core.TypeDefKindObject && args.DefaultPath != "" &&
-		(argType.Self().AsObject.Value.Name != "Directory" && argType.Self().AsObject.Value.Name != "File") {
-		return nil, fmt.Errorf("can only set default path for Directory or File type, not %s", argType.Self().AsObject.Value.Name)
+	// Check if default path from context is set for supported type
+	if args.DefaultPath != "" {
+		if argType.Self().Kind != core.TypeDefKindObject {
+			return nil, fmt.Errorf("can only set default path for Object, not %s", argType.Self().Kind)
+		}
+		name := argType.Self().AsObject.Value.Name
+		if !slices.Contains([]string{"Directory", "File", "GitRepository", "GitRef"}, name) {
+			return nil, fmt.Errorf("cannot set default path for %s", name)
+		}
 	}
 
 	// Check if ignore is set for non-directory type
-	if argType.Self().Kind == core.TypeDefKindObject &&
-		len(args.Ignore) > 0 && argType.Self().AsObject.Value.Name != "Directory" {
-		return nil, fmt.Errorf("can only set ignore for Directory type, not %s", argType.Self().AsObject.Value.Name)
+	if len(args.Ignore) > 0 {
+		if argType.Self().Kind != core.TypeDefKindObject {
+			return nil, fmt.Errorf("can only set ignore for Object type, not %s", argType.Self().Kind)
+		}
+		name := argType.Self().AsObject.Value.Name
+		if name != "Directory" {
+			return nil, fmt.Errorf("can only set ignore for Directory type, not %s", name)
+		}
 	}
 
 	// When using a default path SDKs can't set a default value and the argument

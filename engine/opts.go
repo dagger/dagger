@@ -29,6 +29,8 @@ const (
 	localDirImportExcludePatternsMetaKey = "exclude-patterns"
 	localDirImportFollowPathsMetaKey     = "followpaths"
 
+	localDirImportGitIgnoreMetaKey = "dagger.gitignore"
+
 	// socket session attachable keys
 	SocketURLEncodedKey = "X-Dagger-Socket-URLEncoded"
 )
@@ -135,6 +137,7 @@ func (m ClientMetadata) AppendToHTTPHeaders(h http.Header) http.Header {
 
 type LocalImportOpts struct {
 	Path               string   `json:"path"`
+	UseGitIgnore       bool     `json:"use_gitignore"`
 	IncludePatterns    []string `json:"include_patterns"`
 	ExcludePatterns    []string `json:"exclude_patterns"`
 	FollowPaths        []string `json:"follow_paths"`
@@ -150,6 +153,7 @@ func (o LocalImportOpts) ToGRPCMD() metadata.MD {
 	o.Path = filepath.ToSlash(o.Path)
 	md := encodeMeta(localImportOptsMetaKey, o)
 	md[localDirImportDirNameMetaKey] = []string{o.Path}
+	md[localDirImportGitIgnoreMetaKey] = []string{strconv.FormatBool(o.UseGitIgnore)}
 	md[localDirImportIncludePatternsMetaKey] = o.IncludePatterns
 	md[localDirImportExcludePatternsMetaKey] = o.ExcludePatterns
 	md[localDirImportFollowPathsMetaKey] = o.FollowPaths
@@ -172,6 +176,9 @@ func (o *LocalImportOpts) FromGRPCMD(md metadata.MD) error {
 		o.IncludePatterns = md[localDirImportIncludePatternsMetaKey]
 		o.ExcludePatterns = md[localDirImportExcludePatternsMetaKey]
 		o.FollowPaths = md[localDirImportFollowPathsMetaKey]
+		if v, ok := md[localDirImportGitIgnoreMetaKey]; ok && len(v) > 0 {
+			o.UseGitIgnore, _ = strconv.ParseBool(v[0])
+		}
 	}
 	o.Path = filepath.FromSlash(o.Path)
 	return nil
@@ -212,7 +219,8 @@ type LocalExportOpts struct {
 	// whether to just merge in contents of a directory to the target on the host
 	// or to replace the target entirely such that it matches the source directory,
 	// which includes deleting any files that are not in the source directory
-	Merge bool
+	Merge       bool
+	RemovePaths []string `json:"remove_paths"`
 }
 
 func (o LocalExportOpts) ToGRPCMD() metadata.MD {

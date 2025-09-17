@@ -16,6 +16,20 @@ defmodule Dagger.Binding do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Retrieve the binding value, as type Address
+  """
+  @spec as_address(t()) :: Dagger.Address.t()
+  def as_address(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asAddress")
+
+    %Dagger.Address{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Retrieve the binding value, as type CacheVolume
   """
   @spec as_cache_volume(t()) :: Dagger.CacheVolume.t()
@@ -24,6 +38,20 @@ defmodule Dagger.Binding do
       binding.query_builder |> QB.select("asCacheVolume")
 
     %Dagger.CacheVolume{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type Changeset
+  """
+  @spec as_changeset(t()) :: Dagger.Changeset.t()
+  def as_changeset(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asChangeset")
+
+    %Dagger.Changeset{
       query_builder: query_builder,
       client: binding.client
     }
@@ -86,6 +114,20 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type EnvFile
+  """
+  @spec as_env_file(t()) :: Dagger.EnvFile.t()
+  def as_env_file(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asEnvFile")
+
+    %Dagger.EnvFile{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Retrieve the binding value, as type File
   """
   @spec as_file(t()) :: Dagger.File.t()
@@ -122,6 +164,20 @@ defmodule Dagger.Binding do
       binding.query_builder |> QB.select("asGitRepository")
 
     %Dagger.GitRepository{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type JSONValue
+  """
+  @spec as_json_value(t()) :: Dagger.JSONValue.t()
+  def as_json_value(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asJSONValue")
+
+    %Dagger.JSONValue{
       query_builder: query_builder,
       client: binding.client
     }
@@ -178,6 +234,34 @@ defmodule Dagger.Binding do
       binding.query_builder |> QB.select("asModuleSource")
 
     %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type SearchResult
+  """
+  @spec as_search_result(t()) :: Dagger.SearchResult.t()
+  def as_search_result(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asSearchResult")
+
+    %Dagger.SearchResult{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type SearchSubmatch
+  """
+  @spec as_search_submatch(t()) :: Dagger.SearchSubmatch.t()
+  def as_search_submatch(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asSearchSubmatch")
+
+    %Dagger.SearchSubmatch{
       query_builder: query_builder,
       client: binding.client
     }

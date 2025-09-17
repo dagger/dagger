@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/engine"
@@ -85,7 +86,6 @@ func TestLoadGitLabels(t *testing.T) {
 			},
 		},
 	} {
-		example := example
 		t.Run(example.Name, func(t *testing.T) {
 			labels := telemetry.Labels{}.WithGitLabels(example.Repo)
 			require.Subset(t, labels, example.Labels)
@@ -135,7 +135,6 @@ func TestLoadGitRefEnvLabels(t *testing.T) {
 			},
 		},
 	} {
-		example := example
 		t.Run(example.Name, func(t *testing.T) {
 			for _, e := range example.Env {
 				k, v, _ := strings.Cut(e, "=")
@@ -186,6 +185,8 @@ func TestLoadGitHubLabels(t *testing.T) {
 				"GITHUB_EVENT_PATH=testdata/pull_request.synchronize.json",
 			},
 			Labels: telemetry.Labels{
+				"dagger.io/git.ref":             "81be07d3103b512159628bfa3aae2fbb5d255964",
+				"dagger.io/git.branch":          "dump-env",
 				"dagger.io/vcs.triggerer.login": "vito",
 				"dagger.io/vcs.event.type":      "pull_request",
 				"dagger.io/vcs.workflow.name":   "some-workflow",
@@ -212,6 +213,12 @@ func TestLoadGitHubLabels(t *testing.T) {
 				"GITHUB_EVENT_PATH=testdata/push.json",
 			},
 			Labels: telemetry.Labels{
+				"dagger.io/git.ref":             "2baf7884d80a783bb936c1c9501e18682c32876f",
+				"dagger.io/git.branch":          "main",
+				"dagger.io/git.author.name":     "Alex Suraci",
+				"dagger.io/git.author.email":    "suraci.alex@gmail.com",
+				"dagger.io/git.committer.name":  "GitHub",
+				"dagger.io/git.committer.email": "noreply@github.com",
 				"dagger.io/vcs.triggerer.login": "vito",
 				"dagger.io/vcs.event.type":      "push",
 				"dagger.io/vcs.workflow.name":   "some-workflow",
@@ -221,7 +228,6 @@ func TestLoadGitHubLabels(t *testing.T) {
 			},
 		},
 	} {
-		example := example
 		t.Run(example.Name, func(t *testing.T) {
 			for _, e := range example.Env {
 				k, v, _ := strings.Cut(e, "=")
@@ -229,7 +235,11 @@ func TestLoadGitHubLabels(t *testing.T) {
 			}
 
 			labels := telemetry.Labels{}.WithGitHubLabels()
-			require.Subset(t, labels, example.Labels)
+
+			for k, v := range example.Labels {
+				assert.Contains(t, labels, k)
+				assert.Equal(t, v, labels[k], "label %s should match", k)
+			}
 		})
 	}
 }
@@ -314,7 +324,6 @@ func TestLoadGitLabLabels(t *testing.T) {
 			},
 		},
 	} {
-		example := example
 		t.Run(example.Name, func(t *testing.T) {
 			// Set environment variables
 			for k, v := range example.Env {
@@ -368,7 +377,6 @@ func TestLoadCircleCILabels(t *testing.T) {
 			},
 		},
 	} {
-		example := example
 		t.Run(example.Name, func(t *testing.T) {
 			// Set environment variables
 			for k, v := range example.Env {
@@ -410,7 +418,6 @@ func TestLoadJenkinsLabels(t *testing.T) {
 			},
 		},
 	} {
-		example := example
 		t.Run(example.Name, func(t *testing.T) {
 			// Set environment variables
 			for k, v := range example.Env {
@@ -452,7 +459,6 @@ func TestLoadHarnessLabels(t *testing.T) {
 			},
 		},
 	} {
-		example := example
 		t.Run(example.Name, func(t *testing.T) {
 			// Set environment variables
 			for k, v := range example.Env {

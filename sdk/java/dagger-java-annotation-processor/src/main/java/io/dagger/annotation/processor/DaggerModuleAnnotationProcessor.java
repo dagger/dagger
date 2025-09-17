@@ -297,12 +297,16 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
               var hasDefaultPathAnnotation = defaultPathAnnotation != null;
 
               if (hasDefaultPathAnnotation
-                  && !tm.toString().equals("io.dagger.client.Directory")
-                  && !tm.toString().equals("io.dagger.client.File")) {
+                  && !Set.of(
+                          "io.dagger.client.Directory",
+                          "io.dagger.client.File",
+                          "io.dagger.client.GitRepository",
+                          "io.dagger.client.GitRef")
+                      .contains(tm.toString())) {
                 throw new IllegalArgumentException(
                     "Parameter "
                         + param.getSimpleName()
-                        + " cannot have @DefaultPath annotation if it is not a Directory or File type");
+                        + " cannot have @DefaultPath annotation if it is not a Directory/File or GitRepository/GitRef type");
               }
 
               if (hasDefaultAnnotation && hasDefaultPathAnnotation) {

@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -9,11 +10,14 @@ import (
 	"sync"
 	"time"
 
+	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/cleanups"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
 	"github.com/vito/go-interact/interact"
@@ -145,6 +149,9 @@ func (fe *frontendPlain) SetCloudURL(ctx context.Context, url string, msg string
 	}
 }
 
+func (fe *frontendPlain) SetClient(client *dagger.Client) {
+}
+
 // addVirtualLog attaches a fake log row to a given span
 func (fe *frontendPlain) addVirtualLog(span trace.Span, name string, fields ...string) {
 	if !span.SpanContext().SpanID().IsValid() {
@@ -168,7 +175,7 @@ func (fe *frontendPlain) addVirtualLog(span trace.Span, name string, fields ...s
 	spanDt.logs = append(spanDt.logs, logLine{newCursorBuffer([]byte(line)), time.Now()})
 }
 
-func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run func(context.Context) error) error {
+func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run func(context.Context) (cleanups.CleanupF, error)) error {
 	if opts.TooFastThreshold == 0 {
 		opts.TooFastThreshold = 100 * time.Millisecond
 	}
@@ -192,7 +199,11 @@ func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run f
 		}()
 	}
 
-	runErr := run(ctx)
+	cleanup, runErr := run(ctx)
+	if cleanup != nil {
+		runErr = errors.Join(runErr, cleanup())
+	}
+
 	fe.finalRender()
 
 	fe.db.WriteDot(opts.DotOutputFilePath, opts.DotFocusField, opts.DotShowInternal)
@@ -200,17 +211,12 @@ func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run f
 	return runErr
 }
 
-func (fe *frontendPlain) HandlePrompt(ctx context.Context, prompt string, dest any) error {
-	switch x := dest.(type) {
-	case *bool:
-		return fe.handlePromptBool(ctx, prompt, x)
-	default:
-		return fmt.Errorf("unsupported prompt destination type: %T", dest)
-	}
+func (fe *frontendPlain) HandlePrompt(ctx context.Context, _, prompt string, dest any) error {
+	return interact.NewInteraction(prompt).Resolve(dest)
 }
 
-func (fe *frontendPlain) handlePromptBool(_ context.Context, prompt string, dest *bool) error {
-	return interact.NewInteraction(prompt).Resolve(dest)
+func (fe *frontendPlain) HandleForm(ctx context.Context, form *huh.Form) error {
+	return form.RunWithContext(ctx)
 }
 
 func (fe *frontendPlain) Opts() *dagui.FrontendOpts {
@@ -270,7 +276,6 @@ func (fe plainSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.Re
 		for i, span := range spans {
 			spanIDs[i] = span.SpanContext().SpanID().String()
 		}
-		slog.Debug("frontend exporting spans", "spans", len(spanIDs))
 	}
 
 	for _, span := range spans {

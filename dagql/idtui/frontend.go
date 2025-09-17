@@ -22,11 +22,13 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"golang.org/x/term"
 
+	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/session/prompt"
+	"github.com/dagger/dagger/util/cleanups"
 )
 
 type (
@@ -63,7 +65,7 @@ var loggedOutTraceMsg = fmt.Sprintf("Setup tracing at %%s. To hide set %s=1", Sk
 
 type Frontend interface {
 	// Run starts a frontend, and runs the target function.
-	Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) error) error
+	Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) (cleanups.CleanupF, error)) error
 
 	// Opts returns the opts of the currently running frontend.
 	Opts() *dagui.FrontendOpts
@@ -85,6 +87,10 @@ type Frontend interface {
 
 	// SetCloudURL is called after the CLI checks auth and sets the cloud URL.
 	SetCloudURL(ctx context.Context, url string, msg string, logged bool)
+
+	// SetClient is called to notify the frontend of a created dagger client.
+	// This can be used to make requests to the engine for more information.
+	SetClient(*dagger.Client)
 
 	// Shell is called when the CLI enters interactive mode.
 	Shell(ctx context.Context, handler ShellHandler)
@@ -306,7 +312,6 @@ func (r *renderer) renderCall(
 				fmt.Fprint(out, out.String(" "))
 				if argDig := val.GetCallDigest(); argDig != "" {
 					forceSimplify := false
-					internal := internal
 					argSpan := r.db.MostInterestingSpan(argDig)
 					if argSpan != nil {
 						forceSimplify = argSpan.Internal && !internal // only for the first internal call (not it's children)

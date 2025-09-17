@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/util/cleanups"
 	"go.opentelemetry.io/otel"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -65,8 +66,10 @@ func withEngine(
 	ctx context.Context,
 	params client.Params,
 	fn runClientCallback,
-) error {
-	return Frontend.Run(ctx, opts, func(ctx context.Context) (rerr error) {
+) (rerr error) {
+	return Frontend.Run(ctx, opts, func(ctx context.Context) (_ cleanups.CleanupF, rerr error) {
+		var cleanup cleanups.Cleanups
+
 		// Init tracing as early as possible and shutdown after the command
 		// completes, ensuring progress is fully flushed to the frontend.
 		ctx, cleanupTelemetry := initEngineTelemetry(ctx)
@@ -77,8 +80,10 @@ func withEngine(
 			}
 			Frontend.Opts().TelemetryError = err
 		}))
-
-		defer func() { cleanupTelemetry(rerr) }()
+		cleanup.Add("close telemetry", func() error {
+			cleanupTelemetry(rerr)
+			return nil
+		})
 
 		if debug {
 			params.LogLevel = slog.LevelDebug
@@ -93,7 +98,7 @@ func withEngine(
 		if RunnerImageLoader != "" {
 			backend, err := imageload.GetBackend(RunnerImageLoader)
 			if err != nil {
-				return err
+				return cleanup.Run, err
 			}
 			params.ImageLoaderBackend = backend
 		}
@@ -123,11 +128,13 @@ func withEngine(
 		// Connect to and run with the engine
 		sess, ctx, err := client.Connect(ctx, params)
 		if err != nil {
-			return err
+			return cleanup.Run, err
 		}
-		defer sess.Close()
+		cleanup.Add("close dagger session", sess.Close)
 
-		return fn(ctx, sess)
+		Frontend.SetClient(sess.Dagger())
+
+		return cleanup.Run, fn(ctx, sess)
 	})
 }
 

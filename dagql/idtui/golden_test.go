@@ -23,7 +23,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.25.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"google.golang.org/protobuf/proto"
@@ -66,13 +66,19 @@ func TestTelemetry(t *testing.T) {
 
 func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 	// setup a git repo so function call tests can pick up the right metadata
+
+	// remove the repo if it exists now too, since the Cleanup doesn't always run, e.g. after a ctrl-C
+	exec.Command("rm", "-rf", ".git").Run()
+
 	cmd := exec.Command("sh", "-c", "git init && git remote add origin git@github.com:dagger/dagger")
 	if co, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("failed to initialize viztest git repo: %v: (%s)", err, co)
 	}
+
 	t.Cleanup(func() {
 		exec.Command("rm", "-rf", ".git").Run()
 	})
+
 	for _, ex := range []Example{
 		// implementations of these functions can be found in viztest/main.go
 		{Function: "hello-world"},
@@ -324,6 +330,8 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 		ex.Env = append(ex.Env, "DAGGER_REVEAL=1")
 	}
 
+	realHome, _ := os.UserHomeDir()
+
 	// NOTE: we care about CACHED states for these tests, so we need some way for
 	// them to not be flaky (cache hit/miss), but still produce the same golden
 	// output every time. So, we run everything twice. The first run will cache
@@ -339,6 +347,12 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 		)
 		warmup.Env = append(warmup.Env, telemetry.PropagationEnv(ctx)...)
 		warmup.Env = append(warmup.Env, ex.Env...)
+
+		// still try use docker credentials even though we overrode HOME, lest we get rate limited
+		if realHome != "" {
+			warmup.Env = append(warmup.Env, fmt.Sprintf("DOCKER_CONFIG=%s/.docker", realHome))
+		}
+
 		warmupBuf := new(bytes.Buffer)
 		defer func() {
 			if t.Failed() {
@@ -366,6 +380,11 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 	)
 	cmd.Env = append(cmd.Env, telemetry.PropagationEnv(ctx)...)
 	cmd.Env = append(cmd.Env, ex.Env...)
+
+	// still try use docker credentials even though we overrode HOME, lest we get rate limited
+	if realHome != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("DOCKER_CONFIG=%s/.docker", realHome))
+	}
 
 	errBuf := new(bytes.Buffer)
 	outBuf := new(bytes.Buffer)

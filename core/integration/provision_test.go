@@ -17,6 +17,7 @@ import (
 	"github.com/dagger/testctx"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 	"golang.org/x/mod/semver"
 )
 
@@ -118,6 +119,50 @@ func (ProvisionSuite) TestImageDriverConfig(ctx context.Context, t *testctx.T) {
 			result, err := dockerc.WithExec([]string{tc.name, "exec", ctrid, "cat", "/etc/dagger/engine.json"}).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, configContents, result)
+		})
+	}
+}
+
+func (ProvisionSuite) TestImageDriverCACerts(ctx context.Context, t *testctx.T) {
+	// tests that custom CA certs are properly propagated to the engine container when provisioned
+	for _, tc := range driverTestCases {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			fakeCACert := `-----BEGIN CERTIFICATE-----
+FAKE CERTIFICATE DATA
+-----END CERTIFICATE-----`
+
+			middleware := func(ctr *dagger.Container) *dagger.Container {
+				// this mounts the file into both the client+server containers
+				return ctr.WithNewFile("/root/.config/dagger/ca-certificates/fake-ca.crt", fakeCACert)
+			}
+
+			dockerc := tc.provision(ctx, t, c, containerSetupOpts{name: t.Name(), middleware: middleware})
+			dockerc, err := doLoadEngine(ctx, c, dockerc, tc.name, "registry.dagger.io/engine:dev")
+			require.NoError(t, err)
+			dockerc = dockerc.
+				WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
+				WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", tc.driver+"://registry.dagger.io/engine:dev")
+
+			// check that the ca-cert was used by the engine
+			out, err := dockerc.WithExec([]string{"dagger", "query", "-M"}, dagger.ContainerWithExecOpts{Stdin: `
+				query {
+					container {
+						from(address: "alpine:latest") {
+							standalone: withExec(args: ["cat", "/usr/local/share/ca-certificates/fake-ca.crt"]) {
+								stdout
+							}
+							bundle: withExec(args: ["cat", "/etc/ssl/certs/ca-certificates.crt"]) {
+								stdout
+							}
+						}
+					}
+				}
+			`, InsecureRootCapabilities: true}).Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, gjson.Get(out, "container.from.standalone.stdout").String(), fakeCACert)
+			require.Contains(t, gjson.Get(out, "container.from.bundle.stdout").String(), fakeCACert)
 		})
 	}
 }

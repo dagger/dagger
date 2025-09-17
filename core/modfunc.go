@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/util/gitutil"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
@@ -24,6 +25,7 @@ import (
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/server/resource"
@@ -159,7 +161,7 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 			return nil, fmt.Errorf("failed to convert arg %q: %w", input.Name, err)
 		}
 
-		if len(arg.metadata.Ignore) > 0 && arg.metadata.DefaultPath == "" { // DefaultPath (aka contextual) args already have ignore applied
+		if len(arg.metadata.Ignore) > 0 && !arg.metadata.isContextual() { // contextual args already have ignore applied
 			converted, err = fn.applyIgnoreOnDir(ctx, opts.Server, arg.metadata, converted)
 			if err != nil {
 				return nil, fmt.Errorf("failed to apply ignore pattern on arg %q: %w", input.Name, err)
@@ -200,7 +202,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	ctx context.Context,
 	parent dagql.AnyResult,
 	args map[string]dagql.Input,
-	view dagql.View,
+	view call.View,
 	inputCfg dagql.CacheConfig,
 ) (*dagql.CacheConfig, error) {
 	cacheCfg, err := fn.mod.CacheConfigForCall(ctx, parent, args, view, inputCfg)
@@ -212,7 +214,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 
 	var ctxArgs []*FunctionArg
 	for _, argMetadata := range fn.metadata.Args {
-		if argMetadata.DefaultPath == "" {
+		if !argMetadata.isContextual() {
 			// not a contextual argument
 			continue
 		}
@@ -492,38 +494,41 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("failed to convert return value: %w", err)
 	}
 
-	// Get the client ID actually used during the function call - this might not
-	// be the same as execMD.ClientID if the function call was cached at the
-	// buildkit level
-	clientID, err := ctr.Self().usedClientID(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("could not get used client id")
+	if returnValue != nil {
+		// Get the client ID actually used during the function call - this might not
+		// be the same as execMD.ClientID if the function call was cached at the
+		// buildkit level
+		clientID, err := ctr.Self().usedClientID(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("could not get used client id")
+		}
+
+		// If the function returned anything that's isolated per-client, this caller client should
+		// have access to it now since it was returned to them (i.e. secrets/sockets/etc).
+		returnedIDs := map[digest.Digest]*resource.ID{}
+		if err := fn.returnType.CollectCoreIDs(ctx, returnValue, returnedIDs); err != nil {
+			return nil, fmt.Errorf("failed to collect IDs: %w", err)
+		}
+
+		// NOTE: once generalized function caching is enabled we need to ensure that any non-reproducible
+		// cache entries are linked to the result of this call.
+		// See the previous implementation of this for a reference:
+		// https://github.com/dagger/dagger/blob/7c31db76e07c9a17fcdb3f3c4513c915344c1da8/core/modfunc.go#L483
+
+		// Function calls are cached per-session, but every client caller needs to add
+		// secret/socket/etc. resources from the result to their store.
+		returnedIDsList := make([]*resource.ID, 0, len(returnedIDs))
+		for _, id := range returnedIDs {
+			returnedIDsList = append(returnedIDsList, id)
+		}
+		secretTransferPostCall, err := ResourceTransferPostCall(ctx, query, clientID, returnedIDsList...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create secret transfer post call: %w", err)
+		}
+
+		returnValue = returnValue.WithPostCall(secretTransferPostCall)
 	}
 
-	// If the function returned anything that's isolated per-client, this caller client should
-	// have access to it now since it was returned to them (i.e. secrets/sockets/etc).
-	returnedIDs := map[digest.Digest]*resource.ID{}
-	if err := fn.returnType.CollectCoreIDs(ctx, returnValue, returnedIDs); err != nil {
-		return nil, fmt.Errorf("failed to collect IDs: %w", err)
-	}
-
-	// NOTE: once generalized function caching is enabled we need to ensure that any non-reproducible
-	// cache entries are linked to the result of this call.
-	// See the previous implementation of this for a reference:
-	// https://github.com/dagger/dagger/blob/7c31db76e07c9a17fcdb3f3c4513c915344c1da8/core/modfunc.go#L483
-
-	// Function calls are cached per-session, but every client caller needs to add
-	// secret/socket/etc. resources from the result to their store.
-	returnedIDsList := make([]*resource.ID, 0, len(returnedIDs))
-	for _, id := range returnedIDs {
-		returnedIDsList = append(returnedIDsList, id)
-	}
-	secretTransferPostCall, err := ResourceTransferPostCall(ctx, query, clientID, returnedIDsList...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create secret transfer post call: %w", err)
-	}
-
-	returnValue = returnValue.WithPostCall(secretTransferPostCall)
 	return returnValue, nil
 }
 
@@ -624,40 +629,36 @@ func (fn *ModuleFunction) loadContextualArg(
 	arg *FunctionArg,
 ) (dagql.IDType, error) {
 	if arg.TypeDef.Kind != TypeDefKindObject {
-		return nil, fmt.Errorf("contextual argument %q must be a Directory or a File", arg.OriginalName)
+		return nil, fmt.Errorf("contextual argument %q must be an object", arg.OriginalName)
 	}
-
 	if dag == nil {
 		return nil, fmt.Errorf("dagql server is nil but required for contextual argument %q", arg.OriginalName)
 	}
 
+	if arg.DefaultPath == "" {
+		return nil, fmt.Errorf("argument %q is not a contextual argument", arg.OriginalName)
+	}
+
 	switch arg.TypeDef.AsObject.Value.Name {
 	case "Directory":
-		slog.Debug("moduleFunction.loadContextualArg: loading contextual directory", "fn", arg.Name, "dir", arg.DefaultPath)
-
-		dir, err := fn.mod.ContextSource.Value.Self().LoadContext(ctx, dag, arg.DefaultPath, arg.Ignore)
+		dir, err := fn.mod.ContextSource.Value.Self().LoadContextDir(ctx, dag, arg.DefaultPath, nil, arg.Ignore)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", arg.DefaultPath, err)
 		}
 		return dagql.NewID[*Directory](dir.ID()), nil
 
 	case "File":
-		slog.Debug("moduleFunction.loadContextualArg: loading contextual file", "fn", arg.Name, "file", arg.DefaultPath)
-
 		// We first load the directory from the context path, then we load the file from the path relative to the directory.
 		dirPath := filepath.Dir(arg.DefaultPath)
 		filePath := filepath.Base(arg.DefaultPath)
 
 		// Load the directory containing the file.
-		dir, err := fn.mod.ContextSource.Value.Self().LoadContext(ctx, dag, dirPath, nil)
+		dir, err := fn.mod.ContextSource.Value.Self().LoadContextDir(ctx, dag, dirPath, []string{filePath}, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", dirPath, err)
 		}
 
 		var fileID FileID
-
-		// We need to load the fileID from the directory itself, because `*File` doesn't have a `ID` field,
-		// we use select instead.
 		err = dag.Select(ctx, dir, &fileID,
 			dagql.Selector{
 				Field: "file",
@@ -675,9 +676,56 @@ func (fn *ModuleFunction) loadContextualArg(
 
 		return fileID, nil
 
-	default:
-		return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.AsObject.Value.Name)
+	case "GitRepository", "GitRef":
+		var git dagql.ObjectResult[*GitRepository]
+
+		cleanedPath := filepath.Clean(strings.Trim(arg.DefaultPath, "/"))
+		if cleanedPath == "." || cleanedPath == ".git" {
+			// handle getting the git repo from the current module context
+			var err error
+			git, err = fn.mod.ContextSource.Value.Self().LoadContextGit(ctx, dag)
+			if err != nil {
+				return nil, err
+			}
+		} else if gitURL, err := gitutil.ParseURL(arg.DefaultPath); err == nil {
+			// handle an arbitrary git URL
+			args := []dagql.NamedInput{
+				{Name: "url", Value: dagql.String(gitURL.String())},
+			}
+			if gitURL.Fragment != nil {
+				args = append(args, dagql.NamedInput{Name: "ref", Value: dagql.String(gitURL.Fragment.Ref)})
+			}
+
+			err := dag.Select(ctx, dag.Root(), &git,
+				dagql.Selector{Field: "git", Args: args},
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load contextual git repository: %w", err)
+			}
+		} else {
+			return nil, fmt.Errorf("failed to parse git URL %q: %w", arg.DefaultPath, err)
+		}
+
+		switch arg.TypeDef.AsObject.Value.Name {
+		case "GitRepository":
+			return dagql.NewID[*GitRepository](git.ID()), nil
+
+		case "GitRef":
+			var gitRef dagql.ObjectResult[*GitRef]
+			err := dag.Select(ctx, git, &gitRef,
+				dagql.Selector{
+					Field: "head",
+				},
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load contextual git ref: %w", err)
+			}
+
+			return dagql.NewID[*GitRef](gitRef.ID()), nil
+		}
 	}
+
+	return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.AsObject.Value.Name)
 }
 
 func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Server, arg *FunctionArg, value any) (any, error) {

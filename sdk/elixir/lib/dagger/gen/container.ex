@@ -113,6 +113,19 @@ defmodule Dagger.Container do
   end
 
   @doc """
+  The combined buffered standard output and standard error stream of the last executed command
+
+  Returns an error if no command was executed
+  """
+  @spec combined_output(t()) :: {:ok, String.t()} | {:error, term()}
+  def combined_output(%__MODULE__{} = container) do
+    query_builder =
+      container.query_builder |> QB.select("combinedOutput")
+
+    Client.execute(container.client, query_builder)
+  end
+
+  @doc """
   Return the container's default arguments.
   """
   @spec default_args(t()) :: {:ok, [String.t()]} | {:error, term()}

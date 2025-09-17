@@ -1,7 +1,7 @@
 ---
 title: "Engine Configuration"
 description: "Learn how to configure the Dagger Engine for your workflows, including logging, security, garbage collection, and more."
-slug: "/reference/configuration/engine"
+slug: /reference/configuration/engine
 sidebar_label: "Engine"
 ---
 
@@ -178,7 +178,7 @@ insecure-entitlements = []
 </Tabs>
 
 :::important ROOTLESS MODE
-"Rootless mode" means running the Dagger Engine as a container without the `--privileged` flag. In this case, the container would not run as the `root` user of the system. Currently, the Dagger Engine cannot be run as a rootless container; [network and filesystem constraints related to rootless usage](../../faq.mdx#why-does-the-dagger-engine-need-to-run-in-a-privileged-container) would currently significantly limit its capabilities and performance.
+"Rootless mode" means running the Dagger Engine as a container without the `--privileged` flag. In this case, the container would not run as the `root` user of the system. Currently, the Dagger Engine cannot be run as a rootless container; [network and filesystem constraints related to rootless usage](../../introduction/faq.mdx#why-does-the-dagger-engine-need-to-run-in-a-privileged-container) would currently significantly limit its capabilities and performance.
 :::
 
 ## Garbage collection

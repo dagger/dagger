@@ -1,18 +1,16 @@
 
 ### Modify a copied directory or remote repository in a container
 
-The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a [remote Git repository](../../..//extending/remote-repositories.mdx). It copies the specified directory to the `/src` path in a container, adds a file to it, and returns the modified container.
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a [remote Git repository](../../../extending/modules/remote-repositories.mdx). It copies the specified directory to the `/src` path in a container, adds a file to it, and returns the modified container.
 
 :::warning
-When a host directory or file is copied or mounted to a container's filesystem, modifications made to it in the container **do not automatically transfer back to the host**. 
+When a host directory or file is copied or mounted to a container's filesystem, modifications made to it in the container **do not automatically transfer back to the host**.
 
 Data flows only one way between Dagger operations, because they are connected in a DAG. To transfer modifications back to the local host, you must explicitly export the directory or file back to the host filesystem.
 :::
 
 :::note
-When working with private Git repositories, ensure that [SSH authentication is properly configured](../../../extending/remote-repositories.mdx#ssh-authentication) on your Dagger host.
-:::
-When working with private Git repositories, ensure that [SSH authentication is properly configured](../../..//extending/remote-repositories.mdx#ssh-authentication) on your Dagger host.
+When working with private Git repositories, ensure that [SSH authentication is properly configured](../../../extending/modules/remote-repositories.mdx#ssh-authentication) on your Dagger host.
 :::
 
 <Tabs groupId="language" queryString="sdk">

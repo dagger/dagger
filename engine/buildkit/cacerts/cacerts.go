@@ -9,10 +9,11 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/engine/buildkit/containerfs"
+	"github.com/dagger/dagger/engine/distconsts"
 )
 
 const (
-	EngineCustomCACertsDir = "/usr/local/share/ca-certificates"
+	EngineCustomCACertsDir = distconsts.EngineCustomCACertsDir
 
 	// OrbStack automatically installs this custom CA cert, but we don't want to automatically
 	// install it in every Dagger container, so we ignore it if found.

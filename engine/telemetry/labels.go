@@ -1,8 +1,6 @@
 package telemetry
 
 import (
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -215,6 +213,8 @@ func (labels Labels) WithGitHubLabels() Labels {
 
 	eventType := os.Getenv("GITHUB_EVENT_NAME")
 
+	gitLabels := Labels{}
+
 	labels["dagger.io/vcs.event.type"] = eventType
 	labels["dagger.io/vcs.job.name"] = os.Getenv("GITHUB_JOB")
 	labels["dagger.io/vcs.triggerer.login"] = os.Getenv("GITHUB_ACTOR")
@@ -246,8 +246,16 @@ func (labels Labels) WithGitHubLabels() Labels {
 	if repo, ok := getRepoIsh(event); ok {
 		labels["dagger.io/vcs.repo.full_name"] = repo.GetFullName()
 		labels["dagger.io/vcs.repo.url"] = repo.GetHTMLURL()
+
+		endpoint, err := parseGitURL(repo.GetCloneURL())
+		if err != nil {
+			slog.Warn("failed to parse git remote URL", "err", err)
+			return labels
+		}
+		gitLabels["dagger.io/git.remote"] = endpoint
 	}
 
+	// pr-like events
 	if event, ok := event.(interface {
 		GetPullRequest() *github.PullRequest
 	}); ok && event.GetPullRequest() != nil {
@@ -259,7 +267,36 @@ func (labels Labels) WithGitHubLabels() Labels {
 		labels["dagger.io/vcs.change.branch"] = pr.GetHead().GetRef()
 		labels["dagger.io/vcs.change.head_sha"] = pr.GetHead().GetSHA()
 		labels["dagger.io/vcs.change.label"] = pr.GetHead().GetLabel()
+
+		gitLabels["dagger.io/git.ref"] = pr.GetHead().GetSHA()
+		gitLabels["dagger.io/git.branch"] = pr.GetHead().GetRef() // all prs are branches
 	}
+
+	// push-like events
+	if event, ok := event.(interface {
+		GetRef() string
+		GetHeadCommit() *github.HeadCommit
+	}); ok {
+		headCommit := event.GetHeadCommit()
+		gitLabels["dagger.io/git.ref"] = headCommit.GetID()
+		gitLabels["dagger.io/git.author.name"] = headCommit.GetAuthor().GetName()
+		gitLabels["dagger.io/git.author.email"] = headCommit.GetAuthor().GetEmail()
+		gitLabels["dagger.io/git.committer.name"] = headCommit.GetCommitter().GetName()
+		gitLabels["dagger.io/git.committer.email"] = headCommit.GetCommitter().GetEmail()
+
+		title, _, _ := strings.Cut(headCommit.GetMessage(), "\n")
+		gitLabels["dagger.io/git.title"] = title
+
+		ref := event.GetRef()
+		if branch, ok := strings.CutPrefix(ref, "refs/heads/"); ok {
+			gitLabels["dagger.io/git.branch"] = branch
+		} else if tag, ok := strings.CutPrefix(ref, "refs/tags/"); ok {
+			gitLabels["dagger.io/git.tag"] = tag
+		}
+	}
+
+	// git labels from GitHub take precedence over local git ones
+	maps.Copy(labels, gitLabels)
 
 	return labels
 }
@@ -404,6 +441,7 @@ func (labels Labels) WithHarnessLabels() Labels {
 
 type repoIsh interface {
 	GetFullName() string
+	GetCloneURL() string
 	GetHTMLURL() string
 }
 
@@ -469,21 +507,6 @@ func isCI() bool {
 		os.Getenv("BUILD_NUMBER") != "" || // Jenkins, TeamCity
 		os.Getenv("RUN_ID") != "" || // TaskCluster, dsari
 		os.Getenv("TF_BUILD") != "" // Azure Pipelines
-}
-
-func (labels Labels) WithAnonymousGitLabels(workdir string) Labels {
-	labels = labels.WithGitLabels(workdir)
-
-	for name, value := range labels {
-		if name == "dagger.io/git.author.email" {
-			labels[name] = fmt.Sprintf("%x", sha256.Sum256([]byte(value)))
-		}
-		if name == "dagger.io/git.remote" {
-			labels[name] = base64.StdEncoding.EncodeToString([]byte(value))
-		}
-	}
-
-	return labels
 }
 
 func fetchRef(repo *git.Repository, workdir string, remote string, target string) (*object.Commit, error) {

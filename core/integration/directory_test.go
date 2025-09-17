@@ -40,6 +40,63 @@ func (DirectorySuite) TestEmpty(ctx context.Context, t *testctx.T) {
 	require.Empty(t, res.Directory.Entries)
 }
 
+func (DirectorySuite) TestFindUp(ctx context.Context, t *testctx.T) {
+	// Reuse the same utility used to test Host.findUp()
+	// It creates a directory on the host, but we just load it as a Directory
+	dirPath := findupTestDir(t)
+	c := connect(ctx, t)
+	dir := c.Host().Directory(dirPath)
+	start := "a/b"
+
+	t.Run("find file in current directory", func(ctx context.Context, t *testctx.T) {
+		found, err := dir.FindUp(ctx, "other.txt", start)
+		require.NoError(t, err)
+		require.Equal(t, "a/b/other.txt", found)
+		content, err := dir.File(found).Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "this is a/b/other.txt", content)
+	})
+
+	t.Run("find file in parent directory", func(ctx context.Context, t *testctx.T) {
+		found, err := dir.FindUp(ctx, "target.txt", start)
+		require.NoError(t, err)
+		require.Equal(t, "a/target.txt", found)
+		content, err := dir.File(found).Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "this is a/target.txt", content)
+	})
+
+	t.Run("find file in root", func(ctx context.Context, t *testctx.T) {
+		found, err := dir.FindUp(ctx, "root.txt", start)
+		require.NoError(t, err)
+		require.Equal(t, "root.txt", found)
+		content, err := dir.File(found).Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "this is root.txt", content)
+	})
+
+	t.Run("find directory in parent directory", func(ctx context.Context, t *testctx.T) {
+		found, err := dir.FindUp(ctx, "somedir", start)
+		require.NoError(t, err)
+		require.Equal(t, "a/somedir", found)
+		entries, err := dir.Directory(found).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"hi.txt"}, entries)
+	})
+
+	t.Run("DO NOT find file in child directory", func(ctx context.Context, t *testctx.T) {
+		found, err := dir.FindUp(ctx, "leaf.txt", start)
+		require.NoError(t, err)
+		require.Equal(t, "", found)
+	})
+
+	t.Run("DO NOT find non-existent file", func(ctx context.Context, t *testctx.T) {
+		found, err := dir.FindUp(ctx, "nonexistent.txt", start)
+		require.NoError(t, err)
+		require.Equal(t, "", found)
+	})
+}
+
 func (DirectorySuite) TestScratch(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -805,8 +862,8 @@ func (DirectorySuite) TestExport(ctx context.Context, t *testctx.T) {
 
 	t.Run("to outer dir", func(ctx context.Context, t *testctx.T) {
 		actual, err := dir.Export(ctx, "../")
-		require.Error(t, err)
-		require.Empty(t, actual)
+		require.NoError(t, err)
+		require.Contains(t, actual, "/")
 	})
 }
 
@@ -1000,8 +1057,6 @@ func (DirectorySuite) TestGlob(ctx context.Context, t *testctx.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			t.Run("include only markdown", func(ctx context.Context, t *testctx.T) {
 				entries, err := tc.src.Glob(ctx, "*.md")
@@ -1317,16 +1372,894 @@ func (DirectorySuite) TestPatch(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "Modified Content 2\n", content2)
 	})
 
-	t.Run("invalid patch format", func(ctx context.Context, t *testctx.T) {
+	t.Run("empty patch", func(ctx context.Context, t *testctx.T) {
 		dir := c.Directory().
 			WithNewFile("test.txt", "test content")
 
-		// Create an invalid patch
-		invalidPatch := "this is not a valid patch format"
+		// Create an empty patch
+		invalidPatch := ""
+
+		// Apply the empty patch and expect no error
+		_, err := dir.WithPatch(invalidPatch).Sync(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("bad patch application", func(ctx context.Context, t *testctx.T) {
+		// Create a directory with a simple file
+		dir := c.Directory().
+			WithNewFile("hello.txt", "Hello, World!\n")
+
+		// Create a patch that is looking for the wrong content
+		invalidPatch := `--- a/hello.txt
++++ b/hello.txt
+@@ -1 +1 @@
+-Goodbye, World!
++Hello, Dagger!
+`
 
 		// Apply the invalid patch and expect an error
 		_, err := dir.WithPatch(invalidPatch).Sync(ctx)
 		require.Error(t, err)
+	})
+}
+
+func (DirectorySuite) TestSearch(ctx context.Context, t *testctx.T) {
+	t.Run("literal search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("file1.txt", "Hello, World!\nThis is a test file.\nWorld is great.").
+			WithNewFile("file2.txt", "Hello, Dagger!\nThis is another test file.").
+			WithNewFile("subdir/file3.txt", "Hello from subdirectory!\nWorld tour.")
+
+		results, err := dir.Search(ctx, "World")
+		require.NoError(t, err)
+
+		// Collect all matches to check they're all present (order doesn't matter)
+		var matches []string
+		for _, result := range results {
+			filePath, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			lineNumber, err := result.LineNumber(ctx)
+			require.NoError(t, err)
+			absoluteOffset, err := result.AbsoluteOffset(ctx)
+			require.NoError(t, err)
+			matchedText, err := result.MatchedLines(ctx)
+			require.NoError(t, err)
+			submatches, err := result.Submatches(ctx)
+			require.NoError(t, err)
+
+			// Verify AbsoluteOffset is reasonable (non-negative)
+			require.GreaterOrEqual(t, absoluteOffset, 0)
+
+			// Verify we have at least one submatch for each result
+			require.NotEmpty(t, submatches)
+
+			// Verify submatch structure
+			for _, submatch := range submatches {
+				submatchText, err := submatch.Text(ctx)
+				require.NoError(t, err)
+				start, err := submatch.Start(ctx)
+				require.NoError(t, err)
+				end, err := submatch.End(ctx)
+				require.NoError(t, err)
+
+				require.NotEmpty(t, submatchText)
+				require.GreaterOrEqual(t, start, 0)
+				require.Equal(t, len("World"), end-start)
+				require.Equal(t, "World", submatchText)
+			}
+
+			matches = append(matches, fmt.Sprintf("%s:%d:%s", filePath, lineNumber, matchedText))
+		}
+
+		// Check that we have all expected matches
+		require.Contains(t, matches, "file1.txt:1:Hello, World!\n")
+		require.Contains(t, matches, "file1.txt:3:World is great.")
+		require.Contains(t, matches, "subdir/file3.txt:2:World tour.")
+	})
+
+	t.Run("search beginning with hyphen", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("file1.txt", "Hello, World!\nThis is a --test-- file.\nWorld is great.").
+			WithNewFile("file2.txt", "Hello, Dagger!\nThis is another test file.").
+			WithNewFile("subdir/file3.txt", "Hello from subdirectory!\nWorld tour.")
+
+		results, err := dir.Search(ctx, "-test")
+		require.NoError(t, err)
+
+		// Collect all matches to check they're all present (order doesn't matter)
+		var matches []string
+		for _, result := range results {
+			filePath, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			lineNumber, err := result.LineNumber(ctx)
+			require.NoError(t, err)
+			absoluteOffset, err := result.AbsoluteOffset(ctx)
+			require.NoError(t, err)
+			matchedText, err := result.MatchedLines(ctx)
+			require.NoError(t, err)
+			submatches, err := result.Submatches(ctx)
+			require.NoError(t, err)
+
+			// Verify AbsoluteOffset is reasonable (non-negative)
+			require.GreaterOrEqual(t, absoluteOffset, 0)
+
+			// Verify we have at least one submatch for each result
+			require.NotEmpty(t, submatches)
+
+			// Verify submatch structure
+			for _, submatch := range submatches {
+				submatchText, err := submatch.Text(ctx)
+				require.NoError(t, err)
+				start, err := submatch.Start(ctx)
+				require.NoError(t, err)
+				end, err := submatch.End(ctx)
+				require.NoError(t, err)
+
+				require.NotEmpty(t, submatchText)
+				require.GreaterOrEqual(t, start, 0)
+				require.Equal(t, len("-test"), end-start)
+				require.Equal(t, "-test", submatchText)
+			}
+
+			matches = append(matches, fmt.Sprintf("%s:%d:%s", filePath, lineNumber, matchedText))
+		}
+
+		// Check that we have all expected matches
+		require.Contains(t, matches, "file1.txt:2:This is a --test-- file.\n")
+	})
+
+	t.Run("files-only search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("file1.txt", "Hello, World!\nThis is a test file.\nWorld is great.").
+			WithNewFile("file2.txt", "Hello, Dagger!\nThis is another test file.").
+			WithNewFile("subdir/file3.txt", "Hello from subdirectory!\nWorld tour.")
+
+		results, err := dir.Search(ctx, "World", dagger.DirectorySearchOpts{
+			FilesOnly: true,
+		})
+		require.NoError(t, err)
+
+		// Collect all matches to check they're all present (order doesn't matter)
+		var matches []string
+		for _, result := range results {
+			filePath, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			lineNumber, err := result.LineNumber(ctx)
+			require.NoError(t, err)
+			require.Zero(t, lineNumber)
+			matchedText, err := result.MatchedLines(ctx)
+			require.NoError(t, err)
+			require.Empty(t, matchedText)
+			matches = append(matches, filePath)
+		}
+
+		// Check that we have all expected matches
+		require.ElementsMatch(t, matches, []string{"file1.txt", "subdir/file3.txt"})
+	})
+
+	t.Run("limiting results", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("file1.txt", "Hello, World!\nThis is a test file.\nWorld is great.").
+			WithNewFile("file2.txt", "Hello, Dagger!\nThis is another test file.").
+			WithNewFile("file3.txt", "Hello, Dagger!\nThis is another test file.").
+			WithNewFile("file4.txt", "Hello, Dagger!\nThis is another test file.").
+			WithNewFile("file5.txt", "Hello, Dagger!\nThis is another test file.").
+			WithNewFile("file6.txt", "Hello, Dagger!\nThis is another test file.").
+			WithNewFile("file7.txt", "Hello, Dagger!\nThis is another test file.").
+			WithNewFile("subdir/file3.txt", "Hello from subdirectory!\nWorld tour.")
+
+		results, err := dir.Search(ctx, "another", dagger.DirectorySearchOpts{
+			Limit: 3,
+		})
+		require.NoError(t, err)
+
+		// Collect all matches to check they're all present (order doesn't matter)
+		var matches []string
+		for _, result := range results {
+			filePath, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			lineNumber, err := result.LineNumber(ctx)
+			require.NoError(t, err)
+			absoluteOffset, err := result.AbsoluteOffset(ctx)
+			require.NoError(t, err)
+			matchedText, err := result.MatchedLines(ctx)
+			require.NoError(t, err)
+			submatches, err := result.Submatches(ctx)
+			require.NoError(t, err)
+
+			// Verify AbsoluteOffset is reasonable (non-negative)
+			require.GreaterOrEqual(t, absoluteOffset, 0)
+
+			// Verify we have at least one submatch for each result
+			require.NotEmpty(t, submatches)
+
+			// Verify submatch structure
+			for _, submatch := range submatches {
+				submatchText, err := submatch.Text(ctx)
+				require.NoError(t, err)
+				start, err := submatch.Start(ctx)
+				require.NoError(t, err)
+				end, err := submatch.End(ctx)
+				require.NoError(t, err)
+
+				require.NotEmpty(t, submatchText)
+				require.GreaterOrEqual(t, start, 0)
+				require.Equal(t, len("another"), end-start)
+				require.Equal(t, "another", submatchText)
+			}
+
+			matches = append(matches, fmt.Sprintf("%s:%d:%s", filePath, lineNumber, matchedText))
+		}
+
+		// Check that we have all expected matches
+		// Check that we get exactly 3 matches from the possible files
+		require.Len(t, matches, 3)
+
+		// Define all possible matches since order is not stable
+		possibleMatches := []string{
+			"file2.txt:2:This is another test file.",
+			"file3.txt:2:This is another test file.",
+			"file4.txt:2:This is another test file.",
+			"file5.txt:2:This is another test file.",
+			"file6.txt:2:This is another test file.",
+			"file7.txt:2:This is another test file.",
+		}
+
+		// Verify that all 3 matches are from the possible set and are distinct
+		matchSet := make(map[string]bool)
+		for _, match := range matches {
+			require.Contains(t, possibleMatches, match, "unexpected match: %s", match)
+			require.False(t, matchSet[match], "duplicate match: %s", match)
+			matchSet[match] = true
+		}
+	})
+
+	t.Run("regex search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("main.go", "package main\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}").
+			WithNewFile("test.go", "package main\n\nfunc TestSomething() {\n\t// test code\n}").
+			WithNewFile("lib/helper.go", "package lib\n\nfunc Helper() string {\n\treturn \"help\"\n}")
+
+		// Search for function definitions
+		results, err := dir.Search(ctx, `func \w+\(\)`)
+		require.NoError(t, err)
+		require.Len(t, results, 3)
+
+		// Collect all matches to check they're all present
+		var matches []string
+		for _, result := range results {
+			filePath, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			lineNumber, err := result.LineNumber(ctx)
+			require.NoError(t, err)
+			absoluteOffset, err := result.AbsoluteOffset(ctx)
+			require.NoError(t, err)
+			matchedText, err := result.MatchedLines(ctx)
+			require.NoError(t, err)
+			submatches, err := result.Submatches(ctx)
+			require.NoError(t, err)
+
+			// Verify AbsoluteOffset is reasonable (non-negative)
+			require.GreaterOrEqual(t, absoluteOffset, 0)
+
+			// Verify we have at least one submatch for each result
+			require.NotEmpty(t, submatches)
+
+			// Verify submatch structure for regex - should match "func <name>()"
+			for _, submatch := range submatches {
+				submatchText, err := submatch.Text(ctx)
+				require.NoError(t, err)
+				start, err := submatch.Start(ctx)
+				require.NoError(t, err)
+				end, err := submatch.End(ctx)
+				require.NoError(t, err)
+
+				require.NotEmpty(t, submatchText)
+				require.GreaterOrEqual(t, start, 0)
+				require.Equal(t, len(submatchText), end-start)
+				require.Regexp(t, `func \w+\(\)`, submatchText)
+			}
+
+			matches = append(matches, fmt.Sprintf("%s:%d:%s", filePath, lineNumber, matchedText))
+		}
+
+		// Check that we have all expected matches (order doesn't matter)
+		// Note: matches may have trailing newlines, so we use partial matches
+		require.Contains(t, matches, "main.go:3:func main() {\n")
+		require.Contains(t, matches, "test.go:3:func TestSomething() {\n")
+		require.Contains(t, matches, "lib/helper.go:3:func Helper() string {\n")
+	})
+
+	t.Run("multiline search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("dir/code.go", `package main
+
+import "fmt"
+
+func main() {
+	name := "Alice"
+	age := 30
+	fmt.Printf("Name: %s, Age: %d\n", name, age)
+}
+
+func another() {
+	name := "Alice"
+	age := 50
+	fmt.Printf("Name: %s, Age: %d\n", name, age)
+}`)
+
+		// Search for variable assignments
+		results, err := dir.Search(ctx, ":= \"Alice\"\n\tage", dagger.DirectorySearchOpts{Multiline: true})
+		require.NoError(t, err)
+		require.NotEmpty(t, results)
+
+		// Check that we have the expected variable assignments
+		var matches []string
+		for _, result := range results {
+			filePath, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			lineNumber, err := result.LineNumber(ctx)
+			require.NoError(t, err)
+			matchedText, err := result.MatchedLines(ctx)
+			require.NoError(t, err)
+			matches = append(matches, fmt.Sprintf("%s:%d:%s", filePath, lineNumber, matchedText))
+		}
+
+		// Check for the specific assignments we expect (may have different formatting)
+		require.Contains(t, matches, "dir/code.go:6:\tname := \"Alice\"\n\tage := 30\n")
+		require.Contains(t, matches, "dir/code.go:12:\tname := \"Alice\"\n\tage := 50\n")
+	})
+
+	t.Run("multiline regexp search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("dir/code.go", `package main
+
+import "fmt"
+
+func main() {
+	name := "Alice"
+	age := 30
+	fmt.Printf("Name: %s, Age: %d\n", name, age)
+}
+
+func another() {
+	name := "Alice"
+	age := 50
+	fmt.Printf("Name: %s, Age: %d\n", name, age)
+}`)
+
+		// Search for variable assignments
+		results, err := dir.Search(ctx, `:= ".*"\n\s+age`, dagger.DirectorySearchOpts{
+			Multiline: true,
+		})
+		require.NoError(t, err)
+		require.NotEmpty(t, results)
+
+		// Check that we have the expected variable assignments
+		var matches []string
+		for _, result := range results {
+			filePath, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			lineNumber, err := result.LineNumber(ctx)
+			require.NoError(t, err)
+			matchedText, err := result.MatchedLines(ctx)
+			require.NoError(t, err)
+			matches = append(matches, fmt.Sprintf("%s:%d:%s", filePath, lineNumber, matchedText))
+		}
+
+		// Check for the specific assignments we expect (may have different formatting)
+		require.Contains(t, matches, "dir/code.go:6:\tname := \"Alice\"\n\tage := 30\n")
+		require.Contains(t, matches, "dir/code.go:12:\tname := \"Alice\"\n\tage := 50\n")
+	})
+
+	t.Run("empty directory", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory()
+
+		results, err := dir.Search(ctx, "anything")
+		require.NoError(t, err)
+		require.Empty(t, results)
+	})
+
+	t.Run("no matches", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("file.txt", "Hello, World!")
+
+		results, err := dir.Search(ctx, "nonexistent")
+		require.NoError(t, err)
+		require.Empty(t, results)
+	})
+
+	t.Run("search in subdirectory", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("root.txt", "Root content").
+			WithNewFile("sub/file.txt", "Subdirectory content").
+			WithNewFile("sub/deep/file.txt", "Deep subdirectory content")
+
+		subdir := dir.Directory("sub")
+		results, err := subdir.Search(ctx, "ubdirectory")
+		require.NoError(t, err)
+		require.Equal(t, len(results), 2)
+
+		// Get all file paths
+		var filePaths []string
+		for _, result := range results {
+			path, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			filePaths = append(filePaths, path)
+		}
+
+		// Check that we have the expected files (order doesn't matter)
+		require.Contains(t, filePaths, "file.txt")
+		require.Contains(t, filePaths, "deep/file.txt")
+	})
+
+	t.Run("case sensitive search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("file.txt", "Hello\nhello\nHELLO")
+
+		results, err := dir.Search(ctx, "Hello")
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+		lineNumber0, err := results[0].LineNumber(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 1, lineNumber0)
+	})
+
+	t.Run("case insensitive search", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("file.txt", "Hello\nhello\nHELLO")
+
+		results, err := dir.Search(ctx, "hello", dagger.DirectorySearchOpts{
+			Insensitive: true,
+		})
+		require.NoError(t, err)
+		require.Len(t, results, 3)
+
+		// Collect all line numbers to verify we got all matches
+		var lineNumbers []int
+		for _, result := range results {
+			lineNumber, err := result.LineNumber(ctx)
+			require.NoError(t, err)
+			lineNumbers = append(lineNumbers, lineNumber)
+		}
+		require.ElementsMatch(t, []int{1, 2, 3}, lineNumbers)
+	})
+
+	t.Run("multiple matches in one file", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("code.go", `package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("Hello")
+	fmt.Println("World")
+}`)
+
+		results, err := dir.Search(ctx, "fmt")
+		require.NoError(t, err)
+		require.Len(t, results, 3)
+
+		lineNumber0, err := results[0].LineNumber(ctx)
+		require.NoError(t, err)
+		lineNumber1, err := results[1].LineNumber(ctx)
+		require.NoError(t, err)
+		lineNumber2, err := results[2].LineNumber(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 3, lineNumber0)
+		require.Equal(t, 6, lineNumber1)
+		require.Equal(t, 7, lineNumber2)
+	})
+
+	t.Run("binary files are skipped", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Container().
+			From(alpineImage).
+			WithExec([]string{"sh", "-c", "mkdir -p /testdir && echo 'text content' > /testdir/text.txt && dd if=/dev/urandom of=/testdir/binary.bin bs=1024 count=1 && echo 'text content' >> /testdir/binary.bin"}).
+			Directory("/testdir")
+
+		results, err := dir.Search(ctx, "content")
+		require.NoError(t, err)
+
+		files := []string{}
+		for _, result := range results {
+			filePath, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			files = append(files, filePath)
+		}
+		require.Equal(t, []string{"text.txt"}, files)
+	})
+
+	t.Run("skip hidden files", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("visible.txt", "content with target").
+			WithNewFile(".hidden.txt", "content with target").
+			WithNewFile("subdir/.hidden2.txt", "content with target")
+
+		t.Run("default behavior includes hidden files", func(ctx context.Context, t *testctx.T) {
+			results, err := dir.Search(ctx, "target")
+			require.NoError(t, err)
+
+			var filePaths []string
+			for _, result := range results {
+				path, err := result.FilePath(ctx)
+				require.NoError(t, err)
+				filePaths = append(filePaths, path)
+			}
+			// Default should include hidden files
+			require.Contains(t, filePaths, "visible.txt")
+			require.Contains(t, filePaths, ".hidden.txt")
+			require.Contains(t, filePaths, "subdir/.hidden2.txt")
+		})
+
+		t.Run("skipHidden excludes hidden files", func(ctx context.Context, t *testctx.T) {
+			results, err := dir.Search(ctx, "target", dagger.DirectorySearchOpts{
+				SkipHidden: true,
+			})
+			require.NoError(t, err)
+
+			var filePaths []string
+			for _, result := range results {
+				path, err := result.FilePath(ctx)
+				require.NoError(t, err)
+				filePaths = append(filePaths, path)
+			}
+			// Should only include visible files
+			require.Contains(t, filePaths, "visible.txt")
+			require.NotContains(t, filePaths, ".hidden.txt")
+			require.NotContains(t, filePaths, "subdir/.hidden2.txt")
+		})
+	})
+
+	t.Run("skip ignored files", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("tracked.txt", "content with target").
+			WithNewFile("ignored.log", "content with target").
+			WithNewFile("build/output.bin", "content with target").
+			WithNewFile(".rgignore", "*.log\nbuild/")
+
+		t.Run("default behavior includes ignored files", func(ctx context.Context, t *testctx.T) {
+			results, err := dir.Search(ctx, "target")
+			require.NoError(t, err)
+
+			var filePaths []string
+			for _, result := range results {
+				path, err := result.FilePath(ctx)
+				require.NoError(t, err)
+				filePaths = append(filePaths, path)
+			}
+			// Default should include ignored files
+			require.Contains(t, filePaths, "tracked.txt")
+			require.Contains(t, filePaths, "ignored.log")
+			require.Contains(t, filePaths, "build/output.bin")
+		})
+
+		t.Run("skipIgnored respects rgignore", func(ctx context.Context, t *testctx.T) {
+			results, err := dir.Search(ctx, "target", dagger.DirectorySearchOpts{
+				SkipIgnored: true,
+			})
+			require.NoError(t, err)
+
+			var filePaths []string
+			for _, result := range results {
+				path, err := result.FilePath(ctx)
+				require.NoError(t, err)
+				filePaths = append(filePaths, path)
+			}
+			// Should only include tracked files
+			require.Contains(t, filePaths, "tracked.txt")
+			require.NotContains(t, filePaths, "ignored.log")
+			require.NotContains(t, filePaths, "build/output.bin")
+		})
+	})
+
+	t.Run("globs option", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("main.go", "package main\nfunc main() { fmt.Println(\"hello\") }").
+			WithNewFile("test.go", "package main\nfunc TestSomething() { /* test code */ }").
+			WithNewFile("README.md", "# Project\nThis is a documentation file").
+			WithNewFile("config.yaml", "version: 1\nname: test-project").
+			WithNewFile("lib/helper.go", "package lib\nfunc Helper() string { return \"help\" }")
+
+		t.Run("single glob pattern", func(ctx context.Context, t *testctx.T) {
+			// Search for "func" only in .go files
+			results, err := dir.Search(ctx, "func", dagger.DirectorySearchOpts{
+				Globs: []string{"*.go"},
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 3) // main(), TestSomething(), Helper()
+
+			// Verify all results are from .go files
+			for _, result := range results {
+				filePath, err := result.FilePath(ctx)
+				require.NoError(t, err)
+				require.True(t, strings.HasSuffix(filePath, ".go"), "Expected .go file, got: %s", filePath)
+			}
+		})
+
+		t.Run("multiple glob patterns", func(ctx context.Context, t *testctx.T) {
+			// Search for "test" in both .go and .md files
+			results, err := dir.Search(ctx, "test", dagger.DirectorySearchOpts{
+				Globs: []string{"*.go", "*.md"},
+			})
+			require.NoError(t, err)
+			// Only test.go contains "test" (TestSomething function) - README.md doesn't contain "test"
+			require.Len(t, results, 1)
+
+			result := results[0]
+			filePath, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "test.go", filePath)
+		})
+
+		t.Run("glob with subdirectories", func(ctx context.Context, t *testctx.T) {
+			// Search for "func" in all .go files, including subdirectories
+			results, err := dir.Search(ctx, "func", dagger.DirectorySearchOpts{
+				Globs: []string{"**/*.go"},
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 3) // main(), TestSomething(), Helper()
+
+			var filePaths []string
+			for _, result := range results {
+				filePath, err := result.FilePath(ctx)
+				require.NoError(t, err)
+				filePaths = append(filePaths, filePath)
+			}
+			require.Contains(t, filePaths, "main.go")
+			require.Contains(t, filePaths, "test.go")
+			require.Contains(t, filePaths, "lib/helper.go")
+		})
+
+		t.Run("glob with no matches", func(ctx context.Context, t *testctx.T) {
+			// Search for a pattern that exists in files but not in the files matching the glob
+			results, err := dir.Search(ctx, "main", dagger.DirectorySearchOpts{
+				Globs: []string{"*.md", "*.yaml"}, // Only search in markdown and yaml files where "main" doesn't appear
+			})
+			require.NoError(t, err)
+			require.Empty(t, results)
+		})
+	})
+
+	t.Run("paths option", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("src/main.go", "package main\nfunc main() { fmt.Println(\"hello world\") }").
+			WithNewFile("src/helper.go", "package main\nfunc Helper() { return \"world peace\" }").
+			WithNewFile("tests/main_test.go", "package main\nfunc TestMain() { /* world testing */ }").
+			WithNewFile("docs/README.md", "# Project\nHello world documentation").
+			WithNewFile("config/app.yaml", "name: world-app\nversion: 1.0").
+			WithNewFile("etc/passwd", "root:world passwd").
+			WithSymlink("/etc", "symlink")
+
+		t.Run("single path", func(ctx context.Context, t *testctx.T) {
+			// Search for "world" only in src directory
+			results, err := dir.Search(ctx, "world", dagger.DirectorySearchOpts{
+				Paths: []string{"src"},
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 2) // "hello world" and "world peace"
+
+			// Verify all results are from src directory
+			for _, result := range results {
+				filePath, err := result.FilePath(ctx)
+				require.NoError(t, err)
+				require.True(t, strings.HasPrefix(filePath, "src/"), "Expected src/ path, got: %s", filePath)
+			}
+		})
+
+		t.Run("multiple paths", func(ctx context.Context, t *testctx.T) {
+			// Search for "world" in both src and docs directories
+			results, err := dir.Search(ctx, "world", dagger.DirectorySearchOpts{
+				Paths: []string{"src", "docs"},
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 3) // src/main.go, src/helper.go, docs/README.md
+
+			var filePaths []string
+			for _, result := range results {
+				filePath, err := result.FilePath(ctx)
+				require.NoError(t, err)
+				filePaths = append(filePaths, filePath)
+				// Should be in src or docs directory
+				require.True(t,
+					strings.HasPrefix(filePath, "src/") || strings.HasPrefix(filePath, "docs/"),
+					"Expected src/ or docs/ path, got: %s", filePath)
+			}
+			// config/ and tests/ should be excluded
+			for _, path := range filePaths {
+				require.False(t, strings.HasPrefix(path, "config/"))
+				require.False(t, strings.HasPrefix(path, "tests/"))
+			}
+		})
+
+		t.Run("specific file path", func(ctx context.Context, t *testctx.T) {
+			// Search for "main" in a specific file
+			results, err := dir.Search(ctx, "main", dagger.DirectorySearchOpts{
+				Paths: []string{"src/main.go"},
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 2) // "package main" and "func main"
+
+			// Verify all results are from the specific file
+			for _, result := range results {
+				filePath, err := result.FilePath(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "src/main.go", filePath)
+			}
+		})
+
+		t.Run("path with no matches", func(ctx context.Context, t *testctx.T) {
+			// Search for non-existent pattern in existing directory
+			results, err := dir.Search(ctx, "nonexistent-pattern", dagger.DirectorySearchOpts{
+				Paths: []string{"src"},
+			})
+			require.NoError(t, err)
+			require.Empty(t, results)
+		})
+
+		t.Run("normalizes absolute paths", func(ctx context.Context, t *testctx.T) {
+			// Test that absolute paths are treated as relative to the directory
+			results, err := dir.Search(ctx, "world", dagger.DirectorySearchOpts{
+				Paths: []string{"/src"},
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 2) // Should find results in src directory
+
+			// Verify all results are from src directory
+			for _, result := range results {
+				filePath, err := result.FilePath(ctx)
+				require.NoError(t, err)
+				require.True(t, strings.HasPrefix(filePath, "src/"), "Expected src/ path, got: %s", filePath)
+			}
+		})
+
+		t.Run("keeps symlinks within the directory", func(ctx context.Context, t *testctx.T) {
+			// Test that symlinks are resolved within the directory
+			results, err := dir.Search(ctx, "root", dagger.DirectorySearchOpts{
+				Paths: []string{"symlink"},
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 1)
+			matched, err := results[0].MatchedLines(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "root:world passwd", matched)
+
+			// Test that we don't allow naively evaluating symlinks by following them
+			// first (e.g. symlink/passwd => /etc/passwd)
+			results, err = dir.Search(ctx, "root", dagger.DirectorySearchOpts{
+				Paths: []string{"symlink/passwd"},
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 1)
+			matched, err = results[0].MatchedLines(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "root:world passwd", matched)
+		})
+
+		t.Run("resolves symlinks within a scoped dir", func(ctx context.Context, t *testctx.T) {
+			dir := c.Directory().
+				WithNewFile("symlink", "im innocent").
+				WithNewFile("subdir/etc/passwd", "root:world passwd").
+				WithSymlink("/etc/passwd", "subdir/symlink")
+
+			results, err := dir.Directory("subdir").Search(ctx, "root", dagger.DirectorySearchOpts{
+				Paths: []string{"symlink"},
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 1)
+			matched, err := results[0].MatchedLines(ctx)
+			require.NoError(t, err)
+			// make sure we correctly resolve the path WITHIN the directory - in the
+			// failure case this will have content from `/etc/passwd` on the host!
+			require.Equal(t, "root:world passwd", matched)
+		})
+
+		t.Run("rejects paths that escape directory", func(ctx context.Context, t *testctx.T) {
+			// Test that paths trying to escape via .. are rejected
+			_, err := dir.Search(ctx, "world", dagger.DirectorySearchOpts{
+				Paths: []string{"../../etc/passwd"},
+			})
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "path cannot escape directory")
+		})
+
+		t.Run("rejects nested directory escape attempts", func(ctx context.Context, t *testctx.T) {
+			// Test that paths containing ".." anywhere that would escape are rejected
+			_, err := dir.Search(ctx, "world", dagger.DirectorySearchOpts{
+				Paths: []string{"some/../../etc/passwd"},
+			})
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "path cannot escape directory")
+		})
+
+		t.Run("allows valid relative paths with double dots", func(ctx context.Context, t *testctx.T) {
+			// Test that valid relative paths that don't escape still work
+			results, err := dir.Search(ctx, "package main", dagger.DirectorySearchOpts{
+				Paths: []string{"/src/../"},
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 3)
+		})
+	})
+
+	t.Run("combined globs and paths", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		dir := c.Directory().
+			WithNewFile("src/main.go", "package main\nfunc main() { fmt.Println(\"hello\") }").
+			WithNewFile("src/helper.js", "function helper() { console.log('hello'); }").
+			WithNewFile("tests/main_test.go", "package main\nfunc TestMain() { /* hello testing */ }").
+			WithNewFile("tests/helper_test.js", "function testHelper() { console.log('hello'); }")
+
+		t.Run("globs and paths together", func(ctx context.Context, t *testctx.T) {
+			// Search for "hello" in .go files within src directory only
+			results, err := dir.Search(ctx, "hello", dagger.DirectorySearchOpts{
+				Globs: []string{"*.go"},
+				Paths: []string{"src"},
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 1) // Only src/main.go should match
+
+			result := results[0]
+			filePath, err := result.FilePath(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "src/main.go", filePath)
+		})
+
+		t.Run("globs and paths with multiple patterns", func(ctx context.Context, t *testctx.T) {
+			// Search for "hello" in both .go and .js files within tests directory
+			results, err := dir.Search(ctx, "hello", dagger.DirectorySearchOpts{
+				Globs: []string{"*.go", "*.js"},
+				Paths: []string{"tests"},
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 2) // tests/main_test.go and tests/helper_test.js
+
+			var filePaths []string
+			for _, result := range results {
+				filePath, err := result.FilePath(ctx)
+				require.NoError(t, err)
+				filePaths = append(filePaths, filePath)
+				require.True(t, strings.HasPrefix(filePath, "tests/"))
+			}
+			require.Contains(t, filePaths, "tests/main_test.go")
+			require.Contains(t, filePaths, "tests/helper_test.js")
+		})
 	})
 }
 
@@ -1541,4 +2474,45 @@ func (DirectorySuite) TestExists(ctx context.Context, t *testctx.T) {
 			require.Equal(t, tc.Expected, exists)
 		})
 	}
+}
+
+func (DirectorySuite) TestDirCaching(ctx context.Context, t *testctx.T) {
+	// NOTE: This test requires that WithNewFile sets the creation date to the current time,
+	// if this side-effect were to ever change (i.e. adopting SOURCE_DATE_EPOCH functionality),
+	// then this test will break.
+
+	c := connect(ctx, t)
+	d1, err := c.Directory().
+		WithoutFile("non-existent").
+		WithNewFile("file", "data").
+		Sync(ctx)
+	require.NoError(t, err)
+
+	d2, err := c.Directory().
+		WithoutFile("also-non-existent").
+		WithNewFile("file", "data").
+		Sync(ctx)
+	require.NoError(t, err)
+
+	out, err := c.Container().
+		From(alpineImage).
+		WithMountedDirectory("/d1", d1).
+		WithMountedDirectory("/d2", d2).
+		WithExec([]string{"sh", "-c", "diff <(stat /d1/file | grep Modify) <(stat /d2/file | grep Modify)"}). // they should be the exact same file (i.e. same creation time)
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, out, "")
+
+	d3 := c.Directory().
+		WithNewFile("not", "used").
+		WithNewFile("file", "data")
+
+	out, err = c.Container().
+		From(alpineImage).
+		WithMountedDirectory("/d1", d1).
+		WithMountedDirectory("/d3", d3).
+		WithExec([]string{"sh", "-c", "! diff <(stat /d1/file | grep Modify) <(stat /d3/file | grep Modify)"}). // should be different since "not", "used" file still changed the disk
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.NotEqual(t, out, "")
 }

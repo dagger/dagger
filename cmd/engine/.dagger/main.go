@@ -67,6 +67,10 @@ func (e *DaggerEngine) Container(
 	image Distro,
 	// +optional
 	gpuSupport bool,
+	// +optional
+	version string,
+	// +optional
+	tag string,
 ) (*dagger.Container, error) {
 	cfg, err := generateConfig(e.LogLevel)
 	if err != nil {
@@ -81,7 +85,7 @@ func (e *DaggerEngine) Container(
 		return nil, err
 	}
 
-	builder, err := build.NewBuilder(ctx, e.Source)
+	builder, err := build.NewBuilder(ctx, e.Source, version, tag)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +159,7 @@ func (e *DaggerEngine) Service(
 		}
 	}
 
-	devEngine, err := e.Container(ctx, "", image, gpuSupport)
+	devEngine, err := e.Container(ctx, "", image, gpuSupport, "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +293,7 @@ func (e *DaggerEngine) Publish(
 					span.End()
 				}()
 
-				ctr, err := e.Container(egCtx, platform, target.Image, target.GPUSupport)
+				ctr, err := e.Container(egCtx, platform, target.Image, target.GPUSupport, "", "")
 				if err != nil {
 					return err
 				}

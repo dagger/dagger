@@ -1,7 +1,7 @@
 ---
 title: "Dagger Cloud"
 description: "Learn how to configure Dagger Cloud for your workflows, including organizations, traces, modules, and more."
-slug: "/reference/configuration/cloud"
+slug: /reference/configuration/cloud
 ---
 
 
@@ -82,7 +82,7 @@ To connect to Dagger Cloud from a CI environment, you require a Dagger Cloud tok
 
 To find your token, navigate to the settings page using the cogwheel icon in the top navigation bar. Under the `Tokens` sub-menu, click the eye icon to view the token. You can also use this URL pattern: `https://v3.dagger.cloud/{Your Org Name}/settings?tab=Tokens`
 
-    ![Get token](/img/current_docs/configuration/get-token.png)
+    ![Get token](/img/current_docs/reference/configuration/get-token.png)
 
   :::warning
   If you regenerate your token, you must replace the token wherever you've referenced it. To reduce operational interruptions, only regenerate your token if it has leaked.
@@ -210,19 +210,19 @@ public access to these traces without requiring an invitation to the organizatio
 
 To modify this default setting, navigate to the organization page using the cogwheel icon in the top navigation bar. Under the `Visibility` sub-menu, click the eye icon to toggle public access to trace data as needed.
 
-![public traces](/img/current_docs/configuration/public-traces.png)
+![public traces](/img/current_docs/reference/configuration/public-traces.png)
 
 ### Make an individual trace public
 
 Admin users can make an individual private trace public for sharing of links with users outside of your organization or who are not yet using Dagger Cloud. A confirmation step will verify your intention and the action is reversible.
 
-![make trace public](/img/current_docs/configuration/make-trace-public.png)
+![make trace public](/img/current_docs/reference/configuration/make-trace-public.png)
 
 ### Delete a trace
 
 Admin users can delete an individual trace. There is a confirmation step before deletion, but after deletion, the trace will not be recoverable.
 
-![delete a trace](/img/current_docs/configuration/trace-delete.png)
+![delete a trace](/img/current_docs/reference/configuration/trace-delete.png)
 
 ## Modules
 
@@ -238,19 +238,19 @@ You must be signed in to Dagger Cloud with GitHub.
 
 To initiate this process, navigate to the organization page using the cogwheel icon in the top navigation bar and select the `Git Sources` sub-menu. Click `Install the GitHub Application` to add a GitHub account or organization.
 
-![Module repository setup](/img/current_docs/configuration/cloud-modules-target.png)
+![Module repository setup](/img/current_docs/reference/configuration/cloud-modules-target.png)
 
 You will be directed to install the Dagger Cloud GitHub application and select the GitHub accounts and repositories to add.
 
-![Module repository setup](/img/current_docs/configuration/cloud-modules-install-app.png)
+![Module repository setup](/img/current_docs/reference/configuration/cloud-modules-install-app.png)
 
 Complete the process and then, once the GitHub account or organization appears in the Dagger Cloud user interface, click `Enable module scanning` to have Dagger Cloud begin scanning for Dagger modules. You can enable module scanning for multiple GitHub organizations. Each one can be enabled on a single Dagger organization.
 
-![Module repository setup](/img/current_docs/configuration/cloud-modules-map.png)
+![Module repository setup](/img/current_docs/reference/configuration/cloud-modules-map.png)
 
 The `Scan Results` section at the bottom of the page maintains a record of scans and their status.
 
-![Module scans](/img/current_docs/configuration/cloud-modules-scans.png)
+![Module scans](/img/current_docs/reference/configuration/cloud-modules-scans.png)
 
 ### Manage and inspect modules
 
@@ -258,29 +258,29 @@ Once your modules have been added, you can start using Dagger Cloud to manage th
 
 Access the modules dashboard from the `Modules` menu item in the top navigation bar to see a list of available modules.
 
-![Module list](/img/current_docs/configuration/cloud-modules-list.png)
+![Module list](/img/current_docs/reference/configuration/cloud-modules-list.png)
 
 You can view your entire list of modules by selecting the `All Modules` tab. If you wish to curate and organize this list, you can create custom views of modules filtered by team, service, or domain. To create a custom view, click the `+` icon.
 
-![Module filter](/img/current_docs/configuration/cloud-modules-filter.png)
+![Module filter](/img/current_docs/reference/configuration/cloud-modules-filter.png)
 
 Select a module to see detailed information on its activity and API.
 
 - API: View detailed API documentation for each module, including its installation command, functions, arguments and return values
 
-![Module API](/img/current_docs/configuration/cloud-modules-api.png)
+![Module API](/img/current_docs/reference/configuration/cloud-modules-api.png)
 
 - Activity: See a list of commits, sorted by date
 
-![Module activity](/img/current_docs/configuration/cloud-modules-activity.png)
+![Module activity](/img/current_docs/reference/configuration/cloud-modules-activity.png)
 
 - Dependencies and dependents: Trace dependencies and dependents of your module
 
-![Module dependencies](/img/current_docs/configuration/cloud-modules-deps.png)
+![Module dependencies](/img/current_docs/reference/configuration/cloud-modules-deps.png)
 
 - Traces: List traces triggered by a module
 
-![Module traces](/img/current_docs/configuration/cloud-modules-traces.png)
+![Module traces](/img/current_docs/reference/configuration/cloud-modules-traces.png)
 
 
 :::tip
@@ -306,4 +306,4 @@ You cannot change a member's role at this time. Please contact Dagger via the su
 
 Within a Dagger Cloud organization, it is possible to prune the Dagger Cloud cache for a specific token. Navigate to the organization page using the cogwheel icon in the top navigation bar, select the `Tokens` sub-menu, and click the broom icon for the corresponding token.
 
-![Get token](/img/current_docs/configuration/prune-cache.png)
+![Get token](/img/current_docs/reference/configuration/prune-cache.png)
