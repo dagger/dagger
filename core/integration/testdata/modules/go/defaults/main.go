@@ -1,18 +1,23 @@
 package main
 
+import "fmt"
+
 func New(
 	// +default="hello"
-	message string,
+	greeting string,
 ) *Defaults {
 	return &Defaults{
-		Message: message,
+		Greeting: greeting,
 	}
 }
 
 type Defaults struct {
-	Message string
+	Greeting string
 }
 
-func (m *Defaults) Hello() string {
-	return m.Message
+func (m *Defaults) Message(
+	// +default="world"
+	name string,
+) string {
+	return fmt.Sprintf("%s, %s!", m.Greeting, name)
 }

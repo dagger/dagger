@@ -32,19 +32,51 @@ func (LocalDefaultsSuite) TestSimple(ctx context.Context, t *testctx.T) {
 		stdout         string
 	}{
 		{
-			"module-specific: <CONSTRUCTOR ARG>=<VALUE>",
+			"attached",
 			"./defaults/.env",
-			"MESSAGE=salut",
+			`
+GREETING=salut
+MESSAGE_NAME=monde
+`,
 			"./defaults",
-			[]string{"dagger", "call", "hello"},
+			[]string{"dagger", "call", "message"},
 			dagger.ReturnTypeSuccess,
-			"salut",
+			"salut, monde!",
+		},
+		{
+			"detached implicit",
+			".env",
+			`
+DEFAULTS_GREETING=bonjour
+DEFAULTS_MESSAGE_NAME=monde
+`,
+			"./defaults",
+			[]string{"dagger", "call", "message"},
+			dagger.ReturnTypeSuccess,
+			"bonjour, monde!",
+		},
+		{
+			"detached explicit",
+			".env",
+			`
+DEFAULTS_GREETING=bonjour
+DEFAULTS_MESSAGE_NAME=monde
+`,
+			"",
+			[]string{"dagger", "-m", "./defaults", "call", "message"},
+			dagger.ReturnTypeSuccess,
+			"bonjour, monde!",
 		},
 	} {
 		t.Run(tc.description, func(ctx context.Context, t *testctx.T) {
 			stdout, err := ctr.
 				WithNewFile(tc.dotEnvPath, tc.dotEnvContents).
-				WithWorkdir(tc.workdir).
+				With(func(c *dagger.Container) *dagger.Container {
+					if tc.workdir != "" {
+						return c.WithWorkdir(tc.workdir)
+					}
+					return c
+				}).
 				WithExec(tc.command, dagger.ContainerWithExecOpts{
 					Expect:                        tc.expect,
 					ExperimentalPrivilegedNesting: true,
