@@ -1,0 +1,21 @@
+# This is required so that Netlify doesn't get triggered when unrelated files change.
+# Each build uses credits, and triggering builds unnecessarily is wasteful.
+name: "PR Tracking"
+
+on:
+  pull_request:
+    types: [opened, reopened]
+
+jobs:
+  track:
+    - name: Get today's date value
+      id: values
+      run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+    - uses: EndBug/project-fields@v2
+      with:
+        opearation: set
+        fields: End date
+        github_token: ${{ secrets.PROJECTS_PR_TRACKING_PAT }}
+        project_url: https://github.com/users/dagger/projects/19
+        values: ${{ steps.values.outputs.date }}
