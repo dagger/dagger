@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -2060,12 +2061,30 @@ func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagu
 		// links to its origin instead
 		return
 	}
+	errorCounts := map[string]int{}
 	for _, span := range row.Span.Errors().Order {
 		errText := span.Status.Description
 		if errText == "" {
 			continue
 		}
-
+		errorCounts[errText]++
+	}
+	type errWithCount struct {
+		text  string
+		count int
+	}
+	var counts []errWithCount
+	for errText, count := range errorCounts {
+		counts = append(counts, errWithCount{errText, count})
+	}
+	sort.Slice(counts, func(i, j int) bool {
+		if counts[i].count == counts[j].count {
+			return counts[i].text < counts[j].text
+		}
+		return counts[i].count > counts[j].count
+	})
+	for _, c := range counts {
+		errText, count := c.text, c.count
 		// Calculate available width for text
 		prefixWidth := lipgloss.Width(prefix)
 		indentWidth := row.Depth * 2 // Assuming indent is 2 spaces per depth level
@@ -2073,6 +2092,10 @@ func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagu
 		availableWidth := fe.contentWidth - prefixWidth - indentWidth - markerWidth
 		if availableWidth > 0 {
 			errText = cellbuf.Wrap(errText, availableWidth, "")
+		}
+
+		if count > 1 {
+			errText += "\n" + out.String(fmt.Sprintf("x%d", count)).Bold().String()
 		}
 
 		// Print each wrapped line with proper indentation
