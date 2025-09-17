@@ -306,34 +306,12 @@ func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
 				Schema:      anied,
 				ReadOnly:    isReadOnly,
 				Call: func(ctx context.Context, args any) (any, error) {
-					mcpSrv, ok := m.mcpServers[serverName]
-					if !ok {
-						return nil, fmt.Errorf("mcp server %q not found", serverName)
-					}
-
-					// TODO: skip fs stuff for non-Container services
-					ctr := mcpSrv.Service.Self().Container
-
-					var res *mcp.CallToolResult
-					if ctr.Config.WorkingDir == "" || ctr.Config.WorkingDir == "/" {
-						// Container has no workdir, just call the tool directly
-						res, err = sess.CallTool(ctx, &mcp.CallToolParams{
-							Name:      tool.Name,
-							Arguments: args,
-						})
-						if err != nil {
-							return nil, fmt.Errorf("call tool %q on mcp %q: %w", tool.Name, serverName, err)
-						}
-					} else {
-						// For containers with working directories, the tool expects the workspace
-						// to already be synced by the batch call mechanism. Just call the tool.
-						res, err = sess.CallTool(ctx, &mcp.CallToolParams{
-							Name:      tool.Name,
-							Arguments: args,
-						})
-						if err != nil {
-							return nil, fmt.Errorf("call tool %q on mcp %q: %w", tool.Name, serverName, err)
-						}
+					res, err := sess.CallTool(ctx, &mcp.CallToolParams{
+						Name:      tool.Name,
+						Arguments: args,
+					})
+					if err != nil {
+						return nil, fmt.Errorf("call tool %q on mcp %q: %w", tool.Name, serverName, err)
 					}
 
 					var out string
@@ -734,7 +712,7 @@ func (m *MCP) outputToLLM(ctx context.Context, srv *dagql.Server, val dagql.Type
 		return m.toolObjectResponse(ctx, srv, obj, m.Ingest(obj, ""))
 	}
 
-	result, err := m.sanitizeResult(ctx, val)
+	result, err := m.sanitizeResult(val)
 	if err != nil {
 		return "", fmt.Errorf("failed to simplify result: %w", err)
 	}
@@ -755,7 +733,7 @@ func (m *MCP) outputToLLM(ctx context.Context, srv *dagql.Server, val dagql.Type
 	})
 }
 
-func (m *MCP) sanitizeResult(ctx context.Context, val dagql.Typed) (any, error) {
+func (m *MCP) sanitizeResult(val dagql.Typed) (any, error) {
 	if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](val); ok {
 		// Handle objects by showing their LLM ID, i.e. Container#123
 		return m.Ingest(obj, ""), nil
@@ -763,7 +741,7 @@ func (m *MCP) sanitizeResult(ctx context.Context, val dagql.Typed) (any, error) 
 
 	if anyRes, ok := dagql.UnwrapAs[dagql.AnyResult](val); ok {
 		// Unwrap any Result[T]s so we don't encode a giant ID
-		return m.sanitizeResult(ctx, anyRes.Unwrap())
+		return m.sanitizeResult(anyRes.Unwrap())
 	}
 
 	if list, ok := dagql.UnwrapAs[dagql.Enumerable](val); ok {
@@ -774,7 +752,7 @@ func (m *MCP) sanitizeResult(ctx context.Context, val dagql.Typed) (any, error) 
 			if err != nil {
 				return nil, fmt.Errorf("failed to get ID for object %d: %w", i, err)
 			}
-			simpl, err := m.sanitizeResult(ctx, val)
+			simpl, err := m.sanitizeResult(val)
 			if err != nil {
 				return nil, fmt.Errorf("failed to simplify list element %d: %w", i, err)
 			}
@@ -2213,7 +2191,7 @@ func (m *MCP) toolObjectResponse(ctx context.Context, srv *dagql.Server, target 
 		if err != nil {
 			return "", err
 		}
-		datum, err := m.sanitizeResult(ctx, val)
+		datum, err := m.sanitizeResult(val)
 		if err != nil {
 			return "", err
 		}
