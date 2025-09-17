@@ -24,6 +24,7 @@ import (
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/server/resource"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/opencontainers/go-digest"
 	fsutiltypes "github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
@@ -2442,6 +2443,9 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	if err != nil {
 		return inst, fmt.Errorf("failed to load env file: %w", err)
 	}
+	if envFilePath != "" {
+		slog.GlobalLogger(ctx, "test").Info("Loading local defaults from " + envFilePath)
+	}
 
 	if bp := blueprintSrc.Self(); bp != nil {
 		// Show the downstream module name to clients, not the blueprint name
@@ -2466,10 +2470,13 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		if err != nil {
 			return inst, fmt.Errorf("failed to load .env from %q: %w", src.AsString(), err)
 		}
-		debugSpan(ctx, "DEBUG: searching for .env in %q returned %q", src.ModuleName, modEnvFilePath)
-		if err := mod.MergeDefaults(ctx, modEnvFile); err != nil {
-			debugSpan(ctx, "DEBUG: apply local defaults from %q: %#v", modEnvFilePath, modEnvFile.Variables())
-			return inst, fmt.Errorf("failed to apply local defaults for %q from %q: %w", mod.Name(), modEnvFilePath, err)
+		if modEnvFilePath != "" {
+			slog.GlobalLogger(ctx, "test").Info("Loading module-specific defaults from " + modEnvFilePath)
+			debugSpan(ctx, "DEBUG: searching for .env in %q returned %q", src.ModuleName, modEnvFilePath)
+			if err := mod.MergeDefaults(ctx, modEnvFile); err != nil {
+				debugSpan(ctx, "DEBUG: apply local defaults from %q: %#v", modEnvFilePath, modEnvFile.Variables())
+				return inst, fmt.Errorf("failed to apply local defaults for %q from %q: %w", mod.Name(), modEnvFilePath, err)
+			}
 		}
 	}
 	inst, err = dagql.NewResultForCurrentID(ctx, mod)
