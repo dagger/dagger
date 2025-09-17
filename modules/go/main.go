@@ -72,7 +72,10 @@ func New(
 		// For now, we namespace them explicitly here.
 		buildCache = dag.CacheVolume("github.com/dagger/dagger/modules/go:build")
 	}
+	fmt.Printf("ACB here1 with base %+v\n", base)
 	if base == nil {
+		//fmt.Printf("ACB here2\n")
+		//panic("ACB got here\n")
 		base = dag.
 			Wolfi().
 			Container(dagger.WolfiContainerOpts{Packages: []string{
@@ -87,7 +90,14 @@ func New(
 				"protobuf~31", // ADD: brings /usr/bin/protoc and runtime libs
 				"protobuf-dev~31",
 				"ca-certificates",
-			}}).
+			}})
+		//out, err := base.WithExec([]string{"sh", "-c", "echo ACB here I am one && which go"}).Stdout(context.TODO())
+		//if err != nil {
+		//	panic(fmt.Sprintf("ACB failed with base is nil first %v", err))
+		//}
+		//fmt.Printf("ACB out is %s\n", out)
+
+		base = base.
 			WithEnvVariable("GOLANG_VERSION", version).
 			WithEnvVariable("GOPATH", "/go").
 			WithEnvVariable("PATH", "${GOPATH}/bin:${PATH}", dagger.ContainerWithEnvVariableOpts{Expand: true}).
@@ -96,7 +106,24 @@ func New(
 			WithMountedCache("/go/pkg/mod", moduleCache).
 			WithMountedCache("/root/.cache/go-build", buildCache).
 			WithWorkdir("/app")
+
+		//fmt.Printf("ACB maybe investigate the base here?\n")
+		//out, err = base.WithExec([]string{"sh", "-c", "echo ACB here I am two && which go"}).Stdout(context.TODO())
+		//if err != nil {
+		//	panic(fmt.Sprintf("ACB failed with base is nil second %v", err))
+		//}
+		//fmt.Printf("ACB out is %s\n", out)
+
+		//} else {
+
+		//	fmt.Printf("ACB maybe investigate the base here?\n")
+		//	out, err := base.WithExec([]string{"sh", "-c", "echo ACB here I am && which go"}).Stdout(context.TODO())
+		//	if err != nil {
+		//		panic(fmt.Sprintf("ACB failed with preset base %v", err))
+		//	}
+		//	fmt.Printf("ACB out is %s\n", out)
 	}
+
 	return Go{
 		Version:     version,
 		Source:      source,
@@ -272,6 +299,7 @@ func (p Go) Build(
 	env := p.Env(platform)
 	cmd := []string{"go", "build", "-o", output}
 	for _, pkg := range mainPkgs {
+		fmt.Printf("ACB under modules/go/main running %v\n", cmd)
 		env = env.WithExec(goCommand(cmd, []string{pkg}, ldflags, p.Values, p.Race))
 	}
 	return dag.Directory().WithDirectory(output, env.Directory(output)), nil

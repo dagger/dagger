@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+
+	//"sync"
 	"time"
 
 	goapk "chainguard.dev/apko/pkg/apk/apk"
@@ -89,11 +91,22 @@ type Alpine struct {
 	GoArch string
 }
 
+func (m *Alpine) hasgo() bool {
+	for _, p := range m.Packages {
+		if strings.HasPrefix(p, "go~") {
+			return true
+		}
+	}
+	return false
+}
+
 // Build an Alpine Linux container
 func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 	var branch *goapk.ReleaseBranch
 	var repos []string
 	var basePkgs []string
+
+	fmt.Printf("ACB alpine.Container with %+v\n", m)
 
 	switch m.Distro {
 	case DistroAlpine:
@@ -174,6 +187,22 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 		"/bin",
 	}, ":"))
 
+	if m.hasgo() {
+		fmt.Printf("ACB has go\n")
+
+		size, err := ctr.File("/usr/lib/go/bin/go").Size(ctx)
+		if err != nil {
+			panic(fmt.Sprintf("ctr.File failed0 %v\n", err))
+		}
+		fmt.Printf("ACB ctr.File go size is %d\n", size)
+
+		out, err := ctr.WithExec([]string{"sh", "-c", "echo ACB here I am && which go || (find / | grep 'bin.*go' && echo no go found on path && exit 1)"}).Stdout(context.TODO())
+		if err != nil {
+			panic(fmt.Sprintf("ACB failed without having go %v\nmf=%+v", err, m))
+		}
+		fmt.Printf("ACB has go got %s\nm=%+v", out, m) // located in /usr/sbin/go
+	}
+
 	return ctr, nil
 }
 
@@ -201,10 +230,18 @@ func (m *Alpine) withPkgs(
 		dir  *dagger.Directory
 	}
 
+	fmt.Printf("ACB in Alpine.withPkgs got %+v\n", repoPkgs)
+
+	//var mu sync.Mutex
+
+	foundGo := 0
+
 	var eg errgroup.Group
 	alpinePkgs := make([]*apkPkg, len(repoPkgs))
 	for i, pkg := range repoPkgs {
+		//mu.Lock()
 		eg.Go(func() error {
+			//defer mu.Unlock()
 			url := pkg.URL()
 			mntPath := filepath.Join("/mnt", filepath.Base(url))
 			outDir := "/out"
@@ -224,6 +261,21 @@ func (m *Alpine) withPkgs(
 			if err != nil {
 				return fmt.Errorf("failed to get alpine package entries: %w", err)
 			}
+			fmt.Printf("ACB adding pkg %s\n", pkg.Name)
+			if strings.HasPrefix(pkg.Name, "go-") {
+				fmt.Printf("ACB go pkg entries %+v\n", entries) // ACB go pkg entries [usr/ var/]
+				out, err := unpacked.WithExec([]string{"sh", "-c", "find /out | grep bin.*go\\$ && ls -la /out/usr/bin/go && ls -la /out/usr/lib/go/bin/go && echo ACB DONE HERE"}).Stdout(ctx)
+				if err != nil {
+					panic(fmt.Sprintf("failed to get go size %v\n", err))
+				}
+				fmt.Printf("ACB it worked %s\n", out)
+
+				//goSize, err := alpinePkg.dir.File("/usr/sbin/go").Size(ctx)
+				//if err != nil {
+				//	panic(fmt.Sprintf("failed to get go size %v\n", err))
+				//}
+				//fmt.Printf("ACB got go size %d\n", goSize)
+			}
 
 			// HACK: /lib64 is a link, so don't overwrite it
 			// - wolfi-baselayout links /lib64 -> /lib
@@ -231,11 +283,44 @@ func (m *Alpine) withPkgs(
 			// TODO: this should *probably* apply to /usr/lib64/ and
 			// /usr/local/lib64/ as well
 			if m.Distro == DistroWolfi && pkg.PackageName() != "wolfi-baselayout" {
+				if strings.HasPrefix(pkg.Name, "go-") {
+					size, err := alpinePkg.dir.File("/usr/lib/go/bin/go").Size(ctx)
+					if err != nil {
+						panic(fmt.Sprintf("failed0 %v\n", err))
+					}
+					fmt.Printf("ACB go size0 is %d\n", size)
+				}
+
 				if slices.Contains(entries, "lib64/") || slices.Contains(entries, "lib64") {
 					alpinePkg.dir = alpinePkg.dir.
 						WithDirectory("/lib", alpinePkg.dir.Directory("/lib64")).
 						WithoutDirectory("/lib64")
 				}
+
+				if strings.HasPrefix(pkg.Name, "go-") {
+					size, err := alpinePkg.dir.File("/usr/lib/go/bin/go").Size(ctx)
+					if err != nil {
+						panic(fmt.Sprintf("failed1 %v\n", err))
+					}
+					fmt.Printf("ACB go size1 is %d\n", size)
+					foundGo = 1
+				}
+			} else {
+				if strings.HasPrefix(pkg.Name, "go-") {
+					size, err := alpinePkg.dir.File("/usr/lib/go/bin/go").Size(ctx)
+					if err != nil {
+						panic(fmt.Sprintf("failed3 %v\n", err))
+					}
+					fmt.Printf("ACB go size3 is %d\n", size)
+				}
+			}
+
+			if foundGo > 0 {
+				size, err := alpinePkg.dir.File("/usr/lib/go/bin/go").Size(ctx)
+				if err != nil {
+					panic(fmt.Sprintf("failed4 %v (foundgo=%d)\n", err, foundGo))
+				}
+				fmt.Printf("ACB go size4 is %d (foundgo=%d)\n", size, foundGo)
 			}
 
 			alpinePkgs[i] = alpinePkg
@@ -246,9 +331,11 @@ func (m *Alpine) withPkgs(
 		return nil, fmt.Errorf("failed to get alpine packages: %w", err)
 	}
 
+	foundGo = 0
+
 	installBusyboxSymlinks := false
 	for _, pkg := range alpinePkgs {
-		ctr = ctr.WithDirectory("/", pkg.dir)
+		ctr = ctr.WithDirectory("/", pkg.dir) // this overwrites the root directory
 
 		if pkg.name == "busybox" || pkg.name == "busybox-full" {
 			// We copy apko and don't run scripts, but with a special exception for busybox,
@@ -260,6 +347,16 @@ func (m *Alpine) withPkgs(
 			// it will try to install in this container if/when the ca-certificates package is
 			// installed.
 			ctr = ctr.WithExec([]string{"/bin/busybox", "--install", "-s"})
+		}
+
+		if strings.HasPrefix(pkg.name, "go-") || foundGo > 0 {
+			fmt.Printf("ACB found go here\n")
+			size, err := ctr.File("/usr/lib/go/bin/go").Size(ctx)
+			if err != nil {
+				panic(fmt.Sprintf("failed5 %v (foundgo=%d)\n", err, foundGo))
+			}
+			fmt.Printf("ACB go size5 is %d (foundgo=%d)\n", size, foundGo)
+			foundGo++
 		}
 	}
 
