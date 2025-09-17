@@ -303,11 +303,7 @@ func (ci *CI) withEvalsWorkflow() *CI {
 	})
 	w := gha.Workflow("evals", dagger.GhaWorkflowOpts{
 		// Only run when LLM-related files are changed
-		OnPullRequestOpened:         true,
-		OnPullRequestReopened:       true,
-		OnPullRequestSynchronize:    true,
-		OnPullRequestReadyForReview: true,
-		OnPullRequestPaths: []string{
+		OnPushPaths: []string{
 			"core/llm.go",
 			"core/mcp.go",
 			"core/env.go",
@@ -324,7 +320,7 @@ func (ci *CI) withEvalsWorkflow() *CI {
 			DaggerDev: "${{ github.sha }}", // testdev, so run against local dagger
 			Runner:    AltGoldRunner(),
 			// NOTE: avoid running for forks
-			Condition: fmt.Sprintf(`${{ github.repository == '%s' }}`, upstreamRepository),
+			Condition: fmt.Sprintf(`${{ (github.repository == '%s') && (github.actor != 'dependabot[bot]') }}`, upstreamRepository),
 			Secrets:   []string{"OP_SERVICE_ACCOUNT_TOKEN"},
 			Env: []string{
 				"ANTHROPIC_API_KEY=op://RelEng/ANTHROPIC/API_KEY",
