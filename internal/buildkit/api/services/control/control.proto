@@ -5,9 +5,9 @@ package moby.buildkit.v1;
 // import "github.com/containerd/containerd/api/types/descriptor.proto";
 import "github.com/gogo/googleapis/google/rpc/status.proto";
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
-import "github.com/moby/buildkit/api/types/worker.proto";
-import "github.com/moby/buildkit/solver/pb/ops.proto";
-import "github.com/moby/buildkit/sourcepolicy/pb/policy.proto";
+import "github.com/dagger/dagger/internal/buildkit/api/types/worker.proto";
+import "github.com/dagger/dagger/internal/buildkit/solver/pb/ops.proto";
+import "github.com/dagger/dagger/internal/buildkit/sourcepolicy/pb/policy.proto";
 import "google/protobuf/timestamp.proto";
 
 option (gogoproto.sizer_all) = true;
@@ -73,7 +73,7 @@ message SolveRequest {
 	string Frontend = 6;
 	map<string, string> FrontendAttrs = 7;
 	CacheOptions Cache = 8 [(gogoproto.nullable) = false];
-	repeated string Entitlements = 9 [(gogoproto.customtype) = "github.com/moby/buildkit/util/entitlements.Entitlement" ];
+	repeated string Entitlements = 9 [(gogoproto.customtype) = "github.com/dagger/dagger/internal/buildkit/util/entitlements.Entitlement" ];
 	map<string, pb.Definition> FrontendInputs = 10;
 	bool Internal = 11; // Internal builds are not recorded in build history
 	moby.buildkit.v1.sourcepolicy.Policy SourcePolicy = 12;

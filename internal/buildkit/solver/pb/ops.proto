@@ -217,7 +217,7 @@ message OpMetadata {
 	// WorkerConstraint worker_constraint = 3;
 	ExportCache export_cache = 4;
 
-	map<string, bool> caps = 5 [(gogoproto.castkey) = "github.com/moby/buildkit/util/apicaps.CapID", (gogoproto.nullable) = false];
+	map<string, bool> caps = 5 [(gogoproto.castkey) = "github.com/dagger/dagger/internal/buildkit/util/apicaps.CapID", (gogoproto.nullable) = false];
 
 	ProgressGroup progress_group = 6;
 
