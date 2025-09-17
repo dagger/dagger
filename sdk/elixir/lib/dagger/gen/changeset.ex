@@ -69,6 +69,17 @@ defmodule Dagger.Changeset do
   end
 
   @doc """
+  Applies the diff represented by this changeset to a path on the host.
+  """
+  @spec export(t(), String.t()) :: {:ok, String.t()} | {:error, term()}
+  def export(%__MODULE__{} = changeset, path) do
+    query_builder =
+      changeset.query_builder |> QB.select("export") |> QB.put_arg("path", path)
+
+    Client.execute(changeset.client, query_builder)
+  end
+
+  @doc """
   A unique identifier for this Changeset.
   """
   @spec id(t()) :: {:ok, Dagger.ChangesetID.t()} | {:error, term()}

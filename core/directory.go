@@ -1244,7 +1244,7 @@ func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("export directory %s to host %s", dir.Dir, destPath))
 	defer telemetry.End(span, func() error { return rerr })
 
-	return bk.LocalDirExport(ctx, defPB, destPath, merge)
+	return bk.LocalDirExport(ctx, defPB, destPath, merge, nil)
 }
 
 // Root removes any relative path from the directory.

@@ -2673,15 +2673,22 @@ export class CacheVolume extends BaseClient {
  */
 export class Changeset extends BaseClient {
   private readonly _id?: ChangesetID = undefined
+  private readonly _export?: string = undefined
   private readonly _sync?: ChangesetID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: ChangesetID, _sync?: ChangesetID) {
+  constructor(
+    ctx?: Context,
+    _id?: ChangesetID,
+    _export?: string,
+    _sync?: ChangesetID,
+  ) {
     super(ctx)
 
     this._id = _id
+    this._export = _export
     this._sync = _sync
   }
 
@@ -2733,6 +2740,22 @@ export class Changeset extends BaseClient {
   before = (): Directory => {
     const ctx = this._ctx.select("before")
     return new Directory(ctx)
+  }
+
+  /**
+   * Applies the diff represented by this changeset to a path on the host.
+   * @param path Location of the copied directory (e.g., "logs/").
+   */
+  export = async (path: string): Promise<string> => {
+    if (this._export) {
+      return this._export
+    }
+
+    const ctx = this._ctx.select("export", { path })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**

@@ -494,33 +494,60 @@ func (t *Test) NoChanges() *dagger.Changeset {
 	return t.Dir.Changes(t.Dir)
 }
 `,
-		)
+		).
+		With(daggerCall("dir", "-o", "./outdir"))
 
-	modGen, err := modGen.With(daggerCall("dir", "-o", "./outdir")).Sync(ctx)
-	require.NoError(t, err)
+	t.Run("export", func(ctx context.Context, t *testctx.T) {
+		modGen := modGen
 
-	entries, err := modGen.Directory("./outdir").Entries(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "bar.txt\nfoo.txt", strings.Join(entries, "\n"))
+		entries, err := modGen.Directory("./outdir").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "bar.txt\nfoo.txt", strings.Join(entries, "\n"))
 
-	modGen, err = modGen.With(daggerCall("update", "-o", "./outdir")).Sync(ctx)
-	require.NoError(t, err)
+		modGen, err = modGen.With(daggerCall("update", "export", "--path", "./outdir")).Sync(ctx)
+		require.NoError(t, err)
 
-	entries, err = modGen.Directory("./outdir").Entries(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "baz.txt\nfoo.txt", strings.Join(entries, "\n"))
+		entries, err = modGen.Directory("./outdir").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "baz.txt\nfoo.txt", strings.Join(entries, "\n"))
 
-	contents, err := modGen.File("./outdir/foo.txt").Contents(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "foo\nbaz", contents)
+		contents, err := modGen.File("./outdir/foo.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foo\nbaz", contents)
 
-	contents, err = modGen.File("./outdir/baz.txt").Contents(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "im new here", contents)
+		contents, err = modGen.File("./outdir/baz.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "im new here", contents)
+	})
 
-	out, err := modGen.With(daggerCall("no-changes", "-o", "./outdir")).Stderr(ctx)
-	require.NoError(t, err)
-	require.Contains(t, out, "no changes to apply")
+	t.Run("output flag", func(ctx context.Context, t *testctx.T) {
+		modGen := modGen
+
+		entries, err := modGen.Directory("./outdir").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "bar.txt\nfoo.txt", strings.Join(entries, "\n"))
+
+		modGen, err = modGen.With(daggerCall("update", "-o", "./outdir")).Sync(ctx)
+		require.NoError(t, err)
+
+		entries, err = modGen.Directory("./outdir").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "baz.txt\nfoo.txt", strings.Join(entries, "\n"))
+
+		contents, err := modGen.File("./outdir/foo.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foo\nbaz", contents)
+
+		contents, err = modGen.File("./outdir/baz.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "im new here", contents)
+	})
+
+	t.Run("no changes", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall("no-changes")).Stderr(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "no changes to apply")
+	})
 }
 
 func (s ChangesetSuite) TestWithChanges(ctx context.Context, t *testctx.T) {

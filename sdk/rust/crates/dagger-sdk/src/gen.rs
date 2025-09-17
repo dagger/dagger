@@ -2260,6 +2260,16 @@ impl Changeset {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Applies the diff represented by this changeset to a path on the host.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the copied directory (e.g., "logs/").
+    pub async fn export(&self, path: impl Into<String>) -> Result<String, DaggerError> {
+        let mut query = self.selection.select("export");
+        query = query.arg("path", path.into());
+        query.execute(self.graphql_client.clone()).await
+    }
     /// A unique identifier for this Changeset.
     pub async fn id(&self) -> Result<ChangesetId, DaggerError> {
         let query = self.selection.select("id");

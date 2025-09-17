@@ -944,6 +944,34 @@ class Changeset(Type):
         _ctx = self._select("before", _args)
         return Directory(_ctx)
 
+    async def export(self, path: str) -> str:
+        """Applies the diff represented by this changeset to a path on the host.
+
+        Parameters
+        ----------
+        path:
+            Location of the copied directory (e.g., "logs/").
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("export", _args)
+        return await _ctx.execute(str)
+
     async def id(self) -> ChangesetID:
         """A unique identifier for this Changeset.
 

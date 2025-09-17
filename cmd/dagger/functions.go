@@ -38,6 +38,7 @@ var (
 
 const (
 	Directory     string = "Directory"
+	Changeset     string = "Changeset"
 	Container     string = "Container"
 	File          string = "File"
 	Secret        string = "Secret"
@@ -651,13 +652,13 @@ func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modType
 		return nil
 	}
 
-	// If the function returns a Changeset, apply it to the working directory.
-	if returnType.Name() == "Changeset" {
-		return handleChangesetResponse(ctx, dag, response)
-	}
-
 	// Handle the `export` convenience, i.e, -o,--output flag.
 	switch returnType.Name() {
+	case Changeset:
+		if outputPath == "" {
+			return handleChangesetResponse(ctx, dag, response)
+		}
+		fallthrough
 	case Container, Directory, File:
 		if outputPath != "" {
 			respPath, ok := response.(string)
@@ -737,50 +738,29 @@ func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response a
 		return nil
 	}
 
-	exportDest := outputPath
-	if exportDest == "" {
-		exportDest = "."
-
-		var confirm bool
-		form := idtui.NewForm(
-			huh.NewGroup(
-				huh.NewConfirm().
-					Title("Apply changes?").
-					Description(summary.String()).
-					Affirmative("Apply").
-					Negative("Discard").
-					Value(&confirm),
-			),
-		)
-		if err := Frontend.HandleForm(ctx, form); err != nil {
-			return err
-		}
-		if !confirm {
-			return nil
-		}
+	var confirm bool
+	form := idtui.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Apply changes?").
+				Description(summary.String()).
+				Affirmative("Apply").
+				Negative("Discard").
+				Value(&confirm),
+		),
+	)
+	if err := Frontend.HandleForm(ctx, form); err != nil {
+		return err
+	}
+	if !confirm {
+		return nil
 	}
 
 	ctx, span := Tracer().Start(ctx, "applying changes")
 	defer telemetry.End(span, func() error { return rerr })
-	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
-
-	if _, err := changeset.Layer().Export(ctx, exportDest); err != nil {
+	if _, err := changeset.Export(ctx, "."); err != nil {
 		return err
 	}
-
-	removed, err := changeset.RemovedPaths(ctx)
-	if err != nil {
-		return err
-	}
-
-	for _, filePath := range removed {
-		filePath = filepath.Join(exportDest, filePath)
-		slog.Info("removing file", "path", filePath)
-		if err := os.Remove(filePath); err != nil {
-			slog.Error("failed to remove file; ignoring", "path", filePath, "error", err)
-		}
-	}
-
 	return nil
 }
 
