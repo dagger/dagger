@@ -286,7 +286,7 @@ func (m *MCP) syncMCPSessions(ctx context.Context) error {
 
 func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
 	var tools []LLMTool
-	for name, sess := range m.mcpSessions {
+	for serverName, sess := range m.mcpSessions {
 		for tool, err := range sess.Tools(ctx, nil) {
 			if err != nil {
 				return nil, err
@@ -300,15 +300,15 @@ func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
 			isReadOnly := tool.Annotations != nil && tool.Annotations.ReadOnlyHint
 
 			tools = append(tools, LLMTool{
-				Name:        name + "_" + tool.Name,
-				Server:      name,
+				Name:        serverName + "_" + tool.Name,
+				Server:      serverName,
 				Description: tool.Description,
 				Schema:      anied,
 				ReadOnly:    isReadOnly,
 				Call: func(ctx context.Context, args any) (any, error) {
-					mcpSrv, ok := m.mcpServers[name]
+					mcpSrv, ok := m.mcpServers[serverName]
 					if !ok {
-						return nil, fmt.Errorf("mcp server %q not found", name)
+						return nil, fmt.Errorf("mcp server %q not found", serverName)
 					}
 
 					// TODO: skip fs stuff for non-Container services
@@ -322,7 +322,7 @@ func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
 							Arguments: args,
 						})
 						if err != nil {
-							return nil, fmt.Errorf("call tool %q on mcp %q: %w", tool.Name, name, err)
+							return nil, fmt.Errorf("call tool %q on mcp %q: %w", tool.Name, serverName, err)
 						}
 					} else {
 						// For containers with working directories, the tool expects the workspace
@@ -332,7 +332,7 @@ func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
 							Arguments: args,
 						})
 						if err != nil {
-							return nil, fmt.Errorf("call tool %q on mcp %q: %w", tool.Name, name, err)
+							return nil, fmt.Errorf("call tool %q on mcp %q: %w", tool.Name, serverName, err)
 						}
 					}
 
@@ -730,61 +730,81 @@ func (m *MCP) call(ctx context.Context,
 
 func (m *MCP) outputToLLM(ctx context.Context, srv *dagql.Server, val dagql.Typed) (string, error) {
 	if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](val); ok {
-		// Handle object returns
+		// Handle object returns specially
 		return m.toolObjectResponse(ctx, srv, obj, m.Ingest(obj, ""))
 	}
 
+	result, err := m.sanitizeResult(ctx, val)
+	if err != nil {
+		return "", fmt.Errorf("failed to simplify result: %w", err)
+	}
+
+	if str, ok := result.(string); ok {
+		// Return string content directly, without wrapping it in JSON.
+		return str, nil
+	}
+
+	if result == nil {
+		// No response; just show logs, if any (handled above).
+		return "", nil
+	}
+
+	// Handle scalars, arrays, etc
+	return toolStructuredResponse(map[string]any{
+		"result": result,
+	})
+}
+
+func (m *MCP) sanitizeResult(ctx context.Context, val dagql.Typed) (any, error) {
+	if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](val); ok {
+		// Handle objects by showing their LLM ID, i.e. Container#123
+		return m.Ingest(obj, ""), nil
+	}
+
+	if anyRes, ok := dagql.UnwrapAs[dagql.AnyResult](val); ok {
+		// Unwrap any Result[T]s so we don't encode a giant ID
+		return m.sanitizeResult(ctx, anyRes.Unwrap())
+	}
+
 	if list, ok := dagql.UnwrapAs[dagql.Enumerable](val); ok {
+		// Handle arrays by sanitizing each value
 		var res []any
 		for i := 1; i <= list.Len(); i++ {
-			// Handle arrays of objects by ingesting each object ID.
 			val, err := list.Nth(i)
 			if err != nil {
-				return "", fmt.Errorf("failed to get ID for object %d: %w", i, err)
+				return nil, fmt.Errorf("failed to get ID for object %d: %w", i, err)
 			}
-			if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](val); ok {
-				// Refer to objects by their IDs
-				res = append(res, m.Ingest(obj, ""))
-			} else if resT, ok := dagql.UnwrapAs[dagql.AnyResult](val); ok {
-				// Unwrap any Result[T]s
-				res = append(res, resT.Unwrap())
-			} else {
-				// Not really sure what else there would be, but...
-				res = append(res, val)
+			simpl, err := m.sanitizeResult(ctx, val)
+			if err != nil {
+				return nil, fmt.Errorf("failed to simplify list element %d: %w", i, err)
 			}
+			res = append(res, simpl)
 		}
-		return toolStructuredResponse(map[string]any{
-			"results": res,
-		})
+		return res, nil
 	}
 
 	if str, ok := dagql.UnwrapAs[dagql.String](val); ok {
-		// Handle strings by guarding against non-utf8 or giant payloads.
+		// Handle strings by guarding against non-utf8 payloads.
 		bytes := []byte(str.String())
 		if !utf8.Valid(bytes) {
-			return toolStructuredResponse(map[string]any{
-				"size":   len(bytes),
+			return map[string]any{
+				"type":   "non-utf8-string",
+				"bytes":  len(bytes),
 				"digest": digest.FromBytes(bytes),
-			})
+			}, nil
 		}
 		// Return string content directly, without wrapping it in JSON.
 		return str.String(), nil
 	}
 
-	if anyRes, ok := dagql.UnwrapAs[dagql.AnyResult](val); ok {
-		// Unwrap any Result[T]s
-		val = anyRes.Unwrap()
+	if val == (Void{}) {
+		// Represent Void as null. It's usually a 'null Void', but handle this
+		// anyway for sanity's sake.
+		return nil, nil
 	}
 
-	if val == nil || val == (Void{}) {
-		// No response; just show logs, if any.
-		return "", nil
-	}
-
-	// Handle scalars or arrays of scalars.
-	return toolStructuredResponse(map[string]any{
-		"result": val,
-	})
+	// Nothing else fishy, trust its marshaling
+	return val, nil
 }
 
 func (m *MCP) toolCallToSelections(
@@ -2172,12 +2192,9 @@ func (m *MCP) toolObjectResponse(ctx context.Context, srv *dagql.Server, target 
 		if err != nil {
 			return "", err
 		}
-		var datum any
-		if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](val); ok {
-			datum = m.Ingest(obj, "")
-		} else {
-			// TODO: lists of objects?
-			datum = val.Unwrap()
+		datum, err := m.sanitizeResult(ctx, val)
+		if err != nil {
+			return "", err
 		}
 		data[field.Name] = datum
 	}
