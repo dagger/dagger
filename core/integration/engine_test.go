@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	bkconfig "github.com/moby/buildkit/cmd/buildkitd/config"
-	"github.com/moby/buildkit/identity"
+	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/pelletier/go-toml"
 	"golang.org/x/sync/errgroup"
 

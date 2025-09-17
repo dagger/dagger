@@ -1,6 +1,6 @@
 module github.com/dagger/dagger/cmd/engine/.dagger
 
-go 1.23.8
+go 1.24.4
 
 require (
 	github.com/dagger/dagger/engine/distconsts v0.18.5
@@ -16,7 +16,6 @@ require (
 	github.com/99designs/gqlgen v0.17.75
 	github.com/Khan/genqlient v0.8.1
 	github.com/containerd/platforms v1.0.0-rc.1
-	github.com/moby/buildkit v0.21.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/vektah/gqlparser/v2 v2.5.28
 	go.opentelemetry.io/otel v1.36.0

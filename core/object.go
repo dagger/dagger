@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/moby/buildkit/solver/pb"
+	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 

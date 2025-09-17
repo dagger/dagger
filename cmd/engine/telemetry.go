@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/moby/buildkit/identity"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/resource"

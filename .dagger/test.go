@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/moby/buildkit/identity"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
@@ -569,13 +569,13 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, string, error) {
 			Permissions: 0755,
 		})
 
-	engineRunVol := dag.CacheVolume("dagger-dev-engine-test-varrun" + identity.NewID())
+	engineRunVol := dag.CacheVolume("dagger-dev-engine-test-varrun" + rand.Text())
 	registrySvc := registry()
 	devEngineSvc := devEngine.
 		WithServiceBinding("registry", registrySvc).
 		WithServiceBinding("privateregistry", privateRegistry()).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
-		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume("dagger-dev-engine-test-state"+identity.NewID())).
+		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume("dagger-dev-engine-test-state"+rand.Text())).
 		WithMountedCache("/run", engineRunVol).
 		AsService(dagger.ContainerAsServiceOpts{
 			Args: []string{

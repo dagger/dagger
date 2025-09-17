@@ -12,11 +12,11 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/mackerelio/go-osstat/cpu"
 	"github.com/mackerelio/go-osstat/loadavg"
 	"github.com/mackerelio/go-osstat/memory"
 	"github.com/mackerelio/go-osstat/uptime"
-	"github.com/moby/buildkit/util/bklog"
 	"github.com/prometheus/procfs"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/exp/constraints"

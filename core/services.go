@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/moby/buildkit/util/bklog"
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"

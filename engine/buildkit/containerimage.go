@@ -8,12 +8,12 @@ import (
 	"path"
 
 	"github.com/containerd/platforms"
-	bkcache "github.com/moby/buildkit/cache"
-	bkclient "github.com/moby/buildkit/client"
-	"github.com/moby/buildkit/exporter/containerimage/exptypes"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	bksolverpb "github.com/moby/buildkit/solver/pb"
-	solverresult "github.com/moby/buildkit/solver/result"
+	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/dagger/dagger/internal/buildkit/exporter/containerimage/exptypes"
+	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
+	bksolverpb "github.com/dagger/dagger/internal/buildkit/solver/pb"
+	solverresult "github.com/dagger/dagger/internal/buildkit/solver/result"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/dagger/dagger/engine"

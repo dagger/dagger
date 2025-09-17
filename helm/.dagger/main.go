@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"strings"
 
 	"dagger/helm/internal/dagger"
 
-	"github.com/moby/buildkit/identity"
 	"helm.sh/helm/v3/pkg/chart"
 	"sigs.k8s.io/yaml"
 )
@@ -51,7 +51,7 @@ func (h *Helm) Test(ctx context.Context) error {
 		WithServiceBinding("helm-test", k3ssvc).
 		WithFile("/.kube/config", k3s.Config()).
 		WithEnvVariable("KUBECONFIG", "/.kube/config").
-		WithEnvVariable("CACHEBUSTER", identity.NewID()).
+		WithEnvVariable("CACHEBUSTER", rand.Text()).
 		WithExec([]string{"kubectl", "get", "nodes", "--output=wide"}).
 		Sync(ctx)
 	if err != nil {

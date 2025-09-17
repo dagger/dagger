@@ -1,6 +1,6 @@
 module github.com/dagger/dagger/.dagger
 
-go 1.23.2
+go 1.24.4
 
 require github.com/dagger/dagger/engine/distconsts v0.18.18
 
@@ -14,7 +14,6 @@ require (
 	github.com/BurntSushi/toml v0.3.1
 	github.com/Khan/genqlient v0.8.1
 	github.com/containerd/platforms v0.2.1
-	github.com/moby/buildkit v0.14.0-rc1.0.20240603193914-3d789eb740a9
 	github.com/vektah/gqlparser/v2 v2.5.28
 	go.opentelemetry.io/otel v1.36.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.12.2
@@ -41,7 +40,6 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.3 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.0 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/sosodev/duration v1.3.1 // indirect

@@ -14,8 +14,8 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
-	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"golang.org/x/mod/semver"

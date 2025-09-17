@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/moby/buildkit/solver/pb"
-	srctypes "github.com/moby/buildkit/source/types"
+	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	srctypes "github.com/dagger/dagger/internal/buildkit/source/types"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 

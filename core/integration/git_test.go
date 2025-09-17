@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/moby/buildkit/identity"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"

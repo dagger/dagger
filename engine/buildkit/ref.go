@@ -10,20 +10,20 @@ import (
 
 	"github.com/containerd/containerd/leases"
 	"github.com/containerd/continuity/fs"
-	bkcache "github.com/moby/buildkit/cache"
-	"github.com/moby/buildkit/cache/contenthash"
-	cacheutil "github.com/moby/buildkit/cache/util"
-	"github.com/moby/buildkit/client/llb"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	bksession "github.com/moby/buildkit/session"
-	"github.com/moby/buildkit/snapshot"
-	bksolver "github.com/moby/buildkit/solver"
-	solvererror "github.com/moby/buildkit/solver/errdefs"
-	llberror "github.com/moby/buildkit/solver/llbsolver/errdefs"
-	"github.com/moby/buildkit/solver/llbsolver/provenance"
-	solverresult "github.com/moby/buildkit/solver/result"
-	"github.com/moby/buildkit/util/bklog"
-	bkworker "github.com/moby/buildkit/worker"
+	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	"github.com/dagger/dagger/internal/buildkit/cache/contenthash"
+	cacheutil "github.com/dagger/dagger/internal/buildkit/cache/util"
+	"github.com/dagger/dagger/internal/buildkit/client/llb"
+	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
+	bksession "github.com/dagger/dagger/internal/buildkit/session"
+	"github.com/dagger/dagger/internal/buildkit/snapshot"
+	bksolver "github.com/dagger/dagger/internal/buildkit/solver"
+	solvererror "github.com/dagger/dagger/internal/buildkit/solver/errdefs"
+	llberror "github.com/dagger/dagger/internal/buildkit/solver/llbsolver/errdefs"
+	"github.com/dagger/dagger/internal/buildkit/solver/llbsolver/provenance"
+	solverresult "github.com/dagger/dagger/internal/buildkit/solver/result"
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	bkworker "github.com/dagger/dagger/internal/buildkit/worker"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/tonistiigi/fsutil"
@@ -189,7 +189,7 @@ func (r *ref) AddDependencyBlobs(ctx context.Context, blobs map[digest.Digest]*o
 
 	// This relies on the lease ID being the ref ID which, while unlikely to change, is worth
 	// keeping in mind:
-	// https://github.com/moby/buildkit/blob/c3c65787b5e2c2c9fcab1d0b9bd1884a37384c90/cache/manager.go#L231
+	// https://github.com/dagger/dagger/internal/buildkit/blob/c3c65787b5e2c2c9fcab1d0b9bd1884a37384c90/cache/manager.go#L231
 	leaseID := cacheRef.ID()
 
 	lm := r.c.Worker.LeaseManager()

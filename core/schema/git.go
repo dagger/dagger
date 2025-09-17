@@ -18,7 +18,7 @@ import (
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
-	"github.com/moby/buildkit/executor/oci"
+	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/util/gitutil"

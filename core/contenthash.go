@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	bkcontenthash "github.com/moby/buildkit/cache/contenthash"
-	"github.com/moby/buildkit/client/llb"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/solver/pb"
-	"github.com/moby/buildkit/util/bklog"
-	bkworker "github.com/moby/buildkit/worker"
+	bkcontenthash "github.com/dagger/dagger/internal/buildkit/cache/contenthash"
+	"github.com/dagger/dagger/internal/buildkit/client/llb"
+	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
+	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	bkworker "github.com/dagger/dagger/internal/buildkit/worker"
 	"github.com/opencontainers/go-digest"
 	"resenje.org/singleflight"
 

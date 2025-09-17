@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/moby/buildkit/session/filesync"
+	"github.com/dagger/dagger/internal/buildkit/session/filesync"
 	"github.com/moby/sys/user"
 	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"

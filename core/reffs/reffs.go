@@ -7,9 +7,9 @@ import (
 	"io/fs"
 	"time"
 
-	"github.com/moby/buildkit/client/llb"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/solver/pb"
+	"github.com/dagger/dagger/internal/buildkit/client/llb"
+	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
+	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	fstypes "github.com/tonistiigi/fsutil/types"
 
 	"github.com/dagger/dagger/engine/buildkit"

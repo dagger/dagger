@@ -21,7 +21,7 @@ import (
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/cenkalti/backoff/v4"
-	"github.com/moby/buildkit/identity"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 

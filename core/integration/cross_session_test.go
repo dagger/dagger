@@ -13,9 +13,9 @@ import (
 
 	"dagger.io/dagger"
 	fscopy "github.com/dagger/dagger/engine/sources/local/copy"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
-	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 )

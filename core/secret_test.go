@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/moby/buildkit/session/secrets"
+	"github.com/dagger/dagger/internal/buildkit/session/secrets"
 	"github.com/stretchr/testify/require"
 )
 
