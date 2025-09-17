@@ -85,6 +85,10 @@ func New(
 			// re-enable after we ship its dependent APIs
 			continue
 		}
+		if strings.HasPrefix(module, "modules/evals/") {
+			// re-enable after we ship its dependent APIs
+			continue
+		}
 		dev.ModCodegenTargets = append(dev.ModCodegenTargets, module)
 	}
 
@@ -137,6 +141,10 @@ func (dev *DaggerDev) Lint(
 					continue
 				}
 				if strings.HasPrefix(pkg, "modules/claude/") {
+					// re-enable after we ship its dependent APIs
+					continue
+				}
+				if strings.HasPrefix(pkg, "modules/evals/") {
 					// re-enable after we ship its dependent APIs
 					continue
 				}
