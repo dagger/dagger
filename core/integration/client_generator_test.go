@@ -92,8 +92,6 @@ main()`))
 		}
 
 		for _, tc := range testCases {
-			tc := tc
-
 			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -210,8 +208,6 @@ main()
 		}
 
 		for _, tc := range testCases {
-			tc := tc
-
 			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -337,8 +333,6 @@ main()
 		}
 
 		for _, tc := range testCases {
-			tc := tc
-
 			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -476,8 +470,6 @@ main()
 		}
 
 		for _, tc := range testCases {
-			tc := tc
-
 			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -584,8 +576,6 @@ main()
 		}
 
 		for _, tc := range testCases {
-			tc := tc
-
 			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -720,8 +710,6 @@ main()
 		}
 
 		for _, tc := range testCases {
-			tc := tc
-
 			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -854,8 +842,6 @@ main()`))
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(fmt.Sprintf("%s %q", tc.name, tc.outputDir), func(ctx context.Context, t *testctx.T) {
 			for _, ts := range []testSetup{
 				goTestSetup(tc.outputDir),
@@ -955,8 +941,6 @@ main()`))
 		}
 
 		for _, tc := range testCases {
-			tc := tc
-
 			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -1050,8 +1034,6 @@ main()`))
 		}
 
 		for _, tc := range testCases {
-			tc := tc
-
 			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -1143,8 +1125,6 @@ export class Generator {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.generatorSDK, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
@@ -1534,8 +1514,6 @@ main()`))
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 

@@ -312,7 +312,6 @@ func (r *renderer) renderCall(
 				fmt.Fprint(out, out.String(" "))
 				if argDig := val.GetCallDigest(); argDig != "" {
 					forceSimplify := false
-					internal := internal
 					argSpan := r.db.MostInterestingSpan(argDig)
 					if argSpan != nil {
 						forceSimplify = argSpan.Internal && !internal // only for the first internal call (not it's children)

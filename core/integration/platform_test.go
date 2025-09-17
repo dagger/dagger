@@ -82,7 +82,6 @@ func (PlatformSuite) TestCrossCompile(ctx context.Context, t *testctx.T) {
 	for platform := range platformToUname {
 		i++
 		i := i - 1
-		platform := platform
 		eg.Go(func() error {
 			ctr := c.Container().
 				From("crazymax/goxx:latest").
