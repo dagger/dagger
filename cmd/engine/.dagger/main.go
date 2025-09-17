@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"crypto/rand"
 
 	"github.com/dagger/dagger/engine/distconsts"
-	"github.com/moby/buildkit/identity"
 	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/sync/errgroup"
 
@@ -152,7 +152,7 @@ func (e *DaggerEngine) Service(
 		if version != "" {
 			cacheVolumeName = "dagger-dev-engine-state-" + version
 		} else {
-			cacheVolumeName = "dagger-dev-engine-state-" + identity.NewID()
+			cacheVolumeName = "dagger-dev-engine-state-" + rand.Text()
 		}
 		if name != "" {
 			cacheVolumeName += "-" + name

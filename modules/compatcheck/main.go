@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	cryptorand "crypto/rand"
 	"dagger/compatcheck/internal/dagger"
 	"dagger/compatcheck/schemadiff"
 	_ "embed"
@@ -9,7 +10,6 @@ import (
 	"math/rand/v2"
 	"runtime"
 
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/tidwall/gjson"
 	"golang.org/x/mod/semver"
 )
@@ -123,7 +123,7 @@ func engineServiceWithVersion(version string, withs ...func(*dagger.Container) *
 
 	deviceName, cidr := getUniqueNestedEngineNetwork()
 	return ctr.
-		WithMountedCache("/var/lib/dagger", dag.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
+		WithMountedCache("/var/lib/dagger", dag.CacheVolume("dagger-dev-engine-state-"+cryptorand.Text())).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		WithExec([]string{
 			"--addr", "tcp://0.0.0.0:1234",

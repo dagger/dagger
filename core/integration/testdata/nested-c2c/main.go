@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"os"
 	"strconv"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -91,7 +91,7 @@ func weHaveToGoDeeper(ctx context.Context, c *dagger.Client, depth int, mode str
 		WithEnvVariable("GOCACHE", "/go/build-cache").
 		WithMountedDirectory("/src", code).
 		WithWorkdir("/src").
-		WithEnvVariable("NOW", identity.NewID()).
+		WithEnvVariable("NOW", rand.Text()).
 		WithExec([]string{"cat", "/etc/resolv.conf"}).
 		WithServiceBinding("mirror", mirrorSvc).
 		WithExec(args, dagger.ContainerWithExecOpts{
@@ -130,7 +130,7 @@ func fetch(ctx context.Context, c *dagger.Client, mode, svcURL string) (string, 
 	case "exec":
 		return c.Container().
 			From("alpine:3.16.2").
-			WithEnvVariable("NOW", identity.NewID()).
+			WithEnvVariable("NOW", rand.Text()).
 			WithExec([]string{"cat", "/etc/resolv.conf"}).
 			WithExec([]string{"wget", "-O-", svcURL}).
 			Stdout(ctx)
