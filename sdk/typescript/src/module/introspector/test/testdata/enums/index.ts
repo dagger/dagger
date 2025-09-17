@@ -1,24 +1,23 @@
-import { enumType, field, func, object } from "../../../../decorators.js"
+import { func, object } from "../../../../decorators.js"
 
 /**
  * Enum for Status
  */
-@enumType()
-export class Status {
+export enum Status {
   /**
    * Active status
    */
-  static readonly ACTIVE: string = "ACTIVE value"
+  ACTIVE = "ACTIVE value",
 
   /**
    * Inactive status
    */
-  static readonly INACTIVE: string = "INACTIVE value"
+  INACTIVE = "INACTIVE value",
 }
 
 @object()
 export class Enums {
-  @field()
+  @func()
   status: Status = Status.ACTIVE
 
   @func()
