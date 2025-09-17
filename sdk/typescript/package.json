@@ -17,7 +17,7 @@
   },
   "main": "dist/src/index.js",
   "dependencies": {
-    "@grpc/grpc-js": "^1.13.4",
+    "@grpc/grpc-js": "^1.14.0",
     "@lifeomic/axios-fetch": "^3.1.0",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/core": "^2.1.0",
@@ -55,10 +55,10 @@
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
     "@types/adm-zip": "^0.5.7",
     "@types/mocha": "^10.0.10",
-    "@types/node": "~24.4.0",
+    "@types/node": "~24.5.1",
     "@types/tar": "^6.1.13",
-    "@typescript-eslint/eslint-plugin": "^8.43.0",
-    "@typescript-eslint/parser": "^8.43.0",
+    "@typescript-eslint/eslint-plugin": "^8.44.0",
+    "@typescript-eslint/parser": "^8.44.0",
     "eslint": "^9.35.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
@@ -68,6 +68,6 @@
     "rollup-plugin-dts": "^6.2.3",
     "ts-node": "^10.9.2",
     "tsx": "^4.20.5",
-    "typescript-eslint": "^8.43.0"
+    "typescript-eslint": "^8.44.0"
   }
 }
