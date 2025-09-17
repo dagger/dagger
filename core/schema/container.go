@@ -26,7 +26,6 @@ import (
 	"github.com/moby/buildkit/client/llb/sourceresolver"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
-	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -1798,17 +1797,22 @@ func (s *containerSchema) withDirectoryCacheKey(ctx context.Context, parent dagq
 	//	dirDigest = digest.Digest(dirDigestStr)
 	//}
 
-	ctrDigest, err := core.DigestOf(parent.Self().WithoutInputs())
+	ctrDigest, err := core.DigestOf(parent.Self()) // Self().WithoutInputs()
 	if err != nil {
 		return nil, err
 	}
 
+	dirID := args.Directory.ID().Digest()
+	dirStr := args.Directory.String()
+	fmt.Printf("ACB args.Directory is str=%s idDigest=%s\n", dirStr, dirID)
+
 	cacheCfg.Digest = dagql.HashFrom(
-		//string(dirDigest),
 		string(ctrDigest),
+		string(argDigest),
 		string(args.Path),
-		// TODO where does args.Directory get hashed?
-		string(fmt.Sprintf("hack %v %v", time.Now(), identity.NewID())),
+		string(args.Directory.ID().Digest()),
+
+		//string(fmt.Sprintf("hack %v %v", time.Now(), identity.NewID())),
 	)
 	return &cacheCfg, nil
 }
