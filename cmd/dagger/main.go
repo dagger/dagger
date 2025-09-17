@@ -30,7 +30,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
 	"mvdan.cc/sh/v3/interp"
@@ -367,7 +367,7 @@ func disableFlagsInUseLine(cmd *cobra.Command) {
 func parseGlobalFlags() {
 	flags := pflag.NewFlagSet("global", pflag.ContinueOnError)
 	flags.Usage = func() {}
-	flags.ParseErrorsWhitelist.UnknownFlags = true
+	flags.ParseErrorsAllowlist.UnknownFlags = true
 	installGlobalFlags(flags)
 	if err := flags.Parse(os.Args[1:]); err != nil && !errors.Is(err, pflag.ErrHelp) {
 		fmt.Fprintln(stderr, err)
