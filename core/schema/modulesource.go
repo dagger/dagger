@@ -2448,12 +2448,12 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		// NOTE: we don't change OriginalName, that's used internally at runtime
 		mod.NameField = originalSrc.Self().ModuleName
 		// Apply defaults using the blueprint name
-		if err := mod.ApplyLocalDefaults(ctx, getModuleDefaults(envFile, bp.ModuleName)); err != nil {
+		if err := mod.ApplyLocalDefaults(ctx, envFile.FilterPrefix(bp.ModuleName)); err != nil {
 			return inst, fmt.Errorf("failed to apply local defaults for %q from %q: %w", bp.ModuleName, envFilePath, err)
 		}
 	}
 	// Always apply defaults using the original name
-	if err := mod.ApplyLocalDefaults(ctx, getModuleDefaults(envFile, mod.Name())); err != nil {
+	if err := mod.ApplyLocalDefaults(ctx, envFile.FilterPrefix(mod.Name())); err != nil {
 		return inst, fmt.Errorf("failed to apply local defaults for %q from %q: %w", mod.Name(), envFilePath, err)
 	}
 
@@ -2467,7 +2467,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 			return inst, fmt.Errorf("failed to load .env from %q: %w", src.AsString(), err)
 		}
 		debugSpan(ctx, "DEBUG: searching for .env in %q returned %q", src.ModuleName, modEnvFilePath)
-		if err := mod.ApplyLocalDefaults(ctx, modEnvFile.Variables()); err != nil {
+		if err := mod.ApplyLocalDefaults(ctx, modEnvFile); err != nil {
 			debugSpan(ctx, "DEBUG: apply local defaults from %q: %#v", modEnvFilePath, modEnvFile.Variables())
 			return inst, fmt.Errorf("failed to apply local defaults for %q from %q: %w", mod.Name(), modEnvFilePath, err)
 		}
@@ -2484,45 +2484,6 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 func debugSpan(ctx context.Context, msg string, args ...any) {
 	_, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf(msg, args...))
 	span.End()
-}
-
-// Search an envfile for variables matching the given module name prefix,
-// and return matching variables as a new envfile, with prefix removed
-// Example:
-//
-//	envfile: `
-//	  MY_MODULE_TOKEN=topsecret
-//	  UNRELATED_SOURCE=.
-//	  MY_MODULE_DEBUG=true
-//	`
-//	modName: "my-module"
-//
-//	result: `
-//	  TOKEN=topsecret
-//	  DEBUG=true
-//	`
-//
-// Note: case-insensitive search will be needed to match the resulting variables
-// against variable names
-func getModuleDefaults(envFile *core.EnvFile, modName string) []core.EnvVariable {
-	var defaults []core.EnvVariable
-	for _, variable := range envFile.Variables() {
-		// eg. "my-module"
-		modPrefix := strings.ToLower(modName)
-		// eg. "my_module_"
-		modPrefix = strings.ReplaceAll(modPrefix, "-", "_") + "_"
-
-		// Does "my_module_token" start with "my_module_"?
-		if !strings.HasPrefix(strings.ToLower(variable.Name), modPrefix) {
-			continue
-		}
-		defaults = append(defaults, core.EnvVariable{
-			// eg. "ToKeN" (case doesn't matter)
-			Name:  variable.Name[len(modPrefix):],
-			Value: variable.Value,
-		})
-	}
-	return defaults
 }
 
 // Load a .env file for a module, *reading only from the module root* (ignoring .env files higher in the repo root)

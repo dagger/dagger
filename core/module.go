@@ -83,25 +83,6 @@ func (mod *Module) GetSource() *ModuleSource {
 	return mod.Source.Value.Self()
 }
 
-// Return a reference to the module's main object
-func (mod *Module) MainObject(ctx context.Context) (*ObjectTypeDef, bool) {
-	debugSpan(ctx, "module [name=%q] [nameField=%q] [origName=%q] search for main object", mod.Name(), mod.NameField, mod.OriginalName)
-	for _, typeDef := range mod.ObjectDefs {
-		if typeDef.AsObject.Valid {
-			objDef := typeDef.AsObject.Value
-			debugSpan(ctx, "module [name=%q] [nameField=%q] [origName=%q] search for main object: is it object [name=%q] [origName=%q] ?", mod.Name(), mod.NameField, mod.OriginalName, objDef.Name, objDef.OriginalName)
-			if strings.EqualFold(objDef.OriginalName, mod.OriginalName) {
-				debugSpan(ctx, "module [name=%q] [nameField=%q] [origName=%q] MATCH! [name=%q] [origName=%q]", mod.Name(), mod.NameField, mod.OriginalName, objDef.Name, objDef.OriginalName)
-
-				return objDef, true
-			}
-		}
-	}
-	debugSpan(ctx, "module [name=%q] [nameField=%q] [origName=%q] NO MATCH...", mod.Name(), mod.NameField, mod.OriginalName)
-
-	return nil, false
-}
-
 // Emit a one-off span for debugging purposes
 // Easier for debugging, since you can see it in the TUI instead of navigating to the dev engine logs
 func debugSpan(ctx context.Context, msg string, args ...any) {
@@ -110,24 +91,25 @@ func debugSpan(ctx context.Context, msg string, args ...any) {
 }
 
 // Apply default arguments loaded from a local env file, not from the module's schema
-func (mod *Module) ApplyLocalDefaults(ctx context.Context, defaults []EnvVariable) error {
-	for _, kv := range defaults {
-		matchedName, err := mod.ApplyLocalDefault(ctx, kv.Name, kv.Value)
-		if err != nil {
-			return err
+func (mod *Module) ApplyLocalDefaults(ctx context.Context, defaults *EnvFile) error {
+	debugSpan(ctx, "%q: applying defaults %v", mod.GetSource().AsString(), defaults.Environ)
+	for _, typeDef := range mod.ObjectDefs {
+		if typeDef.AsObject.Valid {
+			objType := typeDef.AsObject.Value
+			objDefaults := defaults.FilterPrefix(objType.Name)
+			if err := objType.ApplyLocalDefaults(ctx, objDefaults); err != nil {
+				return fmt.Errorf("failed to apply local defaults to type %q of module %q: %w", objType.Name, mod.Name(), err)
+			}
+			// FIXME: naive comparison, has false positives,
+			// for example module name 'dagger-dev'<->object name 'DaggerDev'
+			if objType.OriginalName == mod.OriginalName {
+				if err := objType.ApplyLocalDefaults(ctx, defaults); err != nil {
+					return fmt.Errorf("failed to apply local defaults to entrypoint type %q of module %q: %w", objType.Name, mod.Name(), err)
+				}
+			}
 		}
-		_, span := Tracer(ctx).Start(ctx, fmt.Sprintf("apply default: %q (%q)", matchedName, kv.Name))
-		span.End()
 	}
 	return nil
-}
-
-func (mod *Module) ApplyLocalDefault(ctx context.Context, argNameAnyCase, prettyValue string) (string, error) {
-	mainObj, ok := mod.MainObject(ctx)
-	if !ok {
-		return "", fmt.Errorf("error overriding args for module %q: can't load main object", mod.Name())
-	}
-	return mainObj.ApplyLocalDefault(ctx, argNameAnyCase, prettyValue)
 }
 
 func (mod *Module) IDModule() *call.Module {

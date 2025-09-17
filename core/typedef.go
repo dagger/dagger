@@ -210,71 +210,72 @@ func (fn *Function) LookupArg(nameAnyCase string) (*FunctionArg, bool) {
 	return nil, false
 }
 
-func (fn *Function) ApplyLocalDefault(ctx context.Context, argNameAnyCase, prettyValue string) (string, error) {
-	arg, ok := fn.LookupArg(argNameAnyCase)
-	if !ok {
-		return "", fmt.Errorf("function %q has no argument %q", fn.Name, argNameAnyCase)
-	}
-	var (
-		newDefault     any
-		newDefaultJSON []byte
-	)
-	switch arg.TypeDef.Kind {
-	case TypeDefKindString:
-		newDefault = prettyValue
-	case TypeDefKindInteger:
-		var err error
-		newDefault, err = strconv.Atoi(prettyValue)
-		if err != nil {
-			return "", fmt.Errorf("failed to parse integer value %q: %w", prettyValue, err)
-		}
-	case TypeDefKindObject:
-		srv := dagql.CurrentDagqlServer(ctx)
-		// eg. "secret", "gitRef", "directory"...
-		typename := arg.TypeDef.ToType().Name()
-		typename = strings.ToLower(typename[0:1]) + typename[1:]
-		var result dagql.AnyResult
-		if err := srv.Select(ctx, srv.Root(), &result,
-			dagql.Selector{
-				Field: "address",
-				Args: []dagql.NamedInput{{
-					Name:  "value",
-					Value: dagql.NewString(prettyValue),
-				}},
-			},
-			dagql.Selector{
-				Field: strings.ToLower(typename),
-			},
-			dagql.Selector{
-				Field: "id",
-			},
-		); err != nil {
-			return "", err
-		}
-		// FIXME: for objects, set a new 'defaultAddress' field on the typedef,
-		// for cleaner display on introspection
-		newDefault = result.Unwrap()
-	default:
-		// Go straight to JSON
-		if val := []byte(prettyValue); json.Valid(val) {
-			newDefaultJSON = val
-		} else {
-			return "", fmt.Errorf(
-				"can't override arg of type %q: value is not valid json: %s",
-				arg.TypeDef.ToType().Name(),
-				val,
+func (fn *Function) ApplyLocalDefaults(ctx context.Context, defaults *EnvFile) error {
+	for _, arg := range fn.Args {
+		if prettyValue, found := defaults.LookupCaseInsensitive(arg.Name); found {
+			debugSpan(ctx, "MATCH! argument %q of function %q: applying default %q", arg.Name, fn.Name, prettyValue)
+			var (
+				newDefault     any
+				newDefaultJSON []byte
 			)
+			switch arg.TypeDef.Kind {
+			case TypeDefKindString:
+				newDefault = prettyValue
+			case TypeDefKindInteger:
+				var err error
+				newDefault, err = strconv.Atoi(prettyValue)
+				if err != nil {
+					return fmt.Errorf("failed to parse integer value %q: %w", prettyValue, err)
+				}
+			case TypeDefKindObject:
+				srv := dagql.CurrentDagqlServer(ctx)
+				// eg. "secret", "gitRef", "directory"...
+				typename := arg.TypeDef.ToType().Name()
+				typename = strings.ToLower(typename[0:1]) + typename[1:]
+				var result dagql.AnyResult
+				if err := srv.Select(ctx, srv.Root(), &result,
+					dagql.Selector{
+						Field: "address",
+						Args: []dagql.NamedInput{{
+							Name:  "value",
+							Value: dagql.NewString(prettyValue),
+						}},
+					},
+					dagql.Selector{
+						Field: strings.ToLower(typename),
+					},
+					dagql.Selector{
+						Field: "id",
+					},
+				); err != nil {
+					return err
+				}
+				// FIXME: for objects, set a new 'defaultAddress' field on the typedef,
+				// for cleaner display on introspection
+				newDefault = result.Unwrap()
+			default:
+				// Go straight to JSON
+				if val := []byte(prettyValue); json.Valid(val) {
+					newDefaultJSON = val
+				} else {
+					return fmt.Errorf(
+						"can't override arg of type %q: value is not valid json: %s",
+						arg.TypeDef.ToType().Name(),
+						val,
+					)
+				}
+			}
+			if newDefaultJSON == nil {
+				var err error
+				newDefaultJSON, err = json.Marshal(newDefault)
+				if err != nil {
+					return err
+				}
+			}
+			arg.DefaultValue = newDefaultJSON
 		}
 	}
-	if newDefaultJSON == nil {
-		var err error
-		newDefaultJSON, err = json.Marshal(newDefault)
-		if err != nil {
-			return "", err
-		}
-	}
-	arg.DefaultValue = newDefaultJSON
-	return arg.Name, nil
+	return nil
 }
 
 type FunctionArg struct {
@@ -853,12 +854,22 @@ func (obj *ObjectTypeDef) IsSubtypeOf(iface *InterfaceTypeDef) bool {
 	return true
 }
 
-func (obj *ObjectTypeDef) ApplyLocalDefault(ctx context.Context, argNameAnyCase, prettyValue string) (string, error) {
-	fn := obj.Constructor.Value
-	if fn == nil {
-		return "", fmt.Errorf("can't override constructor for type %q: no constructor", obj.Name)
+func (obj *ObjectTypeDef) ApplyLocalDefaults(ctx context.Context, defaults *EnvFile) error {
+	debugSpan(ctx, "object %q: applying defaults %v", obj.Name, defaults.Environ)
+	if constructor := obj.Constructor.Value; constructor != nil {
+		debugSpan(ctx, "constructor of object %q: applying defaults %v", obj.Name, defaults.Environ)
+		if err := constructor.ApplyLocalDefaults(ctx, defaults); err != nil {
+			return fmt.Errorf("failed to apply local defaults to constructor of type %q: %w", obj.Name, err)
+		}
 	}
-	return fn.ApplyLocalDefault(ctx, argNameAnyCase, prettyValue)
+	for _, fn := range obj.Functions {
+		fnDefaults := defaults.FilterPrefix(fn.Name)
+		debugSpan(ctx, "function %q of object %q: applying defaults %v", fn.Name, obj.Name, fnDefaults.Environ)
+		if err := fn.ApplyLocalDefaults(ctx, fnDefaults); err != nil {
+			return fmt.Errorf("failed to apply local defaults to function %q of type %q: %w", fn.Name, obj.Name, err)
+		}
+	}
+	return nil
 }
 
 type FieldTypeDef struct {
