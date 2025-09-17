@@ -10,7 +10,7 @@ retract (
 )
 
 require (
-	github.com/99designs/gqlgen v0.17.79
+	github.com/99designs/gqlgen v0.17.80
 	github.com/Khan/genqlient v0.8.1
 	github.com/adrg/xdg v0.5.3
 	github.com/mitchellh/go-homedir v1.1.0
