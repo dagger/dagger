@@ -155,7 +155,7 @@ func (c estargzType) String() string {
 func (c estargzType) Is(ctx context.Context, cs content.Store, dgst digest.Digest) (bool, error) {
 	info, err := cs.Info(ctx, dgst)
 	if err != nil {
-		return false, nil
+		return false, nil //nolint: nilerr
 	}
 	if isEsgzStr, ok := info.Labels[estargzLabel]; ok {
 		if isEsgz, err := strconv.ParseBool(isEsgzStr); err == nil {

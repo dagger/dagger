@@ -172,7 +172,7 @@ func (c *Client) setupDelegatedTracing(ctx context.Context, td TracerDelegate) e
 	pd := otlptracegrpc.NewClient(c.conn)
 	e, err := otlptrace.New(ctx, pd)
 	if err != nil {
-		return nil
+		return nil //nolint:nilerr
 	}
 	return td.SetSpanExporter(ctx, e)
 }

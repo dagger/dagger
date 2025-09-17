@@ -100,7 +100,7 @@ func layersHandler(provider content.Provider, f func([]ocispecs.Descriptor)) ima
 		case images.MediaTypeDockerSchema2Manifest, ocispecs.MediaTypeImageManifest:
 			p, err := content.ReadBlob(ctx, provider, desc)
 			if err != nil {
-				return nil, nil
+				return nil, nil //nolint:nilerr
 			}
 
 			var manifest ocispecs.Manifest
@@ -113,7 +113,7 @@ func layersHandler(provider content.Provider, f func([]ocispecs.Descriptor)) ima
 		case images.MediaTypeDockerSchema2ManifestList, ocispecs.MediaTypeImageIndex:
 			p, err := content.ReadBlob(ctx, provider, desc)
 			if err != nil {
-				return nil, nil
+				return nil, nil //nolint:nilerr
 			}
 
 			var index ocispecs.Index

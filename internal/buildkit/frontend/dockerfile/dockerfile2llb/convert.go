@@ -20,8 +20,6 @@ import (
 	"time"
 
 	"github.com/containerd/platforms"
-	"github.com/distribution/reference"
-	"github.com/docker/go-connections/nat"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/client/llb/imagemetaresolver"
 	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
@@ -39,6 +37,8 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/gitutil"
 	"github.com/dagger/dagger/internal/buildkit/util/suggest"
 	"github.com/dagger/dagger/internal/buildkit/util/system"
+	"github.com/distribution/reference"
+	"github.com/docker/go-connections/nat"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	"github.com/moby/patternmatcher"
 	"github.com/moby/sys/signal"
@@ -1934,7 +1934,7 @@ func validateCircularDependency(states []*dispatchState) error {
 		visited[state] = struct{}{}
 		path[state] = struct{}{}
 		for dep, c := range state.deps {
-			next := append(current, c)
+			next := append(current, c) //nolint:gocritic
 			if _, ok := path[dep]; ok {
 				return next
 			}

@@ -12,10 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	distreference "github.com/distribution/reference"
-	"github.com/gogo/googleapis/google/rpc"
-	gogotypes "github.com/gogo/protobuf/types"
-	"github.com/golang/protobuf/ptypes/any"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
 	"github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
@@ -26,6 +22,10 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/grpcerrors"
 	"github.com/dagger/dagger/internal/buildkit/util/imageutil"
+	distreference "github.com/distribution/reference"
+	"github.com/gogo/googleapis/google/rpc"
+	gogotypes "github.com/gogo/protobuf/types"
+	"github.com/golang/protobuf/ptypes/any"
 	"github.com/moby/sys/signal"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
@@ -639,7 +639,7 @@ func (c *grpcClient) BuildOpts() client.BuildOpts {
 func (c *grpcClient) CurrentFrontend() (*llb.State, error) {
 	fp := "/run/config/buildkit/metadata/frontend.bin"
 	if _, err := os.Stat(fp); err != nil {
-		return nil, nil
+		return nil, nil //nolint:nilerr
 	}
 	dt, err := os.ReadFile(fp)
 	if err != nil {

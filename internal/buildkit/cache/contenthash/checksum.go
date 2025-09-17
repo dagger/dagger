@@ -12,11 +12,11 @@ import (
 	"sync"
 	"sync/atomic"
 
-	iradix "github.com/hashicorp/go-immutable-radix/v2"
-	simplelru "github.com/hashicorp/golang-lru/v2/simplelru"
 	"github.com/dagger/dagger/internal/buildkit/cache"
 	"github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
+	iradix "github.com/hashicorp/go-immutable-radix/v2"
+	simplelru "github.com/hashicorp/golang-lru/v2/simplelru"
 	"github.com/moby/locker"
 	"github.com/moby/patternmatcher"
 	digest "github.com/opencontainers/go-digest"
@@ -99,7 +99,7 @@ func (cm *cacheManager) Checksum(ctx context.Context, ref cache.ImmutableRef, p 
 	}
 	cc, err := cm.GetCacheContext(ctx, ensureOriginMetadata(ref))
 	if err != nil {
-		return "", nil
+		return "", nil //nolint:nilerr // TODO: ??? this is how it was upstream?
 	}
 	return cc.Checksum(ctx, ref, p, opts, s)
 }
@@ -238,7 +238,7 @@ func newCacheContext(md cache.RefMetadata) (*cacheContext, error) {
 func (cc *cacheContext) load() error {
 	dt, err := cc.md.GetContentHash()
 	if err != nil {
-		return nil
+		return nil //nolint:nilerr // TODO: ??? this is how it was upstream?
 	}
 
 	var l CacheRecords
@@ -870,7 +870,7 @@ func (cc *cacheContext) checksum(ctx context.Context, root *iradix.Node[*CacheRe
 	switch cr.Type {
 	case CacheRecordTypeDir:
 		h := sha256.New()
-		next := append(k, 0)
+		next := append(k, 0) //nolint:gocritic
 		iter := root.Iterator()
 		iter.SeekLowerBound(append(append([]byte{}, next...), 0))
 		subk := next
@@ -891,7 +891,7 @@ func (cc *cacheContext) checksum(ctx context.Context, root *iradix.Node[*CacheRe
 			h.Write([]byte(subcr.Digest))
 
 			if subcr.Type == CacheRecordTypeDir { // skip subfiles
-				next := append(subk, 0, 0xff)
+				next := append(subk, 0, 0xff) //nolint:gocritic
 				iter = root.Iterator()
 				iter.SeekLowerBound(next)
 			}

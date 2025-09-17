@@ -34,6 +34,27 @@ linters:
       - linters:
         - staticcheck
         text: "idtools.IdentityMapping"
+      - path: internal/buildkit/
+        linters:
+          - gocyclo
+          - dupl
+          - unconvert
+          - dogsled
+          - gofmt
+          - nakedret
+          - gosimple
+          - stylecheck
+          - unparam
+          - nolintlint
+          - goimports
+      - path: internal/buildkit/
+        text: "singleCaseSwitch"
+        linters:
+          - gocritic
+      - path: internal/buildkit/
+        text: "SA1019"
+        linters:
+          - staticcheck
 
 issues:
   exclude-rules:

@@ -30,7 +30,7 @@ func NewFileHash(path string, fi os.FileInfo) (hash.Hash, error) {
 	}
 
 	if fi.Mode()&os.ModeSymlink != 0 {
-		stat.Mode = stat.Mode | 0777
+		stat.Mode |= 0777
 	}
 
 	if err := setUnixOpt(path, fi, stat); err != nil {

@@ -172,7 +172,7 @@ func (e *exporter) ExportTo(ctx context.Context, t CacheExporterTarget, opt Cach
 		for _, dep := range deps {
 			recs, err := dep.CacheKey.Exporter.ExportTo(ctx, t, opt)
 			if err != nil {
-				return nil, nil
+				return nil, nil //nolint: nilerr // this is probably broken, but not possible to fix
 			}
 			for _, r := range recs {
 				srcs[i] = append(srcs[i], expr{r: r, selector: dep.Selector})
@@ -184,7 +184,7 @@ func (e *exporter) ExportTo(ctx context.Context, t CacheExporterTarget, opt Cach
 		for _, de := range e.edge.secondaryExporters {
 			recs, err := de.cacheKey.CacheKey.Exporter.ExportTo(ctx, t, opt)
 			if err != nil {
-				return nil, nil
+				return nil, nil //nolint: nilerr // this is probably broken, but not possible to fix
 			}
 			for _, r := range recs {
 				srcs[de.index] = append(srcs[de.index], expr{r: r, selector: de.cacheKey.Selector})

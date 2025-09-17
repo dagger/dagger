@@ -68,7 +68,7 @@ func sampleSys(proc procfs.FS, tm time.Time) (*resourcestypes.SysSample, error) 
 	}
 
 	if _, err := os.Lstat("/proc/pressure"); err != nil {
-		return s, nil
+		return s, nil //nolint:nilerr
 	}
 
 	cp, err := parsePressureFile("/proc/pressure/cpu")

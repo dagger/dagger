@@ -8,8 +8,8 @@ import (
 
 	"github.com/containerd/containerd/mount"
 	"github.com/containerd/containerd/snapshots"
-	"github.com/docker/docker/pkg/idtools"
 	"github.com/dagger/dagger/internal/buildkit/executor"
+	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/sys/userns"
 	"github.com/pkg/errors"
 )
@@ -174,7 +174,8 @@ func setRedirectDir(mounts []mount.Mount, redirectDirOption string) (ret []mount
 				}
 				opts = append(opts, o)
 			}
-			m.Options = append(opts, "redirect_dir="+redirectDirOption)
+			opts = append(opts, "redirect_dir="+redirectDirOption)
+			m.Options = opts
 		}
 		ret = append(ret, m)
 	}

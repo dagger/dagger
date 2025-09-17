@@ -10,8 +10,6 @@ import (
 	"sync"
 	"time"
 
-	intoto "github.com/in-toto/in-toto-golang/in_toto"
-	slsa02 "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/v0.2"
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
 	"github.com/dagger/dagger/internal/buildkit/cache"
 	cacheconfig "github.com/dagger/dagger/internal/buildkit/cache/config"
@@ -41,6 +39,8 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing/detect"
 	"github.com/dagger/dagger/internal/buildkit/worker"
+	intoto "github.com/in-toto/in-toto-golang/in_toto"
+	slsa02 "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/v0.2"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
@@ -990,7 +990,7 @@ func inlineCache(ctx context.Context, ie inlineCacheExporter, res solver.CachedR
 
 	remotes, err := workerRef.GetRemotes(ctx, true, cacheconfig.RefConfig{Compression: compressionopt}, false, g)
 	if err != nil || len(remotes) == 0 {
-		return nil, nil
+		return nil, nil //nolint: nilerr
 	}
 	remote := remotes[0]
 

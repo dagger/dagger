@@ -1118,6 +1118,7 @@ func wrapHeight(j []*job, limit int) []*job {
 				l--
 			}
 			freespace := len(wrapped) - len(rewrapped)
+			//nolint:gocritic
 			wrapped = append(invisible[len(invisible)-freespace:], rewrapped...)
 		}
 	}

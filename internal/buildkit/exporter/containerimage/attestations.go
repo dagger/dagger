@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	intoto "github.com/in-toto/in-toto-golang/in_toto"
 	"github.com/dagger/dagger/internal/buildkit/cache"
 	"github.com/dagger/dagger/internal/buildkit/exporter"
 	"github.com/dagger/dagger/internal/buildkit/exporter/attestation"
@@ -17,6 +16,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/solver"
 	"github.com/dagger/dagger/internal/buildkit/solver/result"
 	"github.com/dagger/dagger/internal/buildkit/version"
+	intoto "github.com/in-toto/in-toto-golang/in_toto"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	spdx_json "github.com/spdx/tools-golang/json"
@@ -56,7 +56,7 @@ func supplementSBOM(ctx context.Context, s session.Group, target cache.Immutable
 	doc, err := decodeSPDX(content)
 	if err != nil {
 		// ignore decoding error
-		return att, nil
+		return att, nil //nolint:nilerr
 	}
 
 	layers, err := newFileLayerFinder(target, targetRemote)
