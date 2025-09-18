@@ -103,6 +103,10 @@ describe("scan by reference TypeScript", function () {
       directory: "deprecatedObject",
     },
     {
+      name: "Should correctly scan deprecated functions",
+      directory: "deprecatedFunction",
+    },
+    {
       name: "Should correctly scan interfaces",
       directory: "interface",
     },
