@@ -111,6 +111,10 @@ describe("scan by reference TypeScript", function () {
       directory: "deprecatedArgument",
     },
     {
+      name: "Should correctly scan deprecated fields",
+      directory: "deprecatedField",
+    },
+    {
       name: "Should correctly scan interfaces",
       directory: "interface",
     },
