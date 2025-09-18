@@ -471,51 +471,6 @@ func (llm *LLM) WithStaticTools() *LLM {
 	return llm
 }
 
-// Add the calling object as an input binding to the environment
-func (llm *LLM) WithCaller(ctx context.Context, name, description string) (*LLM, error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	fc, err := query.CurrentFunctionCall(ctx)
-	if err != nil {
-		return nil, err
-	}
-	deps, err := query.CurrentServedDeps(ctx)
-	if err != nil {
-		return nil, err
-	}
-	srv, err := deps.Schema(ctx)
-	if err != nil {
-		return nil, err
-	}
-	obj, err := srv.Load(ctx, fc.ParentID)
-	if err != nil {
-		return nil, err
-	}
-	var newEnv dagql.ObjectResult[*Env]
-	if err := srv.Select(ctx, llm.mcp.env, &newEnv, dagql.Selector{
-		Field: "with" + obj.Type().Name() + "Input",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "name",
-				Value: dagql.String(name),
-			},
-			{
-				Name:  "value",
-				Value: dagql.NewDynamicID(fc.ParentID, obj),
-			},
-			{
-				Name:  "description",
-				Value: dagql.String(description),
-			},
-		},
-	}); err != nil {
-		return nil, err
-	}
-	return llm.WithEnv(newEnv), nil
-}
-
 // loadLLMRouter creates an LLM router that routes to the root client
 func loadLLMRouter(ctx context.Context, query *Query) (*LLMRouter, error) {
 	parentClient, err := query.NonModuleParentClientMetadata(ctx)
