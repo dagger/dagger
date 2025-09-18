@@ -738,7 +738,7 @@ class Binding(Type):
         return Socket(_ctx)
 
     async def as_string(self) -> str | None:
-        """The binding's string value
+        """Returns the binding's string value
 
         Returns
         -------
@@ -759,7 +759,7 @@ class Binding(Type):
         return await _ctx.execute(str | None)
 
     async def digest(self) -> str:
-        """The digest of the binding value
+        """Returns the digest of the binding value
 
         Returns
         -------
@@ -823,7 +823,7 @@ class Binding(Type):
         return await _ctx.execute(bool)
 
     async def name(self) -> str:
-        """The binding name
+        """Returns the binding name
 
         Returns
         -------
@@ -844,7 +844,7 @@ class Binding(Type):
         return await _ctx.execute(str)
 
     async def type_name(self) -> str:
-        """The binding type
+        """Returns the binding type
 
         Returns
         -------
@@ -3191,12 +3191,6 @@ class CurrentModule(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(CurrentModuleID)
 
-    def meta(self) -> "Module":
-        """The fully instantiated module implementing the current function call."""
-        _args: list[Arg] = []
-        _ctx = self._select("meta", _args)
-        return Module(_ctx)
-
     async def name(self) -> str:
         """The name of the module being executed in
 
@@ -4790,7 +4784,7 @@ class Env(Type):
         return await _ctx.execute(EnvID)
 
     def input(self, name: str) -> Binding:
-        """retrieve an input value by name"""
+        """Retrieves an input binding by name"""
         _args = [
             Arg("name", name),
         ]
@@ -4798,13 +4792,13 @@ class Env(Type):
         return Binding(_ctx)
 
     async def inputs(self) -> list[Binding]:
-        """return all input values for the environment"""
+        """Returns all input bindings provided to the environment"""
         _args: list[Arg] = []
         _ctx = self._select("inputs", _args)
         return await _ctx.execute_object_list(Binding)
 
     def output(self, name: str) -> Binding:
-        """retrieve an output value by name"""
+        """Retrieves an output binding by name"""
         _args = [
             Arg("name", name),
         ]
@@ -4812,7 +4806,7 @@ class Env(Type):
         return Binding(_ctx)
 
     async def outputs(self) -> list[Binding]:
-        """return all output values for the environment"""
+        """Returns all declared output bindings for the environment"""
         _args: list[Arg] = []
         _ctx = self._select("outputs", _args)
         return await _ctx.execute_object_list(Binding)
@@ -5025,6 +5019,17 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withContainerOutput", _args)
+        return Env(_ctx)
+
+    def with_current_module(self) -> Self:
+        """Installs the current module into the environment, exposing its
+        functions to the model
+
+        Contextual path arguments will be populated using the environment's
+        workspace.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withCurrentModule", _args)
         return Env(_ctx)
 
     def with_directory_input(
@@ -5323,7 +5328,12 @@ class Env(Type):
         return Env(_ctx)
 
     def with_module(self, module: "Module") -> Self:
-        """load a module and expose its functions to the model"""
+        """Installs a module into the environment, exposing its functions to the
+        model
+
+        Contextual path arguments will be populated using the environment's
+        workspace.
+        """
         _args = [
             Arg("module", module),
         ]
@@ -5677,7 +5687,7 @@ class Env(Type):
         value: str,
         description: str,
     ) -> Self:
-        """Create or update an input value of type string
+        """Provides a string input binding to the environment
 
         Parameters
         ----------
@@ -5697,7 +5707,7 @@ class Env(Type):
         return Env(_ctx)
 
     def with_string_output(self, name: str, description: str) -> Self:
-        """Create or update an input value of type string
+        """Declares a desired string output binding
 
         Parameters
         ----------
@@ -5714,7 +5724,7 @@ class Env(Type):
         return Env(_ctx)
 
     def with_workspace(self, workspace: Directory) -> Self:
-        """Return a new environment with a new host filesystem
+        """Returns a new environment with the provided workspace
 
         Parameters
         ----------
@@ -5728,7 +5738,7 @@ class Env(Type):
         return Env(_ctx)
 
     def without_outputs(self) -> Self:
-        """Return a new environment without any outputs"""
+        """Returns a new environment without any outputs"""
         _args: list[Arg] = []
         _ctx = self._select("withoutOutputs", _args)
         return Env(_ctx)
@@ -10045,6 +10055,18 @@ class Client(Root):
         return Container(_ctx)
 
     def current_env(self) -> Env:
+        """Returns the current environment
+
+        When called from a function invoked via an LLM tool call, this will be
+        the LLM's current environment, including any modifications made
+        through calling tools. Env values returned by functions become the new
+        environment for subsequent calls, and Changeset values returned by
+        functions are applied to the environment's workspace.
+
+        When called from a module function outside of an LLM, this returns an
+        Env with the current module installed, and with the current module's
+        source directory as its workspace.
+        """
         _args: list[Arg] = []
         _ctx = self._select("currentEnv", _args)
         return Env(_ctx)
@@ -10113,7 +10135,7 @@ class Client(Root):
         privileged: bool | None = False,
         writable: bool | None = False,
     ) -> Env:
-        """Initialize a new environment
+        """Initializes a new environment
 
         .. caution::
             Experimental: Environments are not yet stabilized

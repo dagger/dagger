@@ -191,7 +191,7 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The binding's string value
+     * Returns the binding's string value
      */
     public function asString(): string
     {
@@ -200,7 +200,7 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The digest of the binding value
+     * Returns the digest of the binding value
      */
     public function digest(): string
     {
@@ -227,7 +227,7 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The binding name
+     * Returns the binding name
      */
     public function name(): string
     {
@@ -236,7 +236,7 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The binding type
+     * Returns the binding type
      */
     public function typeName(): string
     {

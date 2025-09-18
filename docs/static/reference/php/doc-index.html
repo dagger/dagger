@@ -152,7 +152,7 @@
 <abbr title="Dagger\Binding">Binding</abbr>::asSocket</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
                     <dd><p>Retrieve the binding value, as type Socket</p></dd><dt><a href="Dagger/Binding.html#method_asString">
 <abbr title="Dagger\Binding">Binding</abbr>::asString</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
-                    <dd><p>The binding's string value</p></dd><dt><a href="Dagger/Changeset.html#method_addedPaths">
+                    <dd><p>Returns the binding's string value</p></dd><dt><a href="Dagger/Changeset.html#method_addedPaths">
 <abbr title="Dagger\Changeset">Changeset</abbr>::addedPaths</a>() &mdash; <em>Method in class <a href="Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></em></dt>
                     <dd><p>Files and directories that were added in the newer directory.</p></dd><dt><a href="Dagger/Changeset.html#method_after">
 <abbr title="Dagger\Changeset">Changeset</abbr>::after</a>() &mdash; <em>Method in class <a href="Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></em></dt>
@@ -243,7 +243,7 @@
 <abbr title="Dagger\Client">Client</abbr>::container</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Creates a scratch container, with no image or metadata.</p></dd><dt><a href="Dagger/Client.html#method_currentEnv">
 <abbr title="Dagger\Client">Client</abbr>::currentEnv</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd></dd><dt><a href="Dagger/Client.html#method_currentFunctionCall">
+                    <dd><p>Returns the current environment</p></dd><dt><a href="Dagger/Client.html#method_currentFunctionCall">
 <abbr title="Dagger\Client">Client</abbr>::currentFunctionCall</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>The FunctionCall context that the SDK caller is currently executing in.</p></dd><dt><a href="Dagger/Client.html#method_currentModule">
 <abbr title="Dagger\Client">Client</abbr>::currentModule</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -319,7 +319,7 @@
                     <dd></dd><dt><a href="Dagger/Attribute/Doc.html"><abbr title="Dagger\Attribute\Doc">Doc</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Attribute.html">Dagger\Attribute</a></em></dt>
                     <dd></dd><dt><a href="Dagger/Binding.html#method_digest">
 <abbr title="Dagger\Binding">Binding</abbr>::digest</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
-                    <dd><p>The digest of the binding value</p></dd><dt><a href="Dagger/Client.html#method_defaultPlatform">
+                    <dd><p>Returns the digest of the binding value</p></dd><dt><a href="Dagger/Client.html#method_defaultPlatform">
 <abbr title="Dagger\Client">Client</abbr>::defaultPlatform</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>The default platform of the engine.</p></dd><dt><a href="Dagger/Client.html#method_directory">
 <abbr title="Dagger\Client">Client</abbr>::directory</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -389,7 +389,7 @@
 <abbr title="Dagger\Client">Client</abbr>::engine</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>The Dagger engine container configuration and state</p></dd><dt><a href="Dagger/Client.html#method_env">
 <abbr title="Dagger\Client">Client</abbr>::env</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Initialize a new environment</p></dd><dt><a href="Dagger/Client.html#method_envFile">
+                    <dd><p>Initializes a new environment</p></dd><dt><a href="Dagger/Client.html#method_envFile">
 <abbr title="Dagger\Client">Client</abbr>::envFile</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Initialize an environment file</p></dd><dt><a href="Dagger/Client.html#method_error">
 <abbr title="Dagger\Client">Client</abbr>::error</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -615,9 +615,9 @@
 <abbr title="Dagger\Env">Env</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>A unique identifier for this Env.</p></dd><dt><a href="Dagger/Env.html#method_input">
 <abbr title="Dagger\Env">Env</abbr>::input</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
-                    <dd><p>retrieve an input value by name</p></dd><dt><a href="Dagger/Env.html#method_inputs">
+                    <dd><p>Retrieves an input binding by name</p></dd><dt><a href="Dagger/Env.html#method_inputs">
 <abbr title="Dagger\Env">Env</abbr>::inputs</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
-                    <dd><p>return all input values for the environment</p></dd><dt><a href="Dagger/EnvFile.html#method_id">
+                    <dd><p>Returns all input bindings provided to the environment</p></dd><dt><a href="Dagger/EnvFile.html#method_id">
 <abbr title="Dagger\EnvFile">EnvFile</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a></em></dt>
                     <dd><p>A unique identifier for this EnvFile.</p></dd><dt><a href="Dagger/EnvVariable.html#method_id">
 <abbr title="Dagger\EnvVariable">EnvVariable</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/EnvVariable.html"><abbr title="Dagger\EnvVariable">EnvVariable</abbr></a></em></dt>
@@ -859,9 +859,7 @@
 <abbr title="Dagger\Client">Client</abbr>::moduleSource</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Create a new module source instance from a source ref string</p></dd><dt><a href="Dagger/Container.html#method_mounts">
 <abbr title="Dagger\Container">Container</abbr>::mounts</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves the list of paths where a directory is mounted.</p></dd><dt><a href="Dagger/CurrentModule.html#method_meta">
-<abbr title="Dagger\CurrentModule">CurrentModule</abbr>::meta</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModule.html"><abbr title="Dagger\CurrentModule">CurrentModule</abbr></a></em></dt>
-                    <dd><p>The fully instantiated module implementing the current function call.</p></dd><dt><a href="Dagger/EngineCache.html#method_maxUsedSpace">
+                    <dd><p>Retrieves the list of paths where a directory is mounted.</p></dd><dt><a href="Dagger/EngineCache.html#method_maxUsedSpace">
 <abbr title="Dagger\EngineCache">EngineCache</abbr>::maxUsedSpace</a>() &mdash; <em>Method in class <a href="Dagger/EngineCache.html"><abbr title="Dagger\EngineCache">EngineCache</abbr></a></em></dt>
                     <dd><p>The maximum bytes to keep in the cache without pruning.</p></dd><dt><a href="Dagger/EngineCache.html#method_minFreeSpace">
 <abbr title="Dagger\EngineCache">EngineCache</abbr>::minFreeSpace</a>() &mdash; <em>Method in class <a href="Dagger/EngineCache.html"><abbr title="Dagger\EngineCache">EngineCache</abbr></a></em></dt>
@@ -890,7 +888,7 @@
                     <dd><p>The module dependency this was declared in.</p></dd>        </dl><h2 id="letterN">N</h2>
         <dl id="indexN"><dt><a href="Dagger/Binding.html#method_name">
 <abbr title="Dagger\Binding">Binding</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
-                    <dd><p>The binding name</p></dd><dt><a href="Dagger/Connection.html#method_newEnvSession">
+                    <dd><p>Returns the binding name</p></dd><dt><a href="Dagger/Connection.html#method_newEnvSession">
 <abbr title="Dagger\Connection">Connection</abbr>::newEnvSession</a>() &mdash; <em>Method in class <a href="Dagger/Connection.html"><abbr title="Dagger\Connection">Connection</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/Connection.html#method_newProcessSession">
 <abbr title="Dagger\Connection">Connection</abbr>::newProcessSession</a>() &mdash; <em>Method in class <a href="Dagger/Connection.html"><abbr title="Dagger\Connection">Connection</abbr></a></em></dt>
@@ -941,9 +939,9 @@
                     <dd><p>The name of this secret.</p></dd>        </dl><h2 id="letterO">O</h2>
         <dl id="indexO"><dt><a href="Dagger/Env.html#method_output">
 <abbr title="Dagger\Env">Env</abbr>::output</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
-                    <dd><p>retrieve an output value by name</p></dd><dt><a href="Dagger/Env.html#method_outputs">
+                    <dd><p>Retrieves an output binding by name</p></dd><dt><a href="Dagger/Env.html#method_outputs">
 <abbr title="Dagger\Env">Env</abbr>::outputs</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
-                    <dd><p>return all output values for the environment</p></dd><dt><a href="Dagger/LLMTokenUsage.html#method_outputTokens">
+                    <dd><p>Returns all declared output bindings for the environment</p></dd><dt><a href="Dagger/LLMTokenUsage.html#method_outputTokens">
 <abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr>::outputTokens</a>() &mdash; <em>Method in class <a href="Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/Module.html#method_objects">
 <abbr title="Dagger\Module">Module</abbr>::objects</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
@@ -1125,7 +1123,7 @@
                     <dd><p>Forces evaluation of the pipeline in the engine.</p></dd>        </dl><h2 id="letterT">T</h2>
         <dl id="indexT"><dt><a href="Dagger/Binding.html#method_typeName">
 <abbr title="Dagger\Binding">Binding</abbr>::typeName</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
-                    <dd><p>The binding type</p></dd><dt><a href="Dagger/Client.html#method_typeDef">
+                    <dd><p>Returns the binding type</p></dd><dt><a href="Dagger/Client.html#method_typeDef">
 <abbr title="Dagger\Client">Client</abbr>::typeDef</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Create a new TypeDef.</p></dd><dt><a href="Dagger/Cloud.html#method_traceURL">
 <abbr title="Dagger\Cloud">Cloud</abbr>::traceURL</a>() &mdash; <em>Method in class <a href="Dagger/Cloud.html"><abbr title="Dagger\Cloud">Cloud</abbr></a></em></dt>
@@ -1336,7 +1334,9 @@
 <abbr title="Dagger\Env">Env</abbr>::withContainerInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Create or update a binding of type Container in the environment</p></dd><dt><a href="Dagger/Env.html#method_withContainerOutput">
 <abbr title="Dagger\Env">Env</abbr>::withContainerOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
-                    <dd><p>Declare a desired Container output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withDirectoryInput">
+                    <dd><p>Declare a desired Container output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withCurrentModule">
+<abbr title="Dagger\Env">Env</abbr>::withCurrentModule</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
+                    <dd><p>Installs the current module into the environment, exposing its functions to the model</p></dd><dt><a href="Dagger/Env.html#method_withDirectoryInput">
 <abbr title="Dagger\Env">Env</abbr>::withDirectoryInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Create or update a binding of type Directory in the environment</p></dd><dt><a href="Dagger/Env.html#method_withDirectoryOutput">
 <abbr title="Dagger\Env">Env</abbr>::withDirectoryOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
@@ -1366,7 +1366,7 @@
 <abbr title="Dagger\Env">Env</abbr>::withJSONValueOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Declare a desired JSONValue output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withModule">
 <abbr title="Dagger\Env">Env</abbr>::withModule</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
-                    <dd><p>load a module and expose its functions to the model</p></dd><dt><a href="Dagger/Env.html#method_withModuleConfigClientInput">
+                    <dd><p>Installs a module into the environment, exposing its functions to the model</p></dd><dt><a href="Dagger/Env.html#method_withModuleConfigClientInput">
 <abbr title="Dagger\Env">Env</abbr>::withModuleConfigClientInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Create or update a binding of type ModuleConfigClient in the environment</p></dd><dt><a href="Dagger/Env.html#method_withModuleConfigClientOutput">
 <abbr title="Dagger\Env">Env</abbr>::withModuleConfigClientOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
@@ -1400,13 +1400,13 @@
 <abbr title="Dagger\Env">Env</abbr>::withSocketOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Declare a desired Socket output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withStringInput">
 <abbr title="Dagger\Env">Env</abbr>::withStringInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
-                    <dd><p>Create or update an input value of type string</p></dd><dt><a href="Dagger/Env.html#method_withStringOutput">
+                    <dd><p>Provides a string input binding to the environment</p></dd><dt><a href="Dagger/Env.html#method_withStringOutput">
 <abbr title="Dagger\Env">Env</abbr>::withStringOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
-                    <dd><p>Create or update an input value of type string</p></dd><dt><a href="Dagger/Env.html#method_withWorkspace">
+                    <dd><p>Declares a desired string output binding</p></dd><dt><a href="Dagger/Env.html#method_withWorkspace">
 <abbr title="Dagger\Env">Env</abbr>::withWorkspace</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
-                    <dd><p>Return a new environment with a new host filesystem</p></dd><dt><a href="Dagger/Env.html#method_withoutOutputs">
+                    <dd><p>Returns a new environment with the provided workspace</p></dd><dt><a href="Dagger/Env.html#method_withoutOutputs">
 <abbr title="Dagger\Env">Env</abbr>::withoutOutputs</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
-                    <dd><p>Return a new environment without any outputs</p></dd><dt><a href="Dagger/Env.html#method_workspace">
+                    <dd><p>Returns a new environment without any outputs</p></dd><dt><a href="Dagger/Env.html#method_workspace">
 <abbr title="Dagger\Env">Env</abbr>::workspace</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/EnvFile.html#method_withVariable">
 <abbr title="Dagger\EnvFile">EnvFile</abbr>::withVariable</a>() &mdash; <em>Method in class <a href="Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a></em></dt>

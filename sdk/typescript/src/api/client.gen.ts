@@ -2554,7 +2554,7 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * The binding's string value
+   * Returns the binding's string value
    */
   asString = async (): Promise<string> => {
     if (this._asString) {
@@ -2569,7 +2569,7 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * The digest of the binding value
+   * Returns the digest of the binding value
    */
   digest = async (): Promise<string> => {
     if (this._digest) {
@@ -2599,7 +2599,7 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * The binding name
+   * Returns the binding name
    */
   name = async (): Promise<string> => {
     if (this._name) {
@@ -2614,7 +2614,7 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * The binding type
+   * Returns the binding type
    */
   typeName = async (): Promise<string> => {
     if (this._typeName) {
@@ -4166,14 +4166,6 @@ export class CurrentModule extends BaseClient {
   }
 
   /**
-   * The fully instantiated module implementing the current function call.
-   */
-  meta = (): Module_ => {
-    const ctx = this._ctx.select("meta")
-    return new Module_(ctx)
-  }
-
-  /**
    * The name of the module being executed in
    */
   name = async (): Promise<string> => {
@@ -5376,7 +5368,7 @@ export class Env extends BaseClient {
   }
 
   /**
-   * retrieve an input value by name
+   * Retrieves an input binding by name
    */
   input = (name: string): Binding => {
     const ctx = this._ctx.select("input", { name })
@@ -5384,7 +5376,7 @@ export class Env extends BaseClient {
   }
 
   /**
-   * return all input values for the environment
+   * Returns all input bindings provided to the environment
    */
   inputs = async (): Promise<Binding[]> => {
     type inputs = {
@@ -5399,7 +5391,7 @@ export class Env extends BaseClient {
   }
 
   /**
-   * retrieve an output value by name
+   * Retrieves an output binding by name
    */
   output = (name: string): Binding => {
     const ctx = this._ctx.select("output", { name })
@@ -5407,7 +5399,7 @@ export class Env extends BaseClient {
   }
 
   /**
-   * return all output values for the environment
+   * Returns all declared output bindings for the environment
    */
   outputs = async (): Promise<Binding[]> => {
     type outputs = {
@@ -5555,6 +5547,16 @@ export class Env extends BaseClient {
    */
   withContainerOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withContainerOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Installs the current module into the environment, exposing its functions to the model
+   *
+   * Contextual path arguments will be populated using the environment's workspace.
+   */
+  withCurrentModule = (): Env => {
+    const ctx = this._ctx.select("withCurrentModule")
     return new Env(ctx)
   }
 
@@ -5745,7 +5747,9 @@ export class Env extends BaseClient {
   }
 
   /**
-   * load a module and expose its functions to the model
+   * Installs a module into the environment, exposing its functions to the model
+   *
+   * Contextual path arguments will be populated using the environment's workspace.
    */
   withModule = (module_: Module_): Env => {
     const ctx = this._ctx.select("withModule", {
@@ -5991,7 +5995,7 @@ export class Env extends BaseClient {
   }
 
   /**
-   * Create or update an input value of type string
+   * Provides a string input binding to the environment
    * @param name The name of the binding
    * @param value The string value to assign to the binding
    * @param description The description of the input
@@ -6006,7 +6010,7 @@ export class Env extends BaseClient {
   }
 
   /**
-   * Create or update an input value of type string
+   * Declares a desired string output binding
    * @param name The name of the binding
    * @param description The description of the output
    */
@@ -6016,7 +6020,7 @@ export class Env extends BaseClient {
   }
 
   /**
-   * Return a new environment with a new host filesystem
+   * Returns a new environment with the provided workspace
    * @param workspace The directory to set as the host filesystem
    */
   withWorkspace = (workspace: Directory): Env => {
@@ -6025,7 +6029,7 @@ export class Env extends BaseClient {
   }
 
   /**
-   * Return a new environment without any outputs
+   * Returns a new environment without any outputs
    */
   withoutOutputs = (): Env => {
     const ctx = this._ctx.select("withoutOutputs")
@@ -9784,6 +9788,14 @@ export class Client extends BaseClient {
     const ctx = this._ctx.select("container", { ...opts })
     return new Container(ctx)
   }
+
+  /**
+   * Returns the current environment
+   *
+   * When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
+   *
+   * When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
+   */
   currentEnv = (): Env => {
     const ctx = this._ctx.select("currentEnv")
     return new Env(ctx)
@@ -9850,7 +9862,7 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Initialize a new environment
+   * Initializes a new environment
    * @param opts.privileged Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
    * @param opts.writable Allow new outputs to be declared and saved in the environment
    * @experimental

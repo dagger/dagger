@@ -706,7 +706,7 @@ func (r *Binding) AsSocket() *Socket {
 	}
 }
 
-// The binding's string value
+// Returns the binding's string value
 func (r *Binding) AsString(ctx context.Context) (string, error) {
 	if r.asString != nil {
 		return *r.asString, nil
@@ -719,7 +719,7 @@ func (r *Binding) AsString(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The digest of the binding value
+// Returns the digest of the binding value
 func (r *Binding) Digest(ctx context.Context) (string, error) {
 	if r.digest != nil {
 		return *r.digest, nil
@@ -785,7 +785,7 @@ func (r *Binding) IsNull(ctx context.Context) (bool, error) {
 	return response, q.Execute(ctx)
 }
 
-// The binding name
+// Returns the binding name
 func (r *Binding) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -798,7 +798,7 @@ func (r *Binding) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The binding type
+// Returns the binding type
 func (r *Binding) TypeName(ctx context.Context) (string, error) {
 	if r.typeName != nil {
 		return *r.typeName, nil
@@ -3014,15 +3014,6 @@ func (r *CurrentModule) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// The fully instantiated module implementing the current function call.
-func (r *CurrentModule) Meta() *Module {
-	q := r.query.Select("meta")
-
-	return &Module{
-		query: q,
-	}
-}
-
 // The name of the module being executed in
 func (r *CurrentModule) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
@@ -4668,7 +4659,7 @@ func (r *Env) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// retrieve an input value by name
+// Retrieves an input binding by name
 func (r *Env) Input(name string) *Binding {
 	q := r.query.Select("input")
 	q = q.Arg("name", name)
@@ -4678,7 +4669,7 @@ func (r *Env) Input(name string) *Binding {
 	}
 }
 
-// return all input values for the environment
+// Returns all input bindings provided to the environment
 func (r *Env) Inputs(ctx context.Context) ([]Binding, error) {
 	q := r.query.Select("inputs")
 
@@ -4711,7 +4702,7 @@ func (r *Env) Inputs(ctx context.Context) ([]Binding, error) {
 	return convert(response), nil
 }
 
-// retrieve an output value by name
+// Retrieves an output binding by name
 func (r *Env) Output(name string) *Binding {
 	q := r.query.Select("output")
 	q = q.Arg("name", name)
@@ -4721,7 +4712,7 @@ func (r *Env) Output(name string) *Binding {
 	}
 }
 
-// return all output values for the environment
+// Returns all declared output bindings for the environment
 func (r *Env) Outputs(ctx context.Context) ([]Binding, error) {
 	q := r.query.Select("outputs")
 
@@ -4868,6 +4859,17 @@ func (r *Env) WithContainerOutput(name string, description string) *Env {
 	q := r.query.Select("withContainerOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Installs the current module into the environment, exposing its functions to the model
+//
+// Contextual path arguments will be populated using the environment's workspace.
+func (r *Env) WithCurrentModule() *Env {
+	q := r.query.Select("withCurrentModule")
 
 	return &Env{
 		query: q,
@@ -5042,7 +5044,9 @@ func (r *Env) WithJSONValueOutput(name string, description string) *Env {
 	}
 }
 
-// load a module and expose its functions to the model
+// Installs a module into the environment, exposing its functions to the model
+//
+// Contextual path arguments will be populated using the environment's workspace.
 func (r *Env) WithModule(module *Module) *Env {
 	assertNotNil("module", module)
 	q := r.query.Select("withModule")
@@ -5245,7 +5249,7 @@ func (r *Env) WithSocketOutput(name string, description string) *Env {
 	}
 }
 
-// Create or update an input value of type string
+// Provides a string input binding to the environment
 func (r *Env) WithStringInput(name string, value string, description string) *Env {
 	q := r.query.Select("withStringInput")
 	q = q.Arg("name", name)
@@ -5257,7 +5261,7 @@ func (r *Env) WithStringInput(name string, value string, description string) *En
 	}
 }
 
-// Create or update an input value of type string
+// Declares a desired string output binding
 func (r *Env) WithStringOutput(name string, description string) *Env {
 	q := r.query.Select("withStringOutput")
 	q = q.Arg("name", name)
@@ -5268,7 +5272,7 @@ func (r *Env) WithStringOutput(name string, description string) *Env {
 	}
 }
 
-// Return a new environment with a new host filesystem
+// Returns a new environment with the provided workspace
 func (r *Env) WithWorkspace(workspace *Directory) *Env {
 	assertNotNil("workspace", workspace)
 	q := r.query.Select("withWorkspace")
@@ -5279,7 +5283,7 @@ func (r *Env) WithWorkspace(workspace *Directory) *Env {
 	}
 }
 
-// Return a new environment without any outputs
+// Returns a new environment without any outputs
 func (r *Env) WithoutOutputs() *Env {
 	q := r.query.Select("withoutOutputs")
 
@@ -9895,6 +9899,11 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 	}
 }
 
+// Returns the current environment
+//
+// When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
+//
+// When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
 func (r *Client) CurrentEnv() *Env {
 	q := r.query.Select("currentEnv")
 
@@ -9992,7 +10001,7 @@ type EnvOpts struct {
 	Writable bool
 }
 
-// Initialize a new environment
+// Initializes a new environment
 //
 // Experimental: Environments are not yet stabilized
 func (r *Client) Env(opts ...EnvOpts) *Env {
