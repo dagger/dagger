@@ -622,22 +622,21 @@ func (m *MCP) call(ctx context.Context,
 		); err != nil {
 			return nil, false, err
 		}
+		if id, ok := dagql.UnwrapAs[dagql.IDType](val); ok {
+			// Handle ID results by turning them back into Objects, since these are
+			// typically implementation details hinting to SDKs to unlazy the call.
+			syncedObj, err := srv.Load(ctx, id.ID())
+			if err != nil {
+				return nil, false, fmt.Errorf("failed to load synced object: %w", err)
+			}
+			val = syncedObj
+		}
 		return val, usedContext, nil
 	}
 
 	val, usedContext, err := doSelect(ctx, m.env)
 	if err != nil {
 		return "", err
-	}
-
-	if id, ok := dagql.UnwrapAs[dagql.IDType](val); ok {
-		// Handle ID results by turning them back into Objects, since these are
-		// typically implementation details hinting to SDKs to unlazy the call.
-		syncedObj, err := srv.Load(ctx, id.ID())
-		if err != nil {
-			return "", fmt.Errorf("failed to load synced object: %w", err)
-		}
-		val = syncedObj
 	}
 
 	// NOTE: returning an Env takes special meaning, at a higher precedence than
