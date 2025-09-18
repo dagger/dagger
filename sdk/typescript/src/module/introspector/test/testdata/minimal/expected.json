@@ -228,6 +228,7 @@
         "foo": {
           "name": "foo",
           "description": "This is a field",
+          "deprecated": "",
           "type": {
             "kind": "STRING_KIND"
           },

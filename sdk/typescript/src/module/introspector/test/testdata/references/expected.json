@@ -141,6 +141,7 @@
         "data": {
           "name": "data",
           "description": "",
+          "deprecated": "",
           "type": {
             "kind": "LIST_KIND",
             "typeDef": {
@@ -159,6 +160,7 @@
         "item1": {
           "name": "item1",
           "description": "Item 1",
+          "deprecated": "",
           "type": {
             "kind": "STRING_KIND"
           },
@@ -167,6 +169,7 @@
         "item2": {
           "name": "item2",
           "description": "",
+          "deprecated": "",
           "type": {
             "kind": "INTEGER_KIND"
           },

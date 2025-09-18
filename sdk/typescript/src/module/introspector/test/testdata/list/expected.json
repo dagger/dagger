@@ -98,6 +98,7 @@
         "value": {
           "name": "value",
           "description": "",
+          "deprecated": "",
           "type": {
             "kind": "INTEGER_KIND"
           },

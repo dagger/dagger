@@ -83,6 +83,7 @@
         "version": {
           "name": "version",
           "description": "",
+          "deprecated": "",
           "type": {
             "kind": "STRING_KIND"
           },
@@ -91,6 +92,7 @@
         "user": {
           "name": "user",
           "description": "",
+          "deprecated": "",
           "type": {
             "kind": "STRING_KIND"
           },
@@ -99,6 +101,7 @@
         "packages": {
           "name": "packages",
           "description": "packages to install",
+          "deprecated": "",
           "type": {
             "kind": "LIST_KIND",
             "typeDef": {
@@ -110,6 +113,7 @@
         "ctr": {
           "name": "ctr",
           "description": "",
+          "deprecated": "",
           "type": {
             "kind": "OBJECT_KIND",
             "name": "Container"

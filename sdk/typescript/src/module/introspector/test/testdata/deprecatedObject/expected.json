@@ -26,6 +26,7 @@
         "oldField": {
           "name": "oldField",
           "description": "",
+          "deprecated": "Migrate to `newField`.",
           "type": {
             "kind": "STRING_KIND"
           },
