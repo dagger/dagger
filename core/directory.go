@@ -820,7 +820,7 @@ func (dir *Directory) WithFile(
 
 	destPath = path.Join(dir.Dir, destPath)
 	newRef, err := query.BuildkitCache().New(ctx, dirCacheRef, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription(fmt.Sprintf("withfile %s %s", destPath, src.File)))
+		bkcache.WithDescription(fmt.Sprintf("withfile %s %s", destPath, filepath.Base(src.File))))
 	if err != nil {
 		return nil, err
 	}
