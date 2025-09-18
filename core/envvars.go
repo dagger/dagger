@@ -30,6 +30,12 @@ func (EnvVariable) Description() string {
 	return "A simple key value object that represents an environment variable."
 }
 
+func NewEnvFile(expand bool) *EnvFile {
+	return &EnvFile{
+		Expand: expand,
+	}
+}
+
 // EnvFile represents a collection of environment variables that can be manipulated
 type EnvFile struct {
 	// Variables stored as key-value pairs, preserving order and allowing duplicates
@@ -57,6 +63,25 @@ func (ef *EnvFile) Len() int {
 func (ef *EnvFile) WithVariable(name, value string) *EnvFile {
 	ef = ef.Clone()
 	ef.add(name, value)
+	return ef
+}
+
+func (ef *EnvFile) WithVariables(variables []EnvVariable) *EnvFile {
+	ef = ef.Clone()
+	for _, v := range variables {
+		ef.add(v.Name, v.Value)
+	}
+	return ef
+}
+
+// WithVariables adds multiple environment variables to the EnvFile
+func (ef *EnvFile) WithEnvFiles(others ...*EnvFile) *EnvFile {
+	for _, other := range others {
+		if other == nil {
+			continue
+		}
+		ef = ef.WithVariables(other.Variables())
+	}
 	return ef
 }
 

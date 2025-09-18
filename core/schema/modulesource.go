@@ -2437,64 +2437,24 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		}
 	}
 
-	// Apply local defaults
-	envFile, envFilePath, err := loadHostEnvFile(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to load env file: %w", err)
-	}
-
 	if bp := blueprintSrc.Self(); bp != nil {
 		// Show the downstream module name to clients, not the blueprint name
 		// NOTE: we don't change OriginalName, that's used internally at runtime
 		mod.NameField = originalSrc.Self().ModuleName
-		// Apply defaults using the blueprint name
-		bpDefaults := envFile.LookupPrefix(bp.ModuleName)
-		if bpDefaults.Len() > 0 {
-			tuiLog(ctx, "%s: %d defaults match blueprint name %q. Merging.",
-				originalSrc.Self().AsString(),
-				bpDefaults.Len(),
-				bp.ModuleName,
-			)
-			if err := mod.MergeDefaults(ctx, bpDefaults); err != nil {
-				return inst, fmt.Errorf("failed to merge defaults for %q from %q: %w", bp.ModuleName, envFilePath, err)
-			}
-		}
-	}
-	// Always apply defaults using the original name
-	// FIXME: sort out which module name to use when
-	defaults := envFile.LookupPrefix(originalSrc.Self().ModuleName)
-	if defaults.Len() > 0 {
-		tuiLog(ctx, "%s: %d defaults match module name %q. Merging.",
-			originalSrc.Self().AsString(),
-			defaults.Len(),
-			src.Self().ModuleName,
-		)
-		if err := mod.MergeDefaults(ctx, envFile.LookupPrefix(src.Self().ModuleName)); err != nil {
-			return inst, fmt.Errorf("failed to merge defaults for %q from %q: %w", mod.Name(), envFilePath, err)
-		}
 	}
 
-	// If we're loading a local module, load .env from its context dir,
-	// and use it to apply defaults *without prefix*
-	// eg. `TOKEN=foo` will be mapped to constructor argument 'token'.
-	if originalSrc.Self().Kind == core.ModuleSourceKindLocal {
-		modEnvFile, modEnvFilePath, err := loadModuleEnvFile(ctx, originalSrc)
-		if err != nil {
-			return inst, fmt.Errorf("failed to load .env from %q: %w", src.Self().AsString(), err)
-		}
-		if modEnvFilePath != "" {
-			if modEnvFile.Len() > 0 {
-				tuiLog(ctx, "%s: merging %d defaults from %s",
-					originalSrc.Self().AsString(),
-					modEnvFile.Len(),
-					modEnvFilePath,
-				)
-				if err := mod.MergeDefaults(ctx, modEnvFile); err != nil {
-					return inst, fmt.Errorf("failed to merge defaults for %q from %q: %w", mod.Name(), modEnvFilePath, err)
-				}
-			}
-		}
+	// Apply local defaults
+	defaults, err := src.Self().LocalDefaults(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load local defaults for module %q: %w", modName, err)
 	}
+	for _, kv := range defaults.Variables() {
+		tuiLog(ctx, "%q: local default: %s=%s", modName, kv.Name, kv.Value)
+	}
+	if err := mod.MergeDefaults(ctx, defaults); err != nil {
+		return inst, fmt.Errorf("failed to merge defaults for module %q: %w", modName, err)
+	}
+
 	inst, err = dagql.NewResultForCurrentID(ctx, mod)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", modName, err)
@@ -2507,178 +2467,6 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 func debugSpan(ctx context.Context, msg string, args ...any) {
 	_, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf(msg, args...))
 	span.End()
-}
-
-// Load a .env file for a module, *reading only from the module root* (ignoring .env files higher in the repo root)
-func loadModuleEnvFile(ctx context.Context, src dagql.ObjectResult[*core.ModuleSource]) (*core.EnvFile, string, error) {
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, "", err
-	}
-	if src.Self().Kind != core.ModuleSourceKindLocal {
-		// We only allow loading an env file from local modules, for safety
-		return &core.EnvFile{}, "", nil
-	}
-	rootPath := dagql.String(src.Self().Local.ContextDirectoryPath)
-	startPath := dagql.String(src.Self().SourceRootSubpath)
-	var rootDir dagql.ObjectResult[*core.Directory]
-	if err := dag.Select(ctx, dag.Root(), &rootDir,
-		dagql.Selector{Field: "host"},
-		dagql.Selector{
-			Field: "directory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: rootPath},
-				{
-					Name: "include",
-					Value: dagql.ArrayInput[dagql.String]{
-						startPath + "/.env",
-					}},
-			},
-		},
-	); err != nil {
-		return nil, "", fmt.Errorf("failed to search %q: %s", rootPath, err.Error())
-	}
-	// We only look for .env at the module root
-	// FIXME: take into account workdir on the host, to honor .env in sub-directories
-	// of the module. This requires either 1) include/exclude support in host.findup(),
-	// or 2) host.workdir() so we can use it as a start for directory.findup()
-	envFilePath := startPath + "/.env"
-	var envFileExists dagql.Boolean
-	if err := dag.Select(ctx, rootDir, &envFileExists,
-		dagql.Selector{Field: "exists",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: envFilePath},
-			},
-		},
-	); err != nil {
-		return nil, "", fmt.Errorf("failed to search for .env: %s", err.Error())
-	}
-	if !envFileExists {
-		return &core.EnvFile{}, "", nil
-	}
-	var envFile *core.EnvFile
-	if err := dag.Select(ctx, rootDir, &envFile,
-		dagql.Selector{Field: "file",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: envFilePath},
-			},
-		},
-		dagql.Selector{Field: "asEnvFile",
-			Args: []dagql.NamedInput{
-				{Name: "expand", Value: dagql.Opt(dagql.NewBoolean(true))},
-			},
-		},
-	); err != nil {
-		return nil, envFilePath.String(), fmt.Errorf("failed to load env file from %s:%s: %s",
-			src.Self().AsString(),
-			envFilePath.String(),
-			err.Error(),
-		)
-	}
-	return envFile, envFilePath.String(), nil
-}
-
-// Load a .env file for a module, *searching all the way up to the module repo root*
-func loadModuleContextEnvFile(ctx context.Context, src dagql.ObjectResult[*core.ModuleSource]) (*core.EnvFile, string, error) {
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, "", err
-	}
-	if src.Self().Kind != core.ModuleSourceKindLocal {
-		// We only allow loading an env file from local modules, for safety
-		return &core.EnvFile{}, "", nil
-	}
-	rootPath := dagql.String(src.Self().Local.ContextDirectoryPath)
-	startPath := dagql.String(src.Self().SourceRootSubpath)
-	var rootDir dagql.ObjectResult[*core.Directory]
-	if err := dag.Select(ctx, dag.Root(), &rootDir,
-		dagql.Selector{Field: "host"},
-		dagql.Selector{
-			Field: "directory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: rootPath},
-				{
-					Name: "include",
-					Value: dagql.ArrayInput[dagql.String]{
-						"**/.env", startPath + "/dagger.json",
-					}},
-			},
-		},
-	); err != nil {
-		return nil, "", fmt.Errorf("failed to search %q: %s", rootPath, err.Error())
-	}
-	var envFilePath dagql.String
-	if err := dag.Select(ctx, rootDir, &envFilePath,
-		dagql.Selector{Field: "findUp",
-			Args: []dagql.NamedInput{
-				{Name: "name", Value: dagql.NewString(".env")},
-				{Name: "start", Value: startPath},
-			},
-		},
-	); err != nil {
-		return nil, "", fmt.Errorf("failed to find-up .env: %s", err.Error())
-	}
-	if envFilePath == "" {
-		return &core.EnvFile{}, "", nil
-	}
-	var envFile *core.EnvFile
-	if err := dag.Select(ctx, rootDir, &envFile,
-		dagql.Selector{Field: "file",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: envFilePath},
-			},
-		},
-		dagql.Selector{Field: "asEnvFile",
-			Args: []dagql.NamedInput{
-				{Name: "expand", Value: dagql.Opt(dagql.NewBoolean(true))},
-			},
-		},
-	); err != nil {
-		return nil, envFilePath.String(), fmt.Errorf("failed to load env file from %s:%s: %s",
-			src.Self().AsString(),
-			envFilePath.String(),
-			err.Error(),
-		)
-	}
-	return envFile, envFilePath.String(), nil
-}
-
-func loadHostEnvFile(ctx context.Context) (*core.EnvFile, string, error) {
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, "", err
-	}
-	var envFilePath dagql.String
-	if err := dag.Select(ctx, dag.Root(), &envFilePath,
-		dagql.Selector{Field: "host"},
-		dagql.Selector{Field: "findUp",
-			Args: []dagql.NamedInput{
-				{Name: "name", Value: dagql.NewString(".env")},
-			},
-		},
-	); err != nil {
-		return nil, "", fmt.Errorf("failed to find-up .env: %s", err.Error())
-	}
-	if envFilePath == "" {
-		return &core.EnvFile{}, "", nil
-	}
-	var envFile *core.EnvFile
-	if err := dag.Select(ctx, dag.Root(), &envFile,
-		dagql.Selector{Field: "host"},
-		dagql.Selector{Field: "file",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: envFilePath},
-			},
-		},
-		dagql.Selector{Field: "asEnvFile",
-			Args: []dagql.NamedInput{
-				{Name: "expand", Value: dagql.Opt(dagql.NewBoolean(true))},
-			},
-		},
-	); err != nil {
-		return nil, envFilePath.String(), fmt.Errorf("failed to load env file from %q: %s", envFilePath.String(), err.Error())
-	}
-	return envFile, envFilePath.String(), nil
 }
 
 // load the given module source's dependencies as modules
