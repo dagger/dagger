@@ -225,23 +225,6 @@ defmodule Dagger.LLM do
   end
 
   @doc """
-  Provide the calling object as an input to the LLM environment
-  """
-  @spec with_caller(t(), String.t(), String.t()) :: Dagger.LLM.t()
-  def with_caller(%__MODULE__{} = llm, name, description) do
-    query_builder =
-      llm.query_builder
-      |> QB.select("withCaller")
-      |> QB.put_arg("name", name)
-      |> QB.put_arg("description", description)
-
-    %Dagger.LLM{
-      query_builder: query_builder,
-      client: llm.client
-    }
-  end
-
-  @doc """
   allow the LLM to interact with an environment via MCP
   """
   @spec with_env(t(), Dagger.Env.t()) :: Dagger.LLM.t()

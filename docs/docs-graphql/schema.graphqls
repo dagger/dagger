@@ -3478,15 +3478,6 @@ type LLM {
     fieldName: String!
   ): LLM!
 
-  """Provide the calling object as an input to the LLM environment"""
-  withCaller(
-    """The name of the binding"""
-    name: String!
-
-    """The description of the input"""
-    description: String!
-  ): LLM!
-
   """allow the LLM to interact with an environment via MCP"""
   withEnv(env: EnvID!): LLM!
 
