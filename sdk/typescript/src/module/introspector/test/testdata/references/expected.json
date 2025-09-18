@@ -187,12 +187,14 @@
         "A": {
           "name": "A",
           "value": "a",
-          "description": "Field A"
+          "description": "Field A",
+          "deprecated": ""
         },
         "B": {
           "name": "B",
           "value": "b",
-          "description": "Field B"
+          "description": "Field B",
+          "deprecated": ""
         }
       }
     }

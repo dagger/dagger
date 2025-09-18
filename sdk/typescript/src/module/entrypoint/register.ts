@@ -5,6 +5,7 @@ import {
   ModuleID,
   TypeDef,
   TypeDefKind,
+  TypeDefWithEnumMemberOpts,
   TypeDefWithFieldOpts,
   TypeDefWithObjectOpts,
   SourceMap,
@@ -101,11 +102,17 @@ export class Register {
       })
 
       Object.values(enum_.values).forEach((value) => {
-        typeDef = typeDef.withEnumMember(value.name, {
+        const memberOpts: TypeDefWithEnumMemberOpts = {
           value: value.value,
           description: value.description,
           sourceMap: addSourceMap(value),
-        })
+        }
+
+        if (value.deprecated) {
+          memberOpts.deprecated = value.deprecated
+        }
+
+        typeDef = typeDef.withEnumMember(value.name, memberOpts)
       })
 
       mod = mod.withEnum(typeDef)
