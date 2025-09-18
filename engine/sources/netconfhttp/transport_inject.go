@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/moby/buildkit/executor/oci"
+	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 )
 
 type dnsConfigKey struct{}

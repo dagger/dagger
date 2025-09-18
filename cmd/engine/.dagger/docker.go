@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"strings"
 
 	"github.com/dagger/dagger/cmd/engine/.dagger/internal/dagger"
 	"github.com/dagger/dagger/engine/distconsts"
-	"github.com/moby/buildkit/identity"
 )
 
 // LoadToDocker loads the engine container into docker
@@ -43,7 +43,7 @@ func (e *DaggerEngine) LoadToDocker(
 		From("docker:cli").
 		WithUnixSocket("/var/run/docker.sock", docker).
 		WithMountedFile("/image.tar.gz", tar).
-		WithEnvVariable("CACHEBUSTER", identity.NewID())
+		WithEnvVariable("CACHEBUSTER", rand.Text())
 
 	stdout, err := loader.
 		WithExec([]string{"docker", "load", "-i", "/image.tar.gz"}).

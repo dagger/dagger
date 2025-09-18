@@ -3,8 +3,8 @@ package buildkit
 import (
 	"context"
 
-	"github.com/moby/buildkit/client/llb"
-	solverpb "github.com/moby/buildkit/solver/pb"
+	"github.com/dagger/dagger/internal/buildkit/client/llb"
+	solverpb "github.com/dagger/dagger/internal/buildkit/solver/pb"
 )
 
 type output struct {

@@ -11,12 +11,12 @@ import (
 	"path/filepath"
 
 	"github.com/containerd/continuity/fs"
-	bkclient "github.com/moby/buildkit/client"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/session/filesync"
-	"github.com/moby/buildkit/snapshot"
-	bksolverpb "github.com/moby/buildkit/solver/pb"
-	"github.com/moby/buildkit/util/bklog"
+	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
+	"github.com/dagger/dagger/internal/buildkit/session/filesync"
+	"github.com/dagger/dagger/internal/buildkit/snapshot"
+	bksolverpb "github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	fsutiltypes "github.com/tonistiigi/fsutil/types"
 
 	"github.com/dagger/dagger/engine"

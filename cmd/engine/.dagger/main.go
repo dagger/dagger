@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"path/filepath"
 	"strings"
 
 	"github.com/dagger/dagger/engine/distconsts"
-	"github.com/moby/buildkit/identity"
 	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/sync/errgroup"
 
@@ -152,7 +152,7 @@ func (e *DaggerEngine) Service(
 		if version != "" {
 			cacheVolumeName = "dagger-dev-engine-state-" + version
 		} else {
-			cacheVolumeName = "dagger-dev-engine-state-" + identity.NewID()
+			cacheVolumeName = "dagger-dev-engine-state-" + rand.Text()
 		}
 		if name != "" {
 			cacheVolumeName += "-" + name
@@ -199,11 +199,20 @@ func (e *DaggerEngine) Generate() *dagger.Directory {
 	// protobuf dependencies
 	generated = generated.
 		WithExec([]string{"go", "install", "google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2"}).
+		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogo@v1.3.2"}).
 		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2"}).
-		WithExec([]string{"go", "install", "google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.4.0"})
+		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogofaster@v1.3.2"}).
+		WithExec([]string{"go", "install", "google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.4.0"}).
+		WithMountedDirectory("./github.com/gogo/googleapis", dag.Git("https://github.com/gogo/googleapis.git").Tag("v1.4.1").Tree()).
+		WithMountedDirectory("./github.com/gogo/protobuf", dag.Git("https://github.com/gogo/protobuf.git").Tag("v1.3.2").Tree()).
+		WithMountedDirectory("./github.com/tonistiigi/fsutil", dag.Git("https://github.com/tonistiigi/fsutil.git").Commit("069baf6a66f5c63a82fb679ff2319ed2ee970fbd").Tree())
 
 	generated = generated.
-		WithExec([]string{"go", "generate", "-v", "./..."})
+		WithExec([]string{"go", "generate", "-v", "./..."}).
+		WithoutMount("./github.com/gogo/googleapis").
+		WithoutMount("./github.com/gogo/protobuf").
+		WithoutMount("./github.com/tonistiigi/fsutil").
+		WithoutDirectory("github.com")
 
 	return original.Diff(generated.Directory("."))
 }

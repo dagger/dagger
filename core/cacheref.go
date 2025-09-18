@@ -3,7 +3,7 @@ package core
 import (
 	"context"
 
-	bkcache "github.com/moby/buildkit/cache"
+	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	"github.com/opencontainers/go-digest"
 )
 

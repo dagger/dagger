@@ -15,7 +15,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/moby/buildkit/solver/pb"
+	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 )
 

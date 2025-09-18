@@ -17,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	bksession "github.com/moby/buildkit/session"
+	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/engine/client"

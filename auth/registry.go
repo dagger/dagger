@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	bkauth "github.com/moby/buildkit/session/auth"
+	bkauth "github.com/dagger/dagger/internal/buildkit/session/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -21,7 +21,7 @@ const defaultDockerDomain = "docker.io"
 // authentication from dynamic user provided secrets.
 // Adapted from: https://github.com/dagger/dagger/blob/v0.2.36/solver/registryauth.go
 // and merge with Buildkit DockerAuthProvider from
-// https://github.com/moby/buildkit/blob/master/session/auth/authprovider/authprovider.go#L42
+// https://github.com/dagger/dagger/internal/buildkit/blob/master/session/auth/authprovider/authprovider.go#L42
 //
 // RegistryAuthProvider implements session.Attachable to be used by Buildkit as
 // credential provider.

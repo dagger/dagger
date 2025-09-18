@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/moby/buildkit/util/grpcerrors"
+	"github.com/dagger/dagger/internal/buildkit/util/grpcerrors"
 	"google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 )

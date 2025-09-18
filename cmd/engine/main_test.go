@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"testing"
 
-	bkconfig "github.com/moby/buildkit/cmd/buildkitd/config"
+	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli"
 )

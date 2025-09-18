@@ -2,7 +2,7 @@ package buildkit
 
 /*
 The original implementation of this is derived from:
-https://github.com/moby/buildkit/blob/08180a774253a8199ebdb629d21cd9f378a14419/executor/runcexecutor/executor.go
+https://github.com/dagger/dagger/internal/buildkit/blob/08180a774253a8199ebdb629d21cd9f378a14419/executor/runcexecutor/executor.go
 */
 
 import (
@@ -24,18 +24,18 @@ import (
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/server/resource"
+	"github.com/dagger/dagger/internal/buildkit/client/llb"
+	"github.com/dagger/dagger/internal/buildkit/executor"
+	"github.com/dagger/dagger/internal/buildkit/executor/oci"
+	bkresourcestypes "github.com/dagger/dagger/internal/buildkit/executor/resources/types"
+	gatewayapi "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
+	randid "github.com/dagger/dagger/internal/buildkit/identity"
+	"github.com/dagger/dagger/internal/buildkit/solver"
+	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
+	"github.com/dagger/dagger/internal/buildkit/util/stack"
 	"github.com/dagger/dagger/util/cleanups"
-	"github.com/moby/buildkit/client/llb"
-	"github.com/moby/buildkit/executor"
-	"github.com/moby/buildkit/executor/oci"
-	bkresourcestypes "github.com/moby/buildkit/executor/resources/types"
-	gatewayapi "github.com/moby/buildkit/frontend/gateway/pb"
-	randid "github.com/moby/buildkit/identity"
-	"github.com/moby/buildkit/solver"
-	"github.com/moby/buildkit/solver/pb"
-	"github.com/moby/buildkit/util/bklog"
-	"github.com/moby/buildkit/util/entitlements"
-	"github.com/moby/buildkit/util/stack"
 	"github.com/moby/sys/signal"
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/runtime-spec/specs-go"

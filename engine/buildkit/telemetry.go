@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/moby/buildkit/client/llb"
+	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"

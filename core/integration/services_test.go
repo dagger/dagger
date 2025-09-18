@@ -30,8 +30,8 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
-	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 

@@ -11,9 +11,9 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
-	"github.com/moby/buildkit/util/bklog"
 )
 
 // mcpDefaultAny lets us skip the typed defaults

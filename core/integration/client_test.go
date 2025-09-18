@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/koron-go/prefixw"
-	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 

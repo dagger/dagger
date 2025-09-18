@@ -2,12 +2,11 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
-
-	"github.com/moby/buildkit/identity"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
 	"github.com/dagger/dagger/engine/distconsts"
@@ -140,7 +139,7 @@ func gitPublish(ctx context.Context, git *dagger.VersionGit, opts gitPublishOpts
 	}
 
 	result := base.
-		WithEnvVariable("CACHEBUSTER", identity.NewID()).
+		WithEnvVariable("CACHEBUSTER", rand.Text()).
 		WithWorkdir("/src/dagger").
 		WithDirectory(".", git.Directory()).
 		WithExec([]string{"git", "restore", "."}). // clean up the dirty state
@@ -169,7 +168,7 @@ func gitPublish(ctx context.Context, git *dagger.VersionGit, opts gitPublishOpts
 		}
 
 		destCommit, err := base.
-			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			WithEnvVariable("CACHEBUSTER", rand.Text()).
 			WithWorkdir("/src/dagger").
 			WithExec([]string{"git", "clone", opts.dest, "."}).
 			WithExec([]string{"git", "fetch", "origin", "-v", "--update-head-ok", fmt.Sprintf("refs/*%[1]s:refs/*%[1]s", strings.TrimPrefix(opts.destTag, "refs/"))}).

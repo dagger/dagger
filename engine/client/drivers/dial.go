@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/engine/client/imageload"
-	connh "github.com/moby/buildkit/client/connhelper"
-	connhKube "github.com/moby/buildkit/client/connhelper/kubepod"
-	connhSSH "github.com/moby/buildkit/client/connhelper/ssh"
+	connh "github.com/dagger/dagger/internal/buildkit/client/connhelper"
+	connhKube "github.com/dagger/dagger/internal/buildkit/client/connhelper/kubepod"
+	connhSSH "github.com/dagger/dagger/internal/buildkit/client/connhelper/ssh"
 )
 
 func init() {

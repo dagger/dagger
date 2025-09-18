@@ -9,11 +9,11 @@ import (
 
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/content/local"
-	"github.com/moby/buildkit/identity"
-	bksession "github.com/moby/buildkit/session"
-	sessioncontent "github.com/moby/buildkit/session/content"
-	"github.com/moby/buildkit/session/secrets/secretsprovider"
-	"github.com/moby/buildkit/util/bklog"
+	"github.com/dagger/dagger/internal/buildkit/identity"
+	bksession "github.com/dagger/dagger/internal/buildkit/session"
+	sessioncontent "github.com/dagger/dagger/internal/buildkit/session/content"
+	"github.com/dagger/dagger/internal/buildkit/session/secrets/secretsprovider"
+	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/engine/buildkit"

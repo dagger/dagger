@@ -13,8 +13,8 @@ import (
 	"sync"
 
 	"github.com/dagger/dagger/engine"
-	bksession "github.com/moby/buildkit/session"
-	"github.com/moby/buildkit/session/sshforward"
+	bksession "github.com/dagger/dagger/internal/buildkit/session"
+	"github.com/dagger/dagger/internal/buildkit/session/sshforward"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/sync/errgroup"

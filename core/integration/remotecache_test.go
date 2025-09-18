@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
-	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 

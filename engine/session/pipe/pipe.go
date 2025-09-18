@@ -6,7 +6,7 @@ import (
 	fmt "fmt"
 	io "io"
 
-	"github.com/moby/buildkit/util/grpcerrors"
+	"github.com/dagger/dagger/internal/buildkit/util/grpcerrors"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 )

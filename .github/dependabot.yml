@@ -18,7 +18,6 @@ updates:
         # these are fiddly, we want to do them manually
       - dependency-name: "go.opentelemetry.io/*"
       - dependency-name: "github.com/dagger/*"
-      - dependency-name: "github.com/moby/buildkit"
       - dependency-name: "github.com/tonistiigi/fsutil"
       - dependency-name: "github.com/vito/midterm"
       # stargz-snapshotter requires containerd/v2, we're not using that

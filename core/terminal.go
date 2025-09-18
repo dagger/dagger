@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	bkgwpb "github.com/moby/buildkit/frontend/gateway/pb"
+	bkgwpb "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
 	"github.com/muesli/termenv"
 	"golang.org/x/sync/errgroup"
 

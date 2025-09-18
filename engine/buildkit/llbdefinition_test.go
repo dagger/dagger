@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/moby/buildkit/client/llb"
+	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )

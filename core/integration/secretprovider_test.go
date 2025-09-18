@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
-	"github.com/moby/buildkit/identity"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/testctx"

@@ -8,7 +8,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/moby/buildkit/client/llb"
+	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/opencontainers/go-digest"
 )
 

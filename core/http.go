@@ -14,8 +14,8 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
-	bkcache "github.com/moby/buildkit/cache"
-	bkclient "github.com/moby/buildkit/client"
+	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -45,7 +45,7 @@ func DoHTTPRequest(
 
 	// If we request a single ETag in 'If-None-Match', some servers omit the
 	// unambiguous ETag in their response.
-	// See: https://github.com/moby/buildkit/issues/905
+	// See: https://github.com/dagger/dagger/internal/buildkit/issues/905
 	var onlyETag string
 
 	if len(mds) > 0 {
