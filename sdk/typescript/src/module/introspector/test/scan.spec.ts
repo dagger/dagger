@@ -99,6 +99,10 @@ describe("scan by reference TypeScript", function () {
       directory: "minimal",
     },
     {
+      name: "Should correctly scan deprecated objects",
+      directory: "deprecatedObject",
+    },
+    {
       name: "Should correctly scan interfaces",
       directory: "interface",
     },
