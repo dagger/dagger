@@ -5,6 +5,7 @@ import {
   ModuleID,
   TypeDef,
   TypeDefKind,
+  TypeDefWithObjectOpts,
   SourceMap,
   FunctionCachePolicy,
   FunctionWithCachePolicyOpts,
@@ -44,11 +45,17 @@ export class Register {
 
     // For each class scanned, register its type, method and properties in the module.
     Object.values(this.module.objects).forEach((object) => {
-      // Register the class Typedef object in Dagger
-      let typeDef = dag.typeDef().withObject(object.name, {
+      const objectOpts: TypeDefWithObjectOpts = {
         description: object.description,
         sourceMap: addSourceMap(object),
-      })
+      }
+
+      if (object.deprecated) {
+        objectOpts.deprecated = object.deprecated
+      }
+
+      // Register the class Typedef object in Dagger
+      let typeDef = dag.typeDef().withObject(object.name, objectOpts)
 
       // Register all functions (methods) to this object
       Object.values(object.methods).forEach((method) => {

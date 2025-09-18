@@ -22,6 +22,7 @@ export type DaggerObjectPropertiesBase = {
 export interface DaggerObjectBase extends Locatable {
   name: string
   description: string
+  deprecated: string
   _constructor: DaggerConstructor | undefined
   methods: DaggerFunctions
   properties: DaggerObjectPropertiesBase
