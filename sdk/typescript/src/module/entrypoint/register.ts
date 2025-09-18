@@ -129,11 +129,17 @@ export class Register {
    * Create a function in the Dagger API.
    */
   addFunction(fct: Method | DaggerInterfaceFunction): Function_ {
-    return dag
+    let fn = dag
       .function_(fct.alias ?? fct.name, addTypeDef(fct.returnType!))
       .withDescription(fct.description)
       .withSourceMap(addSourceMap(fct))
       .with(this.addArg(fct.arguments))
+
+    if (fct.deprecated) {
+      fn = fn.withDeprecated(fct.deprecated)
+    }
+
+    return fn
   }
 
   /**
