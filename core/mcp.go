@@ -836,51 +836,18 @@ func (m *MCP) toolCallToSelections(
 		}
 		val, ok := argsMap[arg.Name]
 		if !ok {
-			var defaultPath string
-			var defaultIgnore []string
-			for _, d := range arg.Directives {
-				if d.Name == "defaultPath" {
-					d.Definition = schema.Directives[d.Name]
-					if d.Definition == nil {
-						return nil, false, fmt.Errorf("directive %q not found", d.Name)
-					}
-					args := d.ArgumentMap(nil)
-					defaultPath, _ = args["path"].(string)
-					defaultIgnore, _ = args["ignore"].([]string)
-				}
+			id, argUsedContext, err := m.maybeLoadContextualArg(ctx, srv, env, arg)
+			if err != nil {
+				return nil, false, fmt.Errorf("arg %q: %w", arg.Name, err)
 			}
-			if defaultPath != "" {
-				dir := env.Self().Workspace
-				switch path.Clean(defaultPath) {
-				case ".", "/":
-				default:
-					dagqlIgnores := make([]dagql.String, len(defaultIgnore))
-					for i, ignore := range defaultIgnore {
-						dagqlIgnores[i] = dagql.String(ignore)
-					}
-					if err := srv.Select(ctx, dir, &dir, dagql.Selector{
-						Field: "directory", // TODO: handle files too
-						Args: []dagql.NamedInput{
-							{
-								Name:  "path",
-								Value: dagql.String(defaultPath),
-							},
-							{
-								Name:  "ignore",
-								Value: dagql.ArrayInput[dagql.String](dagqlIgnores),
-							},
-						},
-					}); err != nil {
-						return nil, false, fmt.Errorf("select subdir for default path for %s: %w", fieldDef.Name, err)
-					}
-				}
-				sel.Args = append(sel.Args, dagql.NamedInput{
-					Name:  arg.Name,
-					Value: dagql.Opt(dagql.NewID[*Directory](dir.ID())),
-				})
+			if argUsedContext {
+				// value loaded from env context
 				usedContext = true
+				val = id
+			} else {
+				// value not available; arg not present
+				continue
 			}
-			continue
 		}
 		delete(remainingArgs, arg.Name)
 		argDef := fieldDef.Arguments.ForName(arg.Name)
@@ -890,23 +857,19 @@ func (m *MCP) toolCallToSelections(
 		}
 		if idType, ok := dagql.UnwrapAs[dagql.IDType](scalar); ok {
 			idStr, ok := val.(string)
-			if !ok {
-				return nil, false, fmt.Errorf("arg %q: expected string, got %T", arg.Name, val)
+			if ok {
+				// Handle Container#123 format ID args passed by the LLM
+				expectedType := strings.TrimSuffix(idType.TypeName(), "ID")
+				envVal, err := m.GetObject(ctx, idStr, expectedType)
+				if err != nil {
+					return nil, false, fmt.Errorf("arg %q: %w", arg.Name, err)
+				}
+				obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](envVal)
+				if !ok {
+					return nil, false, fmt.Errorf("arg %q: expected object, got %T", arg.Name, envVal)
+				}
+				val = obj.ID()
 			}
-			expectedType := strings.TrimSuffix(idType.TypeName(), "ID")
-			envVal, err := m.GetObject(ctx, idStr, expectedType)
-			if err != nil {
-				return nil, false, fmt.Errorf("arg %q: %w", arg.Name, err)
-			}
-			obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](envVal)
-			if !ok {
-				return nil, false, fmt.Errorf("arg %q: expected object, got %T", arg.Name, envVal)
-			}
-			enc, err := obj.ID().Encode()
-			if err != nil {
-				return nil, false, err
-			}
-			val = enc
 		}
 		input, err := arg.Type.Decoder().DecodeInput(val)
 		if err != nil {
@@ -935,6 +898,74 @@ func (m *MCP) toolCallToSelections(
 	}
 
 	return sels, usedContext, nil
+}
+
+func (m *MCP) maybeLoadContextualArg(ctx context.Context, srv *dagql.Server, env dagql.ObjectResult[*Env], arg dagql.InputSpec) (*call.ID, bool, error) {
+	schema := srv.Schema()
+
+	var defaultPath string
+	var ignorePatterns []dagql.String
+	for _, d := range arg.Directives {
+		d.Definition = schema.Directives[d.Name]
+		if d.Definition == nil {
+			return nil, false, fmt.Errorf("directive %q not found", d.Name)
+		}
+		args := d.ArgumentMap(nil)
+		switch d.Name {
+		case "defaultPath":
+			defaultPath, _ = args["path"].(string)
+		case "ignorePatterns":
+			ps, _ := args["patterns"].([]string)
+			for _, p := range ps {
+				ignorePatterns = append(ignorePatterns, dagql.String(p))
+			}
+		}
+	}
+	if defaultPath == "" {
+		return nil, false, nil
+	}
+	workspace := env.Self().Workspace
+	switch arg.Type.Type().Name() {
+	case "DirectoryID":
+		var dirArg dagql.ObjectResult[*Directory]
+		switch path.Clean(defaultPath) {
+		case ".", "/":
+			dirArg = workspace
+		default:
+			if err := srv.Select(ctx, workspace, &dirArg, dagql.Selector{
+				Field: "directory",
+				Args: []dagql.NamedInput{
+					{
+						Name:  "path",
+						Value: dagql.String(defaultPath),
+					},
+					{
+						Name:  "ignore",
+						Value: dagql.ArrayInput[dagql.String](ignorePatterns),
+					},
+				},
+			}); err != nil {
+				return nil, false, fmt.Errorf("select subdir for default path for %s: %w", arg.Name, err)
+			}
+		}
+		return dirArg.ID(), true, nil
+	case "FileID":
+		var fileArg dagql.ObjectResult[*File]
+		if err := srv.Select(ctx, workspace, &fileArg, dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.String(defaultPath),
+				},
+			},
+		}); err != nil {
+			return nil, false, fmt.Errorf("select file for default path for %s: %w", arg.Name, err)
+		}
+		return fileArg.ID(), true, nil
+	default:
+		return nil, false, fmt.Errorf("arg %q: defaultPath directive not supported on type %q", arg.Name, arg.Type.Type().Name())
+	}
 }
 
 func (m *MCP) BlockFunction(ctx context.Context, typeName, funcName string) error {
