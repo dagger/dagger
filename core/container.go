@@ -617,10 +617,12 @@ func (container *Container) Build(
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
+		fmt.Printf("ACB Docker ctr.Build err1 %v\n", err)
 		return nil, err
 	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
+		fmt.Printf("ACB Docker ctr.Build err2 %v\n", err)
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
@@ -645,6 +647,15 @@ func (container *Container) Build(
 		opts["build-arg:"+buildArg.Name] = buildArg.Value
 	}
 
+	if contextDir.LLB.Def == nil {
+		fmt.Printf("ACB Docker ctr.Build contextDir.LLB.Def is nil (and Result is %+v)\n", contextDir.Result) // FIXME this is happening
+	}
+	if dockerfileDir.LLB.Def == nil {
+		fmt.Printf("ACB Docker ctr.Build dockerfileDir.LLB.Def is nil\n")
+	}
+
+	//fmt.Printf("ACB Docker ctr.Build inputs %+v %+v\n", contextDir.LLB, dockerfileDir.LLB)
+	//fmt.Printf("ACB Docker ctr.Build inputs Def %+v %+v\n", contextDir.LLB.Def, dockerfileDir.LLB.Def)
 	inputs := map[string]*pb.Definition{
 		dockerui.DefaultLocalNameContext:    contextDir.LLB,
 		dockerui.DefaultLocalNameDockerfile: dockerfileDir.LLB,
@@ -669,11 +680,13 @@ func (container *Container) Build(
 		FrontendInputs: inputs,
 	})
 	if err != nil {
+		fmt.Printf("ACB Docker ctr.Build err3 %v\n", err)
 		return nil, err
 	}
 
 	bkref, err := res.SingleRef()
 	if err != nil {
+		fmt.Printf("ACB Docker ctr.Build err4 %v\n", err)
 		return nil, err
 	}
 
@@ -683,17 +696,20 @@ func (container *Container) Build(
 	} else {
 		st, err = bkref.ToState()
 		if err != nil {
+			fmt.Printf("ACB Docker ctr.Build err5 %v\n", err)
 			return nil, err
 		}
 	}
 
 	def, err := st.Marshal(ctx, llb.Platform(platform.Spec()))
 	if err != nil {
+		fmt.Printf("ACB Docker ctr.Build err6 %v\n", err)
 		return nil, err
 	}
 
 	dag, err := buildkit.DefToDAG(def.ToPB())
 	if err != nil {
+		fmt.Printf("ACB Docker ctr.Build err7 %v\n", err)
 		return nil, err
 	}
 	if err := dag.Walk(func(dag *buildkit.OpDAG) error {
@@ -733,6 +749,7 @@ func (container *Container) Build(
 	}
 	newDef, err := dag.Marshal()
 	if err != nil {
+		fmt.Printf("ACB Docker ctr.Build err8 %v\n", err)
 		return nil, err
 	}
 	if newDef != nil {
@@ -749,6 +766,7 @@ func (container *Container) Build(
 	if found {
 		var imgSpec specs.Image
 		if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
+			fmt.Printf("ACB Docker ctr.Build err9 %v\n", err)
 			return nil, err
 		}
 

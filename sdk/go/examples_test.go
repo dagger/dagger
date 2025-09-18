@@ -89,6 +89,7 @@ func ExampleContainer_Build() {
 
 	out, err := daggerImg.WithExec([]string{"dagger", "version"}).Stdout(ctx)
 	if err != nil {
+		fmt.Printf("ACB HERE with err=%v\n", err)
 		panic(err)
 	}
 

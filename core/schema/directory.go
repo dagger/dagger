@@ -880,12 +880,15 @@ func applyDockerIgnore(ctx context.Context, srv *dagql.Server, parent dagql.Obje
 }
 
 func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args dirDockerBuildArgs) (*core.Container, error) {
+	fmt.Printf("ACB made it into dockerBuild args=%+v\n", args)
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
+		fmt.Printf("ACB dockerBuild err1, %v\n", err)
 		return nil, err
 	}
 	srv, err := query.Server.Server(ctx)
 	if err != nil {
+		fmt.Printf("ACB dockerBuild err2, %v\n", err)
 		return nil, err
 	}
 
@@ -896,6 +899,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 
 	buildctxDir, err := applyDockerIgnore(ctx, srv, parent, args.Dockerfile)
 	if err != nil {
+		fmt.Printf("ACB dockerBuild err3, %v\n", err)
 		return nil, err
 	}
 
@@ -903,6 +907,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 
 	secrets, err := dagql.LoadIDResults(ctx, srv, args.Secrets)
 	if err != nil {
+		fmt.Printf("ACB dockerBuild err4, %v\n", err)
 		return nil, err
 	}
 	secretStore, err := query.Secrets(ctx)
@@ -910,6 +915,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 		return nil, fmt.Errorf("failed to get secret store: %w", err)
 	}
 
+	fmt.Printf("ACB dockerBuild calling ctr.Build\n")
 	return ctr.Build(
 		ctx,
 		parent.Self(),

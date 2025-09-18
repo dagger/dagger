@@ -367,6 +367,17 @@ func nerdctlSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts co
 		ref = repo.Tag(opts.version)
 	}
 
+	files, err := ref.Tree().Entries(ctx)
+	if err != nil {
+		fmt.Printf("ACB herefail %v\n", err)
+	}
+	fmt.Printf("ACB ref files=%v\n", files)
+
+	_, err = ref.Tree().DockerBuild().Sync(ctx)
+	if err != nil {
+		fmt.Printf("ACB fail2 %v\n", err)
+	}
+
 	// build nerdctl from scratch (annoying, but there *is no upstream package*)
 	base := ref.Tree().
 		DockerBuild().
@@ -379,11 +390,18 @@ func nerdctlSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts co
 		base = base.With(opts.middleware)
 	}
 
+	fmt.Printf("ACB before WithExec\n")
+
+	out, err := base.WithExec([]string{"sh", "-c", "ls -la"}).Stdout(ctx)
+	require.NoError(t, err)
+
+	fmt.Printf("ACB got %s\n", out)
+
 	svc := base.AsService(dagger.ContainerAsServiceOpts{
 		Args:                     []string{"containerd"},
 		InsecureRootCapabilities: true,
 	})
-	svc, err := svc.Start(ctx)
+	svc, err = svc.Start(ctx)
 	require.NoError(t, err)
 
 	ctr := base.WithServiceBinding("containerd", svc)
