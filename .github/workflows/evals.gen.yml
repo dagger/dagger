@@ -11,11 +11,10 @@ name: evals
             - core/schema/llm.go
             - core/schema/env.go
             - modules/evaluator/**
-            - .github/workflows/evals.gen.yml
     workflow_dispatch: {}
 jobs:
     testdev:
-        if: ${{ github.repository == 'dagger/dagger' }}
+        if: ${{ (github.repository == 'dagger/dagger') && (github.actor != 'dependabot[bot]') }}
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
         name: testdev
