@@ -368,6 +368,14 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		if err := srv.Select(ctx, srv.Root(), &env, dagql.Selector{
 			Field: "env",
 		}, dagql.Selector{
+			Field: "withModule",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "module",
+					Value: dagql.NewID[*Module](mod.ResultID),
+				},
+			},
+		}, dagql.Selector{
 			Field: "withWorkspace",
 			Args: []dagql.NamedInput{
 				{

@@ -18,49 +18,54 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.FuncWithCacheKey("env", s.environment,
 			dagql.CachePerClientSchema[*core.Query, environmentArgs](srv)).
-			Doc(`Initialize a new environment`).
+			Doc(`Initializes a new environment`).
 			Experimental("Environments are not yet stabilized").
 			Args(
 				dagql.Arg("privileged").Doc("Give the environment the same privileges as the caller: core API including host access, current module, and dependencies"),
 				dagql.Arg("writable").Doc("Allow new outputs to be declared and saved in the environment"),
 			),
-		dagql.FuncWithCacheKey("currentEnv", s.currentEnvironment, dagql.CachePerClient),
+		dagql.FuncWithCacheKey("currentEnv", s.currentEnvironment, dagql.CachePerClient).
+			Doc(
+				`Returns the current environment`,
+				`When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.`,
+				`When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.`,
+			),
 	}.Install(srv)
 	dagql.Fields[*core.Env]{
 		dagql.Func("inputs", s.inputs).
-			Doc("Return all provided input bindings for the environment"),
+			Doc("Returns all input bindings provided to the environment"),
 		dagql.Func("input", s.input).
-			Doc("Retrieve an input binding by name"),
+			Doc("Retrieves an input binding by name"),
 		dagql.Func("outputs", s.outputs).
-			Doc("Return all declared output bindings for the environment"),
+			Doc("Returns all declared output bindings for the environment"),
 		dagql.Func("withoutOutputs", s.withoutOutputs).
-			Doc("Return a new environment without any outputs"),
+			Doc("Returns a new environment without any outputs"),
 		dagql.Func("output", s.output).
-			Doc("Retrieve an output binding by name"),
+			Doc("Retrieves an output binding by name"),
 		dagql.Func("withWorkspace", s.withWorkspace).
-			Doc("Return a new environment with a new workspace").
+			Doc("Returns a new environment with the provided workspace").
 			Args(
 				dagql.Arg("workspace").Doc("The directory to set as the host filesystem"),
 			),
 		dagql.FuncWithCacheKey("withCurrentModule", s.withCurrentModule, dagql.CachePerClient).
 			Doc(
-				"Install the current module into the environment, exposing its functions to the model",
+				"Installs the current module into the environment, exposing its functions to the model",
 				"Contextual path arguments will be populated using the environment's workspace.",
 			),
 		dagql.Func("withModule", s.withModule).
 			Doc(
-				"Install a module into the environment, exposing its functions to the model",
+				"Installs a module into the environment, exposing its functions to the model",
 				"Contextual path arguments will be populated using the environment's workspace.",
 			),
 		dagql.Func("withStringInput", s.withStringInput).
-			Doc("Bind a string input value to the environment").
+			Doc("Provides a string input binding to the environment").
 			Args(
 				dagql.Arg("name").Doc("The name of the binding"),
 				dagql.Arg("value").Doc("The string value to assign to the binding"),
 				dagql.Arg("description").Doc("The description of the input"),
 			),
 		dagql.Func("withStringOutput", s.withStringOutput).
-			Doc("Declare a desired string output binding").
+			Doc("Declares a desired string output binding").
 			Args(
 				dagql.Arg("name").Doc("The name of the binding"),
 				dagql.Arg("description").Doc("The description of the output"),
@@ -68,13 +73,13 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 	dagql.Fields[*core.Binding]{
 		dagql.Func("name", s.bindingName).
-			Doc("The binding name"),
+			Doc("Returns the binding name"),
 		dagql.Func("typeName", s.bindingTypeName).
-			Doc("The binding type"),
+			Doc("Returns the binding type"),
 		dagql.Func("digest", s.bindingDigest).
-			Doc("The digest of the binding value"),
+			Doc("Returns the digest of the binding value"),
 		dagql.Func("asString", s.bindingAsString).
-			Doc("The binding's string value"),
+			Doc("Returns the binding's string value"),
 		dagql.Func("isNull", s.bindingIsNull).
 			Doc("Returns true if the binding is null"),
 	}.Install(srv)
