@@ -54,12 +54,6 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("prompt").Doc("The prompt to send"),
 			),
-		dagql.Func("withCaller", s.withCaller).
-			Doc("Provide the calling object as an input to the LLM environment").
-			Args(
-				dagql.Arg("name").Doc("The name of the binding"),
-				dagql.Arg("description").Doc("The description of the input"),
-			),
 		dagql.Func("__mcp", func(ctx context.Context, self *core.LLM, _ struct{}) (dagql.Nullable[core.Void], error) {
 			return dagql.Null[core.Void](), self.MCP(ctx, srv)
 		}).
@@ -130,13 +124,6 @@ func (s *llmSchema) withEnv(ctx context.Context, llm *core.LLM, args struct {
 
 func (s *llmSchema) withStaticTools(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
 	return llm.WithStaticTools(), nil
-}
-
-func (s *llmSchema) withCaller(ctx context.Context, llm *core.LLM, args struct {
-	Name        string
-	Description string
-}) (*core.LLM, error) {
-	return llm.WithCaller(ctx, args.Name, args.Description)
 }
 
 func (s *llmSchema) env(ctx context.Context, llm *core.LLM, args struct{}) (res dagql.ObjectResult[*core.Env], _ error) {
