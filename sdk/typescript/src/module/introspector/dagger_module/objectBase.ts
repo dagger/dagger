@@ -8,6 +8,7 @@ import { References } from "./reference.js"
 export interface DaggerObjectPropertyBase extends Locatable {
   name: string
   description: string
+  deprecated: string
   alias?: string
   isExposed: boolean
   type?: TypeDef<TypeDefKind>
