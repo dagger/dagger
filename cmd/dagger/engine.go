@@ -166,7 +166,7 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
 	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
 
 	// Set the root span as the target for "global logs"
-	ctx = slog.ContextWithGlobalSpan(ctx)
+	ctx = telemetry.ContextWithGlobalLogsSpan(ctx)
 
 	// Set the span as the primary span for the frontend.
 	Frontend.SetPrimary(dagui.SpanID{SpanID: span.SpanContext().SpanID()})
