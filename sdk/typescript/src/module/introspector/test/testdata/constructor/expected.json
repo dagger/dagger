@@ -25,6 +25,7 @@
         "sayHello": {
           "name": "sayHello",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "name": {
               "name": "name",
