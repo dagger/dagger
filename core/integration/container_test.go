@@ -1711,6 +1711,32 @@ func (ContainerSuite) TestWithFilesAbsolute(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "file2 content", contents)
 }
 
+func (ContainerSuite) TestWithFilesNested(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Create a directory with a nested file
+	dir := c.Directory().
+		WithNewFile("/sub/file", "nested content").
+		Directory("/sub")
+	file := dir.File("file")
+
+	// WithFile should place the file directly at the target path
+	ctrWithFile := c.Container().
+		From(alpineImage).
+		WithFile("/tmp", file)
+	filesWithFile, err := ctrWithFile.Directory("/tmp").Glob(ctx, "**/*")
+	require.NoError(t, err)
+	require.Equal(t, []string{"file"}, filesWithFile)
+
+	// WithFiles should place the file at its absolute path under the target
+	ctrWithFiles := c.Container().
+		From(alpineImage).
+		WithFiles("/tmp", []*dagger.File{file})
+	filesWithFiles, err := ctrWithFiles.Directory("/tmp").Glob(ctx, "**/*")
+	require.NoError(t, err)
+	require.Equal(t, []string{"file"}, filesWithFiles)
+}
+
 func (ContainerSuite) TestWithNewFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
