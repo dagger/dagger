@@ -259,7 +259,8 @@ func (arg *FunctionArg) isContextual() bool {
 	return arg.DefaultPath != ""
 }
 
-func (arg FunctionArg) Directives() (directives []*ast.Directive) {
+func (arg FunctionArg) Directives() []*ast.Directive {
+	var directives []*ast.Directive
 	if arg.DefaultPath != "" {
 		directives = append(directives, &ast.Directive{
 			Name: "defaultPath",
@@ -297,7 +298,7 @@ func (arg FunctionArg) Directives() (directives []*ast.Directive) {
 			},
 		})
 	}
-	return
+	return directives
 }
 
 type DynamicID struct {
