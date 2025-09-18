@@ -3,6 +3,7 @@
   "objects": {
     "Context": {
       "name": "Context",
+      "deprecated": "",
       "description": "",
       "methods": {
         "helloWorld": {

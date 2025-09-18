@@ -4,6 +4,7 @@
     "VoidReturn": {
       "name": "VoidReturn",
       "description": "VoidReturn class",
+      "deprecated": "",
       "methods": {
         "helloWorld": {
           "name": "helloWorld",

@@ -1,39 +1,10 @@
 {
   "name": "MultipleObjectsAsFields",
   "objects": {
-    "Test": {
-      "name": "Test",
-      "description": "",
-      "methods": {
-        "echo": {
-          "name": "echo",
-          "description": "",
-          "arguments": {},
-          "returnType": {
-            "kind": "STRING_KIND"
-          }
-        }
-      },
-      "properties": {}
-    },
-    "Lint": {
-      "name": "Lint",
-      "description": "",
-      "methods": {
-        "echo": {
-          "name": "echo",
-          "description": "",
-          "arguments": {},
-          "returnType": {
-            "kind": "STRING_KIND"
-          }
-        }
-      },
-      "properties": {}
-    },
     "MultipleObjectsAsFields": {
       "name": "MultipleObjectsAsFields",
       "description": "",
+      "deprecated": "",
       "constructor": {
         "arguments": {}
       },
@@ -58,6 +29,38 @@
           "isExposed": true
         }
       }
+    },
+    "Test": {
+      "name": "Test",
+      "description": "",
+      "deprecated": "",
+      "methods": {
+        "echo": {
+          "name": "echo",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        }
+      },
+      "properties": {}
+    },
+    "Lint": {
+      "name": "Lint",
+      "description": "",
+      "deprecated": "",
+      "methods": {
+        "echo": {
+          "name": "echo",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        }
+      },
+      "properties": {}
     }
   },
   "enums": {},
