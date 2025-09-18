@@ -19,6 +19,11 @@ export type ResolvedNodeWithSymbol<T extends keyof DeclarationsMap> = {
   file: ts.SourceFile
 }
 
+export type SymbolDoc = {
+  description: string
+  deprecated: string
+}
+
 export class AST {
   public checker: ts.TypeChecker
 
@@ -193,7 +198,25 @@ export class AST {
   }
 
   public getDocFromSymbol(symbol: ts.Symbol): string {
-    return ts.displayPartsToString(symbol.getDocumentationComment(this.checker))
+    return this.getSymbolDoc(symbol).description
+  }
+
+  public getSymbolDoc(symbol: ts.Symbol): SymbolDoc {
+    const description = ts
+      .displayPartsToString(symbol.getDocumentationComment(this.checker))
+      .trim()
+
+    let deprecated = ""
+    for (const tag of symbol.getJsDocTags()) {
+      if (tag.name !== "deprecated") continue
+      const text =
+        tag.text?.map((part) => ("text" in part ? part.text : part)).join("") ??
+        ""
+      deprecated = text.trim()
+      break
+    }
+
+    return { description, deprecated }
   }
 
   public getSymbolOrThrow(node: ts.Node): ts.Symbol {
