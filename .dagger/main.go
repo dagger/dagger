@@ -17,7 +17,7 @@ type DaggerDev struct {
 
 	Version string
 	Tag     string
-	Git     *dagger.VersionGit // +private
+	Git     *dagger.GitRef
 
 	// When set, module codegen is automatically applied when retrieving the Dagger source code
 	ModCodegenTargets []string
@@ -62,7 +62,7 @@ func New(
 	dev := &DaggerDev{
 		Source:    source,
 		Tag:       tag,
-		Git:       v.Git(),
+		Git:       v.Git().Head(),
 		Version:   version,
 		DockerCfg: dockerCfg,
 	}

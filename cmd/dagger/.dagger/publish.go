@@ -44,7 +44,7 @@ func (cli *DaggerCli) Publish(
 	ctr = ctr.
 		WithWorkdir("/app").
 		WithDirectory(".", cli.Go.Source()).
-		WithDirectory(".", cli.Git.Directory()).
+		WithDirectory(".", cli.Git.Tag(tag).Tree()).
 		WithDirectory("build", cli.goreleaserBinaries())
 
 	if !semver.IsValid(tag) {

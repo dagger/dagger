@@ -11,17 +11,13 @@ import (
 	"github.com/dagger/dagger/version/internal/dagger"
 )
 
-// Git is an opinionated helper for performing various commands on our dagger repo.
-type Git struct {
-	Directory *dagger.Directory
-
-	// +private
-	Container *dagger.Container
-	// +private
-	Valid bool
+// GitHelper is an opinionated helper for performing various commands on our dagger repo.
+type GitHelper struct {
+	Container *dagger.Container // +private
+	Valid     bool              // +private
 }
 
-func git(ctx context.Context, gitDir *dagger.Directory, dir *dagger.Directory) (*Git, error) {
+func git(ctx context.Context, gitDir *dagger.Directory, dir *dagger.Directory) (*dagger.GitRepository, *GitHelper, error) {
 	ctr := dag.Wolfi().
 		Container(dagger.WolfiContainerOpts{Packages: []string{"git"}}).
 		WithWorkdir("/src")
@@ -37,7 +33,7 @@ func git(ctx context.Context, gitDir *dagger.Directory, dir *dagger.Directory) (
 	valid := false
 	entries, err := ctr.Directory(".").Entries(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if slices.Contains(entries, ".git/") {
 		valid = true
@@ -45,7 +41,7 @@ func git(ctx context.Context, gitDir *dagger.Directory, dir *dagger.Directory) (
 
 	if valid {
 		// enter detached head state, then we can rewrite all our refs however we like later
-		ctr = ctr.WithExec([]string{"sh", "-c", "git checkout -q $(git rev-parse HEAD)"})
+		// ctr = ctr.WithExec([]string{"sh", "-c", "git checkout -q $(git rev-parse HEAD)"})
 
 		// manually add a remote (since .git/config was removed earlier)
 		ctr = ctr.WithExec([]string{"git", "remote", "add", "origin", "https://github.com/dagger/dagger.git"})
@@ -72,9 +68,8 @@ func git(ctx context.Context, gitDir *dagger.Directory, dir *dagger.Directory) (
 			})
 	}
 
-	return &Git{
+	return ctr.Directory(".").AsGit(), &GitHelper{
 		Container: ctr,
-		Directory: dag.Directory().WithDirectory(".git", ctr.Directory(".git")),
 		Valid:     valid,
 	}, nil
 }
@@ -96,7 +91,7 @@ type VersionTag struct {
 }
 
 // VersionTagLatest gets the latest version tag for a given component
-func (git *Git) VersionTagLatest(
+func (git *GitHelper) VersionTagLatest(
 	ctx context.Context,
 
 	// Optional component tag prefix
@@ -117,7 +112,7 @@ func (git *Git) VersionTagLatest(
 
 // VersionTags gets all version tags for a given component - the resulting
 // versions are sorted in ascending order
-func (git *Git) VersionTags(
+func (git *GitHelper) VersionTags(
 	ctx context.Context,
 
 	// Optional component tag prefix
@@ -180,59 +175,6 @@ func (git *Git) VersionTags(
 	return versionTags, nil
 }
 
-type Branch struct {
-	// The raw branch
-	Branch string
-	// The commit hash.
-	Commit string
-}
-
-func (git *Git) Branches(
-	ctx context.Context,
-
-	// Optional commit sha to get branches for
-	commit string, // +optional
-) ([]Branch, error) {
-	if !git.Valid {
-		return nil, nil
-	}
-
-	branchArgs := []string{
-		"git",
-		"branch",
-		// filter to reachable commits from HEAD
-		"--merged=HEAD",
-		// format as "<tag> <commit>"
-		"--format", "%(refname:lstrip=2) %(objectname)",
-		// sort by ascending semver
-		"--sort", "version:refname",
-	}
-	if commit != "" {
-		// filter to specified commit
-		branchArgs = append(branchArgs, "--points-at", commit)
-	}
-	branchesRaw, err := git.Container.WithExec(branchArgs).Stdout(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var branches []Branch
-	for _, line := range strings.Split(branchesRaw, "\n") {
-		parts := strings.Split(line, " ")
-		if len(parts) != 2 {
-			continue
-		}
-		branch, branchCommit := parts[0], parts[1]
-
-		branches = append(branches, Branch{
-			Branch: branch,
-			Commit: branchCommit,
-		})
-	}
-
-	return branches, nil
-}
-
 type Commit struct {
 	// The commit hash.
 	Commit string
@@ -242,11 +184,11 @@ type Commit struct {
 	Date string
 }
 
-func (git *Git) Head(ctx context.Context) (*Commit, error) {
+func (git *GitHelper) Head(ctx context.Context) (*Commit, error) {
 	return git.Commit(ctx, "HEAD")
 }
 
-func (git *Git) Commit(ctx context.Context, ref string) (*Commit, error) {
+func (git *GitHelper) Commit(ctx context.Context, ref string) (*Commit, error) {
 	if !git.Valid {
 		return nil, nil
 	}
@@ -274,7 +216,7 @@ func (git *Git) Commit(ctx context.Context, ref string) (*Commit, error) {
 	}, nil
 }
 
-func (git *Git) MergeBase(ctx context.Context, ref string, ref2 string) (*Commit, error) {
+func (git *GitHelper) MergeBase(ctx context.Context, ref string, ref2 string) (*Commit, error) {
 	if !git.Valid {
 		return nil, nil
 	}
@@ -295,7 +237,7 @@ func (git *Git) MergeBase(ctx context.Context, ref string, ref2 string) (*Commit
 }
 
 // Return whether the current git state is dirty
-func (git *Git) Dirty(ctx context.Context) (bool, error) {
+func (git *GitHelper) Dirty(ctx context.Context) (bool, error) {
 	status, err := git.status(ctx)
 	if err != nil {
 		return false, err
@@ -303,7 +245,7 @@ func (git *Git) Dirty(ctx context.Context) (bool, error) {
 	return len(status) > 0, nil
 }
 
-func (git *Git) status(ctx context.Context) (string, error) {
+func (git *GitHelper) status(ctx context.Context) (string, error) {
 	if !git.Valid {
 		return "", nil
 	}
@@ -320,7 +262,7 @@ func (git *Git) status(ctx context.Context) (string, error) {
 	return strings.Trim(result, "\n"), nil
 }
 
-func (git *Git) FileAt(ctx context.Context, filename string, ref string) (string, error) {
+func (git *GitHelper) FileAt(ctx context.Context, filename string, ref string) (string, error) {
 	if !git.Valid {
 		return "", nil
 	}

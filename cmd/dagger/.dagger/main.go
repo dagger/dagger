@@ -54,7 +54,7 @@ func New(
 type DaggerCli struct {
 	Version string
 	Tag     string
-	Git     *dagger.VersionGit // +private
+	Git     *dagger.GitRepository // +private
 
 	Go *dagger.Go // +private
 }
