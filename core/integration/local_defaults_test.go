@@ -145,6 +145,7 @@ DEFAULTS_MESSAGE_NAME=monde
 			"bonjour, monde!",
 		},
 	} {
+		tc := tc
 		t.Run(tc.description, func(ctx context.Context, t *testctx.T) {
 			stdout, err := ctr.
 				WithNewFile(tc.dotEnvPath, tc.dotEnvContents).
@@ -160,7 +161,7 @@ DEFAULTS_MESSAGE_NAME=monde
 				}).
 				Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, stdout, tc.stdout)
+			require.Equal(t, tc.stdout, stdout)
 		})
 	}
 }
