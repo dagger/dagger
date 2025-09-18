@@ -282,8 +282,17 @@ var coreDirectives = []DirectiveSpec{
 				Name: "path",
 				Type: String(""),
 			},
+		),
+		Locations: []DirectiveLocation{
+			DirectiveLocationArgumentDefinition,
+		},
+	},
+	{
+		Name:        "ignorePatterns",
+		Description: FormatDescription(`Filter directory contents using .gitignore-style glob patterns.`),
+		Args: NewInputSpecs(
 			InputSpec{
-				Name: "ignore",
+				Name: "patterns",
 				Type: ArrayInput[String](nil),
 			},
 		),

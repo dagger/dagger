@@ -117,9 +117,7 @@ func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec
 		if arg.SourceMap.Valid {
 			argSpec.Directives = append(argSpec.Directives, arg.SourceMap.Value.TypeDirective())
 		}
-		if defaultPath := arg.DefaultPathDirective(); defaultPath != nil {
-			argSpec.Directives = append(argSpec.Directives, defaultPath)
-		}
+		argSpec.Directives = append(argSpec.Directives, arg.Directives()...)
 
 		spec.Args.Add(argSpec)
 	}
@@ -261,18 +259,20 @@ func (arg *FunctionArg) isContextual() bool {
 	return arg.DefaultPath != ""
 }
 
-func (arg FunctionArg) DefaultPathDirective() *ast.Directive {
-	if arg.DefaultPath == "" {
-		return nil
-	}
-	args := ast.ArgumentList{
-		{
-			Name: "path",
-			Value: &ast.Value{
-				Kind: ast.StringValue,
-				Raw:  arg.DefaultPath,
+func (arg FunctionArg) Directives() (directives []*ast.Directive) {
+	if arg.DefaultPath != "" {
+		directives = append(directives, &ast.Directive{
+			Name: "defaultPath",
+			Arguments: ast.ArgumentList{
+				{
+					Name: "path",
+					Value: &ast.Value{
+						Kind: ast.StringValue,
+						Raw:  arg.DefaultPath,
+					},
+				},
 			},
-		},
+		})
 	}
 	if len(arg.Ignore) > 0 {
 		var children ast.ChildValueList
@@ -284,18 +284,20 @@ func (arg FunctionArg) DefaultPathDirective() *ast.Directive {
 				},
 			})
 		}
-		args = append(args, &ast.Argument{
-			Name: "ignore",
-			Value: &ast.Value{
-				Kind:     ast.ListValue,
-				Children: children,
+		directives = append(directives, &ast.Directive{
+			Name: "ignorePatterns",
+			Arguments: ast.ArgumentList{
+				&ast.Argument{
+					Name: "patterns",
+					Value: &ast.Value{
+						Kind:     ast.ListValue,
+						Children: children,
+					},
+				},
 			},
 		})
 	}
-	return &ast.Directive{
-		Name:      "defaultPath",
-		Arguments: args,
-	}
+	return
 }
 
 type DynamicID struct {
