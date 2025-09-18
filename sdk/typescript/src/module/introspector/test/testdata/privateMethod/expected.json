@@ -5,6 +5,7 @@
     "PrivateMethod": {
       "name": "PrivateMethod",
       "description": "PrivateMethod class",
+      "deprecated": "",
       "methods": {
         "greeting": {
           "name": "greeting",

@@ -4,6 +4,7 @@
     "Scalar": {
       "name": "Scalar",
       "description": "",
+      "deprecated": "",
       "methods": {
         "fromPlatform": {
           "name": "fromPlatform",
