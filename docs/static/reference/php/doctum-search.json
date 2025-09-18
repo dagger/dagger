@@ -4183,12 +4183,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\LLM::withCaller",
-			"p": "Dagger/LLM.html#method_withCaller",
-			"d": "<p>Provide the calling object as an input to the LLM environment</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\LLM::withEnv",
 			"p": "Dagger/LLM.html#method_withEnv",
 			"d": "<p>allow the LLM to interact with an environment via MCP</p>"

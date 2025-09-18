@@ -8444,23 +8444,6 @@ class LLM(Type):
         _ctx = self._select("withBlockedFunction", _args)
         return LLM(_ctx)
 
-    def with_caller(self, name: str, description: str) -> Self:
-        """Provide the calling object as an input to the LLM environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            The description of the input
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withCaller", _args)
-        return LLM(_ctx)
-
     def with_env(self, env: Env) -> Self:
         """allow the LLM to interact with an environment via MCP"""
         _args = [

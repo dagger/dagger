@@ -8191,17 +8191,6 @@ func (r *LLM) WithBlockedFunction(typeName string, fieldName string) *LLM {
 	}
 }
 
-// Provide the calling object as an input to the LLM environment
-func (r *LLM) WithCaller(name string, description string) *LLM {
-	q := r.query.Select("withCaller")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &LLM{
-		query: q,
-	}
-}
-
 // allow the LLM to interact with an environment via MCP
 func (r *LLM) WithEnv(env *Env) *LLM {
 	assertNotNil("env", env)

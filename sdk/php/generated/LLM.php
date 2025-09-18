@@ -159,17 +159,6 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Provide the calling object as an input to the LLM environment
-     */
-    public function withCaller(string $name, string $description): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCaller');
-        $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('description', $description);
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * allow the LLM to interact with an environment via MCP
      */
     public function withEnv(EnvId|Env $env): LLM

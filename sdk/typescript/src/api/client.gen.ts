@@ -8295,16 +8295,6 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Provide the calling object as an input to the LLM environment
-   * @param name The name of the binding
-   * @param description The description of the input
-   */
-  withCaller = (name: string, description: string): LLM => {
-    const ctx = this._ctx.select("withCaller", { name, description })
-    return new LLM(ctx)
-  }
-
-  /**
    * allow the LLM to interact with an environment via MCP
    */
   withEnv = (env: Env): LLM => {
