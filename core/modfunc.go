@@ -748,7 +748,7 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 				Field: "withDirectory",
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String("/")},
-					{Name: "directory", Value: dagql.NewID[*Directory](dir.ID())},
+					{Name: "source", Value: dagql.NewID[*Directory](dir.ID())},
 					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Ignore...))},
 				},
 			},

@@ -338,14 +338,14 @@ class Directory extends Client\AbstractObject implements Client\IdAble
      */
     public function withDirectory(
         string $path,
-        DirectoryId|Directory $directory,
+        DirectoryId|Directory $source,
         ?array $exclude = null,
         ?array $include = null,
         ?string $owner = '',
     ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDirectory');
         $innerQueryBuilder->setArgument('path', $path);
-        $innerQueryBuilder->setArgument('directory', $directory);
+        $innerQueryBuilder->setArgument('source', $source);
         if (null !== $exclude) {
         $innerQueryBuilder->setArgument('exclude', $exclude);
         }
