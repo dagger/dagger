@@ -9,6 +9,7 @@
         "helloWorld": {
           "name": "helloWorld",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "name": {
               "name": "name",

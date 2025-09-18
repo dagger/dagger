@@ -9,6 +9,7 @@
         "manifest": {
           "name": "manifest",
           "description": "",
+          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "OBJECT_KIND",

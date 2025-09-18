@@ -9,6 +9,7 @@
         "hello": {
           "name": "hello",
           "description": "",
+          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "STRING_KIND"
@@ -17,6 +18,7 @@
         "iface": {
           "name": "iface",
           "description": "",
+          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "INTERFACE_KIND",
@@ -36,6 +38,7 @@
         "foo": {
           "name": "foo",
           "description": "Foo fct",
+          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "STRING_KIND"
@@ -44,6 +47,7 @@
         "count": {
           "name": "count",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "n": {
               "name": "n",
@@ -66,6 +70,7 @@
         "withClass": {
           "name": "withClass",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "c": {
               "name": "c",
@@ -86,6 +91,7 @@
         "outClass": {
           "name": "outClass",
           "description": "",
+          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "OBJECT_KIND",
@@ -95,6 +101,7 @@
         "self": {
           "name": "self",
           "description": "",
+          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "INTERFACE_KIND",
@@ -104,6 +111,7 @@
         "withSelf": {
           "name": "withSelf",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "i": {
               "name": "i",
@@ -124,6 +132,7 @@
         "method": {
           "name": "method",
           "description": "",
+          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "VOID_KIND"

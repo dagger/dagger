@@ -10,6 +10,7 @@
         "bar": {
           "name": "bar",
           "description": "Return Bar object",
+          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "OBJECT_KIND",
@@ -27,6 +28,7 @@
         "exec": {
           "name": "exec",
           "description": "Execute the command and return its result",
+          "deprecated": "",
           "arguments": {
             "cmd": {
               "name": "cmd",

@@ -9,6 +9,7 @@
         "fullVariadicStr": {
           "name": "fullVariadicStr",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "vars": {
               "name": "vars",
@@ -31,6 +32,7 @@
         "semiVariadicStr": {
           "name": "semiVariadicStr",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "separator": {
               "name": "separator",
@@ -63,6 +65,7 @@
         "fullVariadicNum": {
           "name": "fullVariadicNum",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "vars": {
               "name": "vars",
@@ -85,6 +88,7 @@
         "semiVariadicNum": {
           "name": "semiVariadicNum",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "mul": {
               "name": "mul",

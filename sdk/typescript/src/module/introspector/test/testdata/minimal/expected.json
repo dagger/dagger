@@ -9,6 +9,7 @@
         "hello": {
           "name": "hello",
           "description": "",
+          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "STRING_KIND"
@@ -17,6 +18,7 @@
         "echo": {
           "name": "echo",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "msg": {
               "name": "msg",
@@ -36,6 +38,7 @@
         "echoOpts": {
           "name": "echoOpts",
           "description": "EchoOpts does some opts things",
+          "deprecated": "",
           "arguments": {
             "msg": {
               "name": "msg",
@@ -77,6 +80,7 @@
         "echoMaybe": {
           "name": "echoMaybe",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "msg": {
               "name": "msg",
@@ -107,6 +111,7 @@
         "echoOptional": {
           "name": "echoOptional",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "msg": {
               "name": "msg",
@@ -127,6 +132,7 @@
         "echoOptionalSlice": {
           "name": "echoOptionalSlice",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "msg": {
               "name": "msg",
@@ -152,6 +158,7 @@
         "echoes": {
           "name": "echoes",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "msgs": {
               "name": "msgs",
@@ -177,6 +184,7 @@
         "echoesVariadic": {
           "name": "echoesVariadic",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "msgs": {
               "name": "msgs",
@@ -199,6 +207,7 @@
         "helloVoid": {
           "name": "helloVoid",
           "description": "",
+          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "VOID_KIND"

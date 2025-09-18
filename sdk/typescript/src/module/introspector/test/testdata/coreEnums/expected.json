@@ -9,6 +9,7 @@
         "toImageLayerCompression": {
           "name": "toImageLayerCompression",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "compression": {
               "name": "compression",
@@ -29,6 +30,7 @@
         "fromImageLayerCompression": {
           "name": "fromImageLayerCompression",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "compression": {
               "name": "compression",

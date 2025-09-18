@@ -9,6 +9,7 @@
         "create": {
           "name": "create",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "n": {
               "name": "n",
@@ -35,6 +36,7 @@
         "floats": {
           "name": "floats",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "n": {
               "name": "n",
@@ -82,6 +84,7 @@
         "positive": {
           "name": "positive",
           "description": "",
+          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "BOOLEAN_KIND"

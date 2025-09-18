@@ -9,6 +9,7 @@
         "compute": {
           "name": "compute",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "a": {
               "name": "a",

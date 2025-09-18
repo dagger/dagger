@@ -9,6 +9,7 @@
         "sayHello": {
           "name": "sayHello",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "name": {
               "name": "name",
@@ -29,6 +30,7 @@
         "upper": {
           "name": "upper",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "msg": {
               "name": "msg",
@@ -50,6 +52,7 @@
         "uppers": {
           "name": "uppers",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "msg": {
               "name": "msg",

@@ -9,6 +9,7 @@
         "helloWorld": {
           "name": "helloWorld",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "name": {
               "name": "name",
@@ -28,6 +29,7 @@
         "isTrue": {
           "name": "isTrue",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "value": {
               "name": "value",
@@ -47,6 +49,7 @@
         "add": {
           "name": "add",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "a": {
               "name": "a",
@@ -78,6 +81,7 @@
         "sayBool": {
           "name": "sayBool",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "value": {
               "name": "value",
@@ -98,6 +102,7 @@
         "foo": {
           "name": "foo",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "a": {
               "name": "a",
@@ -170,6 +175,7 @@
         "array": {
           "name": "array",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "a": {
               "name": "a",

@@ -9,6 +9,7 @@
         "helloWorld": {
           "name": "helloWorld",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "dir": {
               "name": "dir",
@@ -30,6 +31,7 @@
         "helloWorldIgnored": {
           "name": "helloWorldIgnored",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "dir": {
               "name": "dir",
