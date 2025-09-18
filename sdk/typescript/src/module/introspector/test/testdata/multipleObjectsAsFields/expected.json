@@ -38,6 +38,7 @@
         "echo": {
           "name": "echo",
           "description": "",
+          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "STRING_KIND"
@@ -54,6 +55,7 @@
         "echo": {
           "name": "echo",
           "description": "",
+          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "STRING_KIND"

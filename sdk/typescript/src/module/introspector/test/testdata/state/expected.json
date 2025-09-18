@@ -10,6 +10,7 @@
         "base": {
           "name": "base",
           "description": "Returns a base Alpine container",
+          "deprecated": "",
           "arguments": {
             "version": {
               "name": "version",
@@ -30,6 +31,7 @@
         "install": {
           "name": "install",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "pkgs": {
               "name": "pkgs",
@@ -53,6 +55,7 @@
         "exec": {
           "name": "exec",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "cmd": {
               "name": "cmd",

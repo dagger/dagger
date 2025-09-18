@@ -9,6 +9,7 @@
         "fromPlatform": {
           "name": "fromPlatform",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "platform": {
               "name": "platform",
@@ -29,6 +30,7 @@
         "fromPlatforms": {
           "name": "fromPlatforms",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "platforms": {
               "name": "platforms",
