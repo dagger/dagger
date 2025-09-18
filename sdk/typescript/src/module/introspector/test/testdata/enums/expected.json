@@ -44,6 +44,7 @@
         "status": {
           "name": "status",
           "description": "",
+          "deprecated": "",
           "type": {
             "kind": "ENUM_KIND",
             "name": "Status"
