@@ -6244,7 +6244,51 @@ func (m *Test) UseMode(mode Mode) Mode {
 	return mode
 }
 `
-	// tsSrc := `...` // wip
+	const tsSrc = `import { field, func, object } from "@dagger.io/dagger"
+
+  /** @deprecated This module is deprecated and will be removed in future versions. */
+  @object()
+  export class Test {
+    /** @deprecated This field is deprecated and will be removed in future versions. */
+    @field()
+    legacyField = ""
+
+    @func()
+    async echoString(
+      /** @deprecated Use 'other' instead of 'input'. */
+      input: string,
+      other: string,
+    ): Promise<string> {
+      return input
+    }
+
+    /** @deprecated Prefer EchoString instead. */
+    @func()
+    async legacySummarize(note: string): Promise<LegacyRecord> {
+      return { note }
+    }
+
+    @func()
+    useMode(mode: Mode): Mode {
+      return mode
+    }
+  }
+
+  /** @deprecated This type is deprecated and kept only for retro-compatibility. */
+  export type LegacyRecord = {
+    /** @deprecated This field is deprecated and will be removed in future versions. */
+    note: string
+  }
+
+  /** @deprecated Mode is deprecated; use zeta instead. */
+  export enum Mode {
+    /** @deprecated alpha is deprecated; use zeta instead */
+    Alpha = "alpha",
+    /** @deprecated beta is deprecated; use zeta instead */
+    Beta = "beta",
+    Zeta = "zeta",
+  }`
+
 	// pySrc := `...` // wip
 
 	cases := []sdkCase{
@@ -6254,16 +6298,16 @@ func (m *Test) UseMode(mode Mode) Mode {
 				return os.WriteFile(filepath.Join(dir, "main.go"), []byte(goSrc), 0o644)
 			},
 		},
-		// {
-		// 	sdk: "typescript",
-		// 	writeFiles: func(dir string) error {
-		// 		srcDir := filepath.Join(dir, "src")
-		// 		if err := os.MkdirAll(srcDir, 0o755); err != nil {
-		// 			return err
-		// 		}
-		// 		return os.WriteFile(filepath.Join(srcDir, "index.ts"), []byte(tsSrc), 0o644)
-		// 	},
-		// },
+		{
+			sdk: "typescript",
+			writeFiles: func(dir string) error {
+				srcDir := filepath.Join(dir, "src")
+				if err := os.MkdirAll(srcDir, 0o755); err != nil {
+					return err
+				}
+				return os.WriteFile(filepath.Join(srcDir, "index.ts"), []byte(tsSrc), 0o644)
+			},
+		},
 		// {
 		// 	sdk: "python",
 		// 	writeFiles: func(dir string) error {
@@ -6278,8 +6322,8 @@ func (m *Test) UseMode(mode Mode) Mode {
 
 	const introspect = `
 query ModuleIntrospection($path: String!) {
-  host {
-    directory(path: $path, noGitAutoIgnore: true) {
+	host {
+	  directory(path: $path) {
       asModule {
         objects {
           asObject {
