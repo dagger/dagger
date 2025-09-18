@@ -28,31 +28,39 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 	dagql.Fields[*core.Env]{
 		dagql.Func("inputs", s.inputs).
-			Doc("return all input values for the environment"),
+			Doc("Return all provided input bindings for the environment"),
 		dagql.Func("input", s.input).
-			Doc("retrieve an input value by name"),
+			Doc("Retrieve an input binding by name"),
 		dagql.Func("outputs", s.outputs).
-			Doc("return all output values for the environment"),
+			Doc("Return all declared output bindings for the environment"),
 		dagql.Func("withoutOutputs", s.withoutOutputs).
 			Doc("Return a new environment without any outputs"),
 		dagql.Func("output", s.output).
-			Doc("retrieve an output value by name"),
+			Doc("Retrieve an output binding by name"),
 		dagql.Func("withWorkspace", s.withWorkspace).
-			Doc("Return a new environment with a new host filesystem").
+			Doc("Return a new environment with a new workspace").
 			Args(
 				dagql.Arg("workspace").Doc("The directory to set as the host filesystem"),
 			),
+		dagql.FuncWithCacheKey("withCurrentModule", s.withCurrentModule, dagql.CachePerClient).
+			Doc(
+				"Install the current module into the environment, exposing its functions to the model",
+				"Contextual path arguments will be populated using the environment's workspace.",
+			),
 		dagql.Func("withModule", s.withModule).
-			Doc("load a module and expose its functions to the model"),
+			Doc(
+				"Install a module into the environment, exposing its functions to the model",
+				"Contextual path arguments will be populated using the environment's workspace.",
+			),
 		dagql.Func("withStringInput", s.withStringInput).
-			Doc("Create or update an input value of type string").
+			Doc("Bind a string input value to the environment").
 			Args(
 				dagql.Arg("name").Doc("The name of the binding"),
 				dagql.Arg("value").Doc("The string value to assign to the binding"),
 				dagql.Arg("description").Doc("The description of the input"),
 			),
 		dagql.Func("withStringOutput", s.withStringOutput).
-			Doc("Create or update an input value of type string").
+			Doc("Declare a desired string output binding").
 			Args(
 				dagql.Arg("name").Doc("The name of the binding"),
 				dagql.Arg("description").Doc("The description of the output"),
@@ -175,6 +183,18 @@ func (s environmentSchema) withModule(ctx context.Context, env *core.Env, args s
 		return nil, err
 	}
 	return env.WithModule(mod.Self()), nil
+}
+
+func (s environmentSchema) withCurrentModule(ctx context.Context, env *core.Env, _ struct{}) (*core.Env, error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current query: %w", err)
+	}
+	mod, err := query.CurrentModule(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current module: %w", err)
+	}
+	return env.WithModule(mod), nil
 }
 
 func (s environmentSchema) withStringInput(ctx context.Context, env *core.Env, args struct {
