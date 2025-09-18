@@ -2168,12 +2168,12 @@ impl Binding {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// The binding's string value
+    /// Returns the binding's string value
     pub async fn as_string(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("asString");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The digest of the binding value
+    /// Returns the digest of the binding value
     pub async fn digest(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("digest");
         query.execute(self.graphql_client.clone()).await
@@ -2188,12 +2188,12 @@ impl Binding {
         let query = self.selection.select("isNull");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The binding name
+    /// Returns the binding name
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The binding type
+    /// Returns the binding type
     pub async fn type_name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("typeName");
         query.execute(self.graphql_client.clone()).await
@@ -4902,15 +4902,6 @@ impl CurrentModule {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The fully instantiated module implementing the current function call.
-    pub fn meta(&self) -> Module {
-        let query = self.selection.select("meta");
-        Module {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// The name of the module being executed in
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
@@ -6287,7 +6278,7 @@ impl Env {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// retrieve an input value by name
+    /// Retrieves an input binding by name
     pub fn input(&self, name: impl Into<String>) -> Binding {
         let mut query = self.selection.select("input");
         query = query.arg("name", name.into());
@@ -6297,7 +6288,7 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// return all input values for the environment
+    /// Returns all input bindings provided to the environment
     pub fn inputs(&self) -> Vec<Binding> {
         let query = self.selection.select("inputs");
         vec![Binding {
@@ -6306,7 +6297,7 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }]
     }
-    /// retrieve an output value by name
+    /// Retrieves an output binding by name
     pub fn output(&self, name: impl Into<String>) -> Binding {
         let mut query = self.selection.select("output");
         query = query.arg("name", name.into());
@@ -6316,7 +6307,7 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// return all output values for the environment
+    /// Returns all declared output bindings for the environment
     pub fn outputs(&self) -> Vec<Binding> {
         let query = self.selection.select("outputs");
         vec![Binding {
@@ -6564,6 +6555,16 @@ impl Env {
         let mut query = self.selection.select("withContainerOutput");
         query = query.arg("name", name.into());
         query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Installs the current module into the environment, exposing its functions to the model
+    /// Contextual path arguments will be populated using the environment's workspace.
+    pub fn with_current_module(&self) -> Env {
+        let query = self.selection.select("withCurrentModule");
         Env {
             proc: self.proc.clone(),
             selection: query,
@@ -6905,7 +6906,8 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// load a module and expose its functions to the model
+    /// Installs a module into the environment, exposing its functions to the model
+    /// Contextual path arguments will be populated using the environment's workspace.
     pub fn with_module(&self, module: impl IntoID<ModuleId>) -> Env {
         let mut query = self.selection.select("withModule");
         query = query.arg_lazy(
@@ -7313,7 +7315,7 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Create or update an input value of type string
+    /// Provides a string input binding to the environment
     ///
     /// # Arguments
     ///
@@ -7336,7 +7338,7 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Create or update an input value of type string
+    /// Declares a desired string output binding
     ///
     /// # Arguments
     ///
@@ -7356,7 +7358,7 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return a new environment with a new host filesystem
+    /// Returns a new environment with the provided workspace
     ///
     /// # Arguments
     ///
@@ -7376,7 +7378,7 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return a new environment without any outputs
+    /// Returns a new environment without any outputs
     pub fn without_outputs(&self) -> Env {
         let query = self.selection.select("withoutOutputs");
         Env {
@@ -10395,6 +10397,9 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Returns the current environment
+    /// When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
+    /// When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
     pub fn current_env(&self) -> Env {
         let query = self.selection.select("currentEnv");
         Env {
@@ -10454,7 +10459,7 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Initialize a new environment
+    /// Initializes a new environment
     ///
     /// # Arguments
     ///
@@ -10467,7 +10472,7 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Initialize a new environment
+    /// Initializes a new environment
     ///
     /// # Arguments
     ///

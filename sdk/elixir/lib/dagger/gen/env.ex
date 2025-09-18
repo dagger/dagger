@@ -27,7 +27,7 @@ defmodule Dagger.Env do
   end
 
   @doc """
-  retrieve an input value by name
+  Retrieves an input binding by name
   """
   @spec input(t(), String.t()) :: Dagger.Binding.t()
   def input(%__MODULE__{} = env, name) do
@@ -41,7 +41,7 @@ defmodule Dagger.Env do
   end
 
   @doc """
-  return all input values for the environment
+  Returns all input bindings provided to the environment
   """
   @spec inputs(t()) :: {:ok, [Dagger.Binding.t()]} | {:error, term()}
   def inputs(%__MODULE__{} = env) do
@@ -63,7 +63,7 @@ defmodule Dagger.Env do
   end
 
   @doc """
-  retrieve an output value by name
+  Retrieves an output binding by name
   """
   @spec output(t(), String.t()) :: Dagger.Binding.t()
   def output(%__MODULE__{} = env, name) do
@@ -77,7 +77,7 @@ defmodule Dagger.Env do
   end
 
   @doc """
-  return all output values for the environment
+  Returns all declared output bindings for the environment
   """
   @spec outputs(t()) :: {:ok, [Dagger.Binding.t()]} | {:error, term()}
   def outputs(%__MODULE__{} = env) do
@@ -267,6 +267,22 @@ defmodule Dagger.Env do
       |> QB.select("withContainerOutput")
       |> QB.put_arg("name", name)
       |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Installs the current module into the environment, exposing its functions to the model
+
+  Contextual path arguments will be populated using the environment's workspace.
+  """
+  @spec with_current_module(t()) :: Dagger.Env.t()
+  def with_current_module(%__MODULE__{} = env) do
+    query_builder =
+      env.query_builder |> QB.select("withCurrentModule")
 
     %Dagger.Env{
       query_builder: query_builder,
@@ -521,7 +537,9 @@ defmodule Dagger.Env do
   end
 
   @doc """
-  load a module and expose its functions to the model
+  Installs a module into the environment, exposing its functions to the model
+
+  Contextual path arguments will be populated using the environment's workspace.
   """
   @spec with_module(t(), Dagger.Module.t()) :: Dagger.Env.t()
   def with_module(%__MODULE__{} = env, module) do
@@ -823,7 +841,7 @@ defmodule Dagger.Env do
   end
 
   @doc """
-  Create or update an input value of type string
+  Provides a string input binding to the environment
   """
   @spec with_string_input(t(), String.t(), String.t(), String.t()) :: Dagger.Env.t()
   def with_string_input(%__MODULE__{} = env, name, value, description) do
@@ -841,7 +859,7 @@ defmodule Dagger.Env do
   end
 
   @doc """
-  Create or update an input value of type string
+  Declares a desired string output binding
   """
   @spec with_string_output(t(), String.t(), String.t()) :: Dagger.Env.t()
   def with_string_output(%__MODULE__{} = env, name, description) do
@@ -858,7 +876,7 @@ defmodule Dagger.Env do
   end
 
   @doc """
-  Return a new environment with a new host filesystem
+  Returns a new environment with the provided workspace
   """
   @spec with_workspace(t(), Dagger.Directory.t()) :: Dagger.Env.t()
   def with_workspace(%__MODULE__{} = env, workspace) do
@@ -874,7 +892,7 @@ defmodule Dagger.Env do
   end
 
   @doc """
-  Return a new environment without any outputs
+  Returns a new environment without any outputs
   """
   @spec without_outputs(t()) :: Dagger.Env.t()
   def without_outputs(%__MODULE__{} = env) do

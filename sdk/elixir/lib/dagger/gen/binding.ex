@@ -296,7 +296,7 @@ defmodule Dagger.Binding do
   end
 
   @doc """
-  The binding's string value
+  Returns the binding's string value
   """
   @spec as_string(t()) :: {:ok, String.t() | nil} | {:error, term()}
   def as_string(%__MODULE__{} = binding) do
@@ -307,7 +307,7 @@ defmodule Dagger.Binding do
   end
 
   @doc """
-  The digest of the binding value
+  Returns the digest of the binding value
   """
   @spec digest(t()) :: {:ok, String.t()} | {:error, term()}
   def digest(%__MODULE__{} = binding) do
@@ -340,7 +340,7 @@ defmodule Dagger.Binding do
   end
 
   @doc """
-  The binding name
+  Returns the binding name
   """
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = binding) do
@@ -351,7 +351,7 @@ defmodule Dagger.Binding do
   end
 
   @doc """
-  The binding type
+  Returns the binding type
   """
   @spec type_name(t()) :: {:ok, String.t()} | {:error, term()}
   def type_name(%__MODULE__{} = binding) do

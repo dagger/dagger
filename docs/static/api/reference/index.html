@@ -464,6 +464,16 @@
             </h2>
             <div class="doc-row">
               <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Returns the current environment</p>
+                  <p>When called from a function invoked via an LLM tool call, this will be the LLM&#39;s current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment&#39;s workspace.</p>
+                  <p>When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module&#39;s source directory as its workspace.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
                 <div class="operation-response doc-copy-section">
                   <h5>Type</h5>
                   <p>
@@ -710,7 +720,7 @@
               <div class="doc-copy">
                 <div class="operation-description doc-copy-section">
                   <h5>Description</h5>
-                  <p>Initialize a new environment</p>
+                  <p>Initializes a new environment</p>
                 </div>
               </div>
             </div>
@@ -4664,11 +4674,11 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asString" href="#Binding-asString"><code>asString</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
-                        <td> The binding's string value </td>
+                        <td> Returns the binding's string value </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-digest" href="#Binding-digest"><code>digest</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The digest of the binding value </td>
+                        <td> Returns the digest of the binding value </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-id" href="#Binding-id"><code>id</code></a> - <span class="property-type"><a href="#definition-BindingID"><code>BindingID!</code></a></span> </td>
@@ -4680,11 +4690,11 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-name" href="#Binding-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The binding name </td>
+                        <td> Returns the binding name </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-typeName" href="#Binding-typeName"><code>typeName</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The binding type </td>
+                        <td> Returns the binding type </td>
                       </tr>
                     </tbody>
                   </table>
@@ -6599,10 +6609,6 @@
                         <td> A unique identifier for this CurrentModule. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="CurrentModule-meta" href="#CurrentModule-meta"><code>meta</code></a> - <span class="property-type"><a href="#definition-Module"><code>Module!</code></a></span> </td>
-                        <td> The fully instantiated module implementing the current function call. </td>
-                      </tr>
-                      <tr>
                         <td data-property-name=""><a class="property-name" id="CurrentModule-name" href="#CurrentModule-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The name of the module being executed in </td>
                       </tr>
@@ -7816,7 +7822,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-input" href="#Env-input"><code>input</code></a> - <span class="property-type"><a href="#definition-Binding"><code>Binding!</code></a></span> </td>
-                        <td> retrieve an input value by name </td>
+                        <td> Retrieves an input binding by name </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -7832,11 +7838,11 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Env-inputs" href="#Env-inputs"><code>inputs</code></a> - <span class="property-type"><a href="#definition-Binding"><code>[Binding!]!</code></a></span> </td>
-                        <td> return all input values for the environment </td>
+                        <td> Returns all input bindings provided to the environment </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-output" href="#Env-output"><code>output</code></a> - <span class="property-type"><a href="#definition-Binding"><code>Binding!</code></a></span> </td>
-                        <td> retrieve an output value by name </td>
+                        <td> Retrieves an output binding by name </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -7852,7 +7858,7 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Env-outputs" href="#Env-outputs"><code>outputs</code></a> - <span class="property-type"><a href="#definition-Binding"><code>[Binding!]!</code></a></span> </td>
-                        <td> return all output values for the environment </td>
+                        <td> Returns all declared output bindings for the environment </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withAddressInput" href="#Env-withAddressInput"><code>withAddressInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
@@ -8082,6 +8088,13 @@
                               </div>
                             </div>
                           </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Env-withCurrentModule" href="#Env-withCurrentModule"><code>withCurrentModule</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td>
+                          <p>Installs the current module into the environment, exposing its functions to the model</p>
+                          <p>Contextual path arguments will be populated using the environment&#39;s workspace.</p>
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
@@ -8408,7 +8421,10 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withModule" href="#Env-withModule"><code>withModule</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
-                        <td> load a module and expose its functions to the model </td>
+                        <td>
+                          <p>Installs a module into the environment, exposing its functions to the model</p>
+                          <p>Contextual path arguments will be populated using the environment&#39;s workspace.</p>
+                        </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -8792,7 +8808,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withStringInput" href="#Env-withStringInput"><code>withStringInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
-                        <td> Create or update an input value of type string </td>
+                        <td> Provides a string input binding to the environment </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -8817,7 +8833,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withStringOutput" href="#Env-withStringOutput"><code>withStringOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
-                        <td> Create or update an input value of type string </td>
+                        <td> Declares a desired string output binding </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -8838,7 +8854,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withWorkspace" href="#Env-withWorkspace"><code>withWorkspace</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
-                        <td> Return a new environment with a new host filesystem </td>
+                        <td> Returns a new environment with the provided workspace </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -8855,7 +8871,7 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Env-withoutOutputs" href="#Env-withoutOutputs"><code>withoutOutputs</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
-                        <td> Return a new environment without any outputs </td>
+                        <td> Returns a new environment without any outputs </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Env-workspace" href="#Env-workspace"><code>workspace</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>

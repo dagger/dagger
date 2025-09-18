@@ -20,7 +20,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * retrieve an input value by name
+     * Retrieves an input binding by name
      */
     public function input(string $name): Binding
     {
@@ -30,7 +30,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * return all input values for the environment
+     * Returns all input bindings provided to the environment
      */
     public function inputs(): array
     {
@@ -39,7 +39,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * retrieve an output value by name
+     * Retrieves an output binding by name
      */
     public function output(string $name): Binding
     {
@@ -49,7 +49,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * return all output values for the environment
+     * Returns all declared output bindings for the environment
      */
     public function outputs(): array
     {
@@ -169,6 +169,17 @@ class Env extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withContainerOutput');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Installs the current module into the environment, exposing its functions to the model
+     *
+     * Contextual path arguments will be populated using the environment's workspace.
+     */
+    public function withCurrentModule(): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCurrentModule');
         return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -337,7 +348,9 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * load a module and expose its functions to the model
+     * Installs a module into the environment, exposing its functions to the model
+     *
+     * Contextual path arguments will be populated using the environment's workspace.
      */
     public function withModule(ModuleId|Module $module): Env
     {
@@ -537,7 +550,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Create or update an input value of type string
+     * Provides a string input binding to the environment
      */
     public function withStringInput(string $name, string $value, string $description): Env
     {
@@ -549,7 +562,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Create or update an input value of type string
+     * Declares a desired string output binding
      */
     public function withStringOutput(string $name, string $description): Env
     {
@@ -560,7 +573,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Return a new environment with a new host filesystem
+     * Returns a new environment with the provided workspace
      */
     public function withWorkspace(DirectoryId|Directory $workspace): Env
     {
@@ -570,7 +583,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Return a new environment without any outputs
+     * Returns a new environment without any outputs
      */
     public function withoutOutputs(): Env
     {

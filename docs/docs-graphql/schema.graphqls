@@ -1,5 +1,5 @@
 """Indicates that the argument defaults to a contextual path."""
-directive @defaultPath(path: String!, ignore: [String!]!) on ARGUMENT_DEFINITION
+directive @defaultPath(path: String!) on ARGUMENT_DEFINITION
 
 """Indicates the underlying value of an enum member."""
 directive @enumValue(value: String!) on ENUM_VALUE
@@ -11,6 +11,9 @@ directive @experimental(
   """Explains why this element was marked experimental."""
   reason: String! = "Not stabilized"
 ) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
+
+"""Filter directory contents using .gitignore-style glob patterns."""
+directive @ignorePatterns(patterns: [String!]!) on ARGUMENT_DEFINITION
 
 """Indicates the source information for where a given field is defined."""
 directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!, url: String!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
@@ -118,10 +121,10 @@ type Binding {
   """Retrieve the binding value, as type Socket"""
   asSocket: Socket!
 
-  """The binding's string value"""
+  """Returns the binding's string value"""
   asString: String
 
-  """The digest of the binding value"""
+  """Returns the digest of the binding value"""
   digest: String!
 
   """A unique identifier for this Binding."""
@@ -130,10 +133,10 @@ type Binding {
   """Returns true if the binding is null"""
   isNull: Boolean!
 
-  """The binding name"""
+  """Returns the binding name"""
   name: String!
 
-  """The binding type"""
+  """Returns the binding type"""
   typeName: String!
 }
 
@@ -1429,9 +1432,6 @@ type CurrentModule {
   """A unique identifier for this CurrentModule."""
   id: CurrentModuleID!
 
-  """The fully instantiated module implementing the current function call."""
-  meta: Module!
-
   """The name of the module being executed in"""
   name: String!
 
@@ -2059,16 +2059,16 @@ type Env {
   """A unique identifier for this Env."""
   id: EnvID!
 
-  """retrieve an input value by name"""
+  """Retrieves an input binding by name"""
   input(name: String!): Binding!
 
-  """return all input values for the environment"""
+  """Returns all input bindings provided to the environment"""
   inputs: [Binding!]!
 
-  """retrieve an output value by name"""
+  """Retrieves an output binding by name"""
   output(name: String!): Binding!
 
-  """return all output values for the environment"""
+  """Returns all declared output bindings for the environment"""
   outputs: [Binding!]!
 
   """Create or update a binding of type Address in the environment"""
@@ -2175,6 +2175,13 @@ type Env {
     """A description of the desired value of the binding"""
     description: String!
   ): Env!
+
+  """
+  Installs the current module into the environment, exposing its functions to the model
+
+  Contextual path arguments will be populated using the environment's workspace.
+  """
+  withCurrentModule: Env!
 
   """Create or update a binding of type Directory in the environment"""
   withDirectoryInput(
@@ -2325,7 +2332,11 @@ type Env {
     description: String!
   ): Env!
 
-  """load a module and expose its functions to the model"""
+  """
+  Installs a module into the environment, exposing its functions to the model
+
+  Contextual path arguments will be populated using the environment's workspace.
+  """
   withModule(module: ModuleID!): Env!
 
   """
@@ -2506,7 +2517,7 @@ type Env {
     description: String!
   ): Env!
 
-  """Create or update an input value of type string"""
+  """Provides a string input binding to the environment"""
   withStringInput(
     """The name of the binding"""
     name: String!
@@ -2518,7 +2529,7 @@ type Env {
     description: String!
   ): Env!
 
-  """Create or update an input value of type string"""
+  """Declares a desired string output binding"""
   withStringOutput(
     """The name of the binding"""
     name: String!
@@ -2527,13 +2538,13 @@ type Env {
     description: String!
   ): Env!
 
-  """Return a new environment with a new host filesystem"""
+  """Returns a new environment with the provided workspace"""
   withWorkspace(
     """The directory to set as the host filesystem"""
     workspace: DirectoryID!
   ): Env!
 
-  """Return a new environment without any outputs"""
+  """Returns a new environment without any outputs"""
   withoutOutputs: Env!
 
   workspace: Directory!
@@ -4022,6 +4033,19 @@ type Query {
     platform: Platform
   ): Container!
 
+  """
+  Returns the current environment
+
+  When called from a function invoked via an LLM tool call, this will be the
+  LLM's current environment, including any modifications made through calling
+  tools. Env values returned by functions become the new environment for
+  subsequent calls, and Changeset values returned by functions are applied to
+  the environment's workspace.
+
+  When called from a module function outside of an LLM, this returns an Env with
+  the current module installed, and with the current module's source directory
+  as its workspace.
+  """
   currentEnv: Env!
 
   """
@@ -4048,7 +4072,7 @@ type Query {
   """The Dagger engine container configuration and state"""
   engine: Engine!
 
-  """Initialize a new environment"""
+  """Initializes a new environment"""
   env(
     """
     Give the environment the same privileges as the caller: core API including host access, current module, and dependencies

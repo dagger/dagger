@@ -56,6 +56,13 @@ class Client extends Client\AbstractClient
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
+    /**
+     * Returns the current environment
+     *
+     * When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
+     *
+     * When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
+     */
     public function currentEnv(): Env
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('currentEnv');
@@ -119,7 +126,7 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Initialize a new environment
+     * Initializes a new environment
      */
     public function env(?bool $privileged = false, ?bool $writable = false): Env
     {
