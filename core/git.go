@@ -23,6 +23,7 @@ import (
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
@@ -462,6 +463,8 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, refs []Gi
 				}
 			}
 
+			// TODO: should set doFetch if a tag in ls-remote has been updated?
+
 			if doFetch {
 				fetchRefs = append(fetchRefs, ref)
 			}
@@ -708,11 +711,6 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			}
 			checkoutGit := git.New(gitutil.WithWorkTree(checkoutDir), gitutil.WithGitDir(checkoutDirGit))
 
-			_, err = checkoutGit.Run(ctx, "-c", "init.defaultBranch=main", "init")
-			if err != nil {
-				return err
-			}
-
 			err := doGitCheckout(ctx, checkoutGit, ref.repo.URL.Remote(), gitURL, ref.FullRef, ref.Commit, depth, discardGitDir)
 			if err != nil {
 				return err
@@ -754,6 +752,9 @@ func (ref *RemoteGitRef) mount(ctx context.Context, depth int, fn func(*gitutil.
 	return ref.repo.mount(ctx, depth, []GitRefBackend{ref}, fn)
 }
 
+// doGitCheckout performs a git checkout using the given git helper.
+//
+// The provided git dir should *always* be empty.
 func doGitCheckout(
 	ctx context.Context,
 	checkoutGit *gitutil.GitCLI,
@@ -768,16 +769,24 @@ func doGitCheckout(
 		return fmt.Errorf("could not find git dir: %w", err)
 	}
 
-	pullref := fullref
-	if !gitutil.IsCommitSHA(fullref) {
-		pullref += ":" + pullref
+	_, err = checkoutGit.Run(ctx, "-c", "init.defaultBranch=main", "init")
+	if err != nil {
+		return err
+	}
+
+	destref := fullref
+	if gitutil.IsCommitSHA(fullref) {
+		// we need to create a temporary ref to fetch into!
+		// this ensures that we actually get the "default" tags behavior (only
+		// fetching tags that are part of the history)
+		destref = "refs/dagger.tmp/" + identity.NewID()
 	}
 
 	args := []string{"fetch", "-u"}
 	if depth > 0 {
 		args = append(args, fmt.Sprintf("--depth=%d", depth))
 	}
-	args = append(args, cloneURL, pullref)
+	args = append(args, cloneURL, fullref+":"+destref)
 	_, err = checkoutGit.Run(ctx, args...)
 	if err != nil {
 		return err
@@ -794,6 +803,12 @@ func doGitCheckout(
 		_, err = checkoutGit.Run(ctx, "remote", "add", "origin", remoteURL)
 		if err != nil {
 			return fmt.Errorf("failed to set remote origin to %s: %w", remoteURL, err)
+		}
+	}
+	if strings.HasPrefix(destref, "refs/dagger.tmp/") {
+		_, err = checkoutGit.Run(ctx, "update-ref", "-d", destref)
+		if err != nil {
+			return fmt.Errorf("failed to delete tmp ref: %w", err)
 		}
 	}
 	_, err = checkoutGit.Run(ctx, "reflog", "expire", "--all", "--expire=now")
@@ -1037,10 +1052,6 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 				gitutil.WithGitDir(checkoutDirGit),
 			)
 
-			_, err = checkoutGit.Run(ctx, "-c", "init.defaultBranch=main", "init")
-			if err != nil {
-				return err
-			}
 			return doGitCheckout(ctx, checkoutGit, "", gitURL, fullref, commit, depth, discardGitDir)
 		})
 	})
