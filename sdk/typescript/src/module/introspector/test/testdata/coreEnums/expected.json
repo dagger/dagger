@@ -14,6 +14,7 @@
             "compression": {
               "name": "compression",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -35,6 +36,7 @@
             "compression": {
               "name": "compression",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "ENUM_KIND",
                 "name": "ImageLayerCompression"
