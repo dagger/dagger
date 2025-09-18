@@ -241,7 +241,7 @@ func (spec *parsedEnumType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error)
 			memberOpts.Description = strings.TrimSpace(val.doc)
 		}
 		if val.deprecated != "" {
-			withEnumMemberOpts = append(withEnumMemberOpts, Id("Deprecated").Op(":").Lit(strings.TrimSpace(val.deprecated)))
+			memberOpts.Deprecated = strings.TrimSpace(val.deprecated)
 		}
 		if val.sourceMap != nil {
 			memberOpts.SourceMap = val.sourceMap.TypeDef(dag)
