@@ -92,6 +92,9 @@ func debugSpan(ctx context.Context, msg string, args ...any) {
 
 // Apply default arguments loaded from a local env file, not from the module's schema
 func (mod *Module) MergeDefaults(ctx context.Context, defaults *EnvFile) error {
+	if defaults.Len() == 0 {
+		return nil
+	}
 	debugSpan(ctx, "%q: applying defaults %v", mod.GetSource().AsString(), defaults.Environ)
 	for _, typeDef := range mod.ObjectDefs {
 		if typeDef.AsObject.Valid {
@@ -99,15 +102,39 @@ func (mod *Module) MergeDefaults(ctx context.Context, defaults *EnvFile) error {
 			objName := objType.OriginalName
 			// Apply defaults matching explicit type prefix: `MYTYPE_FOO=BAR` -> `FOO=BAR`
 			objDefaults := defaults.LookupPrefix(objName)
-			debugSpan(ctx, "module=%q object=%q applying defaults=%v", mod.Name(), objName, objDefaults.Environ)
+			debugSpan(ctx, "module=%s(%q) object=%s(%q) lookup prefix %q in %v -> %v",
+				mod.Name(),
+				mod.OriginalName,
+				objType.Name,
+				objType.OriginalName,
+				objName,
+				defaults.Environ,
+				objDefaults.Environ,
+			)
 			if err := objType.MergeDefaults(ctx, objDefaults); err != nil {
 				return fmt.Errorf("failed to apply local defaults to type %q of module %q: %w", objType.Name, mod.Name(), err)
 			}
 			// FIXME: naive comparison, has false positives,
 			// for example module name 'dagger-dev'<->object name 'DaggerDev'
 			// Main object? Apply defaults without prefix
-			if strings.EqualFold(objName, strings.ReplaceAll(mod.Name(), "-", "")) {
-				debugSpan(ctx, "module=%q object=%q applying defaults=%v", mod.Name(), objName, defaults.Environ)
+			isMainObject := strings.EqualFold(objName, strings.ReplaceAll(mod.OriginalName, "-", ""))
+			debugSpan(ctx, "module=%s(%q) object=%s(%q) checking for main object. Is %q equal-fold to %q? answer=%v",
+				mod.Name(),
+				mod.OriginalName,
+				objType.Name,
+				objType.OriginalName,
+				objName,
+				strings.ReplaceAll(mod.OriginalName, "-", ""),
+				isMainObject,
+			)
+			if isMainObject {
+				debugSpan(ctx, "module=%s(%q) object=%s(%q) MAIN OBJECT DETECTED. merging defaults without prefix: %v",
+					mod.Name(),
+					mod.OriginalName,
+					objType.Name,
+					objType.OriginalName,
+					defaults.Environ,
+				)
 				if err := objType.MergeDefaults(ctx, defaults); err != nil {
 					return fmt.Errorf("failed to apply local defaults to entrypoint type %q of module %q: %w", objType.Name, mod.Name(), err)
 				}

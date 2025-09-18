@@ -2444,39 +2444,50 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	if err != nil {
 		return inst, fmt.Errorf("failed to load env file: %w", err)
 	}
-	if envFilePath != "" {
-		fmt.Fprintln(globalW, "Loading local defaults from "+envFilePath)
-	}
 
 	if bp := blueprintSrc.Self(); bp != nil {
 		// Show the downstream module name to clients, not the blueprint name
 		// NOTE: we don't change OriginalName, that's used internally at runtime
 		mod.NameField = originalSrc.Self().ModuleName
 		// Apply defaults using the blueprint name
-		if err := mod.MergeDefaults(ctx, envFile.LookupPrefix(bp.ModuleName)); err != nil {
-			return inst, fmt.Errorf("failed to apply local defaults for %q from %q: %w", bp.ModuleName, envFilePath, err)
+		bpDefaults := envFile.LookupPrefix(bp.ModuleName)
+		tuiLog(ctx, "%s: blueprint detected. %d defaults match blueprint name %q. Merging.",
+			originalSrc.Self().AsString(),
+			bpDefaults.Len(),
+			bp.ModuleName,
+		)
+		if err := mod.MergeDefaults(ctx, bpDefaults); err != nil {
+			return inst, fmt.Errorf("failed to merge defaults for %q from %q: %w", bp.ModuleName, envFilePath, err)
 		}
 	}
 	// Always apply defaults using the original name
-	if err := mod.MergeDefaults(ctx, envFile.LookupPrefix(mod.Name())); err != nil {
-		return inst, fmt.Errorf("failed to apply local defaults for %q from %q: %w", mod.Name(), envFilePath, err)
+	// FIXME: sort out which module name to use when
+	defaults := envFile.LookupPrefix(originalSrc.Self().ModuleName)
+	tuiLog(ctx, "%s: %d defaults match module name %q. Merging.",
+		originalSrc.Self().AsString(),
+		defaults.Len(),
+		src.Self().ModuleName,
+	)
+	if err := mod.MergeDefaults(ctx, envFile.LookupPrefix(src.Self().ModuleName)); err != nil {
+		return inst, fmt.Errorf("failed to merge defaults for %q from %q: %w", mod.Name(), envFilePath, err)
 	}
 
 	// If we're loading a local module, load .env from its context dir,
 	// and use it to apply defaults *without prefix*
 	// eg. `TOKEN=foo` will be mapped to constructor argument 'token'.
-	if src := originalSrc.Self(); src.Kind == core.ModuleSourceKindLocal {
-		debugSpan(ctx, "DEBUG: %q is a local module: allow module-specific local defaults", src.ModuleName)
+	if originalSrc.Self().Kind == core.ModuleSourceKindLocal {
 		modEnvFile, modEnvFilePath, err := loadModuleEnvFile(ctx, originalSrc)
 		if err != nil {
-			return inst, fmt.Errorf("failed to load .env from %q: %w", src.AsString(), err)
+			return inst, fmt.Errorf("failed to load .env from %q: %w", src.Self().AsString(), err)
 		}
 		if modEnvFilePath != "" {
-			fmt.Fprintln(globalW, "Loading module-specific defaults from "+modEnvFilePath)
-			debugSpan(ctx, "DEBUG: searching for .env in %q returned %q", src.ModuleName, modEnvFilePath)
+			tuiLog(ctx, "%s: merging %d defaults from %s",
+				originalSrc.Self().AsString(),
+				modEnvFile.Len(),
+				modEnvFilePath,
+			)
 			if err := mod.MergeDefaults(ctx, modEnvFile); err != nil {
-				debugSpan(ctx, "DEBUG: apply local defaults from %q: %#v", modEnvFilePath, modEnvFile.Variables())
-				return inst, fmt.Errorf("failed to apply local defaults for %q from %q: %w", mod.Name(), modEnvFilePath, err)
+				return inst, fmt.Errorf("failed to merge defaults for %q from %q: %w", mod.Name(), modEnvFilePath, err)
 			}
 		}
 	}
@@ -2485,6 +2496,10 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", modName, err)
 	}
 	return inst, nil
+}
+
+func tuiLog(ctx context.Context, msg string, args ...any) {
+	fmt.Fprintf(globalW, msg, args...)
 }
 
 // Emit a one-off span for debugging purposes

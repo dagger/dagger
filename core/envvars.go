@@ -48,6 +48,11 @@ func (*EnvFile) TypeDescription() string {
 	return "A collection of environment variables."
 }
 
+// Len returns the number of variables in the EnvFile
+func (ef *EnvFile) Len() int {
+	return len(ef.Environ)
+}
+
 // WithVariable adds a new environment variable to the EnvFile
 func (ef *EnvFile) WithVariable(name, value string) *EnvFile {
 	ef = ef.Clone()

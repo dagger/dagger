@@ -95,6 +95,7 @@ func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec
 		input := modType.TypeDef().ToInput()
 		var defaultVal dagql.Input
 		if arg.DefaultValue != nil {
+			// FIXME: handle default addresses
 			var val any
 			dec := json.NewDecoder(bytes.NewReader(arg.DefaultValue.Bytes()))
 			dec.UseNumber()
@@ -211,12 +212,17 @@ func (fn *Function) LookupArg(nameAnyCase string) (*FunctionArg, bool) {
 }
 
 func (fn *Function) MergeDefaults(ctx context.Context, defaults *EnvFile) error {
+	if defaults.Len() == 0 {
+		return nil
+	}
+	debugSpan(ctx, "function %q of object %q: applying defaults %v", fn.Name, fn.ParentOriginalName, defaults.Environ)
 	for _, arg := range fn.Args {
 		if prettyValue, found := defaults.LookupCaseInsensitive(arg.Name); found {
 			debugSpan(ctx, "MATCH! argument %q of function %q: applying default %q", arg.Name, fn.Name, prettyValue)
 			var (
-				newDefault     any
-				newDefaultJSON []byte
+				newDefault          any
+				newDefaultJSON      []byte
+				newDefaultIsAddress bool
 			)
 			switch arg.TypeDef.Kind {
 			case TypeDefKindString:
@@ -252,7 +258,10 @@ func (fn *Function) MergeDefaults(ctx context.Context, defaults *EnvFile) error 
 				}
 				// FIXME: for objects, set a new 'defaultAddress' field on the typedef,
 				// for cleaner display on introspection
+				// FIXME: handle this in ModuleFunction.Call(): core/modfunc.go:310
+				// FIXME: handle this in Function.FieldSpec(): core/typedef.go:98
 				newDefault = result.Unwrap()
+				newDefaultIsAddress = true
 			default:
 				// Go straight to JSON
 				if val := []byte(prettyValue); json.Valid(val) {
@@ -273,6 +282,7 @@ func (fn *Function) MergeDefaults(ctx context.Context, defaults *EnvFile) error 
 				}
 			}
 			arg.DefaultValue = newDefaultJSON
+			arg.DefaultIsAddress = newDefaultIsAddress
 		}
 	}
 	return nil
@@ -280,13 +290,14 @@ func (fn *Function) MergeDefaults(ctx context.Context, defaults *EnvFile) error 
 
 type FunctionArg struct {
 	// Name is the standardized name of the argument (lowerCamelCase), as used for the resolver in the graphql schema
-	Name         string                     `field:"true" doc:"The name of the argument in lowerCamelCase format."`
-	Description  string                     `field:"true" doc:"A doc string for the argument, if any."`
-	SourceMap    dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this arg declaration."`
-	TypeDef      *TypeDef                   `field:"true" doc:"The type of the argument."`
-	DefaultValue JSON                       `field:"true" doc:"A default value to use for this argument when not explicitly set by the caller, if any."`
-	DefaultPath  string                     `field:"true" doc:"Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory"`
-	Ignore       []string                   `field:"true" doc:"Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner."`
+	Name             string                     `field:"true" doc:"The name of the argument in lowerCamelCase format."`
+	Description      string                     `field:"true" doc:"A doc string for the argument, if any."`
+	SourceMap        dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this arg declaration."`
+	TypeDef          *TypeDef                   `field:"true" doc:"The type of the argument."`
+	DefaultValue     JSON                       `field:"true" doc:"A default value to use for this argument when not explicitly set by the caller, if any."`
+	DefaultIsAddress bool                       `field:"true" doc:"True if the default value should be interpreted as an object address, rather than literal value"`
+	DefaultPath      string                     `field:"true" doc:"Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory"`
+	Ignore           []string                   `field:"true" doc:"Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner."`
 
 	// Below are not in public API
 
@@ -325,6 +336,25 @@ func (*FunctionArg) TypeDescription() string {
 
 func (arg *FunctionArg) isContextual() bool {
 	return arg.DefaultPath != ""
+}
+
+// Return the default value, pretty-printed for human reading
+func (arg *FunctionArg) DefaultPretty() (bool, string, error) {
+	if arg.DefaultPath != "" {
+		return true, arg.DefaultPath, nil
+	}
+	defaultJSON := arg.DefaultValue
+	if defaultJSON == nil {
+		return false, "", nil
+	}
+	if arg.DefaultIsAddress {
+		var addr string
+		if err := json.Unmarshal(defaultJSON, &addr); err != nil {
+			return false, "", err
+		}
+		return true, addr, nil
+	}
+	return true, string(defaultJSON), nil
 }
 
 type DynamicID struct {
@@ -855,12 +885,17 @@ func (obj *ObjectTypeDef) IsSubtypeOf(iface *InterfaceTypeDef) bool {
 }
 
 func (obj *ObjectTypeDef) MergeDefaults(ctx context.Context, defaults *EnvFile) error {
+	if defaults.Len() == 0 {
+		return nil
+	}
 	debugSpan(ctx, "object %q: applying defaults %v", obj.Name, defaults.Environ)
-	if constructor := obj.Constructor.Value; constructor != nil {
+	if obj.Constructor.Valid {
 		debugSpan(ctx, "constructor of object %q: applying defaults %v", obj.Name, defaults.Environ)
-		if err := constructor.MergeDefaults(ctx, defaults); err != nil {
+		if err := obj.Constructor.Value.MergeDefaults(ctx, defaults); err != nil {
 			return fmt.Errorf("failed to apply local defaults to constructor of type %q: %w", obj.Name, err)
 		}
+	} else {
+		debugSpan(ctx, "object %q has no constructor", obj.Name)
 	}
 	for _, fn := range obj.Functions {
 		fnDefaults := defaults.LookupPrefix(fn.Name)
