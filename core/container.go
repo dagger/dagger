@@ -9,7 +9,6 @@ import (
 	"io/fs"
 	"maps"
 	"os"
-	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -632,9 +631,9 @@ func (container *Container) Build(
 	}
 
 	if dockerfile != "" {
-		opts["filename"] = path.Join(dockerfileDir.Dir, dockerfile)
+		opts["filename"] = filepath.Join(dockerfileDir.Dir, dockerfile)
 	} else {
-		opts["filename"] = path.Join(dockerfileDir.Dir, defaultDockerfileName)
+		opts["filename"] = filepath.Join(dockerfileDir.Dir, defaultDockerfileName)
 	}
 
 	if target != "" {
