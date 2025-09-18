@@ -13,6 +13,7 @@
         "test": {
           "name": "test",
           "description": "",
+          "deprecated": "",
           "type": {
             "kind": "OBJECT_KIND",
             "name": "Test"
@@ -22,6 +23,7 @@
         "lint": {
           "name": "lint",
           "description": "",
+          "deprecated": "",
           "type": {
             "kind": "OBJECT_KIND",
             "name": "Lint"

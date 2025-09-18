@@ -126,6 +126,7 @@
         "prefix": {
           "name": "gretingPrefix",
           "description": "",
+          "deprecated": "",
           "alias": "prefix",
           "type": {
             "kind": "STRING_KIND"
@@ -135,6 +136,7 @@
         "container": {
           "name": "ctr",
           "description": "",
+          "deprecated": "",
           "alias": "container",
           "type": {
             "kind": "OBJECT_KIND",
@@ -192,6 +194,7 @@
         "bar": {
           "name": "baz",
           "description": "",
+          "deprecated": "",
           "alias": "bar",
           "type": {
             "kind": "STRING_KIND"
@@ -201,6 +204,7 @@
         "oof": {
           "name": "foo",
           "description": "",
+          "deprecated": "",
           "alias": "oof",
           "type": {
             "kind": "INTEGER_KIND"
