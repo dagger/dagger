@@ -14,6 +14,7 @@
             "n": {
               "name": "n",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {
@@ -41,6 +42,7 @@
             "n": {
               "name": "n",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {
@@ -71,6 +73,7 @@
           "value": {
             "name": "value",
             "description": "",
+            "deprecated": "",
             "type": {
               "kind": "INTEGER_KIND"
             },
