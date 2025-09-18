@@ -136,7 +136,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 					`The user and group must be an ID (1000:1000), not a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
-		dagql.Func("filter", s.filter).
+		dagql.NodeFunc("filter", DagOpDirectoryWrapper(srv, s.filter, WithPathFn(keepParentDir[FilterArgs]))).
 			Doc(`Return a snapshot with some paths included or excluded`).
 			Args(
 				dagql.Arg("exclude").Doc(`If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: ["node_modules/", ".git*", ".env"]`),
@@ -361,19 +361,36 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.Object
 
 type FilterArgs struct {
 	core.CopyFilter
+
+	DagOpInternalArgs
 }
 
-func (s *directorySchema) filter(ctx context.Context, parent *core.Directory, args FilterArgs) (*core.Directory, error) {
-	query, err := core.CurrentQuery(ctx)
+func (s *directorySchema) filter(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args FilterArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	//query, err := core.CurrentQuery(ctx)
+	//if err != nil {
+	//	return inst, err
+	//}
+	//dir, err := s.directory(ctx, query, struct{}{})
+	//if err != nil {
+	//	return inst, err
+	//}
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, err
-	}
-	dir, err := s.directory(ctx, query, struct{}{})
-	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
-	return dir.WithDirectory(ctx, "/", parent, args.CopyFilter, "")
+	platform := parent.Self().Platform
+	//return core.NewScratchDirectory(ctx, platform)
+	scratchDir := core.Directory{
+		Platform: platform,
+		Dir:      "/",
+	}
+
+	filtered, err := scratchDir.WithDirectory(ctx, "/", parent.Self(), args.CopyFilter, "")
+	if err != nil {
+		return inst, fmt.Errorf("failed to filter: %w", err)
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, filtered)
 }
 
 type dirWithTimestampsArgs struct {
@@ -863,6 +880,8 @@ func applyDockerIgnore(ctx context.Context, srv *dagql.Server, parent dagql.Obje
 		return parent, nil
 	}
 
+	fmt.Printf("ACB calling srv.Select on parent %+v\n", parent)
+
 	// apply the dockerignore exclusions
 	err = srv.Select(ctx, parent, &buildctxDir,
 		dagql.Selector{
@@ -902,6 +921,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.ObjectRe
 		fmt.Printf("ACB dockerBuild err3, %v\n", err)
 		return nil, err
 	}
+	fmt.Printf("ACB dockerBuild buildctxDir has def %v\n", buildctxDir.Self().LLB.Def)
 
 	ctr := core.NewContainer(platform)
 
