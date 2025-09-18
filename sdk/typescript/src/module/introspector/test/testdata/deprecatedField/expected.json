@@ -1,0 +1,69 @@
+{
+  "name": "DeprecatedField",
+  "objects": {
+    "DeprecatedFields": {
+      "name": "DeprecatedFields",
+      "description": "Module exposing deprecated fields.",
+      "deprecated": "",
+      "methods": {
+        "record": {
+          "name": "record",
+          "description": "",
+          "deprecated": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "LegacyRecord"
+          }
+        }
+      },
+      "properties": {
+        "legacyField": {
+          "name": "legacyField",
+          "description": "",
+          "deprecated": "Inline note that this field is going away.",
+          "type": {
+            "kind": "STRING_KIND"
+          },
+          "isExposed": true
+        },
+        "latestField": {
+          "name": "latestField",
+          "description": "",
+          "deprecated": "",
+          "type": {
+            "kind": "STRING_KIND"
+          },
+          "isExposed": true
+        }
+      }
+    },
+    "LegacyRecord": {
+      "name": "LegacyRecord",
+      "description": "",
+      "properties": {
+        "note": {
+          "name": "note",
+          "description": "",
+          "deprecated": "Prefer `message`.",
+          "type": {
+            "kind": "STRING_KIND"
+          },
+          "isExposed": true
+        },
+        "message": {
+          "name": "message",
+          "description": "",
+          "deprecated": "",
+          "type": {
+            "kind": "STRING_KIND"
+          },
+          "isExposed": true
+        }
+      },
+      "deprecated": "Alias maintained only for compatibility."
+    }
+  },
+  "enums": {},
+  "interfaces": {}
+}

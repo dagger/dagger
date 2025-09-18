@@ -5,6 +5,7 @@ import {
   ModuleID,
   TypeDef,
   TypeDefKind,
+  TypeDefWithFieldOpts,
   TypeDefWithObjectOpts,
   SourceMap,
   FunctionCachePolicy,
@@ -65,13 +66,19 @@ export class Register {
       // Register all fields that belong to this object
       Object.values(object.properties).forEach((field) => {
         if (field.isExposed) {
+          const fieldOpts = {
+            description: field.description,
+            sourceMap: addSourceMap(field),
+          } as TypeDefWithFieldOpts
+
+          if (field.deprecated) {
+            fieldOpts.deprecated = field.deprecated
+          }
+
           typeDef = typeDef.withField(
             field.alias ?? field.name,
             addTypeDef(field.type!),
-            {
-              description: field.description,
-              sourceMap: addSourceMap(field),
-            },
+            fieldOpts,
           )
         }
       })
