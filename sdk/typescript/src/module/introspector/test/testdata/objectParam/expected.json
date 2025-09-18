@@ -107,6 +107,7 @@
         "content": {
           "name": "content",
           "description": "",
+          "deprecated": "",
           "type": {
             "kind": "STRING_KIND"
           },
