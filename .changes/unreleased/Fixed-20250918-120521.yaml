@@ -1,7 +1,0 @@
-kind: Fixed
-body: |
-    Fixes a regression in `Directory.withFiles` which set the wrong path
-time: 2025-09-18T12:05:21.759942725+01:00
-custom:
-    Author: jedevc
-    PR: "11087"
