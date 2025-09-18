@@ -1247,6 +1247,11 @@ export type FunctionWithArgOpts = {
    * The source map for the argument definition.
    */
   sourceMap?: SourceMap
+
+  /**
+   * If deprecated, the reason or migration path.
+   */
+  deprecated?: string
 }
 
 export type FunctionWithCachePolicyOpts = {
@@ -2055,6 +2060,11 @@ export type TypeDefWithEnumMemberOpts = {
    * The source map for the enum member definition.
    */
   sourceMap?: SourceMap
+
+  /**
+   * If deprecated, the reason or migration path.
+   */
+  deprecated?: string
 }
 
 export type TypeDefWithEnumValueOpts = {
@@ -2067,6 +2077,11 @@ export type TypeDefWithEnumValueOpts = {
    * The source map for the enum value definition.
    */
   sourceMap?: SourceMap
+
+  /**
+   * If deprecated, the reason or migration path.
+   */
+  deprecated?: string
 }
 
 export type TypeDefWithFieldOpts = {
@@ -2079,6 +2094,11 @@ export type TypeDefWithFieldOpts = {
    * The source map for the field definition.
    */
   sourceMap?: SourceMap
+
+  /**
+   * If deprecated, the reason or migration path.
+   */
+  deprecated?: string
 }
 
 export type TypeDefWithInterfaceOpts = {
@@ -2089,6 +2109,7 @@ export type TypeDefWithInterfaceOpts = {
 export type TypeDefWithObjectOpts = {
   description?: string
   sourceMap?: SourceMap
+  deprecated?: string
 }
 
 export type TypeDefWithScalarOpts = {
@@ -5368,6 +5389,7 @@ export class EnumTypeDef extends BaseClient {
  */
 export class EnumValueTypeDef extends BaseClient {
   private readonly _id?: EnumValueTypeDefID = undefined
+  private readonly _deprecated?: string = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
   private readonly _value?: string = undefined
@@ -5378,6 +5400,7 @@ export class EnumValueTypeDef extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: EnumValueTypeDefID,
+    _deprecated?: string,
     _description?: string,
     _name?: string,
     _value?: string,
@@ -5385,6 +5408,7 @@ export class EnumValueTypeDef extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._deprecated = _deprecated
     this._description = _description
     this._name = _name
     this._value = _value
@@ -5401,6 +5425,21 @@ export class EnumValueTypeDef extends BaseClient {
     const ctx = this._ctx.select("id")
 
     const response: Awaited<EnumValueTypeDefID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The reason this enum member is deprecated, if any.
+   */
+  deprecated = async (): Promise<string> => {
+    if (this._deprecated) {
+      return this._deprecated
+    }
+
+    const ctx = this._ctx.select("deprecated")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
@@ -6530,6 +6569,7 @@ export class ErrorValue extends BaseClient {
  */
 export class FieldTypeDef extends BaseClient {
   private readonly _id?: FieldTypeDefID = undefined
+  private readonly _deprecated?: string = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
 
@@ -6539,12 +6579,14 @@ export class FieldTypeDef extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: FieldTypeDefID,
+    _deprecated?: string,
     _description?: string,
     _name?: string,
   ) {
     super(ctx)
 
     this._id = _id
+    this._deprecated = _deprecated
     this._description = _description
     this._name = _name
   }
@@ -6560,6 +6602,21 @@ export class FieldTypeDef extends BaseClient {
     const ctx = this._ctx.select("id")
 
     const response: Awaited<FieldTypeDefID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The reason this enum member is deprecated, if any.
+   */
+  deprecated = async (): Promise<string> => {
+    if (this._deprecated) {
+      return this._deprecated
+    }
+
+    const ctx = this._ctx.select("deprecated")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
@@ -6871,6 +6928,7 @@ export class File extends BaseClient {
  */
 export class Function_ extends BaseClient {
   private readonly _id?: FunctionID = undefined
+  private readonly _deprecated?: string = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
 
@@ -6880,12 +6938,14 @@ export class Function_ extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: FunctionID,
+    _deprecated?: string,
     _description?: string,
     _name?: string,
   ) {
     super(ctx)
 
     this._id = _id
+    this._deprecated = _deprecated
     this._description = _description
     this._name = _name
   }
@@ -6920,6 +6980,21 @@ export class Function_ extends BaseClient {
     return response.map((r) =>
       new Client(ctx.copy()).loadFunctionArgFromID(r.id),
     )
+  }
+
+  /**
+   * The reason this function is deprecated, if any.
+   */
+  deprecated = async (): Promise<string> => {
+    if (this._deprecated) {
+      return this._deprecated
+    }
+
+    const ctx = this._ctx.select("deprecated")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -6977,6 +7052,7 @@ export class Function_ extends BaseClient {
    * @param opts.defaultPath If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
    * @param opts.ignore Patterns to ignore when loading the contextual argument value.
    * @param opts.sourceMap The source map for the argument definition.
+   * @param opts.deprecated If deprecated, the reason or migration path.
    */
   withArg = (
     name: string,
@@ -7005,6 +7081,15 @@ export class Function_ extends BaseClient {
       ...opts,
       __metadata: metadata,
     })
+    return new Function_(ctx)
+  }
+
+  /**
+   * Returns the function with the given deprecated string.
+   * @param deprecated If deprecated, the reason or migration path.
+   */
+  withDeprecated = (deprecated: string): Function_ => {
+    const ctx = this._ctx.select("withDeprecated", { deprecated })
     return new Function_(ctx)
   }
 
@@ -7045,6 +7130,7 @@ export class FunctionArg extends BaseClient {
   private readonly _id?: FunctionArgID = undefined
   private readonly _defaultPath?: string = undefined
   private readonly _defaultValue?: JSON = undefined
+  private readonly _deprecated?: string = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
 
@@ -7056,6 +7142,7 @@ export class FunctionArg extends BaseClient {
     _id?: FunctionArgID,
     _defaultPath?: string,
     _defaultValue?: JSON,
+    _deprecated?: string,
     _description?: string,
     _name?: string,
   ) {
@@ -7064,6 +7151,7 @@ export class FunctionArg extends BaseClient {
     this._id = _id
     this._defaultPath = _defaultPath
     this._defaultValue = _defaultValue
+    this._deprecated = _deprecated
     this._description = _description
     this._name = _name
   }
@@ -7109,6 +7197,21 @@ export class FunctionArg extends BaseClient {
     const ctx = this._ctx.select("defaultValue")
 
     const response: Awaited<JSON> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The reason this function is deprecated, if any.
+   */
+  deprecated = async (): Promise<string> => {
+    if (this._deprecated) {
+      return this._deprecated
+    }
+
+    const ctx = this._ctx.select("deprecated")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
@@ -9716,6 +9819,7 @@ export class ModuleSource extends BaseClient {
  */
 export class ObjectTypeDef extends BaseClient {
   private readonly _id?: ObjectTypeDefID = undefined
+  private readonly _deprecated?: string = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
   private readonly _sourceModuleName?: string = undefined
@@ -9726,6 +9830,7 @@ export class ObjectTypeDef extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: ObjectTypeDefID,
+    _deprecated?: string,
     _description?: string,
     _name?: string,
     _sourceModuleName?: string,
@@ -9733,6 +9838,7 @@ export class ObjectTypeDef extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._deprecated = _deprecated
     this._description = _description
     this._name = _name
     this._sourceModuleName = _sourceModuleName
@@ -9759,6 +9865,21 @@ export class ObjectTypeDef extends BaseClient {
   constructor_ = (): Function_ => {
     const ctx = this._ctx.select("constructor")
     return new Function_(ctx)
+  }
+
+  /**
+   * The reason this enum member is deprecated, if any.
+   */
+  deprecated = async (): Promise<string> => {
+    if (this._deprecated) {
+      return this._deprecated
+    }
+
+    const ctx = this._ctx.select("deprecated")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -11664,6 +11785,7 @@ export class TypeDef extends BaseClient {
    * @param opts.value The value of the member in the enum
    * @param opts.description A doc string for the member, if any
    * @param opts.sourceMap The source map for the enum member definition.
+   * @param opts.deprecated If deprecated, the reason or migration path.
    */
   withEnumMember = (
     name: string,
@@ -11678,6 +11800,7 @@ export class TypeDef extends BaseClient {
    * @param value The name of the value in the enum
    * @param opts.description A doc string for the value, if any
    * @param opts.sourceMap The source map for the enum value definition.
+   * @param opts.deprecated If deprecated, the reason or migration path.
    * @deprecated Use withEnumMember instead
    */
   withEnumValue = (value: string, opts?: TypeDefWithEnumValueOpts): TypeDef => {
@@ -11691,6 +11814,7 @@ export class TypeDef extends BaseClient {
    * @param typeDef The type of the field
    * @param opts.description A doc string for the field, if any
    * @param opts.sourceMap The source map for the field definition.
+   * @param opts.deprecated If deprecated, the reason or migration path.
    */
   withField = (
     name: string,
