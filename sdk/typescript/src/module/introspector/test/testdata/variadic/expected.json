@@ -4,6 +4,7 @@
     "Variadic": {
       "name": "Variadic",
       "description": "",
+      "deprecated": "",
       "methods": {
         "fullVariadicStr": {
           "name": "fullVariadicStr",

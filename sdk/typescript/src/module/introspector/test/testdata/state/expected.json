@@ -5,6 +5,7 @@
     "State": {
       "name": "State",
       "description": "State module",
+      "deprecated": "",
       "methods": {
         "base": {
           "name": "base",

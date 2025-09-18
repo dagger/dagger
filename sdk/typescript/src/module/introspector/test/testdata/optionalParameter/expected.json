@@ -4,6 +4,7 @@
     "OptionalParameter": {
       "name": "OptionalParameter",
       "description": "OptionalParameter class",
+      "deprecated": "",
       "methods": {
         "helloWorld": {
           "name": "helloWorld",

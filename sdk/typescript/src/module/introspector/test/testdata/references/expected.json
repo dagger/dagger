@@ -4,6 +4,7 @@
     "References": {
       "name": "References",
       "description": "References class\n\ntest",
+      "deprecated": "",
       "constructor": {
         "arguments": {
           "data": {
@@ -161,7 +162,8 @@
           },
           "isExposed": true
         }
-      }
+      },
+      "deprecated": ""
     }
   },
   "enums": {

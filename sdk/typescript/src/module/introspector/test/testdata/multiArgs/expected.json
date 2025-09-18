@@ -4,6 +4,7 @@
     "MultiArgs": {
       "name": "MultiArgs",
       "description": "",
+      "deprecated": "",
       "methods": {
         "compute": {
           "name": "compute",

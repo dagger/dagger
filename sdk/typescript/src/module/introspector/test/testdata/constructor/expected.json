@@ -5,6 +5,7 @@
     "Constructor": {
       "name": "Constructor",
       "description": "Constructor class",
+      "deprecated": "",
       "constructor": {
         "arguments": {
           "name": {

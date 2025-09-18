@@ -4,6 +4,7 @@
     "CoreEnums": {
       "name": "CoreEnums",
       "description": "",
+      "deprecated": "",
       "methods": {
         "toImageLayerCompression": {
           "name": "toImageLayerCompression",

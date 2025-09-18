@@ -4,6 +4,7 @@
     "Alias": {
       "name": "Alias",
       "description": "",
+      "deprecated": "",
       "constructor": {
         "arguments": {
           "ctr": {
@@ -136,6 +137,7 @@
     "Bar": {
       "name": "Bar",
       "description": "",
+      "deprecated": "",
       "constructor": {
         "arguments": {
           "baz": {

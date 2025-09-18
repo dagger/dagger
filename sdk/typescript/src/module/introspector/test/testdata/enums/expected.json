@@ -4,6 +4,7 @@
     "Enums": {
       "name": "Enums",
       "description": "",
+      "deprecated": "",
       "methods": {
         "setStatus": {
           "name": "setStatus",
