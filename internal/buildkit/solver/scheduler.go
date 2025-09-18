@@ -154,25 +154,9 @@ func (s *scheduler) dispatch(e *edge) {
 	if e.keysDidChange {
 		if k := e.currentIndexKey(); k != nil {
 			// skip this if not at least 1 key per dep
-			origEdge := e.index.LoadOrStore(k, e)
-			if origEdge != nil {
-				if e.isDep(origEdge) || origEdge.isDep(e) {
-					debugSchedulerSkipMergeDueToDependency(e, origEdge)
-				} else {
-					dest, src := origEdge, e
-					if s.ef.hasOwner(origEdge.edge, e.edge) {
-						debugSchedulerSwapMergeDueToOwner(e, origEdge)
-						dest, src = src, dest
-					}
-
-					debugSchedulerMergingEdges(src, dest)
-					if s.mergeTo(dest, src) {
-						s.ef.setEdge(src.edge, dest)
-					} else {
-						debugSchedulerMergingEdgesSkipped(src, dest)
-					}
-				}
-			}
+			// NOTE: we disabled edge merging here, but leaving in this LoadOrStore since
+			// it has side-effects and who knows if it's load-bearing or not
+			_ = e.index.LoadOrStore(k, e)
 		}
 		e.keysDidChange = false
 	}
@@ -283,52 +267,6 @@ func (s *scheduler) newRequestWithFunc(e *edge, f func(context.Context) (any, er
 	s.outgoing[e] = append(s.outgoing[e], p)
 	go start()
 	return p.Receiver
-}
-
-// mergeTo merges the state from one edge to another. source edge is discarded.
-func (s *scheduler) mergeTo(target, src *edge) bool {
-	if target.edge.Vertex.Options().SkipEdgeMerge || src.edge.Vertex.Options().SkipEdgeMerge {
-		return false
-	}
-	if !target.edge.Vertex.Options().IgnoreCache && src.edge.Vertex.Options().IgnoreCache {
-		return false
-	}
-	for _, inc := range s.incoming[src] {
-		inc.mu.Lock()
-		inc.Target = target
-		s.incoming[target] = append(s.incoming[target], inc)
-		inc.mu.Unlock()
-	}
-
-	for _, out := range s.outgoing[src] {
-		out.mu.Lock()
-		out.From = target
-		s.outgoing[target] = append(s.outgoing[target], out)
-		out.mu.Unlock()
-		out.Receiver.Cancel()
-	}
-
-	delete(s.incoming, src)
-	delete(s.outgoing, src)
-	s.signal(target)
-
-	for i, d := range src.deps {
-		for _, k := range d.keys {
-			target.secondaryExporters = append(target.secondaryExporters, expDep{i, CacheKeyWithSelector{CacheKey: k, Selector: src.cacheMap.Deps[i].Selector}})
-		}
-		if d.slowCacheKey != nil {
-			target.secondaryExporters = append(target.secondaryExporters, expDep{i, CacheKeyWithSelector{CacheKey: *d.slowCacheKey}})
-		}
-		if d.result != nil {
-			for _, dk := range d.result.CacheKeys() {
-				target.secondaryExporters = append(target.secondaryExporters, expDep{i, CacheKeyWithSelector{CacheKey: dk, Selector: src.cacheMap.Deps[i].Selector}})
-			}
-		}
-	}
-
-	// TODO(tonistiigi): merge cache providers
-
-	return true
 }
 
 // edgeFactory allows access to the edges from a shared graph

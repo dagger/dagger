@@ -63,50 +63,6 @@ func debugSchedulerCheckEdge(e *edge) bool {
 	return false
 }
 
-func debugSchedulerSkipMergeDueToDependency(e, origEdge *edge) {
-	bklog.G(context.TODO()).
-		WithField("edge_vertex_name", e.edge.Vertex.Name()).
-		WithField("edge_vertex_digest", e.edge.Vertex.Digest()).
-		WithField("edge_index", e.edge.Index).
-		WithField("origEdge_vertex_name", origEdge.edge.Vertex.Name()).
-		WithField("origEdge_vertex_digest", origEdge.edge.Vertex.Digest()).
-		WithField("origEdge_index", origEdge.edge.Index).
-		Debug("skip merge due to dependency")
-}
-
-func debugSchedulerSwapMergeDueToOwner(e, origEdge *edge) {
-	bklog.G(context.TODO()).
-		WithField("edge_vertex_name", e.edge.Vertex.Name()).
-		WithField("edge_vertex_digest", e.edge.Vertex.Digest()).
-		WithField("edge_index", e.edge.Index).
-		WithField("origEdge_vertex_name", origEdge.edge.Vertex.Name()).
-		WithField("origEdge_vertex_digest", origEdge.edge.Vertex.Digest()).
-		WithField("origEdge_index", origEdge.edge.Index).
-		Debug("swap merge due to owner")
-}
-
-func debugSchedulerMergingEdges(src, dest *edge) {
-	bklog.G(context.TODO()).
-		WithField("source_edge_vertex_name", src.edge.Vertex.Name()).
-		WithField("source_edge_vertex_digest", src.edge.Vertex.Digest()).
-		WithField("source_edge_index", src.edge.Index).
-		WithField("dest_vertex_name", dest.edge.Vertex.Name()).
-		WithField("dest_vertex_digest", dest.edge.Vertex.Digest()).
-		WithField("dest_index", dest.edge.Index).
-		Debug("merging edges")
-}
-
-func debugSchedulerMergingEdgesSkipped(src, dest *edge) {
-	bklog.G(context.TODO()).
-		WithField("source_edge_vertex_name", src.edge.Vertex.Name()).
-		WithField("source_edge_vertex_digest", src.edge.Vertex.Digest()).
-		WithField("source_edge_index", src.edge.Index).
-		WithField("dest_vertex_name", dest.edge.Vertex.Name()).
-		WithField("dest_vertex_digest", dest.edge.Vertex.Digest()).
-		WithField("dest_index", dest.edge.Index).
-		Debug("merging edges skipped")
-}
-
 func debugSchedulerPreUnpark(e *edge, inc []pipeSender, updates, allPipes []pipeReceiver) {
 	if e.debug {
 		debugSchedulerPreUnparkSlow(e, inc, updates, allPipes)
