@@ -172,6 +172,10 @@ export class Register {
           sourceMap: addSourceMap(arg),
         }
 
+        if (arg.deprecated) {
+          opts.deprecated = arg.deprecated
+        }
+
         let typeDef = addTypeDef(arg.type!)
         if (arg.isOptional) {
           typeDef = typeDef.withOptional(true)
