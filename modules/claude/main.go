@@ -1,4 +1,4 @@
-//
+// Claude Code agent module, using Claude Code directly as an MCP server.
 
 package main
 
