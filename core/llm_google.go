@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/googleapis/gax-go/v2/apierror"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
@@ -172,8 +173,7 @@ func (c *GenaiClient) processStreamResponse(
 					Type:     "function",
 				})
 			} else {
-				err = fmt.Errorf("unexpected genai part: %+v", part)
-				return content, toolCalls, tokenUsage, err
+				slog.Warn("ignoring unhandled genai part", "part", fmt.Sprintf("%+v", part), "content", fmt.Sprintf("%+v", candidate.Content))
 			}
 		}
 	}
