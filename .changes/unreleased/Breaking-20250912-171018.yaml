@@ -1,0 +1,7 @@
+kind: Breaking
+body: |
+    `GitRepository.branch`/`GitRepository.tag`/`GitRepository.commit` now only accept valid branches/tags/commits
+time: 2025-09-12T17:10:18.519415304+01:00
+custom:
+    Author: jedevc
+    PR: "11038"
