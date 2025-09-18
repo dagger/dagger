@@ -4987,41 +4987,41 @@ func (ContainerSuite) TestLoadHostContainerd(ctx context.Context, t *testctx.T) 
 	nerdctl := nerdctlSetup(ctx, t, c, containerSetupOpts{name: "load-host-containerd", version: "v2.1.2"})
 	fmt.Printf("ACB start2\n")
 	_ = nerdctl
-	//nerdctl, err := nerdctlLoadEngine(ctx, c, nerdctl, "registry.dagger.io/engine:dev")
-	//require.NoError(t, err)
+	nerdctl, err := nerdctlLoadEngine(ctx, c, nerdctl, "registry.dagger.io/engine:dev")
+	require.NoError(t, err)
 
-	//nerdctl = nerdctl.
-	//	WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
-	//	WithSymlink("/usr/local/bin/nerdctl", "/usr/local/bin/docker").
-	//	WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:dev?container=dagger.test&port=1234").
-	//	WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{InsecureRootCapabilities: true}).
-	//	WithoutFile("/usr/local/bin/docker")
+	nerdctl = nerdctl.
+		WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
+		WithSymlink("/usr/local/bin/nerdctl", "/usr/local/bin/docker").
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:dev?container=dagger.test&port=1234").
+		WithExec([]string{"dagger", "core", "version"}, dagger.ContainerWithExecOpts{InsecureRootCapabilities: true}).
+		WithoutFile("/usr/local/bin/docker")
 
-	//t.Run("tcp driver", func(ctx context.Context, t *testctx.T) {
-	//	alt := nerdctl.
-	//		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://containerd:1234")
+	t.Run("tcp driver", func(ctx context.Context, t *testctx.T) {
+		alt := nerdctl.
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://containerd:1234")
 
-	//	imageName := "foobar:" + identity.NewID()
-	//	_, err := alt.WithExec([]string{"nerdctl", "pull", "alpine"}).Sync(ctx)
-	//	require.NoError(t, err)
+		imageName := "foobar:" + identity.NewID()
+		_, err := alt.WithExec([]string{"nerdctl", "pull", "alpine"}).Sync(ctx)
+		require.NoError(t, err)
 
-	//	_, err = alt.
-	//		// HACK: buildkit isn't distributed in the nerdctl image we use, so
-	//		// just tag the image instead of building it
-	//		// WithExec([]string{"nerdctl", "build", "-t", imageName, "-"}, dagger.ContainerWithExecOpts{Stdin: "FROM alpine\nRUN touch /foo\n"}).
-	//		WithExec([]string{"nerdctl", "pull", "alpine"}).
-	//		WithExec([]string{"nerdctl", "tag", "alpine", imageName}).
-	//		Sync(ctx)
-	//	require.NoError(t, err)
+		_, err = alt.
+			// HACK: buildkit isn't distributed in the nerdctl image we use, so
+			// just tag the image instead of building it
+			// WithExec([]string{"nerdctl", "build", "-t", imageName, "-"}, dagger.ContainerWithExecOpts{Stdin: "FROM alpine\nRUN touch /foo\n"}).
+			WithExec([]string{"nerdctl", "pull", "alpine"}).
+			WithExec([]string{"nerdctl", "tag", "alpine", imageName}).
+			Sync(ctx)
+		require.NoError(t, err)
 
-	//	out, err := alt.
-	//		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE", "containerd").
-	//		WithExec([]string{"dagger", "shell", "-c", `host | container-image ` + imageName + ` | with-exec ls,/etc/fstab | stdout`}, dagger.ContainerWithExecOpts{
-	//			InsecureRootCapabilities: true,
-	//		}).Stdout(ctx)
-	//	require.NoError(t, err)
-	//	require.Equal(t, "/etc/fstab\n", out)
-	//})
+		out, err := alt.
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_IMAGESTORE", "containerd").
+			WithExec([]string{"dagger", "shell", "-c", `host | container-image ` + imageName + ` | with-exec ls,/etc/fstab | stdout`}, dagger.ContainerWithExecOpts{
+				InsecureRootCapabilities: true,
+			}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "/etc/fstab\n", out)
+	})
 }
 
 func (ContainerSuite) TestLoadSaveNone(ctx context.Context, t *testctx.T) {
