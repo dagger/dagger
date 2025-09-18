@@ -218,7 +218,7 @@ func (fn *Function) MergeDefaults(ctx context.Context, defaults *EnvFile) error 
 	debugSpan(ctx, "function %q of object %q: applying defaults %v", fn.Name, fn.ParentOriginalName, defaults.Environ)
 	for _, arg := range fn.Args {
 		if prettyValue, found := defaults.LookupCaseInsensitive(arg.Name); found {
-			debugSpan(ctx, "MATCH! argument %q of function %q: applying default %q", arg.Name, fn.Name, prettyValue)
+			tuiLog(ctx, "merging default: %s.%s(%s=%s)\n", fn.ParentOriginalName, fn.Name, arg.Name, prettyValue)
 			var (
 				newDefault          any
 				newDefaultJSON      []byte

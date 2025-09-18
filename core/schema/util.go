@@ -5,10 +5,19 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/introspection"
 )
+
+func tuiLog(ctx context.Context, msg string, args ...any) {
+	if len(msg) > 0 && msg[len(msg)-1] != '\n' {
+		msg += "\n"
+	}
+	w := telemetry.GlobalWriter(ctx, InstrumentationLibrary)
+	fmt.Fprintf(w, msg, args...)
+}
 
 type SchemaResolvers interface {
 	Install(*dagql.Server)

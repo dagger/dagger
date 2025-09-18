@@ -2437,8 +2437,6 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		}
 	}
 
-	globalW := telemetry.GlobalWriter(ctx, InstrumentationLibrary)
-
 	// Apply local defaults
 	envFile, envFilePath, err := loadHostEnvFile(ctx)
 	if err != nil {
@@ -2451,25 +2449,29 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		mod.NameField = originalSrc.Self().ModuleName
 		// Apply defaults using the blueprint name
 		bpDefaults := envFile.LookupPrefix(bp.ModuleName)
-		tuiLog(ctx, "%s: blueprint detected. %d defaults match blueprint name %q. Merging.",
-			originalSrc.Self().AsString(),
-			bpDefaults.Len(),
-			bp.ModuleName,
-		)
-		if err := mod.MergeDefaults(ctx, bpDefaults); err != nil {
-			return inst, fmt.Errorf("failed to merge defaults for %q from %q: %w", bp.ModuleName, envFilePath, err)
+		if bpDefaults.Len() > 0 {
+			tuiLog(ctx, "%s: %d defaults match blueprint name %q. Merging.",
+				originalSrc.Self().AsString(),
+				bpDefaults.Len(),
+				bp.ModuleName,
+			)
+			if err := mod.MergeDefaults(ctx, bpDefaults); err != nil {
+				return inst, fmt.Errorf("failed to merge defaults for %q from %q: %w", bp.ModuleName, envFilePath, err)
+			}
 		}
 	}
 	// Always apply defaults using the original name
 	// FIXME: sort out which module name to use when
 	defaults := envFile.LookupPrefix(originalSrc.Self().ModuleName)
-	tuiLog(ctx, "%s: %d defaults match module name %q. Merging.",
-		originalSrc.Self().AsString(),
-		defaults.Len(),
-		src.Self().ModuleName,
-	)
-	if err := mod.MergeDefaults(ctx, envFile.LookupPrefix(src.Self().ModuleName)); err != nil {
-		return inst, fmt.Errorf("failed to merge defaults for %q from %q: %w", mod.Name(), envFilePath, err)
+	if defaults.Len() > 0 {
+		tuiLog(ctx, "%s: %d defaults match module name %q. Merging.",
+			originalSrc.Self().AsString(),
+			defaults.Len(),
+			src.Self().ModuleName,
+		)
+		if err := mod.MergeDefaults(ctx, envFile.LookupPrefix(src.Self().ModuleName)); err != nil {
+			return inst, fmt.Errorf("failed to merge defaults for %q from %q: %w", mod.Name(), envFilePath, err)
+		}
 	}
 
 	// If we're loading a local module, load .env from its context dir,
@@ -2481,13 +2483,15 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 			return inst, fmt.Errorf("failed to load .env from %q: %w", src.Self().AsString(), err)
 		}
 		if modEnvFilePath != "" {
-			tuiLog(ctx, "%s: merging %d defaults from %s",
-				originalSrc.Self().AsString(),
-				modEnvFile.Len(),
-				modEnvFilePath,
-			)
-			if err := mod.MergeDefaults(ctx, modEnvFile); err != nil {
-				return inst, fmt.Errorf("failed to merge defaults for %q from %q: %w", mod.Name(), modEnvFilePath, err)
+			if modEnvFile.Len() > 0 {
+				tuiLog(ctx, "%s: merging %d defaults from %s",
+					originalSrc.Self().AsString(),
+					modEnvFile.Len(),
+					modEnvFilePath,
+				)
+				if err := mod.MergeDefaults(ctx, modEnvFile); err != nil {
+					return inst, fmt.Errorf("failed to merge defaults for %q from %q: %w", mod.Name(), modEnvFilePath, err)
+				}
 			}
 		}
 	}
@@ -2496,10 +2500,6 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", modName, err)
 	}
 	return inst, nil
-}
-
-func tuiLog(ctx context.Context, msg string, args ...any) {
-	fmt.Fprintf(globalW, msg, args...)
 }
 
 // Emit a one-off span for debugging purposes
