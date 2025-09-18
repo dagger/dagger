@@ -9,6 +9,7 @@
         "setStatus": {
           "name": "setStatus",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "status": {
               "name": "status",
@@ -30,6 +31,7 @@
         "getStatus": {
           "name": "getStatus",
           "description": "",
+          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "ENUM_KIND",

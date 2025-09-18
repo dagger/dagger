@@ -28,6 +28,7 @@
         "appendData": {
           "name": "addData",
           "description": "",
+          "deprecated": "",
           "alias": "appendData",
           "arguments": {
             "data": {
@@ -53,6 +54,7 @@
         "dumpDatas": {
           "name": "dumpDatas",
           "description": "",
+          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "LIST_KIND",
@@ -65,6 +67,7 @@
         "testEnum": {
           "name": "testEnum",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "test": {
               "name": "test",
@@ -87,6 +90,7 @@
         "testEnumStatic": {
           "name": "testEnumStatic",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "test": {
               "name": "test",
@@ -109,6 +113,7 @@
         "testDefaultValue": {
           "name": "testDefaultValue",
           "description": "Doc\n\nfoo",
+          "deprecated": "",
           "arguments": {
             "foo": {
               "name": "foo",
