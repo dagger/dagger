@@ -15,6 +15,7 @@
             "version": {
               "name": "version",
               "description": "version to use (default to: 3.16.2)",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -36,6 +37,7 @@
             "pkgs": {
               "name": "pkgs",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {
@@ -60,6 +62,7 @@
             "cmd": {
               "name": "cmd",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {

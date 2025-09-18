@@ -15,6 +15,7 @@
             "name": {
               "name": "name",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -35,6 +36,7 @@
             "name": {
               "name": "name",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },

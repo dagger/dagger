@@ -21,7 +21,8 @@
               "isVariadic": false,
               "isNullable": false,
               "isOptional": false,
-              "defaultPath": "."
+              "defaultPath": ".",
+              "deprecated": ""
             }
           },
           "returnType": {
@@ -44,6 +45,7 @@
               "isNullable": false,
               "isOptional": false,
               "defaultPath": ".",
+              "deprecated": "",
               "ignore": [
                 "dir"
               ]

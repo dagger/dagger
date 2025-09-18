@@ -14,6 +14,7 @@
             "vars": {
               "name": "vars",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {
@@ -37,6 +38,7 @@
             "separator": {
               "name": "separator",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -47,6 +49,7 @@
             "vars": {
               "name": "vars",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {
@@ -70,6 +73,7 @@
             "vars": {
               "name": "vars",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {
@@ -93,6 +97,7 @@
             "mul": {
               "name": "mul",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "INTEGER_KIND"
               },
@@ -103,6 +108,7 @@
             "vars": {
               "name": "vars",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {

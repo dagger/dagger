@@ -10,6 +10,7 @@
           "data": {
             "name": "data",
             "description": "",
+            "deprecated": "",
             "type": {
               "kind": "LIST_KIND",
               "typeDef": {
@@ -34,6 +35,7 @@
             "data": {
               "name": "data",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {
@@ -72,6 +74,7 @@
             "test": {
               "name": "test",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "ENUM_KIND",
                 "name": "TestEnum"
@@ -95,6 +98,7 @@
             "test": {
               "name": "test",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "ENUM_KIND",
                 "name": "TestEnum"
@@ -118,6 +122,7 @@
             "foo": {
               "name": "foo",
               "description": "Doc\n\ntest",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },

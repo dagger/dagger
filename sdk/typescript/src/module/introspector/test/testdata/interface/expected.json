@@ -52,6 +52,7 @@
             "n": {
               "name": "n",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "INTEGER_KIND"
               },
@@ -75,6 +76,7 @@
             "c": {
               "name": "c",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "OBJECT_KIND",
                 "name": "Container"
@@ -116,6 +118,7 @@
             "i": {
               "name": "i",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "INTERFACE_KIND",
                 "name": "IFace"

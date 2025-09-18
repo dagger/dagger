@@ -33,6 +33,7 @@
             "cmd": {
               "name": "cmd",
               "description": "Command to execute",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {

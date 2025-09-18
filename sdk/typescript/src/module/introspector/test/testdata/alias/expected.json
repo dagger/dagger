@@ -10,6 +10,7 @@
           "ctr": {
             "name": "ctr",
             "description": "",
+            "deprecated": "",
             "type": {
               "kind": "OBJECT_KIND",
               "name": "Container"
@@ -41,6 +42,7 @@
             "baz": {
               "name": "baz",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -51,6 +53,7 @@
             "foo": {
               "name": "foo",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "INTEGER_KIND"
               },
@@ -83,6 +86,7 @@
             "name": {
               "name": "name",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -104,6 +108,7 @@
             "name": {
               "name": "name",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -148,6 +153,7 @@
           "baz": {
             "name": "baz",
             "description": "",
+            "deprecated": "",
             "type": {
               "kind": "STRING_KIND"
             },
@@ -159,6 +165,7 @@
           "foo": {
             "name": "foo",
             "description": "",
+            "deprecated": "",
             "type": {
               "kind": "INTEGER_KIND"
             },

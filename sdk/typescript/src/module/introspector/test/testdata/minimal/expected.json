@@ -23,6 +23,7 @@
             "msg": {
               "name": "msg",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -43,6 +44,7 @@
             "msg": {
               "name": "msg",
               "description": "the message to echo",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -53,6 +55,7 @@
             "suffix": {
               "name": "suffix",
               "description": "String to append to the echoed message",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -64,6 +67,7 @@
             "times": {
               "name": "times",
               "description": "number of times to repeat the message",
+              "deprecated": "",
               "type": {
                 "kind": "INTEGER_KIND"
               },
@@ -85,6 +89,7 @@
             "msg": {
               "name": "msg",
               "description": "the message to echo",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -95,6 +100,7 @@
             "isQuestion": {
               "name": "isQuestion",
               "description": "set to true to add a question mark.",
+              "deprecated": "",
               "type": {
                 "kind": "BOOLEAN_KIND"
               },
@@ -116,6 +122,7 @@
             "msg": {
               "name": "msg",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -137,6 +144,7 @@
             "msg": {
               "name": "msg",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {
@@ -163,6 +171,7 @@
             "msgs": {
               "name": "msgs",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {
@@ -189,6 +198,7 @@
             "msgs": {
               "name": "msgs",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {
