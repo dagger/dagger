@@ -4,6 +4,7 @@
     "Minimal": {
       "name": "Minimal",
       "description": "This is the Minimal object",
+      "deprecated": "",
       "methods": {
         "hello": {
           "name": "hello",
