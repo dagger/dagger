@@ -1,0 +1,42 @@
+{
+  "name": "DeprecatedFunction",
+  "objects": {
+    "DeprecatedFunctions": {
+      "name": "DeprecatedFunctions",
+      "description": "",
+      "deprecated": "",
+      "methods": {
+        "legacy": {
+          "name": "legacy",
+          "description": "",
+          "deprecated": "Use `current` instead.",
+          "arguments": {},
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "empty": {
+          "name": "empty",
+          "description": "",
+          "deprecated": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "current": {
+          "name": "current",
+          "description": "",
+          "deprecated": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        }
+      },
+      "properties": {}
+    }
+  },
+  "enums": {},
+  "interfaces": {}
+}

@@ -154,6 +154,10 @@ export class Register {
       }
     }
 
+    if (fct.deprecated) {
+      fnDef = fnDef.withDeprecated(fct.deprecated)
+    }
+
     return fnDef
   }
 
