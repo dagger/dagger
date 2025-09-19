@@ -714,6 +714,12 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 func (fe *frontendPretty) keymapView() string {
 	outBuf := new(strings.Builder)
 	out := NewOutput(outBuf, termenv.WithProfile(fe.profile))
+	if fe.CloudEngine {
+		fmt.Fprint(out, lipgloss.NewStyle().
+			Foreground(lipgloss.ANSIColor(termenv.ANSIBrightMagenta)).
+			Render("⬢ cloud"))
+		fmt.Fprint(out, KeymapStyle.Render(" "))
+	}
 	fmt.Fprint(out, KeymapStyle.Render(strings.Repeat(HorizBar, 1)))
 	fmt.Fprint(out, KeymapStyle.Render(" "))
 	fe.renderKeymap(out, KeymapStyle)
