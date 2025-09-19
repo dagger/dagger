@@ -1854,31 +1854,6 @@
                 "ofType": null
               }
             }
-          },
-          {
-            "defaultValue": null,
-            "deprecationReason": null,
-            "description": "",
-            "directives": [],
-            "isDeprecated": false,
-            "name": "ignore",
-            "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "LIST",
-                "name": null,
-                "ofType": {
-                  "kind": "NON_NULL",
-                  "name": null,
-                  "ofType": {
-                    "kind": "SCALAR",
-                    "name": "String",
-                    "ofType": null
-                  }
-                }
-              }
-            }
           }
         ],
         "description": "Indicates that the argument defaults to a contextual path.",
@@ -1970,6 +1945,40 @@
           "ENUM_VALUE"
         ],
         "name": "experimental"
+      },
+      {
+        "args": [
+          {
+            "defaultValue": null,
+            "deprecationReason": null,
+            "description": "",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "patterns",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "LIST",
+                "name": null,
+                "ofType": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "description": "Filter directory contents using .gitignore-style glob patterns.",
+        "locations": [
+          "ARGUMENT_DEFINITION"
+        ],
+        "name": "ignorePatterns"
       },
       {
         "args": [
