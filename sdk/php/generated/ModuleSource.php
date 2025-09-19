@@ -258,6 +258,15 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * User-defined defaults read from local .env files
+     */
+    public function userDefaults(): EnvFile
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('userDefaults');
+        return new \Dagger\EnvFile($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The specified version of the git repo this source points to.
      */
     public function version(): string

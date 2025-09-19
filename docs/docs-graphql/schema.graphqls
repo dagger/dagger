@@ -3589,6 +3589,9 @@ type Module {
   """
   sync: ModuleID!
 
+  """User-defined default values, loaded from local .env files."""
+  userDefaults: EnvFile!
+
   """Retrieves the module with the given description"""
   withDescription(
     """The description to set"""
@@ -3748,6 +3751,9 @@ type ModuleSource {
   Forces evaluation of the module source, including any loading into the engine and associated validation.
   """
   sync: ModuleSourceID!
+
+  """User-defined defaults read from local .env files"""
+  userDefaults: EnvFile!
 
   """The specified version of the git repo this source points to."""
   version: String!
