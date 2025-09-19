@@ -254,7 +254,7 @@ func (src *ModuleSource) innerEnvFile(ctx context.Context) (renvFile *EnvFile, r
 	tuiLog(ctx, "%q: innerEnvFile()", src.ModuleName)
 	defer func() {
 		if rerr == nil {
-			tuiLog(ctx, "%q: innerEnvFile() -> %q %v", src.ModuleName, renvFilePath, renvFile.Variables())
+			tuiLog(ctx, "%q: innerEnvFile() -> %q %v", src.ModuleName, renvFilePath, renvFile)
 		}
 	}()
 	dag, err := CurrentDagqlServer(ctx)
@@ -263,17 +263,17 @@ func (src *ModuleSource) innerEnvFile(ctx context.Context) (renvFile *EnvFile, r
 	}
 	// We only allow loading an env file from local modules, for safety
 	if src.Kind != ModuleSourceKindLocal {
+		tuiLog(ctx, "%q: not a local module, not loading inner env file", src.ModuleName)
 		return nil, "", nil
 	}
 	// FIXME: .env must be at the root of the module directory
 	// If the user calls dagger from a subdirectory of the module, and that subdirectory contains a more
 	//  specialized .env, that will be ignored. To fix this, we need access to current workdir on the host,
 	// so that we can findup from there.
-	envFilePath := dagql.String(path.Join(
+	moduleDirPath := path.Join(
 		src.Local.ContextDirectoryPath, // path of the module's git root, on the host
 		src.SourceRootSubpath,          // path of the module directory, relative to its git root
-		".env",
-	))
+	)
 	// Check if the env file exists
 	var envFileExists bool
 	if err := dag.Select(ctx, dag.Root(), &envFileExists,
@@ -281,29 +281,32 @@ func (src *ModuleSource) innerEnvFile(ctx context.Context) (renvFile *EnvFile, r
 		dagql.Selector{
 			Field: "directory",
 			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String("/")},
-				{Name: "include", Value: dagql.ArrayInput[dagql.String]{envFilePath}},
+				{Name: "path", Value: dagql.String(moduleDirPath)},
+				{Name: "include", Value: dagql.ArrayInput[dagql.String]{".env"}},
 			},
 		},
 		dagql.Selector{
 			Field: "exists",
 			Args: []dagql.NamedInput{
-				{Name: "path", Value: envFilePath},
+				{Name: "path", Value: dagql.String(".env")},
 			},
 		},
 	); err != nil {
-		return nil, "", fmt.Errorf("failed to check for existence of inner env file at %s: %w", envFilePath, err)
+		return nil, "", fmt.Errorf("failed to check for inner env file in %s: %w",
+			moduleDirPath, err)
 	}
 	if !envFileExists {
+		tuiLog(ctx, "%q: no inner env file in %s", src.ModuleName, moduleDirPath)
 		return nil, "", nil
 	}
+	envFilePath := path.Join(moduleDirPath, ".env")
 	var envFile *EnvFile
 	if err := dag.Select(ctx, dag.Root(), &envFile,
 		dagql.Selector{Field: "host"},
 		dagql.Selector{
 			Field: "file",
 			Args: []dagql.NamedInput{
-				{Name: "path", Value: envFilePath},
+				{Name: "path", Value: dagql.String(envFilePath)},
 			},
 		},
 		dagql.Selector{
@@ -313,16 +316,16 @@ func (src *ModuleSource) innerEnvFile(ctx context.Context) (renvFile *EnvFile, r
 			},
 		},
 	); err != nil {
-		return nil, "", fmt.Errorf("failed to load inner env file at %s: %w", envFilePath, err)
+		return nil, "", fmt.Errorf("failed to load inner env file in %s: %w", moduleDirPath, err)
 	}
-	return envFile, envFilePath.String(), nil
+	return envFile, envFilePath, nil
 }
 
 func (src *ModuleSource) outerEnvFile(ctx context.Context) (renvFile *EnvFile, renvFilePath string, rerr error) {
 	tuiLog(ctx, "%q: outerEnvFile()", src.ModuleName)
 	defer func() {
 		if rerr == nil {
-			tuiLog(ctx, "%q: outerEnvFile() -> %q %v", src.ModuleName, renvFilePath, renvFile.Variables())
+			tuiLog(ctx, "%q: outerEnvFile() -> %q %v", src.ModuleName, renvFilePath, renvFile)
 		}
 	}()
 

@@ -2443,10 +2443,18 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		mod.NameField = originalSrc.Self().ModuleName
 	}
 
-	// Apply local defaults
-	defaults, err := src.Self().LocalDefaults(ctx)
+	// Load local defaults from the original source (not the blueprint)
+	defaults, err := originalSrc.Self().LocalDefaults(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load local defaults for module %q: %w", modName, err)
+	}
+	// If there is a blueprint, also load defaults from it
+	if bp := blueprintSrc.Self(); bp != nil {
+		bpDefaults, err := bp.LocalDefaults(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to load local defaults for blueprint module %q: %w", modName, err)
+		}
+		defaults = defaults.WithEnvFiles(bpDefaults)
 	}
 	for _, kv := range defaults.Variables() {
 		tuiLog(ctx, "%q: local default: %s=%s", modName, kv.Name, kv.Value)
