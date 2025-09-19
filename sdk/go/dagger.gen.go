@@ -8736,6 +8736,15 @@ func (r *Module) Sync(ctx context.Context) (*Module, error) {
 	}, nil
 }
 
+// User-defined default values, loaded from local .env files.
+func (r *Module) UserDefaults() *EnvFile {
+	q := r.query.Select("userDefaults")
+
+	return &EnvFile{
+		query: q,
+	}
+}
+
 // Retrieves the module with the given description
 func (r *Module) WithDescription(description string) *Module {
 	q := r.query.Select("withDescription")
@@ -9293,6 +9302,15 @@ func (r *ModuleSource) Sync(ctx context.Context) (*ModuleSource, error) {
 	return &ModuleSource{
 		query: q.Root().Select("loadModuleSourceFromID").Arg("id", id),
 	}, nil
+}
+
+// User-defined defaults read from local .env files
+func (r *ModuleSource) UserDefaults() *EnvFile {
+	q := r.query.Select("userDefaults")
+
+	return &EnvFile{
+		query: q,
+	}
 }
 
 // The specified version of the git repo this source points to.

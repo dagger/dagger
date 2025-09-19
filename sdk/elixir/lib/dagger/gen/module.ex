@@ -231,6 +231,20 @@ defmodule Dagger.Module do
   end
 
   @doc """
+  User-defined default values, loaded from local .env files.
+  """
+  @spec user_defaults(t()) :: Dagger.EnvFile.t()
+  def user_defaults(%__MODULE__{} = module) do
+    query_builder =
+      module.query_builder |> QB.select("userDefaults")
+
+    %Dagger.EnvFile{
+      query_builder: query_builder,
+      client: module.client
+    }
+  end
+
+  @doc """
   Retrieves the module with the given description
   """
   @spec with_description(t(), String.t()) :: Dagger.Module.t()

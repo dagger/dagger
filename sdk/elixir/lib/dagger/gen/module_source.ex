@@ -365,6 +365,20 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
+  User-defined defaults read from local .env files
+  """
+  @spec user_defaults(t()) :: Dagger.EnvFile.t()
+  def user_defaults(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("userDefaults")
+
+    %Dagger.EnvFile{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
   The specified version of the git repo this source points to.
   """
   @spec version(t()) :: {:ok, String.t()} | {:error, term()}

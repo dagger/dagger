@@ -9527,6 +9527,15 @@ impl Module {
         let query = self.selection.select("sync");
         query.execute(self.graphql_client.clone()).await
     }
+    /// User-defined default values, loaded from local .env files.
+    pub fn user_defaults(&self) -> EnvFile {
+        let query = self.selection.select("userDefaults");
+        EnvFile {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieves the module with the given description
     ///
     /// # Arguments
@@ -9791,6 +9800,15 @@ impl ModuleSource {
     pub async fn sync(&self) -> Result<ModuleSourceId, DaggerError> {
         let query = self.selection.select("sync");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// User-defined defaults read from local .env files
+    pub fn user_defaults(&self) -> EnvFile {
+        let query = self.selection.select("userDefaults");
+        EnvFile {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// The specified version of the git repo this source points to.
     pub async fn version(&self) -> Result<String, DaggerError> {
