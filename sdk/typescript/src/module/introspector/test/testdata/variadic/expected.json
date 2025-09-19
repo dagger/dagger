@@ -4,14 +4,17 @@
     "Variadic": {
       "name": "Variadic",
       "description": "",
+      "deprecated": "",
       "methods": {
         "fullVariadicStr": {
           "name": "fullVariadicStr",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "vars": {
               "name": "vars",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {
@@ -30,10 +33,12 @@
         "semiVariadicStr": {
           "name": "semiVariadicStr",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "separator": {
               "name": "separator",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -44,6 +49,7 @@
             "vars": {
               "name": "vars",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {
@@ -62,10 +68,12 @@
         "fullVariadicNum": {
           "name": "fullVariadicNum",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "vars": {
               "name": "vars",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {
@@ -84,10 +92,12 @@
         "semiVariadicNum": {
           "name": "semiVariadicNum",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "mul": {
               "name": "mul",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "INTEGER_KIND"
               },
@@ -98,6 +108,7 @@
             "vars": {
               "name": "vars",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {

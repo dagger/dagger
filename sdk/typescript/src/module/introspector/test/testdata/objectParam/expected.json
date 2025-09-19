@@ -1,46 +1,20 @@
 {
   "name": "ObjectParam",
   "objects": {
-    "Message": {
-      "name": "Message",
-      "description": "",
-      "constructor": {
-        "arguments": {
-          "content": {
-            "name": "content",
-            "description": "",
-            "type": {
-              "kind": "STRING_KIND"
-            },
-            "isVariadic": false,
-            "isNullable": false,
-            "isOptional": false
-          }
-        }
-      },
-      "methods": {},
-      "properties": {
-        "content": {
-          "name": "content",
-          "description": "",
-          "type": {
-            "kind": "STRING_KIND"
-          },
-          "isExposed": true
-        }
-      }
-    },
     "ObjectParam": {
       "name": "ObjectParam",
       "description": "",
+      "deprecated": "",
       "methods": {
         "sayHello": {
           "name": "sayHello",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "name": {
               "name": "name",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -57,10 +31,12 @@
         "upper": {
           "name": "upper",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "msg": {
               "name": "msg",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "OBJECT_KIND",
                 "name": "Message"
@@ -78,10 +54,12 @@
         "uppers": {
           "name": "uppers",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "msg": {
               "name": "msg",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {
@@ -104,6 +82,38 @@
         }
       },
       "properties": {}
+    },
+    "Message": {
+      "name": "Message",
+      "description": "",
+      "deprecated": "",
+      "constructor": {
+        "arguments": {
+          "content": {
+            "name": "content",
+            "description": "",
+            "deprecated": "",
+            "type": {
+              "kind": "STRING_KIND"
+            },
+            "isVariadic": false,
+            "isNullable": false,
+            "isOptional": false
+          }
+        }
+      },
+      "methods": {},
+      "properties": {
+        "content": {
+          "name": "content",
+          "description": "",
+          "deprecated": "",
+          "type": {
+            "kind": "STRING_KIND"
+          },
+          "isExposed": true
+        }
+      }
     }
   },
   "enums": {},

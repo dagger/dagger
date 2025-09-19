@@ -1,13 +1,46 @@
 {
   "name": "MultipleObjectsAsFields",
   "objects": {
+    "MultipleObjectsAsFields": {
+      "name": "MultipleObjectsAsFields",
+      "description": "",
+      "deprecated": "",
+      "constructor": {
+        "arguments": {}
+      },
+      "methods": {},
+      "properties": {
+        "test": {
+          "name": "test",
+          "description": "",
+          "deprecated": "",
+          "type": {
+            "kind": "OBJECT_KIND",
+            "name": "Test"
+          },
+          "isExposed": true
+        },
+        "lint": {
+          "name": "lint",
+          "description": "",
+          "deprecated": "",
+          "type": {
+            "kind": "OBJECT_KIND",
+            "name": "Lint"
+          },
+          "isExposed": true
+        }
+      }
+    },
     "Test": {
       "name": "Test",
       "description": "",
+      "deprecated": "",
       "methods": {
         "echo": {
           "name": "echo",
           "description": "",
+          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "STRING_KIND"
@@ -19,10 +52,12 @@
     "Lint": {
       "name": "Lint",
       "description": "",
+      "deprecated": "",
       "methods": {
         "echo": {
           "name": "echo",
           "description": "",
+          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "STRING_KIND"
@@ -30,34 +65,6 @@
         }
       },
       "properties": {}
-    },
-    "MultipleObjectsAsFields": {
-      "name": "MultipleObjectsAsFields",
-      "description": "",
-      "constructor": {
-        "arguments": {}
-      },
-      "methods": {},
-      "properties": {
-        "test": {
-          "name": "test",
-          "description": "",
-          "type": {
-            "kind": "OBJECT_KIND",
-            "name": "Test"
-          },
-          "isExposed": true
-        },
-        "lint": {
-          "name": "lint",
-          "description": "",
-          "type": {
-            "kind": "OBJECT_KIND",
-            "name": "Lint"
-          },
-          "isExposed": true
-        }
-      }
     }
   },
   "enums": {},

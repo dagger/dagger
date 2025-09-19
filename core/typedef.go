@@ -23,6 +23,7 @@ type Function struct {
 	Description string         `field:"true" doc:"A doc string for the function, if any."`
 	Args        []*FunctionArg `field:"true" doc:"Arguments accepted by the function, if any."`
 	ReturnType  *TypeDef       `field:"true" doc:"The type returned by the function."`
+	Deprecated  string         `field:"true" doc:"The reason this function is deprecated, if any."`
 
 	SourceMap dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this function declaration."`
 
@@ -75,9 +76,10 @@ func (fn Function) Clone() *Function {
 
 func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec, error) {
 	spec := dagql.FieldSpec{
-		Name:        fn.Name,
-		Description: formatGqlDescription(fn.Description),
-		Type:        fn.ReturnType.ToTyped(),
+		Name:             fn.Name,
+		Description:      formatGqlDescription(fn.Description),
+		Type:             fn.ReturnType.ToTyped(),
+		DeprecatedReason: fn.Deprecated,
 	}
 	if fn.SourceMap.Valid {
 		spec.Directives = append(spec.Directives, fn.SourceMap.Value.TypeDirective())
@@ -109,10 +111,11 @@ func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec
 		}
 
 		argSpec := dagql.InputSpec{
-			Name:        arg.Name,
-			Description: formatGqlDescription(arg.Description),
-			Type:        input,
-			Default:     defaultVal,
+			Name:             arg.Name,
+			Description:      formatGqlDescription(arg.Description),
+			Type:             input,
+			Default:          defaultVal,
+			DeprecatedReason: arg.Deprecated,
 		}
 		if arg.SourceMap.Valid {
 			argSpec.Directives = append(argSpec.Directives, arg.SourceMap.Value.TypeDirective())
@@ -129,7 +132,13 @@ func (fn *Function) WithDescription(desc string) *Function {
 	return fn
 }
 
-func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultValue JSON, defaultPath string, ignore []string, sourceMap *SourceMap) *Function {
+func (fn *Function) WithDeprecated(deprecated string) *Function {
+	fn = fn.Clone()
+	fn.Deprecated = strings.TrimSpace(deprecated)
+	return fn
+}
+
+func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultValue JSON, defaultPath string, ignore []string, sourceMap *SourceMap, deprecated string) *Function {
 	fn = fn.Clone()
 	arg := &FunctionArg{
 		Name:         strcase.ToLowerCamel(name),
@@ -139,6 +148,7 @@ func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultV
 		OriginalName: name,
 		DefaultPath:  defaultPath,
 		Ignore:       ignore,
+		Deprecated:   deprecated,
 	}
 	if sourceMap != nil {
 		arg.SourceMap = dagql.NonNull(sourceMap)
@@ -218,6 +228,7 @@ type FunctionArg struct {
 	DefaultValue JSON                       `field:"true" doc:"A default value to use for this argument when not explicitly set by the caller, if any."`
 	DefaultPath  string                     `field:"true" doc:"Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory"`
 	Ignore       []string                   `field:"true" doc:"Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner."`
+	Deprecated   string                     `field:"true" doc:"The reason this function is deprecated, if any."`
 
 	// Below are not in public API
 
@@ -468,9 +479,9 @@ func (typeDef *TypeDef) WithListOf(elem *TypeDef) *TypeDef {
 	return typeDef
 }
 
-func (typeDef *TypeDef) WithObject(name, desc string, sourceMap *SourceMap) *TypeDef {
+func (typeDef *TypeDef) WithObject(name, desc, deprecated string, sourceMap *SourceMap) *TypeDef {
 	typeDef = typeDef.WithKind(TypeDefKindObject)
-	typeDef.AsObject = dagql.NonNull(NewObjectTypeDef(name, desc).WithSourceMap(sourceMap))
+	typeDef.AsObject = dagql.NonNull(NewObjectTypeDef(name, desc, deprecated).WithSourceMap(sourceMap))
 	return typeDef
 }
 
@@ -486,7 +497,7 @@ func (typeDef *TypeDef) WithOptional(optional bool) *TypeDef {
 	return typeDef
 }
 
-func (typeDef *TypeDef) WithObjectField(name string, fieldType *TypeDef, desc string, sourceMap *SourceMap) (*TypeDef, error) {
+func (typeDef *TypeDef) WithObjectField(name string, fieldType *TypeDef, desc string, sourceMap *SourceMap, deprecated string) (*TypeDef, error) {
 	if !typeDef.AsObject.Valid {
 		return nil, fmt.Errorf("cannot add function to non-object type: %s", typeDef.Kind)
 	}
@@ -497,6 +508,7 @@ func (typeDef *TypeDef) WithObjectField(name string, fieldType *TypeDef, desc st
 		OriginalName: name,
 		Description:  desc,
 		TypeDef:      fieldType,
+		Deprecated:   deprecated,
 	}
 	if sourceMap != nil {
 		field.SourceMap = dagql.NonNull(sourceMap)
@@ -540,7 +552,7 @@ func (typeDef *TypeDef) WithEnum(name, desc string, sourceMap *SourceMap) *TypeD
 	return typeDef
 }
 
-func (typeDef *TypeDef) WithEnumValue(name, value, desc string, sourceMap *SourceMap) (*TypeDef, error) {
+func (typeDef *TypeDef) WithEnumValue(name, value, desc, deprecated string, sourceMap *SourceMap) (*TypeDef, error) {
 	if !typeDef.AsEnum.Valid {
 		return nil, fmt.Errorf("cannot add value to non-enum type: %s", typeDef.Kind)
 	}
@@ -549,12 +561,12 @@ func (typeDef *TypeDef) WithEnumValue(name, value, desc string, sourceMap *Sourc
 	}
 
 	typeDef = typeDef.Clone()
-	typeDef.AsEnum.Value.Members = append(typeDef.AsEnum.Value.Members, NewEnumValueTypeDef(name, value, desc, sourceMap))
+	typeDef.AsEnum.Value.Members = append(typeDef.AsEnum.Value.Members, NewEnumValueTypeDef(name, value, desc, deprecated, sourceMap))
 
 	return typeDef, nil
 }
 
-func (typeDef *TypeDef) WithEnumMember(name, value, desc string, sourceMap *SourceMap) (*TypeDef, error) {
+func (typeDef *TypeDef) WithEnumMember(name, value, desc, deprecated string, sourceMap *SourceMap) (*TypeDef, error) {
 	if !typeDef.AsEnum.Valid {
 		return nil, fmt.Errorf("cannot add value to non-enum type: %s", typeDef.Kind)
 	}
@@ -563,7 +575,7 @@ func (typeDef *TypeDef) WithEnumMember(name, value, desc string, sourceMap *Sour
 	}
 
 	typeDef = typeDef.Clone()
-	typeDef.AsEnum.Value.Members = append(typeDef.AsEnum.Value.Members, NewEnumMemberTypeDef(name, value, desc, sourceMap))
+	typeDef.AsEnum.Value.Members = append(typeDef.AsEnum.Value.Members, NewEnumMemberTypeDef(name, value, desc, deprecated, sourceMap))
 
 	return typeDef, nil
 }
@@ -644,6 +656,7 @@ type ObjectTypeDef struct {
 	Fields      []*FieldTypeDef            `field:"true" doc:"Static fields defined on this object, if any."`
 	Functions   []*Function                `field:"true" doc:"Functions defined on this object, if any."`
 	Constructor dagql.Nullable[*Function]  `field:"true" doc:"The function used to construct new instances of this object, if any"`
+	Deprecated  string                     `field:"true" doc:"The reason this enum member is deprecated, if any."`
 
 	// SourceModuleName is currently only set when returning the TypeDef from the Objects field on Module
 	SourceModuleName string `field:"true" doc:"If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise."`
@@ -681,11 +694,12 @@ func (*ObjectTypeDef) TypeDescription() string {
 	return "A definition of a custom object defined in a Module."
 }
 
-func NewObjectTypeDef(name, description string) *ObjectTypeDef {
+func NewObjectTypeDef(name, description, deprecated string) *ObjectTypeDef {
 	return &ObjectTypeDef{
 		Name:         strcase.ToCamel(name),
 		OriginalName: name,
 		Description:  description,
+		Deprecated:   deprecated,
 	}
 }
 
@@ -791,6 +805,8 @@ type FieldTypeDef struct {
 	TypeDef     *TypeDef `field:"true" doc:"The type of the field."`
 
 	SourceMap dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this field declaration."`
+
+	Deprecated string `field:"true" doc:"The reason this enum member is deprecated, if any."`
 
 	// Below are not in public API
 
@@ -1066,6 +1082,7 @@ type EnumMemberTypeDef struct {
 	Value       string                     `field:"true" doc:"The value of the enum member"`
 	Description string                     `field:"true" doc:"A doc string for the enum member, if any."`
 	SourceMap   dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this enum member declaration."`
+	Deprecated  string                     `field:"true" doc:"The reason this enum member is deprecated, if any."`
 
 	OriginalName string
 }
@@ -1083,12 +1100,13 @@ func (*EnumMemberTypeDef) TypeDescription() string {
 	return "A definition of a value in a custom enum defined in a Module."
 }
 
-func NewEnumMemberTypeDef(name, value, description string, sourceMap *SourceMap) *EnumMemberTypeDef {
+func NewEnumMemberTypeDef(name, value, description, deprecated string, sourceMap *SourceMap) *EnumMemberTypeDef {
 	typedef := &EnumMemberTypeDef{
 		OriginalName: name,
 		Name:         strcase.ToScreamingSnake(name),
 		Value:        value,
 		Description:  description,
+		Deprecated:   deprecated,
 	}
 	if sourceMap != nil {
 		typedef.SourceMap = dagql.NonNull(sourceMap)
@@ -1096,12 +1114,13 @@ func NewEnumMemberTypeDef(name, value, description string, sourceMap *SourceMap)
 	return typedef
 }
 
-func NewEnumValueTypeDef(name, value, description string, sourceMap *SourceMap) *EnumMemberTypeDef {
+func NewEnumValueTypeDef(name, value, description, deprecated string, sourceMap *SourceMap) *EnumMemberTypeDef {
 	typedef := &EnumMemberTypeDef{
 		OriginalName: name,
 		Name:         value,
 		Value:        value,
 		Description:  description,
+		Deprecated:   deprecated,
 	}
 	if sourceMap != nil {
 		typedef.SourceMap = dagql.NonNull(sourceMap)
@@ -1120,15 +1139,28 @@ func (enumValue EnumMemberTypeDef) Clone() *EnumMemberTypeDef {
 }
 
 func (enumValue *EnumMemberTypeDef) EnumValueDirectives() []*ast.Directive {
-	if enumValue.Value == "" || enumValue.Value == enumValue.Name {
-		return nil
+	directives := []*ast.Directive{}
+
+	if enumValue.Deprecated != "" {
+		directives = append(directives, &ast.Directive{
+			Name: "deprecated",
+			Arguments: ast.ArgumentList{
+				&ast.Argument{
+					Name: "reason",
+					Value: &ast.Value{
+						Kind: ast.StringValue,
+						Raw:  enumValue.Deprecated,
+					},
+				},
+			},
+		})
 	}
 
-	return []*ast.Directive{
-		{
+	if enumValue.Value != "" && enumValue.Value != enumValue.Name {
+		directives = append(directives, &ast.Directive{
 			Name: "enumValue",
 			Arguments: ast.ArgumentList{
-				{
+				&ast.Argument{
 					Name: "value",
 					Value: &ast.Value{
 						Kind: ast.StringValue,
@@ -1136,8 +1168,10 @@ func (enumValue *EnumMemberTypeDef) EnumValueDirectives() []*ast.Directive {
 					},
 				},
 			},
-		},
+		})
 	}
+
+	return directives
 }
 
 type TypeDefKind string

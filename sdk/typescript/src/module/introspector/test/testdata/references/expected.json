@@ -4,11 +4,13 @@
     "References": {
       "name": "References",
       "description": "References class\n\ntest",
+      "deprecated": "",
       "constructor": {
         "arguments": {
           "data": {
             "name": "data",
             "description": "",
+            "deprecated": "",
             "type": {
               "kind": "LIST_KIND",
               "typeDef": {
@@ -27,11 +29,13 @@
         "appendData": {
           "name": "addData",
           "description": "",
+          "deprecated": "",
           "alias": "appendData",
           "arguments": {
             "data": {
               "name": "data",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {
@@ -52,6 +56,7 @@
         "dumpDatas": {
           "name": "dumpDatas",
           "description": "",
+          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "LIST_KIND",
@@ -64,10 +69,12 @@
         "testEnum": {
           "name": "testEnum",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "test": {
               "name": "test",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "ENUM_KIND",
                 "name": "TestEnum"
@@ -86,10 +93,12 @@
         "testEnumStatic": {
           "name": "testEnumStatic",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "test": {
               "name": "test",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "ENUM_KIND",
                 "name": "TestEnum"
@@ -108,10 +117,12 @@
         "testDefaultValue": {
           "name": "testDefaultValue",
           "description": "Doc\n\nfoo",
+          "deprecated": "",
           "arguments": {
             "foo": {
               "name": "foo",
               "description": "Doc\n\ntest",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -130,6 +141,7 @@
         "data": {
           "name": "data",
           "description": "",
+          "deprecated": "",
           "type": {
             "kind": "LIST_KIND",
             "typeDef": {
@@ -148,6 +160,7 @@
         "item1": {
           "name": "item1",
           "description": "Item 1",
+          "deprecated": "",
           "type": {
             "kind": "STRING_KIND"
           },
@@ -156,12 +169,14 @@
         "item2": {
           "name": "item2",
           "description": "",
+          "deprecated": "",
           "type": {
             "kind": "INTEGER_KIND"
           },
           "isExposed": true
         }
-      }
+      },
+      "deprecated": ""
     }
   },
   "enums": {
@@ -172,12 +187,14 @@
         "A": {
           "name": "A",
           "value": "a",
-          "description": "Field A"
+          "description": "Field A",
+          "deprecated": ""
         },
         "B": {
           "name": "B",
           "value": "b",
-          "description": "Field B"
+          "description": "Field B",
+          "deprecated": ""
         }
       }
     }
