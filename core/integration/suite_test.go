@@ -64,6 +64,7 @@ func BenchMiddleware() []testctx.Middleware[*testing.B] {
 
 func connect(ctx context.Context, t testing.TB, opts ...dagger.ClientOpt) *dagger.Client {
 	opts = append([]dagger.ClientOpt{
+		// FIXME: test spans are easier to read in the TUI when this is silenced
 		dagger.WithLogOutput(testutil.NewTWriter(t)),
 	}, opts...)
 	client, err := dagger.Connect(ctx, opts...)

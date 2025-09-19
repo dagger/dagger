@@ -5346,12 +5346,24 @@ func (r *EnvFile) Exists(ctx context.Context, name string) (bool, error) {
 	return response, q.Execute(ctx)
 }
 
+// EnvFileGetOpts contains options for EnvFile.Get
+type EnvFileGetOpts struct {
+	// Return the value exactly as written to the file. No quote removal or variable expansion
+	Raw bool
+}
+
 // Lookup a variable (last occurrence wins) and return its value, or an empty string
-func (r *EnvFile) Get(ctx context.Context, name string) (string, error) {
+func (r *EnvFile) Get(ctx context.Context, name string, opts ...EnvFileGetOpts) (string, error) {
 	if r.get != nil {
 		return *r.get, nil
 	}
 	q := r.query.Select("get")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `raw` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Raw) {
+			q = q.Arg("raw", opts[i].Raw)
+		}
+	}
 	q = q.Arg("name", name)
 
 	var response string
@@ -5400,9 +5412,21 @@ func (r *EnvFile) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// EnvFileVariablesOpts contains options for EnvFile.Variables
+type EnvFileVariablesOpts struct {
+	// Return values exactly as written to the file. No quote removal or variable expansion
+	Raw bool
+}
+
 // Return all variables
-func (r *EnvFile) Variables(ctx context.Context) ([]EnvVariable, error) {
+func (r *EnvFile) Variables(ctx context.Context, opts ...EnvFileVariablesOpts) ([]EnvVariable, error) {
 	q := r.query.Select("variables")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `raw` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Raw) {
+			q = q.Arg("raw", opts[i].Raw)
+		}
+	}
 
 	q = q.Select("id")
 

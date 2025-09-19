@@ -5792,7 +5792,12 @@ class EnvFile(Type):
         _ctx = self._select("exists", _args)
         return await _ctx.execute(bool)
 
-    async def get(self, name: str) -> str:
+    async def get(
+        self,
+        name: str,
+        *,
+        raw: bool | None = None,
+    ) -> str:
         """Lookup a variable (last occurrence wins) and return its value, or an
         empty string
 
@@ -5800,6 +5805,9 @@ class EnvFile(Type):
         ----------
         name:
             Variable name
+        raw:
+            Return the value exactly as written to the file. No quote removal
+            or variable expansion
 
         Returns
         -------
@@ -5817,6 +5825,7 @@ class EnvFile(Type):
         """
         _args = [
             Arg("name", name),
+            Arg("raw", raw, None),
         ]
         _ctx = self._select("get", _args)
         return await _ctx.execute(str)
@@ -5845,9 +5854,18 @@ class EnvFile(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(EnvFileID)
 
-    async def variables(self) -> list["EnvVariable"]:
-        """Return all variables"""
-        _args: list[Arg] = []
+    async def variables(self, *, raw: bool | None = None) -> list["EnvVariable"]:
+        """Return all variables
+
+        Parameters
+        ----------
+        raw:
+            Return values exactly as written to the file. No quote removal or
+            variable expansion
+        """
+        _args = [
+            Arg("raw", raw, None),
+        ]
         _ctx = self._select("variables", _args)
         return await _ctx.execute_object_list(EnvVariable)
 

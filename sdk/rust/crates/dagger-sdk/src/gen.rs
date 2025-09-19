@@ -7402,6 +7402,18 @@ pub struct EnvFile {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct EnvFileGetOpts {
+    /// Return the value exactly as written to the file. No quote removal or variable expansion
+    #[builder(setter(into, strip_option), default)]
+    pub raw: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct EnvFileVariablesOpts {
+    /// Return values exactly as written to the file. No quote removal or variable expansion
+    #[builder(setter(into, strip_option), default)]
+    pub raw: Option<bool>,
+}
 impl EnvFile {
     /// Return as a file
     pub fn as_file(&self) -> File {
@@ -7427,9 +7439,28 @@ impl EnvFile {
     /// # Arguments
     ///
     /// * `name` - Variable name
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn get(&self, name: impl Into<String>) -> Result<String, DaggerError> {
         let mut query = self.selection.select("get");
         query = query.arg("name", name.into());
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Lookup a variable (last occurrence wins) and return its value, or an empty string
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Variable name
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn get_opts(
+        &self,
+        name: impl Into<String>,
+        opts: EnvFileGetOpts,
+    ) -> Result<String, DaggerError> {
+        let mut query = self.selection.select("get");
+        query = query.arg("name", name.into());
+        if let Some(raw) = opts.raw {
+            query = query.arg("raw", raw);
+        }
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this EnvFile.
@@ -7438,8 +7469,28 @@ impl EnvFile {
         query.execute(self.graphql_client.clone()).await
     }
     /// Return all variables
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn variables(&self) -> Vec<EnvVariable> {
         let query = self.selection.select("variables");
+        vec![EnvVariable {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }]
+    }
+    /// Return all variables
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn variables_opts(&self, opts: EnvFileVariablesOpts) -> Vec<EnvVariable> {
+        let mut query = self.selection.select("variables");
+        if let Some(raw) = opts.raw {
+            query = query.arg("raw", raw);
+        }
         vec![EnvVariable {
             proc: self.proc.clone(),
             selection: query,

@@ -43,10 +43,13 @@ defmodule Dagger.EnvFile do
   @doc """
   Lookup a variable (last occurrence wins) and return its value, or an empty string
   """
-  @spec get(t(), String.t()) :: {:ok, String.t()} | {:error, term()}
-  def get(%__MODULE__{} = env_file, name) do
+  @spec get(t(), String.t(), [{:raw, boolean() | nil}]) :: {:ok, String.t()} | {:error, term()}
+  def get(%__MODULE__{} = env_file, name, optional_args \\ []) do
     query_builder =
-      env_file.query_builder |> QB.select("get") |> QB.put_arg("name", name)
+      env_file.query_builder
+      |> QB.select("get")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg("raw", optional_args[:raw])
 
     Client.execute(env_file.client, query_builder)
   end
@@ -65,10 +68,14 @@ defmodule Dagger.EnvFile do
   @doc """
   Return all variables
   """
-  @spec variables(t()) :: {:ok, [Dagger.EnvVariable.t()]} | {:error, term()}
-  def variables(%__MODULE__{} = env_file) do
+  @spec variables(t(), [{:raw, boolean() | nil}]) ::
+          {:ok, [Dagger.EnvVariable.t()]} | {:error, term()}
+  def variables(%__MODULE__{} = env_file, optional_args \\ []) do
     query_builder =
-      env_file.query_builder |> QB.select("variables") |> QB.select("id")
+      env_file.query_builder
+      |> QB.select("variables")
+      |> QB.maybe_put_arg("raw", optional_args[:raw])
+      |> QB.select("id")
 
     with {:ok, items} <- Client.execute(env_file.client, query_builder) do
       {:ok,

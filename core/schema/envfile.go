@@ -17,13 +17,17 @@ func (s envfileSchema) Install(srv *dagql.Server) {
 			Doc("Initialize an environment file").
 			Args(
 				dagql.Arg("expand").
+					Deprecated("Variable expansion is now enabled by default").
 					Doc(`Replace "${VAR}" or "$VAR" with the value of other vars`),
 			),
 	}.Install(srv)
 
 	dagql.Fields[*core.EnvFile]{
 		dagql.Func("variables", s.variables).
-			Doc("Return all variables"),
+			Doc("Return all variables").
+			Args(
+				dagql.Arg("raw").Doc("Return values exactly as written to the file. No quote removal or variable expansion"),
+			),
 		dagql.Func("withVariable", s.withVariable).
 			Doc("Add a variable").
 			Args(
@@ -39,6 +43,7 @@ func (s envfileSchema) Install(srv *dagql.Server) {
 			Doc(`Lookup a variable (last occurrence wins) and return its value, or an empty string`).
 			Args(
 				dagql.Arg("name").Doc("Variable name"),
+				dagql.Arg("raw").Doc("Return the value exactly as written to the file. No quote removal or variable expansion"),
 			),
 		dagql.Func("exists", s.exists).
 			Doc("Check if a variable exists").
@@ -52,9 +57,9 @@ func (s envfileSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.File]{
 		dagql.Func("asEnvFile", s.asEnvFile).
 			Args(
-				dagql.Arg("expand").Doc(
-					`Replace "${VAR}" or "$VAR" with the value of other vars`,
-				),
+				dagql.Arg("expand").
+					Doc(`Replace "${VAR}" or "$VAR" with the value of other vars`).
+					Deprecated("Variable expansion is now enabled by default"),
 			).
 			Doc("Parse as an env file"),
 	}.Install(srv)
@@ -74,8 +79,10 @@ func (s envfileSchema) newEnvFile(
 	return &core.EnvFile{Expand: expand}, nil
 }
 
-func (s envfileSchema) variables(ctx context.Context, parent *core.EnvFile, args struct{}) (dagql.Array[core.EnvVariable], error) {
-	return parent.Variables(), nil
+func (s envfileSchema) variables(ctx context.Context, parent *core.EnvFile, args struct {
+	Raw dagql.Optional[dagql.Boolean]
+}) (dagql.Array[core.EnvVariable], error) {
+	return parent.Variables(ctx, args.Raw.GetOr(dagql.Boolean(false)).Bool())
 }
 
 func (s envfileSchema) withVariable(ctx context.Context, parent *core.EnvFile, args struct {
@@ -93,18 +100,23 @@ func (s envfileSchema) withoutVariable(ctx context.Context, parent *core.EnvFile
 
 func (s envfileSchema) get(ctx context.Context, parent *core.EnvFile, args struct {
 	Name dagql.String
+	Raw  dagql.Optional[dagql.Boolean]
 }) (dagql.String, error) {
-	if val, ok := parent.Lookup(args.Name.String()); ok {
-		return dagql.NewString(val), nil
+	val, found, err := parent.Lookup(ctx, args.Name.String(), args.Raw.GetOr(dagql.Boolean(false)).Bool())
+	if err != nil {
+		return dagql.String(""), err
 	}
-	return dagql.NewString(""), nil
+	if found {
+		return dagql.String(val), nil
+	}
+	return dagql.String(""), nil
 }
 
 func (s envfileSchema) exists(ctx context.Context, parent *core.EnvFile, args struct {
 	Name dagql.String
 }) (dagql.Boolean, error) {
-	_, ok := parent.Lookup(args.Name.String())
-	return dagql.NewBoolean(ok), nil
+	exists := parent.Exists(args.Name.String())
+	return dagql.NewBoolean(exists), nil
 }
 
 func (s envfileSchema) asFile(ctx context.Context, parent *core.EnvFile, args struct{}) (*core.File, error) {

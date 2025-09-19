@@ -2567,13 +2567,23 @@ type EnvFile {
   get(
     """Variable name"""
     name: String!
+
+    """
+    Return the value exactly as written to the file. No quote removal or variable expansion
+    """
+    raw: Boolean
   ): String!
 
   """A unique identifier for this EnvFile."""
   id: EnvFileID!
 
   """Return all variables"""
-  variables: [EnvVariable!]!
+  variables(
+    """
+    Return values exactly as written to the file. No quote removal or variable expansion
+    """
+    raw: Boolean
+  ): [EnvVariable!]!
 
   """Add a variable"""
   withVariable(
