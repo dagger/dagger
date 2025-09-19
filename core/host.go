@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -22,6 +23,33 @@ func (*Host) Type() *ast.Type {
 
 func (*Host) TypeDescription() string {
 	return "Information about the host environment."
+}
+
+// Lookup an environment variable in the host system from the current context
+func (Host) GetEnv(ctx context.Context, name string) string {
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return ""
+	}
+	var plaintext string
+	err = dag.Select(ctx, dag.Root(), &plaintext,
+		dagql.Selector{
+			Field: "secret",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "uri",
+					Value: dagql.NewString("env://" + name),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "plaintext",
+		},
+	)
+	if err != nil {
+		return ""
+	}
+	return plaintext
 }
 
 // find-up a given soughtName in curDirPath and its parent directories, return the dir

@@ -241,7 +241,7 @@ func TestAllExpansion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := All(tt.environ)
+			got, err := All(tt.environ, nil)
 			if tt.wantError {
 				require.Error(t, err, tt.name)
 			} else {
@@ -257,7 +257,7 @@ func TestLookup(t *testing.T) {
 		"FOO=bar",
 		"BAZ=$FOO-baz",
 	}
-	val, ok, err := Lookup(environ, "BAZ")
+	val, ok, err := Lookup(environ, "BAZ", nil)
 	require.NoError(t, err)
 	require.True(t, ok, "Lookup should find BAZ")
 	require.Equal(t, "bar-baz", val)
