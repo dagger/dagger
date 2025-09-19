@@ -166,7 +166,7 @@
                     string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_get">get</a>(string $name)
+                    <a href="#method_get">get</a>(string $name, bool|null $raw = null)
         
                                             <p><p>Lookup a variable (last occurrence wins) and return its value, or an empty string</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -186,7 +186,7 @@
                     array
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_variables">variables</a>()
+                    <a href="#method_variables">variables</a>(bool|null $raw = null)
         
                                             <p><p>Return all variables</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -384,7 +384,7 @@
                     <h3 id="method_get">
         <div class="location">at line 38</div>
         <code>                    string
-    <strong>get</strong>(string $name)
+    <strong>get</strong>(string $name, bool|null $raw = null)
         </code>
     </h3>
     <div class="details">    
@@ -401,6 +401,11 @@
                     <tr>
                 <td>string</td>
                 <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>bool|null</td>
+                <td>$raw</td>
                 <td></td>
             </tr>
             </table>
@@ -424,7 +429,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 48</div>
+        <div class="location">at line 51</div>
         <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
     <strong>id</strong>()
         </code>
@@ -456,9 +461,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_variables">
-        <div class="location">at line 57</div>
+        <div class="location">at line 60</div>
         <code>                    array
-    <strong>variables</strong>()
+    <strong>variables</strong>(bool|null $raw = null)
         </code>
     </h3>
     <div class="details">    
@@ -469,6 +474,16 @@
                             <p><p>Return all variables</p></p>                        
         </div>
         <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>bool|null</td>
+                <td>$raw</td>
+                <td></td>
+            </tr>
+            </table>
+
             
                             <h4>Return Value</h4>
 
@@ -488,7 +503,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withVariable">
-        <div class="location">at line 66</div>
+        <div class="location">at line 72</div>
         <code>                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
     <strong>withVariable</strong>(string $name, string $value)
         </code>
@@ -535,7 +550,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutVariable">
-        <div class="location">at line 77</div>
+        <div class="location">at line 83</div>
         <code>                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
     <strong>withoutVariable</strong>(string $name)
         </code>

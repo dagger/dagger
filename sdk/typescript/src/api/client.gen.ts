@@ -1042,6 +1042,20 @@ export type EnumTypeDefID = string & { __EnumTypeDefID: never }
  */
 export type EnumValueTypeDefID = string & { __EnumValueTypeDefID: never }
 
+export type EnvFileGetOpts = {
+  /**
+   * Return the value exactly as written to the file. No quote removal or variable expansion
+   */
+  raw?: boolean
+}
+
+export type EnvFileVariablesOpts = {
+  /**
+   * Return values exactly as written to the file. No quote removal or variable expansion
+   */
+  raw?: boolean
+}
+
 /**
  * The `EnvFileID` scalar type represents an identifier for an object of type EnvFile.
  */
@@ -6116,13 +6130,14 @@ export class EnvFile extends BaseClient {
   /**
    * Lookup a variable (last occurrence wins) and return its value, or an empty string
    * @param name Variable name
+   * @param opts.raw Return the value exactly as written to the file. No quote removal or variable expansion
    */
-  get = async (name: string): Promise<string> => {
+  get = async (name: string, opts?: EnvFileGetOpts): Promise<string> => {
     if (this._get) {
       return this._get
     }
 
-    const ctx = this._ctx.select("get", { name })
+    const ctx = this._ctx.select("get", { name, ...opts })
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -6131,13 +6146,14 @@ export class EnvFile extends BaseClient {
 
   /**
    * Return all variables
+   * @param opts.raw Return values exactly as written to the file. No quote removal or variable expansion
    */
-  variables = async (): Promise<EnvVariable[]> => {
+  variables = async (opts?: EnvFileVariablesOpts): Promise<EnvVariable[]> => {
     type variables = {
       id: EnvVariableID
     }
 
-    const ctx = this._ctx.select("variables").select("id")
+    const ctx = this._ctx.select("variables", { ...opts }).select("id")
 
     const response: Awaited<variables[]> = await ctx.execute()
 

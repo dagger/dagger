@@ -5,9 +5,9 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dagger/dagger/core/dotenv"
 	"github.com/dagger/dagger/dagql"
 	"github.com/vektah/gqlparser/v2/ast"
-	"mvdan.cc/sh/v3/shell"
 )
 
 type EnvVariable struct {
@@ -78,61 +78,43 @@ func (ef *EnvFile) WithoutVariable(name string) *EnvFile {
 }
 
 // Variables returns all variables
-func (ef *EnvFile) Variables() []EnvVariable {
-	vars := make([]EnvVariable, 0, len(ef.Environ))
-	expansionLookup := map[string]string{}
-	for _, kv := range ef.Environ {
-		k, v, _ := strings.Cut(kv, "=")
-		if ef.Expand {
-			expanded, err := shell.Expand(v, func(k string) string {
-				if v, ok := expansionLookup[k]; ok {
-					return v
-				}
-				return ""
-			})
-			if err == nil {
-				v = expanded
-			}
-			expansionLookup[k] = v
-		}
-		vars = append(vars, EnvVariable{
-			Name:  k,
-			Value: v,
-		})
+func (ef *EnvFile) Variables(ctx context.Context, raw bool) ([]EnvVariable, error) {
+	if raw {
+		return ef.variablesRaw(ctx)
 	}
-	return vars
+	return ef.variables(ctx)
+}
+
+func (ef *EnvFile) variablesRaw(_ context.Context) (vars []EnvVariable, _ error) {
+	for name, value := range dotenv.AllRaw(ef.Environ) {
+		vars = append(vars, EnvVariable{Name: name, Value: value})
+	}
+	return vars, nil
+}
+
+func (ef *EnvFile) variables(_ context.Context) (vars []EnvVariable, _ error) {
+	all, err := dotenv.All(ef.Environ)
+	if err != nil {
+		return nil, err
+	}
+	for name, value := range all {
+		vars = append(vars, EnvVariable{Name: name, Value: value})
+	}
+	return vars, nil
 }
 
 // Return true if the variable exists
 func (ef *EnvFile) Exists(name string) bool {
-	_, found := ef.lookup(name)
-	return found
+	return dotenv.Exists(ef.Environ, name)
 }
 
 // Lookup a variable and return its value, and a 'found' boolean
-func (ef *EnvFile) Lookup(name string) (string, bool) {
-	if !ef.Expand {
-		// Optimization: if no expansion, just return the raw value
-		return ef.lookup(name)
+func (ef *EnvFile) Lookup(ctx context.Context, name string, raw bool) (string, bool, error) {
+	if raw {
+		value, found := dotenv.LookupRaw(ef.Environ, name)
+		return value, found, nil
 	}
-	// Variables() handles expansion
-	variables := ef.Variables()
-	for _, variable := range variables {
-		if variable.Name == name {
-			return variable.Value, true
-		}
-	}
-	return "", false
-}
-
-func (ef *EnvFile) lookup(name string) (string, bool) {
-	for _, kv := range ef.Environ {
-		k, v, _ := strings.Cut(kv, "=")
-		if k == name {
-			return v, true
-		}
-	}
-	return "", false
+	return dotenv.Lookup(ef.Environ, name)
 }
 
 func (ef *EnvFile) add(name, value string) {
