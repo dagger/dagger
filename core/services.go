@@ -346,7 +346,7 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
 	slog.Trace("detach: stopping")
 
 	// we should avoid blocking, and return immediately
-	go ss.stopGraceful(ctx, running, TerminateGracePeriod)
+	go ss.stopGraceful(context.WithoutCancel(ctx), running, TerminateGracePeriod)
 }
 
 func (ss *Services) stop(ctx context.Context, running *RunningService, force bool) error {
