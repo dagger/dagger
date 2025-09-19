@@ -12,13 +12,13 @@ import (
 
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/session/filesync"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/solver"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/source"
-	upstreamlocal "github.com/dagger/dagger/internal/buildkit/source/local"
 	srctypes "github.com/dagger/dagger/internal/buildkit/source/types"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/moby/locker"
@@ -29,8 +29,6 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/client/pathutil"
-	"github.com/moby/buildkit/solver/pb"
-	"github.com/moby/buildkit/source/types"
 )
 
 type LocalSource struct {
@@ -63,126 +61,11 @@ type SnapshotSyncOpts struct {
 func (ls *LocalSource) Snapshot(ctx context.Context, session session.Group, sm *session.Manager, clientPath string, opts SnapshotSyncOpts) (bkcache.ImmutableRef, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get requester session ID: %w", err)
 	}
 
-	for k, v := range attrs {
-		switch k {
-		case pb.AttrLocalSessionID:
-			id.SessionID = v
-			if p := strings.SplitN(v, ":", 2); len(p) == 2 {
-				id.Name = p[0] + "-" + id.Name
-				id.SessionID = p[1]
-			}
-		case pb.AttrIncludePatterns:
-			var patterns []string
-			if err := json.Unmarshal([]byte(v), &patterns); err != nil {
-				return nil, err
-			}
-			id.IncludePatterns = patterns
-		case pb.AttrExcludePatterns:
-			var patterns []string
-			if err := json.Unmarshal([]byte(v), &patterns); err != nil {
-				return nil, err
-			}
-			id.ExcludePatterns = patterns
-		case pb.AttrFollowPaths:
-			var paths []string
-			if err := json.Unmarshal([]byte(v), &paths); err != nil {
-				return nil, err
-			}
-			id.FollowPaths = paths
-		case pb.AttrSharedKeyHint:
-			id.SharedKeyHint = v
-		case pb.AttrLocalDiffer:
-			switch v {
-			case pb.AttrLocalDifferMetadata, "":
-				id.Differ = fsutil.DiffMetadata
-			case pb.AttrLocalDifferNone:
-				id.Differ = fsutil.DiffNone
-			}
-		}
-	}
-
-	return id, nil
-}
-
-func (ls *localSource) Resolve(ctx context.Context, id source.Identifier, sm *session.Manager, _ solver.Vertex) (source.SourceInstance, error) {
-	localIdentifier, ok := id.(*upstreamlocal.LocalIdentifier)
-	if !ok {
-		return nil, fmt.Errorf("invalid local identifier %v", id)
-	}
-	clone := *localIdentifier
-	localIdentifier = &clone
-
-	gitIgnore := false
-	cachebuster := ""
-
-	excludes := make([]string, 0, len(localIdentifier.ExcludePatterns))
-	for _, pattern := range localIdentifier.ExcludePatterns {
-		if pattern == "[dagger.gitignore]" {
-			gitIgnore = true
-		} else if strings.HasPrefix(pattern, "[dagger.cachebuster=") && strings.HasSuffix(pattern, "]") {
-			cachebuster = strings.TrimSuffix(strings.TrimPrefix(pattern, "[dagger.cachebuster="), "]")
-		} else {
-			excludes = append(excludes, pattern)
-		}
-	}
-	localIdentifier.ExcludePatterns = excludes
-	return &localSourceHandler{
-		src:         *localIdentifier,
-		gitIgnore:   gitIgnore,
-		cachebuster: cachebuster,
-		sm:          sm,
-		localSource: ls,
-	}, nil
-}
-
-type localSourceHandler struct {
-	src upstreamlocal.LocalIdentifier
-	sm  *session.Manager
-	*localSource
-	gitIgnore   bool
-	cachebuster string
-}
-
-func (ls *localSourceHandler) CacheKey(ctx context.Context, g session.Group, index int) (string, string, solver.CacheOpts, bool, error) {
-	sessionID := ls.src.SessionID
-
-	if sessionID == "" {
-		id := g.SessionIterator().NextSession()
-		if id == "" {
-			return "", "", nil, false, errors.New("could not access local files without session")
-		}
-		sessionID = id
-	}
-	dt, err := json.Marshal(struct {
-		SessionID       string
-		IncludePatterns []string
-		ExcludePatterns []string
-		Gitignore       bool
-		FollowPaths     []string
-		Cachebuster     string
-	}{
-		SessionID:       sessionID,
-		IncludePatterns: ls.src.IncludePatterns,
-		ExcludePatterns: ls.src.ExcludePatterns,
-		Gitignore:       ls.gitIgnore,
-		FollowPaths:     ls.src.FollowPaths,
-		Cachebuster:     ls.cachebuster,
-	})
-	if err != nil {
-		return "", "", nil, false, err
-	}
-	digestString := digest.FromBytes(dt).String()
-	return ls.src.Name + ":" + digestString, digestString, nil, true, nil
-}
-
-func (ls *localSourceHandler) Snapshot(ctx context.Context, g session.Group) (bkcache.ImmutableRef, error) {
-	sessionID := ls.src.SessionID
-	if sessionID == "" {
-		// should only happen in Dockerfile cases
-		return ls.snapshotWithAnySession(ctx, g)
+	if clientMetadata.ClientID == "" {
+		return nil, fmt.Errorf("no clientID in the current session")
 	}
 
 	timeoutCtx, cancel := context.WithCancelCause(ctx)
@@ -261,7 +144,7 @@ func (ls *LocalSource) sync(
 	opts SnapshotSyncOpts,
 ) (_ bkcache.ImmutableRef, rerr error) {
 	// first ensure that all the parent dirs under the client's rootfs (above the given clientPath) are synced in correctly
-	if err := ls.syncParentDirs(ctx, ref, caller, clientPath, drive); err != nil {
+	if err := ls.syncParentDirs(ctx, ref, caller, clientPath, drive, opts); err != nil {
 		return nil, fmt.Errorf("failed to sync parent dirs: %w", err)
 	}
 
@@ -286,6 +169,7 @@ func (ls *LocalSource) syncParentDirs(
 	caller session.Caller,
 	clientPath string,
 	drive string,
+	opts SnapshotSyncOpts,
 ) (rerr error) {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer func() {
@@ -303,7 +187,7 @@ func (ls *LocalSource) syncParentDirs(
 	include := strings.TrimPrefix(strings.TrimSuffix(clientPath, "/"), "/")
 	includes := []string{include}
 	excludes := []string{include + "/*"}
-	if ls.gitIgnore {
+	if opts.GitIgnore {
 		excludes = append(excludes, "!"+include+"/**/.gitignore", include+"/**/.git")
 	}
 
@@ -482,13 +366,13 @@ func (md CacheRefMetadata) setSharedKey(key string) error {
 	return md.SetString(keySharedKey, key, sharedKeyIndex+key)
 }
 
-type DummySource struct {}
+type DummySource struct{}
 
-func NewDummySource() (source.Source) {
+func NewDummySource() source.Source {
 	return &DummySource{}
 }
 
-func (*DummySource) Schemes() []string{
+func (*DummySource) Schemes() []string {
 	return []string{srctypes.LocalScheme}
 }
 
