@@ -30,6 +30,11 @@ class MyModule
         $imageRepo = 'ttl.sh/myapp:latest';
         $platformVariants = [];
         foreach ($platforms as $platform) {
+            // parse architecture using containerd utility module
+            $platformArch = dag()
+                ->containerd()
+                ->architectureOf($platform);
+
             $ctr = dag()
                 ->container($platform)
                 ->from('golang:1.21-alpine')
@@ -40,6 +45,10 @@ class MyModule
                 // ensure binary will be statically linked and thus executable
                 // in the final image
                 ->withEnvVariable('CGO_ENABLED', '0')
+                // configure go compiler to use cross-compilation targeting the
+                // desired platform
+                ->withEnvVariable('GOOS', 'linux')
+                ->withEnvVariable('GOARCH', $platformArch)
                 ->withWorkdir('/src')
                 ->withExec(['go', 'build', '-o', '/output/hello']);
 
