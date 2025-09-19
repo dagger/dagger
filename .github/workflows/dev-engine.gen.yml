@@ -1,28 +1,48 @@
 # This file was generated. See https://daggerverse.dev/mod/github.com/dagger/dagger/modules/gha
-name: evals
+name: Dev Engine
 "on":
     push:
-        paths:
-            - core/llm.go
-            - core/mcp.go
-            - core/env.go
-            - core/llm_*.go
-            - core/llm_*.md
-            - core/schema/llm.go
-            - core/schema/env.go
-            - modules/evaluator/**
+        branches:
+            - main
+    pull_request:
+        types:
+            - opened
+            - reopened
+            - synchronize
+            - ready_for_review
     workflow_dispatch: {}
+permissions:
+    contents: read
+concurrency:
+    group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+    cancel-in-progress: true
 jobs:
-    testdev:
-        if: ${{ (github.repository == 'dagger/dagger') && (github.actor != 'dependabot[bot]') }}
+    dev-engine:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
-        name: testdev
+        name: Dev Engine
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
                 version: v0.18.19
+            - name: scripts/start-dev-dagger.sh
+              id: start-dev-dagger
+              run: |
+                #!/bin/bash --noprofile --norc -e -o pipefail
+
+                cd $(mktemp -d)
+                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree | export ."
+
+                ./hack/build
+
+                export _EXPERIMENTAL_DAGGER_CLI_BIN=$(realpath ./bin/dagger)
+                echo "_EXPERIMENTAL_DAGGER_CLI_BIN=$_EXPERIMENTAL_DAGGER_CLI_BIN" >>"${GITHUB_ENV}"
+              env:
+                _EXPERIMENTAL_DAGGER_DEV_CONTAINER: dagger-engine.dev-${{ github.run_id }}-${{ github.job }}
+                _EXPERIMENTAL_DAGGER_DEV_IMAGE: localhost/dagger-engine.dev:${{ github.run_id }}-${{ github.job }}
+                DAGGER_REF: ${{ github.sha }}
+              shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -142,13 +162,8 @@ jobs:
                 cat $tmp/stdout.txt
                 exit $EXIT_CODE
               env:
-                COMMAND: dagger call --allow-llm all check
+                COMMAND: dagger call --docker-cfg=file:$HOME/.docker/config.json check --targets=SDKs
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                DAGGER_MODULE: github.com/${{ github.repository }}/modules/evals@${{ github.sha }}
-                DOTENV: |-
-                    ANTHROPIC_API_KEY=op://RelEng/ANTHROPIC/API_KEY
-                    GEMINI_API_KEY=op://RelEng/GEMINI/API_KEY
-                    OPENAI_API_KEY=op://RelEng/OPEN_AI/API_KEY
-                OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
               shell: bash
         timeout-minutes: 20

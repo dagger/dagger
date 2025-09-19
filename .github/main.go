@@ -107,6 +107,12 @@ func New() *CI {
 			"Helm",
 			"check --targets=helm",
 		).
+		withWorkflow(
+			ci.AltRunner,
+			true,
+			"Dev Engine",
+			"check --targets=SDKs",
+		).
 		withTestWorkflows(
 			ci.AltRunner,
 			"Engine & CLI",
@@ -177,9 +183,7 @@ func (ci *CI) withSDKWorkflows(runner *dagger.Gha, name string, sdks ...string) 
 	for _, sdk := range sdks {
 		command := daggerCommand("check --targets=sdk/" + sdk)
 		w = w.
-			WithJob(runner.Job(sdk+"-dev", command, dagger.GhaJobOpts{
-				DaggerDev: "${{ github.sha }}",
-			}))
+			WithJob(runner.Job(sdk+"-dev", command))
 	}
 
 	ci.Workflows = ci.Workflows.WithWorkflow(w)
@@ -206,7 +210,7 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 		WithJob(runner.Job("scan-engine", "scan", dagger.GhaJobOpts{
 			Runner: AltBronzeRunnerWithCache(),
 		})).
-		With(splitTests(runner, "testdev-", true, []testSplit{
+		With(splitTests(runner, "testdev-", false, []testSplit{
 			{"cgroupsv2", []string{"TestProvision", "TestTelemetry"}, &dagger.GhaJobOpts{}},
 			{"modules", []string{"TestModule"}, &dagger.GhaJobOpts{
 				Runner: AltPlatinumRunner(),
@@ -317,9 +321,8 @@ func (ci *CI) withEvalsWorkflow() *CI {
 		"testdev",
 		"--allow-llm all check",
 		dagger.GhaJobOpts{
-			Module:    module("modules/evals"),
-			DaggerDev: "${{ github.sha }}", // testdev, so run against local dagger
-			Runner:    AltGoldRunner(),
+			Module: module("modules/evals"),
+			Runner: AltGoldRunner(),
 			// NOTE: avoid running for forks
 			Condition: fmt.Sprintf(`${{ (github.repository == '%s') && (github.actor != 'dependabot[bot]') }}`, upstreamRepository),
 			Secrets:   []string{"OP_SERVICE_ACCOUNT_TOKEN"},
