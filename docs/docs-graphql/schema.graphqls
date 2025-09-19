@@ -3556,6 +3556,9 @@ type Module {
   """Interfaces served by this module."""
   interfaces: [TypeDef!]!
 
+  """User-defined defaults values, loaded from local .env files."""
+  localDefaults: EnvFile!
+
   """The name of the module"""
   name: String!
 
@@ -3709,6 +3712,9 @@ type ModuleSource {
   sources.
   """
   localContextDirectoryPath: String!
+
+  """User-defined defaults read from local .env files"""
+  localDefaults: EnvFile!
 
   """The name of the module, including any setting via the withName API."""
   moduleName: String!

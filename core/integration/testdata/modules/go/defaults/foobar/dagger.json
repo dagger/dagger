@@ -1,0 +1,7 @@
+{
+  "name": "foobar",
+  "engineVersion": "v0.18.19",
+  "sdk": {
+    "source": "go"
+  }
+}

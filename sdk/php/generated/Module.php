@@ -68,6 +68,15 @@ class Module extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * User-defined defaults values, loaded from local .env files.
+     */
+    public function localDefaults(): EnvFile
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('localDefaults');
+        return new \Dagger\EnvFile($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The name of the module
      */
     public function name(): string

@@ -118,7 +118,7 @@ func (EnvFileSuite) TestEvalMatch(ctx context.Context, t *testctx.T) {
 			}
 
 			for name := range tt.vars {
-				expectedValue, expectedFound, expectedErr := dotenv.Lookup(environ, name)
+				expectedValue, expectedFound, expectedErr := dotenv.Lookup(environ, name, nil)
 				if !expectedFound {
 					expectedValue = ""
 				}

@@ -4281,6 +4281,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Module::localDefaults",
+			"p": "Dagger/Module.html#method_localDefaults",
+			"d": "<p>User-defined defaults values, loaded from local .env files.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Module::name",
 			"p": "Dagger/Module.html#method_name",
 			"d": "<p>The name of the module</p>"
@@ -4470,6 +4476,12 @@
 			"n": "Dagger\\ModuleSource::localContextDirectoryPath",
 			"p": "Dagger/ModuleSource.html#method_localContextDirectoryPath",
 			"d": "<p>The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleSource::localDefaults",
+			"p": "Dagger/ModuleSource.html#method_localDefaults",
+			"d": "<p>User-defined defaults read from local .env files</p>"
 		},
 		{
 			"t": "M",

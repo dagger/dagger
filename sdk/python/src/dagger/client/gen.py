@@ -8711,6 +8711,12 @@ class Module(Type):
         _ctx = self._select("interfaces", _args)
         return await _ctx.execute_object_list(TypeDef)
 
+    def local_defaults(self) -> EnvFile:
+        """User-defined defaults values, loaded from local .env files."""
+        _args: list[Arg] = []
+        _ctx = self._select("localDefaults", _args)
+        return EnvFile(_ctx)
+
     async def name(self) -> str:
         """The name of the module
 
@@ -9224,6 +9230,12 @@ class ModuleSource(Type):
         _args: list[Arg] = []
         _ctx = self._select("localContextDirectoryPath", _args)
         return await _ctx.execute(str)
+
+    def local_defaults(self) -> EnvFile:
+        """User-defined defaults read from local .env files"""
+        _args: list[Arg] = []
+        _ctx = self._select("localDefaults", _args)
+        return EnvFile(_ctx)
 
     async def module_name(self) -> str:
         """The name of the module, including any setting via the withName API.

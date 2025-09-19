@@ -9458,6 +9458,15 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         }]
     }
+    /// User-defined defaults values, loaded from local .env files.
+    pub fn local_defaults(&self) -> EnvFile {
+        let query = self.selection.select("localDefaults");
+        EnvFile {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The name of the module
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
@@ -9742,6 +9751,15 @@ impl ModuleSource {
     pub async fn local_context_directory_path(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("localContextDirectoryPath");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// User-defined defaults read from local .env files
+    pub fn local_defaults(&self) -> EnvFile {
+        let query = self.selection.select("localDefaults");
+        EnvFile {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// The name of the module, including any setting via the withName API.
     pub async fn module_name(&self) -> Result<String, DaggerError> {

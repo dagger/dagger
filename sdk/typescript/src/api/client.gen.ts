@@ -8605,6 +8605,14 @@ export class Module_ extends BaseClient {
   }
 
   /**
+   * User-defined defaults values, loaded from local .env files.
+   */
+  localDefaults = (): EnvFile => {
+    const ctx = this._ctx.select("localDefaults")
+    return new EnvFile(ctx)
+  }
+
+  /**
    * The name of the module
    */
   name = async (): Promise<string> => {
@@ -9113,6 +9121,14 @@ export class ModuleSource extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * User-defined defaults read from local .env files
+   */
+  localDefaults = (): EnvFile => {
+    const ctx = this._ctx.select("localDefaults")
+    return new EnvFile(ctx)
   }
 
   /**
