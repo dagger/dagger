@@ -30,6 +30,8 @@ export const field = registry.field
 /**
  * The definition of the `@enumType` decorator that should be on top of any
  * class module that must be exposed to the Dagger API as enumeration.
+ *
+ * @deprecated In favor of using TypeScript `enum` types.
  */
 export const enumType = registry.enumType
 

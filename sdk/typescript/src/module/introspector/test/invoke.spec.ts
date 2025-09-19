@@ -576,4 +576,57 @@ describe("Invoke typescript function", function () {
 
     assert.equal(resultAfterSet, "INACTIVE")
   })
+
+  it("Should correctly handle legacy enum decorator values", async function () {
+    this.timeout(60000)
+
+    const files = await listFiles(`${rootDirectory}/legacyEnumDecorator`)
+    let modules: Module[] = []
+
+    try {
+      modules = await load(files)
+    } catch {
+      assert.fail("failed to load files")
+    }
+
+    const module = await scan(files, "legacyEnumDecorator")
+    const executor = new Executor(modules, module)
+
+    const inputDefault = {
+      parentName: "LegacyEnums",
+      fnName: "getStatus",
+      parentArgs: {
+        status: "ACTIVE",
+      },
+      fnArgs: {},
+    }
+
+    const resultDefault = await invoke(executor, module, inputDefault)
+
+    assert.equal(resultDefault, "ACTIVE")
+
+    const inputSet = {
+      parentName: "LegacyEnums",
+      fnName: "setStatus",
+      parentArgs: {
+        status: "ACTIVE",
+      },
+      fnArgs: {
+        status: "INACTIVE",
+      },
+    }
+
+    const resultSet = await invoke(executor, module, inputSet)
+
+    const inputAfterSet = {
+      parentName: "LegacyEnums",
+      fnName: "getStatus",
+      parentArgs: JSON.parse(JSON.stringify(resultSet)),
+      fnArgs: {},
+    }
+
+    const resultAfterSet = await invoke(executor, module, inputAfterSet)
+
+    assert.equal(resultAfterSet, "INACTIVE")
+  })
 })

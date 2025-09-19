@@ -2651,15 +2651,14 @@ class Test:
 		},
 		{
 			sdk: "typescript",
-			source: `import { dag, enumType, func, object } from "@dagger.io/dagger"
+			source: `import { func, object } from "@dagger.io/dagger"
 
-@enumType()
-export class Language {
-  static readonly Go: string = "GO"
-  static readonly Python: string = "PYTHON"
-  static readonly Typescript: string = "TYPESCRIPT"
-  static readonly PHP: string = "PHP"
-  static readonly Elixir: string = "ELIXIR"
+export enum Language {
+  Go = "GO",
+  Python = "PYTHON",
+  Typescript = "TYPESCRIPT",
+  PHP = "PHP",
+  Elixir = "ELIXIR",
 }
 
 @object()
