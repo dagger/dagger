@@ -1,5 +1,5 @@
 # This file was generated. See https://daggerverse.dev/mod/github.com/dagger/dagger/modules/gha
-name: Helm
+name: Dev Engine
 "on":
     push:
         branches:
@@ -17,16 +17,32 @@ concurrency:
     group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
     cancel-in-progress: true
 jobs:
-    helm:
+    dev-engine:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
-        name: Helm
+            - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
+        name: Dev Engine
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
                 version: v0.18.19
+            - name: scripts/start-dev-dagger.sh
+              id: start-dev-dagger
+              run: |
+                #!/bin/bash --noprofile --norc -e -o pipefail
+
+                cd $(mktemp -d)
+                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree | export ."
+
+                ./hack/build
+
+                export _EXPERIMENTAL_DAGGER_CLI_BIN=$(realpath ./bin/dagger)
+                echo "_EXPERIMENTAL_DAGGER_CLI_BIN=$_EXPERIMENTAL_DAGGER_CLI_BIN" >>"${GITHUB_ENV}"
+              env:
+                _EXPERIMENTAL_DAGGER_DEV_CONTAINER: dagger-engine.dev-${{ github.run_id }}-${{ github.job }}
+                _EXPERIMENTAL_DAGGER_DEV_IMAGE: localhost/dagger-engine.dev:${{ github.run_id }}-${{ github.job }}
+                DAGGER_REF: ${{ github.sha }}
+              shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -146,7 +162,7 @@ jobs:
                 cat $tmp/stdout.txt
                 exit $EXIT_CODE
               env:
-                COMMAND: dagger call --docker-cfg=file:$HOME/.docker/config.json check --targets=helm
+                COMMAND: dagger call --docker-cfg=file:$HOME/.docker/config.json check --targets=SDKs
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
               shell: bash
