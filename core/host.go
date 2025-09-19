@@ -139,31 +139,6 @@ func (*Host) Directory(ctx context.Context, path string, filter CopyFilter, gitI
 	dir.Result = ref
 
 	return dir, nil
-
-	// query.LocalSource().Snapshot(ctx, query.BuildkitSession(), query.BuildkitCache(), path, local.SnapshotSyncOpts{})
-	// Should not impact performance
-	// If args.IsDapOp -> do the actual snapshot
-	// Otherwise:
-	//
-	//
-	// Directory call Snapshot & manually set Directory.Result
-	// Questions?
-	// - How do I manually create a localSource or localSourceHandler to call snapshot?
-	// - How do I create a raw Directory object to set Directory.Result = localSourceHandler.Snapshot?
-
-	// Get the buildkit cache manager
-	// 	bk, err := query.Buildkit(ctx)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	// }
-	// cache := query.BuildkitCache()
-	// session := query.BuildkitSession()
-	//
-	// Get the buildkit session
-	// bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
-	// if !ok {
-	// 	return nil, fmt.Errorf("no buildkit session group in context")
-	// }
 }
 
 func (h *Host) Clone() *Host {

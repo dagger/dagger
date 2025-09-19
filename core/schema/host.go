@@ -2,7 +2,6 @@ package schema
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,7 +14,6 @@ import (
 	"github.com/containerd/containerd/leases"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	bkworker "github.com/dagger/dagger/internal/buildkit/worker"
@@ -282,24 +280,6 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		}
 	}
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get requester session ID: %w", err)
-	}
-	stableID := clientMetadata.ClientStableID
-	if stableID == "" {
-		slog.WarnContext(ctx, "client stable ID not set, using random value")
-		stableID = identity.NewID()
-	}
-
-	localOpts := []llb.LocalOption{
-		llb.SessionID(clientMetadata.ClientID),
-		llb.SharedKeyHint(stableID),
-		buildkit.WithTracePropagation(ctx),
-	}
-
-	localName := fmt.Sprintf("upload %s from %s (client id: %s, session id: %s)", args.Path, stableID, clientMetadata.ClientID, clientMetadata.SessionID)
-
 	includePatterns := make([]string, 0, 2+len(args.Include))
 	if relPath != "." {
 		includePatterns = append(includePatterns, "!*", relPath)
@@ -315,20 +295,9 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		}
 		includePatterns = append(includePatterns, include)
 	}
-	//	localOpts = append(localOpts, llb.IncludePatterns(includePatterns))
-	//	if len(args.Include) > 0 {
-	//		localName += fmt.Sprintf(" (include: %s)", strings.Join(args.Include, ", "))
-	//	}
 
 	excludePatterns := make([]string, 0, len(args.Exclude))
-	// HACK: to bust the cache and pass custom options, we put them in
-	// excludePatterns. we filter them out later.
-	if args.Gitignore {
-		excludePatterns = append(excludePatterns, "[dagger.gitignore]")
-	}
-	if args.NoCache {
-		excludePatterns = append(excludePatterns, "[dagger.cachebuster="+rand.Text()+"]")
-	}
+
 	for _, exclude := range args.Exclude {
 		exclude, negative := strings.CutPrefix(exclude, "!")
 		if !filepath.IsLocal(exclude) {
@@ -340,16 +309,6 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		}
 		excludePatterns = append(excludePatterns, exclude)
 	}
-	localOpts = append(localOpts, llb.ExcludePatterns(excludePatterns))
-	if len(args.Exclude) > 0 {
-		localName += fmt.Sprintf(" (exclude: %s)", strings.Join(args.Exclude, ", "))
-	}
-
-	if args.Gitignore {
-		localName += " (with gitignore)"
-	}
-
-	localOpts = append(localOpts, llb.WithCustomName(localName))
 
 	if args.IsDagOp {
 		dir, err := host.Self().Directory(ctx, hostPath, core.CopyFilter{
@@ -368,23 +327,6 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 
 		return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 	}
-
-	//	localLLB := llb.Local(hostPath, localOpts...)
-	//
-	//	localDef, err := localLLB.Marshal(ctx, llb.Platform(query.Platform().Spec()))
-	//	if err != nil {
-	//		return inst, fmt.Errorf("failed to marshal local LLB: %w", err)
-	//	}
-	//	localPB := localDef.ToPB()
-	//
-	//	dir, err := core.NewDirectory(localPB, "/", query.Platform(), nil).Directory(ctx, relPath)
-	//	if err != nil {
-	//		return inst, err
-	//	}
-	//	inst, err = dagql.NewObjectResultForCurrentID(ctx, srv, dir)
-	//	if err != nil {
-	//		return inst, fmt.Errorf("failed to create instance: %w", err)
-	//	}
 
 	dir, err := DagOpDirectory(ctx, srv, host.Self(), args, "", s.directory)
 	if err != nil {
