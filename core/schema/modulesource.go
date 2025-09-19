@@ -507,7 +507,10 @@ func (s *moduleSourceSchema) localModuleSource(
 		}
 	}
 
-	localSrc.Digest = localSrc.CalcDigest().String()
+	if err := localSrc.LoadUserDefaults(ctx); err != nil {
+		return inst, fmt.Errorf("load user defaults: %w", err)
+	}
+	localSrc.Digest = localSrc.CalcDigest(ctx).String()
 
 	return dagql.NewResultForCurrentID(ctx, localSrc)
 }
@@ -660,7 +663,10 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return inst, err
 	}
 
-	gitSrc.Digest = gitSrc.CalcDigest().String()
+	if err := gitSrc.LoadUserDefaults(ctx); err != nil {
+		return inst, fmt.Errorf("load user defaults: %w", err)
+	}
+	gitSrc.Digest = gitSrc.CalcDigest(ctx).String()
 
 	inst, err = dagql.NewResultForCurrentID(ctx, gitSrc)
 	if err != nil {
@@ -822,7 +828,10 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
 
-	dirSrc.Digest = dirSrc.CalcDigest().String()
+	if err := dirSrc.LoadUserDefaults(ctx); err != nil {
+		return inst, fmt.Errorf("load user defaults: %w", err)
+	}
+	dirSrc.Digest = dirSrc.CalcDigest(ctx).String()
 	return inst, nil
 }
 
@@ -1035,7 +1044,10 @@ func (s *moduleSourceSchema) moduleSourceWithSourceSubpath(
 		return nil, fmt.Errorf("failed to reload module source context: %w", err)
 	}
 
-	src.Digest = src.CalcDigest().String()
+	if err := src.LoadUserDefaults(ctx); err != nil {
+		return nil, fmt.Errorf("load user defaults: %w", err)
+	}
+	src.Digest = src.CalcDigest(ctx).String()
 	return src, nil
 }
 
@@ -1068,7 +1080,11 @@ func (s *moduleSourceSchema) moduleSourceWithName(
 		src.ModuleOriginalName = args.Name
 	}
 
-	src.Digest = src.CalcDigest().String()
+	// Reload user defaults with new name
+	if err := src.LoadUserDefaults(ctx); err != nil {
+		return nil, fmt.Errorf("load user defaults: %w", err)
+	}
+	src.Digest = src.CalcDigest(ctx).String()
 	return src, nil
 }
 
@@ -1104,7 +1120,7 @@ func (s *moduleSourceSchema) moduleSourceWithIncludes(
 		return nil, fmt.Errorf("failed to reload module source context: %w", err)
 	}
 
-	src.Digest = src.CalcDigest().String()
+	src.Digest = src.CalcDigest(ctx).String()
 	return src, nil
 }
 
@@ -1120,7 +1136,7 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 		src.SDK = nil
 		src.SDKImpl = nil
 
-		src.Digest = src.CalcDigest().String()
+		src.Digest = src.CalcDigest(ctx).String()
 		return src, nil
 	}
 
@@ -1139,7 +1155,11 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 		return nil, fmt.Errorf("failed to load sdk for module source: %w", err)
 	}
 
-	src.Digest = src.CalcDigest().String()
+	// New SDK means new exposed functions and types. Different .env entries might match.
+	if err := src.LoadUserDefaults(ctx); err != nil {
+		return nil, fmt.Errorf("load user defaults: %w", err)
+	}
+	src.Digest = src.CalcDigest(ctx).String()
 	return src, nil
 }
 
@@ -1275,7 +1295,7 @@ func (s *moduleSourceSchema) moduleSourceWithEngineVersion(
 	engineVersion = engine.NormalizeVersion(engineVersion)
 	src.EngineVersion = engineVersion
 
-	src.Digest = src.CalcDigest().String()
+	src.Digest = src.CalcDigest(ctx).String()
 	return src, nil
 }
 
@@ -1417,7 +1437,7 @@ func (s *moduleSourceSchema) moduleSourceWithDependencies(
 	})
 	parentSrc.Dependencies = finalDeps
 
-	parentSrc.Digest = parentSrc.CalcDigest().String()
+	parentSrc.Digest = parentSrc.CalcDigest(ctx).String()
 	return parentSrc, nil
 }
 
@@ -1757,7 +1777,7 @@ func (s *moduleSourceSchema) moduleSourceWithoutDependencies(
 	}
 
 	parentSrc.Dependencies = filteredDeps
-	parentSrc.Digest = parentSrc.CalcDigest().String()
+	parentSrc.Digest = parentSrc.CalcDigest(ctx).String()
 	return parentSrc, nil
 }
 
@@ -2376,7 +2396,8 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 	// Create module with blueprint source for SDK operations
 	mod := &core.Module{
-		Source:        dagql.NonNull(src),
+		Source: dagql.NonNull(src),
+
 		ContextSource: dagql.NonNull(originalSrc),
 
 		NameField:    src.Self().ModuleName,
@@ -2439,7 +2460,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		}
 	}
 
-	if blueprintSrc.Self() != nil {
+	if bp := blueprintSrc.Self(); bp != nil {
 		// Show the downstream module name to clients, not the blueprint name
 		// NOTE: we don't change OriginalName, that's used internally at runtime
 		mod.NameField = originalSrc.Self().ModuleName
@@ -2449,7 +2470,6 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", modName, err)
 	}
-
 	return inst, nil
 }
 
@@ -2557,7 +2577,7 @@ func (s *moduleSourceSchema) moduleSourceWithClient(
 
 	src.ConfigClients = append(src.ConfigClients, moduleConfigClient)
 
-	src.Digest = src.CalcDigest().String()
+	src.Digest = src.CalcDigest(ctx).String()
 
 	return src, nil
 }
@@ -2677,7 +2697,7 @@ func (s *moduleSourceSchema) moduleSourceWithUpdatedClients(
 }
 
 func (s *moduleSourceSchema) moduleSourceWithoutClient(
-	_ context.Context,
+	ctx context.Context,
 	src *core.ModuleSource,
 	args struct {
 		Path string
@@ -2698,7 +2718,7 @@ func (s *moduleSourceSchema) moduleSourceWithoutClient(
 
 	src.ConfigClients = configClients
 
-	src.Digest = src.CalcDigest().String()
+	src.Digest = src.CalcDigest(ctx).String()
 
 	return src, nil
 }

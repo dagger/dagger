@@ -73,6 +73,19 @@ func (fn Function) Clone() *Function {
 	return &cp
 }
 
+// FieldSpec converts a Function into a GraphQL field specification for inclusion in a GraphQL schema.
+// This method is called during schema generation when building the GraphQL API representation of module functions.
+// It transforms the Function's metadata (name, description, arguments, return type) into the dagql.FieldSpec format
+// that the GraphQL engine can understand and expose as queryable fields.
+//
+// The conversion process includes:
+// - Converting function arguments to GraphQL input specifications with proper typing
+// - Handling default values for arguments by JSON decoding and type validation
+// - Adding source map directives for debugging/IDE support
+// - Resolving module types through the provided Module context
+//
+// This is typically called during module loading/registration when the Dagger engine builds
+// the complete GraphQL schema that clients will query against.
 func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec, error) {
 	spec := dagql.FieldSpec{
 		Name:        fn.Name,
@@ -201,9 +214,9 @@ func (fn *Function) IsSubtypeOf(otherFn *Function) bool {
 	return true
 }
 
-func (fn *Function) LookupArg(name string) (*FunctionArg, bool) {
+func (fn *Function) LookupArg(nameAnyCase string) (*FunctionArg, bool) {
 	for _, arg := range fn.Args {
-		if arg.Name == name {
+		if strings.EqualFold(arg.Name, nameAnyCase) {
 			return arg, true
 		}
 	}

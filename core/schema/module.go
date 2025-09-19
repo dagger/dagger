@@ -78,6 +78,9 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.NodeFunc("generatedContextDirectory", s.moduleGeneratedContextDirectory).
 			Doc(`The generated files and directories made on top of the module source's context directory.`),
 
+		dagql.Func("userDefaults", s.moduleUserDefaults).
+			Doc(`User-defined default values, loaded from local .env files.`),
+
 		dagql.Func("withDescription", s.moduleWithDescription).
 			Doc(`Retrieves the module with the given description`).
 			Args(
@@ -626,6 +629,10 @@ func (s *moduleSchema) moduleGeneratedContextDirectory(
 		},
 	)
 	return inst, err
+}
+
+func (s *moduleSchema) moduleUserDefaults(ctx context.Context, mod *core.Module, _ struct{}) (*core.EnvFile, error) {
+	return mod.UserDefaults(ctx)
 }
 
 func (s *moduleSchema) moduleDependencies(

@@ -118,7 +118,7 @@ func (EnvFileSuite) TestEvalMatch(ctx context.Context, t *testctx.T) {
 			}
 
 			for name := range tt.vars {
-				expectedValue, expectedFound, expectedErr := dotenv.Lookup(environ, name)
+				expectedValue, expectedFound, expectedErr := dotenv.Lookup(environ, name, nil)
 				if !expectedFound {
 					expectedValue = ""
 				}
@@ -186,4 +186,31 @@ func (EnvFileSuite) TestOverride(ctx context.Context, t *testctx.T) {
 	variable, err := envFile.Get(ctx, "FOO")
 	require.NoError(t, err)
 	require.Equal(t, "newbar", variable)
+}
+
+func (EnvFileSuite) TestSystemVariables(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := nestedDaggerContainer(t, c, "", "").
+		WithEnvVariable("SYSTEM_GREETING", "live long and prosper").
+		WithNewFile(".env", `GREETING="${SYSTEM_GREETING}"`)
+	output1, err := ctr.
+		WithExec([]string{
+			"dagger", "core", "host", "file", "--path=.env", "as-env-file", "get", "GREETING"},
+			nestedExec,
+		).
+		Stdout(ctx)
+	// FIXME System env variable lookup is temporarily disabled
+	// see https://github.com/dagger/dagger/pull/11034#discussion_r2401382370
+	require.Error(t, err)
+	require.NotEqual(t, "live long and prosper", output1, "output should NOT include the system env variable (feature temporarily disabled)")
+	output2, err := ctr.
+		WithExec([]string{
+			"dagger", "core", "host", "file", "--path=.env", "as-env-file", "variables", "value"},
+			nestedExec,
+		).
+		Stdout(ctx)
+	// FIXME System env variable lookup is temporarily disabled
+	// see https://github.com/dagger/dagger/pull/11034#discussion_r2401382370
+	require.Error(t, err)
+	require.NotEqual(t, "live long and prosper", output2, "output should NOT include the system env variable (feature temporarily disabled)")
 }

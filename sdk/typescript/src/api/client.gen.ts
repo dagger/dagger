@@ -8686,6 +8686,14 @@ export class Module_ extends BaseClient {
   }
 
   /**
+   * User-defined default values, loaded from local .env files.
+   */
+  userDefaults = (): EnvFile => {
+    const ctx = this._ctx.select("userDefaults")
+    return new EnvFile(ctx)
+  }
+
+  /**
    * Retrieves the module with the given description
    * @param description The description to set
    */
@@ -9237,6 +9245,14 @@ export class ModuleSource extends BaseClient {
     const response: Awaited<ModuleSourceID> = await ctx.execute()
 
     return new Client(ctx.copy()).loadModuleSourceFromID(response)
+  }
+
+  /**
+   * User-defined defaults read from local .env files
+   */
+  userDefaults = (): EnvFile => {
+    const ctx = this._ctx.select("userDefaults")
+    return new EnvFile(ctx)
   }
 
   /**

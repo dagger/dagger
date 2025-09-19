@@ -4323,6 +4323,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Module::userDefaults",
+			"p": "Dagger/Module.html#method_userDefaults",
+			"d": "<p>User-defined default values, loaded from local .env files.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Module::withDescription",
 			"p": "Dagger/Module.html#method_withDescription",
 			"d": "<p>Retrieves the module with the given description</p>"
@@ -4524,6 +4530,12 @@
 			"n": "Dagger\\ModuleSource::sync",
 			"p": "Dagger/ModuleSource.html#method_sync",
 			"d": "<p>Forces evaluation of the module source, including any loading into the engine and associated validation.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleSource::userDefaults",
+			"p": "Dagger/ModuleSource.html#method_userDefaults",
+			"d": "<p>User-defined defaults read from local .env files</p>"
 		},
 		{
 			"t": "M",

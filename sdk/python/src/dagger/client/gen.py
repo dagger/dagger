@@ -8809,6 +8809,12 @@ class Module(Type):
     def __await__(self):
         return self.sync().__await__()
 
+    def user_defaults(self) -> EnvFile:
+        """User-defined default values, loaded from local .env files."""
+        _args: list[Arg] = []
+        _ctx = self._select("userDefaults", _args)
+        return EnvFile(_ctx)
+
     def with_description(self, description: str) -> Self:
         """Retrieves the module with the given description
 
@@ -9399,6 +9405,12 @@ class ModuleSource(Type):
 
     def __await__(self):
         return self.sync().__await__()
+
+    def user_defaults(self) -> EnvFile:
+        """User-defined defaults read from local .env files"""
+        _args: list[Arg] = []
+        _ctx = self._select("userDefaults", _args)
+        return EnvFile(_ctx)
 
     async def version(self) -> str:
         """The specified version of the git repo this source points to.
