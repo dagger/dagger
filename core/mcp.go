@@ -49,7 +49,7 @@ type LLMTool struct {
 	// https://platform.openai.com/docs/guides/structured-outputs?api-mode=chat
 	Strict bool `json:"-"`
 	// Whether this tool automatically runs with context (i.e. the workspace) from
-	// the LLM's Env.
+	// the LLM's Env. True for tools from Env.withModule or Env.withMCPServer.
 	Contextual bool `json:"-"`
 	// Whether the tool is read-only (from MCP ReadOnlyHint annotation)
 	ReadOnly bool `json:"-"`
@@ -307,6 +307,7 @@ func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
 				Server:      serverName,
 				Description: tool.Description,
 				Schema:      anied,
+				Contextual:  true,
 				ReadOnly:    isReadOnly,
 				Call: func(ctx context.Context, args any) (any, error) {
 					res, err := sess.CallTool(ctx, &mcp.CallToolParams{
