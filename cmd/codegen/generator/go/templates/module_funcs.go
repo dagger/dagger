@@ -24,7 +24,20 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 	if err != nil {
 		return nil, fmt.Errorf("failed to find decl for method %s: %w", fn.Name(), err)
 	}
-	spec.doc = funcDecl.Doc.Text()
+
+	docPragmas, docComment := parsePragmaComment(funcDecl.Doc.Text())
+	spec.doc = docComment
+
+	if _, ok := docPragmas["cache-per-session"]; ok {
+		spec.cachePerSession = true
+	}
+	if v, ok := docPragmas["cache-ttl"]; ok {
+		spec.cacheTTL, ok = v.(string)
+		if !ok {
+			return nil, fmt.Errorf("cache-ttl pragma %q, must be a valid string", v)
+		}
+	}
+
 	spec.sourceMap = ps.sourceMap(funcDecl)
 
 	sig, ok := fn.Type().(*types.Signature)
@@ -77,9 +90,11 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 }
 
 type funcTypeSpec struct {
-	name      string
-	doc       string
-	sourceMap *sourceMap
+	name            string
+	doc             string
+	sourceMap       *sourceMap
+	cachePerSession bool
+	cacheTTL        string
 
 	argSpecs []paramSpec
 
@@ -113,6 +128,14 @@ func (spec *funcTypeSpec) TypeDefFunc(dag *dagger.Client) (*dagger.Function, err
 	if spec.doc != "" {
 		fnTypeDef = fnTypeDef.WithDescription(strings.TrimSpace(spec.doc))
 	}
+
+	if spec.cachePerSession {
+		fnTypeDef = fnTypeDef.WithCachePerSession()
+	}
+	if spec.cacheTTL != "" {
+		fnTypeDef = fnTypeDef.WithCacheTTL(strings.TrimSpace(spec.cacheTTL))
+	}
+
 	if spec.sourceMap != nil {
 		fnTypeDef = fnTypeDef.WithSourceMap(spec.sourceMap.TypeDef(dag))
 	}

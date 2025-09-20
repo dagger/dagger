@@ -6487,7 +6487,6 @@ func (m *Test) TestAlwaysCache() string {
 }
 `,
 		},
-
 		{
 			sdk: "python",
 			source: `import dagger
