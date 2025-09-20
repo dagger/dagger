@@ -1,4 +1,4 @@
-# Instructions
+## Calling Methods
 
 To complete your task:
 1. Discover available methods using ListMethods

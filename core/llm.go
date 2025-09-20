@@ -649,14 +649,6 @@ func (llm *LLM) messagesWithSystemPrompt() []*ModelMessage {
 	if !llm.disableDefaultSystemPrompt {
 		systemPrompt = llm.mcp.DefaultSystemPrompt()
 	}
-	if !llm.mcp.staticTools {
-		if values, err := llm.mcp.userProvidedValues(); err == nil && len(values) > 0 {
-			if systemPrompt != "" {
-				systemPrompt += "\n\n"
-			}
-			systemPrompt += fmt.Sprintf("The following values have been provided:\n\n%s", values)
-		}
-	}
 	if systemPrompt != "" {
 		return append([]*ModelMessage{{
 			Role:    "system",
@@ -811,22 +803,32 @@ func (llm *LLM) loop(ctx context.Context) error {
 
 		messagesToSend := llm.messagesWithSystemPrompt()
 
-		var userMessages []*ModelMessage
+		var newMessages []*ModelMessage
 		for _, msg := range slices.Backward(messagesToSend) {
-			if msg.Role != "user" || msg.ToolCallID != "" {
-				// only display user messages appended since the last response
+			if msg.Role == "assistant" || msg.ToolCallID != "" {
+				// only display messages appended since the last response
 				break
 			}
-			userMessages = append(userMessages, msg)
+			newMessages = append(newMessages, msg)
 		}
-		slices.Reverse(userMessages)
-		for _, msg := range userMessages {
+		slices.Reverse(newMessages)
+		for _, msg := range newMessages {
 			func() {
-				ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", telemetry.Reveal(), trace.WithAttributes(
-					attribute.String(telemetry.UIActorEmojiAttr, "🧑"),
-					attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageSent),
-					attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleUser),
-				))
+				var emoji string
+				switch msg.Role {
+				case "user":
+					emoji = "🧑"
+				case "system":
+					emoji = "⚙️"
+				}
+				ctx, span := Tracer(ctx).Start(ctx, "LLM prompt",
+					telemetry.Reveal(),
+					trace.WithAttributes(
+						attribute.String(telemetry.UIActorEmojiAttr, emoji),
+						attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageSent),
+						attribute.String(telemetry.LLMRoleAttr, msg.Role),
+						attribute.Bool(telemetry.UIInternalAttr, msg.Role == "system"),
+					))
 				defer span.End()
 				stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
 					log.String(telemetry.ContentTypeAttr, "text/markdown"))

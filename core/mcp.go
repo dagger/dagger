@@ -130,21 +130,38 @@ func newMCP(env dagql.ObjectResult[*Env]) *MCP {
 }
 
 func (m *MCP) DefaultSystemPrompt() string {
-	var prompt string
-	basics, err := prompts.FS.ReadFile("basics.md")
-	if err != nil {
-		// this should be caught at dev time
-		panic(err)
+	env := m.env.Self()
+	var promptFiles []string
+	if len(env.inputsByName) > 0 ||
+		env.privileged ||
+		len(env.installedModules) > 0 {
+		promptFiles = append(promptFiles, "basics.md")
 	}
-	prompt += string(basics)
 	if m.staticTools {
-		static, err := prompts.FS.ReadFile("static.md")
+		promptFiles = append(promptFiles, "static.md")
+	}
+	if len(env.outputsByName) > 0 {
+		promptFiles = append(promptFiles, "outputs.md")
+	}
+	var prompt string
+	for _, file := range promptFiles {
+		content, err := prompts.FS.ReadFile(file)
 		if err != nil {
 			// this should be caught at dev time
 			panic(err)
 		}
-		prompt += "\n"
-		prompt += string(static)
+		if len(prompt) > 0 {
+			prompt += "\n"
+		}
+		prompt += string(content)
+	}
+	if !m.staticTools {
+		if values, err := m.userProvidedValues(); err == nil && len(values) > 0 {
+			if prompt != "" {
+				prompt += "\n\n"
+			}
+			prompt += fmt.Sprintf("The following values have been provided:\n\n```\n%s\n```", values)
+		}
 	}
 	return prompt
 }
@@ -1564,42 +1581,44 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 		})
 	}
 
-	builtins = append(builtins, LLMTool{
-		Name:        "ListObjects",
-		Description: "List available objects.",
-		Schema: map[string]any{
-			"type":                 "object",
-			"properties":           map[string]any{},
-			"required":             []string{},
-			"additionalProperties": false,
-		},
-		Strict: true,
-		Call: ToolFunc(srv, func(ctx context.Context, args struct{}) (any, error) {
-			type objDesc struct {
-				ID          string `json:"id"`
-				Description string `json:"description"`
-			}
-			var objects []objDesc
-			for _, typeName := range slices.Sorted(maps.Keys(m.typeCounts)) {
-				count := m.typeCounts[typeName]
-				for i := 1; i <= count; i++ {
-					bnd, found, err := m.Input(ctx, fmt.Sprintf("%s#%d", typeName, i))
-					if err != nil {
-						continue
-					}
-					if !found {
-						// impossible?
-						continue
-					}
-					objects = append(objects, objDesc{
-						ID:          bnd.ID(),
-						Description: bnd.Description,
-					})
+	if len(m.typeCounts) > 0 {
+		builtins = append(builtins, LLMTool{
+			Name:        "ListObjects",
+			Description: "List available objects.",
+			Schema: map[string]any{
+				"type":                 "object",
+				"properties":           map[string]any{},
+				"required":             []string{},
+				"additionalProperties": false,
+			},
+			Strict: true,
+			Call: ToolFunc(srv, func(ctx context.Context, args struct{}) (any, error) {
+				type objDesc struct {
+					ID          string `json:"id"`
+					Description string `json:"description"`
 				}
-			}
-			return toolStructuredResponse(objects)
-		}),
-	})
+				var objects []objDesc
+				for _, typeName := range slices.Sorted(maps.Keys(m.typeCounts)) {
+					count := m.typeCounts[typeName]
+					for i := 1; i <= count; i++ {
+						bnd, found, err := m.Input(ctx, fmt.Sprintf("%s#%d", typeName, i))
+						if err != nil {
+							continue
+						}
+						if !found {
+							// impossible?
+							continue
+						}
+						objects = append(objects, objDesc{
+							ID:          bnd.ID(),
+							Description: bnd.Description,
+						})
+					}
+				}
+				return toolStructuredResponse(objects)
+			}),
+		})
+	}
 
 	if m.staticTools {
 		builtins = append(builtins, m.staticMethodCallingTools(srv, allMethods)...)
@@ -1637,27 +1656,29 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 		builtins = append(builtins, returnTool)
 	}
 
-	builtins = append(builtins, LLMTool{
-		Name:        "UserProvidedValues",
-		Description: "Read the inputs supplied by the user.",
-		Schema: map[string]any{
-			"type":                 "object",
-			"properties":           map[string]any{},
-			"required":             []string{},
-			"additionalProperties": false,
-		},
-		Strict: true,
-		Call: func(ctx context.Context, args any) (any, error) {
-			values, err := m.userProvidedValues()
-			if err != nil {
-				return nil, err
-			}
-			if values == "" {
-				return "No user-provided values.", nil
-			}
-			return values, nil
-		},
-	})
+	if len(m.env.Self().inputsByName) > 0 {
+		builtins = append(builtins, LLMTool{
+			Name:        "UserProvidedValues",
+			Description: "Read the inputs supplied by the user.",
+			Schema: map[string]any{
+				"type":                 "object",
+				"properties":           map[string]any{},
+				"required":             []string{},
+				"additionalProperties": false,
+			},
+			Strict: true,
+			Call: func(ctx context.Context, args any) (any, error) {
+				values, err := m.userProvidedValues()
+				if err != nil {
+					return nil, err
+				}
+				if values == "" {
+					return "No user-provided values.", nil
+				}
+				return values, nil
+			},
+		})
+	}
 
 	return builtins, nil
 }
