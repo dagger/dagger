@@ -60,7 +60,7 @@ var (
 	verbose                  int
 	quiet, _                 = strconv.Atoi(os.Getenv("DAGGER_QUIET"))
 	reveal                   = os.Getenv("DAGGER_REVEAL") != ""
-	debug                    bool
+	debugFlag                bool
 	progress                 string
 	interactive              bool
 	interactiveCommand       string
@@ -331,7 +331,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
 	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
 	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
-	flags.BoolVarP(&debug, "debug", "d", debug, "Show debug logs and full verbosity")
+	flags.BoolVarP(&debugFlag, "debug", "d", debugFlag, "Show debug logs and full verbosity")
 	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty, dots)")
 	flags.BoolVarP(&interactive, "interactive", "i", false, "Spawn a terminal on container exec failure")
 	flags.StringVar(&interactiveCommand, "interactive-command", "/bin/sh", "Change the default command for interactive mode")
@@ -436,7 +436,7 @@ func main() {
 	opts.Verbosity += verbose                      // raise verbosity with -v
 	opts.Verbosity -= quiet                        // lower verbosity with -q
 	opts.Silent = silent                           // show no progress
-	opts.Debug = debug                             // show everything
+	opts.Debug = debugFlag                         // show everything
 	opts.RevealNoisySpans = reveal                 // disable 'reveal: true' mechanic (for tests)
 	opts.OpenWeb = web
 	opts.NoExit = noExit
@@ -488,7 +488,7 @@ func main() {
 
 	ctx := context.Background()
 	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
-	ctx = slog.ContextWithDebugMode(ctx, debug)
+	ctx = slog.ContextWithDebugMode(ctx, debugFlag)
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {

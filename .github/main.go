@@ -315,8 +315,9 @@ func (ci *CI) withEvalsWorkflow() *CI {
 		},
 	}).WithJob(gha.Job(
 		"testdev",
-		"evals",
+		"--allow-llm all check",
 		dagger.GhaJobOpts{
+			Module:    module("modules/evals"),
 			DaggerDev: "${{ github.sha }}", // testdev, so run against local dagger
 			Runner:    AltGoldRunner(),
 			// NOTE: avoid running for forks

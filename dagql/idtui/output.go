@@ -66,3 +66,7 @@ func HasDarkBackground() bool {
 	})
 	return lipgloss.HasDarkBackground()
 }
+
+func hl(st termenv.Style) termenv.Style {
+	return st.Reverse()
+}

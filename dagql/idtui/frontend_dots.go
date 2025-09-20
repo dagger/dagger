@@ -73,8 +73,9 @@ func NewDots(output io.Writer) Frontend {
 	}
 }
 
-func (fe *frontendDots) SetClient(client *dagger.Client) {
-}
+func (fe *frontendDots) SetClient(client *dagger.Client) {}
+
+func (fe *frontendDots) SetSidebarContent(SidebarSection) {}
 
 func (fe *frontendDots) Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) (cleanups.CleanupF, error)) error {
 	fe.opts = opts
