@@ -5,66 +5,13 @@
   },
   {
     "role": "assistant",
-    "content": "Hello! I'm here to help you with your Dagger pipeline tasks. I can see you've provided a cache-busting string, which suggests you might be working on some kind of build or deployment process.\n\nLet me check what objects and logs are available to better understand what you'd like to work on:",
-    "tool_calls": [
-      {
-        "id": "toolu_01RH1V2RiWQQ2ygF5gKDHz5w",
-        "function": {
-          "name": "ListObjects",
-          "arguments": {}
-        },
-        "type": "function"
-      }
-    ],
+    "content": "Hello! How can I assist you today?",
     "token_usage": {
-      "input_tokens": 875,
-      "output_tokens": 101,
+      "input_tokens": 337,
+      "output_tokens": 10,
       "cached_token_reads": 0,
       "cached_token_writes": 0,
-      "total_tokens": 976
-    }
-  },
-  {
-    "role": "user",
-    "content": "null\n",
-    "tool_call_id": "toolu_01RH1V2RiWQQ2ygF5gKDHz5w"
-  },
-  {
-    "role": "assistant",
-    "content": "",
-    "tool_calls": [
-      {
-        "id": "toolu_01N8hx9pZpFQeo4LoLK9MeTk",
-        "function": {
-          "name": "ReadLogs",
-          "arguments": {}
-        },
-        "type": "function"
-      }
-    ],
-    "token_usage": {
-      "input_tokens": 990,
-      "output_tokens": 36,
-      "cached_token_reads": 0,
-      "cached_token_writes": 0,
-      "total_tokens": 1026
-    }
-  },
-  {
-    "role": "user",
-    "content": "no logs captured",
-    "tool_call_id": "toolu_01N8hx9pZpFQeo4LoLK9MeTk",
-    "tool_errored": true
-  },
-  {
-    "role": "assistant",
-    "content": "It looks like there are no objects or logs available yet, which means this might be the start of a fresh pipeline. How can I help you today? Are you looking to set up a build process, run some containers, or work with files? Just let me know what you'd like to accomplish!",
-    "token_usage": {
-      "input_tokens": 1051,
-      "output_tokens": 64,
-      "cached_token_reads": 0,
-      "cached_token_writes": 0,
-      "total_tokens": 1115
+      "total_tokens": 347
     }
   }
 ]
