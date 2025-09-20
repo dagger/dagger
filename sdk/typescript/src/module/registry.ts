@@ -39,6 +39,23 @@ export type ArgumentOptions = {
   ignore?: string[]
 }
 
+export type FunctionOptions = {
+  /**
+    * The time-to-live for persistent caching of the result of the function.
+    */
+  cacheTTL?: string
+
+  /**
+    * If true, the result of the function is cached only per session, not persistently across sessions.
+    */
+  cachePerSession?: boolean
+
+  /**
+    * An optional alias to use for the function when exposed on the API.
+    */
+  alias?: string
+}
+
 /**
  * Registry stores class and method that have the @object decorator.
  *
