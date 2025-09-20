@@ -2437,17 +2437,44 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		}
 	}
 
-	if blueprintSrc.Self() != nil {
+	if bp := blueprintSrc.Self(); bp != nil {
 		// Show the downstream module name to clients, not the blueprint name
 		// NOTE: we don't change OriginalName, that's used internally at runtime
 		mod.NameField = originalSrc.Self().ModuleName
 	}
+
+	// Load local defaults from the original source (not the blueprint)
+	defaults, err := originalSrc.Self().LocalDefaults(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load local defaults for module %q: %w", modName, err)
+	}
+	// If there is a blueprint, also load defaults from it
+	if bp := blueprintSrc.Self(); bp != nil {
+		bpDefaults, err := bp.LocalDefaults(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to load local defaults for blueprint module %q: %w", modName, err)
+		}
+		defaults = defaults.WithEnvFiles(bpDefaults)
+	}
+	for _, kv := range defaults.Variables() {
+		tuiLog(ctx, "%q: local default: %s=%s", modName, kv.Name, kv.Value)
+	}
+	if err := mod.MergeDefaults(ctx, defaults); err != nil {
+		return inst, fmt.Errorf("failed to merge defaults for module %q: %w", modName, err)
+	}
+
 	inst, err = dagql.NewResultForCurrentID(ctx, mod)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", modName, err)
 	}
-
 	return inst, nil
+}
+
+// Emit a one-off span for debugging purposes
+// Easier for debugging, since you can see it in the TUI instead of navigating to the dev engine logs
+func debugSpan(ctx context.Context, msg string, args ...any) {
+	_, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf(msg, args...))
+	span.End()
 }
 
 // load the given module source's dependencies as modules

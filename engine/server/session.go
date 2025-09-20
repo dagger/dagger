@@ -217,6 +217,11 @@ func (client *daggerClient) ShutdownTelemetry(ctx context.Context) error {
 	return errs
 }
 
+// Return modules being served to this client
+func (client *daggerClient) modules() []core.Mod {
+	return client.deps.Mods
+}
+
 func (client *daggerClient) getMainClientCaller() (bksession.Caller, error) {
 	return client.getClientCaller(client.daggerSession.mainClientCallerID)
 }
@@ -1334,25 +1339,42 @@ func (srv *Server) MainClientCallerMetadata(ctx context.Context) (*engine.Client
 // The nearest ancestor client that is not a module (either a caller from the host like the CLI
 // or a nested exec). Useful for figuring out where local sources should be resolved from through
 // chains of dependency modules.
-func (srv *Server) NonModuleParentClientMetadata(ctx context.Context) (*engine.ClientMetadata, error) {
+func (srv *Server) nonModuleParentClient(ctx context.Context) (*daggerClient, error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
-
 	if client.mod == nil {
-		// not a module client, return the metadata
-		return client.clientMetadata, nil
+		// not a module client, return the current client
+		return client, nil
 	}
 	for i := len(client.parents) - 1; i >= 0; i-- {
 		parent := client.parents[i]
 		if parent.mod == nil {
-			// not a module client, return the metadata
-			return parent.clientMetadata, nil
+			// not a module client: match
+			return parent, nil
 		}
 	}
-
 	return nil, fmt.Errorf("no non-module parent found")
+}
+
+// The nearest ancestor client that is not a module (either a caller from the host like the CLI
+// or a nested exec). Useful for figuring out where local sources should be resolved from through
+// chains of dependency modules.
+func (srv *Server) NonModuleParentClientMetadata(ctx context.Context) (*engine.ClientMetadata, error) {
+	client, err := srv.nonModuleParentClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.clientMetadata, nil
+}
+
+func (srv *Server) NonModuleParentClientModules(ctx context.Context) ([]core.Mod, error) {
+	client, err := srv.nonModuleParentClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.modules(), nil
 }
 
 // The default deps of every user module (currently just core)

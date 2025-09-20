@@ -1,0 +1,6 @@
+{
+  "name": "defaults",
+  "sdk": {
+    "source": "go"
+  }
+}

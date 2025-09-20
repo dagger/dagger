@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
@@ -36,6 +37,14 @@ import (
 var (
 	errEmptyResultRef = fmt.Errorf("empty result reference")
 )
+
+func tuiLog(ctx context.Context, msg string, args ...any) {
+	if len(msg) > 0 && msg[len(msg)-1] != '\n' {
+		msg += "\n"
+	}
+	w := telemetry.GlobalWriter(ctx, InstrumentationLibrary)
+	fmt.Fprintf(w, msg, args...)
+}
 
 type Evaluatable interface {
 	dagql.Typed
