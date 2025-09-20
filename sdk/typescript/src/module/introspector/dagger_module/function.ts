@@ -2,6 +2,7 @@ import ts from "typescript"
 
 import { TypeDefKind } from "../../../api/client.gen.js"
 import { IntrospectionError } from "../../../common/errors/index.js"
+import { FunctionOptions } from "../../registry.js"
 import { TypeDef } from "../typedef.js"
 import {
   AST,
@@ -12,6 +13,7 @@ import { DaggerArgument, DaggerArguments } from "./argument.js"
 import { FUNCTION_DECORATOR } from "./decorator.js"
 import { Locatable } from "./locatable.js"
 import { References } from "./reference.js"
+import { func } from "../../decorators.js"
 
 export type DaggerFunctions = { [name: string]: DaggerFunction }
 
@@ -20,8 +22,10 @@ export class DaggerFunction extends Locatable {
   public description: string
   private _returnTypeRef?: string
   public returnType?: TypeDef<TypeDefKind>
-  public alias: string | undefined
   public arguments: DaggerArguments = {}
+  public alias: string | undefined
+  public cacheTTL: string | undefined
+  public cachePerSession: boolean | undefined
 
   private signature: ts.Signature
   private symbol: ts.Symbol
@@ -37,6 +41,25 @@ export class DaggerFunction extends Locatable {
     this.name = this.node.name.getText()
     this.description = this.ast.getDocFromSymbol(this.symbol)
 
+    const functionArguments = this.ast.getDecoratorArgument<
+      FunctionOptions | string
+    >(
+      this.node,
+      FUNCTION_DECORATOR,
+      "object",
+    )
+    if (functionArguments) {
+      if (typeof functionArguments === "string") {
+        this.alias = functionArguments
+      } else {
+        if (functionArguments.alias) {
+          this.alias = functionArguments.alias
+        }
+        this.cacheTTL = functionArguments.cacheTTL
+        this.cachePerSession = functionArguments.cachePerSession
+      }
+    }
+
     for (const parameter of this.node.parameters) {
       this.arguments[parameter.name.getText()] = new DaggerArgument(
         parameter,
@@ -44,7 +67,6 @@ export class DaggerFunction extends Locatable {
       )
     }
     this.returnType = this.getReturnType()
-    this.alias = this.getAlias()
   }
 
   private getReturnType(): TypeDef<TypeDefKind> | undefined {
@@ -56,19 +78,6 @@ export class DaggerFunction extends Locatable {
     }
 
     return typedef
-  }
-
-  private getAlias(): string | undefined {
-    const alias = this.ast.getDecoratorArgument<string>(
-      this.node,
-      FUNCTION_DECORATOR,
-      "string",
-    )
-    if (!alias) {
-      return
-    }
-
-    return JSON.parse(alias.replace(/'/g, '"'))
   }
 
   public getArgsOrder(): string[] {
