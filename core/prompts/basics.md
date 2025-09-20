@@ -1,5 +1,5 @@
 You will be given a task described through the combination of tool descriptions and user messages.
-The `save` tool, if present, describes the desired outputs.
+The Save tool, if present, describes the desired outputs. Your goal is to call it with those outputs.
 
 The Dagger tool system operates as a chain of transformations where:
 1. Objects are referenced by IDs (e.g., Container#1, File#2)
