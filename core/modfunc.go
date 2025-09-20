@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -93,19 +94,22 @@ type CallOpts struct {
 	Inputs         []CallInput
 	ParentTyped    dagql.AnyResult
 	ParentFields   map[string]any
-	Cache          bool
 	SkipSelfSchema bool
 	Server         *dagql.Server
 
-	// If true, don't mix in the digest for the current dagql call into the cache key for
-	// the exec-op underlying the function call.
+	// TODO: doc
+	CacheTTLSeconds int64
+	CachePerSession bool
+
+	// If set, don't mix in the digest for the current dagql call into the cache key for
+	// the exec-op underlying the function call, instead mix in this string.
 	//
 	// We want the function call to be cached by the dagql digest in almost every case
 	// since the current dagql call is typically the actual function call. However, in
 	// some corner cases we may calling a function internally within a separate dagql
 	// call and don't want the current call digest mixed in, e.g. during the special
 	// function call that retrieves the module typedefs.
-	SkipCallDigestCacheKey bool
+	OverrideCallDigestCacheKey string
 }
 
 type CallInput struct {
@@ -268,6 +272,11 @@ func (fn *ModuleFunction) CacheConfigForCall(
 func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.AnyResult, rerr error) { //nolint: gocyclo
 	mod := fn.mod
 
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	lg := bklog.G(ctx).WithField("module", mod.Name()).WithField("function", fn.metadata.Name)
 	if fn.objDef != nil {
 		lg = lg.WithField("object", fn.objDef.Name)
@@ -294,18 +303,30 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	var cacheMixins []string
-	if !opts.Cache {
-		// Scope the exec cache key to the current session ID. It will be
+	callKey := dagql.CurrentID(ctx).Digest().String()
+	if opts.OverrideCallDigestCacheKey != "" {
+		callKey = opts.OverrideCallDigestCacheKey
+	}
+	cacheMixins = append(cacheMixins, callKey)
+
+	var expirationMixin string
+	expirationCache := query.CallExpirationCache()
+	if opts.CachePerSession {
+		// Scope the exec cache key to the current session ID. It will still be
 		// cached in the context of the session but invalidated across
 		// different sessions.
-		cacheMixins = append(cacheMixins, clientMetadata.SessionID)
+		expirationMixin = clientMetadata.SessionID
+	} else {
+		ttl := opts.CacheTTLSeconds
+		if ttl == 0 {
+			// TODO: default 1w for now, needs more thought
+			ttl = 7 * 24 * 60 * 60
+		}
+		expiration := expirationCache.GetOrInitExpiration(callKey, ttl)
+		expirationMixin = strconv.Itoa(int(expiration))
 	}
-	if !opts.SkipCallDigestCacheKey {
-		// If true, scope the exec cache key to the current dagql call digest. This is needed currently
-		// for module function calls specifically so that their cache key is based on their arguments and
-		// receiver object.
-		cacheMixins = append(cacheMixins, dagql.CurrentID(ctx).Digest().String())
-	}
+	cacheMixins = append(cacheMixins, expirationMixin)
+
 	execMD.CacheMixin = dagql.HashFrom(cacheMixins...)
 
 	callInputs, err := fn.setCallInputs(ctx, opts)
@@ -411,10 +432,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("failed to exec function: %w", err)
 	}
 
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)

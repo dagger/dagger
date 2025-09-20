@@ -1489,6 +1489,11 @@ func (srv *Server) ClientTelemetry(ctx context.Context, sessID, clientID string)
 	return clientdb.New(db), db.Close, nil
 }
 
+// The global call expiration cache
+func (srv *Server) CallExpirationCache() *core.CallExpirationCache {
+	return srv.callExpirationCache
+}
+
 type httpError struct {
 	error
 	code int
