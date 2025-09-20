@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,6 +21,7 @@ const (
 	goSDKRuntimePath            = "/runtime"
 	goSDKIntrospectionJSONPath  = "/schema.json"
 	goSDKDependenciesConfigPath = "/dependencies.json"
+	GoSDKModuleIDPath           = "typedefs.json"
 )
 
 /*
@@ -41,6 +43,10 @@ type goSDKConfig struct {
 }
 
 func (sdk *goSDK) AsRuntime() (core.Runtime, bool) {
+	return sdk, true
+}
+
+func (sdk *goSDK) AsTypeDefs() (core.TypeDefs, bool) {
 	return sdk, true
 }
 
@@ -214,6 +220,128 @@ func (sdk *goSDK) Codegen(
 			".env", // this is here because the Go SDK does not use WithVCSIgnoredPaths on core/codegen/GeneratedCode
 		},
 	}, nil
+}
+
+func (sdk *goSDK) TypeDefs(
+	ctx context.Context,
+	deps *core.ModDeps,
+	src dagql.ObjectResult[*core.ModuleSource],
+) (inst dagql.ObjectResult[*core.Module], rerr error) {
+	dag, err := sdk.root.Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag for go module sdk codegen: %w", err)
+	}
+
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{})
+	if err != nil {
+		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
+	}
+
+	var ctr dagql.ObjectResult[*core.Container]
+
+	modName := src.Self().ModuleOriginalName
+	contextDir := src.Self().ContextDirectory
+	srcSubpath := src.Self().SourceSubpath
+
+	ctr, err = sdk.base(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	var typeDefsID string
+	err = dag.Select(ctx, ctr, &typeDefsID,
+		dagql.Selector{
+			Field: "withMountedFile",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(goSDKIntrospectionJSONPath),
+				},
+				{
+					Name:  "source",
+					Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withMountedDirectory",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(goSDKUserModContextDirPath),
+				},
+				{
+					Name:  "source",
+					Value: dagql.NewID[*core.Directory](contextDir.ID()),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withWorkdir",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withExec",
+			Args: []dagql.NamedInput{
+				{
+					Name: "args",
+					Value: dagql.ArrayInput[dagql.String]{
+						"codegen",
+						"generate-typedefs",
+						"--module-source-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
+						"--module-name", dagql.String(modName),
+						"--introspection-json-path", goSDKIntrospectionJSONPath,
+						"--output", GoSDKModuleIDPath,
+					},
+				},
+				{
+					Name:  "experimentalPrivilegedNesting",
+					Value: dagql.Boolean(true),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(GoSDKModuleIDPath),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "contents",
+		},
+	)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get type defs json during module sdk codegen: %w", err)
+	}
+
+	var modID core.ModuleID
+	if err = json.Unmarshal([]byte(typeDefsID), &modID); err != nil {
+		return inst, err
+	}
+
+	err = dag.Select(ctx, dag.Root(), &inst,
+		dagql.Selector{
+			Field: "loadModuleFromID",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "id",
+					Value: dagql.NewID[*core.Module](modID.ID()),
+				},
+			},
+		})
+	if err != nil {
+		return inst, fmt.Errorf("failed to load module from type defs json: %w", err)
+	}
+
+	return inst, nil
 }
 
 func (sdk *goSDK) Runtime(
