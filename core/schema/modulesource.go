@@ -2442,6 +2442,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		// NOTE: we don't change OriginalName, that's used internally at runtime
 		mod.NameField = originalSrc.Self().ModuleName
 	}
+
 	inst, err = dagql.NewResultForCurrentID(ctx, mod)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", modName, err)
