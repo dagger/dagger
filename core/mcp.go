@@ -48,6 +48,9 @@ type LLMTool struct {
 	// Whether the tool schema is strict.
 	// https://platform.openai.com/docs/guides/structured-outputs?api-mode=chat
 	Strict bool `json:"-"`
+	// Whether this tool automatically runs with context (i.e. the workspace) from
+	// the LLM's Env.
+	Contextual bool `json:"-"`
 	// Whether the tool is read-only (from MCP ReadOnlyHint annotation)
 	ReadOnly bool `json:"-"`
 	// GraphQL API field that this tool corresponds to
@@ -503,6 +506,7 @@ func (m *MCP) typeTools(allTools map[string]LLMTool, srv *dagql.Server, schema *
 			Description: strings.TrimSpace(field.Description),
 			Schema:      toolSchema,
 			Strict:      false, // unused
+			Contextual:  autoConstruct != nil,
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
 				argsMap, ok := args.(map[string]any)
 				if !ok {
@@ -1061,7 +1065,11 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 		attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),
 		attribute.StringSlice(telemetry.LLMToolArgValuesAttr, toolArgValues),
 	}
-	if tool.Name == "CallMethod" || tool.Name == "ChainMethods" {
+	if !tool.Contextual ||
+		(tool.Name == "CallMethod" || tool.Name == "ChainMethods") {
+		// For non-contextual methods, or plumbing methods, don't show this span
+		// since it'll just be ugly. Just show the underlying function call that it
+		// makes.
 		attrs = append(attrs, attribute.Bool(telemetry.UIPassthroughAttr, true))
 	}
 	if tool.Server != "" {
