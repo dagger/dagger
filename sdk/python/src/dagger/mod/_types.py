@@ -19,6 +19,8 @@ class FieldDefinition:
 class FunctionDefinition:
     name: APIName | None = None
     doc: str | None = None
+    cache_ttl: str | None = None
+    cache_per_session: bool = False
 
 
 class Enum(str, base.Enum):

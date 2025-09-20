@@ -89,6 +89,14 @@ class Function(Generic[P, R]):
         return self.meta.doc if self.meta.doc is not None else get_doc(self.wrapped)
 
     @cached_property
+    def cache_ttl(self):
+        return self.meta.cache_ttl
+
+    @cached_property
+    def cache_per_session(self):
+        return self.meta.cache_per_session
+
+    @cached_property
     def type_hints(self):
         return get_type_hints(self.wrapped)
 
