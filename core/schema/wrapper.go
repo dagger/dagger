@@ -173,6 +173,8 @@ func getSelfDigest(a any) (digest.Digest, error) {
 	case *core.Changeset:
 		// FIXME this seems weird?
 		return "", nil
+	case *core.Host:
+		return "", nil
 	default:
 		return "", fmt.Errorf("unable to create digest: unknown type %T", a)
 	}
