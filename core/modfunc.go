@@ -29,9 +29,12 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 )
+
+const defaultCacheTTLSeconds = 7 * 24 * 60 * 60 // 1 week
 
 type ModuleFunction struct {
 	mod     *Module
@@ -94,19 +97,23 @@ type CallOpts struct {
 	Inputs         []CallInput
 	ParentTyped    dagql.AnyResult
 	ParentFields   map[string]any
-	Cache          bool
 	SkipSelfSchema bool
 	Server         *dagql.Server
 
-	// If true, don't mix in the digest for the current dagql call into the cache key for
-	// the exec-op underlying the function call.
+	// TODO: doc
+	CacheTTLSeconds int64
+	CachePerSession bool
+
+	// If set, don't mix in the digest for the current dagql call into the cache key for
+	// the exec-op underlying the function call, instead mix in this string.
 	//
 	// We want the function call to be cached by the dagql digest in almost every case
 	// since the current dagql call is typically the actual function call. However, in
 	// some corner cases we may calling a function internally within a separate dagql
 	// call and don't want the current call digest mixed in, e.g. during the special
 	// function call that retrieves the module typedefs.
-	SkipCallDigestCacheKey bool
+	// TODO: UPDATE ABOVE DOC STRING
+	OverridePersistenceKey string
 }
 
 type CallInput struct {
@@ -571,12 +578,32 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		}
 	}
 
+	if fn.metadata.CachePerSession || fn.mod.DisableDefaultFunctionCaching {
+		// Scope the exec cache key to the current session ID. It will still be
+		// cached in the context of the session but invalidated across
+		// different sessions.
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		dgstInputs = append(dgstInputs, clientMetadata.SessionID)
+	} else if fn.metadata.CacheTTLSeconds.Valid {
+		cacheCfg.TTL = fn.metadata.CacheTTLSeconds.Value.Int64()
+	} else {
+		cacheCfg.TTL = defaultCacheTTLSeconds
+	}
+
 	cacheCfg.Digest = dagql.HashFrom(dgstInputs...)
 	return cacheCfg, nil
 }
 
 func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.AnyResult, rerr error) { //nolint: gocyclo
 	mod := fn.mod
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	lg := bklog.G(ctx).WithField("module", mod.Name()).WithField("function", fn.metadata.Name)
 	if fn.objDef != nil {
@@ -604,17 +631,10 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	var cacheMixins []string
-	if !opts.Cache {
-		// Scope the exec cache key to the current session ID. It will be
-		// cached in the context of the session but invalidated across
-		// different sessions.
-		cacheMixins = append(cacheMixins, clientMetadata.SessionID)
-	}
-	if !opts.SkipCallDigestCacheKey {
-		// If true, scope the exec cache key to the current dagql call digest. This is needed currently
-		// for module function calls specifically so that their cache key is based on their arguments and
-		// receiver object.
-		cacheMixins = append(cacheMixins, dagql.CurrentID(ctx).Digest().String())
+	if opts.OverridePersistenceKey != "" {
+		cacheMixins = append(cacheMixins, opts.OverridePersistenceKey)
+	} else {
+		cacheMixins = append(cacheMixins, cache.CurrentStorageKey(ctx))
 	}
 	execMD.CacheMixin = dagql.HashFrom(cacheMixins...)
 
@@ -721,10 +741,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("exec function: %w", err)
 	}
 
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get buildkit client: %w", err)
@@ -809,6 +825,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("convert return value: %w", err)
 	}
 
+	safeToPersistCache := true
 	if returnValue != nil {
 		// Get the client ID actually used during the function call - this might not
 		// be the same as execMD.ClientID if the function call was cached at the
@@ -825,11 +842,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 			return nil, fmt.Errorf("collect IDs: %w", err)
 		}
 
-		// NOTE: once generalized function caching is enabled we need to ensure that any non-reproducible
-		// cache entries are linked to the result of this call.
-		// See the previous implementation of this for a reference:
-		// https://github.com/dagger/dagger/blob/7c31db76e07c9a17fcdb3f3c4513c915344c1da8/core/modfunc.go#L483
-
 		// Function calls are cached per-session, but every client caller needs to add
 		// secret/socket/etc. resources from the result to their store.
 		returnedIDsList := make([]*resource.ID, 0, len(returnedIDs))
@@ -840,8 +852,17 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		if err != nil {
 			return nil, fmt.Errorf("create secret transfer post call: %w", err)
 		}
+		if secretTransferPostCall != nil {
+			// this being non-nil indicates there were secrets created by direct SetSecret calls in the
+			// returned value. This means we cannot use a persistently cached result, so invalidate the
+			// cache for this call in the future.
+			safeToPersistCache = false
+		}
 
 		returnValue = returnValue.WithPostCall(secretTransferPostCall)
+	}
+	if returnValue != nil {
+		returnValue = returnValue.WithSafeToPersistCache(safeToPersistCache)
 	}
 
 	return returnValue, nil

@@ -103,6 +103,25 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Mark this function as only cached for callers in the current session.
+     */
+    public function withCachePerSession(): Function_
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCachePerSession');
+        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Mark the persistent cache entries for this function as expiring after the given duration.
+     */
+    public function withCacheTTL(string $duration): Function_
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCacheTTL');
+        $innerQueryBuilder->setArgument('duration', $duration);
+        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Returns the function with the given doc string.
      */
     public function withDescription(string $description): Function_

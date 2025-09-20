@@ -6902,6 +6902,23 @@ export class Function_ extends BaseClient {
   }
 
   /**
+   * Mark this function as only cached for callers in the current session.
+   */
+  withCachePerSession = (): Function_ => {
+    const ctx = this._ctx.select("withCachePerSession")
+    return new Function_(ctx)
+  }
+
+  /**
+   * Mark the persistent cache entries for this function as expiring after the given duration.
+   * @param duration The duration of the cache TTL as a string, e.g. "5m", "1h30s".
+   */
+  withCacheTTL = (duration: string): Function_ => {
+    const ctx = this._ctx.select("withCacheTTL", { duration })
+    return new Function_(ctx)
+  }
+
+  /**
    * Returns the function with the given doc string.
    * @param description The doc string to set.
    */

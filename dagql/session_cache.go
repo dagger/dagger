@@ -134,17 +134,17 @@ func (c *SessionCache) GetOrInitializeWithCallbacks(
 	}
 
 	var zeroKey CacheKeyType
-	isZero := key.ResultKey == zeroKey
+	isZero := key.CallKey == zeroKey
 
 	keys := telemetryKeys(ctx)
 	if keys == nil {
 		keys = &c.seenKeys
 	}
-	_, seen := keys.LoadOrStore(key.ResultKey, struct{}{})
+	_, seen := keys.LoadOrStore(key.CallKey, struct{}{})
 	if o.Telemetry != nil && (!seen || isZero) {
 		// track keys globally in addition to any local key stores, otherwise we'll
 		// see dupes when e.g. IDs returned out of the "bubble" are loaded
-		c.seenKeys.Store(key.ResultKey, struct{}{})
+		c.seenKeys.Store(key.CallKey, struct{}{})
 
 		telemetryCtx, done := o.Telemetry(ctx)
 		defer func() {

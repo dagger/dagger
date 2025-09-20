@@ -6716,6 +6716,27 @@ class Function(Type):
         _ctx = self._select("withArg", _args)
         return Function(_ctx)
 
+    def with_cache_per_session(self) -> Self:
+        """Mark this function as only cached for callers in the current session."""
+        _args: list[Arg] = []
+        _ctx = self._select("withCachePerSession", _args)
+        return Function(_ctx)
+
+    def with_cache_ttl(self, duration: str) -> Self:
+        """Mark the persistent cache entries for this function as expiring after
+        the given duration.
+
+        Parameters
+        ----------
+        duration:
+            The duration of the cache TTL as a string, e.g. "5m", "1h30s".
+        """
+        _args = [
+            Arg("duration", duration),
+        ]
+        _ctx = self._select("withCacheTTL", _args)
+        return Function(_ctx)
+
     def with_description(self, description: str) -> Self:
         """Returns the function with the given doc string.
 

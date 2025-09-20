@@ -6411,6 +6411,25 @@ func (r *Function) WithArg(name string, typeDef *TypeDef, opts ...FunctionWithAr
 	}
 }
 
+// Mark this function as only cached for callers in the current session.
+func (r *Function) WithCachePerSession() *Function {
+	q := r.query.Select("withCachePerSession")
+
+	return &Function{
+		query: q,
+	}
+}
+
+// Mark the persistent cache entries for this function as expiring after the given duration.
+func (r *Function) WithCacheTTL(duration string) *Function {
+	q := r.query.Select("withCacheTTL")
+	q = q.Arg("duration", duration)
+
+	return &Function{
+		query: q,
+	}
+}
+
 // Returns the function with the given doc string.
 func (r *Function) WithDescription(description string) *Function {
 	q := r.query.Select("withDescription")

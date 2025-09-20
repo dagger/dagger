@@ -44,6 +44,15 @@ var (
 	// introduced - if it's present and not a dev version, it must be higher
 	// than v0.9.9.
 	MinimumModuleVersion = "v0.9.9"
+
+	// TODO: doc
+	// TODO: ADJUST VERSION BASED ON WHEN RELEASE HAPPENS
+	// TODO: ADJUST VERSION BASED ON WHEN RELEASE HAPPENS
+	// TODO: ADJUST VERSION BASED ON WHEN RELEASE HAPPENS
+	// TODO: ADJUST VERSION BASED ON WHEN RELEASE HAPPENS
+	// TODO: ADJUST VERSION BASED ON WHEN RELEASE HAPPENS
+	// TODO: ADJUST VERSION BASED ON WHEN RELEASE HAPPENS
+	MinimumDefaultFunctionCachingModuleVersion = "v0.18.20"
 )
 
 var (

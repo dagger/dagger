@@ -489,7 +489,7 @@ func (local *localFS) toRootPath(path string) string {
 // the cache key to use for an operation on a given path (where path is relative to local.subdir)
 func (local *localFS) cacheKey(path string) cache.CacheKey[string] {
 	return cache.CacheKey[string]{
-		ResultKey:      local.toRootPath(path),
+		CallKey:        local.toRootPath(path),
 		ConcurrencyKey: cacheConcurrencyKey,
 	}
 }

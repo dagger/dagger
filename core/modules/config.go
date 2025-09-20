@@ -77,6 +77,9 @@ type ModuleConfig struct {
 
 	// The clients generated for this module.
 	Clients []*ModuleConfigClient `json:"clients,omitempty"`
+
+	// TODO: doc
+	DisableDefaultFunctionCaching *bool `json:"disableDefaultFunctionCaching,omitempty"`
 }
 
 type ModuleConfigUserFields struct {

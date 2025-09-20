@@ -57,6 +57,9 @@ type Module struct {
 
 	// ResultID is the ID of the initialized module.
 	ResultID *call.ID
+
+	// TODO: doc
+	DisableDefaultFunctionCaching bool
 }
 
 func (*Module) Type() *ast.Type {

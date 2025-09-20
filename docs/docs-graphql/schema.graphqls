@@ -2900,6 +2900,17 @@ type Function {
     sourceMap: SourceMapID
   ): Function!
 
+  """Mark this function as only cached for callers in the current session."""
+  withCachePerSession: Function!
+
+  """
+  Mark the persistent cache entries for this function as expiring after the given duration.
+  """
+  withCacheTTL(
+    """The duration of the cache TTL as a string, e.g. "5m", "1h30s"."""
+    duration: String!
+  ): Function!
+
   """Returns the function with the given doc string."""
   withDescription(
     """The doc string to set."""

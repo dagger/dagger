@@ -306,10 +306,13 @@ func (class Class[T]) Call(
 	}
 
 	// field implementations can optionally return a wrapped Typed val that has
-	// a callback that should always run after the field is called
+	// a callback that should always run after the field is called and additional
+	// caching metadata
 	var postCall cache.PostCallFunc
+	var safeToPersistCache bool
 	if val != nil {
 		postCall = val.GetPostCall()
+		safeToPersistCache = val.IsSafeToPersistCache()
 	}
 
 	// they can also return types that need to run a callback when they are
@@ -320,16 +323,18 @@ func (class Class[T]) Call(
 	}
 
 	return &CacheValWithCallbacks{
-		Value:     val,
-		PostCall:  postCall,
-		OnRelease: onRelease,
+		Value:              val,
+		PostCall:           postCall,
+		OnRelease:          onRelease,
+		SafeToPersistCache: safeToPersistCache,
 	}, nil
 }
 
 type Result[T Typed] struct {
-	constructor *call.ID
-	self        T
-	postCall    cache.PostCallFunc
+	constructor        *call.ID
+	self               T
+	postCall           cache.PostCallFunc
+	safeToPersistCache bool
 }
 
 var _ AnyResult = Result[Typed]{}
@@ -380,6 +385,15 @@ func (r Result[T]) WithPostCall(fn cache.PostCallFunc) AnyResult {
 func (r Result[T]) ResultWithPostCall(fn cache.PostCallFunc) Result[T] {
 	r.postCall = fn
 	return r
+}
+
+func (r Result[T]) WithSafeToPersistCache(safe bool) AnyResult {
+	r.safeToPersistCache = safe
+	return r
+}
+
+func (r Result[T]) IsSafeToPersistCache() bool {
+	return r.safeToPersistCache
 }
 
 // WithDigest returns an updated instance with the given metadata set.
@@ -454,13 +468,19 @@ func (r ObjectResult[T]) Select(ctx context.Context, s *Server, sel Selector) (A
 	if err != nil {
 		return nil, err
 	}
-	return r.call(ctx, s, preselectResult.newID, preselectResult.inputArgs, preselectResult.doNotCache)
+	return r.call(ctx, s,
+		preselectResult.newID,
+		preselectResult.inputArgs,
+		preselectResult.doNotCache,
+		preselectResult.cacheTTL,
+	)
 }
 
 type preselectResult struct {
 	inputArgs  map[string]Input
 	newID      *call.ID
 	doNotCache bool
+	cacheTTL   int64
 }
 
 // sortArgsToSchema sorts the arguments to match the schema definition order.
@@ -537,6 +557,7 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 	)
 
 	doNotCache := field.CacheSpec.DoNotCache != ""
+	var cacheTTL int64
 	if field.CacheSpec.GetCacheConfig != nil {
 		origDgst := newID.Digest()
 
@@ -582,12 +603,15 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 		if cacheCfg.Digest != origDgst {
 			newID = newID.WithDigest(cacheCfg.Digest)
 		}
+
+		cacheTTL = cacheCfg.TTL
 	}
 
 	return &preselectResult{
 		inputArgs:  inputArgs,
 		newID:      newID,
 		doNotCache: doNotCache,
+		cacheTTL:   cacheTTL,
 	}, nil
 }
 
@@ -606,7 +630,9 @@ func (r ObjectResult[T]) Call(ctx context.Context, s *Server, newID *call.ID) (A
 	}
 
 	doNotCache := field.CacheSpec.DoNotCache != ""
-	return r.call(ctx, s, newID, inputArgs, doNotCache)
+	// TODO: since IDs don't *currently* have function call chains in them, leaving
+	// TTL to 0 might technically be fine for now, but treacherous in future
+	return r.call(ctx, s, newID, inputArgs, doNotCache, 0)
 }
 
 func ExtractIDArgs(specs InputSpecs, id *call.ID) (map[string]Input, error) {
@@ -651,6 +677,7 @@ func (r ObjectResult[T]) call(
 	newID *call.ID,
 	inputArgs map[string]Input,
 	doNotCache bool,
+	cacheTTL int64,
 ) (AnyResult, error) {
 	ctx = idToContext(ctx, newID)
 	ctx = srvToContext(ctx, s)
@@ -662,10 +689,11 @@ func (r ObjectResult[T]) call(
 	}
 
 	cacheKey := cache.CacheKey[CacheKeyType]{
-		ResultKey: string(newID.Digest()),
+		CallKey: string(newID.Digest()),
+		TTL:     cacheTTL,
 	}
 	if doNotCache {
-		cacheKey.ResultKey = ""
+		cacheKey.CallKey = ""
 	}
 	// dedupe concurrent calls only if the ID digest is the same and if the two calls are from the same client
 	// we don't want to dedupe across clients since:
@@ -707,9 +735,10 @@ func (r ObjectResult[T]) call(
 		}
 
 		return &CacheValWithCallbacks{
-			Value:     val,
-			PostCall:  valWithCallbacks.PostCall,
-			OnRelease: valWithCallbacks.OnRelease,
+			Value:              val,
+			PostCall:           valWithCallbacks.PostCall,
+			OnRelease:          valWithCallbacks.OnRelease,
+			SafeToPersistCache: valWithCallbacks.SafeToPersistCache,
 		}, nil
 	}, opts...)
 
@@ -743,7 +772,7 @@ func (r ObjectResult[T]) call(
 		if digestChanged && matchesType {
 			newID = valID
 			_, err := s.Cache.GetOrInitializeValue(ctx, cache.CacheKey[CacheKeyType]{
-				ResultKey: string(valID.Digest()),
+				CallKey: string(valID.Digest()),
 			}, val)
 			if err != nil {
 				return nil, err
@@ -1273,6 +1302,7 @@ type GetCacheConfigFunc[T Typed, A any] func(context.Context, ObjectResult[T], A
 type CacheConfig struct {
 	Digest      digest.Digest
 	UpdatedArgs map[string]Input
+	TTL         int64
 }
 
 // Field defines a field of an Object type.

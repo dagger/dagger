@@ -91,6 +91,10 @@ type AnyResult interface {
 
 	// WithPostCall returns a new AnyResult with the given post-call function attached to it.
 	WithPostCall(fn cache.PostCallFunc) AnyResult
+
+	// TODO: doc
+	IsSafeToPersistCache() bool
+	WithSafeToPersistCache(safe bool) AnyResult
 }
 
 // AnyObjectResult is an AnyResult that wraps a selectable value (i.e. a graph object)

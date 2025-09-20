@@ -385,11 +385,12 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 				})
 			}
 			return fn.Call(ctx, &CallOpts{
-				Inputs:       callInput,
-				ParentTyped:  nil,
-				ParentFields: nil,
-				Cache:        dagql.IsInternal(ctx),
-				Server:       dag,
+				Inputs:          callInput,
+				ParentTyped:     nil,
+				ParentFields:    nil,
+				Server:          dag,
+				CachePerSession: fnTypeDef.CachePerSession,
+				CacheTTLSeconds: fnTypeDef.CacheTTLSeconds.Value.Int64(),
 			})
 		},
 		dagql.CacheSpec{
@@ -498,14 +499,12 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 		Spec: &spec,
 		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
 			opts := &CallOpts{
-				ParentTyped:  obj,
-				ParentFields: obj.Self().Fields,
-				// TODO: there may be a more elegant way to do this, but the desired
-				// effect is to cache SDK module calls, which we used to do pre-DagQL.
-				// We should figure out how user modules can opt in to caching, too.
-				Cache:          dagql.IsInternal(ctx),
-				SkipSelfSchema: false,
-				Server:         dag,
+				ParentTyped:     obj,
+				ParentFields:    obj.Self().Fields,
+				SkipSelfSchema:  false,
+				Server:          dag,
+				CachePerSession: fun.CachePerSession,
+				CacheTTLSeconds: fun.CacheTTLSeconds.Value.Int64(),
 			}
 			for name, val := range args {
 				opts.Inputs = append(opts.Inputs, CallInput{

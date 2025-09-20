@@ -8121,6 +8121,29 @@ impl Function {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Mark this function as only cached for callers in the current session.
+    pub fn with_cache_per_session(&self) -> Function {
+        let query = self.selection.select("withCachePerSession");
+        Function {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Mark the persistent cache entries for this function as expiring after the given duration.
+    ///
+    /// # Arguments
+    ///
+    /// * `duration` - The duration of the cache TTL as a string, e.g. "5m", "1h30s".
+    pub fn with_cache_ttl(&self, duration: impl Into<String>) -> Function {
+        let mut query = self.selection.select("withCacheTTL");
+        query = query.arg("duration", duration.into());
+        Function {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Returns the function with the given doc string.
     ///
     /// # Arguments
