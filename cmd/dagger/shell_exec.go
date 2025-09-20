@@ -519,10 +519,32 @@ func (h *shellCallHandler) shellPreprocessArgs(
 	))
 
 	opts := fn.OptionalArgs()
+	reqs := fn.RequiredArgs()
 
 	// All CLI arguments are strings at first, but booleans can be omitted.
 	// We don't wan't to process values yet, just validate and consume the flags
 	// so we get the remaining positional args.
+
+	// Add required arguments as flags so they can be specified as named arguments
+	for _, arg := range reqs {
+		name := arg.FlagName()
+
+		switch arg.TypeDef.Kind {
+		case dagger.TypeDefKindListKind:
+			switch arg.TypeDef.AsList.ElementTypeDef.Kind {
+			case dagger.TypeDefKindBooleanKind:
+				flags.BoolSlice(name, nil, "")
+			default:
+				flags.StringSlice(name, nil, "")
+			}
+		case dagger.TypeDefKindBooleanKind:
+			flags.Bool(name, false, "")
+		default:
+			flags.String(name, "", "")
+		}
+	}
+
+	// Add optional arguments as flags
 	for _, arg := range opts {
 		name := arg.FlagName()
 
@@ -544,8 +566,6 @@ func (h *shellCallHandler) shellPreprocessArgs(
 	if err := flags.Parse(args); err != nil {
 		return values, args, checkErrHelp(err, args)
 	}
-
-	reqs := fn.RequiredArgs()
 
 	// A command for with-exec could include a `--`, but it's only if it's
 	// the first positional argument that means we've stopped processing our
@@ -572,19 +592,44 @@ func (h *shellCallHandler) shellPreprocessArgs(
 		}
 		values[name] = results
 	} else {
-		// Normal use case. Positional arguments should match number of required function arguments
-		if err := ExactArgs(len(reqs))(pos); err != nil {
-			return values, args, err
+		// Collect which required arguments were provided as named flags
+		providedAsFlags := make(map[string]bool)
+		for _, arg := range reqs {
+			flag := flags.Lookup(arg.FlagName())
+			if flag != nil && flag.Changed {
+				providedAsFlags[arg.FlagName()] = true
+			}
 		}
+
+		// Calculate how many required arguments still need to be filled by positional args
+		remainingRequiredCount := len(reqs) - len(providedAsFlags)
+
+		// Validate that we have the right number of positional arguments
+		// for the remaining required arguments
+		if len(pos) != remainingRequiredCount {
+			return values, args, fmt.Errorf("requires %d positional argument(s), received %d", remainingRequiredCount, len(pos))
+		}
+
 		a = make([]string, 0, len(fn.Args))
-		// Use the `=` syntax so that each element in the args list corresponds
-		// to a single argument instead of two.
-		for i, arg := range reqs {
-			a = append(a, fmt.Sprintf("--%s=%v", arg.FlagName(), pos[i]))
+
+		// Process required arguments in order, using positional args for those
+		// not provided as named flags
+		posIndex := 0
+		for _, arg := range reqs {
+			flagName := arg.FlagName()
+			if providedAsFlags[flagName] {
+				// This required argument was provided as a named flag
+				// It will be handled in the flags.Visit loop below
+				continue
+			} else if posIndex < len(pos) {
+				// This required argument needs to be filled from positional args
+				a = append(a, fmt.Sprintf("--%s=%v", flagName, pos[posIndex]))
+				posIndex++
+			}
 		}
 	}
 
-	// Add all the optional flags
+	// Add all the flags (both required and optional that were specified)
 	flags.Visit(func(f *pflag.Flag) {
 		if !f.Changed {
 			return
