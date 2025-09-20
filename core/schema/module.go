@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"time"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/sdk"
@@ -155,6 +156,15 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("defaultPath").Doc(`If the argument is a Directory or File type, default to load path from context directory, relative to root directory.`),
 				dagql.Arg("ignore").Doc(`Patterns to ignore when loading the contextual argument value.`),
 				dagql.Arg("sourceMap").Doc(`The source map for the argument definition.`),
+			),
+
+		dagql.Func("withCachePerSession", s.functionWithCachePerSession).
+			Doc(`Mark this function as only cached for callers in the current session.`),
+
+		dagql.Func("withCacheTTL", s.functionWithCacheTTL).
+			Doc(`Mark the persistent cache entries for this function as expiring after the given duration.`).
+			Args(
+				dagql.Arg("duration").Doc(`The duration of the cache TTL as a string, e.g. "5m", "1h30s".`),
 			),
 	}.Install(dag)
 
@@ -558,6 +568,25 @@ func (s *moduleSchema) functionWithSourceMap(ctx context.Context, fn *core.Funct
 		return nil, fmt.Errorf("failed to decode source map: %w", err)
 	}
 	return fn.WithSourceMap(sourceMap.Self()), nil
+}
+
+func (s *moduleSchema) functionWithCachePerSession(ctx context.Context, fn *core.Function, args struct{}) (*core.Function, error) {
+	fn = fn.Clone()
+	fn.CachePerSession = true
+	return fn, nil
+}
+
+func (s *moduleSchema) functionWithCacheTTL(ctx context.Context, fn *core.Function, args struct {
+	Duration string
+}) (*core.Function, error) {
+	durationTime, err := time.ParseDuration(args.Duration)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse duration %q: %w", args.Duration, err)
+	}
+
+	fn = fn.Clone()
+	fn.CacheTTLSeconds = dagql.NonNull(dagql.Int(int(durationTime.Seconds())))
+	return fn, nil
 }
 
 func (s *moduleSchema) currentModule(

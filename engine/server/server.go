@@ -23,6 +23,7 @@ import (
 	ctdsnapshot "github.com/containerd/containerd/snapshots"
 	"github.com/containerd/go-runc"
 	"github.com/containerd/platforms"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/config"
@@ -171,9 +172,10 @@ type Server struct {
 	//
 	// session+client state
 	//
-	daggerSessions   map[string]*daggerSession // session id -> session state
-	daggerSessionsMu sync.RWMutex
-	clientDBs        *clientdb.DBs
+	daggerSessions      map[string]*daggerSession // session id -> session state
+	daggerSessionsMu    sync.RWMutex
+	clientDBs           *clientdb.DBs
+	callExpirationCache *core.CallExpirationCache
 
 	locker *locker.Locker
 
@@ -210,9 +212,11 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			SearchDomains: bkcfg.DNS.SearchDomains,
 		},
 
-		baseDagqlCache: cache.NewCache[string, dagql.AnyResult](),
-		daggerSessions: make(map[string]*daggerSession),
-		locker:         locker.New(),
+		baseDagqlCache:      cache.NewCache[string, dagql.AnyResult](),
+		daggerSessions:      make(map[string]*daggerSession),
+		callExpirationCache: core.NewCallExpirationCache(),
+
+		locker: locker.New(),
 	}
 
 	// start the global namespace worker pool, which is used for running Go funcs
@@ -546,6 +550,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 	// garbage collect client DBs
 	go srv.gcClientDBs()
+
+	// garbage collect call expiration cache
+	go srv.callExpirationCache.GCLoop()
 
 	// initialize the secret salt
 	secretSaltPath := filepath.Join(srv.rootDir, "secret-salt")

@@ -2373,6 +2373,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize module: %w", err)
 		}
+
 		initialized = resultInst.Self()
 	} else {
 		runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
@@ -2401,14 +2402,13 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 				return fmt.Errorf("failed to create module definition function for module %q: %w", modName, err)
 			}
 			result, err := getModDefFn.Call(ctx, &core.CallOpts{
-				Cache:          true,
 				SkipSelfSchema: true,
 				Server:         dag,
-				// Don't include the digest for the current call (which is a bunch of module source stuff, including
+				// Don't use the digest for the current call (which is a bunch of module source stuff, including
 				// APIs that are cached per-client when local sources are involved) in the cache key of this
 				// function call. That would needlessly invalidate the cache more than is needed, similar to how
 				// we want to scope the codegen cache keys by the content digested source instance above.
-				SkipCallDigestCacheKey: true,
+				OverrideCallDigestCacheKey: tmpModInst.ID().Digest().String(),
 			})
 			if err != nil {
 				return fmt.Errorf("failed to call module %q to get functions: %w", modName, err)

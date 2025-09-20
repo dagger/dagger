@@ -28,6 +28,9 @@ type Function struct {
 
 	// Below are not in public API
 
+	CachePerSession bool
+	CacheTTLSeconds dagql.Nullable[dagql.Int]
+
 	// OriginalName of the parent object
 	ParentOriginalName string
 
