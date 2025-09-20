@@ -1,7 +1,7 @@
 #!/bin/bash --noprofile --norc -e -o pipefail
 
 cd $(mktemp -d)
-dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree | export ."
+git clone https://github.com/dagger/dagger.git . --revision=$DAGGER_REF
 
 ./hack/build
 
