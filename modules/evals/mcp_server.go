@@ -30,13 +30,14 @@ func (e *ModelContextProtocol) Prompt(base *dagger.LLM) *dagger.LLM {
 				WithWorkdir("/work").
 				AsService(),
 		).
-		WithSystemPrompt("Your current working directory is /work.").
+		WithSystemPrompt("Your workspace is /work. You MUST include it at the beginning of path arguments to make them absolute paths.").
 		WithEnv(dag.Env().
 			WithWorkspace(dag.Directory().
 				WithNewFile("README.md", "# Sample Project\nThis is a test project.\n").
 				WithNewFile("main.go", "package main\n\nfunc main() {\n\tprintln(\"Hello, World!\")\n}\n")),
 		).
 		WithPrompt(`Please make the following changes to the workspace:
+
 1. Update the README.md file to add a "Getting Started" section with installation instructions
 2. Remove main.go - we don't need it anymore.
 3. Create a new file called "config.json" with some basic configuration settings
