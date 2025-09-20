@@ -6297,6 +6297,56 @@ func (m *Test) TestAlwaysCache() string {
 }
 `,
 		},
+
+		{
+			sdk: "python",
+			source: `import dagger
+import random
+import string
+
+@dagger.object_type
+class Test:
+		@dagger.function(cache_ttl="10s")
+		def test_ttl(self) -> str:
+				return ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
+
+		@dagger.function(cache_per_session=True)
+		def test_cache_per_session(self) -> str:
+				return ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
+
+		@dagger.function
+		def test_always_cache(self) -> str:
+				return ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
+`,
+		},
+
+		{
+			sdk: "typescript",
+			source: `
+import crypto from "crypto"
+
+import {  object, func } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+  @func(cacheTTL="10s")
+	testTtl(): string {
+		return crypto.randomBytes(16).toString("hex")
+	}
+
+	@func(cachePerSession=true)
+	testCachePerSession(): string {
+		return crypto.randomBytes(16).toString("hex")
+	}
+
+	@func()
+	testAlwaysCache(): string {
+		return crypto.randomBytes(16).toString("hex")
+	}
+}
+
+`,
+		},
 	} {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			t.Run("always cache", func(ctx context.Context, t *testctx.T) {
