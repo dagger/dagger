@@ -1464,6 +1464,11 @@ func (srv *Server) SecretSalt() []byte {
 	return srv.secretSalt
 }
 
+// The global call expiration cache
+func (srv *Server) CallExpirationCache() *core.CallExpirationCache {
+	return srv.callExpirationCache
+}
+
 type httpError struct {
 	error
 	code int
