@@ -95,8 +95,15 @@ type seenKeysCtxKey struct{}
 //
 // This is useful in scenarios where we want to see actions performed, even if
 // they had been performed already (e.g. an LLM running tools).
+//
+// Additionally, it explicitly sets the internal flag to false, to prevent
+// Server.Select from marking its spans internal.
 func WithRepeatedTelemetry(ctx context.Context) context.Context {
-	return context.WithValue(ctx, seenKeysCtxKey{}, &sync.Map{})
+	return context.WithValue(
+		context.WithValue(ctx, seenKeysCtxKey{}, &sync.Map{}),
+		internalKey{},
+		false,
+	)
 }
 
 func telemetryKeys(ctx context.Context) *sync.Map {
