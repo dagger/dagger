@@ -1061,7 +1061,7 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 		attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),
 		attribute.StringSlice(telemetry.LLMToolArgValuesAttr, toolArgValues),
 	}
-	if tool.Name == "call_method" || tool.Name == "chain_methods" {
+	if tool.Name == "CallMethod" || tool.Name == "ChainMethods" {
 		attrs = append(attrs, attribute.Bool(telemetry.UIPassthroughAttr, true))
 	}
 	if tool.Server != "" {
@@ -1425,7 +1425,7 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 	}
 
 	return LLMTool{
-		Name:        "save",
+		Name:        "Save",
 		Description: desc,
 		Schema: map[string]any{
 			"type":                 "object",
@@ -1505,7 +1505,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 			allTypes[name] = objectType
 		}
 		builtins = append(builtins, LLMTool{
-			Name:        "declare_output",
+			Name:        "DeclareOutput",
 			Description: "Declare a new output that can have a value saved to it",
 			Schema: map[string]any{
 				"type": "object",
@@ -1556,7 +1556,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 	}
 
 	builtins = append(builtins, LLMTool{
-		Name:        "list_objects",
+		Name:        "ListObjects",
 		Description: "List available objects.",
 		Schema: map[string]any{
 			"type":                 "object",
@@ -1597,7 +1597,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 	}
 
 	builtins = append(builtins, LLMTool{
-		Name:        "read_logs",
+		Name:        "ReadLogs",
 		Description: "Read logs from the most recent execution. Can filter with grep pattern or read the last N lines.",
 		Schema: map[string]any{
 			"type": "object",
@@ -1629,7 +1629,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 	}
 
 	builtins = append(builtins, LLMTool{
-		Name:        "user_provided_values",
+		Name:        "UserProvidedValues",
 		Description: "Read the inputs supplied by the user.",
 		Schema: map[string]any{
 			"type":                 "object",
@@ -1704,7 +1704,7 @@ func (m *MCP) staticMethodCallingTools(srv *dagql.Server, allMethods map[string]
 	var tools []LLMTool
 
 	tools = append(tools, LLMTool{
-		Name:        "list_methods",
+		Name:        "ListMethods",
 		Description: "List the methods that can be selected.",
 		Schema: map[string]any{
 			"type":                 "object",
@@ -1718,8 +1718,8 @@ func (m *MCP) staticMethodCallingTools(srv *dagql.Server, allMethods map[string]
 
 	if len(allMethods) > 0 {
 		tools = append(tools, LLMTool{
-			Name:        "select_methods",
-			Description: "Select methods for interacting with the available objects. Never guess - only select methods previously returned by list_methods.",
+			Name:        "SelectMethods",
+			Description: "Select methods for interacting with the available objects. Never guess - only select methods previously returned by ListMethods.",
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -1727,7 +1727,7 @@ func (m *MCP) staticMethodCallingTools(srv *dagql.Server, allMethods map[string]
 						"type": "array",
 						"items": map[string]any{
 							"type":        "string",
-							"description": "The name of the method to select, as seen in list_methods.",
+							"description": "The name of the method to select, as seen in ListMethods.",
 						},
 						"description": "The methods to select.",
 					},
@@ -1738,8 +1738,8 @@ func (m *MCP) staticMethodCallingTools(srv *dagql.Server, allMethods map[string]
 			Strict: true,
 			Call:   m.selectMethodsTool(srv, allMethods),
 		}, LLMTool{
-			Name:        "call_method",
-			Description: "Call a method on an object. Methods must be selected with `select_methods` before calling them. Self represents the object to call the method on, and args specify any additional parameters to pass.",
+			Name:        "CallMethod",
+			Description: "Call a method on an object. Methods must be selected with SelectMethods before calling them. Self represents the object to call the method on, and args specify any additional parameters to pass.",
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -1763,7 +1763,7 @@ func (m *MCP) staticMethodCallingTools(srv *dagql.Server, allMethods map[string]
 			Strict: false,
 			Call:   m.callMethodTool(allMethods),
 		}, LLMTool{
-			Name: "chain_methods",
+			Name: "ChainMethods",
 			Description: `Invoke multiple methods sequentially, passing the result of one method as the receiver of the next
 
 NOTE: you must select methods before chaining them`,
@@ -1880,7 +1880,7 @@ func (m *MCP) selectMethodsTool(srv *dagql.Server, allMethods map[string]LLMTool
 			}
 		}
 		if len(unknownMethods) > 0 {
-			return nil, fmt.Errorf("unknown methods: %v; use list_methods first", unknownMethods)
+			return nil, fmt.Errorf("unknown methods: %v; use ListMethods first", unknownMethods)
 		}
 		for _, method := range selectedMethods {
 			m.selectedMethods[method.Name] = true
@@ -1932,10 +1932,10 @@ func (m *MCP) callMethodTool(allMethods map[string]LLMTool) LLMToolFunc {
 		var method LLMTool
 		method, found := allMethods[call.Method]
 		if !found {
-			return nil, fmt.Errorf("method not defined: %q; use list_methods first", call.Method)
+			return nil, fmt.Errorf("method not defined: %q; use ListMethods first", call.Method)
 		}
 		if !m.selectedMethods[call.Method] {
-			return nil, fmt.Errorf("method not selected: %q; use select_methods first", call.Method)
+			return nil, fmt.Errorf("method not selected: %q; use SelectMethods first", call.Method)
 		}
 		return method.Call(ctx, call.Args)
 	}
@@ -1990,7 +1990,7 @@ func (m *MCP) chainMethodsTool(srv *dagql.Server, allMethods map[string]LLMTool)
 func directlyExposeTools(allMethods map[string]LLMTool) []LLMTool {
 	staticTools := slices.Collect(maps.Values(allMethods))
 	for i := range staticTools {
-		// sanitize tool names; Foo.bar is more intuitive for call_method form
+		// sanitize tool names; Foo.bar is more intuitive for CallMethod form
 		staticTools[i].Name = regexp.MustCompile(`[^a-zA-Z0-9_-]`).
 			ReplaceAllString(staticTools[i].Name, "_")
 	}
