@@ -119,6 +119,9 @@ type Server interface {
 
 	// A shared engine-wide salt used when creating cache keys for secrets based on their plaintext
 	SecretSalt() []byte
+
+	// The global call expiration cache
+	CallExpirationCache() *CallExpirationCache
 }
 
 type queryKey struct{}

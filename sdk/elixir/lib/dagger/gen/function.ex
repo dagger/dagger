@@ -129,6 +129,34 @@ defmodule Dagger.Function do
   end
 
   @doc """
+  Mark this function as only cached for callers in the current session.
+  """
+  @spec with_cache_per_session(t()) :: Dagger.Function.t()
+  def with_cache_per_session(%__MODULE__{} = function) do
+    query_builder =
+      function.query_builder |> QB.select("withCachePerSession")
+
+    %Dagger.Function{
+      query_builder: query_builder,
+      client: function.client
+    }
+  end
+
+  @doc """
+  Mark the persistent cache entries for this function as expiring after the given duration.
+  """
+  @spec with_cache_ttl(t(), String.t()) :: Dagger.Function.t()
+  def with_cache_ttl(%__MODULE__{} = function, duration) do
+    query_builder =
+      function.query_builder |> QB.select("withCacheTTL") |> QB.put_arg("duration", duration)
+
+    %Dagger.Function{
+      query_builder: query_builder,
+      client: function.client
+    }
+  end
+
+  @doc """
   Returns the function with the given doc string.
   """
   @spec with_description(t(), String.t()) :: Dagger.Function.t()
