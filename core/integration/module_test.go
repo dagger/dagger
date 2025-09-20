@@ -6470,7 +6470,7 @@ import (
 type Test struct{}
 
 // My cool doc on TestTtl
-// +cache-ttl="10s"
+// +cache-ttl="20s"
 func (m *Test) TestTtl() string {
 	return rand.Text()
 }
@@ -6496,7 +6496,7 @@ import string
 
 @dagger.object_type
 class Test:
-		@dagger.function(cache_ttl="10s")
+		@dagger.function(cache_ttl="20s")
 		def test_ttl(self) -> str:
 				return ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
 
@@ -6519,12 +6519,12 @@ import {  object, func } from "@dagger.io/dagger"
 
 @object()
 export class Test {
-  @func(cacheTTL="10s")
+	@func({ cacheTTL: "20s"})
 	testTtl(): string {
 		return crypto.randomBytes(16).toString("hex")
 	}
 
-	@func(cachePerSession=true)
+	@func({ cachePerSession: true })
 	testCachePerSession(): string {
 		return crypto.randomBytes(16).toString("hex")
 	}
@@ -6604,7 +6604,7 @@ export class Test {
 				require.NoError(t, c2.Close())
 
 				require.Equal(t, out1, out2, "outputs should be equal since the cache ttl has not expired")
-				time.Sleep(11 * time.Second)
+				time.Sleep(21 * time.Second)
 
 				c3 := connect(ctx, t)
 				modGen3 := modInit(t, c3, tc.sdk, tc.source).
