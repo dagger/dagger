@@ -31,7 +31,7 @@ func (e *ModuleDependencies) Prompt(ctx context.Context, base *dagger.LLM) (*dag
 	return base.
 		WithEnv(dag.Env(dagger.EnvOpts{Privileged: true}).
 			WithStringOutput("methods", "The names of tools or methods that you can see.")).
-		WithPrompt("List all of the tools or methods that you can see."), nil
+		WithPrompt("Save all of the tools or methods that you can see."), nil
 }
 
 func (e *ModuleDependencies) Check(ctx context.Context, prompt *dagger.LLM) error {
