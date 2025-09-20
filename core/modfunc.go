@@ -359,34 +359,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 	if env, ok := EnvFromContext(ctx); ok {
 		fnCall.EnvID = env.ID()
-	} else {
-		srv, err := CurrentDagqlServer(ctx)
-		if err != nil {
-			return nil, err
-		}
-		var env dagql.ObjectResult[*Env]
-		if err := srv.Select(ctx, srv.Root(), &env, dagql.Selector{
-			Field: "env",
-		}, dagql.Selector{
-			Field: "withModule",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "module",
-					Value: dagql.NewID[*Module](mod.ResultID),
-				},
-			},
-		}, dagql.Selector{
-			Field: "withWorkspace",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "workspace",
-					Value: dagql.NewID[*Directory](mod.GetSource().ContextDirectory.ID()),
-				},
-			},
-		}); err != nil {
-			return nil, fmt.Errorf("failed to create env: %w", err)
-		}
-		fnCall.EnvID = env.ID()
 	}
 	if fn.objDef != nil {
 		fnCall.ParentName = fn.objDef.OriginalName

@@ -132,10 +132,42 @@ func (s environmentSchema) currentEnvironment(ctx context.Context, parent *core.
 	if err != nil {
 		return res, err
 	}
-	if fc.EnvID == nil {
-		return res, fmt.Errorf("no environment found in context")
+	if fc.EnvID != nil {
+		return dagql.NewID[*core.Env](fc.EnvID).Load(ctx, s.srv)
 	}
-	return dagql.NewID[*core.Env](fc.EnvID).Load(ctx, s.srv)
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	mod, err := query.CurrentModule(ctx)
+	if err != nil {
+		return res, err
+	}
+	var env dagql.ObjectResult[*core.Env]
+	if err := dag.Select(ctx, dag.Root(), &env, dagql.Selector{
+		Field: "env",
+	}, dagql.Selector{
+		Field: "withModule",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "module",
+				Value: dagql.NewID[*core.Module](mod.ResultID),
+			},
+		},
+	}, dagql.Selector{
+		Field: "withWorkspace",
+		Args: []dagql.NamedInput{
+			{
+				Name: "workspace",
+				Value: dagql.NewID[*core.Directory](
+					mod.GetSource().ContextDirectory.ID(),
+				),
+			},
+		},
+	}); err != nil {
+		return res, fmt.Errorf("failed to create env: %w", err)
+	}
+	return env, nil
 }
 
 func (s environmentSchema) inputs(ctx context.Context, env *core.Env, args struct{}) (dagql.Array[*core.Binding], error) {
