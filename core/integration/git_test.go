@@ -186,6 +186,31 @@ func requireSampleGitHiddenCommit(ctx context.Context, t *testctx.T, c *dagger.C
 	requireGitRefIsCommit(ctx, t, "318970484f692d7a76cfa533c5d47458631c9654", ref, c)
 }
 
+func requireStrictCommit(ctx context.Context, t *testctx.T, repo *dagger.GitRepository, refStr string) {
+	ref := repo.Commit(refStr)
+	_, err := ref.Commit(ctx)
+	require.Error(t, err)
+	requireErrOut(t, err, "invalid commit SHA")
+}
+
+func requireStrictTag(ctx context.Context, t *testctx.T, repo *dagger.GitRepository, refStr string) {
+	ref := repo.Tag(refStr)
+	_, err := ref.Commit(ctx)
+	require.Error(t, err)
+	requireErrOut(t, err, "repository does not contain")
+	requireErrOut(t, err, "refs/tags/")
+	requireErrOut(t, err, refStr)
+}
+
+func requireStrictBranch(ctx context.Context, t *testctx.T, repo *dagger.GitRepository, refStr string) {
+	ref := repo.Branch(refStr)
+	_, err := ref.Commit(ctx)
+	require.Error(t, err)
+	requireErrOut(t, err, "repository does not contain")
+	requireErrOut(t, err, "refs/heads/")
+	requireErrOut(t, err, refStr)
+}
+
 // verify repository has expected branches, tags, and commits
 func requireSampleGitRepo(ctx context.Context, t *testctx.T, c *dagger.Client, repo *dagger.GitRepository) {
 	// 1. TEST BRANCH REFS
@@ -201,7 +226,7 @@ func requireSampleGitRepo(ctx context.Context, t *testctx.T, c *dagger.Client, r
 	// sample hidden commit
 	// $ git ls-remote https://github.com/dagger/dagger.git | grep pull/8735
 	// 318970484f692d7a76cfa533c5d47458631c9654	refs/pull/8735/head
-	requireSampleGitHiddenCommit(ctx, t, c, repo.Tag("318970484f692d7a76cfa533c5d47458631c9654"))
+	requireSampleGitHiddenCommit(ctx, t, c, repo.Commit("318970484f692d7a76cfa533c5d47458631c9654"))
 
 	// 3. TEST TAG REFS
 	// listing tags
@@ -225,6 +250,13 @@ func requireSampleGitRepo(ctx context.Context, t *testctx.T, c *dagger.Client, r
 	requireSampleGitTag(ctx, t, c, repo.Tag("v0.9.5"))
 	// sample annotated tag
 	requireGitRefIsSampleAnnotatedTag(ctx, t, c, repo.Tag("v0.6.1"))
+
+	// attempting to use lax refs should fail (see TestLegacyGitLaxRefs)
+	requireStrictCommit(ctx, t, repo, "main")
+	requireStrictTag(ctx, t, repo, "main")
+	requireStrictTag(ctx, t, repo, "refs/heads/main")
+	requireStrictBranch(ctx, t, repo, "v0.9.5")
+	requireStrictBranch(ctx, t, repo, "refs/tags/v0.9.5")
 }
 
 func (GitSuite) TestGitRefs(ctx context.Context, t *testctx.T) {
