@@ -5158,7 +5158,7 @@ func (ModuleSuite) TestContextGitRemote(ctx context.Context, t *testctx.T) {
 
 	modGen := goGitBase(t, c)
 
-	remoteModule := "github.com/jedevc/dagger-test-modules"
+	remoteModule := "github.com/dagger/dagger-test-modules"
 	remoteRef := "context-git"
 	g := c.Git(remoteModule).Ref(remoteRef)
 	commit, err := g.Commit(ctx)
@@ -5166,7 +5166,7 @@ func (ModuleSuite) TestContextGitRemote(ctx context.Context, t *testctx.T) {
 	fullref, err := g.Ref(ctx)
 	require.NoError(t, err)
 
-	modPath := "github.com/jedevc/dagger-test-modules/context-git@" + remoteRef
+	modPath := "github.com/dagger/dagger-test-modules/context-git@" + remoteRef
 
 	t.Run("repo local", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerCallAt(modPath, "test-repo-local")).Stdout(ctx)
