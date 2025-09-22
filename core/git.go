@@ -496,12 +496,18 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 
 	var refSpecs []string
 	for _, ref := range refs {
+		destref := ref.FullRef
 		if gitutil.IsCommitSHA(ref.FullRef) {
-			// TODO: may need fallback if git remote doesn't support fetching by commit
-			refSpecs = append(refSpecs, ref.FullRef)
-		} else {
-			refSpecs = append(refSpecs, ref.FullRef+":"+ref.FullRef)
+			// we create a ref to fetch into, ensuring that we actually get the
+			// "default" tags behavior (only fetching tags that are part of the
+			// history)
+			// we *don't* remove this later, or git gc could maybe come and
+			// sweep it up
+			destref = "refs/dagger/" + identity.NewID()
 		}
+
+		// TODO: may need fallback if git remote doesn't support fetching by commit
+		refSpecs = append(refSpecs, ref.FullRef+":"+destref)
 	}
 
 	args := []string{
@@ -777,8 +783,7 @@ func doGitCheckout(
 	destref := fullref
 	if gitutil.IsCommitSHA(fullref) {
 		// we need to create a temporary ref to fetch into!
-		// this ensures that we actually get the "default" tags behavior (only
-		// fetching tags that are part of the history)
+		// this matches the behavior *above* in RemoteGitRepository.fetch,
 		destref = "refs/dagger.tmp/" + identity.NewID()
 	}
 
