@@ -1172,6 +1172,43 @@ export class Test {
 	}
 }
 
+func (LegacySuite) TestLegacyTypescriptEnumDecorator(ctx context.Context, t *testctx.T) {
+	// Changed in dagger/dagger#10632
+	//
+	// Since that change, using native TypeScript enums is recommended.
+	// The @enumType() decorator remains available solely for backward compatibility.
+
+	c := connect(ctx, t)
+
+	tsSrc := `import { enumType, func, object } from "@dagger.io/dagger"
+
+@enumType()
+export class LegacyStatus {
+  static readonly Active: string = "ACTIVE"
+  static readonly Inactive: string = "INACTIVE"
+}
+
+@object()
+export class Test {
+  @func()
+  fromStatus(status: LegacyStatus): string {
+    return status as string
+  }
+}
+`
+
+	modGen := modInit(t, c, "typescript", tsSrc).
+		With(daggerExec("develop", "--compat=v0.18.10"))
+
+	out, err := modGen.With(daggerQuery(`{test{fromStatus(status: ACTIVE)}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "ACTIVE", gjson.Get(out, "test.fromStatus").String())
+
+	out, err = modGen.With(daggerQuery(`{test{fromStatus(status: INACTIVE)}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "INACTIVE", gjson.Get(out, "test.fromStatus").String())
+}
+
 func (LegacySuite) TestLegacyCustomExternalEnum(ctx context.Context, t *testctx.T) {
 	// Changed in dagger/dagger#9518
 	//

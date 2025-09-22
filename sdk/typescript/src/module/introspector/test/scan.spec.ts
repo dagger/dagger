@@ -43,6 +43,10 @@ describe("scan by reference TypeScript", function () {
       directory: "enums",
     },
     {
+      name: "Should correctly scan legacy enum decorator",
+      directory: "legacyEnumDecorator",
+    },
+    {
       name: "Should correctly scan list",
       directory: "list",
     },

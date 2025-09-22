@@ -52,19 +52,8 @@ export class DaggerModule {
   public objects: DaggerObjectsBase = {}
 
   /**
-   * An enum is either a decorated class or a native enum.
-   * Native enum cannot be decorated so they are resolved if referenced in the module.
-   *
-   * @example
-   * ```ts
-   * @enumType()
-   * export class Example {
-   *   static A: string = "a"
-   *   static B: string = "b"
-   * }
-   * ```
-   *
-   * or
+   * An enum is typically a native TypeScript enum declared with the `enum` keyword.
+   * Decorated classes using `@enumType()` are still supported for backward compatibility.
    *
    * @example
    * ```ts
