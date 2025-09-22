@@ -331,7 +331,7 @@ func preventCacheMountPrune(c *dagger.Client, t *testctx.T, cache *dagger.CacheV
 //
 // TODO: A better alternative might be to record the log output and assert
 // against what the user sees there, but that's a bigger lift.
-func requireErrOut(t *testctx.T, err error, out string) {
+func requireErrOut(t *testctx.T, err error, out string, msgAndInterface ...any) {
 	t.Helper()
 	if err == nil {
 		require.Fail(t, "expected error, got nil")
@@ -342,6 +342,7 @@ func requireErrOut(t *testctx.T, err error, out string) {
 			t,
 			fmt.Sprintf("%s\nStdout: %s\nStderr: %s", err, execErr.Stdout, execErr.Stderr),
 			out,
+			msgAndInterface...,
 		)
 		return
 	}
