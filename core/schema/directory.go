@@ -125,7 +125,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to retrieve. Example: "/src"`),
 			),
-		dagql.Func("withDirectory", s.withDirectory).
+		dagql.NodeFunc("withDirectory", DagOpDirectoryWrapper(srv, s.withDirectory, WithPathFn(keepParentDir[WithDirectoryArgs]))).
 			Doc(`Return a snapshot with a directory added`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the written directory (e.g., "/src/").`),
@@ -136,7 +136,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 					`The user and group must be an ID (1000:1000), not a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
-		dagql.Func("filter", s.filter).
+		dagql.NodeFunc("filter", DagOpDirectoryWrapper(srv, s.filter, WithPathFn(keepParentDir[FilterArgs]))).
 			Doc(`Return a snapshot with some paths included or excluded`).
 			Args(
 				dagql.Arg("exclude").Doc(`If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: ["node_modules/", ".git*", ".env"]`),
@@ -345,37 +345,49 @@ type WithDirectoryArgs struct {
 	Owner     string `default:""`
 
 	core.CopyFilter
+	DagOpInternalArgs
 }
 
-func (s *directorySchema) withDirectory(ctx context.Context, parent *core.Directory, args WithDirectoryArgs) (*core.Directory, error) {
+func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithDirectoryArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 
 	dir, err := args.Directory.Load(ctx, srv)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
-
-	return parent.WithDirectory(ctx, args.Path, dir.Self(), args.CopyFilter, args.Owner)
+	with, err := parent.Self().WithDirectory(ctx, args.Path, dir.Self(), args.CopyFilter, args.Owner)
+	if err != nil {
+		return res, fmt.Errorf("failed to add directory %q: %w", args.Path, err)
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, with)
 }
 
 type FilterArgs struct {
 	core.CopyFilter
+
+	DagOpInternalArgs
 }
 
-func (s *directorySchema) filter(ctx context.Context, parent *core.Directory, args FilterArgs) (*core.Directory, error) {
-	query, err := core.CurrentQuery(ctx)
+func (s *directorySchema) filter(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args FilterArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, err
-	}
-	dir, err := s.directory(ctx, query, struct{}{})
-	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
-	return dir.WithDirectory(ctx, "/", parent, args.CopyFilter, "")
+	platform := parent.Self().Platform
+	scratchDir := core.Directory{
+		Platform: platform,
+		Dir:      parent.Self().Dir,
+	}
+
+	filtered, err := scratchDir.WithDirectory(ctx, "/", parent.Self(), args.CopyFilter, "")
+	if err != nil {
+		return inst, fmt.Errorf("failed to filter: %w", err)
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, filtered)
 }
 
 type dirWithTimestampsArgs struct {
