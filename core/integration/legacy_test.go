@@ -1173,6 +1173,11 @@ export class Test {
 }
 
 func (LegacySuite) TestLegacyTypescriptEnumDecorator(ctx context.Context, t *testctx.T) {
+	// Changed in dagger/dagger#10632
+	//
+	// Since that change, using native TypeScript enums is recommended.
+	// The @enumType() decorator remains available solely for backward compatibility.
+
 	c := connect(ctx, t)
 
 	tsSrc := `import { enumType, func, object } from "@dagger.io/dagger"
