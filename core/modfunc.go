@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -310,6 +309,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	cacheMixins = append(cacheMixins, callKey)
 
 	var expirationMixin string
+	var setExpiration func()
 	expirationCache := query.CallExpirationCache()
 	if opts.CachePerSession {
 		// Scope the exec cache key to the current session ID. It will still be
@@ -322,8 +322,9 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 			// TODO: default 1w for now, needs more thought
 			ttl = 7 * 24 * 60 * 60
 		}
-		expiration := expirationCache.GetOrInitExpiration(callKey, ttl)
-		expirationMixin = strconv.Itoa(int(expiration))
+		var expiration *expirationCacheEntry
+		expiration, setExpiration = expirationCache.GetOrInitExpiration(callKey, ttl, clientMetadata.SessionID)
+		expirationMixin = expiration.mixin
 	}
 	cacheMixins = append(cacheMixins, expirationMixin)
 
@@ -516,6 +517,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("failed to convert return value: %w", err)
 	}
 
+	safeToCache := !opts.CachePerSession // TODO: kinda confusing names
 	if returnValue != nil {
 		// Get the client ID actually used during the function call - this might not
 		// be the same as execMD.ClientID if the function call was cached at the
@@ -532,11 +534,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 			return nil, fmt.Errorf("failed to collect IDs: %w", err)
 		}
 
-		// NOTE: once generalized function caching is enabled we need to ensure that any non-reproducible
-		// cache entries are linked to the result of this call.
-		// See the previous implementation of this for a reference:
-		// https://github.com/dagger/dagger/blob/7c31db76e07c9a17fcdb3f3c4513c915344c1da8/core/modfunc.go#L483
-
 		// Function calls are cached per-session, but every client caller needs to add
 		// secret/socket/etc. resources from the result to their store.
 		returnedIDsList := make([]*resource.ID, 0, len(returnedIDs))
@@ -547,8 +544,18 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		if err != nil {
 			return nil, fmt.Errorf("failed to create secret transfer post call: %w", err)
 		}
+		if secretTransferPostCall != nil {
+			// this being non-nil indicates there were secrets created by direct SetSecret calls in the
+			// returned value. This means we cannot use a persistently cached result, so invalidate the
+			// cache for this call in the future.
+			safeToCache = false
+		}
 
 		returnValue = returnValue.WithPostCall(secretTransferPostCall)
+	}
+
+	if safeToCache {
+		setExpiration()
 	}
 
 	return returnValue, nil

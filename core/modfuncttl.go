@@ -1,54 +1,78 @@
 package core
 
 import (
+	"strconv"
 	"sync"
 	"time"
+
+	"github.com/dagger/dagger/dagql"
 )
 
 type CallExpirationCache struct {
 	cache sync.Map
 }
 
+type expirationCacheEntry struct {
+	mixin      string
+	expiration int64
+}
+
 func NewCallExpirationCache() *CallExpirationCache {
 	return &CallExpirationCache{}
 }
 
-func (f *CallExpirationCache) GetOrInitExpiration(key string, ttl int64) int64 {
+func (f *CallExpirationCache) GetOrInitExpiration(key string, ttl int64, sessionID string) (*expirationCacheEntry, func()) {
 	now := time.Now().Unix()
 	newExpiration := now + ttl
 
-	// load current expiration, if hasn't past or wasn't set, return it
-	v, _ := f.cache.LoadOrStore(key, newExpiration)
-	existingExpiration := v.(int64)
-	if existingExpiration > now {
-		return existingExpiration
+	v, loaded := f.cache.Load(key)
+	var existingEntry *expirationCacheEntry
+	if loaded {
+		existingEntry = v.(*expirationCacheEntry)
 	}
 
-	// it expired, try to swap in new expiration time
-	swapped := f.cache.CompareAndSwap(key, existingExpiration, newExpiration)
-	if swapped {
-		// swapped in successfully, return new expiration time
-		return newExpiration
-	}
+	switch {
+	case !loaded:
+		// Nothing saved in the cache yet, use a new mixin. Don't store yet, that only happens
+		// once a call completes successfully and has been determined to be safe to cache.
+		newEntry := newExpirationEntry(newExpiration, sessionID)
+		return newEntry, func() {
+			f.cache.LoadOrStore(key, newEntry)
+		}
 
-	// We lost a race to reset the expiration time, return whatever is there now (it
-	// should be close enough to what we wanted). Do a LoadOrStore in case someone
-	// did a delete though.
-	v, _ = f.cache.LoadOrStore(key, newExpiration)
-	return v.(int64)
+	case existingEntry.expiration < now:
+		// We do have a cached entry, but it expired, so don't use it. Use a new mixin, but again
+		// don't store it yet until the call completes successfully and is determined to be safe
+		// to cache.
+		newEntry := newExpirationEntry(newExpiration, sessionID)
+		return newEntry, func() {
+			// Delete the old expired entry, provided no one else already updated it
+			deleted := f.cache.CompareAndDelete(key, existingEntry)
+			if deleted {
+				f.cache.LoadOrStore(key, newEntry)
+			}
+		}
+
+	default:
+		// We have a cached entry and it hasn't expired yet, use the cached mixin
+		return existingEntry, func() {}
+	}
 }
 
-func (f *CallExpirationCache) UnsetExpiration(key string, expectedExpiration int64) {
-	f.cache.CompareAndDelete(key, expectedExpiration)
+func newExpirationEntry(newExpiration int64, sessionID string) *expirationCacheEntry {
+	return &expirationCacheEntry{
+		mixin:      dagql.HashFrom(strconv.Itoa(int(newExpiration)), sessionID).String(),
+		expiration: int64(newExpiration),
+	}
 }
 
 func (f *CallExpirationCache) GCLoop() {
 	now := time.Now().Unix()
 	for range time.Tick(10 * time.Minute) {
 		f.cache.Range(func(key, value any) bool {
-			expiration := value.(int64)
-			if expiration < now {
-				f.cache.CompareAndDelete(key, expiration)
+			entry := value.(*expirationCacheEntry)
+			if entry.expiration < now {
+				f.cache.CompareAndDelete(key, entry)
 			}
 			return true
 		})

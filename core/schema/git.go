@@ -508,7 +508,6 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		if err != nil {
 			return inst, fmt.Errorf("failed to create post call: %w", err)
 		}
-
 		inst = inst.ResultWithPostCall(postCall)
 	}
 
