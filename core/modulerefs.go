@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -246,58 +247,64 @@ func (p *ParsedGitRefString) GetGitRefAndModVersion(
 	dag *dagql.Server,
 	pinCommitRef string, // "" if none
 ) (inst dagql.ObjectResult[*GitRef], _ string, rerr error) {
-	commitRef := pinCommitRef
-	var modVersion string
-	if p.hasVersion {
-		modVersion = p.ModVersion
-		if semver.IsValid(modVersion) {
-			var tags dagql.Array[dagql.String]
-			err := dag.Select(ctx, dag.Root(), &tags,
-				dagql.Selector{
-					Field: "git",
-					Args: []dagql.NamedInput{
-						{Name: "url", Value: dagql.String(p.cloneRef)},
-					},
+	var modTag string
+	if p.hasVersion && semver.IsValid(p.ModVersion) {
+		var tags dagql.Array[dagql.String]
+		err := dag.Select(ctx, dag.Root(), &tags,
+			dagql.Selector{
+				Field: "git",
+				Args: []dagql.NamedInput{
+					{Name: "url", Value: dagql.String(p.cloneRef)},
 				},
-				dagql.Selector{
-					Field: "tags",
-				},
-			)
-			if err != nil {
-				return inst, "", fmt.Errorf("failed to resolve git tags: %w", err)
-			}
-
-			allTags := make([]string, len(tags))
-			for i, tag := range tags {
-				allTags[i] = tag.String()
-			}
-
-			matched, err := matchVersion(allTags, modVersion, p.RepoRootSubdir)
-			if err != nil {
-				return inst, "", fmt.Errorf("matching version to tags: %w", err)
-			}
-			modVersion = matched
+			},
+			dagql.Selector{
+				Field: "tags",
+			},
+		)
+		if err != nil {
+			return inst, "", fmt.Errorf("failed to resolve git tags: %w", err)
 		}
-		if commitRef == "" {
-			commitRef = modVersion
+
+		allTags := make([]string, len(tags))
+		for i, tag := range tags {
+			allTags[i] = tag.String()
 		}
+
+		matched, err := matchVersion(allTags, p.ModVersion, p.RepoRootSubdir)
+		if err != nil {
+			return inst, "", fmt.Errorf("matching version to tags: %w", err)
+		}
+		modTag = matched
 	}
 
-	var commitRefSelector dagql.Selector
-	if commitRef == "" {
-		commitRefSelector = dagql.Selector{
-			Field: "head",
-		}
-	} else {
-		commitRefSelector = dagql.Selector{
+	var selector dagql.Selector
+	switch {
+	case pinCommitRef != "":
+		selector = dagql.Selector{
 			Field: "commit",
 			Args: []dagql.NamedInput{
-				// reassign modVersion to matched tag which could be subPath/tag
-				{Name: "id", Value: dagql.String(commitRef)},
+				{Name: "id", Value: dagql.String(pinCommitRef)},
 			},
 		}
+	case modTag != "":
+		selector = dagql.Selector{
+			Field: "tag",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(modTag)},
+			},
+		}
+	case p.hasVersion:
+		selector = dagql.Selector{
+			Field: "ref",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(p.ModVersion)},
+			},
+		}
+	default:
+		selector = dagql.Selector{
+			Field: "head",
+		}
 	}
-
 	var gitRef dagql.ObjectResult[*GitRef]
 	err := dag.Select(ctx, dag.Root(), &gitRef,
 		dagql.Selector{
@@ -306,13 +313,13 @@ func (p *ParsedGitRefString) GetGitRefAndModVersion(
 				{Name: "url", Value: dagql.String(p.cloneRef)},
 			},
 		},
-		commitRefSelector,
+		selector,
 	)
 	if err != nil {
 		return inst, "", fmt.Errorf("failed to resolve git src: %w", err)
 	}
 
-	return gitRef, modVersion, nil
+	return gitRef, cmp.Or(modTag, p.ModVersion), nil
 }
 
 // Match a version string in a list of versions with optional subPath
