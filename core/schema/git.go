@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -475,7 +476,6 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 
 	repo, err := core.NewGitRepository(ctx, &core.RemoteGitRepository{
 		URL:           remote,
-		Head:          head,
 		SSHKnownHosts: args.SSHKnownHosts,
 		SSHAuthSocket: sshAuthSock,
 		AuthUsername:  args.HTTPAuthUsername,
@@ -487,6 +487,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 	if err != nil {
 		return inst, err
 	}
+	repo.Remote.Head = head
 	repo.DiscardGitDir = discardGitDir
 
 	inst, err = dagql.NewResultForCurrentID(ctx, repo)
@@ -549,7 +550,8 @@ func isRemotePublic(ctx context.Context, remote *gitutil.GitURL) (bool, error) {
 }
 
 type refArgs struct {
-	Name string
+	Name   string
+	Commit string `default:"" internal:"true"`
 }
 
 func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args refArgs) (inst dagql.Result[*core.GitRef], _ error) {
@@ -558,6 +560,10 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 	if err != nil {
 		return inst, err
 	}
+	if args.Commit != "" && args.Commit != ref.SHA {
+		ref.SHA = args.Commit
+	}
+
 	refBackend, err := repo.Backend.Get(ctx, ref)
 	if err != nil {
 		return inst, err
@@ -630,9 +636,7 @@ func (s *gitSchema) commit(ctx context.Context, parent dagql.ObjectResult[*core.
 	return s.ref(ctx, parent, refArgs{Name: args.ID})
 }
 
-type branchArgs struct {
-	Name string
-}
+type branchArgs refArgs
 
 func (s *gitSchema) branch(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args branchArgs) (dagql.Result[*core.GitRef], error) {
 	if supportsStrictRefs(ctx) {
@@ -641,9 +645,7 @@ func (s *gitSchema) branch(ctx context.Context, parent dagql.ObjectResult[*core.
 	return s.ref(ctx, parent, refArgs(args))
 }
 
-type tagArgs struct {
-	Name string
-}
+type tagArgs refArgs
 
 func (s *gitSchema) tag(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args tagArgs) (dagql.Result[*core.GitRef], error) {
 	if supportsStrictRefs(ctx) {
@@ -810,7 +812,7 @@ func (s *gitSchema) fetchRef(
 	parent dagql.ObjectResult[*core.GitRef],
 	args RawDagOpInternalArgs,
 ) (dagql.String, error) {
-	return dagql.NewString(parent.Self().Ref.Name), nil
+	return dagql.NewString(cmp.Or(parent.Self().Ref.Name, parent.Self().Ref.SHA)), nil
 }
 
 type mergeBaseArgs struct {
