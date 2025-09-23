@@ -3549,7 +3549,7 @@ export class Container extends BaseClient {
   /**
    * Return a new container snapshot, with a directory added to its filesystem
    * @param path Location of the written directory (e.g., "/tmp/directory").
-   * @param directory Identifier of the directory to write
+   * @param source Identifier of the directory to write
    * @param opts.exclude Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).
    * @param opts.include Patterns to include in the written directory (e.g. ["*.go", "go.mod", "go.sum"]).
    * @param opts.owner A user:group to set for the directory and its contents.
@@ -3561,10 +3561,10 @@ export class Container extends BaseClient {
    */
   withDirectory = (
     path: string,
-    directory: Directory,
+    source: Directory,
     opts?: ContainerWithDirectoryOpts,
   ): Container => {
-    const ctx = this._ctx.select("withDirectory", { path, directory, ...opts })
+    const ctx = this._ctx.select("withDirectory", { path, source, ...opts })
     return new Container(ctx)
   }
 
@@ -4569,7 +4569,7 @@ export class Directory extends BaseClient {
   /**
    * Return a snapshot with a directory added
    * @param path Location of the written directory (e.g., "/src/").
-   * @param directory Identifier of the directory to copy.
+   * @param source Identifier of the directory to copy.
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    * @param opts.owner A user:group to set for the copied directory and its contents.
@@ -4580,10 +4580,10 @@ export class Directory extends BaseClient {
    */
   withDirectory = (
     path: string,
-    directory: Directory,
+    source: Directory,
     opts?: DirectoryWithDirectoryOpts,
   ): Directory => {
-    const ctx = this._ctx.select("withDirectory", { path, directory, ...opts })
+    const ctx = this._ctx.select("withDirectory", { path, source, ...opts })
     return new Directory(ctx)
   }
 

@@ -805,7 +805,7 @@ func (container *Container) WithDirectory(
 
 	args := []dagql.NamedInput{
 		{Name: "path", Value: dagql.String(mntSubpath)},
-		{Name: "directory", Value: dagql.NewID[*Directory](src.ID())},
+		{Name: "source", Value: dagql.NewID[*Directory](src.ID())},
 	}
 	if len(filter.Exclude) > 0 {
 		args = append(args, dagql.NamedInput{Name: "exclude", Value: asArrayInput(filter.Exclude, dagql.NewString)})
