@@ -373,7 +373,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 				}
 			}
 
-			public, err := isRemotePublic(netconfhttp.WithDNSConfig(ctx, dnsConfig), remote)
+			public, err := IsRemotePublic(netconfhttp.WithDNSConfig(ctx, dnsConfig), remote)
 			if err != nil {
 				return inst, err
 			}
@@ -519,7 +519,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 	return inst, nil
 }
 
-func isRemotePublic(ctx context.Context, remote *gitutil.GitURL) (bool, error) {
+func IsRemotePublic(ctx context.Context, remote *gitutil.GitURL) (bool, error) {
 	// check if repo is public
 	repo := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
 		Name: "origin",

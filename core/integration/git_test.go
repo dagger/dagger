@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
@@ -1303,4 +1304,32 @@ func decodeAndTrimPAT(encoded string) (string, error) {
 		return "", fmt.Errorf("failed to decode PAT: %w", err)
 	}
 	return strings.TrimSpace(string(decodedPAT)), nil
+}
+
+// Ensure IsRemotePublic correctly detects repo visibility (see dagger/dagger#11112)
+func (GitSuite) TestIsRemotePublic(ctx context.Context, t *testctx.T) {
+	vc := append([]vcsTestCase{
+		{
+			name:                "Azure DevOps private",
+			expectedBaseHTMLURL: "dev.azure.com/daggere2e/private/_git/dagger-test-modules.git",
+			isPrivateRepo:       true,
+		},
+	}, vcsTestCases...)
+
+	for _, v := range vc {
+		t.Run(v.name, func(ctx context.Context, t *testctx.T) {
+			remoteURL := v.expectedBaseHTMLURL
+			if !strings.Contains(remoteURL, "://") {
+				remoteURL = "https://" + remoteURL
+			}
+
+			remote, err := gitutil.ParseURL(remoteURL)
+			require.NoError(t, err)
+
+			isRemotePublic, err := schema.IsRemotePublic(ctx, remote)
+			require.NoError(t, err)
+
+			require.Equalf(t, !v.isPrivateRepo, isRemotePublic, "Expected public=%v for repo %q", !v.isPrivateRepo, v.name)
+		})
+	}
 }
