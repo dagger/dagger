@@ -143,8 +143,6 @@ func IsGitTransport(remote string) bool {
 }
 
 func fromURL(url *url.URL) *GitURL {
-	withoutFragment := *url
-	withoutFragment.Fragment = ""
 	return &GitURL{
 		Scheme:   url.Scheme,
 		User:     url.User,
@@ -155,8 +153,6 @@ func fromURL(url *url.URL) *GitURL {
 }
 
 func fromSCPStyleURL(url *sshutil.SCPStyleURL) *GitURL {
-	withoutFragment := *url
-	withoutFragment.Fragment = ""
 	return &GitURL{
 		Scheme:   SSHProtocol,
 		User:     url.User,

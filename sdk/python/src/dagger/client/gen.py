@@ -7515,60 +7515,6 @@ class GitRepository(Type):
         _ctx = self._select("url", _args)
         return await _ctx.execute(str | None)
 
-    def with_auth_header(self, header: "Secret") -> Self:
-        """Header to authenticate the remote with.
-
-        .. deprecated::
-            Use "httpAuthHeader" in the constructor instead.
-
-        Parameters
-        ----------
-        header:
-            Secret used to populate the Authorization HTTP header
-        """
-        warnings.warn(
-            'Method "with_auth_header" is deprecated: Use "httpAuthHeader" in the constructor instead.',
-            DeprecationWarning,
-            stacklevel=4,
-        )
-        _args = [
-            Arg("header", header),
-        ]
-        _ctx = self._select("withAuthHeader", _args)
-        return GitRepository(_ctx)
-
-    def with_auth_token(self, token: "Secret") -> Self:
-        """Token to authenticate the remote with.
-
-        .. deprecated::
-            Use "httpAuthToken" in the constructor instead.
-
-        Parameters
-        ----------
-        token:
-            Secret used to populate the password during basic HTTP
-            Authorization
-        """
-        warnings.warn(
-            'Method "with_auth_token" is deprecated: Use "httpAuthToken" in the constructor instead.',
-            DeprecationWarning,
-            stacklevel=4,
-        )
-        _args = [
-            Arg("token", token),
-        ]
-        _ctx = self._select("withAuthToken", _args)
-        return GitRepository(_ctx)
-
-    def with_(
-        self, cb: Callable[["GitRepository"], "GitRepository"]
-    ) -> "GitRepository":
-        """Call the provided callable with current GitRepository.
-
-        This is useful for reusability and readability by not breaking the calling chain.
-        """
-        return cb(self)
-
 
 @typecheck
 class Host(Type):

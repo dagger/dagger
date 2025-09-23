@@ -988,39 +988,6 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (GitSuite) TestWithAuth(ctx context.Context, t *testctx.T) {
-	// these were deprecated in dagger/dagger#10248
-
-	c := connect(ctx, t)
-	gitDaemon, repoURL := gitServiceHTTPWithBranch(ctx, t, c, "", c.Directory().WithNewFile("README.md", "Hello, world!"), "main", "", c.SetSecret("target", "foobar"))
-
-	t.Run("token auth", func(ctx context.Context, t *testctx.T) {
-		git := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon})
-		//nolint:staticcheck // SA1019 deprecated
-		git = git.WithAuthToken(c.SetSecret("token", "foobar"))
-		dt, err := git.
-			Branch("main").
-			Tree().
-			File("README.md").
-			Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "Hello, world!", dt)
-	})
-
-	t.Run("header auth", func(ctx context.Context, t *testctx.T) {
-		git := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon})
-		//nolint:staticcheck // SA1019 deprecated
-		git = git.WithAuthHeader(c.SetSecret("header", "basic "+base64.StdEncoding.EncodeToString([]byte("x-access-token:foobar"))))
-		dt, err := git.
-			Branch("main").
-			Tree().
-			File("README.md").
-			Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "Hello, world!", dt)
-	})
-}
-
 func (GitSuite) TestSubmoduleAuth(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	t.Cleanup(func() { _ = c.Close() })
@@ -1317,15 +1284,14 @@ func (GitSuite) TestGitSchemeless(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("private no auth fails", func(ctx context.Context, t *testctx.T) {
-		// should fallback to https and fail
 		repo := c.Git("github.com/grouville/daggerverse-private.git")
 		err := checkAccess(ctx, repo)
 		require.Error(t, err)
-		requireErrOut(t, err, "authentication failed")
+		requireErrOut(t, err, "failed to determine Git URL protocol")
 
-		url, err := repo.URL(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "https://github.com/grouville/daggerverse-private.git", url)
+		_, err = repo.URL(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "failed to determine Git URL protocol")
 	})
 }
 

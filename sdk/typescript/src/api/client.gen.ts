@@ -7546,35 +7546,6 @@ export class GitRepository extends BaseClient {
 
     return response
   }
-
-  /**
-   * Header to authenticate the remote with.
-   * @param header Secret used to populate the Authorization HTTP header
-   * @deprecated Use "httpAuthHeader" in the constructor instead.
-   */
-  withAuthHeader = (header: Secret): GitRepository => {
-    const ctx = this._ctx.select("withAuthHeader", { header })
-    return new GitRepository(ctx)
-  }
-
-  /**
-   * Token to authenticate the remote with.
-   * @param token Secret used to populate the password during basic HTTP Authorization
-   * @deprecated Use "httpAuthToken" in the constructor instead.
-   */
-  withAuthToken = (token: Secret): GitRepository => {
-    const ctx = this._ctx.select("withAuthToken", { token })
-    return new GitRepository(ctx)
-  }
-
-  /**
-   * Call the provided function with current GitRepository.
-   *
-   * This is useful for reusability and readability by not breaking the calling chain.
-   */
-  with = (arg: (param: GitRepository) => GitRepository) => {
-    return arg(this)
-  }
 }
 
 /**
