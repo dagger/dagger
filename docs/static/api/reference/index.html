@@ -7474,11 +7474,6 @@
                         <td> A unique identifier for this EngineCache. </td>
                       </tr>
                       <tr>
-                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="EngineCache-keepBytes" href="#EngineCache-keepBytes"><code>keepBytes</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
-                        <td> The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in. <span class="deprecation-reason">Use minFreeSpace instead.</span>
-                        </td>
-                      </tr>
-                      <tr>
                         <td data-property-name=""><a class="property-name" id="EngineCache-maxUsedSpace" href="#EngineCache-maxUsedSpace"><code>maxUsedSpace</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
                         <td> The maximum bytes to keep in the cache without pruning. </td>
                       </tr>
@@ -10442,31 +10437,6 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>host</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>Upstream host to forward traffic to.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="Host-setSecretFile" href="#Host-setSecretFile"><code>setSecretFile</code></a> - <span class="property-type"><a href="#definition-Secret"><code>Secret!</code></a></span> </td>
-                        <td>
-                          <p>Sets a secret given a user-defined name and the file path on the host, and returns the secret.</p>
-                          <p>The file is limited to a size of 512000 bytes.</p>
-                          <span class="deprecation-reason">setSecretFile is superceded by use of the secret API with file:// URIs</span>
-                        </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The user defined name for this secret.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Location of the file to set as a secret.</p>
                               </div>
                             </div>
                           </div>

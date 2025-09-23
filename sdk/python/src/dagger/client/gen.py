@@ -4184,36 +4184,6 @@ class EngineCache(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(EngineCacheID)
 
-    async def keep_bytes(self) -> int:
-        """The maximum bytes to keep in the cache without pruning, after which
-        automatic pruning may kick in.
-
-        .. deprecated::
-            Use minFreeSpace instead.
-
-        Returns
-        -------
-        int
-            The `Int` scalar type represents non-fractional signed whole
-            numeric values. Int can represent values between -(2^31) and 2^31
-            - 1.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        warnings.warn(
-            'Method "keep_bytes" is deprecated: Use minFreeSpace instead.',
-            DeprecationWarning,
-            stacklevel=4,
-        )
-        _args: list[Arg] = []
-        _ctx = self._select("keepBytes", _args)
-        return await _ctx.execute(int)
-
     async def max_used_space(self) -> int:
         """The maximum bytes to keep in the cache without pruning.
 
@@ -7678,35 +7648,6 @@ class Host(Type):
         ]
         _ctx = self._select("service", _args)
         return Service(_ctx)
-
-    def set_secret_file(self, name: str, path: str) -> "Secret":
-        """Sets a secret given a user-defined name and the file path on the host,
-        and returns the secret.
-
-        The file is limited to a size of 512000 bytes.
-
-        .. deprecated::
-            setSecretFile is superceded by use of the secret API with file://
-            URIs
-
-        Parameters
-        ----------
-        name:
-            The user defined name for this secret.
-        path:
-            Location of the file to set as a secret.
-        """
-        warnings.warn(
-            'Method "set_secret_file" is deprecated: setSecretFile is superceded by use of the secret API with file:// URIs',
-            DeprecationWarning,
-            stacklevel=4,
-        )
-        _args = [
-            Arg("name", name),
-            Arg("path", path),
-        ]
-        _ctx = self._select("setSecretFile", _args)
-        return Secret(_ctx)
 
     def tunnel(
         self,

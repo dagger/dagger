@@ -1918,11 +1918,6 @@ type EngineCache {
   """A unique identifier for this EngineCache."""
   id: EngineCacheID!
 
-  """
-  The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
-  """
-  keepBytes: Int! @deprecated(reason: "Use minFreeSpace instead.")
-
   """The maximum bytes to keep in the cache without pruning."""
   maxUsedSpace: Int!
 
@@ -3223,19 +3218,6 @@ type Host {
     """Upstream host to forward traffic to."""
     host: String = "localhost"
   ): Service!
-
-  """
-  Sets a secret given a user-defined name and the file path on the host, and returns the secret.
-
-  The file is limited to a size of 512000 bytes.
-  """
-  setSecretFile(
-    """The user defined name for this secret."""
-    name: String!
-
-    """Location of the file to set as a secret."""
-    path: String!
-  ): Secret! @deprecated(reason: "setSecretFile is superceded by use of the secret API with file:// URIs")
 
   """Creates a tunnel that forwards traffic from the host to a service."""
   tunnel(

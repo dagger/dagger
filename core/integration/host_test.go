@@ -2,9 +2,7 @@ package core
 
 import (
 	"context"
-	"crypto/md5"
 	"crypto/rand"
-	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -210,43 +208,6 @@ func (HostSuite) TestDirectoryHome(ctx context.Context, t *testctx.T) {
 	entries, err := c.Host().Directory(filepath.Join("~", subdir, "some-dir")).Entries(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{"sub-file"}, entries)
-}
-
-func (HostSuite) TestSetSecretFile(ctx context.Context, t *testctx.T) {
-	// Generate 512000 random bytes (non UTF-8)
-	// This is our current limit: secrets break at 512001 bytes
-	data := make([]byte, 512000)
-	_, err := rand.Read(data)
-	if err != nil {
-		panic(err)
-	}
-
-	// Compute the MD5 hash of the data
-	hash := md5.Sum(data)
-	hashStr := hex.EncodeToString(hash[:])
-
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "some-file"), data, 0o600))
-
-	c := connect(ctx, t, dagger.WithWorkdir(dir))
-
-	t.Run("non utf8 binary data is properly set as secret", func(ctx context.Context, t *testctx.T) {
-		//nolint:staticcheck // SA1019 deprecated
-		secret := c.Host().SetSecretFile("mysecret", filepath.Join(dir, "some-file"))
-
-		output, err := c.Container().From(alpineImage).
-			WithEnvVariable("CACHEBUST", identity.NewID()).
-			WithMountedSecret("/mysecret", secret).
-			WithExec([]string{"md5sum", "/mysecret"}).
-			Stdout(ctx)
-
-		require.NoError(t, err)
-
-		// Extract the MD5 hash from the command output
-		hashStrCmd := strings.Split(output, " ")[0]
-
-		require.Equal(t, hashStr, hashStrCmd)
-	})
 }
 
 func (HostSuite) TestDirectoryExcludeInclude(ctx context.Context, t *testctx.T) {

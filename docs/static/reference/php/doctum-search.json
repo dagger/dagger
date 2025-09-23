@@ -2889,12 +2889,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\EngineCache::keepBytes",
-			"p": "Dagger/EngineCache.html#method_keepBytes",
-			"d": "<p>The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\EngineCache::maxUsedSpace",
 			"p": "Dagger/EngineCache.html#method_maxUsedSpace",
 			"d": "<p>The maximum bytes to keep in the cache without pruning.</p>"
@@ -3900,12 +3894,6 @@
 			"n": "Dagger\\Host::service",
 			"p": "Dagger/Host.html#method_service",
 			"d": "<p>Creates a service that forwards traffic to a specified address via the host.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Host::setSecretFile",
-			"p": "Dagger/Host.html#method_setSecretFile",
-			"d": "<p>Sets a secret given a user-defined name and the file path on the host, and returns the secret.</p>"
 		},
 		{
 			"t": "M",

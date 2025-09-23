@@ -99,19 +99,6 @@ class Host extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Sets a secret given a user-defined name and the file path on the host, and returns the secret.
-     *
-     * The file is limited to a size of 512000 bytes.
-     */
-    public function setSecretFile(string $name, string $path): Secret
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('setSecretFile');
-        $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('path', $path);
-        return new \Dagger\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Creates a tunnel that forwards traffic from the host to a service.
      */
     public function tunnel(ServiceId|Service $service, ?bool $native = false, ?array $ports = null): Service
