@@ -212,9 +212,8 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			SearchDomains: bkcfg.DNS.SearchDomains,
 		},
 
-		baseDagqlCache:      cache.NewCache[string, dagql.AnyResult](),
-		daggerSessions:      make(map[string]*daggerSession),
-		callExpirationCache: core.NewCallExpirationCache(),
+		baseDagqlCache: cache.NewCache[string, dagql.AnyResult](),
+		daggerSessions: make(map[string]*daggerSession),
 
 		locker: locker.New(),
 	}
@@ -548,11 +547,18 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		time.AfterFunc(time.Second, srv.throttledGC)
 	}()
 
+	//
+	// setup function caching
+	//
+	functionCacheDBPath := filepath.Join(srv.rootDir, "function-cache.db")
+	srv.callExpirationCache, err = core.NewCallExpirationCache(ctx, functionCacheDBPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create function call expiration cache: %w", err)
+	}
+	go srv.callExpirationCache.GCLoop(ctx)
+
 	// garbage collect client DBs
 	go srv.gcClientDBs()
-
-	// garbage collect call expiration cache
-	go srv.callExpirationCache.GCLoop()
 
 	// initialize the secret salt
 	secretSaltPath := filepath.Join(srv.rootDir, "secret-salt")
