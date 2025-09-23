@@ -23,7 +23,7 @@ func (j *Job) installDaggerSteps() []api.JobStep {
 	steps := []api.JobStep{
 		{
 			Name: "Install Dagger",
-			Uses: "dagger/dagger-for-github@v8.2.0",
+			Uses: "dagger/dagger-for-github@" + DaggerForGithubVersion,
 			With: map[string]string{
 				"version": j.DaggerVersion,
 			},
@@ -81,6 +81,65 @@ func (j *Job) uploadEngineLogsStep() []api.JobStep {
 }
 
 func (j *Job) callDaggerStep() api.JobStep {
+	// for dagger dev engines continue to use the exec step so that we don't
+	// override the dagger CLI
+	if j.DaggerDev != "" {
+		return j.callDaggerWithExecStep()
+	}
+
+	env := map[string]string{}
+	// Debug mode
+	if j.Debug {
+		env["DEBUG"] = "1"
+	}
+	// Inject user-defined secrets
+	for _, secretName := range j.Secrets {
+		env[secretName] = fmt.Sprintf("${{ secrets.%s }}", secretName)
+	}
+
+	// Pass along .env lines
+	if len(j.Env) > 0 {
+		env["DOTENV"] = strings.Join(j.Env, "\n")
+	}
+
+	if j.UploadLogs {
+		env["NO_OUTPUT"] = "true"
+	}
+
+	with := map[string]string{
+		"call": j.Command,
+		// TODO: once we release it we can add it
+		// "enable-github-summary": "true",
+	}
+
+	if j.CloudEngine {
+		with["dagger-flags"] = "--cloud"
+	}
+
+	// Inject module name
+	if j.Module != "" {
+		with["module"] = j.Module
+	}
+
+	// Inject Public Dagger Cloud token
+	if j.PublicToken != "" {
+		with["cloud-token"] = j.PublicToken
+	}
+
+	if j.DaggerVersion != "" {
+		with["version"] = j.DaggerVersion
+	}
+
+	return api.JobStep{
+		ID:   "exec",
+		Name: "exec",
+		Uses: "dagger/dagger-for-github@" + DaggerForGithubVersion,
+		With: with,
+		Env:  env,
+	}
+}
+
+func (j *Job) callDaggerWithExecStep() api.JobStep {
 	env := map[string]string{}
 	// Debug mode
 	if j.Debug {

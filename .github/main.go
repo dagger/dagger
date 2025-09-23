@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	daggerVersion      = "v0.18.19"
+	daggerVersion      = "v0.19.0"
 	upstreamRepository = "dagger/dagger"
 	ubuntuVersion      = "24.04"
 	defaultRunner      = "ubuntu-" + ubuntuVersion
@@ -36,6 +36,7 @@ type CI struct {
 	DaggerRunner       *dagger.Gha // +private
 	AltRunner          *dagger.Gha // +private
 	AltRunnerWithCache *dagger.Gha // +private
+	CloudRunner        *dagger.Gha // +private
 }
 
 func New() *CI {
@@ -53,7 +54,7 @@ func New() *CI {
 		Workflows: dag.Gha(dagger.GhaOpts{
 			JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
 				Module:        module(),
-				PublicToken:   publicToken,
+				PublicToken:   "oidc",
 				DaggerVersion: daggerVersion,
 			}),
 		}),
@@ -85,6 +86,22 @@ func New() *CI {
 				TimeoutMinutes: timeoutMinutes,
 			}),
 			WorkflowDefaults: workflow,
+		}),
+		CloudRunner: dag.Gha(dagger.GhaOpts{
+			JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
+				Runner:         []string{"ubuntu-24.04"},
+				TimeoutMinutes: timeoutMinutes,
+				CloudEngine:    true,
+			}),
+			WorkflowDefaults: dag.Gha().Workflow("", dagger.GhaWorkflowOpts{
+				PullRequestConcurrency:      "preempt",
+				Permissions:                 []dagger.GhaPermission{dagger.GhaPermissionReadContents, dagger.GhaPermissionWriteIdToken},
+				OnPushBranches:              []string{"main"},
+				OnPullRequestOpened:         true,
+				OnPullRequestReopened:       true,
+				OnPullRequestSynchronize:    true,
+				OnPullRequestReadyForReview: true,
+			}),
 		}),
 	}
 
@@ -118,7 +135,7 @@ func New() *CI {
 			"Engine & CLI",
 		).
 		withSDKWorkflows(
-			ci.AltRunnerWithCache,
+			ci.CloudRunner,
 			"SDKs",
 			"python",
 			"typescript",
