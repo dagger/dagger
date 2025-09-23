@@ -294,14 +294,14 @@ func (ModuleSuite) BenchmarkCallSameModuleInParallel(ctx context.Context, b *tes
 			With(sdkSource("go", `package main
 
 import (
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"dagger/dep/internal/dagger"
+	"crypto/rand"
 )
 
 type Dep struct {}
 
 func (m *Dep) DepFn(s *dagger.Secret) string {
-	return identity.NewID()
+	return rand.Text()
 }
 `)).
 			WithWorkdir("/work").
