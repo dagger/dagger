@@ -806,7 +806,7 @@ func (c *Client) WriteImage(
 	if callerSupports(caller, &store.BasicStore_serviceDesc) {
 		loadClient := store.NewBasicStoreClient(caller.Conn())
 		ctx = metadata.AppendToOutgoingContext(ctx, store.ImageTagKey, name)
-		tarballWriter, err := loadClient.LoadTarball(ctx)
+		tarballWriter, err := loadClient.WriteTarball(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open tarball pipe: %w", err)
 		}

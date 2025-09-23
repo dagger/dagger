@@ -1,7 +1,6 @@
 syntax = "proto3";
 
-// TODO: breaking client<->server compat
-// package dagger.h2c;
+package dagger.h2c;
 
 option go_package = "h2c";
 

@@ -1,7 +1,6 @@
 syntax = "proto3";
 
-// TODO: breaking client<->server compat
-// package dagger.prompt;
+package dagger.prompt;
 
 option go_package = "prompt";
 

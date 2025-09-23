@@ -1,7 +1,6 @@
 syntax = "proto3";
 
-// TODO: breaking client<->server compat
-// package dagger.git;
+package dagger.git;
 
 option go_package = "git";
 
