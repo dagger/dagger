@@ -1,80 +1,127 @@
 package core
 
 import (
+	"context"
+	"database/sql"
+	_ "embed"
+	"errors"
+	"fmt"
+	"net/url"
 	"strconv"
-	"sync"
 	"time"
 
+	_ "modernc.org/sqlite"
+
+	"github.com/dagger/dagger/core/modfunccache"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/slog"
 )
 
+//go:embed modfunccache/schema.sql
+var ModFuncCacheSchema string
+
 type CallExpirationCache struct {
-	cache sync.Map
+	db *modfunccache.Queries
 }
 
-type expirationCacheEntry struct {
-	mixin      string
-	expiration int64
+func NewCallExpirationCache(ctx context.Context, dbPath string) (*CallExpirationCache, error) {
+	connURL := &url.URL{
+		Scheme: "file",
+		Path:   dbPath,
+		RawQuery: url.Values{
+			"_pragma": []string{
+				// ref: https://www.sqlite.org/pragma.html
+				"journal_mode=WAL",
+				"busy_timeout=10000", // wait up to 10s when there are concurrent writers
+				// TODO: handle loading corrupt db on startup
+				"synchronous=OFF",
+
+				// TODO: ?
+				// cache_size
+				// threads
+				// optimize https://www.sqlite.org/pragma.html#pragma_optimize
+			},
+			"_txlock": []string{"immediate"}, // use BEGIN IMMEDIATE for transactions
+		}.Encode(),
+	}
+	db, err := sql.Open("sqlite", connURL.String())
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", connURL, err)
+	}
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("ping %s: %w", connURL, err)
+	}
+	if _, err := db.Exec(ModFuncCacheSchema); err != nil {
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
+
+	queries, err := modfunccache.Prepare(ctx, db)
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("prepare queries: %w", err)
+	}
+
+	return &CallExpirationCache{db: queries}, nil
 }
 
-func NewCallExpirationCache() *CallExpirationCache {
-	return &CallExpirationCache{}
-}
-
-func (f *CallExpirationCache) GetOrInitExpiration(key string, ttl int64, sessionID string) (*expirationCacheEntry, func()) {
+func (f *CallExpirationCache) GetOrInitExpiration(ctx context.Context, key string, ttl int64, clientID string) (string, func(context.Context) error, error) {
 	now := time.Now().Unix()
 	newExpiration := now + ttl
 
-	v, loaded := f.cache.Load(key)
-	var existingEntry *expirationCacheEntry
-	if loaded {
-		existingEntry = v.(*expirationCacheEntry)
+	call, err := f.db.SelectCall(ctx, key)
+	switch {
+	case err == nil:
+	case errors.Is(err, sql.ErrNoRows):
+	default:
+		return "", nil, fmt.Errorf("select call: %w", err)
 	}
 
 	switch {
-	case !loaded:
+	case call == nil:
 		// Nothing saved in the cache yet, use a new mixin. Don't store yet, that only happens
 		// once a call completes successfully and has been determined to be safe to cache.
-		newEntry := newExpirationEntry(newExpiration, sessionID)
-		return newEntry, func() {
-			f.cache.LoadOrStore(key, newEntry)
-		}
+		newMixin := newExpirationMixin(newExpiration, clientID)
+		return newMixin, func(ctx context.Context) error {
+			return f.db.SetExpiration(ctx, modfunccache.SetExpirationParams{
+				Key:        key,
+				Mixin:      newMixin,
+				Expiration: newExpiration,
+				PrevMixin:  "",
+			})
+		}, nil
 
-	case existingEntry.expiration < now:
+	case call.Expiration < now:
 		// We do have a cached entry, but it expired, so don't use it. Use a new mixin, but again
 		// don't store it yet until the call completes successfully and is determined to be safe
 		// to cache.
-		newEntry := newExpirationEntry(newExpiration, sessionID)
-		return newEntry, func() {
-			// Delete the old expired entry, provided no one else already updated it
-			deleted := f.cache.CompareAndDelete(key, existingEntry)
-			if deleted {
-				f.cache.LoadOrStore(key, newEntry)
-			}
-		}
+		newMixin := newExpirationMixin(newExpiration, clientID)
+		return newMixin, func(ctx context.Context) error {
+			return f.db.SetExpiration(ctx, modfunccache.SetExpirationParams{
+				Key:        key,
+				Mixin:      newMixin,
+				Expiration: newExpiration,
+				PrevMixin:  call.Mixin,
+			})
+		}, nil
 
 	default:
 		// We have a cached entry and it hasn't expired yet, use the cached mixin
-		return existingEntry, func() {}
+		return call.Mixin, func(context.Context) error { return nil }, nil
 	}
 }
 
-func newExpirationEntry(newExpiration int64, sessionID string) *expirationCacheEntry {
-	return &expirationCacheEntry{
-		mixin:      dagql.HashFrom(strconv.Itoa(int(newExpiration)), sessionID).String(),
-		expiration: int64(newExpiration),
-	}
+func newExpirationMixin(newExpiration int64, clientID string) string {
+	return dagql.HashFrom(strconv.Itoa(int(newExpiration)), clientID).String()
 }
 
-func (f *CallExpirationCache) GCLoop() {
-	now := time.Now().Unix()
+func (f *CallExpirationCache) GCLoop(ctx context.Context) {
 	for range time.Tick(10 * time.Minute) {
-		f.cache.Range(func(key, value any) bool {
-			entry := value.(*expirationCacheEntry)
-			if entry.expiration < now {
-				f.cache.CompareAndDelete(key, entry)
-			}
-			return true
-		})
+		now := time.Now().Unix()
+		if err := f.db.GCExpiredCalls(ctx, modfunccache.GCExpiredCallsParams{
+			Now: now,
+		}); err != nil {
+			slog.Warn("failed to GC expired function calls", "err", err)
+		}
 	}
 }

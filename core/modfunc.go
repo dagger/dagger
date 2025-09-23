@@ -618,7 +618,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	cacheMixins = append(cacheMixins, callKey)
 
 	var expirationMixin string
-	var setExpiration func()
+	var setExpiration func(context.Context) error
 	expirationCache := query.CallExpirationCache()
 	if opts.CachePerSession {
 		// Scope the exec cache key to the current session ID. It will still be
@@ -631,9 +631,10 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 			// TODO: default 1w for now, needs more thought
 			ttl = 7 * 24 * 60 * 60
 		}
-		var expiration *expirationCacheEntry
-		expiration, setExpiration = expirationCache.GetOrInitExpiration(callKey, ttl, clientMetadata.SessionID)
-		expirationMixin = expiration.mixin
+		expirationMixin, setExpiration, err = expirationCache.GetOrInitExpiration(ctx, callKey, ttl, clientMetadata.ClientID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get expiration: %w", err)
+		}
 	}
 	cacheMixins = append(cacheMixins, expirationMixin)
 
@@ -826,7 +827,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("convert return value: %w", err)
 	}
 
-	safeToCache := !opts.CachePerSession // TODO: kinda confusing names
+	safeToCache := setExpiration != nil
 	if returnValue != nil {
 		// Get the client ID actually used during the function call - this might not
 		// be the same as execMD.ClientID if the function call was cached at the
@@ -863,8 +864,12 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		returnValue = returnValue.WithPostCall(secretTransferPostCall)
 	}
 
-	if safeToCache {
-		setExpiration()
+	if safeToCache && setExpiration != nil {
+		if err := setExpiration(ctx); err != nil {
+			// TODO: lower to just logging
+			// slog.Warn("failed to set expiration", "err", err)
+			return nil, fmt.Errorf("failed to set expiration: %w", err)
+		}
 	}
 
 	return returnValue, nil
