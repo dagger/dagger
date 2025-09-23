@@ -1,0 +1,9 @@
+kind: Breaking
+body: |-
+    `GitRepository`'s `withAuthToken` and `withAuthHeader` are now no-ops.
+
+    Instead authentication should *only* be provided at the top-level `git` query, since it's now queried immediately.
+time: 2025-09-23T11:32:45.600115242+01:00
+custom:
+    Author: jedevc
+    PR: "11032"
