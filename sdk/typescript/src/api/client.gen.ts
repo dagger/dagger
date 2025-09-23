@@ -4772,7 +4772,6 @@ export class Engine extends BaseClient {
  */
 export class EngineCache extends BaseClient {
   private readonly _id?: EngineCacheID = undefined
-  private readonly _keepBytes?: number = undefined
   private readonly _maxUsedSpace?: number = undefined
   private readonly _minFreeSpace?: number = undefined
   private readonly _prune?: Void = undefined
@@ -4785,7 +4784,6 @@ export class EngineCache extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: EngineCacheID,
-    _keepBytes?: number,
     _maxUsedSpace?: number,
     _minFreeSpace?: number,
     _prune?: Void,
@@ -4795,7 +4793,6 @@ export class EngineCache extends BaseClient {
     super(ctx)
 
     this._id = _id
-    this._keepBytes = _keepBytes
     this._maxUsedSpace = _maxUsedSpace
     this._minFreeSpace = _minFreeSpace
     this._prune = _prune
@@ -4824,22 +4821,6 @@ export class EngineCache extends BaseClient {
   entrySet = (opts?: EngineCacheEntrySetOpts): EngineCacheEntrySet => {
     const ctx = this._ctx.select("entrySet", { ...opts })
     return new EngineCacheEntrySet(ctx)
-  }
-
-  /**
-   * The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
-   * @deprecated Use minFreeSpace instead.
-   */
-  keepBytes = async (): Promise<number> => {
-    if (this._keepBytes) {
-      return this._keepBytes
-    }
-
-    const ctx = this._ctx.select("keepBytes")
-
-    const response: Awaited<number> = await ctx.execute()
-
-    return response
   }
 
   /**
@@ -7640,19 +7621,6 @@ export class Host extends BaseClient {
   service = (ports: PortForward[], opts?: HostServiceOpts): Service => {
     const ctx = this._ctx.select("service", { ports, ...opts })
     return new Service(ctx)
-  }
-
-  /**
-   * Sets a secret given a user-defined name and the file path on the host, and returns the secret.
-   *
-   * The file is limited to a size of 512000 bytes.
-   * @param name The user defined name for this secret.
-   * @param path Location of the file to set as a secret.
-   * @deprecated setSecretFile is superceded by use of the secret API with file:// URIs
-   */
-  setSecretFile = (name: string, path: string): Secret => {
-    const ctx = this._ctx.select("setSecretFile", { name, path })
-    return new Secret(ctx)
   }
 
   /**

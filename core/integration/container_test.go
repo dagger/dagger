@@ -4436,8 +4436,7 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 		dir := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "some-file"), data, 0o600))
 
-		//nolint:staticcheck // SA1019 deprecated
-		secret := c.Host().SetSecretFile("mysecret", filepath.Join(dir, "some-file"))
+		secret := c.Secret("file://" + filepath.Join(dir, "some-file"))
 		output, err := c.Container().
 			From("alpine:latest").
 			WithEnvVariable("foo", "bar").

@@ -6058,11 +6058,6 @@ impl EngineCache {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
-    pub async fn keep_bytes(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("keepBytes");
-        query.execute(self.graphql_client.clone()).await
-    }
     /// The maximum bytes to keep in the cache without pruning.
     pub async fn max_used_space(&self) -> Result<isize, DaggerError> {
         let query = self.selection.select("maxUsedSpace");
@@ -8842,23 +8837,6 @@ impl Host {
             query = query.arg("host", host);
         }
         Service {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Sets a secret given a user-defined name and the file path on the host, and returns the secret.
-    /// The file is limited to a size of 512000 bytes.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The user defined name for this secret.
-    /// * `path` - Location of the file to set as a secret.
-    pub fn set_secret_file(&self, name: impl Into<String>, path: impl Into<String>) -> Secret {
-        let mut query = self.selection.select("setSecretFile");
-        query = query.arg("name", name.into());
-        query = query.arg("path", path.into());
-        Secret {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

@@ -3925,7 +3925,6 @@ type EngineCache struct {
 	query *querybuilder.Selection
 
 	id            *EngineCacheID
-	keepBytes     *int
 	maxUsedSpace  *int
 	minFreeSpace  *int
 	prune         *Void
@@ -3997,21 +3996,6 @@ func (r *EngineCache) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
-}
-
-// The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
-//
-// Deprecated: Use minFreeSpace instead.
-func (r *EngineCache) KeepBytes(ctx context.Context) (int, error) {
-	if r.keepBytes != nil {
-		return *r.keepBytes, nil
-	}
-	q := r.query.Select("keepBytes")
-
-	var response int
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
 // The maximum bytes to keep in the cache without pruning.
@@ -7399,21 +7383,6 @@ func (r *Host) Service(ports []PortForward, opts ...HostServiceOpts) *Service {
 	q = q.Arg("ports", ports)
 
 	return &Service{
-		query: q,
-	}
-}
-
-// Sets a secret given a user-defined name and the file path on the host, and returns the secret.
-//
-// The file is limited to a size of 512000 bytes.
-//
-// Deprecated: setSecretFile is superceded by use of the secret API with file:// URIs
-func (r *Host) SetSecretFile(name string, path string) *Secret {
-	q := r.query.Select("setSecretFile")
-	q = q.Arg("name", name)
-	q = q.Arg("path", path)
-
-	return &Secret{
 		query: q,
 	}
 }
