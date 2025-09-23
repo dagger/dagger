@@ -1,7 +1,6 @@
 syntax = "proto3";
 
-// TODO: breaking client<->server compat
-// package dagger.pipe;
+package dagger.pipe;
 
 option go_package = "pipe";
 

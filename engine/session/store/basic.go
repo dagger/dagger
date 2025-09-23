@@ -21,8 +21,7 @@ type basicStoreAttachable struct {
 
 var _ BasicStoreServer = (*basicStoreAttachable)(nil)
 
-// TODO: should be "dagger.store.tag" but breaks client<->server compat
-const ImageTagKey = "dagger.imageload"
+const ImageTagKey = "dagger.store.tag"
 
 func (loader basicStoreAttachable) Register(srv *grpc.Server) {
 	RegisterBasicStoreServer(srv, loader)
@@ -30,7 +29,7 @@ func (loader basicStoreAttachable) Register(srv *grpc.Server) {
 
 var BasicStore_serviceDesc = _BasicStore_serviceDesc //nolint:stylecheck
 
-func (loader basicStoreAttachable) LoadTarball(srv BasicStore_LoadTarballServer) error {
+func (loader basicStoreAttachable) WriteTarball(srv BasicStore_WriteTarballServer) error {
 	md, ok := metadata.FromIncomingContext(srv.Context())
 	if !ok {
 		return fmt.Errorf("request lacks metadata: %w", cerrdefs.ErrInvalidArgument)
@@ -43,13 +42,13 @@ func (loader basicStoreAttachable) LoadTarball(srv BasicStore_LoadTarballServer)
 	tag := values[0]
 
 	reader := &TarballReader{ReadF: srv.Recv, CloseF: func() error {
-		return srv.SendAndClose(&LoadResponse{})
+		return srv.SendAndClose(&emptypb.Empty{})
 	}}
 	err := loader.write(srv.Context(), tag, reader)
 	if err != nil {
 		return err
 	}
-	return srv.SendAndClose(&LoadResponse{})
+	return srv.SendAndClose(&emptypb.Empty{})
 }
 
 func (loader basicStoreAttachable) ReadTarball(req *emptypb.Empty, srv BasicStore_ReadTarballServer) error {
