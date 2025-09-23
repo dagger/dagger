@@ -740,7 +740,7 @@ func (s *moduleSchema) currentModuleSource(
 			Field: "withDirectory",
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.String("/")},
-				{Name: "directory", Value: dagql.NewID[*core.Directory](generatedDiff.ID())},
+				{Name: "source", Value: dagql.NewID[*core.Directory](generatedDiff.ID())},
 			},
 		},
 		dagql.Selector{
