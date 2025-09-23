@@ -551,7 +551,7 @@ func (fe *frontendPlain) renderStep(span *dagui.Span, depth int, done bool) {
 	if done {
 		if span.IsFailedOrCausedFailure() {
 			fmt.Fprint(fe.output, fe.output.String(" ERROR").Foreground(termenv.ANSIRed))
-		} else if span.IsCached() {
+		} else if span.IsCached() || span.IsPending() {
 			fmt.Fprint(fe.output, fe.output.String(" CACHED").Foreground(termenv.ANSIBlue))
 		} else {
 			fmt.Fprint(fe.output, fe.output.String(" DONE").Foreground(termenv.ANSIGreen))
