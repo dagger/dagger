@@ -3147,18 +3147,6 @@ type GitRepository {
 
   """The URL of the git repository."""
   url: String
-
-  """Header to authenticate the remote with."""
-  withAuthHeader(
-    """Secret used to populate the Authorization HTTP header"""
-    header: SecretID!
-  ): GitRepository! @deprecated(reason: "Use \"httpAuthHeader\" in the constructor instead.")
-
-  """Token to authenticate the remote with."""
-  withAuthToken(
-    """Secret used to populate the password during basic HTTP Authorization"""
-    token: SecretID!
-  ): GitRepository! @deprecated(reason: "Use \"httpAuthToken\" in the constructor instead.")
 }
 
 """

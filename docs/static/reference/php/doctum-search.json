@@ -3867,18 +3867,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\GitRepository::withAuthHeader",
-			"p": "Dagger/GitRepository.html#method_withAuthHeader",
-			"d": "<p>Header to authenticate the remote with.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\GitRepository::withAuthToken",
-			"p": "Dagger/GitRepository.html#method_withAuthToken",
-			"d": "<p>Token to authenticate the remote with.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Host::containerImage",
 			"p": "Dagger/Host.html#method_containerImage",
 			"d": "<p>Accesses a container image on the host.</p>"

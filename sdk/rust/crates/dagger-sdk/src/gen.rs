@@ -8626,46 +8626,6 @@ impl GitRepository {
         let query = self.selection.select("url");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Header to authenticate the remote with.
-    ///
-    /// # Arguments
-    ///
-    /// * `header` - Secret used to populate the Authorization HTTP header
-    pub fn with_auth_header(&self, header: impl IntoID<SecretId>) -> GitRepository {
-        let mut query = self.selection.select("withAuthHeader");
-        query = query.arg_lazy(
-            "header",
-            Box::new(move || {
-                let header = header.clone();
-                Box::pin(async move { header.into_id().await.unwrap().quote() })
-            }),
-        );
-        GitRepository {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Token to authenticate the remote with.
-    ///
-    /// # Arguments
-    ///
-    /// * `token` - Secret used to populate the password during basic HTTP Authorization
-    pub fn with_auth_token(&self, token: impl IntoID<SecretId>) -> GitRepository {
-        let mut query = self.selection.select("withAuthToken");
-        query = query.arg_lazy(
-            "token",
-            Box::new(move || {
-                let token = token.clone();
-                Box::pin(async move { token.into_id().await.unwrap().quote() })
-            }),
-        );
-        GitRepository {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
 }
 #[derive(Clone)]
 pub struct Host {
