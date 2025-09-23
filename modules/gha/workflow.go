@@ -395,7 +395,9 @@ func (w *Workflow) asWorkflow() api.Workflow {
 	for _, job := range w.Jobs {
 		steps := []api.JobStep{}
 		steps = append(steps, job.installDaggerSteps()...)
-		steps = append(steps, job.warmEngineStep())
+		if !job.CloudEngine {
+			steps = append(steps, job.warmEngineStep())
+		}
 		for _, cmd := range job.SetupCommands {
 			steps = append(steps, api.JobStep{
 				Name:  cmd,
