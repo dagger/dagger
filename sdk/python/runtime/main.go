@@ -7,8 +7,9 @@ import (
 	_ "embed"
 	"fmt"
 	"path"
-	"python-sdk/internal/dagger"
 	"strings"
+
+	"python-sdk/internal/dagger"
 )
 
 const (
@@ -181,7 +182,7 @@ func (m *PythonSdk) ModuleRuntime(
 }
 
 // Container for executing the Python module runtime
-func (m *PythonSdk) ModuleTypeDefs(
+func (m *PythonSdk) ModuleDefs(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,

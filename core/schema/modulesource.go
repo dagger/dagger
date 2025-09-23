@@ -2038,9 +2038,9 @@ func (s *moduleSourceSchema) runCodegen(
 	// This is not really a dependency as it's the module itself, but that will allow to generate
 	// the types.
 	if srcInst.Self().SDK != nil {
-		// Only if the SDK implements a specific `moduleTypeDefs` function.
+		// Only if the SDK implements a specific function to get module type definitions.
 		// If not, we will have circular dependency issues.
-		if _, ok := srcInst.Self().SDKImpl.AsTypeDefs(); ok && isSelfCallsEnabled(srcInst) {
+		if _, ok := srcInst.Self().SDKImpl.AsModuleDefs(); ok && isSelfCallsEnabled(srcInst) {
 			var mod dagql.ObjectResult[*core.Module]
 			err = dag.Select(ctx, srcInst, &mod, dagql.Selector{
 				Field: "asModule",
@@ -2366,10 +2366,10 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 
 	modName := src.Self().ModuleName
 
-	typeDefsImpl, typeDefsEnabled := src.Self().SDKImpl.AsTypeDefs()
+	typeDefsImpl, typeDefsEnabled := src.Self().SDKImpl.AsModuleDefs()
 	if typeDefsEnabled {
 		var resultInst dagql.ObjectResult[*core.Module]
-		resultInst, err = typeDefsImpl.TypeDefs(ctx, mod.Deps, srcInstContentHashed)
+		resultInst, err = typeDefsImpl.ModuleDefs(ctx, mod.Deps, srcInstContentHashed)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize module: %w", err)
 		}
@@ -2465,7 +2465,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 
 	if !mod.Runtime.Valid {
 		// mod.Runtime is required for the module to be correctly loaded and usable.
-		// So set it if it doesn't yet exist (because moduleTypeDefs does not create it)
+		// So set it if it doesn't yet exist (because moduleDefs does not create it)
 		runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
 		if err != nil {
 			return nil, err
@@ -2474,7 +2474,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		var runtimeRes dagql.ID[*core.Container]
 		// But mod.Runtime itself is not enough, it needs to be fully resolved now. It's expected not only
 		// mod.Runtime exists, but it's expected the cache has been filled.
-		// If the SDK is not defining moduleTypeDefs, then a function will be called against the module and creates all
+		// If the SDK is not defining moduleDefs, then a function will be called against the module and creates all
 		// the required objects. Here we don't want that, so just sync it so it exists and will be available later to be
 		// invoked.
 		if err = dag.Select(ctx, mod.Runtime.Value, &runtimeRes, dagql.Selector{
@@ -2576,7 +2576,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 			return inst, err
 		}
 
-		if _, ok := src.Self().SDKImpl.AsTypeDefs(); ok && isSelfCallsEnabled(src) {
+		if _, ok := src.Self().SDKImpl.AsModuleDefs(); ok && isSelfCallsEnabled(src) {
 			mod.Deps = mod.Deps.Append(mod)
 		}
 

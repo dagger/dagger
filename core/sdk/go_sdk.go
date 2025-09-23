@@ -46,7 +46,7 @@ func (sdk *goSDK) AsRuntime() (core.Runtime, bool) {
 	return sdk, true
 }
 
-func (sdk *goSDK) AsTypeDefs() (core.TypeDefs, bool) {
+func (sdk *goSDK) AsModuleDefs() (core.ModuleDefs, bool) {
 	return sdk, true
 }
 
@@ -222,7 +222,7 @@ func (sdk *goSDK) Codegen(
 	}, nil
 }
 
-func (sdk *goSDK) TypeDefs(
+func (sdk *goSDK) ModuleDefs(
 	ctx context.Context,
 	deps *core.ModDeps,
 	src dagql.ObjectResult[*core.ModuleSource],
@@ -248,8 +248,8 @@ func (sdk *goSDK) TypeDefs(
 		return inst, err
 	}
 
-	var typeDefsID string
-	err = dag.Select(ctx, ctr, &typeDefsID,
+	var modDefsID string
+	err = dag.Select(ctx, ctr, &modDefsID,
 		dagql.Selector{
 			Field: "withMountedFile",
 			Args: []dagql.NamedInput{
@@ -323,7 +323,7 @@ func (sdk *goSDK) TypeDefs(
 	}
 
 	var modID core.ModuleID
-	if err = json.Unmarshal([]byte(typeDefsID), &modID); err != nil {
+	if err = json.Unmarshal([]byte(modDefsID), &modID); err != nil {
 		return inst, err
 	}
 
