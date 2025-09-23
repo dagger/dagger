@@ -214,41 +214,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 		// hidden from external clients via the __ prefix
 		dagql.Func("__internalService", s.internalService).
 			Doc(`(Internal-only) "service" but scoped to the exact right buildkit session ID.`),
-
-		dagql.NodeFuncWithCacheKey("setSecretFile", s.setSecretFile, dagql.CachePerClient).
-			Deprecated(`setSecretFile is superceded by use of the secret API with file:// URIs`).
-			Doc(
-				`Sets a secret given a user-defined name and the file path on the host,
-				and returns the secret.`,
-				`The file is limited to a size of 512000 bytes.`).
-			Args(
-				dagql.Arg("name").Doc(`The user defined name for this secret.`),
-				dagql.Arg("path").Doc(`Location of the file to set as a secret.`),
-			),
 	}.Install(srv)
-}
-
-type setSecretFileArgs struct {
-	Name string
-	Path string
-}
-
-func (s *hostSchema) setSecretFile(ctx context.Context, host dagql.ObjectResult[*core.Host], args setSecretFileArgs) (inst dagql.Result[*core.Secret], err error) {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
-	}
-
-	err = srv.Select(ctx, srv.Root(), &inst,
-		dagql.Selector{
-			Field: "secret",
-			Args: []dagql.NamedInput{{
-				Name:  "uri",
-				Value: dagql.NewString("file://" + args.Path),
-			}},
-		},
-	)
-	return inst, err
 }
 
 type hostDirectoryArgs struct {
