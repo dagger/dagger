@@ -9,11 +9,11 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
-type typeDefsModule struct {
+type moduleDefs struct {
 	mod *module
 }
 
-func (sdk *typeDefsModule) TypeDefs(
+func (sdk *moduleDefs) ModuleDefs(
 	ctx context.Context,
 	deps *core.ModDeps,
 	source dagql.ObjectResult[*core.ModuleSource],
@@ -33,7 +33,7 @@ func (sdk *typeDefsModule) TypeDefs(
 
 	rerr = dag.Select(ctx, sdk.mod.sdk, &inst,
 		dagql.Selector{
-			Field: "moduleTypeDefs",
+			Field: "moduleDefs",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "modSource",
