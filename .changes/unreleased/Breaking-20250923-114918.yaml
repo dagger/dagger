@@ -1,0 +1,9 @@
+kind: Breaking
+body: |-
+    Remove deprecated `Host.setSecretFile` method
+
+    Use the `file://` secret provider instead.
+time: 2025-09-23T11:49:18.437860973+01:00
+custom:
+    Author: jedevc
+    PR: "11115"
