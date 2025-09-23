@@ -687,10 +687,10 @@ jobs:
                 DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
               shell: bash
         timeout-minutes: 20
-    testdev-call-and-shell:
+    test-call-and-shell:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
-        name: testdev-call-and-shell
+        name: test-call-and-shell
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
@@ -828,10 +828,10 @@ jobs:
                 path: ${{ steps.exec.outputs.stderr_file }}
               if: always()
         timeout-minutes: 30
-    testdev-cgroupsv-2:
+    test-cgroupsv-2:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
-        name: testdev-cgroupsv2
+        name: test-cgroupsv2
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
@@ -969,10 +969,10 @@ jobs:
                 path: ${{ steps.exec.outputs.stderr_file }}
               if: always()
         timeout-minutes: 30
-    testdev-cli-engine:
+    test-cli-engine:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
-        name: testdev-cli-engine
+        name: test-cli-engine
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
@@ -1110,10 +1110,10 @@ jobs:
                 path: ${{ steps.exec.outputs.stderr_file }}
               if: always()
         timeout-minutes: 30
-    testdev-client-generator:
+    test-client-generator:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
-        name: testdev-client-generator
+        name: test-client-generator
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
@@ -1251,10 +1251,10 @@ jobs:
                 path: ${{ steps.exec.outputs.stderr_file }}
               if: always()
         timeout-minutes: 30
-    testdev-container:
+    test-container:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
-        name: testdev-container
+        name: test-container
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
@@ -1392,10 +1392,10 @@ jobs:
                 path: ${{ steps.exec.outputs.stderr_file }}
               if: always()
         timeout-minutes: 30
-    testdev-everything-else:
+    test-everything-else:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-32x64' || 'ubuntu-24.04' }}
-        name: testdev-everything-else
+        name: test-everything-else
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
@@ -1533,10 +1533,10 @@ jobs:
                 path: ${{ steps.exec.outputs.stderr_file }}
               if: always()
         timeout-minutes: 30
-    testdev-interface:
+    test-interface:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
-        name: testdev-interface
+        name: test-interface
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
@@ -1674,10 +1674,10 @@ jobs:
                 path: ${{ steps.exec.outputs.stderr_file }}
               if: always()
         timeout-minutes: 30
-    testdev-llm:
+    test-llm:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
-        name: testdev-LLM
+        name: test-LLM
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
@@ -1815,10 +1815,10 @@ jobs:
                 path: ${{ steps.exec.outputs.stderr_file }}
               if: always()
         timeout-minutes: 30
-    testdev-module-runtimes:
+    test-module-runtimes:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-32x64' || 'ubuntu-24.04' }}
-        name: testdev-module-runtimes
+        name: test-module-runtimes
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
@@ -1956,10 +1956,10 @@ jobs:
                 path: ${{ steps.exec.outputs.stderr_file }}
               if: always()
         timeout-minutes: 30
-    testdev-modules:
+    test-modules:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-32x64' || 'ubuntu-24.04' }}
-        name: testdev-modules
+        name: test-modules
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0

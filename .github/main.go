@@ -111,7 +111,7 @@ func New() *CI {
 			ci.AltRunner,
 			true,
 			"Dev Engine",
-			"check --targets=SDKs",
+			"check --targets=sdk",
 		).
 		withTestWorkflows(
 			ci.AltRunner,
@@ -183,7 +183,7 @@ func (ci *CI) withSDKWorkflows(runner *dagger.Gha, name string, sdks ...string) 
 	for _, sdk := range sdks {
 		command := daggerCommand("check --targets=sdk/" + sdk)
 		w = w.
-			WithJob(runner.Job(sdk+"-dev", command))
+			WithJob(runner.Job(sdk, command))
 	}
 
 	ci.Workflows = ci.Workflows.WithWorkflow(w)
@@ -210,7 +210,7 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 		WithJob(runner.Job("scan-engine", "scan", dagger.GhaJobOpts{
 			Runner: AltBronzeRunnerWithCache(),
 		})).
-		With(splitTests(runner, "testdev-", false, []testSplit{
+		With(splitTests(runner, "test-", false, []testSplit{
 			{"cgroupsv2", []string{"TestProvision", "TestTelemetry"}, &dagger.GhaJobOpts{}},
 			{"modules", []string{"TestModule"}, &dagger.GhaJobOpts{
 				Runner: AltPlatinumRunner(),

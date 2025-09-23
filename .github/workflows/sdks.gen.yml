@@ -17,11 +17,11 @@ concurrency:
     group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
     cancel-in-progress: true
 jobs:
-    dotnet-dev:
+    dotnet:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
             - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
-        name: dotnet-dev
+        name: dotnet
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
@@ -151,11 +151,11 @@ jobs:
                 DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
               shell: bash
         timeout-minutes: 20
-    elixir-dev:
+    elixir:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
             - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
-        name: elixir-dev
+        name: elixir
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
@@ -285,11 +285,11 @@ jobs:
                 DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
               shell: bash
         timeout-minutes: 20
-    go-dev:
+    go:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
             - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
-        name: go-dev
+        name: go
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
@@ -419,11 +419,11 @@ jobs:
                 DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
               shell: bash
         timeout-minutes: 20
-    java-dev:
+    java:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
             - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
-        name: java-dev
+        name: java
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
@@ -553,11 +553,11 @@ jobs:
                 DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
               shell: bash
         timeout-minutes: 20
-    php-dev:
+    php:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
             - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
-        name: php-dev
+        name: php
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
@@ -687,11 +687,11 @@ jobs:
                 DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
               shell: bash
         timeout-minutes: 20
-    python-dev:
+    python:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
             - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
-        name: python-dev
+        name: python
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
@@ -821,11 +821,11 @@ jobs:
                 DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
               shell: bash
         timeout-minutes: 20
-    rust-dev:
+    rust:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
             - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
-        name: rust-dev
+        name: rust
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
@@ -955,11 +955,11 @@ jobs:
                 DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
               shell: bash
         timeout-minutes: 20
-    typescript-dev:
+    typescript:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
             - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
-        name: typescript-dev
+        name: typescript
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
