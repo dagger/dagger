@@ -164,7 +164,7 @@ jobs:
                 exit $EXIT_CODE
               env:
                 COMMAND: dagger call --docker-cfg=file:$HOME/.docker/config.json check --targets=sdk
-                DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_CLOUD_TOKEN: oidc
                 DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
               shell: bash
         timeout-minutes: 20

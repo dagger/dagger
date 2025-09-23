@@ -293,22 +293,27 @@ func getOIDCToken(ctx context.Context) (*oidcTokenResponse, error) {
 		if err := json.NewEncoder(b).Encode(payload); err != nil {
 			return nil, fmt.Errorf("failed to encode OIDC payload: %w", err)
 		}
-		r, err = http.NewRequestWithContext(ctx, http.MethodPost, apiURL+"/v1/oidc?provider=github", b)
+		reqURL := apiURL + "/v1/oidc?provider=github"
+		r, err = http.NewRequestWithContext(ctx, http.MethodPost, reqURL, b)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create request for fetching OIDC token: %w", err)
+			return nil, fmt.Errorf("failed to create request on %s for fetching OIDC token: %w", reqURL, err)
 		}
 		r.Header.Set("Authorization", "Bearer "+providerToken)
 		r.Header.Set("Content-Type", "application/json")
 
 		loginRes, err := http.DefaultClient.Do(r)
 		if err != nil {
-			return nil, fmt.Errorf("failed to request OIDC token: %w", err)
+			return nil, fmt.Errorf("failed to request OIDC token at %s: %w", reqURL, err)
 		}
 		defer loginRes.Body.Close()
 
+		if res.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("failed to fetch OIDC token from %s server responded with %s", reqURL, loginRes.Status)
+		}
+
 		tokenResponse := &oidcTokenResponse{}
 		if err := json.NewDecoder(loginRes.Body).Decode(&tokenResponse); err != nil {
-			return nil, fmt.Errorf("failed to decode OIDC token response: %w", err)
+			return nil, fmt.Errorf("failed to decode OIDC token response from %s: %w", reqURL, err)
 		}
 		return tokenResponse, nil
 	}

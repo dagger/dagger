@@ -13,7 +13,7 @@ const (
 	upstreamRepository = "dagger/dagger"
 	ubuntuVersion      = "24.04"
 	defaultRunner      = "ubuntu-" + ubuntuVersion
-	publicToken        = "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
+	publicToken        = "oidc"
 	timeoutMinutes     = 20
 )
 
@@ -36,6 +36,7 @@ type CI struct {
 	DaggerRunner       *dagger.Gha // +private
 	AltRunner          *dagger.Gha // +private
 	AltRunnerWithCache *dagger.Gha // +private
+	CloudRunner        *dagger.Gha // +private
 }
 
 func New() *CI {
@@ -86,6 +87,22 @@ func New() *CI {
 			}),
 			WorkflowDefaults: workflow,
 		}),
+		CloudRunner: dag.Gha(dagger.GhaOpts{
+			JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
+				Runner:         []string{"ubuntu-24.04"},
+				TimeoutMinutes: timeoutMinutes,
+				CloudEngine:    true,
+			}),
+			WorkflowDefaults: dag.Gha().Workflow("", dagger.GhaWorkflowOpts{
+				PullRequestConcurrency:      "preempt",
+				Permissions:                 []dagger.GhaPermission{dagger.GhaPermissionReadContents, dagger.GhaPermissionWriteIdToken},
+				OnPushBranches:              []string{"main"},
+				OnPullRequestOpened:         true,
+				OnPullRequestReopened:       true,
+				OnPullRequestSynchronize:    true,
+				OnPullRequestReadyForReview: true,
+			}),
+		}),
 	}
 
 	return ci.
@@ -118,7 +135,7 @@ func New() *CI {
 			"Engine & CLI",
 		).
 		withSDKWorkflows(
-			ci.AltRunnerWithCache,
+			ci.CloudRunner,
 			"SDKs",
 			"python",
 			"typescript",
@@ -255,7 +272,6 @@ func splitTests(runner *dagger.Gha, name string, dev bool, splits []testSplit) d
 
 			opts := *split.opts
 			opts.TimeoutMinutes = 30
-			opts.UploadLogs = true
 			if dev {
 				opts.DaggerDev = "${{ github.sha }}"
 			}
