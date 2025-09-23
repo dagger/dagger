@@ -773,7 +773,7 @@ type Container {
     path: String!
 
     """Identifier of the directory to write"""
-    directory: DirectoryID!
+    source: DirectoryID!
 
     """
     Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).
@@ -1748,7 +1748,7 @@ type Directory {
     path: String!
 
     """Identifier of the directory to copy."""
-    directory: DirectoryID!
+    source: DirectoryID!
 
     """
     Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
