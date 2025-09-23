@@ -109,7 +109,7 @@ func (Host) FindUpAll(
 	return found, nil
 }
 
-func (*Host) Directory(ctx context.Context, path string, filter CopyFilter, gitIgnore bool, noCache bool) (*Directory, error) {
+func (*Host) Directory(ctx context.Context, path string, filter CopyFilter, gitIgnore bool, noCache bool, relPath string) (*Directory, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current query: %w", err)
@@ -124,6 +124,7 @@ func (*Host) Directory(ctx context.Context, path string, filter CopyFilter, gitI
 		IncludePatterns: filter.Include,
 		ExcludePatterns: filter.Exclude,
 		GitIgnore:       gitIgnore,
+		RelativePath:    relPath,
 	}
 
 	if noCache {

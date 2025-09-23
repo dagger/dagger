@@ -56,6 +56,7 @@ type SnapshotSyncOpts struct {
 	ExcludePatterns []string
 	GitIgnore       bool
 	CacheBuster     string
+	RelativePath    string
 }
 
 func (ls *LocalSource) Snapshot(ctx context.Context, session session.Group, sm *session.Manager, clientPath string, opts SnapshotSyncOpts) (bkcache.ImmutableRef, error) {
@@ -155,7 +156,7 @@ func (ls *LocalSource) sync(
 
 	// now sync in the clientPath dir
 	remote := newRemoteFS(caller, drive+clientPath, opts.IncludePatterns, opts.ExcludePatterns, opts.GitIgnore)
-	local, err := newLocalFS(ref.sharedState, clientPath, opts.IncludePatterns, opts.ExcludePatterns, opts.GitIgnore)
+	local, err := newLocalFS(ref.sharedState, clientPath, opts.IncludePatterns, opts.ExcludePatterns, opts.GitIgnore, opts.RelativePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create local fs: %w", err)
 	}
@@ -197,7 +198,7 @@ func (ls *LocalSource) syncParentDirs(
 	}
 
 	remote := newRemoteFS(caller, root, includes, excludes, false)
-	local, err := newLocalFS(ref.sharedState, "/", includes, excludes, false)
+	local, err := newLocalFS(ref.sharedState, "/", includes, excludes, false, "")
 	if err != nil {
 		return fmt.Errorf("failed to create local fs: %w", err)
 	}

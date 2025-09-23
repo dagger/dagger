@@ -314,16 +314,16 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		dir, err := host.Self().Directory(ctx, hostPath, core.CopyFilter{
 			Include: args.Include,
 			Exclude: args.Exclude,
-		}, args.Gitignore, args.NoCache)
+		}, args.Gitignore, args.NoCache, relPath)
 
 		if err != nil {
 			return inst, fmt.Errorf("failed to get directory: %w", err)
 		}
 
-		dir, err = dir.Directory(ctx, relPath)
-		if err != nil {
-			return inst, fmt.Errorf("failed to get relative directory: %w", err)
-		}
+		// dir, err = dir.Directory(ctx, relPath)
+		// if err != nil {
+		// 	return inst, fmt.Errorf("failed to get relative directory: %w", err)
+		// }
 
 		return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 	}
