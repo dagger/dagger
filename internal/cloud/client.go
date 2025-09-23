@@ -98,6 +98,12 @@ type SerializableCertificate struct {
 	SCTs             [][]byte `json:"scts,omitempty"`
 }
 
+type EngineRequest struct {
+	Module   string   `json:"module,omitempty"`
+	Function string   ` json:"function,omitempty"`
+	ExecCmd  []string `json:"exec_cmd,omitempty"`
+}
+
 type EngineSpec struct {
 	Architecture   string                   `json:"architecture,omitempty"`
 	CacheSizeGb    int                      `json:"cache_size_gb,omitempty"`
@@ -111,6 +117,9 @@ type EngineSpec struct {
 	TTLDuration    time.Duration            `json:"ttl_duration,omitempty"`
 	URL            string                   `json:"url,omitempty"`
 	CertSerialized *SerializableCertificate `json:"cert,omitempty"`
+	Module         string                   `json:"module,omitempty"`
+	Function       string                   `json:"function,omitempty"`
+	ExecCmd        []string                 `json:"exec_cmd,omitempty"`
 }
 
 func (es *EngineSpec) TLSCertificate() (*tls.Certificate, error) {
@@ -149,7 +158,7 @@ type ErrResponse struct {
 	Message string `json:"message"`
 }
 
-func (c *Client) Engine(ctx context.Context) (*EngineSpec, error) {
+func (c *Client) Engine(ctx context.Context, req EngineRequest) (*EngineSpec, error) {
 	// Remote Engine version defaults to the CLI version - this guarantees the best compatibility
 	tag := engine.Tag
 	// Default to `main` when the CLI is a development version
@@ -160,7 +169,10 @@ func (c *Client) Engine(ctx context.Context) (*EngineSpec, error) {
 	// The only property that we can set is the Image tag.
 	// The rest will be handled by engine configs (follow-up).
 	engineSpec := &EngineSpec{
-		Image: "registry.dagger.io/engine:" + tag,
+		Image:    "registry.dagger.io/engine:" + tag,
+		Module:   req.Module,
+		Function: req.Function,
+		ExecCmd:  req.ExecCmd,
 	}
 	b, err := json.Marshal(engineSpec)
 	if err != nil {
