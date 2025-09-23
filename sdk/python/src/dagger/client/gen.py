@@ -2142,7 +2142,7 @@ class Container(Type):
     def with_directory(
         self,
         path: str,
-        directory: "Directory",
+        source: "Directory",
         *,
         exclude: list[str] | None = None,
         include: list[str] | None = None,
@@ -2156,7 +2156,7 @@ class Container(Type):
         ----------
         path:
             Location of the written directory (e.g., "/tmp/directory").
-        directory:
+        source:
             Identifier of the directory to write
         exclude:
             Patterns to exclude in the written directory (e.g.
@@ -2176,7 +2176,7 @@ class Container(Type):
         """
         _args = [
             Arg("path", path),
-            Arg("directory", directory),
+            Arg("source", source),
             Arg("exclude", [] if exclude is None else exclude, []),
             Arg("include", [] if include is None else include, []),
             Arg("owner", owner, ""),
@@ -3843,7 +3843,7 @@ class Directory(Type):
     def with_directory(
         self,
         path: str,
-        directory: Self,
+        source: Self,
         *,
         exclude: list[str] | None = None,
         include: list[str] | None = None,
@@ -3855,7 +3855,7 @@ class Directory(Type):
         ----------
         path:
             Location of the written directory (e.g., "/src/").
-        directory:
+        source:
             Identifier of the directory to copy.
         exclude:
             Exclude artifacts that match the given pattern (e.g.,
@@ -3871,7 +3871,7 @@ class Directory(Type):
         """
         _args = [
             Arg("path", path),
-            Arg("directory", directory),
+            Arg("source", source),
             Arg("exclude", [] if exclude is None else exclude, []),
             Arg("include", [] if include is None else include, []),
             Arg("owner", owner, ""),

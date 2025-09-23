@@ -2,6 +2,7 @@ package schema
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -129,10 +130,12 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("path").Doc(`Location of the directory to retrieve. Example: "/src"`),
 			),
 		dagql.Func("withDirectory", s.withDirectory).
+			View(AllVersion).
 			Doc(`Return a snapshot with a directory added`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the written directory (e.g., "/src/").`),
-				dagql.Arg("directory").Doc(`Identifier of the directory to copy.`),
+				dagql.Arg("directory").Doc(`Identifier of the directory to copy.`).View(BeforeVersion("v0.19.0")),
+				dagql.Arg("source").Doc(`Identifier of the directory to copy.`).View(AfterVersion("v0.19.0")),
 				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 				dagql.Arg("owner").Doc(`A user:group to set for the copied directory and its contents.`,
@@ -364,9 +367,11 @@ func (s *directorySchema) withNewDirectory(ctx context.Context, parent dagql.Obj
 }
 
 type WithDirectoryArgs struct {
-	Path      string
-	Directory core.DirectoryID
-	Owner     string `default:""`
+	Path  string
+	Owner string `default:""`
+
+	Source    core.DirectoryID
+	Directory core.DirectoryID // legacy, use Source instead
 
 	core.CopyFilter
 }
@@ -377,7 +382,7 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent *core.Direct
 		return nil, err
 	}
 
-	dir, err := args.Directory.Load(ctx, srv)
+	dir, err := cmp.Or(args.Source, args.Directory).Load(ctx, srv)
 	if err != nil {
 		return nil, err
 	}

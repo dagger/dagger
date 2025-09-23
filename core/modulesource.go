@@ -399,7 +399,7 @@ func (src *ModuleSource) LoadContextDir(
 					Field: "withDirectory",
 					Args: append([]dagql.NamedInput{
 						{Name: "path", Value: dagql.String("/")},
-						{Name: "directory", Value: dagql.NewID[*Directory](ctxDir.ID())},
+						{Name: "source", Value: dagql.NewID[*Directory](ctxDir.ID())},
 					}, filterInputs...),
 				},
 			); err != nil {
@@ -439,7 +439,7 @@ func (src *ModuleSource) LoadContextDir(
 					Field: "withDirectory",
 					Args: append([]dagql.NamedInput{
 						{Name: "path", Value: dagql.String("/")},
-						{Name: "directory", Value: dagql.NewID[*Directory](ctxDir.ID())},
+						{Name: "source", Value: dagql.NewID[*Directory](ctxDir.ID())},
 					}, filterInputs...),
 				},
 			); err != nil {

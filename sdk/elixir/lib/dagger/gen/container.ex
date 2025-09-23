@@ -705,12 +705,12 @@ defmodule Dagger.Container do
           {:owner, String.t() | nil},
           {:expand, boolean() | nil}
         ]) :: Dagger.Container.t()
-  def with_directory(%__MODULE__{} = container, path, directory, optional_args \\ []) do
+  def with_directory(%__MODULE__{} = container, path, source, optional_args \\ []) do
     query_builder =
       container.query_builder
       |> QB.select("withDirectory")
       |> QB.put_arg("path", path)
-      |> QB.put_arg("directory", Dagger.ID.id!(directory))
+      |> QB.put_arg("source", Dagger.ID.id!(source))
       |> QB.maybe_put_arg("exclude", optional_args[:exclude])
       |> QB.maybe_put_arg("include", optional_args[:include])
       |> QB.maybe_put_arg("owner", optional_args[:owner])

@@ -2049,8 +2049,8 @@ type ContainerWithDirectoryOpts struct {
 }
 
 // Return a new container snapshot, with a directory added to its filesystem
-func (r *Container) WithDirectory(path string, directory *Directory, opts ...ContainerWithDirectoryOpts) *Container {
-	assertNotNil("directory", directory)
+func (r *Container) WithDirectory(path string, source *Directory, opts ...ContainerWithDirectoryOpts) *Container {
+	assertNotNil("source", source)
 	q := r.query.Select("withDirectory")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `exclude` optional argument
@@ -2071,7 +2071,7 @@ func (r *Container) WithDirectory(path string, directory *Directory, opts ...Con
 		}
 	}
 	q = q.Arg("path", path)
-	q = q.Arg("directory", directory)
+	q = q.Arg("source", source)
 
 	return &Container{
 		query: q,
@@ -3651,8 +3651,8 @@ type DirectoryWithDirectoryOpts struct {
 }
 
 // Return a snapshot with a directory added
-func (r *Directory) WithDirectory(path string, directory *Directory, opts ...DirectoryWithDirectoryOpts) *Directory {
-	assertNotNil("directory", directory)
+func (r *Directory) WithDirectory(path string, source *Directory, opts ...DirectoryWithDirectoryOpts) *Directory {
+	assertNotNil("source", source)
 	q := r.query.Select("withDirectory")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `exclude` optional argument
@@ -3669,7 +3669,7 @@ func (r *Directory) WithDirectory(path string, directory *Directory, opts ...Dir
 		}
 	}
 	q = q.Arg("path", path)
-	q = q.Arg("directory", directory)
+	q = q.Arg("source", source)
 
 	return &Directory{
 		query: q,
