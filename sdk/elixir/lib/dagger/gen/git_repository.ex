@@ -146,44 +146,6 @@ defmodule Dagger.GitRepository do
 
     Client.execute(git_repository.client, query_builder)
   end
-
-  @deprecated """
-  Use \\"httpAuthHeader\\" in the constructor instead.
-  """
-  @doc """
-  Header to authenticate the remote with.
-  """
-  @spec with_auth_header(t(), Dagger.Secret.t()) :: Dagger.GitRepository.t()
-  def with_auth_header(%__MODULE__{} = git_repository, header) do
-    query_builder =
-      git_repository.query_builder
-      |> QB.select("withAuthHeader")
-      |> QB.put_arg("header", Dagger.ID.id!(header))
-
-    %Dagger.GitRepository{
-      query_builder: query_builder,
-      client: git_repository.client
-    }
-  end
-
-  @deprecated """
-  Use \\"httpAuthToken\\" in the constructor instead.
-  """
-  @doc """
-  Token to authenticate the remote with.
-  """
-  @spec with_auth_token(t(), Dagger.Secret.t()) :: Dagger.GitRepository.t()
-  def with_auth_token(%__MODULE__{} = git_repository, token) do
-    query_builder =
-      git_repository.query_builder
-      |> QB.select("withAuthToken")
-      |> QB.put_arg("token", Dagger.ID.id!(token))
-
-    %Dagger.GitRepository{
-      query_builder: query_builder,
-      client: git_repository.client
-    }
-  end
 end
 
 defimpl Jason.Encoder, for: Dagger.GitRepository do

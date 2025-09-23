@@ -1019,12 +1019,20 @@ func (s *directorySchema) asGit(
 	ctx context.Context,
 	dir dagql.ObjectResult[*core.Directory],
 	_ struct{},
-) (*core.GitRepository, error) {
-	return &core.GitRepository{
-		Backend: &core.LocalGitRepository{
-			Directory: dir,
-		},
-	}, nil
+) (inst dagql.Result[*core.GitRepository], _ error) {
+	repo, err := core.NewGitRepository(ctx, &core.LocalGitRepository{
+		Directory: dir,
+	})
+	if err != nil {
+		return inst, err
+	}
+	inst, err = dagql.NewResultForCurrentID(ctx, repo)
+	if err != nil {
+		return inst, err
+	}
+
+	inst = inst.WithDigest(dagql.HashFrom(string(repo.Remote.Digest())))
+	return inst, nil
 }
 
 type directoryWithSymlinkArgs struct {

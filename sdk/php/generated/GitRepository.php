@@ -112,24 +112,4 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('url');
         return (string)$this->queryLeaf($leafQueryBuilder, 'url');
     }
-
-    /**
-     * Header to authenticate the remote with.
-     */
-    public function withAuthHeader(SecretId|Secret $header): GitRepository
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withAuthHeader');
-        $innerQueryBuilder->setArgument('header', $header);
-        return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Token to authenticate the remote with.
-     */
-    public function withAuthToken(SecretId|Secret $token): GitRepository
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withAuthToken');
-        $innerQueryBuilder->setArgument('token', $token);
-        return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
 }

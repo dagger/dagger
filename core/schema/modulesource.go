@@ -528,10 +528,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to resolve git src: %w", err)
 	}
-	gitCommit, gitRefFull, err := gitRef.Self().Resolve(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to resolve git src to commit: %w", err)
-	}
+	gitCommit, gitRefFull := gitRef.Self().Ref.SHA, gitRef.Self().Ref.Name
 
 	gitSrc := &core.ModuleSource{
 		ConfigExists: true, // we can't load uninitialized git modules, we'll error out later if it's not there
