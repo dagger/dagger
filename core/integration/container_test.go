@@ -1810,7 +1810,7 @@ func (ContainerSuite) TestMountsWithoutMount(ctx context.Context, t *testctx.T) 
 		`query Test($id: DirectoryID!, $scratch: DirectoryID!) {
 			container {
 				from(address: "`+alpineImage+`") {
-					withDirectory(path: "/mnt/dir", directory: $scratch) {
+					withDirectory(path: "/mnt/dir", source: $scratch) {
 						withMountedTemp(path: "/mnt/tmp") {
 							mounts
 							withMountedDirectory(path: "/mnt/dir", source: $id) {
