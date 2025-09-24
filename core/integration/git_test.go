@@ -405,7 +405,7 @@ func (GitSuite) TestSSHAuthSock(ctx context.Context, t *testctx.T) {
 
 	gitSSH := c.Container().
 		From(alpineImage).
-		WithExec([]string{"apk", "add", "git", "openssh"})
+		WithExec([]string{"apk", "add", "git", "openssh", "openssl"})
 
 	hostKeyGen := gitSSH.
 		WithExec([]string{

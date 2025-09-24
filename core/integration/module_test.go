@@ -6102,7 +6102,7 @@ func (m *Foo) HowCoolIsDagger() string {
 		// 3. a dagger module that requires a dependency (NOT a dagger dependency) from a remote private repo.
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithExec([]string{"apk", "add", "git", "openssh"}).
+			WithExec([]string{"apk", "add", "git", "openssh", "openssl"}).
 			WithUnixSocket("/sock/unix-socket", socket).
 			WithEnvVariable("SSH_AUTH_SOCK", "/sock/unix-socket").
 			WithWorkdir("/work").
