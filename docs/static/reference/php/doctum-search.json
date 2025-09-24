@@ -2187,12 +2187,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Container::build",
-			"p": "Dagger/Container.html#method_build",
-			"d": "<p>Initializes this container from a Dockerfile build.</p>"
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Container::combinedOutput",
 			"p": "Dagger/Container.html#method_combinedOutput",
 			"d": "<p>The combined buffered standard output and standard error stream of the last executed command</p>"

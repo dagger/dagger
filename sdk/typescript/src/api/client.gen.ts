@@ -178,39 +178,6 @@ export type ContainerAsTarballOpts = {
   mediaTypes?: ImageMediaTypes
 }
 
-export type ContainerBuildOpts = {
-  /**
-   * Path to the Dockerfile to use.
-   */
-  dockerfile?: string
-
-  /**
-   * Target build stage to build.
-   */
-  target?: string
-
-  /**
-   * Additional build arguments.
-   */
-  buildArgs?: BuildArg[]
-
-  /**
-   * Secrets to pass to the build.
-   *
-   * They will be mounted at /run/secrets/[secret-name] in the build container
-   *
-   * They can be accessed in the Dockerfile using the "secret" mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl [http://example.com?token=$(cat /run/secrets/my-secret)](http://example.com?token=$(cat /run/secrets/my-secret))
-   */
-  secrets?: Secret[]
-
-  /**
-   * If set, skip the automatic init process injected into containers created by RUN statements.
-   *
-   * This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
-   */
-  noInit?: boolean
-}
-
 export type ContainerDirectoryOpts = {
   /**
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
@@ -2978,27 +2945,6 @@ export class Container extends BaseClient {
 
     const ctx = this._ctx.select("asTarball", { ...opts, __metadata: metadata })
     return new File(ctx)
-  }
-
-  /**
-   * Initializes this container from a Dockerfile build.
-   * @param context Directory context used by the Dockerfile.
-   * @param opts.dockerfile Path to the Dockerfile to use.
-   * @param opts.target Target build stage to build.
-   * @param opts.buildArgs Additional build arguments.
-   * @param opts.secrets Secrets to pass to the build.
-   *
-   * They will be mounted at /run/secrets/[secret-name] in the build container
-   *
-   * They can be accessed in the Dockerfile using the "secret" mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl [http://example.com?token=$(cat /run/secrets/my-secret)](http://example.com?token=$(cat /run/secrets/my-secret))
-   * @param opts.noInit If set, skip the automatic init process injected into containers created by RUN statements.
-   *
-   * This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
-   * @deprecated Use `Directory.build` instead
-   */
-  build = (context: Directory, opts?: ContainerBuildOpts): Container => {
-    const ctx = this._ctx.select("build", { context, ...opts })
-    return new Container(ctx)
   }
 
   /**
