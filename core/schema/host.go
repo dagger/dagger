@@ -146,7 +146,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 		// TODO: Updated: converted to dagOp
 		// NOTE: (for near future) we can support force reloading by adding a new arg to this function and providing
 		// a custom cache key function that uses a random value when that arg is true.
-		dagql.NodeFuncWithCacheKey("directory", DagOpDirectoryWrapper(srv, s.directory), dagql.CacheAsRequested).
+		dagql.NodeFuncWithCacheKey("directory", s.directory, dagql.CacheAsRequested).
 			Doc(`Accesses a directory on the host.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to access (e.g., ".").`),
@@ -310,16 +310,28 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		excludePatterns = append(excludePatterns, exclude)
 	}
 
-	dir, err := host.Self().Directory(ctx, hostPath, core.CopyFilter{
-		Include: args.Include,
-		Exclude: args.Exclude,
-	}, args.Gitignore, args.NoCache, relPath)
+	if args.InDagOp() {
+		dir, err := host.Self().Directory(ctx, hostPath, core.CopyFilter{
+			Include: args.Include,
+			Exclude: args.Exclude,
+		}, args.Gitignore, args.NoCache, relPath)
 
-	if err != nil {
-		return inst, fmt.Errorf("failed to get directory: %w", err)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get directory: %w", err)
+		}
+
+		return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 	}
 
-	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+	dir, err := DagOpDirectory(ctx, srv, host.Self(), args, "", s.directory)
+	if err != nil {
+		return inst, err
+	}
+	dirRes, err := dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+	if err != nil {
+		return inst, err
+	}
+	return core.MakeDirectoryContentHashed(ctx, bk, dirRes)
 }
 
 type hostSocketArgs struct {

@@ -198,7 +198,7 @@ func (ls *LocalSource) syncParentDirs(
 	}
 
 	remote := newRemoteFS(caller, root, includes, excludes, false)
-	local, err := newLocalFS(ref.sharedState, "/", includes, excludes, false, "")
+	local, err := newLocalFS(ref.sharedState, "/", includes, excludes, false, opts.RelativePath)
 	if err != nil {
 		return fmt.Errorf("failed to create local fs: %w", err)
 	}
