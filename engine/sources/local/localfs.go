@@ -326,14 +326,15 @@ func (local *localFS) Sync( //nolint:gocyclo
 		return nil, nil
 	}
 
-	// TODO: revert once I figure out what's wrong with that copy.
-	ctx, copySpan := newSpan(ctx, fmt.Sprintf("copy %s %s", local.rootPath, filepath.Join(local.subdir, local.copyPath)))
+	ctx, copySpan := newSpan(ctx, "copy")
 	defer telemetry.End(copySpan, func() error { return rerr })
 
-	dgst, err := cacheCtx.Checksum(ctx, newCopyRef, "/", bkcontenthash.ChecksumOpts{}, session)
+	dgst, err := cacheCtx.Checksum(ctx, newCopyRef, filepath.Join("/", local.copyPath), bkcontenthash.ChecksumOpts{}, session)
 	if err != nil {
 		return nil, fmt.Errorf("failed to checksum: %w", err)
 	}
+
+	fmt.Printf("[COPY][SYNC] DIGEST: %#v\n", dgst)
 
 	// If we have already created a cache ref with the same content hash, use that instead of copying
 	// another equivalent one.
@@ -373,6 +374,11 @@ func (local *localFS) Sync( //nolint:gocyclo
 			// only copy files that we know about changes for
 			ci.Only = only
 			ci.CopyDirContents = true
+
+			// If the copy path is not the root, then we need to set the base path
+			if local.copyPath != "." {
+				ci.BaseCopyPath = local.copyPath
+			}
 		},
 		fscopy.WithXAttrErrorHandler(func(dst, src, key string, err error) error {
 			bklog.G(ctx).Debugf("xattr error during local import copy: %v", err)
@@ -381,7 +387,8 @@ func (local *localFS) Sync( //nolint:gocyclo
 	}
 
 	if err := fscopy.Copy(ctx,
-		local.rootPath, filepath.Join(local.subdir, local.copyPath), // relative path
+		local.rootPath,
+		filepath.Join(local.subdir, local.copyPath),
 		copyRefMntPath, "/",
 		copyOpts...,
 	); err != nil {

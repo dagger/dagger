@@ -310,33 +310,16 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		excludePatterns = append(excludePatterns, exclude)
 	}
 
-	if args.IsDagOp {
-		dir, err := host.Self().Directory(ctx, hostPath, core.CopyFilter{
-			Include: args.Include,
-			Exclude: args.Exclude,
-		}, args.Gitignore, args.NoCache, relPath)
+	dir, err := host.Self().Directory(ctx, hostPath, core.CopyFilter{
+		Include: args.Include,
+		Exclude: args.Exclude,
+	}, args.Gitignore, args.NoCache, relPath)
 
-		if err != nil {
-			return inst, fmt.Errorf("failed to get directory: %w", err)
-		}
-
-		// dir, err = dir.Directory(ctx, relPath)
-		// if err != nil {
-		// 	return inst, fmt.Errorf("failed to get relative directory: %w", err)
-		// }
-
-		return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
-	}
-
-	dir, err := DagOpDirectory(ctx, srv, host.Self(), args, "", s.directory)
 	if err != nil {
-		return inst, err
+		return inst, fmt.Errorf("failed to get directory: %w", err)
 	}
-	dirRes, err := dagql.NewObjectResultForCurrentID(ctx, srv, dir)
-	if err != nil {
-		return inst, err
-	}
-	return core.MakeDirectoryContentHashed(ctx, bk, dirRes)
+
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 type hostSocketArgs struct {
