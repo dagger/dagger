@@ -162,17 +162,26 @@ func (remote *Remote) ShortNames() []string {
 	return names
 }
 
-func (remote *Remote) Lookup(target string) (*Ref, error) {
-	if target == "HEAD" && remote.Head != nil {
-		if remote.Head.SHA != "" {
-			// head is already fully resolved
-			return remote.Head, nil
+func (remote *Remote) Get(name string) (result *Ref) {
+	for _, ref := range remote.Refs {
+		if ref.Name == name {
+			return ref
 		}
-		// head isn't resolved, so just use what it points to
+	}
+	return nil
+}
+
+// Lookup looks up a ref by name, simulating git-checkout semantics.
+// It handles full refs, partial refs, commits, symrefs, HEAD resolution, etc.
+func (remote *Remote) Lookup(target string) (result *Ref, _ error) {
+	isHead := target == "HEAD"
+	if isHead && remote.Head != nil && remote.Head.Name != "" {
+		// resolve HEAD to a specific ref
 		target = remote.Head.Name
 	}
+
 	if IsCommitSHA(target) {
-		return &Ref{Name: target, SHA: target}, nil
+		return &Ref{SHA: target}, nil
 	}
 
 	// simulate git-checkout semantics, and make sure to select exactly the right ref
@@ -211,11 +220,17 @@ func (remote *Remote) Lookup(target string) (*Ref, error) {
 		return nil, fmt.Errorf("invalid commit sha %q for %q", match.SHA, match.Name)
 	}
 
+	// clone the match to avoid weirdly mutating later
+	clone := *match
+	match = &clone
+
 	// resolve symrefs to get the right ref result
 	if ref, ok := remote.Symrefs[match.Name]; ok {
-		clone := *match
-		match = &clone
 		match.Name = ref
+	}
+
+	if isHead && remote.Head != nil && remote.Head.SHA != "" {
+		match.SHA = remote.Head.SHA
 	}
 
 	return match, nil

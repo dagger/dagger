@@ -30,10 +30,10 @@ type GitRepository struct {
 type GitRepositoryBackend interface {
 	HasPBDefinitions
 
-	// Get returns a reference to a specific git ref (branch, tag, or commit).
-	Get(ctx context.Context, ref *gitutil.Ref) (GitRefBackend, error)
 	// Remote returns information about the git remote.
 	Remote(ctx context.Context) (*gitutil.Remote, error)
+	// Get returns a reference to a specific git ref (branch, tag, or commit).
+	Get(ctx context.Context, ref *gitutil.Ref) (GitRefBackend, error)
 
 	mount(ctx context.Context, depth int, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error
 }
@@ -112,7 +112,7 @@ func doGitCheckout(
 	checkoutGit *gitutil.GitCLI,
 	remoteURL string,
 	cloneURL string,
-	fullref string, commit string,
+	ref *gitutil.Ref,
 	depth int,
 	discardGitDir bool,
 ) error {
@@ -126,33 +126,39 @@ func doGitCheckout(
 		return err
 	}
 
-	destref := fullref
-	if gitutil.IsCommitSHA(fullref) {
-		// we need to create a temporary ref to fetch into!
-		// this ensures that we actually get the "default" tags behavior (only
-		// fetching tags that are part of the history)
-		destref = "refs/dagger.tmp/" + identity.NewID()
-	}
+	tmpref := "refs/dagger.tmp/" + identity.NewID()
 
+	// TODO: maybe this should use --no-tags by default, but that's a breaking change :(
+	// also, we currently don't do any special work to ensure that the fetched
+	// tags are consistent with the GitRepository.Remote (oops)
 	args := []string{"fetch", "-u"}
 	if depth > 0 {
 		args = append(args, fmt.Sprintf("--depth=%d", depth))
 	}
-	// TODO: maybe this should use --no-tags by default, but that's a breaking change :(
-	// also, we currently don't do any special work to ensure that the fetched
-	// tags are consistent with the GitRepository.Remote (oops)
-	args = append(args, cloneURL, fullref+":"+destref)
+	args = append(args, cloneURL)
+	args = append(args, ref.SHA+":"+tmpref)
 	_, err = checkoutGit.Run(ctx, args...)
 	if err != nil {
 		return err
 	}
-	_, err = checkoutGit.Run(ctx, "checkout", strings.TrimPrefix(fullref, "refs/heads/"))
-	if err != nil {
-		return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
-	}
-	_, err = checkoutGit.Run(ctx, "reset", "--hard", commit)
-	if err != nil {
-		return fmt.Errorf("failed to reset ref: %w", err)
+	if ref.Name == "" {
+		_, err = checkoutGit.Run(ctx, "checkout", ref.SHA)
+		if err != nil {
+			return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
+		}
+	} else {
+		_, err = checkoutGit.Run(ctx, "update-ref", ref.Name, ref.SHA)
+		if err != nil {
+			return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
+		}
+		_, err = checkoutGit.Run(ctx, "checkout", strings.TrimPrefix(ref.Name, "refs/heads/"))
+		if err != nil {
+			return fmt.Errorf("failed to checkout remote %s: %w", cloneURL, err)
+		}
+		_, err = checkoutGit.Run(ctx, "reset", "--hard", ref.SHA)
+		if err != nil {
+			return fmt.Errorf("failed to reset ref: %w", err)
+		}
 	}
 	if remoteURL != "" {
 		_, err = checkoutGit.Run(ctx, "remote", "add", "origin", remoteURL)
@@ -160,11 +166,9 @@ func doGitCheckout(
 			return fmt.Errorf("failed to set remote origin to %s: %w", remoteURL, err)
 		}
 	}
-	if strings.HasPrefix(destref, "refs/dagger.tmp/") {
-		_, err = checkoutGit.Run(ctx, "update-ref", "-d", destref)
-		if err != nil {
-			return fmt.Errorf("failed to delete tmp ref: %w", err)
-		}
+	_, err = checkoutGit.Run(ctx, "update-ref", "-d", tmpref)
+	if err != nil {
+		return fmt.Errorf("failed to delete tmp ref: %w", err)
 	}
 	_, err = checkoutGit.Run(ctx, "reflog", "expire", "--all", "--expire=now")
 	if err != nil {
@@ -214,7 +218,7 @@ func MergeBase(ctx context.Context, ref1 *GitRef, ref2 *GitRef) (*GitRef, error)
 			return nil, err
 		}
 
-		ref := &gitutil.Ref{SHA: mergeBase, Name: mergeBase}
+		ref := &gitutil.Ref{SHA: mergeBase}
 		backend, err := ref1.Repo.Self().Backend.Get(ctx, ref)
 		if err != nil {
 			return nil, err
@@ -234,7 +238,7 @@ func MergeBase(ctx context.Context, ref1 *GitRef, ref2 *GitRef) (*GitRef, error)
 	}
 	mergeBase := strings.TrimSpace(string(out))
 
-	ref := &gitutil.Ref{SHA: mergeBase, Name: mergeBase}
+	ref := &gitutil.Ref{SHA: mergeBase}
 	backend, err := ref1.Repo.Self().Backend.Get(ctx, ref)
 	if err != nil {
 		return nil, err

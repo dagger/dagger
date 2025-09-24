@@ -2,6 +2,7 @@ package schema
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -524,11 +525,10 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	gitRef, modVersion, err := parsed.GetGitRefAndModVersion(ctx, dag, refPin)
+	gitRef, err := parsed.GitRef(ctx, dag, refPin)
 	if err != nil {
 		return inst, fmt.Errorf("failed to resolve git src: %w", err)
 	}
-	gitCommit, gitRefFull := gitRef.Self().Ref.SHA, gitRef.Self().Ref.Name
 
 	gitSrc := &core.ModuleSource{
 		ConfigExists: true, // we can't load uninitialized git modules, we'll error out later if it's not there
@@ -536,9 +536,9 @@ func (s *moduleSourceSchema) gitModuleSource(
 		Git: &core.GitModuleSource{
 			HTMLRepoURL:  parsed.RepoRoot.Repo,
 			RepoRootPath: parsed.RepoRoot.Root,
-			Version:      modVersion,
-			Commit:       gitCommit,
-			Ref:          gitRefFull,
+			Version:      cmp.Or(gitRef.Self().Ref.ShortName(), gitRef.Self().Ref.SHA),
+			Commit:       gitRef.Self().Ref.SHA,
+			Ref:          gitRef.Self().Ref.Name,
 			CloneRef:     parsed.SourceCloneRef,
 		},
 	}
@@ -1721,7 +1721,7 @@ func (s *moduleSourceSchema) moduleSourceWithoutDependencies(
 			// see if we can match Pin() with that commit. But that would mean resolving the commit here.
 			if existingVersion == "" {
 				return nil, fmt.Errorf(
-					"version %q was requested to be uninstalled but the dependency %q was originally installed without a specific version. Try re-running the uninstall command without specifying the version number",
+					"version %q was requested to be uninstalled but the dependency %q was installed without a specific version. Try re-running the uninstall command without specifying the version number",
 					depVersion,
 					existingSymbolic,
 				)
@@ -1741,7 +1741,12 @@ func (s *moduleSourceSchema) moduleSourceWithoutDependencies(
 					depReqModVersion, _ = strings.CutPrefix(depReqModVersion, parsedDepGitRef.RepoRootSubdir+"/")
 					existingVersion, _ = strings.CutPrefix(existingVersion, existingDep.Self().SourceRootSubpath+"/")
 				}
-				return nil, fmt.Errorf("version %q was requested to be uninstalled but the installed version is %q", depReqModVersion, existingVersion)
+				return nil, fmt.Errorf(
+					"version %q was requested to be uninstalled but the dependency %q was installed with %q. Try re-running the uninstall command without specifying the version number",
+					depReqModVersion,
+					existingSymbolic,
+					existingVersion,
+				)
 			}
 
 			break

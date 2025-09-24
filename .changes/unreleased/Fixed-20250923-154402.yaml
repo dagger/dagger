@@ -1,0 +1,6 @@
+kind: Fixed
+body: Contextual git refs are correctly pinned
+time: 2025-09-23T15:44:02.929087233+01:00
+custom:
+    Author: jedevc
+    PR: "11092"
