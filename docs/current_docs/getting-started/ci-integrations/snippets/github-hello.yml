@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Call Dagger Function
-        uses: dagger/dagger-for-github@8.0.0
+        uses: dagger/dagger-for-github@v8.2.0
         with:
           version: "latest"
           module: github.com/shykes/daggerverse/hello@v0.1.2
