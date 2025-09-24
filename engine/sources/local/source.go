@@ -78,6 +78,12 @@ func (ls *LocalSource) Snapshot(ctx context.Context, session session.Group, sm *
 		return nil, fmt.Errorf("failed to get session: %w", err)
 	}
 
+	// If relPath is ".", we want to use the root path so we can unset it
+	// because `"."` leads to unecessary complications inside snapshot.
+	if opts.RelativePath == "." {
+		opts.RelativePath = ""
+	}
+
 	ref, err := ls.snapshot(ctx, session, caller, clientPath, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to snapshot: %w", err)
