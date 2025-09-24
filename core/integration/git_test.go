@@ -1101,7 +1101,7 @@ func (GitSuite) TestRemoteUpdates(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t)
 
-	svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello, world!"))
+	svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+t.Name()))
 
 	svc, err := svc.Start(ctx)
 	require.NoError(t, err)
@@ -1138,6 +1138,55 @@ func (GitSuite) TestRemoteUpdates(ctx context.Context, t *testctx.T) {
 	entries, err = ref.Tree().Entries(ctx)
 	require.NoError(t, err)
 	require.Contains(t, entries, "abc")
+}
+
+func (GitSuite) TestRemoteUpdatesFrozenTag(ctx context.Context, t *testctx.T) {
+	// similar to above, upstream changes between fetches, but we check that
+	// the tag gets *resolved* and doesn't get updated
+
+	c := connect(ctx, t)
+
+	svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+t.Name()))
+
+	svc, err := svc.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, err := svc.Stop(ctx)
+		require.NoError(t, err)
+	})
+
+	ctr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"git", "config", "--global", "user.name", "tester"}).
+		WithExec([]string{"git", "config", "--global", "user.email", "test@dagger.io"}).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "clone", url, "."}).
+		WithExec([]string{"sh", "-c", `touch xyz && git add xyz && git commit -m "xyz" && git tag v1.0 && git push origin main && git push origin v1.0`})
+	commit, err := ctr.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	commit = strings.TrimSpace(commit)
+
+	// resolve the commit now (by syncing it), but don't clone it
+	ref := c.Git(url).Tag("v1.0")
+	result, err := ref.Commit(ctx)
+	require.NoError(t, err)
+	require.Equal(t, commit, result)
+
+	// modify the upstream
+	ctr = ctr.WithExec([]string{"sh", "-c", `touch abc && git add abc && git commit -m "abc" && git tag -d v1.0 && git tag v1.0 && git push origin main && git push -f origin v1.0`})
+	_, err = ctr.Sync(ctx)
+	require.NoError(t, err)
+
+	// now check that the checkout is for the original commit
+	entries, err := ref.Tree().Entries(ctx)
+	require.NoError(t, err)
+	require.Contains(t, entries, "xyz")
+	require.NotContains(t, entries, "abc")
+
+	head, err := ref.Tree().File(".git/HEAD").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, commit, strings.TrimSpace(head))
 }
 
 func (GitSuite) TestServiceStableDigest(ctx context.Context, t *testctx.T) {
