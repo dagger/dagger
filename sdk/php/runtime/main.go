@@ -12,22 +12,32 @@ import (
 )
 
 const (
-	PhpImage      = "php:8.3-cli-alpine"
-	PhpDigest     = "sha256:e4ffe0a17a6814009b5f0713a5444634a9c5b688ee34b8399e7d4f2db312c3b4"
-	ComposerImage = "composer:2@sha256:6d2b5386580c3ba67399c6ccfb50873146d68fcd7c31549f8802781559bed709"
-	ModSourcePath = "/src"
-	GenPath       = "sdk"
+	PhpImage       = "php:8.4-cli-alpine" // TODO: because of how defaults works, this is not used. Should I switch to `nil` by default and fallback to using those constants ?
+	PhpDigest      = "sha256:fada271bbcae269b0b5f93212432a70ffb0aa51de0fa9c925455e8a1afae65ca"
+	CurlImage      = "alpine/curl:8.14.1"
+	CurlDigest     = "sha256:4007cdf991c197c3412b5af737a916a894809273570b0c2bb93d295342fc23a2"
+	ComposerImage  = "composer/composer:2-bin@sha256:73bf0499280eef8014f37daf5c4fb503f7964d9e5d53d447ff26d01d8a7e5d23"
+	PieReleasePhar = "https://github.com/php/pie/releases/download/1.2.0/pie.phar"
+	PieDigest      = "sha256:5ea836df7244a05d62b300a2294b5b6ae10c951f4f6a5e0d2ae2de84541142f0" // TODO: not sure how to check this after curl
+	ModSourcePath  = "/src"
+	GenPath        = "sdk"
 )
 
 type PhpSdk struct {
 	SourceDir *dagger.Directory
+	// Set custom php version to use with this module
+	PhpVersion string
+	// If true will use pie to install extra php modules from composer.json
+	UsePie bool
+	// List of extension to install through `docker-php-ext-install`
+	PhpExtInstall []string
 }
 
 func New(
-	// Directory with the PHP SDK source code.
-	// +optional
-	// +defaultPath="/sdk/php"
-	// +ignore=["**", "!generated/", "!src/", "!scripts/", "!composer.json", "!composer.lock", "!LICENSE", "!README.md"]
+// Directory with the PHP SDK source code.
+// +optional
+// +defaultPath="/sdk/php"
+// +ignore=["**", "!generated/", "!src/", "!scripts/", "!composer.json", "!composer.lock", "!LICENSE", "!README.md"]
 	sdkSourceDir *dagger.Directory,
 ) (*PhpSdk, error) {
 	if sdkSourceDir == nil {
@@ -36,6 +46,20 @@ func New(
 	return &PhpSdk{
 		SourceDir: sdkSourceDir,
 	}, nil
+}
+
+func (m *PhpSdk) WithConfig(
+// +default="8.4-cli-alpine@sha256:fada271bbcae269b0b5f93212432a70ffb0aa51de0fa9c925455e8a1afae65ca"
+	phpVersion string,
+// +default=false
+	usePie bool,
+// +default=[]string{}
+	phpExtInstall []string,
+) *PhpSdk {
+	m.PhpVersion = phpVersion
+	m.UsePie = usePie
+	m.PhpExtInstall = phpExtInstall
+	return m
 }
 
 func (m *PhpSdk) Codegen(
@@ -72,13 +96,30 @@ func (m *PhpSdk) CodegenBase(
 	}
 
 	base := dag.Container().
-		From(fmt.Sprintf("%s@%s", PhpImage, PhpDigest)).
-		WithExec([]string{"apk", "add", "git", "openssh", "curl"}).
-		WithFile("/usr/bin/composer", dag.Container().From(ComposerImage).File("/usr/bin/composer")).
-		WithMountedCache("/root/.composer", dag.CacheVolume(fmt.Sprintf("composer-%s", PhpImage))).
+		From(fmt.Sprintf("php:%s", m.PhpVersion)).
+		WithExec([]string{"apk", "add", "git", "openssh", "curl", "jq"}).
+		WithFile("/usr/bin/composer", dag.Container().From(ComposerImage).File("/composer")).
+		WithMountedCache("/root/.composer", dag.CacheVolume(fmt.Sprintf("composer-%s", m.PhpVersion))).
 		WithEnvVariable("COMPOSER_HOME", "/root/.composer").
 		WithEnvVariable("COMPOSER_NO_INTERACTION", "1").
 		WithEnvVariable("COMPOSER_ALLOW_SUPERUSER", "1")
+
+	if len(m.PhpExtInstall) > 0 {
+		for _, ext := range m.PhpExtInstall {
+			base = base.
+				WithExec([]string{"docker-php-ext-install", ext})
+		}
+	}
+
+	if m.UsePie {
+		base = base.
+			WithExec([]string{"apk", "add", "gcc", "make", "autoconf", "libtool", "bison", "re2c", "pkgconf"}). // For php/pie
+			WithFile("/usr/bin/pie",
+				dag.Container().From(fmt.Sprintf("%s@%s", CurlImage, CurlDigest)).
+					WithExec([]string{"curl", "-o", "/usr/bin/pie", "-sLO", PieReleasePhar}).
+					WithExec([]string{"chmod", "+x", "/usr/bin/pie"}).
+					File("/usr/bin/pie"))
+	}
 
 	/**
 	 * Mounts PHP SDK code and installs it
@@ -143,6 +184,13 @@ func (m *PhpSdk) CodegenBase(
 		ctr = ctr.WithExec([]string{
 			"composer",
 			"install"})
+	}
+
+	if m.UsePie {
+		ctr = ctr.WithExec([]string{
+			"pie",
+			"install",
+			"--no-interaction"})
 	}
 
 	return ctr, nil
