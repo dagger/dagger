@@ -125,11 +125,28 @@ func DagOpDirectoryWrapper[T dagql.Typed, A DagOpInternalArgsIface](
 		if args.InDagOp() {
 			return fn(ctx, self, args)
 		}
+
 		dir, err := DagOpDirectory(ctx, srv, self.Self(), args, "", fn, opts...)
 		if err != nil {
 			return inst, err
 		}
-		return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+
+		dirRes, err := dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+		if err != nil {
+			return inst, err
+		}
+
+		query, err := core.CurrentQuery(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get current query: %w", err)
+		}
+
+		bk, err := query.Buildkit(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get buildkit client: %w", err)
+		}
+
+		return core.MakeDirectoryContentHashed(ctx, bk, dirRes)
 	}
 }
 
