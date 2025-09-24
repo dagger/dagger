@@ -24,6 +24,7 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/client"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
@@ -372,7 +373,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 				}
 			}
 
-			public, err := isRemotePublic(netconfhttp.WithDNSConfig(ctx, dnsConfig), remote)
+			public, err := IsRemotePublic(netconfhttp.WithDNSConfig(ctx, dnsConfig), remote)
 			if err != nil {
 				return inst, err
 			}
@@ -518,7 +519,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 	return inst, nil
 }
 
-func isRemotePublic(ctx context.Context, remote *gitutil.GitURL) (bool, error) {
+func IsRemotePublic(ctx context.Context, remote *gitutil.GitURL) (bool, error) {
 	// check if repo is public
 	repo := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
 		Name: "origin",
@@ -526,6 +527,11 @@ func isRemotePublic(ctx context.Context, remote *gitutil.GitURL) (bool, error) {
 	})
 	_, err := repo.ListContext(ctx, &git.ListOptions{Auth: nil})
 	if err != nil {
+		// Some Git hosts (Azure Repos and custom portals) return a 200 HTML login page for unauthenticated refs: go-git reports ErrInvalidPktLen
+		// treat as auth-required/private
+		if errors.Is(err, pktline.ErrInvalidPktLen) {
+			return false, nil
+		}
 		if errors.Is(err, transport.ErrAuthenticationRequired) {
 			return false, nil
 		}
