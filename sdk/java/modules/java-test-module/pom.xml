@@ -158,18 +158,6 @@
 
         <plugins>
             <plugin>
-                <groupId>com.spotify.fmt</groupId>
-                <artifactId>fmt-maven-plugin</artifactId>
-                <version>2.28</version>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>format</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
                 <!--
                 This plugin configuration helps VS Code editor (and others) to find
                 the generated code created by `dagger init` and `dagger develop` and
