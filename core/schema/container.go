@@ -391,11 +391,7 @@ func (s *containerSchema) Install() {
 				`Redirect the command's standard error to a file in the container (e.g.,
 			"/tmp/stderr").`).
 			ArgDoc("expect", `Exit codes this command is allowed to exit with without error`).
-			ArgDoc("experimentalPrivilegedNesting",
-				`Provides Dagger access to the executed command.`,
-				`Do not use this option unless you trust the command being executed;
-				the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
-				FILESYSTEM.`).
+			ArgDeprecated("experimentalPrivilegedNesting", "Nesting is now enabled by default").
 			ArgDoc("insecureRootCapabilities",
 				`Execute the command with all root capabilities. This is similar to
 				running a command with "sudo" or executing "docker run" with the
@@ -430,11 +426,7 @@ func (s *containerSchema) Install() {
 				`Redirect the command's standard error to a file in the container (e.g.,
 			"/tmp/stderr").`).
 			ArgDoc("expect", `Exit codes this command is allowed to exit with without error`).
-			ArgDoc("experimentalPrivilegedNesting",
-				`Provides Dagger access to the executed command.`,
-				`Do not use this option unless you trust the command being executed;
-				the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
-				FILESYSTEM.`).
+			ArgDeprecated("experimentalPrivilegedNesting", "Nesting is now enabled by default").
 			ArgDoc("insecureRootCapabilities",
 				`Execute the command with all root capabilities. This is similar to
 				running a command with "sudo" or executing "docker run" with the
@@ -460,11 +452,7 @@ func (s *containerSchema) Install() {
 				`Redirect the command's standard error to a file in the container (e.g.,
 			"/tmp/stderr").`).
 			ArgDoc("expect", `Exit codes this command is allowed to exit with without error`).
-			ArgDoc("experimentalPrivilegedNesting",
-				`Provides Dagger access to the executed command.`,
-				`Do not use this option unless you trust the command being executed;
-				the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
-				FILESYSTEM.`).
+			ArgDeprecated("experimentalPrivilegedNesting", "Nesting is now enabled by default").
 			ArgDoc("insecureRootCapabilities",
 				`Execute the command with all root capabilities. This is similar to
 				running a command with "sudo" or executing "docker run" with the
@@ -642,11 +630,7 @@ func (s *containerSchema) Install() {
 		dagql.Func("withDefaultTerminalCmd", s.withDefaultTerminalCmd).
 			Doc(`Set the default command to invoke for the container's terminal API.`).
 			ArgDoc("args", `The args of the command.`).
-			ArgDoc("experimentalPrivilegedNesting",
-				`Provides Dagger access to the executed command.`,
-				`Do not use this option unless you trust the command being executed;
-				the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
-				FILESYSTEM.`).
+			ArgDeprecated("experimentalPrivilegedNesting", "Nesting is now enabled by default").
 			ArgDoc("insecureRootCapabilities",
 				`Execute the command with all root capabilities. This is similar to
 				running a command with "sudo" or executing "docker run" with the
@@ -659,11 +643,7 @@ func (s *containerSchema) Install() {
 			Impure("Nondeterministic.").
 			Doc(`Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
 			ArgDoc("cmd", `If set, override the container's default terminal command and invoke these command arguments instead.`).
-			ArgDoc("experimentalPrivilegedNesting",
-				`Provides Dagger access to the executed command.`,
-				`Do not use this option unless you trust the command being executed;
-				the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
-				FILESYSTEM.`).
+			ArgDeprecated("experimentalPrivilegedNesting", "Nesting is now enabled by default").
 			ArgDoc("insecureRootCapabilities",
 				`Execute the command with all root capabilities. This is similar to
 				running a command with "sudo" or executing "docker run" with the
@@ -674,11 +654,7 @@ func (s *containerSchema) Install() {
 			View(BeforeVersion("v0.12.0")).
 			Doc(`Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
 			ArgDoc("cmd", `If set, override the container's default terminal command and invoke these command arguments instead.`).
-			ArgDoc("experimentalPrivilegedNesting",
-				`Provides Dagger access to the executed command.`,
-				`Do not use this option unless you trust the command being executed;
-				the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
-				FILESYSTEM.`).
+			ArgDeprecated("experimentalPrivilegedNesting", "Nesting is now enabled by default").
 			ArgDoc("insecureRootCapabilities",
 				`Execute the command with all root capabilities. This is similar to
 				running a command with "sudo" or executing "docker run" with the
@@ -857,6 +833,11 @@ func (s *containerSchema) withExec(ctx context.Context, parent *core.Container, 
 		}
 	}
 
+	if args.ContainerExecOpts.ExperimentalPrivilegedNesting {
+		slog.Warn("The 'experimentalPrivilegedNesting' argument is deprecated. You can safely omit it.")
+	}
+	args.ContainerExecOpts.ExperimentalPrivilegedNesting = true
+
 	expandedArgs := make([]string, len(args.Args))
 	for i, arg := range args.Args {
 		expandedArg, err := expandEnvVar(ctx, parent, arg, args.Expand)
@@ -891,8 +872,7 @@ type containerExecArgsLegacy struct {
 	// Exit codes this exec is allowed to exit with
 	Expect core.ReturnTypes `default:"SUCCESS"`
 
-	// Provide the executed command access back to the Dagger API
-	ExperimentalPrivilegedNesting bool `default:"false"`
+	ExperimentalPrivilegedNesting bool `default:"false"` // deprecated
 
 	// Grant the process all root capabilities
 	InsecureRootCapabilities bool `default:"false"`
@@ -909,7 +889,7 @@ func (s *containerSchema) withExecLegacy(ctx context.Context, parent *core.Conta
 		RedirectStdout:                args.RedirectStdout,
 		RedirectStderr:                args.RedirectStderr,
 		Expect:                        args.Expect,
-		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
+		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting, // deprecated but we leave the legacy wrapper alone
 		InsecureRootCapabilities:      args.InsecureRootCapabilities,
 		NestedExecMetadata:            args.NestedExecMetadata,
 	}
@@ -1970,6 +1950,10 @@ func (s *containerSchema) withDefaultTerminalCmd(
 	ctr *core.Container,
 	args containerWithDefaultTerminalCmdArgs,
 ) (*core.Container, error) {
+	if args.DefaultTerminalCmdOpts.ExperimentalPrivilegedNesting.Valid {
+		slog.Warn("The 'experimentalPrivilegedNesting' argument is deprecated. You can safely omit it.")
+	}
+	args.DefaultTerminalCmdOpts.ExperimentalPrivilegedNesting = dagql.Opt(dagql.Boolean(true))
 	ctr = ctr.Clone()
 	ctr.DefaultTerminalCmd = args.DefaultTerminalCmdOpts
 	return ctr, nil
@@ -1988,9 +1972,10 @@ func (s *containerSchema) terminal(
 		args.Cmd = ctr.Self.DefaultTerminalCmd.Args
 	}
 
-	if !args.ExperimentalPrivilegedNesting.Valid {
-		args.ExperimentalPrivilegedNesting = ctr.Self.DefaultTerminalCmd.ExperimentalPrivilegedNesting
+	if args.ExperimentalPrivilegedNesting.Valid { // deprecated: warn
+		slog.Warn("The 'experimentalPrivilegedNesting' argument is deprecated. You can safely omit it.")
 	}
+	args.ExperimentalPrivilegedNesting = dagql.Opt(dagql.Boolean(true)) // deprecated: force to true
 
 	if !args.InsecureRootCapabilities.Valid {
 		args.InsecureRootCapabilities = ctr.Self.DefaultTerminalCmd.InsecureRootCapabilities
@@ -2024,10 +2009,10 @@ func (s *containerSchema) terminalLegacy(
 			Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(args.Cmd...)),
 		})
 	}
-	if args.ExperimentalPrivilegedNesting.Valid {
+	if args.ExperimentalPrivilegedNesting.Valid { // deprecated but leave legacy wrapper alone
 		inputs = append(inputs, dagql.NamedInput{
 			Name:  "experimentalPrivilegedNesting",
-			Value: args.ExperimentalPrivilegedNesting,
+			Value: args.ExperimentalPrivilegedNesting, // deprecated but leave legacy wrapper alone
 		})
 	}
 	if args.InsecureRootCapabilities.Valid {

@@ -226,7 +226,7 @@ func (m *Hoster) Run(ctx context.Context) error {
 		WithDefaultArgs([]string{"httpd", "-v", "-f"}).
 		WithExposedPort(80).
 		AsService()
-	
+
 	hn, err := srv.Hostname(ctx)
 	if err != nil {
 		return err
@@ -401,7 +401,7 @@ func (m *Hoster) Run(ctx context.Context) error {
 		WithExposedPort(80).
 		AsService().
 		WithHostname("wwwhatsup0")
-	
+
 	_, err := srv.Start(ctx)
 	if err != nil {
 		return err
@@ -462,7 +462,7 @@ func (m *Caller) Run(ctx context.Context) error {
 		WithExposedPort(80).
 		AsService().
 		WithHostname("wwwhatsup1")
-	
+
 	_, err = srv.Start(ctx)
 	if err != nil {
 		return err
@@ -505,7 +505,7 @@ func (m *Hoster) Run(ctx context.Context) error {
 		WithExposedPort(80).
 		AsService().
 		WithHostname("wwwhatsup1")
-	
+
 	_, err := srv.Start(ctx)
 	if err != nil {
 		return err
@@ -1125,8 +1125,6 @@ func (ContainerSuite) TestExecServicesNestedExec(ctx context.Context, t *testctx
 		WithExec([]string{
 			"go", "run", "./core/integration/testdata/nested-c2c/",
 			"exec", strconv.Itoa(nestingLimit), svcURL,
-		}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
 		}).
 		Stdout(ctx)
 	require.NoError(t, err)
@@ -1160,8 +1158,6 @@ func (ContainerSuite) TestExecServicesNestedHTTP(ctx context.Context, t *testctx
 		WithExec([]string{
 			"go", "run", "./core/integration/testdata/nested-c2c/",
 			"http", strconv.Itoa(nestingLimit), svcURL,
-		}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
 		}).
 		Stdout(ctx)
 	require.NoError(t, err)
@@ -1195,8 +1191,6 @@ func (ContainerSuite) TestExecServicesNestedGit(ctx context.Context, t *testctx.
 		WithExec([]string{
 			"go", "run", "./core/integration/testdata/nested-c2c/",
 			"git", strconv.Itoa(nestingLimit), svcURL,
-		}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
 		}).
 		Stdout(ctx)
 	require.NoError(t, err)

@@ -5380,9 +5380,7 @@ func (m *Dep) Collect(MyEnum, MyInterface) error {
 
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		})
+		return c.WithExec(append([]string{"dagger"}, args...))
 	}
 }
 
@@ -5398,8 +5396,7 @@ func daggerQueryAt(modPath string, query string, args ...any) dagger.WithContain
 			execArgs = append(execArgs, "-m", modPath)
 		}
 		return c.WithExec(execArgs, dagger.ContainerWithExecOpts{
-			Stdin:                         query,
-			ExperimentalPrivilegedNesting: true,
+			Stdin: query,
 		})
 	}
 }
@@ -5415,8 +5412,7 @@ func daggerCallAt(modPath string, args ...string) dagger.WithContainerFunc {
 			execArgs = append(execArgs, "-m", modPath)
 		}
 		return c.WithExec(append(execArgs, args...), dagger.ContainerWithExecOpts{
-			UseEntrypoint:                 true,
-			ExperimentalPrivilegedNesting: true,
+			UseEntrypoint: true,
 		})
 	}
 }
@@ -5440,9 +5436,7 @@ func mountedPrivateRepoSocket(c *dagger.Client, t *testctx.T) (dagger.WithContai
 
 func daggerFunctions(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "functions"}, args...), dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		})
+		return c.WithExec(append([]string{"dagger", "functions"}, args...))
 	}
 }
 

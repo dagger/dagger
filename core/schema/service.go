@@ -32,11 +32,7 @@ func (s *serviceSchema) Install() {
 				`If empty, the container's default command is used.`).
 			ArgDoc("useEntrypoint",
 				`If the container has an entrypoint, prepend it to the args.`).
-			ArgDoc("experimentalPrivilegedNesting",
-				`Provides Dagger access to the executed command.`,
-				`Do not use this option unless you trust the command being executed;
-				the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
-				FILESYSTEM.`).
+			ArgDeprecated("experimentalPrivilegedNesting", "Nesting is now enabled by default").
 			ArgDoc("insecureRootCapabilities",
 				`Execute the command with all root capabilities. This is similar to
 				running a command with "sudo" or executing "docker run" with the
@@ -104,6 +100,10 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent *co
 }
 
 func (s *serviceSchema) containerAsService(ctx context.Context, parent *core.Container, args core.ContainerAsServiceArgs) (*core.Service, error) {
+	if args.ExperimentalPrivilegedNesting {
+		slog.SpanLogger(ctx, InstrumentationLibrary).Warn("experimentalPrivilegedNesting is deprecated and ignored; nesting is now enabled by default")
+	}
+	args.ExperimentalPrivilegedNesting = true
 	expandedArgs := make([]string, len(args.Args))
 	for i, arg := range args.Args {
 		expandedArg, err := expandEnvVar(ctx, parent, arg, args.Expand)

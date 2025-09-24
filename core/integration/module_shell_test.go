@@ -18,17 +18,13 @@ func TestShell(t *testing.T) {
 
 func daggerShell(script string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec([]string{"dagger", "shell", "-c", script}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		})
+		return c.WithExec([]string{"dagger", "shell", "-c", script})
 	}
 }
 
 func daggerShellNoLoad(script string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec([]string{"dagger", "shell", "--no-load", "-c", script}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		})
+		return c.WithExec([]string{"dagger", "shell", "--no-load", "-c", script})
 	}
 }
 
@@ -292,7 +288,7 @@ func New(foo string, bar string) *Test {
 }
 
 type Test struct{
-	Foo string 
+	Foo string
 	Bar string
 }
 
