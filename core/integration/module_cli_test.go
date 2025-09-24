@@ -986,7 +986,7 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 				var modCfg modules.ModuleConfig
 				require.NoError(t, json.Unmarshal([]byte(out), &modCfg))
 				require.Len(t, modCfg.Dependencies, 1)
-				require.Equal(t, tc.gitTestRepoRef, modCfg.Dependencies[0].Source)
+				require.Equal(t, tc.gitTestRepoRef+"@main", modCfg.Dependencies[0].Source)
 				require.NotEmpty(t, modCfg.Dependencies[0].Pin)
 			})
 		})
@@ -1350,52 +1350,44 @@ func (f *Foo) ContainerEcho(ctx context.Context, input string) (string, error) {
 			{
 				installCmdMod:   "github.com/shykes/daggerverse/hello@v0.3.0",
 				uninstallCmdMod: "github.com/shykes/daggerverse/hello@v0.3.0",
-				expectedError:   "",
 			},
 			{
 				installCmdMod:   "github.com/shykes/daggerverse/hello@v0.3.0",
 				uninstallCmdMod: "github.com/shykes/daggerverse/hello",
-				expectedError:   "",
 			},
 			{
 				installCmdMod:   "github.com/shykes/daggerverse/hello@v0.3.0",
 				uninstallCmdMod: "hello",
-				expectedError:   "",
 			},
 			{
 				installCmdMod:   "github.com/shykes/daggerverse/hello",
 				uninstallCmdMod: "github.com/shykes/daggerverse/hello",
-				expectedError:   "",
 			},
 			{
 				installCmdMod:   "github.com/shykes/daggerverse/hello",
 				uninstallCmdMod: "github.com/shykes/daggerverse/hello@v0.3.0",
-				expectedError:   `version "v0.3.0" was requested to be uninstalled but the dependency "github.com/shykes/daggerverse/hello" was originally installed without a specific version. Try re-running the uninstall command without specifying the version number`,
+				expectedError:   `version "v0.3.0" was requested to be uninstalled but the dependency "github.com/shykes/daggerverse/hello" was installed with "main"`,
 			},
 			{
 				installCmdMod:   "github.com/shykes/daggerverse/hello",
 				uninstallCmdMod: "hello",
-				expectedError:   "",
 			},
 			{
 				installCmdMod:   "github.com/shykes/daggerverse/hello@v0.1.2",
 				uninstallCmdMod: "github.com/shykes/daggerverse/hello@v0.3.0",
-				expectedError:   `version "v0.3.0" was requested to be uninstalled but the installed version is "v0.1.2"`,
+				expectedError:   `version "v0.3.0" was requested to be uninstalled but the dependency "github.com/shykes/daggerverse/hello" was installed with "v0.1.2"`,
 			},
 			{
 				installCmdMod:   "",
 				uninstallCmdMod: "github.com/shykes/daggerverse/hello@v0.3.0",
-				expectedError:   "",
 			},
 			{
 				installCmdMod:   "",
 				uninstallCmdMod: "github.com/shykes/daggerverse/hello",
-				expectedError:   "",
 			},
 			{
 				installCmdMod:   "",
 				uninstallCmdMod: "hello",
-				expectedError:   "",
 			},
 		}
 
@@ -1572,7 +1564,7 @@ func (CLISuite) TestDaggerUpdate(ctx context.Context, t *testctx.T) {
 			name:        "existing dep dont have version, update cmd use name without version",
 			daggerjson:  depHasNoVersion,
 			updateCmd:   []string{"update", "docker"},
-			contains:    []string{`"github.com/shykes/daggerverse/docker"`},
+			contains:    []string{`"github.com/shykes/daggerverse/docker@main"`},
 			notContains: []string{randomMainPin},
 		},
 		{

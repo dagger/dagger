@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	_ "embed"
 	"encoding/base64"
@@ -5158,7 +5159,7 @@ func (ModuleSuite) TestContextGitRemote(ctx context.Context, t *testctx.T) {
 
 	modGen := goGitBase(t, c)
 
-	remoteModule := "github.com/jedevc/dagger-test-modules"
+	remoteModule := "github.com/dagger/dagger-test-modules"
 	remoteRef := "context-git"
 	g := c.Git(remoteModule).Ref(remoteRef)
 	commit, err := g.Commit(ctx)
@@ -5166,7 +5167,7 @@ func (ModuleSuite) TestContextGitRemote(ctx context.Context, t *testctx.T) {
 	fullref, err := g.Ref(ctx)
 	require.NoError(t, err)
 
-	modPath := "github.com/jedevc/dagger-test-modules/context-git@" + remoteRef
+	modPath := "github.com/dagger/dagger-test-modules/context-git@" + remoteRef
 
 	t.Run("repo local", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerCallAt(modPath, "test-repo-local")).Stdout(ctx)
@@ -5193,6 +5194,100 @@ func (ModuleSuite) TestContextGitRemote(ctx context.Context, t *testctx.T) {
 		// dagger/dagger v0.18.3 => 6f7af26f18061c6f575eda774f44aa7d314af4ce
 		require.Equal(t, "refs/tags/v0.18.3@6f7af26f18061c6f575eda774f44aa7d314af4ce", out)
 	})
+}
+
+func (ModuleSuite) TestContextGitRemoteDep(ctx context.Context, t *testctx.T) {
+	// pretty much exactly the same test as above, but calling a remote git repo via a pinned dependency
+
+	c := connect(ctx, t)
+
+	remoteRepo := "github.com/dagger/dagger-test-modules"
+	remoteModule := remoteRepo + "/context-git"
+
+	// this commit is *not* the target of any version
+	// so, this ends up repinning
+	commit := "ed6bf431366bac652f807864e22ae49be9433bd5"
+
+	for _, version := range []string{"", "main", "context-git", "v1.2.3"} {
+		t.Run("version="+version, func(ctx context.Context, t *testctx.T) {
+			g := c.Git(remoteRepo).Ref(cmp.Or(version, "HEAD"))
+			fullref, err := g.Ref(ctx)
+			require.NoError(t, err)
+			require.Contains(t, fullref, version)
+
+			if version != "" {
+				version = "@" + version
+			}
+
+			// create a module that depends on the remote module
+			modGen := goGitBase(t, c).
+				WithWorkdir("/work").
+				With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+				WithNewFile("dagger.json", `{
+			"name": "test",
+	"source": ".",
+	"sdk": "go",
+	"dependencies": [
+		{
+			"name": "context-git",
+			"source": "`+remoteModule+version+`",
+			"pin": "`+commit+`"
+		}
+	]
+	}`).
+				With(sdkSource("go", `package main
+
+	import (
+		"context"
+	)
+
+	type Test struct{}
+
+	func (m *Test) TestRepoLocal(ctx context.Context) (string, error) {
+		return dag.ContextGit().TestRepoLocal(ctx)
+	}
+
+	func (m *Test) TestRepoRemote(ctx context.Context) (string, error) {
+		return dag.ContextGit().TestRepoRemote(ctx)
+	}
+
+	func (m *Test) TestRefLocal(ctx context.Context) (string, error) {
+		return dag.ContextGit().TestRefLocal(ctx)
+	}
+
+	func (m *Test) TestRefRemote(ctx context.Context) (string, error) {
+		return dag.ContextGit().TestRefRemote(ctx)
+	}
+	`)).
+				WithExec([]string{"sh", "-c", `git init && git add . && git commit -m "initial commit"`})
+
+			t.Run("repo local", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-repo-local")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, fullref+"@"+commit, out)
+			})
+
+			t.Run("ref local", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-ref-local")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, fullref+"@"+commit, out)
+			})
+
+			t.Run("ref remote", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-ref-remote")).Stdout(ctx)
+				require.NoError(t, err)
+				// dagger/dagger v0.18.3 => 6f7af26f18061c6f575eda774f44aa7d314af4ce
+				require.Equal(t, "refs/tags/v0.18.3@6f7af26f18061c6f575eda774f44aa7d314af4ce", out)
+			})
+
+			t.Run("repo remote", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-repo-remote")).Stdout(ctx)
+				require.NoError(t, err)
+				// dagger/dagger v0.18.2 => 0b46ea3c49b5d67509f67747742e5d8b24be9ef7
+				require.Equal(t, "refs/tags/v0.18.2@0b46ea3c49b5d67509f67747742e5d8b24be9ef7", out)
+			})
+		})
+	}
 }
 
 func (ModuleSuite) TestIgnore(ctx context.Context, t *testctx.T) {

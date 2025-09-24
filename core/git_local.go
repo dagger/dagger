@@ -130,7 +130,7 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 				gitutil.WithWorkTree(checkoutDir),
 				gitutil.WithGitDir(checkoutDirGit),
 			)
-			return doGitCheckout(ctx, checkoutGit, "", gitURL, ref.Ref.Name, ref.Ref.SHA, depth, discardGitDir)
+			return doGitCheckout(ctx, checkoutGit, "", gitURL, ref.Ref, depth, discardGitDir)
 		})
 	})
 	if err != nil {

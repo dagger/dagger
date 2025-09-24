@@ -36,8 +36,7 @@ import (
 )
 
 type RemoteGitRepository struct {
-	URL  *gitutil.GitURL
-	Head *gitutil.Ref
+	URL *gitutil.GitURL
 
 	SSHKnownHosts string
 	SSHAuthSocket dagql.ObjectResult[*Socket]
@@ -88,7 +87,6 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (*gitutil.Remote, e
 	if err != nil {
 		return nil, err
 	}
-	out.Head = repo.Head
 	return out, nil
 }
 
@@ -204,7 +202,7 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, refs []Gi
 
 			// skip fetch if commit already exists
 			doFetch := true
-			if res, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "rev-parse", "--verify", ref.Name+"^{commit}"); err != nil {
+			if res, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "rev-parse", "--verify", ref.SHA+"^{commit}"); err != nil {
 				return fmt.Errorf("failed to rev-parse: %w", err)
 			} else if strings.TrimSpace(string(res)) == ref.SHA {
 				doFetch = false
@@ -265,12 +263,9 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 
 	var refSpecs []string
 	for _, ref := range refs {
-		if gitutil.IsCommitSHA(ref.Name) {
-			// TODO: may need fallback if git remote doesn't support fetching by commit
-			refSpecs = append(refSpecs, ref.Name)
-		} else {
-			refSpecs = append(refSpecs, ref.Name+":"+ref.Name)
-		}
+		// fetch by sha, since we've already done tag resolution
+		// TODO: may need fallback if git remote doesn't support fetching by commit
+		refSpecs = append(refSpecs, ref.SHA)
 	}
 
 	args := []string{
@@ -467,7 +462,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			}
 			checkoutGit := git.New(gitutil.WithWorkTree(checkoutDir), gitutil.WithGitDir(checkoutDirGit))
 
-			return doGitCheckout(ctx, checkoutGit, ref.repo.URL.Remote(), gitURL, ref.Name, ref.SHA, depth, discardGitDir)
+			return doGitCheckout(ctx, checkoutGit, ref.repo.URL.Remote(), gitURL, ref.Ref, depth, discardGitDir)
 		})
 		if err != nil {
 			return fmt.Errorf("failed to checkout %s in %s: %w", ref.Name, ref.repo.URL.Remote(), err)
