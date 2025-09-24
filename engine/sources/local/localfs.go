@@ -323,8 +323,10 @@ func (local *localFS) Sync( //nolint:gocyclo
 		cachedResults = append(cachedResults, appliedChange)
 		only[hardlink.path] = struct{}{}
 		cachedResultsMu.Unlock()
-		if cacheCtx != nil {
-			if err := cacheCtx.HandleChange(appliedChange.Result().kind, hardlink.path, appliedChange.Result().stat, nil); err != nil {
+
+		path, ok := strings.CutPrefix(hardlink.path, local.copyPath)
+		if cacheCtx != nil && ok {
+			if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
 				return nil, fmt.Errorf("failed to handle change in content hasher: %w", err)
 			}
 		}
