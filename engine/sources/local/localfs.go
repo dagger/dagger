@@ -400,11 +400,7 @@ digest: %#v
 			// only copy files that we know about changes for
 			ci.Only = only
 			ci.CopyDirContents = true
-
-			// If the copy path is not the root, then we need to set the base path
-			if local.copyPath != "." {
-				ci.BaseCopyPath = local.copyPath
-			}
+			ci.BaseCopyPath = local.copyPath
 		},
 		fscopy.WithXAttrErrorHandler(func(dst, src, key string, err error) error {
 			bklog.G(ctx).Debugf("xattr error during local import copy: %v", err)
