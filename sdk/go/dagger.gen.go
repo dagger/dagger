@@ -1214,63 +1214,6 @@ func (r *Container) AsTarball(opts ...ContainerAsTarballOpts) *File {
 	}
 }
 
-// ContainerBuildOpts contains options for Container.Build
-type ContainerBuildOpts struct {
-	// Path to the Dockerfile to use.
-	//
-	// Default: "Dockerfile"
-	Dockerfile string
-	// Target build stage to build.
-	Target string
-	// Additional build arguments.
-	BuildArgs []BuildArg
-	// Secrets to pass to the build.
-	//
-	// They will be mounted at /run/secrets/[secret-name] in the build container
-	//
-	// They can be accessed in the Dockerfile using the "secret" mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl [http://example.com?token=$(cat /run/secrets/my-secret)](http://example.com?token=$(cat /run/secrets/my-secret))
-	Secrets []*Secret
-	// If set, skip the automatic init process injected into containers created by RUN statements.
-	//
-	// This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
-	NoInit bool
-}
-
-// Initializes this container from a Dockerfile build.
-//
-// Deprecated: Use `Directory.build` instead
-func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Container {
-	assertNotNil("context", context)
-	q := r.query.Select("build")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `dockerfile` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Dockerfile) {
-			q = q.Arg("dockerfile", opts[i].Dockerfile)
-		}
-		// `target` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Target) {
-			q = q.Arg("target", opts[i].Target)
-		}
-		// `buildArgs` optional argument
-		if !querybuilder.IsZeroValue(opts[i].BuildArgs) {
-			q = q.Arg("buildArgs", opts[i].BuildArgs)
-		}
-		// `secrets` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Secrets) {
-			q = q.Arg("secrets", opts[i].Secrets)
-		}
-		// `noInit` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoInit) {
-			q = q.Arg("noInit", opts[i].NoInit)
-		}
-	}
-	q = q.Arg("context", context)
-
-	return &Container{
-		query: q,
-	}
-}
-
 // The combined buffered standard output and standard error stream of the last executed command
 //
 // Returns an error if no command was executed

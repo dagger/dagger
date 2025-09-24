@@ -5110,47 +5110,6 @@
                           </div>
                         </td>
                       </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="Container-build" href="#Container-build"><code>build</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Initializes this container from a Dockerfile build. <span class="deprecation-reason">Use <code>Directory.build</code> instead</span>
-                        </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>context</code></span> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span></h6>
-                                <p>Directory context used by the Dockerfile.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>dockerfile</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>Path to the Dockerfile to use.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>target</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>Target build stage to build.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>buildArgs</code></span> - <span class="property-type"><a href="#definition-BuildArg"><code>[BuildArg!]</code></a></span></h6>
-                                <p>Additional build arguments.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>secrets</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>[SecretID!]</code></a></span></h6>
-                                <p>Secrets to pass to the build.</p>
-                                <p>They will be mounted at /run/secrets/[secret-name] in the build container</p>
-                                <p>They can be accessed in the Dockerfile using the &quot;secret&quot; mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl [<a href="http://example.com?token=$">http://example.com?token=$</a>(cat /run/secrets/my-secret)](<a href="http://example.com?token=$">http://example.com?token=$</a>(cat /run/secrets/my-secret))</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>noInit</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>If set, skip the automatic init process injected into containers created by RUN statements.</p>
-                                <p>This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Container-combinedOutput" href="#Container-combinedOutput"><code>combinedOutput</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td>

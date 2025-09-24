@@ -1205,63 +1205,6 @@ class Container(Type):
         _ctx = self._select("asTarball", _args)
         return File(_ctx)
 
-    def build(
-        self,
-        context: "Directory",
-        *,
-        dockerfile: str | None = "Dockerfile",
-        target: str | None = "",
-        build_args: list[BuildArg] | None = None,
-        secrets: "list[Secret] | None" = None,
-        no_init: bool | None = False,
-    ) -> Self:
-        """Initializes this container from a Dockerfile build.
-
-        .. deprecated::
-            Use `Directory.build` instead
-
-        Parameters
-        ----------
-        context:
-            Directory context used by the Dockerfile.
-        dockerfile:
-            Path to the Dockerfile to use.
-        target:
-            Target build stage to build.
-        build_args:
-            Additional build arguments.
-        secrets:
-            Secrets to pass to the build.
-            They will be mounted at /run/secrets/[secret-name] in the build
-            container
-            They can be accessed in the Dockerfile using the "secret" mount
-            type and mount path /run/secrets/[secret-name], e.g. RUN
-            --mount=type=secret,id=my-secret curl
-            [http://example.com?token=$(cat /run/secrets/my-
-            secret)](http://example.com?token=$(cat /run/secrets/my-secret))
-        no_init:
-            If set, skip the automatic init process injected into containers
-            created by RUN statements.
-            This should only be used if the user requires that their exec
-            processes be the pid 1 process in the container. Otherwise it may
-            result in unexpected behavior.
-        """
-        warnings.warn(
-            'Method "build" is deprecated: Use `Directory.build` instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
-        _args = [
-            Arg("context", context),
-            Arg("dockerfile", dockerfile, "Dockerfile"),
-            Arg("target", target, ""),
-            Arg("buildArgs", [] if build_args is None else build_args, []),
-            Arg("secrets", [] if secrets is None else secrets, []),
-            Arg("noInit", no_init, False),
-        ]
-        _ctx = self._select("build", _args)
-        return Container(_ctx)
-
     async def combined_output(self) -> str:
         """The combined buffered standard output and standard error stream of the
         last executed command
