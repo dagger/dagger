@@ -1,10 +1,5 @@
 package io.dagger.client.telemetry;
 
-import java.util.Optional;
-import java.util.concurrent.TimeUnit;
-
-import org.apache.commons.lang3.Strings;
-
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
 import io.opentelemetry.context.propagation.ContextPropagators;
@@ -15,13 +10,17 @@ import io.opentelemetry.sdk.resources.Resource;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import io.opentelemetry.sdk.trace.export.BatchSpanProcessor;
 import io.opentelemetry.sdk.trace.export.SpanExporter;
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
+import org.apache.commons.lang3.Strings;
 
 public class TelemetryInitializer {
 
   private static final String SERVICE_NAME = "dagger-java-sdk";
   private static final String OTLP_DISABLED = System.getenv("OTEL_SDK_DISABLED");
   private static final String OTLP_ENDPOINT = System.getenv("OTEL_EXPORTER_OTLP_ENDPOINT");
-  private static final String OTLP_TRACES_ENDPOINT = System.getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT");
+  private static final String OTLP_TRACES_ENDPOINT =
+      System.getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT");
   private static final String OTLP_PROTOCOL = System.getenv("OTEL_EXPORTER_OTLP_PROTOCOL");
 
   private static OpenTelemetrySdk INSTANCE;
@@ -42,33 +41,38 @@ public class TelemetryInitializer {
       return OpenTelemetry.noop();
     }
 
-    Resource resource = Resource.getDefault().merge(Resource.builder().put("serviceName", SERVICE_NAME).build());
+    Resource resource =
+        Resource.getDefault().merge(Resource.builder().put("serviceName", SERVICE_NAME).build());
 
     SpanExporter spanExporter;
     if (Strings.CI.equals(OTLP_PROTOCOL, "http/protobuf")) {
-      spanExporter = OtlpHttpSpanExporter.builder()
-          .setEndpoint(Optional.ofNullable(OTLP_TRACES_ENDPOINT).orElse(OTLP_ENDPOINT))
-          .setTimeout(2, TimeUnit.SECONDS)
-          .build();
+      spanExporter =
+          OtlpHttpSpanExporter.builder()
+              .setEndpoint(Optional.ofNullable(OTLP_TRACES_ENDPOINT).orElse(OTLP_ENDPOINT))
+              .setTimeout(2, TimeUnit.SECONDS)
+              .build();
     } else {
-      spanExporter = OtlpGrpcSpanExporter.builder()
-          .setEndpoint(Optional.ofNullable(OTLP_TRACES_ENDPOINT).orElse(OTLP_ENDPOINT))
-          .setTimeout(2, TimeUnit.SECONDS)
-          .build();
+      spanExporter =
+          OtlpGrpcSpanExporter.builder()
+              .setEndpoint(Optional.ofNullable(OTLP_TRACES_ENDPOINT).orElse(OTLP_ENDPOINT))
+              .setTimeout(2, TimeUnit.SECONDS)
+              .build();
     }
 
-    SdkTracerProvider sdkTracerProvider = SdkTracerProvider.builder()
-        .setResource(resource)
-        .addSpanProcessor(
-            BatchSpanProcessor.builder(spanExporter)
-                .setScheduleDelay(100, TimeUnit.MILLISECONDS)
-                .build())
-        .build();
+    SdkTracerProvider sdkTracerProvider =
+        SdkTracerProvider.builder()
+            .setResource(resource)
+            .addSpanProcessor(
+                BatchSpanProcessor.builder(spanExporter)
+                    .setScheduleDelay(100, TimeUnit.MILLISECONDS)
+                    .build())
+            .build();
 
-    OpenTelemetrySdk sdk = OpenTelemetrySdk.builder()
-        .setTracerProvider(sdkTracerProvider)
-        .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
-        .build();
+    OpenTelemetrySdk sdk =
+        OpenTelemetrySdk.builder()
+            .setTracerProvider(sdkTracerProvider)
+            .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
+            .build();
 
     INSTANCE = sdk;
 

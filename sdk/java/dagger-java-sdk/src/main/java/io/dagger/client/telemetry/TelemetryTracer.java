@@ -15,9 +15,11 @@ public class TelemetryTracer {
     this.tracer = openTelemetry.getTracer(name);
   }
 
-  public <T> T startActiveSpan(String name, Context context, Attributes attributes, TelemetrySupplier<T> function)
+  public <T> T startActiveSpan(
+      String name, Context context, Attributes attributes, TelemetrySupplier<T> function)
       throws Exception {
-    Span span = tracer.spanBuilder(name).setParent(context).setAllAttributes(attributes).startSpan();
+    Span span =
+        tracer.spanBuilder(name).setParent(context).setAllAttributes(attributes).startSpan();
 
     try (var scope = span.makeCurrent()) {
       return function.get();
