@@ -1093,7 +1093,7 @@ func (GitSuite) TestRemoteUpdates(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t)
 
-	svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+t.Name()))
+	svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
 
 	svc, err := svc.Start(ctx)
 	require.NoError(t, err)
@@ -1138,7 +1138,7 @@ func (GitSuite) TestRemoteUpdatesFrozenTag(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t)
 
-	svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+t.Name()))
+	svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
 
 	svc, err := svc.Start(ctx)
 	require.NoError(t, err)
