@@ -620,7 +620,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	var expirationMixin string
 	var setExpiration func(context.Context) error
 	expirationCache := query.CallExpirationCache()
-	if opts.CachePerSession {
+	if opts.CachePerSession || mod.DisableDefaultFunctionCaching {
 		// Scope the exec cache key to the current session ID. It will still be
 		// cached in the context of the session but invalidated across
 		// different sessions.

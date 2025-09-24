@@ -900,6 +900,22 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	engineVersion = engine.NormalizeVersion(engineVersion)
 	src.EngineVersion = engineVersion
 
+	canDefaultFuncCaching := engine.CheckVersionCompatibility(
+		src.EngineVersion,
+		engine.MinimumDefaultFunctionCachingModuleVersion,
+	)
+	switch {
+	case modCfg.DisableDefaultFunctionCaching != nil:
+		// explicit setting in dagger.json, use it
+		src.DisableDefaultFunctionCaching = *modCfg.DisableDefaultFunctionCaching
+	case canDefaultFuncCaching:
+		// no explicit setting in dagger.json but module engine version supports it, enable function caching
+		src.DisableDefaultFunctionCaching = false
+	default:
+		// no explicit setting in dagger.json and module engine version doesn't support it, disable function caching
+		src.DisableDefaultFunctionCaching = true
+	}
+
 	if modCfg.SDK != nil {
 		src.SDK = &core.SDKConfig{
 			Source:       modCfg.SDK.Source,
@@ -1863,6 +1879,10 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 		},
 	}
 
+	if src.DisableDefaultFunctionCaching {
+		modCfg.DisableDefaultFunctionCaching = ptr(true)
+	}
+
 	if src.SDK != nil {
 		modCfg.SDK = &modules.SDK{
 			Source:       src.SDK.Source,
@@ -2548,6 +2568,8 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		OriginalName: src.Self().ModuleOriginalName,
 
 		SDKConfig: sdk,
+
+		DisableDefaultFunctionCaching: src.Self().DisableDefaultFunctionCaching,
 	}
 
 	// load the deps as actual Modules
