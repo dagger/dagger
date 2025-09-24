@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -203,7 +204,9 @@ func (local *localFS) Sync( //nolint:gocyclo
 				cachedResults = append(cachedResults, appliedChange)
 				only[path] = struct{}{}
 				cachedResultsMu.Unlock()
-				if cacheCtx != nil {
+
+				path, ok := strings.CutPrefix(path, local.copyPath)
+				if cacheCtx != nil && ok {
 					if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
 						return fmt.Errorf("failed to handle change in content hasher: %w", err)
 					}
@@ -226,7 +229,9 @@ func (local *localFS) Sync( //nolint:gocyclo
 				cachedResults = append(cachedResults, appliedChange)
 				only[path] = struct{}{}
 				cachedResultsMu.Unlock()
-				if cacheCtx != nil {
+
+				path, ok := strings.CutPrefix(path, local.copyPath)
+				if cacheCtx != nil && ok {
 					if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
 						return fmt.Errorf("failed to handle change in content hasher: %w", err)
 					}
@@ -256,7 +261,9 @@ func (local *localFS) Sync( //nolint:gocyclo
 					cachedResults = append(cachedResults, appliedChange)
 					only[path] = struct{}{}
 					cachedResultsMu.Unlock()
-					if cacheCtx != nil {
+
+					path, ok := strings.CutPrefix(path, local.copyPath)
+					if cacheCtx != nil && ok {
 						if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
 							return fmt.Errorf("failed to handle change in content hasher: %w", err)
 						}
@@ -288,7 +295,9 @@ func (local *localFS) Sync( //nolint:gocyclo
 			cachedResults = append(cachedResults, appliedChange)
 			only[path] = struct{}{}
 			cachedResultsMu.Unlock()
-			if cacheCtx != nil {
+
+			path, ok := strings.CutPrefix(path, local.copyPath)
+			if cacheCtx != nil && ok {
 				if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
 					return fmt.Errorf("failed to handle change in content hasher: %w", err)
 				}
@@ -329,7 +338,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 	ctx, copySpan := newSpan(ctx, "copy")
 	defer telemetry.End(copySpan, func() error { return rerr })
 
-	dgst, err := cacheCtx.Checksum(ctx, newCopyRef, filepath.Join("/", local.copyPath), bkcontenthash.ChecksumOpts{}, session)
+	dgst, err := cacheCtx.Checksum(ctx, newCopyRef, "/", bkcontenthash.ChecksumOpts{}, session)
 	if err != nil {
 		return nil, fmt.Errorf("failed to checksum: %w", err)
 	}
