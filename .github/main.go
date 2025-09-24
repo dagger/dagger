@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	daggerVersion      = "v0.18.18"
+	daggerVersion      = "v0.18.19"
 	upstreamRepository = "dagger/dagger"
 	ubuntuVersion      = "24.04"
 	defaultRunner      = "ubuntu-" + ubuntuVersion
@@ -312,7 +312,6 @@ func (ci *CI) withEvalsWorkflow() *CI {
 			"core/schema/llm.go",
 			"core/schema/env.go",
 			"modules/evaluator/**",
-			".github/workflows/evals.gen.yml",
 		},
 	}).WithJob(gha.Job(
 		"testdev",
@@ -321,7 +320,7 @@ func (ci *CI) withEvalsWorkflow() *CI {
 			DaggerDev: "${{ github.sha }}", // testdev, so run against local dagger
 			Runner:    AltGoldRunner(),
 			// NOTE: avoid running for forks
-			Condition: fmt.Sprintf(`${{ github.repository == '%s' }}`, upstreamRepository),
+			Condition: fmt.Sprintf(`${{ (github.repository == '%s') && (github.actor != 'dependabot[bot]') }}`, upstreamRepository),
 			Secrets:   []string{"OP_SERVICE_ACCOUNT_TOKEN"},
 			Env: []string{
 				"ANTHROPIC_API_KEY=op://RelEng/ANTHROPIC/API_KEY",

@@ -1296,27 +1296,26 @@ class Test:
 			{
 				sdk:             "typescript",
 				supportsMembers: true,
-				source: `import { func, object, enumType } from "@dagger.io/dagger"
+				source: `import { func, object } from "@dagger.io/dagger"
 
 /**
  * Enum for Status
  */
-@enumType()
-export class Status {
+export enum Status {
   /**
    * Active status
    */
-  static readonly Active: string = "ACTIVE value"
+  Active = "ACTIVE value",
 
   /**
    * Inactive status
    */
-  static readonly Inactive: string = "INACTIVE value"
+  Inactive = "INACTIVE value",
 
   /**
    * Weird status
    */
-  static readonly WEIRD: string = "WEIRD"
+  WEIRD = "WEIRD",
 }
 
 @object()

@@ -1,0 +1,71 @@
+{
+  "name": "LegacyEnumDecorator",
+  "objects": {
+    "LegacyEnums": {
+      "name": "LegacyEnums",
+      "description": "",
+      "methods": {
+        "setStatus": {
+          "name": "setStatus",
+          "description": "",
+          "arguments": {
+            "status": {
+              "name": "status",
+              "description": "",
+              "type": {
+                "kind": "ENUM_KIND",
+                "name": "LegacyStatus"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "LegacyEnums"
+          }
+        },
+        "getStatus": {
+          "name": "getStatus",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "ENUM_KIND",
+            "name": "LegacyStatus"
+          }
+        }
+      },
+      "properties": {
+        "status": {
+          "name": "status",
+          "description": "",
+          "type": {
+            "kind": "ENUM_KIND",
+            "name": "LegacyStatus"
+          },
+          "isExposed": true
+        }
+      }
+    }
+  },
+  "enums": {
+    "LegacyStatus": {
+      "name": "LegacyStatus",
+      "description": "Legacy enum exposed through the deprecated decorator.",
+      "values": {
+        "ACTIVE": {
+          "name": "ACTIVE",
+          "value": "ACTIVE value",
+          "description": "Active status"
+        },
+        "INACTIVE": {
+          "name": "INACTIVE",
+          "value": "INACTIVE value",
+          "description": "Inactive status"
+        }
+      }
+    }
+  },
+  "interfaces": {}
+}

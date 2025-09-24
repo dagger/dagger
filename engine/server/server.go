@@ -58,6 +58,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/network/cniprovider"
 	"github.com/dagger/dagger/internal/buildkit/util/network/netproviders"
 	"github.com/dagger/dagger/internal/buildkit/util/resolver"
+	resolverconfig "github.com/dagger/dagger/internal/buildkit/util/resolver/config"
 	"github.com/dagger/dagger/internal/buildkit/util/throttle"
 	"github.com/dagger/dagger/internal/buildkit/util/winlayers"
 	"github.com/dagger/dagger/internal/buildkit/version"
@@ -287,7 +288,19 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		srv.enabledPlatforms = []ocispecs.Platform{srv.defaultPlatform}
 	}
 
-	srv.registryHosts = resolver.NewRegistryConfig(bkcfg.Registries)
+	registries := bkcfg.Registries
+	if len(registries) == 0 {
+		registries = map[string]resolverconfig.RegistryConfig{}
+	}
+	for k, v := range cfg.Registries {
+		registries[k] = resolverconfig.RegistryConfig{
+			Mirrors:   v.Mirrors,
+			PlainHTTP: v.PlainHTTP,
+			Insecure:  v.Insecure,
+			RootCAs:   v.RootCAs,
+		}
+	}
+	srv.registryHosts = resolver.NewRegistryConfig(registries)
 
 	if slog.Default().Enabled(ctx, slog.LevelExtraDebug) {
 		srv.buildkitLogSink = os.Stderr

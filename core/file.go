@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -481,7 +480,7 @@ func (file *File) WithName(ctx context.Context, filename string) (*File, error) 
 	}
 
 	// Create a new file with the new name
-	newFile := llb.Scratch().File(llb.Copy(st, file.File, path.Base(filename)))
+	newFile := llb.Scratch().File(llb.Copy(st, file.File, filepath.Base(filename)))
 
 	def, err := newFile.Marshal(ctx, llb.Platform(file.Platform.Spec()))
 	if err != nil {
@@ -489,7 +488,7 @@ func (file *File) WithName(ctx context.Context, filename string) (*File, error) 
 	}
 
 	file.LLB = def.ToPB()
-	file.File = path.Base(filename)
+	file.File = filepath.Base(filename)
 
 	return file, nil
 }
@@ -547,7 +546,7 @@ func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bo
 		return err
 	}
 
-	ctx, vtx := Tracer(ctx).Start(ctx, fmt.Sprintf("export file %s to host %s", file.File, dest))
+	ctx, vtx := Tracer(ctx).Start(ctx, fmt.Sprintf("export file %s to host %s", filepath.Base(file.File), dest))
 	defer telemetry.End(vtx, func() error { return rerr })
 
 	return bk.LocalFileExport(ctx, def.ToPB(), dest, file.File, allowParentDirPath)

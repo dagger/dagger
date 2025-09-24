@@ -120,3 +120,31 @@ See:
 
 - [How to Write a Git Commit Message](https://chris.beams.io/posts/git-commit/)
 - [Conventional Commits](https://www.conventionalcommits.org)
+
+
+## Github Actions
+
+The workflows titled `*.gen.yml` under `.github/workflows` are generated using the [gha module](./modules/gha/main.go).
+
+Workflows are defined in [.github/main.go](./.github/main.go). To modify an existing workflow, you should modify its configuration in [.github/main.go](./.github/main.go) and then regenerate the workflow yaml.
+
+To regenerate the github actions yaml, run:
+
+```
+dagger -m .github <<.
+ generate |
+ export .
+.
+```
+
+## Docs
+
+### Running the docs locally
+
+The `docs` submodule handles everything needed for running the documentation site locally.
+
+It can be executed with:
+
+```
+dagger -m docs call server up
+```

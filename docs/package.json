@@ -31,15 +31,15 @@
     "docusaurus-plugin-sass": "^0.2.6",
     "docusaurus-plugin-typedoc": "^1.4.2",
     "posthog-docusaurus": "^2.0.4",
-    "posthog-js": "^1.266.0",
+    "posthog-js": "^1.266.3",
     "prism-react-renderer": "^2.4.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "remark-code-import": "^1.2.0",
-    "sass": "^1.92.1",
+    "sass": "^1.93.0",
     "typedoc": "^0.28.13",
     "typedoc-plugin-frontmatter": "^1.3.0",
-    "typedoc-plugin-markdown": "^4.8.1",
+    "typedoc-plugin-markdown": "^4.9.0",
     "typescript": "^5.9.2",
     "unist-util-visit": "^5.0.0"
   },
@@ -47,7 +47,7 @@
     "@docusaurus/module-type-aliases": "^3.5.2",
     "@docusaurus/tsconfig": "^3.8.1",
     "@docusaurus/types": "^3.5.2",
-    "@types/node": "^24.4",
+    "@types/node": "^24.5",
     "markdownlint-cli": "^0.45.0"
   },
   "browserslist": {
