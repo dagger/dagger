@@ -1525,7 +1525,10 @@ func (ConfigSuite) TestDepWritePins(ctx context.Context, t *testctx.T) {
 
 		// get the latest commit on main
 		repo := "github.com/dagger/dagger-test-modules"
-		commit, err := c.Git(repo).Head().Commit(ctx)
+		head := c.Git(repo).Head()
+		commit, err := head.Commit(ctx)
+		require.NoError(t, err)
+		ref, err := head.Ref(ctx)
 		require.NoError(t, err)
 
 		ctr := goGitBase(t, c).
@@ -1545,7 +1548,7 @@ func (ConfigSuite) TestDepWritePins(ctx context.Context, t *testctx.T) {
 		dep := modCfg.Dependencies[0]
 
 		require.Equal(t, "root-mod", dep.Name)
-		require.Equal(t, repo, dep.Source)
+		require.Equal(t, repo+"@"+strings.TrimPrefix(ref, "refs/heads/"), dep.Source)
 		require.Equal(t, commit, dep.Pin)
 	})
 
