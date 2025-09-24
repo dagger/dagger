@@ -378,9 +378,9 @@ func (*DummySource) Schemes() []string {
 }
 
 func (*DummySource) Identifier(scheme, ref string, attrs map[string]string, platform *pb.Platform) (source.Identifier, error) {
-	panic("dummy local source has been called")
+	return nil, errors.New("DummySource.Identifier has been called")
 }
 
 func (*DummySource) Resolve(ctx context.Context, id source.Identifier, sm *session.Manager, _ solver.Vertex) (source.SourceInstance, error) {
-	panic("dummy local source has been called")
+	return nil, errors.New("DummySource.Resolve has been called")
 }
