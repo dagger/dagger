@@ -75,6 +75,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				),
 			),
 		dagql.NodeFunc("build", s.build).
+			View(BeforeVersion("v0.19.0")).
 			Deprecated("Use `Directory.build` instead").
 			Doc(`Initializes this container from a Dockerfile build.`).
 			Args(

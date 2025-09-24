@@ -11,8 +11,7 @@ public class BuildFromDockerfile {
   public static void main(String... args) throws Exception {
     try (AutoCloseableClient client = Dagger.connect()) {
       Directory dir = client.git("https://github.com/dagger/dagger").tag("v0.6.2").tree();
-
-      Container daggerImg = client.container().build(dir);
+      Container daggerImg = dir.dockerBuild();
 
       String stdout = daggerImg.withExec(List.of("version")).stdout();
       System.out.println(stdout);

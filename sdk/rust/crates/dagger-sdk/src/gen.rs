@@ -2354,27 +2354,6 @@ pub struct ContainerAsTarballOpts {
     pub platform_variants: Option<Vec<ContainerId>>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct ContainerBuildOpts<'a> {
-    /// Additional build arguments.
-    #[builder(setter(into, strip_option), default)]
-    pub build_args: Option<Vec<BuildArg>>,
-    /// Path to the Dockerfile to use.
-    #[builder(setter(into, strip_option), default)]
-    pub dockerfile: Option<&'a str>,
-    /// If set, skip the automatic init process injected into containers created by RUN statements.
-    /// This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
-    #[builder(setter(into, strip_option), default)]
-    pub no_init: Option<bool>,
-    /// Secrets to pass to the build.
-    /// They will be mounted at /run/secrets/[secret-name] in the build container
-    /// They can be accessed in the Dockerfile using the "secret" mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl [http://example.com?token=$(cat /run/secrets/my-secret)](http://example.com?token=$(cat /run/secrets/my-secret))
-    #[builder(setter(into, strip_option), default)]
-    pub secrets: Option<Vec<SecretId>>,
-    /// Target build stage to build.
-    #[builder(setter(into, strip_option), default)]
-    pub target: Option<&'a str>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerDirectoryOpts {
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
@@ -2827,67 +2806,6 @@ impl Container {
             query = query.arg("mediaTypes", media_types);
         }
         File {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Initializes this container from a Dockerfile build.
-    ///
-    /// # Arguments
-    ///
-    /// * `context` - Directory context used by the Dockerfile.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn build(&self, context: impl IntoID<DirectoryId>) -> Container {
-        let mut query = self.selection.select("build");
-        query = query.arg_lazy(
-            "context",
-            Box::new(move || {
-                let context = context.clone();
-                Box::pin(async move { context.into_id().await.unwrap().quote() })
-            }),
-        );
-        Container {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Initializes this container from a Dockerfile build.
-    ///
-    /// # Arguments
-    ///
-    /// * `context` - Directory context used by the Dockerfile.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn build_opts<'a>(
-        &self,
-        context: impl IntoID<DirectoryId>,
-        opts: ContainerBuildOpts<'a>,
-    ) -> Container {
-        let mut query = self.selection.select("build");
-        query = query.arg_lazy(
-            "context",
-            Box::new(move || {
-                let context = context.clone();
-                Box::pin(async move { context.into_id().await.unwrap().quote() })
-            }),
-        );
-        if let Some(dockerfile) = opts.dockerfile {
-            query = query.arg("dockerfile", dockerfile);
-        }
-        if let Some(target) = opts.target {
-            query = query.arg("target", target);
-        }
-        if let Some(build_args) = opts.build_args {
-            query = query.arg("buildArgs", build_args);
-        }
-        if let Some(secrets) = opts.secrets {
-            query = query.arg("secrets", secrets);
-        }
-        if let Some(no_init) = opts.no_init {
-            query = query.arg("noInit", no_init);
-        }
-        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

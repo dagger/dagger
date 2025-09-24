@@ -12,7 +12,6 @@ import {
   ClientContainerOpts,
   connect,
   Container,
-  Directory,
   NetworkProtocol,
 } from "../../index.js"
 
@@ -172,9 +171,8 @@ describe("TypeScript SDK api", function () {
         `,
       )
 
-      const builder = client
-        .container()
-        .build(image)
+      const builder = image
+        .dockerBuild()
         .withWorkdir("/")
         .withExec(["echo", "htrshtrhrthrts"], { redirectStdout: "file.txt" })
 
@@ -300,12 +298,12 @@ describe("TypeScript SDK api", function () {
 
   it("Compute nested arguments", async function () {
     const tree = new Client()
-      .container()
-      .build(new Directory(), { buildArgs: [{ value: "foo", name: "test" }] })
+      .directory()
+      .dockerBuild({ buildArgs: [{ value: "foo", name: "test" }] })
 
     assert.strictEqual(
       querySanitizer(buildQuery(tree["_ctx"]["_queryTree"])),
-      `{ container { build (context: {"_ctx":{"_queryTree":[],"_connection":{}}},buildArgs: [{value:"foo",name:"test"}]) } }`,
+      `{ directory { dockerBuild (buildArgs: [{value:"foo",name:"test"}]) } }`,
     )
   })
 
