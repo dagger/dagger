@@ -64,8 +64,8 @@ public class ClientTest
             """;
 
         var dockerDir = _dag.Directory().WithNewFile("Dockerfile", dockerfile);
-        var output = await _dag.Container()
-            .Build(dockerDir, buildArgs: [new BuildArg("SPAM", "egg")])
+        var output = await dockerDir
+            .DockerBuild(buildArgs: [new BuildArg("SPAM", "egg")])
             .WithExec([])
             .StdoutAsync();
 
