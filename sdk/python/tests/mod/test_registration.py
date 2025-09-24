@@ -59,6 +59,18 @@ def test_func_doc():
     assert mod.get_object("Foo").functions["fn_with_doc"].doc == "Foo."
 
 
+def test_object_type_deprecated_metadata():
+    mod = Module()
+
+    @mod.object_type(deprecated="Use NewFoo instead")
+    class Foo:
+        pass
+
+    obj = mod.get_object("Foo")
+
+    assert obj.deprecated == "Use NewFoo instead"
+
+
 def test_external_constructor_doc():
     mod = Module()
 

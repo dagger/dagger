@@ -235,6 +235,7 @@ class Constructor(Function[P, R]):
 class ObjectType(Generic[T]):
     cls: type[T]
     interface: bool = False
+    deprecated: str | None = None
     fields: dict[APIName, Field] = dataclasses.field(default_factory=dict)
     functions: dict[APIName, Function] = dataclasses.field(default_factory=dict)
 

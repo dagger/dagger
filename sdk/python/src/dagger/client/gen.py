@@ -4704,6 +4704,27 @@ class EnumTypeDef(Type):
 class EnumValueTypeDef(Type):
     """A definition of a value in a custom enum defined in a Module."""
 
+    async def deprecated(self) -> str:
+        """The reason this enum member is deprecated, if any.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("deprecated", _args)
+        return await _ctx.execute(str)
+
     async def description(self) -> str:
         """A doc string for the enum member, if any.
 
@@ -6190,6 +6211,27 @@ class FieldTypeDef(Type):
     object whose value is computed by invoking code (and can accept
     arguments)."""
 
+    async def deprecated(self) -> str:
+        """The reason this enum member is deprecated, if any.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("deprecated", _args)
+        return await _ctx.execute(str)
+
     async def description(self) -> str:
         """A doc string for the field, if any.
 
@@ -6645,6 +6687,27 @@ class Function(Type):
         _ctx = self._select("args", _args)
         return await _ctx.execute_object_list(FunctionArg)
 
+    async def deprecated(self) -> str:
+        """The reason this function is deprecated, if any.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("deprecated", _args)
+        return await _ctx.execute(str)
+
     async def description(self) -> str:
         """A doc string for the function, if any.
 
@@ -6733,6 +6796,7 @@ class Function(Type):
         default_path: str | None = "",
         ignore: list[str] | None = None,
         source_map: "SourceMap | None" = None,
+        deprecated: str | None = "",
     ) -> Self:
         """Returns the function with the provided argument
 
@@ -6754,6 +6818,8 @@ class Function(Type):
             Patterns to ignore when loading the contextual argument value.
         source_map:
             The source map for the argument definition.
+        deprecated:
+            If deprecated, the reason or migration path.
         """
         _args = [
             Arg("name", name),
@@ -6763,6 +6829,7 @@ class Function(Type):
             Arg("defaultPath", default_path, ""),
             Arg("ignore", [] if ignore is None else ignore, []),
             Arg("sourceMap", source_map, None),
+            Arg("deprecated", deprecated, ""),
         ]
         _ctx = self._select("withArg", _args)
         return Function(_ctx)
@@ -6788,6 +6855,20 @@ class Function(Type):
             Arg("timeToLive", time_to_live, None),
         ]
         _ctx = self._select("withCachePolicy", _args)
+        return Function(_ctx)
+
+    def with_deprecated(self, deprecated: str) -> Self:
+        """Returns the function with the given deprecated string.
+
+        Parameters
+        ----------
+        deprecated:
+            If deprecated, the reason or migration path.
+        """
+        _args = [
+            Arg("deprecated", deprecated),
+        ]
+        _ctx = self._select("withDeprecated", _args)
         return Function(_ctx)
 
     def with_description(self, description: str) -> Self:
@@ -6873,6 +6954,27 @@ class FunctionArg(Type):
         _args: list[Arg] = []
         _ctx = self._select("defaultValue", _args)
         return await _ctx.execute(JSON)
+
+    async def deprecated(self) -> str:
+        """The reason this function is deprecated, if any.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("deprecated", _args)
+        return await _ctx.execute(str)
 
     async def description(self) -> str:
         """A doc string for the argument, if any.
@@ -9921,6 +10023,27 @@ class ObjectTypeDef(Type):
         _ctx = self._select("constructor", _args)
         return Function(_ctx)
 
+    async def deprecated(self) -> str:
+        """The reason this enum member is deprecated, if any.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("deprecated", _args)
+        return await _ctx.execute(str)
+
     async def description(self) -> str:
         """The doc string for the object, if any.
 
@@ -12103,6 +12226,7 @@ class TypeDef(Type):
         value: str | None = "",
         description: str | None = "",
         source_map: SourceMap | None = None,
+        deprecated: str | None = "",
     ) -> Self:
         """Adds a static value for an Enum TypeDef, failing if the type is not an
         enum.
@@ -12117,12 +12241,15 @@ class TypeDef(Type):
             A doc string for the member, if any
         source_map:
             The source map for the enum member definition.
+        deprecated:
+            If deprecated, the reason or migration path.
         """
         _args = [
             Arg("name", name),
             Arg("value", value, ""),
             Arg("description", description, ""),
             Arg("sourceMap", source_map, None),
+            Arg("deprecated", deprecated, ""),
         ]
         _ctx = self._select("withEnumMember", _args)
         return TypeDef(_ctx)
@@ -12133,6 +12260,7 @@ class TypeDef(Type):
         *,
         description: str | None = "",
         source_map: SourceMap | None = None,
+        deprecated: str | None = "",
     ) -> Self:
         """Adds a static value for an Enum TypeDef, failing if the type is not an
         enum.
@@ -12148,6 +12276,8 @@ class TypeDef(Type):
             A doc string for the value, if any
         source_map:
             The source map for the enum value definition.
+        deprecated:
+            If deprecated, the reason or migration path.
         """
         warnings.warn(
             'Method "with_enum_value" is deprecated: Use "with_enum_member" instead',
@@ -12158,6 +12288,7 @@ class TypeDef(Type):
             Arg("value", value),
             Arg("description", description, ""),
             Arg("sourceMap", source_map, None),
+            Arg("deprecated", deprecated, ""),
         ]
         _ctx = self._select("withEnumValue", _args)
         return TypeDef(_ctx)
@@ -12169,6 +12300,7 @@ class TypeDef(Type):
         *,
         description: str | None = "",
         source_map: SourceMap | None = None,
+        deprecated: str | None = "",
     ) -> Self:
         """Adds a static field for an Object TypeDef, failing if the type is not
         an object.
@@ -12183,12 +12315,15 @@ class TypeDef(Type):
             A doc string for the field, if any
         source_map:
             The source map for the field definition.
+        deprecated:
+            If deprecated, the reason or migration path.
         """
         _args = [
             Arg("name", name),
             Arg("typeDef", type_def),
             Arg("description", description, ""),
             Arg("sourceMap", source_map, None),
+            Arg("deprecated", deprecated, ""),
         ]
         _ctx = self._select("withField", _args)
         return TypeDef(_ctx)
@@ -12243,6 +12378,7 @@ class TypeDef(Type):
         *,
         description: str | None = "",
         source_map: SourceMap | None = None,
+        deprecated: str | None = "",
     ) -> Self:
         """Returns a TypeDef of kind Object with the provided name.
 
@@ -12254,6 +12390,7 @@ class TypeDef(Type):
             Arg("name", name),
             Arg("description", description, ""),
             Arg("sourceMap", source_map, None),
+            Arg("deprecated", deprecated, ""),
         ]
         _ctx = self._select("withObject", _args)
         return TypeDef(_ctx)

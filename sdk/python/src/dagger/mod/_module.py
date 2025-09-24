@@ -158,6 +158,7 @@ class Module:
                 type_def = type_def.with_object(
                     obj_name,
                     description=get_doc(obj_type.cls),
+                    deprecated=obj_type.deprecated,
                 )
 
             # Object fields
@@ -668,16 +669,21 @@ class Module:
         kw_only_default=True,
         field_specifiers=(function, dataclasses.field, dataclasses.Field),
     )
-    def object_type(self, cls: T) -> T: ...
+    def object_type(self, cls: T, /, *, deprecated: str | None = None) -> T: ...
 
     @overload
     @dataclass_transform(
         kw_only_default=True,
         field_specifiers=(function, dataclasses.field, dataclasses.Field),
     )
-    def object_type(self) -> Callable[[T], T]: ...
+    def object_type(self, *, deprecated: str | None = None) -> Callable[[T], T]: ...
 
-    def object_type(self, cls: T | None = None) -> T | Callable[[T], T]:
+    def object_type(
+        self,
+        cls: T | None = None,
+        *,
+        deprecated: str | None = None,
+    ) -> T | Callable[[T], T]:
         """Exposes a Python class as a :py:class:`dagger.ObjectTypeDef`.
 
         Used with :py:meth:`field` and :py:meth:`function` to expose
@@ -693,6 +699,12 @@ class Module:
                 @dagger.function
                 def bar(self) -> str:
                     return "foobar"
+
+
+        Parameters
+        ----------
+        deprecated:
+            Optional deprecation message visible when introspecting the module.
         """
 
         def wrapper(cls: T) -> T:
@@ -714,12 +726,18 @@ class Module:
                     raise BadUsageError(msg)
 
             wrapped = dataclasses.dataclass(kw_only=True)(cls)
-            return self._process_type(wrapped)
+            return self._process_type(wrapped, deprecated=deprecated)
 
         return wrapper(cls) if cls else wrapper
 
-    def _process_type(self, cls: T, interface: bool = False) -> T:
-        obj_def = ObjectType(cls, interface=interface)
+    def _process_type(
+        self,
+        cls: T,
+        *,
+        interface: bool = False,
+        deprecated: str | None = None,
+    ) -> T:
+        obj_def = ObjectType(cls, interface=interface, deprecated=deprecated)
 
         cls.__dagger_module__ = self
         cls.__dagger_object_type__ = obj_def
