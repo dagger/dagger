@@ -148,13 +148,13 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Return a new LLM with the specified tool disabled
+     * Return a new LLM with the specified function no longer exposed as a tool
      */
-    public function withBlockedFunction(string $typeName, string $fieldName): LLM
+    public function withBlockedFunction(string $typeName, string $function): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withBlockedFunction');
         $innerQueryBuilder->setArgument('typeName', $typeName);
-        $innerQueryBuilder->setArgument('fieldName', $fieldName);
+        $innerQueryBuilder->setArgument('function', $function);
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

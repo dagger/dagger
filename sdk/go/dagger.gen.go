@@ -8185,11 +8185,11 @@ func (r *LLM) Tools(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Return a new LLM with the specified tool disabled
-func (r *LLM) WithBlockedFunction(typeName string, fieldName string) *LLM {
+// Return a new LLM with the specified function no longer exposed as a tool
+func (r *LLM) WithBlockedFunction(typeName string, function string) *LLM {
 	q := r.query.Select("withBlockedFunction")
 	q = q.Arg("typeName", typeName)
-	q = q.Arg("fieldName", fieldName)
+	q = q.Arg("function", function)
 
 	return &LLM{
 		query: q,

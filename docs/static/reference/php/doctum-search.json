@@ -4179,7 +4179,7 @@
 			"t": "M",
 			"n": "Dagger\\LLM::withBlockedFunction",
 			"p": "Dagger/LLM.html#method_withBlockedFunction",
-			"d": "<p>Return a new LLM with the specified tool disabled</p>"
+			"d": "<p>Return a new LLM with the specified function no longer exposed as a tool</p>"
 		},
 		{
 			"t": "M",

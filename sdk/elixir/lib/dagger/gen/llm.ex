@@ -214,15 +214,15 @@ defmodule Dagger.LLM do
   end
 
   @doc """
-  Return a new LLM with the specified tool disabled
+  Return a new LLM with the specified function no longer exposed as a tool
   """
   @spec with_blocked_function(t(), String.t(), String.t()) :: Dagger.LLM.t()
-  def with_blocked_function(%__MODULE__{} = llm, type_name, field_name) do
+  def with_blocked_function(%__MODULE__{} = llm, type_name, function) do
     query_builder =
       llm.query_builder
       |> QB.select("withBlockedFunction")
       |> QB.put_arg("typeName", type_name)
-      |> QB.put_arg("fieldName", field_name)
+      |> QB.put_arg("function", function)
 
     %Dagger.LLM{
       query_builder: query_builder,

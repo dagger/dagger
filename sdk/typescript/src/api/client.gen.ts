@@ -8291,12 +8291,17 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Return a new LLM with the specified tool disabled
-   * @param typeName The type name whose field will be disabled
-   * @param fieldName The field name to disable
+   * Return a new LLM with the specified function no longer exposed as a tool
+   * @param typeName The type name whose function will be blocked
+   * @param function The function to block
+   *
+   * Will be converted to lowerCamelCase if necessary.
    */
-  withBlockedFunction = (typeName: string, fieldName: string): LLM => {
-    const ctx = this._ctx.select("withBlockedFunction", { typeName, fieldName })
+  withBlockedFunction = (typeName: string, function_: string): LLM => {
+    const ctx = this._ctx.select("withBlockedFunction", {
+      typeName,
+      function: function_,
+    })
     return new LLM(ctx)
   }
 

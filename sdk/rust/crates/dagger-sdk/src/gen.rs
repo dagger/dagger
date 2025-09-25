@@ -9273,20 +9273,22 @@ impl Llm {
         let query = self.selection.select("tools");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Return a new LLM with the specified tool disabled
+    /// Return a new LLM with the specified function no longer exposed as a tool
     ///
     /// # Arguments
     ///
-    /// * `type_name` - The type name whose field will be disabled
-    /// * `field_name` - The field name to disable
+    /// * `type_name` - The type name whose function will be blocked
+    /// * `function` - The function to block
+    ///
+    /// Will be converted to lowerCamelCase if necessary.
     pub fn with_blocked_function(
         &self,
         type_name: impl Into<String>,
-        field_name: impl Into<String>,
+        function: impl Into<String>,
     ) -> Llm {
         let mut query = self.selection.select("withBlockedFunction");
         query = query.arg("typeName", type_name.into());
-        query = query.arg("fieldName", field_name.into());
+        query = query.arg("function", function.into());
         Llm {
             proc: self.proc.clone(),
             selection: query,

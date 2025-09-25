@@ -8438,19 +8438,21 @@ class LLM(Type):
         _ctx = self._select("tools", _args)
         return await _ctx.execute(str)
 
-    def with_blocked_function(self, type_name: str, field_name: str) -> Self:
-        """Return a new LLM with the specified tool disabled
+    def with_blocked_function(self, type_name: str, function: str) -> Self:
+        """Return a new LLM with the specified function no longer exposed as a
+        tool
 
         Parameters
         ----------
         type_name:
-            The type name whose field will be disabled
-        field_name:
-            The field name to disable
+            The type name whose function will be blocked
+        function:
+            The function to block
+            Will be converted to lowerCamelCase if necessary.
         """
         _args = [
             Arg("typeName", type_name),
-            Arg("fieldName", field_name),
+            Arg("function", function),
         ]
         _ctx = self._select("withBlockedFunction", _args)
         return LLM(_ctx)
