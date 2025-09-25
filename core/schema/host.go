@@ -235,8 +235,6 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
 
-	args.Path = path.Clean(args.Path)
-
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get current query: %w", err)
@@ -247,49 +245,59 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	hostPath := args.Path
-	hostPath, err = bk.AbsPath(ctx, hostPath)
+	copyPath := path.Clean(args.Path)
+	initialAbsCopyPath, err := bk.AbsPath(ctx, copyPath)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get absolute path from git ignore root %s: %w", hostPath, err)
+		return inst, fmt.Errorf("failed to get host absolute path for %s: %w", copyPath, err)
 	}
 
-	relPath := "."
+	// Relpath is the actual path the user wants to copy, relative to the absRootCopyPath.
+	// If `args.GitIgnore` is set, absRootCopyPath changes to the .git directory location
+	// so we can load .gitignore patterns from there.
+	// Then we copy everything from relPathFromRoot which is the actual path the caller
+	// wants to copy.
+	absRootCopyPath := initialAbsCopyPath
+	relPathFromRoot := "."
 
 	if args.Gitignore {
-		// load all the .gitgnore patterns inside the context directory (if
-		// ContextDirectoryPath is set) or the git repo if .git is found.
-		originalPath := hostPath
+		// If `args.GitIgnoreRoot` is set, we use it as the root to load .gitignores
+		// patterns from.
+		// Otherwise, we search for a .git directory to be the new root.
 		if args.GitIgnoreRoot != "" {
-			hostPath = args.GitIgnoreRoot
-			hostPath, err = bk.AbsPath(ctx, hostPath)
+			gitRootPath := args.GitIgnoreRoot
+			absRootCopyPath, err = bk.AbsPath(ctx, gitRootPath)
 			if err != nil {
-				return inst, fmt.Errorf("failed to get absolute path from git ignore root %s: %w", hostPath, err)
+				return inst, fmt.Errorf("failed to get absolute path from git ignore root %s: %w", gitRootPath, err)
 			}
 		} else {
-			dotGitPath, found, err := host.Self().FindUp(ctx, core.NewCallerStatFS(bk), hostPath, ".git")
+			dotGitPath, found, err := host.Self().FindUp(ctx, core.NewCallerStatFS(bk), initialAbsCopyPath, ".git")
 			if err != nil {
 				return inst, fmt.Errorf("failed to find up .git: %w", err)
 			}
 			if found {
-				hostPath = dotGitPath
+				absRootCopyPath = dotGitPath
 			}
 		}
-		relPath, err = filepath.Rel(hostPath, originalPath)
+
+		// Compute the relative path to know what the caller actually wants to copy.
+		relPathFromRoot, err = filepath.Rel(absRootCopyPath, initialAbsCopyPath)
 		if err != nil {
-			return inst, fmt.Errorf("failed to get relative path from %q: %w", originalPath, err)
+			return inst, fmt.Errorf("failed to get relative path from %q: %w", initialAbsCopyPath, err)
 		}
 	}
 
-	includePatterns := make([]string, 0, 2+len(args.Include))
-	if relPath != "." {
-		includePatterns = append(includePatterns, "!*", relPath)
+	// If relPathFromRoot is different from the rootCopyPath, we include everything
+	// inside the relPathFromRoot directory by default.
+	includePatterns := make([]string, 0, 1+len(args.Include))
+	if relPathFromRoot != "." {
+		includePatterns = append(includePatterns, "!*", relPathFromRoot)
 	}
 	for _, include := range args.Include {
 		include, negative := strings.CutPrefix(include, "!")
 		if !filepath.IsLocal(include) {
 			continue
 		}
-		include = filepath.Join(relPath, include)
+		include = filepath.Join(relPathFromRoot, include)
 		if negative {
 			include = "!" + include
 		}
@@ -297,24 +305,27 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	}
 
 	excludePatterns := make([]string, 0, len(args.Exclude))
-
 	for _, exclude := range args.Exclude {
 		exclude, negative := strings.CutPrefix(exclude, "!")
 		if !filepath.IsLocal(exclude) {
 			continue
 		}
-		exclude = filepath.Join(relPath, exclude)
+		exclude = filepath.Join(relPathFromRoot, exclude)
 		if negative {
 			exclude = "!" + exclude
 		}
 		excludePatterns = append(excludePatterns, exclude)
 	}
 
+	// The operation is not wrapped in dagOp at the schema level, so we manually handle
+	// it inside the resolver.
+	// That's because it's more conveniant to call `MakeDirectoryContentHashed` here
+	// that having an option in the `dagOpDirectoryWrapper`
 	if args.InDagOp() {
-		dir, err := host.Self().Directory(ctx, hostPath, core.CopyFilter{
-			Include: args.Include,
-			Exclude: args.Exclude,
-		}, args.Gitignore, args.NoCache, relPath)
+		dir, err := host.Self().Directory(ctx, absRootCopyPath, core.CopyFilter{
+			Include: includePatterns,
+			Exclude: excludePatterns,
+		}, args.Gitignore, args.NoCache, relPathFromRoot)
 
 		if err != nil {
 			return inst, fmt.Errorf("failed to get directory: %w", err)
@@ -323,14 +334,18 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 	}
 
+	// If outside of DagOp, we create a "promise" of that future directory so
+	// the function will be called again by DagQL with `args.InDagOp() == true`
 	dir, err := DagOpDirectory(ctx, srv, host.Self(), args, "", s.directory)
 	if err != nil {
-		return inst, err
+		return inst, fmt.Errorf("failed to create dagOp for directory: %w", err)
 	}
+
 	dirRes, err := dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 	if err != nil {
-		return inst, err
+		return inst, fmt.Errorf("failed to compute object result for dag Op directory: %w", err)
 	}
+
 	return core.MakeDirectoryContentHashed(ctx, bk, dirRes)
 }
 

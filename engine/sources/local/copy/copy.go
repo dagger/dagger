@@ -2,7 +2,6 @@ package copy
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -614,8 +613,6 @@ func (c *copier) copyDirectory(
 	}
 
 	for _, fi := range fis {
-		fmt.Printf("[COPY DIRECTORY FILE] src=%s, srcComponents=%s, target=%s\n", filepath.Join(src, fi.Name()), filepath.Join(srcComponents, fi.Name()), filepath.Join(dst, fi.Name()))
-
 		if err := c.copy(
 			ctx,
 			filepath.Join(src, fi.Name()), filepath.Join(srcComponents, fi.Name()),

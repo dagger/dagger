@@ -56,7 +56,11 @@ type SnapshotSyncOpts struct {
 	ExcludePatterns []string
 	GitIgnore       bool
 	CacheBuster     string
-	RelativePath    string
+
+	// If set, the snapshot will be relative that path.
+	// This is required when `GitIgnore` is set so we don't returns
+	// the whole git repo but simply apply .gitignore rules on that path.
+	RelativePath string
 }
 
 func (ls *LocalSource) Snapshot(ctx context.Context, session session.Group, sm *session.Manager, clientPath string, opts SnapshotSyncOpts) (bkcache.ImmutableRef, error) {
@@ -79,7 +83,7 @@ func (ls *LocalSource) Snapshot(ctx context.Context, session session.Group, sm *
 	}
 
 	// If relPath is ".", we want to use the root path so we can unset it
-	// because `"."` leads to unecessary complications inside snapshot.
+	// because `"."` leads to unnecessary complications inside snapshot.
 	if opts.RelativePath == "." {
 		opts.RelativePath = ""
 	}
