@@ -319,7 +319,7 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 
 	// The operation is not wrapped in dagOp at the schema level, so we manually handle
 	// it inside the resolver.
-	// That's because it's more conveniant to call `MakeDirectoryContentHashed` here
+	// That's because it's more convenient to call `MakeDirectoryContentHashed` here
 	// that having an option in the `dagOpDirectoryWrapper`
 	if args.InDagOp() {
 		dir, err := host.Self().Directory(ctx, absRootCopyPath, core.CopyFilter{
