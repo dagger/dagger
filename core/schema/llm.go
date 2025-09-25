@@ -5,6 +5,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/iancoleman/strcase"
 )
 
 type llmSchema struct {
@@ -71,10 +72,10 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		dagql.Func("withoutDefaultSystemPrompt", s.withoutDefaultSystemPrompt).
 			Doc("Disable the default system prompt"),
 		dagql.Func("withBlockedFunction", s.withBlockedFunction).
-			Doc("Return a new LLM with the specified tool disabled").
+			Doc("Return a new LLM with the specified function no longer exposed as a tool").
 			Args(
-				dagql.Arg("typeName").Doc("The type name whose field will be disabled"),
-				dagql.Arg("fieldName").Doc("The field name to disable"),
+				dagql.Arg("typeName").Doc("The type name whose function will be blocked"),
+				dagql.Arg("function").Doc("The function to block", "Will be converted to lowerCamelCase if necessary."),
 			),
 		dagql.Func("withMCPServer", s.withMCPServer).
 			Doc("Add an external MCP server to the LLM").
@@ -181,10 +182,15 @@ func (s *llmSchema) withoutDefaultSystemPrompt(ctx context.Context, llm *core.LL
 }
 
 func (s *llmSchema) withBlockedFunction(ctx context.Context, llm *core.LLM, args struct {
-	TypeName  string
-	FieldName string
+	TypeName string
+	Function string
 }) (*core.LLM, error) {
-	return llm.WithBlockedFunction(ctx, args.TypeName, args.FieldName)
+	return llm.WithBlockedFunction(ctx,
+		args.TypeName,
+		// We're stringly typed, which sucks, but we can at least allow people to
+		// refer to names in their locale (e.g. snake_case in Python.)
+		strcase.ToLowerCamel(args.Function),
+	)
 }
 
 func (s *llmSchema) withMCPServer(ctx context.Context, llm *core.LLM, args struct {
