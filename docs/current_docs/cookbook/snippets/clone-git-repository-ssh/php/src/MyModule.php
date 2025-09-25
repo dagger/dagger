@@ -6,6 +6,7 @@ namespace DaggerModule;
 
 use Dagger\Attribute\DaggerFunction;
 use Dagger\Attribute\DaggerObject;
+use Dagger\Attribute\Doc;
 use Dagger\Container;
 use Dagger\Socket;
 
@@ -14,8 +15,8 @@ use function Dagger\dag;
 #[DaggerObject]
 class MyModule
 {
-    // Demonstrates an SSH-based clone requiring a user-supplied sshAuthSocket.
     #[DaggerFunction]
+    #[Doc('Demonstrates an SSH-based clone requiring a user-supplied sshAuthSocket.')]
     public function cloneWithSsh(string $repository, string $ref, Socket $sock): Container
     {
 
