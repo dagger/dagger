@@ -88,6 +88,11 @@ class Function(Generic[P, R]):
         """Return the description for the callable to invoke."""
         return self.meta.doc if self.meta.doc is not None else get_doc(self.wrapped)
 
+    @property
+    def deprecated(self) -> str | None:
+        """Return the deprecation message for the callable, if any."""
+        return self.meta.deprecated
+
     @cached_property
     def cache_policy(self):
         return self.meta.cache
