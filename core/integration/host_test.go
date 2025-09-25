@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -390,8 +391,8 @@ func (HostSuite) TestDirectoryGitIgnore(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, []string{"foo.txt"}, entries)
 
-		_, err = c.Host().Directory(filepath.Join(dir, "bar/"), dagger.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
-		require.Error(t, err)
+		entries, err = c.Host().Directory(filepath.Join(dir, "bar/"), dagger.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
+		require.Error(t, err, fmt.Errorf("expected error, got: %#v", entries))
 		requireErrOut(t, err, "no such file or directory")
 	})
 
