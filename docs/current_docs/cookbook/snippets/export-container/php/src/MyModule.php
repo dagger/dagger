@@ -16,7 +16,8 @@ class MyModule
 {
     #[DaggerFunction]
     #[Doc('Return a container')]
-    public function base(): Container {
+    public function base(): Container 
+    {
         return dag()
             ->container()
             ->from('alpine:latest')
