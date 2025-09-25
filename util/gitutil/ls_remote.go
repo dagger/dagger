@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -14,8 +15,6 @@ type Remote struct {
 
 	// override what HEAD points to, if set
 	Head *Ref
-
-	digest digest.Digest
 }
 
 type Ref struct {
@@ -46,10 +45,7 @@ func (r *Ref) ShortName() string {
 }
 
 func (r *Ref) Digest() digest.Digest {
-	return digest.FromString(strings.Join([]string{
-		r.Name,
-		r.SHA,
-	}, "\x00"))
+	return dagql.HashFrom(r.Name, r.SHA)
 }
 
 func (cli *GitCLI) LsRemote(ctx context.Context, remote string) (*Remote, error) {
@@ -84,19 +80,18 @@ func (cli *GitCLI) LsRemote(ctx context.Context, remote string) (*Remote, error)
 	return &Remote{
 		Refs:    refs,
 		Symrefs: symrefs,
-		digest:  digest.FromBytes(out),
 	}, nil
 }
 
 func (remote *Remote) Digest() digest.Digest {
-	if remote.Head != nil {
-		return digest.FromString(strings.Join([]string{
-			remote.digest.String(),
-			remote.Head.SHA,
-			remote.Head.Name,
-		}, "\x00"))
+	inputs := []string{}
+	for _, ref := range remote.Refs {
+		inputs = append(inputs, "ref", ref.Digest().String(), "\x00")
 	}
-	return remote.digest
+	if remote.Head != nil {
+		inputs = append(inputs, "head", remote.Head.Digest().String(), "\x00")
+	}
+	return dagql.HashFrom(inputs...)
 }
 
 func (remote *Remote) withRefs(refs []*Ref) *Remote {
@@ -104,7 +99,6 @@ func (remote *Remote) withRefs(refs []*Ref) *Remote {
 		Refs:    refs,
 		Symrefs: remote.Symrefs,
 		Head:    remote.Head,
-		digest:  remote.digest,
 	}
 }
 

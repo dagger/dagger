@@ -1020,18 +1020,35 @@ func (s *directorySchema) asGit(
 	dir dagql.ObjectResult[*core.Directory],
 	_ struct{},
 ) (inst dagql.Result[*core.GitRepository], _ error) {
-	repo, err := core.NewGitRepository(ctx, &core.LocalGitRepository{
+	backend := &core.LocalGitRepository{
 		Directory: dir,
-	})
-	if err != nil {
-		return inst, err
 	}
-	inst, err = dagql.NewResultForCurrentID(ctx, repo)
+	repo, err := core.NewGitRepository(ctx, backend)
 	if err != nil {
 		return inst, err
 	}
 
-	inst = inst.WithDigest(dagql.HashFrom(string(repo.Remote.Digest())))
+	dgstInputs := []string{
+		string(repo.Remote.Digest()),
+	}
+
+	shallowFile, err := backend.File(ctx, "shallow")
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return inst, err
+	}
+	if shallowFile != nil {
+		dt, err := shallowFile.Contents(ctx, nil, nil)
+		if err != nil {
+			return inst, err
+		}
+		dgstInputs = append(dgstInputs, string(dt))
+	}
+
+	inst, err = dagql.NewResultForCurrentID(ctx, repo)
+	if err != nil {
+		return inst, err
+	}
+	inst = inst.WithDigest(dagql.HashFrom(dgstInputs...))
 	return inst, nil
 }
 
