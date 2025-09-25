@@ -149,11 +149,14 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 
 	for {
 		// update the sidebar after every step, not after the entire loop
-		prompted = prompted.Step()
+		prompted, err = prompted.Step(ctx)
+		if err != nil {
+			return s, err
+		}
 
 		s.updateLLMAndAgentVar(prompted)
 
-		if err := s.syncAndUpdateSidebar(ctx); err != nil {
+		if err := s.updateSidebar(prompted); err != nil {
 			return s, err
 		}
 
@@ -233,16 +236,7 @@ func (s *LLMSession) updateLLMAndAgentVar(llm *dagger.LLM) error {
 	return nil
 }
 
-func (s *LLMSession) syncAndUpdateSidebar(ctx context.Context) error {
-	llm, err := s.llm.Sync(ctx)
-	if err != nil {
-		return err
-	}
-
-	// NB: this doesn't really do anything, since sync updates in-place, but might
-	// as well respect the return value
-	s.llm = llm
-
+func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
 	inputTokens, err := llm.TokenUsage().InputTokens(s.plumbingCtx)
 	if err != nil {
 		return err

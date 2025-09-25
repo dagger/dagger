@@ -94,12 +94,13 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		}).
 			Doc("synchronize LLM state"),
 		dagql.Func("loop", s.loop).
-			Doc("Loop completing tool calls until the LLM ends its turn"),
-		dagql.Func("step", s.step).
-			Doc("Returns an LLM that will only sync one step instead of looping"),
+			Doc("Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn"),
 		dagql.Func("hasPrompt", s.hasPrompt).
-			// Deprecated("use sync").
-			Doc("Indicates that the LLM can be synced or stepped"),
+			Doc("Indicates whether there are any queued prompts or tool results to send to the model"),
+		dagql.NodeFunc("step", s.step).
+			Doc("Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results"),
+		dagql.Func("__step", s.stepInner).
+			Doc("Inner function called by step that configures an LLM to do one iteration"),
 		dagql.Func("attempt", s.attempt).
 			Doc("create a branch in the LLM's history"),
 		dagql.Func("tools", s.tools).
@@ -211,7 +212,16 @@ func (s *llmSchema) loop(ctx context.Context, llm *core.LLM, args struct{}) (*co
 	return llm, llm.Sync(ctx)
 }
 
-func (s *llmSchema) step(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
+func (s *llmSchema) step(ctx context.Context, llm dagql.ObjectResult[*core.LLM], args struct{}) (id dagql.ID[*core.LLM], err error) {
+	err = s.srv.Select(ctx, llm, &id, dagql.Selector{
+		Field: "__step",
+	}, dagql.Selector{
+		Field: "sync",
+	})
+	return id, err
+}
+
+func (s *llmSchema) stepInner(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
 	return llm.Step(), nil
 }
 
