@@ -45,6 +45,15 @@ Here's an example where one field is exposed as a Dagger Function, while the oth
 ```
 
 </TabItem>
+<TabItem value="php" label="PHP">
+PHP already offers `private`, `protected` and `public` keywords to handle member visibility in a class. However, Dagger will only expose those members of a Dagger module that are explicitly decorated with the `#[DaggerFunction]` decorator. Others will remain private.
+
+Here's an example where one field is exposed as a Dagger Function, while the other is not:
+
+```php file=./snippets/state-functions/php/src/MyModule.php
+```
+
+</TabItem>
 <TabItem value="java" label="Java">
 Dagger will automatically expose all public fields of a class as Dagger Functions. It's also possible to expose a package, `protected` or `private` field by annotating it with the `@Function` annotation.
 
