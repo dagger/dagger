@@ -8227,7 +8227,8 @@ class LLM(Type):
         return Env(_ctx)
 
     async def has_prompt(self) -> bool:
-        """Indicates that the LLM can be synced or stepped
+        """Indicates whether there are any queued prompts or tool results to send
+        to the model
 
         Returns
         -------
@@ -8331,7 +8332,9 @@ class LLM(Type):
         return await _ctx.execute(str)
 
     def loop(self) -> Self:
-        """Loop completing tool calls until the LLM ends its turn"""
+        """Submit the queued prompt, evaluate any tool calls, queue their
+        results, and keep going until the model ends its turn
+        """
         _args: list[Arg] = []
         _ctx = self._select("loop", _args)
         return LLM(_ctx)
@@ -8378,11 +8381,19 @@ class LLM(Type):
         _ctx = self._select("provider", _args)
         return await _ctx.execute(str)
 
-    def step(self) -> Self:
-        """Returns an LLM that will only sync one step instead of looping"""
+    async def step(self) -> Self:
+        """Submit the queued prompt or tool call results, evaluate any tool
+        calls, and queue their results
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
         _args: list[Arg] = []
-        _ctx = self._select("step", _args)
-        return LLM(_ctx)
+        return await self._ctx.execute_sync(self, "step", _args)
 
     async def sync(self) -> Self:
         """synchronize LLM state
@@ -10049,6 +10060,10 @@ class Client(Root):
         When called from a module function outside of an LLM, this returns an
         Env with the current module installed, and with the current module's
         source directory as its workspace.
+
+        .. caution::
+            Experimental: Programmatic env access is speculative and might be
+            replaced.
         """
         _args: list[Arg] = []
         _ctx = self._select("currentEnv", _args)

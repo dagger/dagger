@@ -560,7 +560,7 @@
                     <dd><p>Information about the host environment.</p></dd><dt><a href="Dagger/HostId.html"><abbr title="Dagger\HostId">HostId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The <code>HostID</code> scalar type represents an identifier for an object of type Host.</p></dd><dt><a href="Dagger/LLM.html#method_hasPrompt">
 <abbr title="Dagger\LLM">LLM</abbr>::hasPrompt</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>Indicates that the LLM can be synced or stepped</p></dd><dt><a href="Dagger/LLM.html#method_history">
+                    <dd><p>Indicates whether there are any queued prompts or tool results to send to the model</p></dd><dt><a href="Dagger/LLM.html#method_history">
 <abbr title="Dagger\LLM">LLM</abbr>::history</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>return the llm message history</p></dd><dt><a href="Dagger/LLM.html#method_historyJSON">
 <abbr title="Dagger\LLM">LLM</abbr>::historyJSON</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
@@ -837,7 +837,7 @@
 <abbr title="Dagger\LLM">LLM</abbr>::lastReply</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>return the last llm reply from the history</p></dd><dt><a href="Dagger/LLM.html#method_loop">
 <abbr title="Dagger\LLM">LLM</abbr>::loop</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>Loop completing tool calls until the LLM ends its turn</p></dd><dt><a href="Dagger/LLMId.html"><abbr title="Dagger\LLMId">LLMId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn</p></dd><dt><a href="Dagger/LLMId.html"><abbr title="Dagger\LLMId">LLMId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The <code>LLMID</code> scalar type represents an identifier for an object of type LLM.</p></dd><dt><a href="Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd></dd><dt><a href="Dagger/LLMTokenUsageId.html"><abbr title="Dagger\LLMTokenUsageId">LLMTokenUsageId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The <code>LLMTokenUsageID</code> scalar type represents an identifier for an object of type LLMTokenUsage.</p></dd><dt><a href="Dagger/Label.html"><abbr title="Dagger\Label">Label</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
@@ -1066,7 +1066,7 @@
 <abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr>::sourceModuleName</a>() &mdash; <em>Method in class <a href="Dagger/InterfaceTypeDef.html"><abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr></a></em></dt>
                     <dd><p>If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.</p></dd><dt><a href="Dagger/LLM.html#method_step">
 <abbr title="Dagger\LLM">LLM</abbr>::step</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>Returns an LLM that will only sync one step instead of looping</p></dd><dt><a href="Dagger/LLM.html#method_sync">
+                    <dd><p>Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results</p></dd><dt><a href="Dagger/LLM.html#method_sync">
 <abbr title="Dagger\LLM">LLM</abbr>::sync</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>synchronize LLM state</p></dd><dt><a href="Dagger/Module.html#method_sdk">
 <abbr title="Dagger\Module">Module</abbr>::sdk</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>

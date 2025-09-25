@@ -80,29 +80,29 @@
         </div>
                 <div id="page-content">
     <div class="page-header">
-        <h1>LLM    
+        <h1>LLM
             </h1>
     </div>
 
-    
+
     <p>        class
     <strong>LLM</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
 </p>
 
-        
-    
-        
 
-            
-        
-    
+
+
+
+
+
+
             <h2>Properties</h2>
 
             <table class="table table-condensed">
                     <tr>
                 <td class="type" id="property_lastQuery">
-                                                                                
-                                                                                
+
+
                                     </td>
                 <td>$lastQuery</td>
                 <td class="last"></td>
@@ -111,17 +111,17 @@
             </tr>
             </table>
 
-    
+
             <h2>Methods</h2>
 
             <div class="container-fluid underlined">
                     <div class="row">
                 <div class="col-md-2 type">
-                    
+
                 </div>
                 <div class="col-md-8">
                     <a href="#method___construct">__construct</a>(<a href="../Dagger/Client/AbstractClient.html"><abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr></a> $client, <abbr title="Dagger\GraphQl\QueryBuilderChain">QueryBuilderChain</abbr> $queryBuilderChain)
-        
+
                                             <p class="no-description">No description</p>
                                     </div>
                 <div class="col-md-2"><small>from&nbsp;<a href="../Dagger/Client/AbstractObject.html#method___construct">
@@ -133,7 +133,7 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_queryLeaf">queryLeaf</a>(<abbr title="GraphQL\QueryBuilder\QueryBuilder">QueryBuilder</abbr> $leafQueryBuilder, string $leafKey)
-        
+
                                             <p class="no-description">No description</p>
                                     </div>
                 <div class="col-md-2"><small>from&nbsp;<a href="../Dagger/Client/AbstractObject.html#method_queryLeaf">
@@ -145,7 +145,7 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_attempt">attempt</a>(int $number)
-        
+
                                             <p><p>create a branch in the LLM's history</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
@@ -155,7 +155,7 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_bindResult">bindResult</a>(string $name)
-        
+
                                             <p><p>returns the type of the current state</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
@@ -165,7 +165,7 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_env">env</a>()
-        
+
                                             <p><p>return the LLM's current environment</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
@@ -175,8 +175,8 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_hasPrompt">hasPrompt</a>()
-        
-                                            <p><p>Indicates that the LLM can be synced or stepped</p></p>                </div>
+
+                                            <p><p>Indicates whether there are any queued prompts or tool results to send to the model</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -185,7 +185,7 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_history">history</a>()
-        
+
                                             <p><p>return the llm message history</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
@@ -195,7 +195,7 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_historyJSON">historyJSON</a>()
-        
+
                                             <p><p>return the raw llm message history as json</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
@@ -205,7 +205,7 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
-        
+
                                             <p><p>A unique identifier for this LLM.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
@@ -215,7 +215,7 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_lastReply">lastReply</a>()
-        
+
                                             <p><p>return the last llm reply from the history</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
@@ -225,8 +225,8 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_loop">loop</a>()
-        
-                                            <p><p>Loop completing tool calls until the LLM ends its turn</p></p>                </div>
+
+                                            <p><p>Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -235,7 +235,7 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_model">model</a>()
-        
+
                                             <p><p>return the model used by the llm</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
@@ -245,18 +245,18 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_provider">provider</a>()
-        
+
                                             <p><p>return the provider used by the llm</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
+                    <a href="../Dagger/LLMId.html"><abbr title="Dagger\LLMId">LLMId</abbr></a>
                 </div>
                 <div class="col-md-8">
                     <a href="#method_step">step</a>()
-        
-                                            <p><p>Returns an LLM that will only sync one step instead of looping</p></p>                </div>
+
+                                            <p><p>Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -265,7 +265,7 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_sync">sync</a>()
-        
+
                                             <p><p>synchronize LLM state</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
@@ -275,7 +275,7 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_tokenUsage">tokenUsage</a>()
-        
+
                                             <p><p>returns the token usage of the current state</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
@@ -285,7 +285,7 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_tools">tools</a>()
-        
+
                                             <p><p>print documentation for available tools</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
@@ -295,7 +295,7 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_withBlockedFunction">withBlockedFunction</a>(string $typeName, string $fieldName)
-        
+
                                             <p><p>Return a new LLM with the specified tool disabled</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
@@ -305,7 +305,7 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_withEnv">withEnv</a>(<abbr title="Dagger\EnvId|Dagger\Env">Env</abbr> $env)
-        
+
                                             <p><p>allow the LLM to interact with an environment via MCP</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
@@ -315,7 +315,7 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_withMCPServer">withMCPServer</a>(string $name, <abbr title="Dagger\ServiceId|Dagger\Service">Service</abbr> $service)
-        
+
                                             <p><p>Add an external MCP server to the LLM</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
@@ -325,7 +325,7 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_withModel">withModel</a>(string $model)
-        
+
                                             <p><p>swap out the llm model</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
@@ -335,7 +335,7 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_withPrompt">withPrompt</a>(string $prompt)
-        
+
                                             <p><p>append a prompt to the llm context</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
@@ -345,7 +345,7 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_withPromptFile">withPromptFile</a>(<abbr title="Dagger\FileId|Dagger\File">File</abbr> $file)
-        
+
                                             <p><p>append the contents of a file to the llm context</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
@@ -355,7 +355,7 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_withStaticTools">withStaticTools</a>()
-        
+
                                             <p><p>Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
@@ -365,7 +365,7 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_withSystemPrompt">withSystemPrompt</a>(string $prompt)
-        
+
                                             <p><p>Add a system prompt to the LLM's environment</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
@@ -375,7 +375,7 @@
                 </div>
                 <div class="col-md-8">
                     <a href="#method_withoutDefaultSystemPrompt">withoutDefaultSystemPrompt</a>()
-        
+
                                             <p><p>Disable the default system prompt</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
@@ -389,17 +389,17 @@
                     <h3 id="method___construct">
         <div class="location">in <a href="../Dagger/Client/AbstractObject.html#method___construct">
 <abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a> at line 13</div>
-        <code>                    
+        <code>
     <strong>__construct</strong>(<a href="../Dagger/Client/AbstractClient.html"><abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr></a> $client, <abbr title="Dagger\GraphQl\QueryBuilderChain">QueryBuilderChain</abbr> $queryBuilderChain)
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
                             <p class="no-description">No description</p>
-                    
+
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -417,10 +417,10 @@
             </tr>
             </table>
 
-            
-            
-            
-            
+
+
+
+
                     </div>
     </div>
 
@@ -433,13 +433,13 @@
     <strong>queryLeaf</strong>(<abbr title="GraphQL\QueryBuilder\QueryBuilder">QueryBuilder</abbr> $leafQueryBuilder, string $leafKey)
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
                             <p class="no-description">No description</p>
-                    
+
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -457,7 +457,7 @@
             </tr>
             </table>
 
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -467,9 +467,9 @@
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
@@ -481,12 +481,12 @@
     <strong>attempt</strong>(int $number)
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
-                            <p><p>create a branch in the LLM's history</p></p>                        
+                            <p><p>create a branch in the LLM's history</p></p>
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -499,7 +499,7 @@
             </tr>
             </table>
 
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -509,9 +509,9 @@
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
@@ -523,12 +523,12 @@
     <strong>bindResult</strong>(string $name)
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
-                            <p><p>returns the type of the current state</p></p>                        
+                            <p><p>returns the type of the current state</p></p>
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -541,7 +541,7 @@
             </tr>
             </table>
 
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -551,9 +551,9 @@
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
@@ -565,15 +565,15 @@
     <strong>env</strong>()
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
-                            <p><p>return the LLM's current environment</p></p>                        
+                            <p><p>return the LLM's current environment</p></p>
         </div>
         <div class="tags">
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -583,9 +583,9 @@
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
@@ -597,15 +597,15 @@
     <strong>hasPrompt</strong>()
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
-                            <p><p>Indicates that the LLM can be synced or stepped</p></p>                        
+                            <p><p>Indicates whether there are any queued prompts or tool results to send to the model</p></p>
         </div>
         <div class="tags">
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -615,9 +615,9 @@
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
@@ -629,15 +629,15 @@
     <strong>history</strong>()
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
-                            <p><p>return the llm message history</p></p>                        
+                            <p><p>return the llm message history</p></p>
         </div>
         <div class="tags">
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -647,9 +647,9 @@
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
@@ -661,15 +661,15 @@
     <strong>historyJSON</strong>()
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
-                            <p><p>return the raw llm message history as json</p></p>                        
+                            <p><p>return the raw llm message history as json</p></p>
         </div>
         <div class="tags">
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -679,9 +679,9 @@
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
@@ -693,15 +693,15 @@
     <strong>id</strong>()
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
-                            <p><p>A unique identifier for this LLM.</p></p>                        
+                            <p><p>A unique identifier for this LLM.</p></p>
         </div>
         <div class="tags">
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -711,9 +711,9 @@
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
@@ -725,15 +725,15 @@
     <strong>lastReply</strong>()
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
-                            <p><p>return the last llm reply from the history</p></p>                        
+                            <p><p>return the last llm reply from the history</p></p>
         </div>
         <div class="tags">
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -743,9 +743,9 @@
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
@@ -757,15 +757,15 @@
     <strong>loop</strong>()
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
-                            <p><p>Loop completing tool calls until the LLM ends its turn</p></p>                        
+                            <p><p>Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn</p></p>
         </div>
         <div class="tags">
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -775,9 +775,9 @@
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
@@ -789,15 +789,15 @@
     <strong>model</strong>()
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
-                            <p><p>return the model used by the llm</p></p>                        
+                            <p><p>return the model used by the llm</p></p>
         </div>
         <div class="tags">
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -807,9 +807,9 @@
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
@@ -821,15 +821,15 @@
     <strong>provider</strong>()
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
-                            <p><p>return the provider used by the llm</p></p>                        
+                            <p><p>return the provider used by the llm</p></p>
         </div>
         <div class="tags">
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -839,9 +839,9 @@
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
@@ -849,31 +849,31 @@
                     <div class="method-item">
                     <h3 id="method_step">
         <div class="location">at line 117</div>
-        <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
+        <code>                    <a href="../Dagger/LLMId.html"><abbr title="Dagger\LLMId">LLMId</abbr></a>
     <strong>step</strong>()
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
-                            <p><p>Returns an LLM that will only sync one step instead of looping</p></p>                        
+                            <p><p>Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results</p></p>
         </div>
         <div class="tags">
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
+            <td><a href="../Dagger/LLMId.html"><abbr title="Dagger\LLMId">LLMId</abbr></a></td>
             <td></td>
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
@@ -885,15 +885,15 @@
     <strong>sync</strong>()
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
-                            <p><p>synchronize LLM state</p></p>                        
+                            <p><p>synchronize LLM state</p></p>
         </div>
         <div class="tags">
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -903,9 +903,9 @@
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
@@ -917,15 +917,15 @@
     <strong>tokenUsage</strong>()
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
-                            <p><p>returns the token usage of the current state</p></p>                        
+                            <p><p>returns the token usage of the current state</p></p>
         </div>
         <div class="tags">
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -935,9 +935,9 @@
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
@@ -949,15 +949,15 @@
     <strong>tools</strong>()
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
-                            <p><p>print documentation for available tools</p></p>                        
+                            <p><p>print documentation for available tools</p></p>
         </div>
         <div class="tags">
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -967,9 +967,9 @@
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
@@ -981,12 +981,12 @@
     <strong>withBlockedFunction</strong>(string $typeName, string $fieldName)
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
-                            <p><p>Return a new LLM with the specified tool disabled</p></p>                        
+                            <p><p>Return a new LLM with the specified tool disabled</p></p>
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1004,7 +1004,7 @@
             </tr>
             </table>
 
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -1014,9 +1014,9 @@
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
@@ -1028,12 +1028,12 @@
     <strong>withEnv</strong>(<abbr title="Dagger\EnvId|Dagger\Env">Env</abbr> $env)
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
-                            <p><p>allow the LLM to interact with an environment via MCP</p></p>                        
+                            <p><p>allow the LLM to interact with an environment via MCP</p></p>
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1046,7 +1046,7 @@
             </tr>
             </table>
 
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -1056,9 +1056,9 @@
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
@@ -1070,12 +1070,12 @@
     <strong>withMCPServer</strong>(string $name, <abbr title="Dagger\ServiceId|Dagger\Service">Service</abbr> $service)
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
-                            <p><p>Add an external MCP server to the LLM</p></p>                        
+                            <p><p>Add an external MCP server to the LLM</p></p>
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1093,7 +1093,7 @@
             </tr>
             </table>
 
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -1103,9 +1103,9 @@
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
@@ -1117,12 +1117,12 @@
     <strong>withModel</strong>(string $model)
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
-                            <p><p>swap out the llm model</p></p>                        
+                            <p><p>swap out the llm model</p></p>
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1135,7 +1135,7 @@
             </tr>
             </table>
 
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -1145,9 +1145,9 @@
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
@@ -1159,12 +1159,12 @@
     <strong>withPrompt</strong>(string $prompt)
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
-                            <p><p>append a prompt to the llm context</p></p>                        
+                            <p><p>append a prompt to the llm context</p></p>
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1177,7 +1177,7 @@
             </tr>
             </table>
 
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -1187,9 +1187,9 @@
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
@@ -1201,12 +1201,12 @@
     <strong>withPromptFile</strong>(<abbr title="Dagger\FileId|Dagger\File">File</abbr> $file)
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
-                            <p><p>append the contents of a file to the llm context</p></p>                        
+                            <p><p>append the contents of a file to the llm context</p></p>
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1219,7 +1219,7 @@
             </tr>
             </table>
 
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -1229,9 +1229,9 @@
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
@@ -1243,15 +1243,15 @@
     <strong>withStaticTools</strong>()
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
-                            <p><p>Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration</p></p>                        
+                            <p><p>Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration</p></p>
         </div>
         <div class="tags">
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -1261,9 +1261,9 @@
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
@@ -1275,12 +1275,12 @@
     <strong>withSystemPrompt</strong>(string $prompt)
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
-                            <p><p>Add a system prompt to the LLM's environment</p></p>                        
+                            <p><p>Add a system prompt to the LLM's environment</p></p>
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1293,7 +1293,7 @@
             </tr>
             </table>
 
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -1303,9 +1303,9 @@
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
@@ -1317,15 +1317,15 @@
     <strong>withoutDefaultSystemPrompt</strong>()
         </code>
     </h3>
-    <div class="details">    
-    
-            
+    <div class="details">
+
+
 
         <div class="method-description">
-                            <p><p>Disable the default system prompt</p></p>                        
+                            <p><p>Disable the default system prompt</p></p>
         </div>
         <div class="tags">
-            
+
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
@@ -1335,16 +1335,16 @@
         </tr>
     </table>
 
-            
-            
-            
+
+
+
                     </div>
     </div>
 
             </div>
             </div>
 
-    
+
 </div><div id="footer">
         Generated by <a href="https://github.com/code-lts/doctum">Doctum, a API Documentation generator and fork of Sami</a>.</div></div>
     </div>

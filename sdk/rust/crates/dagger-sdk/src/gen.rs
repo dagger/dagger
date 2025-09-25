@@ -9205,7 +9205,7 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Indicates that the LLM can be synced or stepped
+    /// Indicates whether there are any queued prompts or tool results to send to the model
     pub async fn has_prompt(&self) -> Result<bool, DaggerError> {
         let query = self.selection.select("hasPrompt");
         query.execute(self.graphql_client.clone()).await
@@ -9230,7 +9230,7 @@ impl Llm {
         let query = self.selection.select("lastReply");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Loop completing tool calls until the LLM ends its turn
+    /// Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
     pub fn r#loop(&self) -> Llm {
         let query = self.selection.select("loop");
         Llm {
@@ -9249,14 +9249,10 @@ impl Llm {
         let query = self.selection.select("provider");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Returns an LLM that will only sync one step instead of looping
-    pub fn step(&self) -> Llm {
+    /// Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
+    pub async fn step(&self) -> Result<Llmid, DaggerError> {
         let query = self.selection.select("step");
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
+        query.execute(self.graphql_client.clone()).await
     }
     /// synchronize LLM state
     pub async fn sync(&self) -> Result<Llmid, DaggerError> {

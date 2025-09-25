@@ -8078,6 +8078,7 @@ export class LLM extends BaseClient {
   private readonly _lastReply?: string = undefined
   private readonly _model?: string = undefined
   private readonly _provider?: string = undefined
+  private readonly _step?: LLMID = undefined
   private readonly _sync?: LLMID = undefined
   private readonly _tools?: string = undefined
 
@@ -8092,6 +8093,7 @@ export class LLM extends BaseClient {
     _lastReply?: string,
     _model?: string,
     _provider?: string,
+    _step?: LLMID,
     _sync?: LLMID,
     _tools?: string,
   ) {
@@ -8103,6 +8105,7 @@ export class LLM extends BaseClient {
     this._lastReply = _lastReply
     this._model = _model
     this._provider = _provider
+    this._step = _step
     this._sync = _sync
     this._tools = _tools
   }
@@ -8149,7 +8152,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Indicates that the LLM can be synced or stepped
+   * Indicates whether there are any queued prompts or tool results to send to the model
    */
   hasPrompt = async (): Promise<boolean> => {
     if (this._hasPrompt) {
@@ -8205,7 +8208,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Loop completing tool calls until the LLM ends its turn
+   * Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
    */
   loop = (): LLM => {
     const ctx = this._ctx.select("loop")
@@ -8243,11 +8246,14 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * Returns an LLM that will only sync one step instead of looping
+   * Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
    */
-  step = (): LLM => {
+  step = async (): Promise<LLM> => {
     const ctx = this._ctx.select("step")
-    return new LLM(ctx)
+
+    const response: Awaited<LLMID> = await ctx.execute()
+
+    return new Client(ctx.copy()).loadLLMFromID(response)
   }
 
   /**
@@ -9785,6 +9791,7 @@ export class Client extends BaseClient {
    * When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
    *
    * When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
+   * @experimental
    */
   currentEnv = (): Env => {
     const ctx = this._ctx.select("currentEnv")

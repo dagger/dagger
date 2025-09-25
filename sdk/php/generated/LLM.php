@@ -40,7 +40,7 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Indicates that the LLM can be synced or stepped
+     * Indicates whether there are any queued prompts or tool results to send to the model
      */
     public function hasPrompt(): bool
     {
@@ -85,7 +85,7 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Loop completing tool calls until the LLM ends its turn
+     * Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
      */
     public function loop(): LLM
     {
@@ -112,12 +112,12 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Returns an LLM that will only sync one step instead of looping
+     * Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
      */
-    public function step(): LLM
+    public function step(): LLMId
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('step');
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('step');
+        return new \Dagger\LLMId((string)$this->queryLeaf($leafQueryBuilder, 'step'));
     }
 
     /**

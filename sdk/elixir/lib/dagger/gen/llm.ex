@@ -58,7 +58,7 @@ defmodule Dagger.LLM do
   end
 
   @doc """
-  Indicates that the LLM can be synced or stepped
+  Indicates whether there are any queued prompts or tool results to send to the model
   """
   @spec has_prompt(t()) :: {:ok, boolean()} | {:error, term()}
   def has_prompt(%__MODULE__{} = llm) do
@@ -113,7 +113,7 @@ defmodule Dagger.LLM do
   end
 
   @doc """
-  Loop completing tool calls until the LLM ends its turn
+  Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
   """
   @spec loop(t()) :: Dagger.LLM.t()
   def loop(%__MODULE__{} = llm) do
@@ -149,17 +149,23 @@ defmodule Dagger.LLM do
   end
 
   @doc """
-  Returns an LLM that will only sync one step instead of looping
+  Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
   """
-  @spec step(t()) :: Dagger.LLM.t()
+  @spec step(t()) :: {:ok, Dagger.LLM.t()} | {:error, term()}
   def step(%__MODULE__{} = llm) do
     query_builder =
       llm.query_builder |> QB.select("step")
 
-    %Dagger.LLM{
-      query_builder: query_builder,
-      client: llm.client
-    }
+    with {:ok, id} <- Client.execute(llm.client, query_builder) do
+      {:ok,
+       %Dagger.LLM{
+         query_builder:
+           QB.query()
+           |> QB.select("loadLLMFromID")
+           |> QB.put_arg("id", id),
+         client: llm.client
+       }}
+    end
   end
 
   @doc """

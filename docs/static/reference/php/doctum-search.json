@@ -4107,7 +4107,7 @@
 			"t": "M",
 			"n": "Dagger\\LLM::hasPrompt",
 			"p": "Dagger/LLM.html#method_hasPrompt",
-			"d": "<p>Indicates that the LLM can be synced or stepped</p>"
+			"d": "<p>Indicates whether there are any queued prompts or tool results to send to the model</p>"
 		},
 		{
 			"t": "M",
@@ -4137,7 +4137,7 @@
 			"t": "M",
 			"n": "Dagger\\LLM::loop",
 			"p": "Dagger/LLM.html#method_loop",
-			"d": "<p>Loop completing tool calls until the LLM ends its turn</p>"
+			"d": "<p>Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn</p>"
 		},
 		{
 			"t": "M",
@@ -4155,7 +4155,7 @@
 			"t": "M",
 			"n": "Dagger\\LLM::step",
 			"p": "Dagger/LLM.html#method_step",
-			"d": "<p>Returns an LLM that will only sync one step instead of looping</p>"
+			"d": "<p>Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results</p>"
 		},
 		{
 			"t": "M",

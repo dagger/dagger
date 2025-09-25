@@ -7965,6 +7965,7 @@ type LLM struct {
 	lastReply   *string
 	model       *string
 	provider    *string
+	step        *LLMID
 	sync        *LLMID
 	tools       *string
 }
@@ -8012,7 +8013,7 @@ func (r *LLM) Env() *Env {
 	}
 }
 
-// Indicates that the LLM can be synced or stepped
+// Indicates whether there are any queued prompts or tool results to send to the model
 func (r *LLM) HasPrompt(ctx context.Context) (bool, error) {
 	if r.hasPrompt != nil {
 		return *r.hasPrompt, nil
@@ -8101,7 +8102,7 @@ func (r *LLM) LastReply(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Loop completing tool calls until the LLM ends its turn
+// Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
 func (r *LLM) Loop() *LLM {
 	q := r.query.Select("loop")
 
@@ -8136,13 +8137,17 @@ func (r *LLM) Provider(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Returns an LLM that will only sync one step instead of looping
-func (r *LLM) Step() *LLM {
+// Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
+func (r *LLM) Step(ctx context.Context) (*LLM, error) {
 	q := r.query.Select("step")
 
-	return &LLM{
-		query: q,
+	var id LLMID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
 	}
+	return &LLM{
+		query: q.Root().Select("loadLLMFromID").Arg("id", id),
+	}, nil
 }
 
 // synchronize LLM state
@@ -9893,6 +9898,8 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 // When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
 //
 // When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
+//
+// Experimental: Programmatic env access is speculative and might be replaced.
 func (r *Client) CurrentEnv() *Env {
 	q := r.query.Select("currentEnv")
 
