@@ -13,6 +13,7 @@ ContextPath: TypeAlias = str
 class FieldDefinition:
     name: APIName | None
     optional: bool = False
+    deprecated: str | None = None
 
 
 @dataclasses.dataclass(slots=True, frozen=True)

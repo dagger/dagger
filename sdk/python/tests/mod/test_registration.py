@@ -73,6 +73,18 @@ def test_function_deprecated_metadata():
     assert fn.deprecated == "Use new method instead"
 
 
+def test_field_deprecated_metadata():
+    mod = Module()
+
+    @mod.object_type
+    class Foo:
+        legacy: str = mod.field(deprecated="Use new field instead")
+
+    field = mod.get_object("Foo").fields["legacy"]
+
+    assert field.meta.deprecated == "Use new field instead"
+
+
 def test_object_type_deprecated_metadata():
     mod = Module()
 
