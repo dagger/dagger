@@ -55,6 +55,29 @@ func (repo *LocalGitRepository) Remote(ctx context.Context) (*gitutil.Remote, er
 	return remote, nil
 }
 
+func (repo *LocalGitRepository) File(ctx context.Context, filename string) (*File, error) {
+	var gitDir string
+	err := repo.mount(ctx, 0, nil, func(git *gitutil.GitCLI) error {
+		dir, err := git.GitDir(ctx)
+		if err != nil {
+			return err
+		}
+		if filepath.IsAbs(dir) {
+			dir, err = filepath.Rel(dir, git.Dir())
+			if err != nil {
+				return err
+			}
+		}
+		gitDir = dir
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return repo.Directory.Self().File(ctx, filepath.Join(gitDir, filename))
+}
+
 func (repo *LocalGitRepository) mount(ctx context.Context, depth int, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
