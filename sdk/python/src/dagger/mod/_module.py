@@ -159,6 +159,7 @@ class Module:
                         field_name,
                         to_typedef(types[field.original_name], ctx),
                         description=get_doc(field.return_type),
+                        deprecated=field.meta.deprecated,
                     )
 
             # Object/interface functions
@@ -525,6 +526,7 @@ class Module:
         default: Callable[[], Any] | object = ...,
         name: APIName | None = None,
         init: bool = True,
+        deprecated: str | None = None,
     ) -> Any:
         """Exposes an attribute as a :py:class:`dagger.FieldTypeDef`.
 
@@ -549,6 +551,8 @@ class Module:
         init:
             Whether the field should be included in the constructor.
             Defaults to `True`.
+        deprecated:
+            Optional deprecation message exposed to the engine.
         """
         kwargs = {}
         optional = False
@@ -558,7 +562,7 @@ class Module:
             kwargs["default_factory" if callable(default) else "default"] = default
 
         return dataclasses.field(
-            metadata={FIELD_DEF_KEY: FieldDefinition(name, optional)},
+            metadata={FIELD_DEF_KEY: FieldDefinition(name, optional, deprecated)},
             kw_only=True,
             init=init,
             repr=init,  # default repr shows field as an __init__ argument
