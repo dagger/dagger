@@ -345,23 +345,6 @@ func (local *localFS) Sync( //nolint:gocyclo
 		return nil, fmt.Errorf("failed to checksum: %w", err)
 	}
 
-	fmt.Printf(`[COPY][SYNC]\n
-local.rootPath: %s
-local.copyPath: %s
-local.useGitignore: %v
-local.includes: %v
-local.excludes: %v
-digest: %#v
-****
-`,
-		local.rootPath,
-		local.copyPath,
-		local.useGitignore,
-		local.includes,
-		local.excludes,
-		dgst,
-	)
-
 	// If we have already created a cache ref with the same content hash, use that instead of copying
 	// another equivalent one.
 	sis, err := contenthash.SearchContentHash(ctx, cacheManager, dgst)
