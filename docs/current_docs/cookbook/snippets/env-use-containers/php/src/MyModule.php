@@ -27,13 +27,13 @@ class MyModule
         $work = dag()
             ->llm()
             ->withEnv($environment)
-            ->withPrompt(
-                'You are a software engineer with deep knowledge of Web application development.
+            ->withPrompt(<<<'PROMPT'
+                You are a software engineer with deep knowledge of Web application development.
                 You have access to a container.
                 Install the necessary tools and libraries to create a
                 complete development environment for Web applications.
-                Once complete, return the updated container.'
-            );
+                Once complete, return the updated container.
+                PROMPT);
 
         return $work
             ->env()
