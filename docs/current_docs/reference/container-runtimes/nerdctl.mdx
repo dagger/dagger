@@ -6,36 +6,45 @@ slug: /reference/container-runtimes/nerdctl
 
 # Nerdctl
 
-Dagger can be used with any OCI-compatible container runtime, including `nerdctl`.
-
-## How it works
-
-By default, Dagger tries to invoke the `docker` executable. Since `nerdctl` is CLI-compatible with Docker, it can be used as a drop-in replacement. This is as simple as creating a symbolic link to the `nerdctl` executable in your system path and naming it `docker`.
+Dagger can be used with any OCI-compatible container runtime, including
+`nerdctl` and `finch` (which uses `nerdctl` under the hood).
 
 ## Prerequisites
 
-- `nerdctl` installed and running on the host system in [rootless mode](https://github.com/containerd/nerdctl/blob/main/docs/rootless.md).
+Ensure that `nerdctl` (or `finch`) is installed and running on your system:
+
+```console
+$ nerdctl info
+Client:
+ Namespace: default
+ Debug Mode: false
+```
+
+:::warning
+To be able to use the `nerdctl` backend as unprivileged user, `nerdctl` must be
+installed and running on the host system in [rootless mode](https://github.com/containerd/nerdctl/blob/main/docs/rootless.md).
+:::
+
+### Using `lima`
+
+To use `nerdctl` with Dagger via `lima`, create the following shell script at `/usr/local/bin/nerdctl`:
+
+```console
+#!/bin/sh
+lima nerdctl "$@"
+```
 
 ## Example
 
-- To use `nerdctl` with Dagger, create a symbolic link as below:
-
-    ```shell
-    sudo ln -s $(which nerdctl) /usr/local/bin/docker
-    ```
-
-- To use `nerdctl` with Dagger via `lima`, create the following shell script at `/usr/local/bin/nerdctl`:
-
-    ```shell
-    #!/bin/sh
-    lima nerdctl "$@"
-    ```
-
-    Then, create a symbolic link to the shell script and name it `docker`:
-
-    ```shell
-    sudo ln -s /usr/local/bin/nerdctl /usr/local/bin/docker
-    ```
+```console
+$ nerdctl ps
+CONTAINER ID   IMAGE                                COMMAND                  CREATED       STATUS       PORTS                                         NAMES
+$ nerdctl core version
+v0.18.19
+$ nerdctl ps
+CONTAINER ID   IMAGE                                COMMAND                  CREATED       STATUS       PORTS                                         NAMES
+27d47c3d5a10   registry.dagger.io/engine:v0.18.19   "dagger-entrypoint.s…"   6 days ago    Up 4 hours                                                 dagger-engine-v0.18.19
+```
 
 ## Resources
 
