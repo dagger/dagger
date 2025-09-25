@@ -347,10 +347,10 @@ func (ah *authHandler) fetchToken(ctx context.Context, sm *session.Manager, g se
 		if err != nil {
 			return nil, err
 		}
-		if resp.ExpiresIn == 0 {
-			resp.ExpiresIn = defaultExpiration
+		if resp.ExpiresInSeconds == 0 {
+			resp.ExpiresInSeconds = defaultExpiration
 		}
-		expires = int(resp.ExpiresIn)
+		expires = int(resp.ExpiresInSeconds)
 		// We later check issuedAt.isZero, which would return
 		// false if converted from zero Unix time. Therefore,
 		// zero time value in response is handled separately
@@ -385,10 +385,10 @@ func (ah *authHandler) fetchToken(ctx context.Context, sm *session.Manager, g se
 					if err != nil {
 						return nil, err
 					}
-					if resp.ExpiresIn == 0 {
-						resp.ExpiresIn = defaultExpiration
+					if resp.ExpiresInSeconds == 0 {
+						resp.ExpiresInSeconds = defaultExpiration
 					}
-					issuedAt, expires = resp.IssuedAt, resp.ExpiresIn
+					issuedAt, expires = resp.IssuedAt, resp.ExpiresInSeconds
 					token = resp.AccessToken
 					return nil, nil
 				}
@@ -399,10 +399,10 @@ func (ah *authHandler) fetchToken(ctx context.Context, sm *session.Manager, g se
 			}
 			return nil, err
 		}
-		if resp.ExpiresIn == 0 {
-			resp.ExpiresIn = defaultExpiration
+		if resp.ExpiresInSeconds == 0 {
+			resp.ExpiresInSeconds = defaultExpiration
 		}
-		issuedAt, expires = resp.IssuedAt, resp.ExpiresIn
+		issuedAt, expires = resp.IssuedAt, resp.ExpiresInSeconds
 		token = resp.Token
 		return nil, nil
 	}
@@ -411,10 +411,10 @@ func (ah *authHandler) fetchToken(ctx context.Context, sm *session.Manager, g se
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to fetch anonymous token")
 	}
-	if resp.ExpiresIn == 0 {
-		resp.ExpiresIn = defaultExpiration
+	if resp.ExpiresInSeconds == 0 {
+		resp.ExpiresInSeconds = defaultExpiration
 	}
-	issuedAt, expires = resp.IssuedAt, resp.ExpiresIn
+	issuedAt, expires = resp.IssuedAt, resp.ExpiresInSeconds
 
 	token = resp.Token
 	return nil, nil
