@@ -72,6 +72,18 @@ func Container(opts ...dagger.ContainerOpts) *dagger.Container {
 	return client.Container(opts...)
 }
 
+// Returns the current environment
+//
+// When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
+//
+// When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
+//
+// Experimental: Programmatic env access is speculative and might be replaced.
+func CurrentEnv() *dagger.Env {
+	client := initClient()
+	return client.CurrentEnv()
+}
+
 // The FunctionCall context that the SDK caller is currently executing in.
 //
 // If the caller is not currently executing in a function, this will return an error.
@@ -110,7 +122,7 @@ func Engine() *dagger.Engine {
 	return client.Engine()
 }
 
-// Initialize a new environment
+// Initializes a new environment
 //
 // Experimental: Environments are not yet stabilized
 func Env(opts ...dagger.EnvOpts) *dagger.Env {

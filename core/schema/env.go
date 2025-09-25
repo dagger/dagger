@@ -18,31 +18,54 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.FuncWithCacheKey("env", s.environment,
 			dagql.CachePerClientSchema[*core.Query, environmentArgs](srv)).
-			Doc(`Initialize a new environment`).
+			Doc(`Initializes a new environment`).
 			Experimental("Environments are not yet stabilized").
 			Args(
 				dagql.Arg("privileged").Doc("Give the environment the same privileges as the caller: core API including host access, current module, and dependencies"),
 				dagql.Arg("writable").Doc("Allow new outputs to be declared and saved in the environment"),
 			),
+		dagql.FuncWithCacheKey("currentEnv", s.currentEnvironment, dagql.CachePerClient).
+			Doc(
+				`Returns the current environment`,
+				`When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.`,
+				`When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.`,
+			).Experimental("Programmatic env access is speculative and might be replaced."),
 	}.Install(srv)
 	dagql.Fields[*core.Env]{
 		dagql.Func("inputs", s.inputs).
-			Doc("return all input values for the environment"),
+			Doc("Returns all input bindings provided to the environment"),
 		dagql.Func("input", s.input).
-			Doc("retrieve an input value by name"),
+			Doc("Retrieves an input binding by name"),
 		dagql.Func("outputs", s.outputs).
-			Doc("return all output values for the environment"),
+			Doc("Returns all declared output bindings for the environment"),
+		dagql.Func("withoutOutputs", s.withoutOutputs).
+			Doc("Returns a new environment without any outputs"),
 		dagql.Func("output", s.output).
-			Doc("retrieve an output value by name"),
+			Doc("Retrieves an output binding by name"),
+		dagql.Func("withWorkspace", s.withWorkspace).
+			Doc("Returns a new environment with the provided workspace").
+			Args(
+				dagql.Arg("workspace").Doc("The directory to set as the host filesystem"),
+			),
+		dagql.FuncWithCacheKey("withCurrentModule", s.withCurrentModule, dagql.CachePerClient).
+			Doc(
+				"Installs the current module into the environment, exposing its functions to the model",
+				"Contextual path arguments will be populated using the environment's workspace.",
+			),
+		dagql.Func("withModule", s.withModule).
+			Doc(
+				"Installs a module into the environment, exposing its functions to the model",
+				"Contextual path arguments will be populated using the environment's workspace.",
+			),
 		dagql.Func("withStringInput", s.withStringInput).
-			Doc("Create or update an input value of type string").
+			Doc("Provides a string input binding to the environment").
 			Args(
 				dagql.Arg("name").Doc("The name of the binding"),
 				dagql.Arg("value").Doc("The string value to assign to the binding"),
 				dagql.Arg("description").Doc("The description of the input"),
 			),
 		dagql.Func("withStringOutput", s.withStringOutput).
-			Doc("Create or update an input value of type string").
+			Doc("Declares a desired string output binding").
 			Args(
 				dagql.Arg("name").Doc("The name of the binding"),
 				dagql.Arg("description").Doc("The description of the output"),
@@ -50,13 +73,13 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 	dagql.Fields[*core.Binding]{
 		dagql.Func("name", s.bindingName).
-			Doc("The binding name"),
+			Doc("Returns the binding name"),
 		dagql.Func("typeName", s.bindingTypeName).
-			Doc("The binding type"),
+			Doc("Returns the binding type"),
 		dagql.Func("digest", s.bindingDigest).
-			Doc("The digest of the binding value"),
+			Doc("Returns the digest of the binding value"),
 		dagql.Func("asString", s.bindingAsString).
-			Doc("The binding's string value"),
+			Doc("Returns the binding's string value"),
 		dagql.Func("isNull", s.bindingIsNull).
 			Doc("Returns true if the binding is null"),
 	}.Install(srv)
@@ -75,12 +98,74 @@ type environmentArgs struct {
 }
 
 func (s environmentSchema) environment(ctx context.Context, parent *core.Query, args environmentArgs) (*core.Env, error) {
-	env := core.NewEnv(s.srv)
+	var workspace dagql.ObjectResult[*core.Directory]
+	if mod, err := parent.CurrentModule(ctx); err == nil {
+		workspace = mod.GetSource().ContextDirectory
+	} else {
+		// FIXME: inherit from somewhere?
+		if err := s.srv.Select(ctx, s.srv.Root(), &workspace, dagql.Selector{
+			Field: "directory",
+		}); err != nil {
+			return nil, err
+		}
+	}
+	deps, err := parent.CurrentServedDeps(ctx)
+	if err != nil {
+		return nil, err
+	}
+	env := core.NewEnv(workspace, deps)
 	if args.Privileged {
 		env = env.Privileged()
 	}
 	if args.Writable {
 		env = env.Writable()
+	}
+	return env, nil
+}
+
+func (s environmentSchema) currentEnvironment(ctx context.Context, parent *core.Query, args struct{}) (res dagql.ObjectResult[*core.Env], _ error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return res, err
+	}
+	fc, err := query.CurrentFunctionCall(ctx)
+	if err != nil {
+		return res, err
+	}
+	if fc.EnvID != nil {
+		return dagql.NewID[*core.Env](fc.EnvID).Load(ctx, s.srv)
+	}
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	mod, err := query.CurrentModule(ctx)
+	if err != nil {
+		return res, err
+	}
+	var env dagql.ObjectResult[*core.Env]
+	if err := dag.Select(ctx, dag.Root(), &env, dagql.Selector{
+		Field: "env",
+	}, dagql.Selector{
+		Field: "withModule",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "module",
+				Value: dagql.NewID[*core.Module](mod.ResultID),
+			},
+		},
+	}, dagql.Selector{
+		Field: "withWorkspace",
+		Args: []dagql.NamedInput{
+			{
+				Name: "workspace",
+				Value: dagql.NewID[*core.Directory](
+					mod.GetSource().ContextDirectory.ID(),
+				),
+			},
+		},
+	}); err != nil {
+		return res, fmt.Errorf("failed to create env: %w", err)
 	}
 	return env, nil
 }
@@ -111,6 +196,42 @@ func (s environmentSchema) output(ctx context.Context, env *core.Env, args struc
 
 func (s environmentSchema) outputs(ctx context.Context, env *core.Env, args struct{}) (dagql.Array[*core.Binding], error) {
 	return env.Outputs(), nil
+}
+
+func (s environmentSchema) withoutOutputs(ctx context.Context, env *core.Env, args struct{}) (*core.Env, error) {
+	return env.WithoutOutputs(), nil
+}
+
+func (s environmentSchema) withWorkspace(ctx context.Context, env *core.Env, args struct {
+	Workspace core.DirectoryID
+}) (*core.Env, error) {
+	dir, err := args.Workspace.Load(ctx, s.srv)
+	if err != nil {
+		return nil, err
+	}
+	return env.WithWorkspace(dir), nil
+}
+
+func (s environmentSchema) withModule(ctx context.Context, env *core.Env, args struct {
+	Module core.ModuleID
+}) (*core.Env, error) {
+	mod, err := args.Module.Load(ctx, s.srv)
+	if err != nil {
+		return nil, err
+	}
+	return env.WithModule(mod.Self()), nil
+}
+
+func (s environmentSchema) withCurrentModule(ctx context.Context, env *core.Env, _ struct{}) (*core.Env, error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current query: %w", err)
+	}
+	mod, err := query.CurrentModule(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current module: %w", err)
+	}
+	return env.WithModule(mod), nil
 }
 
 func (s environmentSchema) withStringInput(ctx context.Context, env *core.Env, args struct {

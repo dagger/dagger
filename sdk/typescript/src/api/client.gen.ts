@@ -2490,14 +2490,6 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * Retrieve the binding value, as type LLM
-   */
-  asLLM = (): LLM => {
-    const ctx = this._ctx.select("asLLM")
-    return new LLM(ctx)
-  }
-
-  /**
    * Retrieve the binding value, as type Module
    */
   asModule = (): Module_ => {
@@ -2562,7 +2554,7 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * The binding's string value
+   * Returns the binding's string value
    */
   asString = async (): Promise<string> => {
     if (this._asString) {
@@ -2577,7 +2569,7 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * The digest of the binding value
+   * Returns the digest of the binding value
    */
   digest = async (): Promise<string> => {
     if (this._digest) {
@@ -2607,7 +2599,7 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * The binding name
+   * Returns the binding name
    */
   name = async (): Promise<string> => {
     if (this._name) {
@@ -2622,7 +2614,7 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * The binding type
+   * Returns the binding type
    */
   typeName = async (): Promise<string> => {
     if (this._typeName) {
@@ -5376,7 +5368,7 @@ export class Env extends BaseClient {
   }
 
   /**
-   * retrieve an input value by name
+   * Retrieves an input binding by name
    */
   input = (name: string): Binding => {
     const ctx = this._ctx.select("input", { name })
@@ -5384,7 +5376,7 @@ export class Env extends BaseClient {
   }
 
   /**
-   * return all input values for the environment
+   * Returns all input bindings provided to the environment
    */
   inputs = async (): Promise<Binding[]> => {
     type inputs = {
@@ -5399,7 +5391,7 @@ export class Env extends BaseClient {
   }
 
   /**
-   * retrieve an output value by name
+   * Retrieves an output binding by name
    */
   output = (name: string): Binding => {
     const ctx = this._ctx.select("output", { name })
@@ -5407,7 +5399,7 @@ export class Env extends BaseClient {
   }
 
   /**
-   * return all output values for the environment
+   * Returns all declared output bindings for the environment
    */
   outputs = async (): Promise<Binding[]> => {
     type outputs = {
@@ -5555,6 +5547,16 @@ export class Env extends BaseClient {
    */
   withContainerOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withContainerOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Installs the current module into the environment, exposing its functions to the model
+   *
+   * Contextual path arguments will be populated using the environment's workspace.
+   */
+  withCurrentModule = (): Env => {
+    const ctx = this._ctx.select("withCurrentModule")
     return new Env(ctx)
   }
 
@@ -5745,23 +5747,14 @@ export class Env extends BaseClient {
   }
 
   /**
-   * Create or update a binding of type LLM in the environment
-   * @param name The name of the binding
-   * @param value The LLM value to assign to the binding
-   * @param description The purpose of the input
+   * Installs a module into the environment, exposing its functions to the model
+   *
+   * Contextual path arguments will be populated using the environment's workspace.
    */
-  withLLMInput = (name: string, value: LLM, description: string): Env => {
-    const ctx = this._ctx.select("withLLMInput", { name, value, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired LLM output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withLLMOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withLLMOutput", { name, description })
+  withModule = (module_: Module_): Env => {
+    const ctx = this._ctx.select("withModule", {
+      module: module_,
+    })
     return new Env(ctx)
   }
 
@@ -6002,7 +5995,7 @@ export class Env extends BaseClient {
   }
 
   /**
-   * Create or update an input value of type string
+   * Provides a string input binding to the environment
    * @param name The name of the binding
    * @param value The string value to assign to the binding
    * @param description The description of the input
@@ -6017,13 +6010,34 @@ export class Env extends BaseClient {
   }
 
   /**
-   * Create or update an input value of type string
+   * Declares a desired string output binding
    * @param name The name of the binding
    * @param description The description of the output
    */
   withStringOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withStringOutput", { name, description })
     return new Env(ctx)
+  }
+
+  /**
+   * Returns a new environment with the provided workspace
+   * @param workspace The directory to set as the host filesystem
+   */
+  withWorkspace = (workspace: Directory): Env => {
+    const ctx = this._ctx.select("withWorkspace", { workspace })
+    return new Env(ctx)
+  }
+
+  /**
+   * Returns a new environment without any outputs
+   */
+  withoutOutputs = (): Env => {
+    const ctx = this._ctx.select("withoutOutputs")
+    return new Env(ctx)
+  }
+  workspace = (): Directory => {
+    const ctx = this._ctx.select("workspace")
+    return new Directory(ctx)
   }
 
   /**
@@ -8059,10 +8073,12 @@ export class JSONValue extends BaseClient {
 
 export class LLM extends BaseClient {
   private readonly _id?: LLMID = undefined
+  private readonly _hasPrompt?: boolean = undefined
   private readonly _historyJSON?: JSON = undefined
   private readonly _lastReply?: string = undefined
   private readonly _model?: string = undefined
   private readonly _provider?: string = undefined
+  private readonly _step?: LLMID = undefined
   private readonly _sync?: LLMID = undefined
   private readonly _tools?: string = undefined
 
@@ -8072,20 +8088,24 @@ export class LLM extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: LLMID,
+    _hasPrompt?: boolean,
     _historyJSON?: JSON,
     _lastReply?: string,
     _model?: string,
     _provider?: string,
+    _step?: LLMID,
     _sync?: LLMID,
     _tools?: string,
   ) {
     super(ctx)
 
     this._id = _id
+    this._hasPrompt = _hasPrompt
     this._historyJSON = _historyJSON
     this._lastReply = _lastReply
     this._model = _model
     this._provider = _provider
+    this._step = _step
     this._sync = _sync
     this._tools = _tools
   }
@@ -8132,6 +8152,21 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Indicates whether there are any queued prompts or tool results to send to the model
+   */
+  hasPrompt = async (): Promise<boolean> => {
+    if (this._hasPrompt) {
+      return this._hasPrompt
+    }
+
+    const ctx = this._ctx.select("hasPrompt")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * return the llm message history
    */
   history = async (): Promise<string[]> => {
@@ -8173,7 +8208,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * synchronize LLM state
+   * Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
    */
   loop = (): LLM => {
     const ctx = this._ctx.select("loop")
@@ -8211,6 +8246,17 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
+   */
+  step = async (): Promise<LLM> => {
+    const ctx = this._ctx.select("step")
+
+    const response: Awaited<LLMID> = await ctx.execute()
+
+    return new Client(ctx.copy()).loadLLMFromID(response)
+  }
+
+  /**
    * synchronize LLM state
    */
   sync = async (): Promise<LLM> => {
@@ -8245,10 +8291,35 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Return a new LLM with the specified function no longer exposed as a tool
+   * @param typeName The type name whose function will be blocked
+   * @param function The function to block
+   *
+   * Will be converted to lowerCamelCase if necessary.
+   */
+  withBlockedFunction = (typeName: string, function_: string): LLM => {
+    const ctx = this._ctx.select("withBlockedFunction", {
+      typeName,
+      function: function_,
+    })
+    return new LLM(ctx)
+  }
+
+  /**
    * allow the LLM to interact with an environment via MCP
    */
   withEnv = (env: Env): LLM => {
     const ctx = this._ctx.select("withEnv", { env })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Add an external MCP server to the LLM
+   * @param name The name of the MCP server
+   * @param service The MCP service to run and communicate with over stdio
+   */
+  withMCPServer = (name: string, service: Service): LLM => {
+    const ctx = this._ctx.select("withMCPServer", { name, service })
     return new LLM(ctx)
   }
 
@@ -8276,6 +8347,14 @@ export class LLM extends BaseClient {
    */
   withPromptFile = (file: File): LLM => {
     const ctx = this._ctx.select("withPromptFile", { file })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
+   */
+  withStaticTools = (): LLM => {
+    const ctx = this._ctx.select("withStaticTools")
     return new LLM(ctx)
   }
 
@@ -9712,6 +9791,19 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Returns the current environment
+   *
+   * When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
+   *
+   * When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
+   * @experimental
+   */
+  currentEnv = (): Env => {
+    const ctx = this._ctx.select("currentEnv")
+    return new Env(ctx)
+  }
+
+  /**
    * The FunctionCall context that the SDK caller is currently executing in.
    *
    * If the caller is not currently executing in a function, this will return an error.
@@ -9772,7 +9864,7 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Initialize a new environment
+   * Initializes a new environment
    * @param opts.privileged Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
    * @param opts.writable Allow new outputs to be declared and saved in the environment
    * @experimental

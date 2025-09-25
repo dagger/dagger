@@ -571,7 +571,7 @@ func (c *Client) PromptAllowLLM(ctx context.Context, moduleRepoURL string) error
 		Default:       false, // TODO: default to true?
 	})
 	if err != nil {
-		return fmt.Errorf("failed to prompt user for LLM API access: %w", err)
+		return fmt.Errorf("failed to prompt user for LLM API access from %s: %w", moduleRepoURL, err)
 	}
 	if response.Response {
 		return nil

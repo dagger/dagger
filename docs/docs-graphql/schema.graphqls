@@ -1,3 +1,6 @@
+"""Indicates that the argument defaults to a contextual path."""
+directive @defaultPath(path: String!) on ARGUMENT_DEFINITION
+
 """Indicates the underlying value of an enum member."""
 directive @enumValue(value: String!) on ENUM_VALUE
 
@@ -8,6 +11,9 @@ directive @experimental(
   """Explains why this element was marked experimental."""
   reason: String! = "Not stabilized"
 ) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
+
+"""Filter directory contents using .gitignore-style glob patterns."""
+directive @ignorePatterns(patterns: [String!]!) on ARGUMENT_DEFINITION
 
 """Indicates the source information for where a given field is defined."""
 directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!, url: String!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
@@ -91,9 +97,6 @@ type Binding {
   """Retrieve the binding value, as type JSONValue"""
   asJSONValue: JSONValue!
 
-  """Retrieve the binding value, as type LLM"""
-  asLLM: LLM!
-
   """Retrieve the binding value, as type Module"""
   asModule: Module!
 
@@ -118,10 +121,10 @@ type Binding {
   """Retrieve the binding value, as type Socket"""
   asSocket: Socket!
 
-  """The binding's string value"""
+  """Returns the binding's string value"""
   asString: String
 
-  """The digest of the binding value"""
+  """Returns the digest of the binding value"""
   digest: String!
 
   """A unique identifier for this Binding."""
@@ -130,10 +133,10 @@ type Binding {
   """Returns true if the binding is null"""
   isNull: Boolean!
 
-  """The binding name"""
+  """Returns the binding name"""
   name: String!
 
-  """The binding type"""
+  """Returns the binding type"""
   typeName: String!
 }
 
@@ -2056,16 +2059,16 @@ type Env {
   """A unique identifier for this Env."""
   id: EnvID!
 
-  """retrieve an input value by name"""
+  """Retrieves an input binding by name"""
   input(name: String!): Binding!
 
-  """return all input values for the environment"""
+  """Returns all input bindings provided to the environment"""
   inputs: [Binding!]!
 
-  """retrieve an output value by name"""
+  """Retrieves an output binding by name"""
   output(name: String!): Binding!
 
-  """return all output values for the environment"""
+  """Returns all declared output bindings for the environment"""
   outputs: [Binding!]!
 
   """Create or update a binding of type Address in the environment"""
@@ -2172,6 +2175,13 @@ type Env {
     """A description of the desired value of the binding"""
     description: String!
   ): Env!
+
+  """
+  Installs the current module into the environment, exposing its functions to the model
+
+  Contextual path arguments will be populated using the environment's workspace.
+  """
+  withCurrentModule: Env!
 
   """Create or update a binding of type Directory in the environment"""
   withDirectoryInput(
@@ -2322,26 +2332,12 @@ type Env {
     description: String!
   ): Env!
 
-  """Create or update a binding of type LLM in the environment"""
-  withLLMInput(
-    """The name of the binding"""
-    name: String!
+  """
+  Installs a module into the environment, exposing its functions to the model
 
-    """The LLM value to assign to the binding"""
-    value: LLMID!
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """Declare a desired LLM output to be assigned in the environment"""
-  withLLMOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
+  Contextual path arguments will be populated using the environment's workspace.
+  """
+  withModule(module: ModuleID!): Env!
 
   """
   Create or update a binding of type ModuleConfigClient in the environment
@@ -2521,7 +2517,7 @@ type Env {
     description: String!
   ): Env!
 
-  """Create or update an input value of type string"""
+  """Provides a string input binding to the environment"""
   withStringInput(
     """The name of the binding"""
     name: String!
@@ -2533,7 +2529,7 @@ type Env {
     description: String!
   ): Env!
 
-  """Create or update an input value of type string"""
+  """Declares a desired string output binding"""
   withStringOutput(
     """The name of the binding"""
     name: String!
@@ -2541,6 +2537,17 @@ type Env {
     """The description of the output"""
     description: String!
   ): Env!
+
+  """Returns a new environment with the provided workspace"""
+  withWorkspace(
+    """The directory to set as the host filesystem"""
+    workspace: DirectoryID!
+  ): Env!
+
+  """Returns a new environment without any outputs"""
+  withoutOutputs: Env!
+
+  workspace: Directory!
 }
 
 """A collection of environment variables."""
@@ -3426,6 +3433,11 @@ type LLM {
   """return the LLM's current environment"""
   env: Env!
 
+  """
+  Indicates whether there are any queued prompts or tool results to send to the model
+  """
+  hasPrompt: Boolean!
+
   """return the llm message history"""
   history: [String!]!
 
@@ -3438,7 +3450,9 @@ type LLM {
   """return the last llm reply from the history"""
   lastReply: String!
 
-  """synchronize LLM state"""
+  """
+  Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
+  """
   loop: LLM!
 
   """return the model used by the llm"""
@@ -3446,6 +3460,11 @@ type LLM {
 
   """return the provider used by the llm"""
   provider: String!
+
+  """
+  Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
+  """
+  step: LLMID!
 
   """synchronize LLM state"""
   sync: LLMID!
@@ -3456,8 +3475,32 @@ type LLM {
   """print documentation for available tools"""
   tools: String!
 
+  """
+  Return a new LLM with the specified function no longer exposed as a tool
+  """
+  withBlockedFunction(
+    """The type name whose function will be blocked"""
+    typeName: String!
+
+    """
+    The function to block
+
+    Will be converted to lowerCamelCase if necessary.
+    """
+    function: String!
+  ): LLM!
+
   """allow the LLM to interact with an environment via MCP"""
   withEnv(env: EnvID!): LLM!
+
+  """Add an external MCP server to the LLM"""
+  withMCPServer(
+    """The name of the MCP server"""
+    name: String!
+
+    """The MCP service to run and communicate with over stdio"""
+    service: ServiceID!
+  ): LLM!
 
   """swap out the llm model"""
   withModel(
@@ -3476,6 +3519,11 @@ type LLM {
     """The file to read the prompt from"""
     file: FileID!
   ): LLM!
+
+  """
+  Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
+  """
+  withStaticTools: LLM!
 
   """Add a system prompt to the LLM's environment"""
   withSystemPrompt(
@@ -3989,6 +4037,21 @@ type Query {
   ): Container!
 
   """
+  Returns the current environment
+
+  When called from a function invoked via an LLM tool call, this will be the
+  LLM's current environment, including any modifications made through calling
+  tools. Env values returned by functions become the new environment for
+  subsequent calls, and Changeset values returned by functions are applied to
+  the environment's workspace.
+
+  When called from a module function outside of an LLM, this returns an Env with
+  the current module installed, and with the current module's source directory
+  as its workspace.
+  """
+  currentEnv: Env! @experimental(reason: "Programmatic env access is speculative and might be replaced.")
+
+  """
   The FunctionCall context that the SDK caller is currently executing in.
 
   If the caller is not currently executing in a function, this will return an error.
@@ -4012,7 +4075,7 @@ type Query {
   """The Dagger engine container configuration and state"""
   engine: Engine!
 
-  """Initialize a new environment"""
+  """Initializes a new environment"""
   env(
     """
     Give the environment the same privileges as the caller: core API including host access, current module, and dependencies

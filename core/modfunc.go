@@ -283,9 +283,10 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, err
 	}
 
+	callID := dagql.CurrentID(ctx)
 	execMD := buildkit.ExecutionMetadata{
 		ClientID:          identity.NewID(),
-		CallID:            dagql.CurrentID(ctx),
+		CallID:            callID,
 		ExecID:            identity.NewID(),
 		Internal:          true,
 		ParentIDs:         map[digest.Digest]*resource.ID{},
@@ -353,7 +354,11 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	fnCall := &FunctionCall{
 		Name:      fn.metadata.OriginalName,
 		Parent:    parentJSON,
+		ParentID:  callID.Receiver(),
 		InputArgs: callInputs,
+	}
+	if env, ok := EnvFromContext(ctx); ok {
+		fnCall.EnvID = env.ID()
 	}
 	if fn.objDef != nil {
 		fnCall.ParentName = fn.objDef.OriginalName

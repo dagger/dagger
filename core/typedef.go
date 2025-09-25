@@ -117,6 +117,7 @@ func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec
 		if arg.SourceMap.Valid {
 			argSpec.Directives = append(argSpec.Directives, arg.SourceMap.Value.TypeDirective())
 		}
+		argSpec.Directives = append(argSpec.Directives, arg.Directives()...)
 
 		spec.Args.Add(argSpec)
 	}
@@ -256,6 +257,48 @@ func (*FunctionArg) TypeDescription() string {
 
 func (arg *FunctionArg) isContextual() bool {
 	return arg.DefaultPath != ""
+}
+
+func (arg FunctionArg) Directives() []*ast.Directive {
+	var directives []*ast.Directive
+	if arg.DefaultPath != "" {
+		directives = append(directives, &ast.Directive{
+			Name: "defaultPath",
+			Arguments: ast.ArgumentList{
+				{
+					Name: "path",
+					Value: &ast.Value{
+						Kind: ast.StringValue,
+						Raw:  arg.DefaultPath,
+					},
+				},
+			},
+		})
+	}
+	if len(arg.Ignore) > 0 {
+		var children ast.ChildValueList
+		for _, ignore := range arg.Ignore {
+			children = append(children, &ast.ChildValue{
+				Value: &ast.Value{
+					Kind: ast.StringValue,
+					Raw:  ignore,
+				},
+			})
+		}
+		directives = append(directives, &ast.Directive{
+			Name: "ignorePatterns",
+			Arguments: ast.ArgumentList{
+				&ast.Argument{
+					Name: "patterns",
+					Value: &ast.Value{
+						Kind:     ast.ListValue,
+						Children: children,
+					},
+				},
+			},
+		})
+	}
+	return directives
 }
 
 type DynamicID struct {
@@ -1222,6 +1265,9 @@ type FunctionCall struct {
 	ParentName string                  `field:"true" doc:"The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module."`
 	Parent     JSON                    `field:"true" doc:"The value of the parent object of the function being called. If the function is top-level to the module, this is always an empty object."`
 	InputArgs  []*FunctionCallArgValue `field:"true" doc:"The argument values the function is being invoked with."`
+
+	ParentID *call.ID
+	EnvID    *call.ID
 }
 
 func (*FunctionCall) Type() *ast.Type {

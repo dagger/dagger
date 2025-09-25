@@ -20,7 +20,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * retrieve an input value by name
+     * Retrieves an input binding by name
      */
     public function input(string $name): Binding
     {
@@ -30,7 +30,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * return all input values for the environment
+     * Returns all input bindings provided to the environment
      */
     public function inputs(): array
     {
@@ -39,7 +39,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * retrieve an output value by name
+     * Retrieves an output binding by name
      */
     public function output(string $name): Binding
     {
@@ -49,7 +49,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * return all output values for the environment
+     * Returns all declared output bindings for the environment
      */
     public function outputs(): array
     {
@@ -169,6 +169,17 @@ class Env extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withContainerOutput');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Installs the current module into the environment, exposing its functions to the model
+     *
+     * Contextual path arguments will be populated using the environment's workspace.
+     */
+    public function withCurrentModule(): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCurrentModule');
         return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -337,25 +348,14 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Create or update a binding of type LLM in the environment
+     * Installs a module into the environment, exposing its functions to the model
+     *
+     * Contextual path arguments will be populated using the environment's workspace.
      */
-    public function withLLMInput(string $name, LLMId|LLM $value, string $description): Env
+    public function withModule(ModuleId|Module $module): Env
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLLMInput');
-        $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('value', $value);
-        $innerQueryBuilder->setArgument('description', $description);
-        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Declare a desired LLM output to be assigned in the environment
-     */
-    public function withLLMOutput(string $name, string $description): Env
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLLMOutput');
-        $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('description', $description);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withModule');
+        $innerQueryBuilder->setArgument('module', $module);
         return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -550,7 +550,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Create or update an input value of type string
+     * Provides a string input binding to the environment
      */
     public function withStringInput(string $name, string $value, string $description): Env
     {
@@ -562,7 +562,7 @@ class Env extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Create or update an input value of type string
+     * Declares a desired string output binding
      */
     public function withStringOutput(string $name, string $description): Env
     {
@@ -570,5 +570,30 @@ class Env extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('description', $description);
         return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns a new environment with the provided workspace
+     */
+    public function withWorkspace(DirectoryId|Directory $workspace): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withWorkspace');
+        $innerQueryBuilder->setArgument('workspace', $workspace);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns a new environment without any outputs
+     */
+    public function withoutOutputs(): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutOutputs');
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    public function workspace(): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('workspace');
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

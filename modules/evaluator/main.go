@@ -213,9 +213,7 @@ func (m *Evaluator) EvalsAcrossModels(
 				// track model span ID so we can link to it
 				SpanID: modelSpan.SpanContext().SpanID().String(),
 			}
-			defer telemetry.End(modelSpan, func() error {
-				return report.Check()
-			})
+			defer telemetry.End(modelSpan, report.Check)
 			for _, name := range evals {
 				result := EvalResult{
 					Name: name,

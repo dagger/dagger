@@ -15,7 +15,6 @@ import (
 	"github.com/containerd/containerd/labels"
 	"github.com/containerd/containerd/leases"
 	cerrdefs "github.com/containerd/errdefs"
-	"github.com/docker/docker/pkg/idtools"
 	"github.com/dagger/dagger/internal/buildkit/cache/metadata"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -25,6 +24,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/disk"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/dagger/dagger/internal/buildkit/util/progress"
+	"github.com/docker/docker/pkg/idtools"
 	digest "github.com/opencontainers/go-digest"
 	imagespecidentity "github.com/opencontainers/image-spec/identity"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -1147,7 +1147,7 @@ func (cm *cacheManager) prune(ctx context.Context, ch chan client.UsageInfo, opt
 
 			shared := false
 			if opt.checkShared != nil {
-				shared = opt.checkShared.Exists(cr.ID(), cr.layerDigestChain())
+				shared = opt.checkShared.Exists(cr.ID(), cr.layerDigestChain().digests)
 			}
 
 			if !opt.all {
@@ -1392,7 +1392,7 @@ func (cm *cacheManager) DiskUsage(ctx context.Context, opt client.DiskUsageInfo)
 			description: cr.GetDescription(),
 			doubleRef:   cr.equalImmutable != nil,
 			recordType:  cr.GetRecordType(),
-			parentChain: cr.layerDigestChain(),
+			parentChain: cr.layerDigestChain().digests,
 		}
 		if c.recordType == "" {
 			c.recordType = client.UsageRecordTypeRegular

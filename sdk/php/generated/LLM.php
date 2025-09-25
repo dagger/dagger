@@ -40,6 +40,15 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Indicates whether there are any queued prompts or tool results to send to the model
+     */
+    public function hasPrompt(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('hasPrompt');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'hasPrompt');
+    }
+
+    /**
      * return the llm message history
      */
     public function history(): array
@@ -76,7 +85,7 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * synchronize LLM state
+     * Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
      */
     public function loop(): LLM
     {
@@ -100,6 +109,15 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('provider');
         return (string)$this->queryLeaf($leafQueryBuilder, 'provider');
+    }
+
+    /**
+     * Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
+     */
+    public function step(): LLMId
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('step');
+        return new \Dagger\LLMId((string)$this->queryLeaf($leafQueryBuilder, 'step'));
     }
 
     /**
@@ -130,12 +148,34 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return a new LLM with the specified function no longer exposed as a tool
+     */
+    public function withBlockedFunction(string $typeName, string $function): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withBlockedFunction');
+        $innerQueryBuilder->setArgument('typeName', $typeName);
+        $innerQueryBuilder->setArgument('function', $function);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * allow the LLM to interact with an environment via MCP
      */
     public function withEnv(EnvId|Env $env): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnv');
         $innerQueryBuilder->setArgument('env', $env);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Add an external MCP server to the LLM
+     */
+    public function withMCPServer(string $name, ServiceId|Service $service): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMCPServer');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('service', $service);
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -166,6 +206,15 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPromptFile');
         $innerQueryBuilder->setArgument('file', $file);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
+     */
+    public function withStaticTools(): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withStaticTools');
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

@@ -20,6 +20,15 @@ func IsInternal(ctx context.Context) bool {
 	return false
 }
 
+// isNonInternal returns whether the internal flag has been explicitly set to
+// false in the context.
+func isNonInternal(ctx context.Context) bool {
+	if val := ctx.Value(internalKey{}); val != nil {
+		return !val.(bool)
+	}
+	return false
+}
+
 type skipKey struct{}
 
 func WithSkip(ctx context.Context) context.Context {

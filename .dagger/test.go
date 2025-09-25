@@ -209,7 +209,7 @@ func (t *Test) Update(
 	// Enable verbose output
 	// +optional
 	testVerbose bool,
-) (*dagger.Directory, error) {
+) (*dagger.Changeset, error) {
 	cmd, _, err := t.testCmd(ctx)
 	if err != nil {
 		return nil, err
@@ -233,8 +233,7 @@ func (t *Test) Update(
 	if err != nil {
 		return nil, err
 	}
-	path := strings.TrimSuffix(pkg, "...")
-	return dag.Directory().WithDirectory(path, ran.Directory(path)), nil
+	return ran.Directory(".").Changes(t.Dagger.Source), nil
 }
 
 // Run specific tests while curling (pprof) dumps from their associated dev engine:

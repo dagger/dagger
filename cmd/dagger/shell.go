@@ -23,6 +23,7 @@ import (
 	"github.com/vito/bubbline/computil"
 	"github.com/vito/bubbline/editline"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/trace"
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
@@ -234,7 +235,7 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 	h.wd = h.initwd
 
 	// not h.Debug() on purpose because it's only set from within an interpreter run
-	if debug {
+	if debugFlag {
 		slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 		slog.Debug("initial workdir",
 			"context", h.initwd.Context,
@@ -341,26 +342,22 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		return nil
 	}
 
-	// Create a new span for this command
-	ctx, span := Tracer().Start(ctx, line,
-		trace.WithAttributes(
-			attribute.String(telemetry.ContentTypeAttr, h.mode.ContentType()),
-			attribute.Bool(telemetry.CanceledAttr, line == ""),
-		),
-	)
-	defer telemetry.End(span, func() error { return rerr })
-
-	// redirect stdio to the current span
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	defer stdio.Close() // ensure we send EOF this regardless so TUI can flush
-
 	// Empty input
 	if line == "" {
+		// add an immediately-canceled blank span, to emulate submitting blank shell
+		// commands to space things apart
+		_, span := Tracer().Start(ctx, "",
+			telemetry.Reveal(),
+			trace.WithAttributes(attribute.Bool(telemetry.CanceledAttr, true)))
+		span.End()
 		return nil
 	}
 
 	// Handle based on mode
 	if h.mode == modePrompt {
+		// NB: no span in this case, just let the LLM APIs create the user/assistant
+		// message spans
+
 		llm, err := h.llm(ctx)
 		if err != nil {
 			return err
@@ -370,8 +367,34 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 			return err
 		}
 		h.llmSession = newLLM
+		h.llmModel = newLLM.model
 		return nil
 	}
+
+	// Ensure we always see new telemetry for shell commands, rather than
+	// "resurrecting" the same telemetry from previous commands
+	if bag, err := baggage.Parse("repeat-telemetry=true"); err == nil {
+		ctx = baggage.ContextWithBaggage(ctx, bag)
+	}
+
+	// Create a new span for this command
+	var span trace.Span
+	ctx, span = Tracer().Start(ctx, line,
+		telemetry.Reveal(),
+		trace.WithAttributes(
+			attribute.String(telemetry.ContentTypeAttr, h.mode.ContentType()),
+		))
+	defer telemetry.End(span, func() error {
+		if errors.Is(rerr, context.Canceled) {
+			span.SetAttributes(attribute.Bool(telemetry.CanceledAttr, true))
+			return nil
+		}
+		return rerr
+	})
+
+	// redirect stdio to the current span
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close() // ensure we send EOF this regardless so TUI can flush
 
 	stdoutW := newTerminalWriter(stdio.Stdout.Write)
 	// handle shell state
@@ -387,7 +410,7 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 	// that should hardly cause memory issues.
 	defer h.state.Prune(ctx)
 
-	if debug {
+	if debugFlag {
 		// requires `--debug -vvvv` and .debug` for full dump
 		defer h.state.debug(ctx, h.Debug())
 	}
@@ -504,6 +527,7 @@ func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
 		return nil, err
 	}
 	h.llmSession = s
+	h.llmModel = s.model
 	return h.llmSession, h.llmErr
 }
 
@@ -519,6 +543,20 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, msg tea.KeyMsg) tea
 		h.mode = modeShell
 		return func() tea.Msg {
 			return idtui.UpdatePromptMsg{}
+		}
+	case "ctrl+s":
+		if h.llmSession != nil {
+			return func() tea.Msg {
+				if err := h.llmSession.SyncToLocal(ctx); err != nil {
+					slog.Error("failed to sync changes to local filesystem", "error", err.Error())
+					// Show error in sidebar
+					Frontend.SetSidebarContent(idtui.SidebarSection{
+						Title:   "Changes",
+						Content: termenv.String("SYNC ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
+					})
+				}
+				return idtui.UpdatePromptMsg{}
+			}
 		}
 	}
 	return nil

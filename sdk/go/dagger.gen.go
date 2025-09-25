@@ -634,15 +634,6 @@ func (r *Binding) AsJSONValue() *JSONValue {
 	}
 }
 
-// Retrieve the binding value, as type LLM
-func (r *Binding) AsLLM() *LLM {
-	q := r.query.Select("asLLM")
-
-	return &LLM{
-		query: q,
-	}
-}
-
 // Retrieve the binding value, as type Module
 func (r *Binding) AsModule() *Module {
 	q := r.query.Select("asModule")
@@ -715,7 +706,7 @@ func (r *Binding) AsSocket() *Socket {
 	}
 }
 
-// The binding's string value
+// Returns the binding's string value
 func (r *Binding) AsString(ctx context.Context) (string, error) {
 	if r.asString != nil {
 		return *r.asString, nil
@@ -728,7 +719,7 @@ func (r *Binding) AsString(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The digest of the binding value
+// Returns the digest of the binding value
 func (r *Binding) Digest(ctx context.Context) (string, error) {
 	if r.digest != nil {
 		return *r.digest, nil
@@ -794,7 +785,7 @@ func (r *Binding) IsNull(ctx context.Context) (bool, error) {
 	return response, q.Execute(ctx)
 }
 
-// The binding name
+// Returns the binding name
 func (r *Binding) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -807,7 +798,7 @@ func (r *Binding) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The binding type
+// Returns the binding type
 func (r *Binding) TypeName(ctx context.Context) (string, error) {
 	if r.typeName != nil {
 		return *r.typeName, nil
@@ -4668,7 +4659,7 @@ func (r *Env) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// retrieve an input value by name
+// Retrieves an input binding by name
 func (r *Env) Input(name string) *Binding {
 	q := r.query.Select("input")
 	q = q.Arg("name", name)
@@ -4678,7 +4669,7 @@ func (r *Env) Input(name string) *Binding {
 	}
 }
 
-// return all input values for the environment
+// Returns all input bindings provided to the environment
 func (r *Env) Inputs(ctx context.Context) ([]Binding, error) {
 	q := r.query.Select("inputs")
 
@@ -4711,7 +4702,7 @@ func (r *Env) Inputs(ctx context.Context) ([]Binding, error) {
 	return convert(response), nil
 }
 
-// retrieve an output value by name
+// Retrieves an output binding by name
 func (r *Env) Output(name string) *Binding {
 	q := r.query.Select("output")
 	q = q.Arg("name", name)
@@ -4721,7 +4712,7 @@ func (r *Env) Output(name string) *Binding {
 	}
 }
 
-// return all output values for the environment
+// Returns all declared output bindings for the environment
 func (r *Env) Outputs(ctx context.Context) ([]Binding, error) {
 	q := r.query.Select("outputs")
 
@@ -4868,6 +4859,17 @@ func (r *Env) WithContainerOutput(name string, description string) *Env {
 	q := r.query.Select("withContainerOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Installs the current module into the environment, exposing its functions to the model
+//
+// Contextual path arguments will be populated using the environment's workspace.
+func (r *Env) WithCurrentModule() *Env {
+	q := r.query.Select("withCurrentModule")
 
 	return &Env{
 		query: q,
@@ -5042,24 +5044,13 @@ func (r *Env) WithJSONValueOutput(name string, description string) *Env {
 	}
 }
 
-// Create or update a binding of type LLM in the environment
-func (r *Env) WithLLMInput(name string, value *LLM, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withLLMInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired LLM output to be assigned in the environment
-func (r *Env) WithLLMOutput(name string, description string) *Env {
-	q := r.query.Select("withLLMOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
+// Installs a module into the environment, exposing its functions to the model
+//
+// Contextual path arguments will be populated using the environment's workspace.
+func (r *Env) WithModule(module *Module) *Env {
+	assertNotNil("module", module)
+	q := r.query.Select("withModule")
+	q = q.Arg("module", module)
 
 	return &Env{
 		query: q,
@@ -5258,7 +5249,7 @@ func (r *Env) WithSocketOutput(name string, description string) *Env {
 	}
 }
 
-// Create or update an input value of type string
+// Provides a string input binding to the environment
 func (r *Env) WithStringInput(name string, value string, description string) *Env {
 	q := r.query.Select("withStringInput")
 	q = q.Arg("name", name)
@@ -5270,13 +5261,41 @@ func (r *Env) WithStringInput(name string, value string, description string) *En
 	}
 }
 
-// Create or update an input value of type string
+// Declares a desired string output binding
 func (r *Env) WithStringOutput(name string, description string) *Env {
 	q := r.query.Select("withStringOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
 	return &Env{
+		query: q,
+	}
+}
+
+// Returns a new environment with the provided workspace
+func (r *Env) WithWorkspace(workspace *Directory) *Env {
+	assertNotNil("workspace", workspace)
+	q := r.query.Select("withWorkspace")
+	q = q.Arg("workspace", workspace)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Returns a new environment without any outputs
+func (r *Env) WithoutOutputs() *Env {
+	q := r.query.Select("withoutOutputs")
+
+	return &Env{
+		query: q,
+	}
+}
+
+func (r *Env) Workspace() *Directory {
+	q := r.query.Select("workspace")
+
+	return &Directory{
 		query: q,
 	}
 }
@@ -7940,11 +7959,13 @@ func (r *JSONValue) WithField(path []string, value *JSONValue) *JSONValue {
 type LLM struct {
 	query *querybuilder.Selection
 
+	hasPrompt   *bool
 	historyJSON *JSON
 	id          *LLMID
 	lastReply   *string
 	model       *string
 	provider    *string
+	step        *LLMID
 	sync        *LLMID
 	tools       *string
 }
@@ -7990,6 +8011,19 @@ func (r *LLM) Env() *Env {
 	return &Env{
 		query: q,
 	}
+}
+
+// Indicates whether there are any queued prompts or tool results to send to the model
+func (r *LLM) HasPrompt(ctx context.Context) (bool, error) {
+	if r.hasPrompt != nil {
+		return *r.hasPrompt, nil
+	}
+	q := r.query.Select("hasPrompt")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // return the llm message history
@@ -8068,7 +8102,7 @@ func (r *LLM) LastReply(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// synchronize LLM state
+// Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
 func (r *LLM) Loop() *LLM {
 	q := r.query.Select("loop")
 
@@ -8101,6 +8135,19 @@ func (r *LLM) Provider(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
+func (r *LLM) Step(ctx context.Context) (*LLM, error) {
+	q := r.query.Select("step")
+
+	var id LLMID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &LLM{
+		query: q.Root().Select("loadLLMFromID").Arg("id", id),
+	}, nil
 }
 
 // synchronize LLM state
@@ -8138,11 +8185,34 @@ func (r *LLM) Tools(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Return a new LLM with the specified function no longer exposed as a tool
+func (r *LLM) WithBlockedFunction(typeName string, function string) *LLM {
+	q := r.query.Select("withBlockedFunction")
+	q = q.Arg("typeName", typeName)
+	q = q.Arg("function", function)
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // allow the LLM to interact with an environment via MCP
 func (r *LLM) WithEnv(env *Env) *LLM {
 	assertNotNil("env", env)
 	q := r.query.Select("withEnv")
 	q = q.Arg("env", env)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Add an external MCP server to the LLM
+func (r *LLM) WithMCPServer(name string, service *Service) *LLM {
+	assertNotNil("service", service)
+	q := r.query.Select("withMCPServer")
+	q = q.Arg("name", name)
+	q = q.Arg("service", service)
 
 	return &LLM{
 		query: q,
@@ -8174,6 +8244,15 @@ func (r *LLM) WithPromptFile(file *File) *LLM {
 	assertNotNil("file", file)
 	q := r.query.Select("withPromptFile")
 	q = q.Arg("file", file)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
+func (r *LLM) WithStaticTools() *LLM {
+	q := r.query.Select("withStaticTools")
 
 	return &LLM{
 		query: q,
@@ -9814,6 +9893,21 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 	}
 }
 
+// Returns the current environment
+//
+// When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
+//
+// When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
+//
+// Experimental: Programmatic env access is speculative and might be replaced.
+func (r *Client) CurrentEnv() *Env {
+	q := r.query.Select("currentEnv")
+
+	return &Env{
+		query: q,
+	}
+}
+
 // The FunctionCall context that the SDK caller is currently executing in.
 //
 // If the caller is not currently executing in a function, this will return an error.
@@ -9903,7 +9997,7 @@ type EnvOpts struct {
 	Writable bool
 }
 
-// Initialize a new environment
+// Initializes a new environment
 //
 // Experimental: Environments are not yet stabilized
 func (r *Client) Env(opts ...EnvOpts) *Env {

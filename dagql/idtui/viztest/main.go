@@ -557,3 +557,19 @@ func (*Viztest) TraceRemoteFunctionCalls(ctx context.Context) error {
 	dag.Versioned().Hello(ctx)
 	return nil
 }
+
+func (v *Viztest) LogWithChildren(ctx context.Context) string {
+	fmt.Println("Hey I'm a message.")
+	defer fmt.Println("Hey I'm another message.")
+	_, _ = dag.Container().
+		From("alpine").
+		WithEnvVariable("BUST", time.Now().String()).
+		WithExec([]string{"sh", "-c", "echo this is a failing effect; exit 1"}).
+		Sync(ctx)
+	_, _ = dag.Container().
+		From("alpine").
+		WithEnvVariable("BUST", time.Now().String()).
+		WithExec([]string{"sh", "-c", "echo whatup im another echo"}).
+		Sync(ctx)
+	return "This is the result of the call."
+}

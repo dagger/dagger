@@ -689,12 +689,6 @@ class Binding(Type):
         _ctx = self._select("asJSONValue", _args)
         return JSONValue(_ctx)
 
-    def as_llm(self) -> "LLM":
-        """Retrieve the binding value, as type LLM"""
-        _args: list[Arg] = []
-        _ctx = self._select("asLLM", _args)
-        return LLM(_ctx)
-
     def as_module(self) -> "Module":
         """Retrieve the binding value, as type Module"""
         _args: list[Arg] = []
@@ -744,7 +738,7 @@ class Binding(Type):
         return Socket(_ctx)
 
     async def as_string(self) -> str | None:
-        """The binding's string value
+        """Returns the binding's string value
 
         Returns
         -------
@@ -765,7 +759,7 @@ class Binding(Type):
         return await _ctx.execute(str | None)
 
     async def digest(self) -> str:
-        """The digest of the binding value
+        """Returns the digest of the binding value
 
         Returns
         -------
@@ -829,7 +823,7 @@ class Binding(Type):
         return await _ctx.execute(bool)
 
     async def name(self) -> str:
-        """The binding name
+        """Returns the binding name
 
         Returns
         -------
@@ -850,7 +844,7 @@ class Binding(Type):
         return await _ctx.execute(str)
 
     async def type_name(self) -> str:
-        """The binding type
+        """Returns the binding type
 
         Returns
         -------
@@ -4790,7 +4784,7 @@ class Env(Type):
         return await _ctx.execute(EnvID)
 
     def input(self, name: str) -> Binding:
-        """retrieve an input value by name"""
+        """Retrieves an input binding by name"""
         _args = [
             Arg("name", name),
         ]
@@ -4798,13 +4792,13 @@ class Env(Type):
         return Binding(_ctx)
 
     async def inputs(self) -> list[Binding]:
-        """return all input values for the environment"""
+        """Returns all input bindings provided to the environment"""
         _args: list[Arg] = []
         _ctx = self._select("inputs", _args)
         return await _ctx.execute_object_list(Binding)
 
     def output(self, name: str) -> Binding:
-        """retrieve an output value by name"""
+        """Retrieves an output binding by name"""
         _args = [
             Arg("name", name),
         ]
@@ -4812,7 +4806,7 @@ class Env(Type):
         return Binding(_ctx)
 
     async def outputs(self) -> list[Binding]:
-        """return all output values for the environment"""
+        """Returns all declared output bindings for the environment"""
         _args: list[Arg] = []
         _ctx = self._select("outputs", _args)
         return await _ctx.execute_object_list(Binding)
@@ -5025,6 +5019,17 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withContainerOutput", _args)
+        return Env(_ctx)
+
+    def with_current_module(self) -> Self:
+        """Installs the current module into the environment, exposing its
+        functions to the model
+
+        Contextual path arguments will be populated using the environment's
+        workspace.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withCurrentModule", _args)
         return Env(_ctx)
 
     def with_directory_input(
@@ -5322,46 +5327,17 @@ class Env(Type):
         _ctx = self._select("withJSONValueOutput", _args)
         return Env(_ctx)
 
-    def with_llm_input(
-        self,
-        name: str,
-        value: "LLM",
-        description: str,
-    ) -> Self:
-        """Create or update a binding of type LLM in the environment
+    def with_module(self, module: "Module") -> Self:
+        """Installs a module into the environment, exposing its functions to the
+        model
 
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The LLM value to assign to the binding
-        description:
-            The purpose of the input
+        Contextual path arguments will be populated using the environment's
+        workspace.
         """
         _args = [
-            Arg("name", name),
-            Arg("value", value),
-            Arg("description", description),
+            Arg("module", module),
         ]
-        _ctx = self._select("withLLMInput", _args)
-        return Env(_ctx)
-
-    def with_llm_output(self, name: str, description: str) -> Self:
-        """Declare a desired LLM output to be assigned in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        description:
-            A description of the desired value of the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("description", description),
-        ]
-        _ctx = self._select("withLLMOutput", _args)
+        _ctx = self._select("withModule", _args)
         return Env(_ctx)
 
     def with_module_config_client_input(
@@ -5711,7 +5687,7 @@ class Env(Type):
         value: str,
         description: str,
     ) -> Self:
-        """Create or update an input value of type string
+        """Provides a string input binding to the environment
 
         Parameters
         ----------
@@ -5731,7 +5707,7 @@ class Env(Type):
         return Env(_ctx)
 
     def with_string_output(self, name: str, description: str) -> Self:
-        """Create or update an input value of type string
+        """Declares a desired string output binding
 
         Parameters
         ----------
@@ -5746,6 +5722,31 @@ class Env(Type):
         ]
         _ctx = self._select("withStringOutput", _args)
         return Env(_ctx)
+
+    def with_workspace(self, workspace: Directory) -> Self:
+        """Returns a new environment with the provided workspace
+
+        Parameters
+        ----------
+        workspace:
+            The directory to set as the host filesystem
+        """
+        _args = [
+            Arg("workspace", workspace),
+        ]
+        _ctx = self._select("withWorkspace", _args)
+        return Env(_ctx)
+
+    def without_outputs(self) -> Self:
+        """Returns a new environment without any outputs"""
+        _args: list[Arg] = []
+        _ctx = self._select("withoutOutputs", _args)
+        return Env(_ctx)
+
+    def workspace(self) -> Directory:
+        _args: list[Arg] = []
+        _ctx = self._select("workspace", _args)
+        return Directory(_ctx)
 
     def with_(self, cb: Callable[["Env"], "Env"]) -> "Env":
         """Call the provided callable with current Env.
@@ -8225,6 +8226,26 @@ class LLM(Type):
         _ctx = self._select("env", _args)
         return Env(_ctx)
 
+    async def has_prompt(self) -> bool:
+        """Indicates whether there are any queued prompts or tool results to send
+        to the model
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("hasPrompt", _args)
+        return await _ctx.execute(bool)
+
     async def history(self) -> list[str]:
         """return the llm message history
 
@@ -8311,7 +8332,9 @@ class LLM(Type):
         return await _ctx.execute(str)
 
     def loop(self) -> Self:
-        """synchronize LLM state"""
+        """Submit the queued prompt, evaluate any tool calls, queue their
+        results, and keep going until the model ends its turn
+        """
         _args: list[Arg] = []
         _ctx = self._select("loop", _args)
         return LLM(_ctx)
@@ -8358,6 +8381,20 @@ class LLM(Type):
         _ctx = self._select("provider", _args)
         return await _ctx.execute(str)
 
+    async def step(self) -> Self:
+        """Submit the queued prompt or tool call results, evaluate any tool
+        calls, and queue their results
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "step", _args)
+
     async def sync(self) -> Self:
         """synchronize LLM state
 
@@ -8401,12 +8438,48 @@ class LLM(Type):
         _ctx = self._select("tools", _args)
         return await _ctx.execute(str)
 
+    def with_blocked_function(self, type_name: str, function: str) -> Self:
+        """Return a new LLM with the specified function no longer exposed as a
+        tool
+
+        Parameters
+        ----------
+        type_name:
+            The type name whose function will be blocked
+        function:
+            The function to block
+            Will be converted to lowerCamelCase if necessary.
+        """
+        _args = [
+            Arg("typeName", type_name),
+            Arg("function", function),
+        ]
+        _ctx = self._select("withBlockedFunction", _args)
+        return LLM(_ctx)
+
     def with_env(self, env: Env) -> Self:
         """allow the LLM to interact with an environment via MCP"""
         _args = [
             Arg("env", env),
         ]
         _ctx = self._select("withEnv", _args)
+        return LLM(_ctx)
+
+    def with_mcp_server(self, name: str, service: "Service") -> Self:
+        """Add an external MCP server to the LLM
+
+        Parameters
+        ----------
+        name:
+            The name of the MCP server
+        service:
+            The MCP service to run and communicate with over stdio
+        """
+        _args = [
+            Arg("name", name),
+            Arg("service", service),
+        ]
+        _ctx = self._select("withMCPServer", _args)
         return LLM(_ctx)
 
     def with_model(self, model: str) -> Self:
@@ -8449,6 +8522,14 @@ class LLM(Type):
             Arg("file", file),
         ]
         _ctx = self._select("withPromptFile", _args)
+        return LLM(_ctx)
+
+    def with_static_tools(self) -> Self:
+        """Use a static set of tools for method calls, e.g. for MCP clients that
+        do not support dynamic tool registration
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withStaticTools", _args)
         return LLM(_ctx)
 
     def with_system_prompt(self, prompt: str) -> Self:
@@ -9969,6 +10050,27 @@ class Client(Root):
         _ctx = self._select("container", _args)
         return Container(_ctx)
 
+    def current_env(self) -> Env:
+        """Returns the current environment
+
+        When called from a function invoked via an LLM tool call, this will be
+        the LLM's current environment, including any modifications made
+        through calling tools. Env values returned by functions become the new
+        environment for subsequent calls, and Changeset values returned by
+        functions are applied to the environment's workspace.
+
+        When called from a module function outside of an LLM, this returns an
+        Env with the current module installed, and with the current module's
+        source directory as its workspace.
+
+        .. caution::
+            Experimental: Programmatic env access is speculative and might be
+            replaced.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("currentEnv", _args)
+        return Env(_ctx)
+
     def current_function_call(self) -> FunctionCall:
         """The FunctionCall context that the SDK caller is currently executing
         in.
@@ -10033,7 +10135,7 @@ class Client(Root):
         privileged: bool | None = False,
         writable: bool | None = False,
     ) -> Env:
-        """Initialize a new environment
+        """Initializes a new environment
 
         .. caution::
             Experimental: Environments are not yet stabilized

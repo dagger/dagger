@@ -215,6 +215,10 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		locker:         locker.New(),
 	}
 
+	// start the global namespace worker pool, which is used for running Go funcs
+	// in container namespaces dynamically
+	buildkit.GetGlobalNamespaceWorkerPool().Start()
+
 	//
 	// setup directories and paths
 	//
@@ -566,6 +570,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 func (srv *Server) Close() error {
 	err := srv.baseWorker.Close()
+
+	// Shutdown the global namespace worker pool
+	buildkit.ShutdownGlobalNamespaceWorkerPool()
 
 	// note this *could* cause a panic in Session if it was still running, so
 	// the server should be shutdown first
