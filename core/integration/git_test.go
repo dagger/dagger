@@ -628,7 +628,7 @@ func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {
 func (GitSuite) TestGitCheckedTags(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	requireGitTagsExist := func(t *testctx.T, git *dagger.GitRef) {
+	requireGitTagsExist := func(ctx context.Context, t *testctx.T, git *dagger.GitRef) {
 		ctr := c.Container().
 			From("alpine").
 			WithExec([]string{"apk", "add", "git"}).
@@ -649,45 +649,37 @@ func (GitSuite) TestGitCheckedTags(ctx context.Context, t *testctx.T) {
 		require.NotContains(t, out, "dagger.tmp")
 	}
 
-	runCheckedTags := func(t *testctx.T, git *dagger.GitRepository, desc string) {
-		t.Run(desc+"/branch", func(ctx context.Context, t *testctx.T) {
-			requireGitTagsExist(t, git.Branch("main"))
+	runCheckedTags := func(t *testctx.T, git *dagger.GitRepository) {
+		t.Run("branch", func(ctx context.Context, t *testctx.T) {
+			requireGitTagsExist(ctx, t, git.Branch("main"))
 		})
 
-		t.Run(desc+"/tag", func(ctx context.Context, t *testctx.T) {
-			requireGitTagsExist(t, git.Tag("v0.12.0"))
+		t.Run("tag", func(ctx context.Context, t *testctx.T) {
+			requireGitTagsExist(ctx, t, git.Tag("v0.12.0"))
 		})
 
-		t.Run(desc+"/commit", func(ctx context.Context, t *testctx.T) {
+		t.Run("commit", func(ctx context.Context, t *testctx.T) {
 			// v0.12.0 => 133917c6f9ce36d8cfdc595d9b7bd2c14cbc2c20
-			requireGitTagsExist(t, git.Commit("133917c6f9ce36d8cfdc595d9b7bd2c14cbc2c20"))
+			requireGitTagsExist(ctx, t, git.Commit("133917c6f9ce36d8cfdc595d9b7bd2c14cbc2c20"))
 		})
 
-		t.Run(desc+"/head", func(ctx context.Context, t *testctx.T) {
-			requireGitTagsExist(t, git.Head())
+		t.Run("head", func(ctx context.Context, t *testctx.T) {
+			requireGitTagsExist(ctx, t, git.Head())
 		})
 	}
 
-	remotes := []*dagger.GitRepository{
-		c.Git("https://github.com/dagger/dagger.git"),
-	}
-
-	localClone := c.Container().
-		From(alpineImage).
-		WithExec([]string{"apk", "add", "git"}).
-		WithWorkdir("/src").
-		WithExec([]string{"git", "clone", "https://github.com/dagger/dagger", "."}).
-		Directory(".")
-
-	remotes = append(remotes, localClone.AsGit())
-
-	for i, git := range remotes {
-		desc := "remote"
-		if i == 1 {
-			desc = "local AsGit"
-		}
-		runCheckedTags(t, git, desc)
-	}
+	t.Run("remote", func(ctx context.Context, t *testctx.T) {
+		runCheckedTags(t, c.Git("https://github.com/dagger/dagger"))
+	})
+	t.Run("local", func(ctx context.Context, t *testctx.T) {
+		localClone := c.Container().
+			From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			WithWorkdir("/src").
+			WithExec([]string{"git", "clone", "https://github.com/dagger/dagger", "."}).
+			Directory(".")
+		runCheckedTags(t, localClone.AsGit())
+	})
 }
 
 func (GitSuite) TestGitTagsSSH(ctx context.Context, t *testctx.T) {
@@ -1101,7 +1093,7 @@ func (GitSuite) TestRemoteUpdates(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t)
 
-	svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+t.Name()))
+	svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
 
 	svc, err := svc.Start(ctx)
 	require.NoError(t, err)
@@ -1146,7 +1138,7 @@ func (GitSuite) TestRemoteUpdatesFrozenTag(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t)
 
-	svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+t.Name()))
+	svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
 
 	svc, err := svc.Start(ctx)
 	require.NoError(t, err)
