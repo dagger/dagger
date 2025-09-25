@@ -52,8 +52,8 @@ func (Host) GetEnv(ctx context.Context, name string) string {
 	return string(plaintext)
 }
 
-// find-up a given soughtName in curDirPath and its parent directories, return the dir
-// it was found in, if any
+// find-up a given soughtName in curDirPath and its parent directories,
+// return the absolute path to the dir it was found in, if any
 func (Host) FindUp(
 	ctx context.Context,
 	statFS StatFS,
@@ -109,7 +109,7 @@ func (Host) FindUpAll(
 	return found, nil
 }
 
-func (*Host) Directory(ctx context.Context, path string, filter CopyFilter, gitIgnore bool, noCache bool, relPath string) (*Directory, error) {
+func (*Host) Directory(ctx context.Context, rootPath string, filter CopyFilter, gitIgnore bool, noCache bool, relPath string) (*Directory, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current query: %w", err)
@@ -131,7 +131,7 @@ func (*Host) Directory(ctx context.Context, path string, filter CopyFilter, gitI
 		snapshotOpts.CacheBuster = rand.Text()
 	}
 
-	ref, err := query.LocalSource().Snapshot(ctx, bkGroupSession, query.BuildkitSession(), path, snapshotOpts)
+	ref, err := query.LocalSource().Snapshot(ctx, bkGroupSession, query.BuildkitSession(), rootPath, snapshotOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get snapshot: %w", err)
 	}
