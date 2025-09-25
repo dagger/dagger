@@ -59,6 +59,20 @@ def test_func_doc():
     assert mod.get_object("Foo").functions["fn_with_doc"].doc == "Foo."
 
 
+def test_function_deprecated_metadata():
+    mod = Module()
+
+    @mod.object_type
+    class Foo:
+        @mod.function(deprecated="Use new method instead")
+        def legacy(self):
+            """Legacy function."""
+
+    fn = mod.get_object("Foo").functions["legacy"]
+
+    assert fn.deprecated == "Use new method instead"
+
+
 def test_object_type_deprecated_metadata():
     mod = Module()
 
