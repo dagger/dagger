@@ -176,6 +176,9 @@ class Module:
                 if doc := func.doc:
                     func_def = func_def.with_description(doc)
 
+                if deprecated := func.deprecated:
+                    func_def = func_def.with_deprecated(deprecated)
+
                 for param in func.parameters.values():
                     arg_def = to_typedef(
                         param.resolved_type,
@@ -569,6 +572,7 @@ class Module:
         *,
         name: APIName | None = None,
         doc: str | None = None,
+        deprecated: str | None = None,
     ) -> Func[P, R]: ...
 
     @overload
@@ -577,6 +581,7 @@ class Module:
         *,
         name: APIName | None = None,
         doc: str | None = None,
+        deprecated: str | None = None,
     ) -> Callable[[Func[P, R]], Func[P, R]]: ...
 
     def function(
@@ -585,6 +590,7 @@ class Module:
         *,
         name: APIName | None = None,
         doc: str | None = None,
+        deprecated: str | None = None,
     ) -> Func[P, R] | Callable[[Func[P, R]], Func[P, R]]:
         """Exposes a Python function as a :py:class:`dagger.Function`.
 
@@ -609,6 +615,8 @@ class Module:
         doc:
             An alternative description for the API. Useful to use the
             docstring for other purposes.
+        deprecated:
+            Optional deprecation message exposed to the engine.
         """
 
         # TODO: Wrap appropriately
@@ -616,7 +624,7 @@ class Module:
             # TODO: Use beartype to validate
             assert callable(func), f"Expected a callable, got {type(func)}."
 
-            meta = FunctionDefinition(name, doc)
+            meta = FunctionDefinition(name=name, doc=doc, deprecated=deprecated)
 
             if inspect.isclass(func):
                 return Constructor(func, meta)

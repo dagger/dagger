@@ -19,6 +19,7 @@ class FieldDefinition:
 class FunctionDefinition:
     name: APIName | None = None
     doc: str | None = None
+    deprecated: str | None = None
 
 
 class Enum(str, base.Enum):
