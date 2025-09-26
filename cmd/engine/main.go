@@ -21,7 +21,9 @@ import (
 
 	"github.com/containerd/containerd/pkg/seed" //nolint:staticcheck // SA1019 deprecated
 	"github.com/containerd/containerd/sys"
+	"github.com/containerd/platforms"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/config"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/util/apicaps"
@@ -239,8 +241,9 @@ func addFlags(app *cli.App) {
 }
 
 func main() { //nolint:gocyclo
+	engineVersion := fmt.Sprintf("%s %s %s", engine.Version, engine.Tag, platforms.DefaultString())
 	cli.VersionPrinter = func(c *cli.Context) {
-		fmt.Println(c.App.Name, version.Package, c.App.Version, version.Revision)
+		fmt.Println(engineVersion)
 	}
 	app := cli.NewApp()
 	app.Name = "dagger-engine"
@@ -251,6 +254,7 @@ func main() { //nolint:gocyclo
 	ctx, cancel := context.WithCancelCause(appcontext.Context())
 
 	app.Action = func(c *cli.Context) error {
+		bklog.G(ctx).Debug("starting dagger engine version:", engineVersion)
 		defer cancel(errors.New("main done"))
 		// TODO: On Windows this always returns -1. The actual "are you admin" check is very Windows-specific.
 		// See https://github.com/golang/go/issues/28804#issuecomment-505326268 for the "short" version.
