@@ -2304,7 +2304,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 			// APIs that are cached per-client when local sources are involved) in the cache key of this
 			// function call. That would needlessly invalidate the cache more than is needed, similar to how
 			// we want to scope the codegen cache keys by the content digested source instance above.
-			OverrideCallDigestCacheKey: tmpModInst.ID().Digest().String(),
+			OverridePersistenceKey: tmpModInst.ID().Digest().String(),
 		})
 		if err != nil {
 			return fmt.Errorf("failed to call module %q to get functions: %w", modName, err)

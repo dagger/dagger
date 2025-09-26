@@ -23,7 +23,6 @@ import (
 	ctdsnapshot "github.com/containerd/containerd/snapshots"
 	"github.com/containerd/go-runc"
 	"github.com/containerd/platforms"
-	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/config"
@@ -172,10 +171,9 @@ type Server struct {
 	//
 	// session+client state
 	//
-	daggerSessions      map[string]*daggerSession // session id -> session state
-	daggerSessionsMu    sync.RWMutex
-	clientDBs           *clientdb.DBs
-	callExpirationCache *core.CallExpirationCache
+	daggerSessions   map[string]*daggerSession // session id -> session state
+	daggerSessionsMu sync.RWMutex
+	clientDBs        *clientdb.DBs
 
 	locker *locker.Locker
 
@@ -212,7 +210,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			SearchDomains: bkcfg.DNS.SearchDomains,
 		},
 
-		baseDagqlCache: cache.NewCache[string, dagql.AnyResult](),
 		daggerSessions: make(map[string]*daggerSession),
 
 		locker: locker.New(),
@@ -548,14 +545,19 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}()
 
 	//
-	// setup function caching
+	// setup dagql caching
 	//
-	functionCacheDBPath := filepath.Join(srv.rootDir, "function-cache.db")
-	srv.callExpirationCache, err = core.NewCallExpirationCache(ctx, functionCacheDBPath)
+	dagqlCacheDBPath := filepath.Join(srv.rootDir, "dagql-cache.db")
+	srv.baseDagqlCache, err = cache.NewCache[string, dagql.AnyResult](ctx, dagqlCacheDBPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create function call expiration cache: %w", err)
+		return nil, fmt.Errorf("failed to create dagql cache: %w", err)
 	}
-	go srv.callExpirationCache.GCLoop(ctx)
+	// TODO: REENABLE GC
+	// TODO: REENABLE GC
+	// TODO: REENABLE GC
+	// TODO: REENABLE GC
+	// TODO: REENABLE GC
+	// go srv.callExpirationCache.GCLoop(ctx)
 
 	// garbage collect client DBs
 	go srv.gcClientDBs()

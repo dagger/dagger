@@ -3,8 +3,12 @@ package modfunccache
 import (
 	"context"
 	"database/sql"
+	_ "embed"
 	"fmt"
 )
+
+//go:embed schema.sql
+var Schema string
 
 type DBTX interface {
 	ExecContext(context.Context, string, ...interface{}) (sql.Result, error)

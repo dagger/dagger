@@ -1490,8 +1490,9 @@ func (srv *Server) ClientTelemetry(ctx context.Context, sessID, clientID string)
 }
 
 // The global call expiration cache
+// TODO: rm if unused
 func (srv *Server) CallExpirationCache() *core.CallExpirationCache {
-	return srv.callExpirationCache
+	panic("delete me")
 }
 
 type httpError struct {
