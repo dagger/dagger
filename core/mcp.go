@@ -1573,7 +1573,11 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 				if err != nil {
 					return nil, err
 				}
-				return dest, nil
+				m.env = dest
+				return toolStructuredResponse(map[string]any{
+					"output": args.Name,
+					"hint":   "To save a value to the output, use the Save tool.",
+				})
 			}),
 		})
 	}
