@@ -22,9 +22,11 @@ import (
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
+	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/util/patternmatcher"
 	"github.com/dustin/go-humanize"
+	copy "github.com/tonistiigi/fsutil/copy"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
@@ -695,6 +697,7 @@ type CopyFilter struct {
 	Include []string `default:"[]"`
 }
 
+//nolint:gocyclo
 func (dir *Directory) WithDirectory(
 	ctx context.Context,
 	destDir string,
@@ -704,36 +707,150 @@ func (dir *Directory) WithDirectory(
 ) (*Directory, error) {
 	dir = dir.Clone()
 
-	destSt, err := dir.State()
+	destDir = path.Join(dir.Dir, destDir)
+
+	dirRef, err := getRefOrEvaluate(ctx, dir)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get directory ref: %w", err)
+	}
+	srcRef, err := getRefOrEvaluate(ctx, src)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source directory ref: %w", err)
 	}
 
-	srcSt, err := src.State()
+	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get current query: %w", err)
 	}
 
-	var ownership *Ownership
-	if owner != "" {
-		ownership, err = parseDirectoryOwner(owner)
+	cache := query.BuildkitCache()
+
+	// MergeOp currently only supports merging the "/" of states together without any
+	// modifications or filtering
+	canDoDirectMerge :=
+		len(filter.Exclude) == 0 &&
+			len(filter.Include) == 0 &&
+			destDir == "/" &&
+			src.Dir == "/"
+
+	if dirRef == nil {
+		tmpRef, err := query.BuildkitCache().New(ctx, nil, nil,
+			bkcache.CachePolicyRetain,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription("Directory.withDirectory source"))
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+			return nil, fmt.Errorf("buildkitcache.New failed: %w", err)
 		}
+		dirRef, err = tmpRef.Commit(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to commit copied directory: %w", err)
+		}
+		defer dirRef.Release(ctx) // release; the merge should keep it alive
 	}
 
-	if err := dir.SetState(ctx, mergeStates(mergeStateInput{
-		Dest:            destSt,
-		DestDir:         path.Join(dir.Dir, destDir),
-		Src:             srcSt,
-		SrcDir:          src.Dir,
-		IncludePatterns: filter.Include,
-		ExcludePatterns: filter.Exclude,
-		Owner:           ownership,
-	})); err != nil {
+	mergeRefs := []bkcache.ImmutableRef{dirRef}
+
+	if canDoDirectMerge {
+		// Directly merge the states together, which is lazy, uses hardlinks instead of
+		// copies and caches inputs individually instead of invalidating the whole
+		// chain following any modified input.
+		if srcRef == nil {
+			dir.Result = dirRef
+			return dir, nil
+		}
+		mergeRefs = append(mergeRefs, srcRef)
+	} else {
+		// Even if we can't merge directly, we can still get some optimization by
+		// copying to scratch and then merging that. This still results in an on-disk
+		// copy but preserves the other caching benefits of MergeOp. This is the same
+		// behavior as "COPY --link" in Dockerfiles.
+		copyingRef, err := query.BuildkitCache().New(ctx, nil, nil,
+			bkcache.CachePolicyRetain,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithDescription("Directory.withDirectory source"))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create new cache for source directory: %w", err)
+		}
+		err = MountRef(ctx, copyingRef, nil, func(copyDest string) error {
+			resolvedCopyDest, err := containerdfs.RootPath(copyDest, destDir)
+			if err != nil {
+				return err
+			}
+
+			if srcRef == nil {
+				err = os.MkdirAll(resolvedCopyDest, 0755)
+				if err != nil {
+					return err
+				}
+				if owner != "" {
+					ownership, err := parseDirectoryOwner(owner)
+					if err != nil {
+						return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+					}
+					err = os.Chown(resolvedCopyDest, ownership.UID, ownership.GID)
+					if err != nil {
+						return fmt.Errorf("failed to set chown %s: err", resolvedCopyDest)
+					}
+				}
+			} else {
+				mounter, err := srcRef.Mount(ctx, true, nil)
+				if err != nil {
+					return fmt.Errorf("failed to mount source directory: %w", err)
+				}
+				lm := snapshot.LocalMounter(mounter)
+				srcPath, err := lm.Mount()
+				if err != nil {
+					return fmt.Errorf("failed to mount source directory: %w", err)
+				}
+				defer lm.Unmount()
+				resolvedSrcPath, err := containerdfs.RootPath(srcPath, src.Dir) // TODO maybe RootPathWithoutFinalSymlink is needed instead?
+				if err != nil {
+					return err
+				}
+				var opts []copy.Opt
+				opts = append(opts, copy.WithCopyInfo(copy.CopyInfo{
+					AlwaysReplaceExistingDestPaths: true,
+					CopyDirContents:                true,
+				}))
+				for _, pattern := range filter.Include {
+					opts = append(opts, copy.WithIncludePattern(pattern))
+				}
+				for _, pattern := range filter.Exclude {
+					opts = append(opts, copy.WithExcludePattern(pattern))
+				}
+				if owner != "" {
+					ownership, err := parseDirectoryOwner(owner)
+					if err != nil {
+						return fmt.Errorf("failed to parse ownership %s: %w", owner, err)
+					}
+					opts = append(opts, copy.WithChown(ownership.UID, ownership.GID))
+				}
+				if err := copy.Copy(ctx, resolvedSrcPath, ".", resolvedCopyDest, ".", opts...); err != nil {
+					return fmt.Errorf("failed to copy source directory: %w", err)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		copiedRef, err := copyingRef.Commit(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to commit copied directory: %w", err)
+		}
+		defer copiedRef.Release(ctx) // release; the merge should keep it alive
+		mergeRefs = append(mergeRefs, copiedRef)
+	}
+
+	ref, err := cache.Merge(ctx, mergeRefs, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to merge directories: %w", err)
+	}
+	err = ref.Finalize(ctx)
+	if err != nil {
 		return nil, err
 	}
-
+	dir.Result = ref
 	return dir, nil
 }
 
@@ -905,75 +1022,6 @@ func (dir *Directory) WithFiles(
 	}
 
 	return dir, nil
-}
-
-type mergeStateInput struct {
-	Dest         llb.State
-	DestDir      string
-	DestFileName string
-
-	Src         llb.State
-	SrcDir      string
-	SrcFileName string
-
-	IncludePatterns []string
-	ExcludePatterns []string
-
-	Permissions *int
-	Owner       *Ownership
-}
-
-func mergeStates(input mergeStateInput) llb.State {
-	input.DestDir = path.Join("/", input.DestDir)
-	input.SrcDir = path.Join("/", input.SrcDir)
-
-	copyInfo := &llb.CopyInfo{
-		CreateDestPath:      true,
-		CopyDirContentsOnly: true,
-		IncludePatterns:     input.IncludePatterns,
-		ExcludePatterns:     input.ExcludePatterns,
-	}
-	if input.DestFileName == "" && input.SrcFileName != "" {
-		input.DestFileName = input.SrcFileName
-	}
-	if input.Permissions != nil {
-		fm := fs.FileMode(*input.Permissions)
-		copyInfo.Mode = &fm
-	}
-	if input.Owner != nil {
-		input.Owner.Opt().SetCopyOption(copyInfo)
-	}
-
-	// MergeOp currently only supports merging the "/" of states together without any
-	// modifications or filtering
-	canDoDirectMerge := copyInfo.Mode == nil &&
-		copyInfo.ChownOpt == nil &&
-		len(copyInfo.ExcludePatterns) == 0 &&
-		len(copyInfo.IncludePatterns) == 0 &&
-		input.DestDir == "/" &&
-		input.SrcDir == "/" &&
-		// TODO:(sipsma) we could support direct merge-op with individual files if we can verify
-		// there are no other files in the dir, but doing so by just calling ReadDir would result
-		// in unlazying the inputs, which defeats some of the performance benefits of merge-op.
-		input.DestFileName == "" &&
-		input.SrcFileName == ""
-
-	mergeStates := []llb.State{input.Dest}
-	if canDoDirectMerge {
-		// Directly merge the states together, which is lazy, uses hardlinks instead of
-		// copies and caches inputs individually instead of invalidating the whole
-		// chain following any modified input.
-		mergeStates = append(mergeStates, input.Src)
-	} else {
-		// Even if we can't merge directly, we can still get some optimization by
-		// copying to scratch and then merging that. This still results in an on-disk
-		// copy but preserves the other caching benefits of MergeOp. This is the same
-		// behavior as "COPY --link" in Dockerfiles.
-		mergeStates = append(mergeStates, llb.Scratch().File(llb.Copy(
-			input.Src, path.Join(input.SrcDir, input.SrcFileName), path.Join(input.DestDir, input.DestFileName), copyInfo,
-		)))
-	}
-	return llb.Merge(mergeStates)
 }
 
 func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (*Directory, error) {
