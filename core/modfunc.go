@@ -246,48 +246,6 @@ func (fn *ModuleFunction) mergeLocalDefaultsTypeDefs(ctx context.Context) error 
 	return nil
 }
 
-// FieldSpec returns the field spec for this function with LocalDefaults applied
-func (fn *ModuleFunction) FieldSpec(ctx context.Context) (dagql.FieldSpec, error) {
-	// FIXME: maybe this wrapper is not needed if we just inject the default
-	// value in the typedef?
-	// Get the base spec from the metadata
-	spec, err := fn.metadata.FieldSpec(ctx, fn.mod)
-	if err != nil {
-		return spec, err
-	}
-
-	// Local defaults for object types CANNOT be resolved here since we never
-	// have server access during schema generation. They will be resolved at
-	// runtime in CacheConfigForCall, similar to contextual arguments.
-	// Only apply local defaults for primitive types that don't need server access
-	inputs := spec.Args.Inputs(call.View(""))
-	newInputs := make([]dagql.InputSpec, 0, len(inputs))
-	for _, argSpec := range inputs {
-		newArgSpec := argSpec
-		localDefault, hasLocalDefault, err := fn.LocalDefault(ctx, argSpec.Name)
-		if err != nil {
-			return spec, fmt.Errorf("%s.%s(%s=...): load local defaults: %w", fn.mod.Name(), fn.metadata.Name, argSpec.Name, err)
-		}
-		if hasLocalDefault {
-			if localDefault.IsObject() {
-				// FIXME
-			} else {
-				defaultInput, err := localDefault.UserDefaultPrimitive.DagqlInput()
-				if err != nil {
-					return spec, err
-				}
-				newArgSpec.Default = defaultInput
-			}
-		}
-		newInputs = append(newInputs, newArgSpec)
-	}
-
-	// Replace Args with new specs containing LocalDefaults
-	spec.Args = dagql.NewInputSpecs(newInputs...)
-
-	return spec, nil
-}
-
 // Print text directly on the user's console
 func console(ctx context.Context, msg string, args ...any) {
 	if !strings.HasSuffix(msg, "\n") {

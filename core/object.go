@@ -370,7 +370,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		return fmt.Errorf("failed to create function: %w", err)
 	}
 	fn.mergeLocalDefaultsTypeDefs(ctx)
-	spec, err := fn.FieldSpec(ctx)
+	spec, err := fn.metadata.FieldSpec(ctx, mod)
 	if err != nil {
 		return fmt.Errorf("failed to get field spec for constructor: %w", err)
 	}
@@ -491,7 +491,7 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 	if err := modFun.mergeLocalDefaultsTypeDefs(ctx); err != nil {
 		return f, fmt.Errorf("failed to merge local defaults for %q: %w", fun.Name, err)
 	}
-	spec, err := modFun.FieldSpec(ctx)
+	spec, err := fun.FieldSpec(ctx, mod)
 	if err != nil {
 		return f, fmt.Errorf("failed to get field spec: %w", err)
 	}
