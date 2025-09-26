@@ -1,6 +1,6 @@
 {
   "name": "gha",
-  "engineVersion": "v0.18.2",
+  "engineVersion": "v0.18.19",
   "sdk": {
     "source": "go"
   },

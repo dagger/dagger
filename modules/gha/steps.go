@@ -21,7 +21,13 @@ func (j *Job) checkoutStep() api.JobStep {
 
 func (j *Job) installDaggerSteps() []api.JobStep {
 	steps := []api.JobStep{
-		j.bashStep("install-dagger", map[string]string{"DAGGER_VERSION": j.DaggerVersion}),
+		{
+			Name: "Install Dagger",
+			Uses: "dagger/dagger-for-github@v8.2.0",
+			With: map[string]string{
+				"version": j.DaggerVersion,
+			},
+		},
 	}
 
 	if j.DaggerDev != "" {

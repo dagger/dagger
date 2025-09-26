@@ -17,56 +17,16 @@ concurrency:
     group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
     cancel-in-progress: true
 jobs:
-    dotnet-dev:
+    dotnet:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
             - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
-        name: dotnet-dev
+        name: dotnet
         steps:
-            - name: scripts/install-dagger.sh
-              id: install-dagger
-              run: |
-                #!/bin/bash
-
-                set -o pipefail
-                # Fallback to /usr/local for backwards compatability
-                prefix_dir="${RUNNER_TEMP:-/usr/local}"
-
-                # Ensure the dir is writable otherwise fallback to tmpdir
-                if [[ ! -d "$prefix_dir" ]] || [[ ! -w "$prefix_dir" ]]; then
-                  prefix_dir="$(mktemp -d)"
-                fi
-                printf '%s/bin' "$prefix_dir" >>$GITHUB_PATH
-
-                # If the dagger version is 'latest', set the version back to an empty
-                # string. This allows the install script to detect and install the latest
-                # version itself
-                if [[ "$DAGGER_VERSION" == "latest" ]]; then
-                  DAGGER_VERSION=
-                fi
-
-                # The install.sh script creates path ${prefix_dir}/bin
-                curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
-              env:
-                DAGGER_VERSION: v0.18.19
-              shell: bash
-            - name: scripts/start-dev-dagger.sh
-              id: start-dev-dagger
-              run: |
-                #!/bin/bash --noprofile --norc -e -o pipefail
-
-                cd $(mktemp -d)
-                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree | export ."
-
-                ./hack/build
-
-                export _EXPERIMENTAL_DAGGER_CLI_BIN=$(realpath ./bin/dagger)
-                echo "_EXPERIMENTAL_DAGGER_CLI_BIN=$_EXPERIMENTAL_DAGGER_CLI_BIN" >>"${GITHUB_ENV}"
-              env:
-                _EXPERIMENTAL_DAGGER_DEV_CONTAINER: dagger-engine.dev-${{ github.run_id }}-${{ github.job }}
-                _EXPERIMENTAL_DAGGER_DEV_IMAGE: localhost/dagger-engine.dev:${{ github.run_id }}-${{ github.job }}
-                DAGGER_REF: ${{ github.sha }}
-              shell: bash
+            - name: Install Dagger
+              uses: dagger/dagger-for-github@v8.2.0
+              with:
+                version: v0.18.19
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -191,56 +151,16 @@ jobs:
                 DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
               shell: bash
         timeout-minutes: 20
-    elixir-dev:
+    elixir:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
             - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
-        name: elixir-dev
+        name: elixir
         steps:
-            - name: scripts/install-dagger.sh
-              id: install-dagger
-              run: |
-                #!/bin/bash
-
-                set -o pipefail
-                # Fallback to /usr/local for backwards compatability
-                prefix_dir="${RUNNER_TEMP:-/usr/local}"
-
-                # Ensure the dir is writable otherwise fallback to tmpdir
-                if [[ ! -d "$prefix_dir" ]] || [[ ! -w "$prefix_dir" ]]; then
-                  prefix_dir="$(mktemp -d)"
-                fi
-                printf '%s/bin' "$prefix_dir" >>$GITHUB_PATH
-
-                # If the dagger version is 'latest', set the version back to an empty
-                # string. This allows the install script to detect and install the latest
-                # version itself
-                if [[ "$DAGGER_VERSION" == "latest" ]]; then
-                  DAGGER_VERSION=
-                fi
-
-                # The install.sh script creates path ${prefix_dir}/bin
-                curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
-              env:
-                DAGGER_VERSION: v0.18.19
-              shell: bash
-            - name: scripts/start-dev-dagger.sh
-              id: start-dev-dagger
-              run: |
-                #!/bin/bash --noprofile --norc -e -o pipefail
-
-                cd $(mktemp -d)
-                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree | export ."
-
-                ./hack/build
-
-                export _EXPERIMENTAL_DAGGER_CLI_BIN=$(realpath ./bin/dagger)
-                echo "_EXPERIMENTAL_DAGGER_CLI_BIN=$_EXPERIMENTAL_DAGGER_CLI_BIN" >>"${GITHUB_ENV}"
-              env:
-                _EXPERIMENTAL_DAGGER_DEV_CONTAINER: dagger-engine.dev-${{ github.run_id }}-${{ github.job }}
-                _EXPERIMENTAL_DAGGER_DEV_IMAGE: localhost/dagger-engine.dev:${{ github.run_id }}-${{ github.job }}
-                DAGGER_REF: ${{ github.sha }}
-              shell: bash
+            - name: Install Dagger
+              uses: dagger/dagger-for-github@v8.2.0
+              with:
+                version: v0.18.19
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -365,56 +285,16 @@ jobs:
                 DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
               shell: bash
         timeout-minutes: 20
-    go-dev:
+    go:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
             - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
-        name: go-dev
+        name: go
         steps:
-            - name: scripts/install-dagger.sh
-              id: install-dagger
-              run: |
-                #!/bin/bash
-
-                set -o pipefail
-                # Fallback to /usr/local for backwards compatability
-                prefix_dir="${RUNNER_TEMP:-/usr/local}"
-
-                # Ensure the dir is writable otherwise fallback to tmpdir
-                if [[ ! -d "$prefix_dir" ]] || [[ ! -w "$prefix_dir" ]]; then
-                  prefix_dir="$(mktemp -d)"
-                fi
-                printf '%s/bin' "$prefix_dir" >>$GITHUB_PATH
-
-                # If the dagger version is 'latest', set the version back to an empty
-                # string. This allows the install script to detect and install the latest
-                # version itself
-                if [[ "$DAGGER_VERSION" == "latest" ]]; then
-                  DAGGER_VERSION=
-                fi
-
-                # The install.sh script creates path ${prefix_dir}/bin
-                curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
-              env:
-                DAGGER_VERSION: v0.18.19
-              shell: bash
-            - name: scripts/start-dev-dagger.sh
-              id: start-dev-dagger
-              run: |
-                #!/bin/bash --noprofile --norc -e -o pipefail
-
-                cd $(mktemp -d)
-                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree | export ."
-
-                ./hack/build
-
-                export _EXPERIMENTAL_DAGGER_CLI_BIN=$(realpath ./bin/dagger)
-                echo "_EXPERIMENTAL_DAGGER_CLI_BIN=$_EXPERIMENTAL_DAGGER_CLI_BIN" >>"${GITHUB_ENV}"
-              env:
-                _EXPERIMENTAL_DAGGER_DEV_CONTAINER: dagger-engine.dev-${{ github.run_id }}-${{ github.job }}
-                _EXPERIMENTAL_DAGGER_DEV_IMAGE: localhost/dagger-engine.dev:${{ github.run_id }}-${{ github.job }}
-                DAGGER_REF: ${{ github.sha }}
-              shell: bash
+            - name: Install Dagger
+              uses: dagger/dagger-for-github@v8.2.0
+              with:
+                version: v0.18.19
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -539,56 +419,16 @@ jobs:
                 DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
               shell: bash
         timeout-minutes: 20
-    java-dev:
+    java:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
             - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
-        name: java-dev
+        name: java
         steps:
-            - name: scripts/install-dagger.sh
-              id: install-dagger
-              run: |
-                #!/bin/bash
-
-                set -o pipefail
-                # Fallback to /usr/local for backwards compatability
-                prefix_dir="${RUNNER_TEMP:-/usr/local}"
-
-                # Ensure the dir is writable otherwise fallback to tmpdir
-                if [[ ! -d "$prefix_dir" ]] || [[ ! -w "$prefix_dir" ]]; then
-                  prefix_dir="$(mktemp -d)"
-                fi
-                printf '%s/bin' "$prefix_dir" >>$GITHUB_PATH
-
-                # If the dagger version is 'latest', set the version back to an empty
-                # string. This allows the install script to detect and install the latest
-                # version itself
-                if [[ "$DAGGER_VERSION" == "latest" ]]; then
-                  DAGGER_VERSION=
-                fi
-
-                # The install.sh script creates path ${prefix_dir}/bin
-                curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
-              env:
-                DAGGER_VERSION: v0.18.19
-              shell: bash
-            - name: scripts/start-dev-dagger.sh
-              id: start-dev-dagger
-              run: |
-                #!/bin/bash --noprofile --norc -e -o pipefail
-
-                cd $(mktemp -d)
-                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree | export ."
-
-                ./hack/build
-
-                export _EXPERIMENTAL_DAGGER_CLI_BIN=$(realpath ./bin/dagger)
-                echo "_EXPERIMENTAL_DAGGER_CLI_BIN=$_EXPERIMENTAL_DAGGER_CLI_BIN" >>"${GITHUB_ENV}"
-              env:
-                _EXPERIMENTAL_DAGGER_DEV_CONTAINER: dagger-engine.dev-${{ github.run_id }}-${{ github.job }}
-                _EXPERIMENTAL_DAGGER_DEV_IMAGE: localhost/dagger-engine.dev:${{ github.run_id }}-${{ github.job }}
-                DAGGER_REF: ${{ github.sha }}
-              shell: bash
+            - name: Install Dagger
+              uses: dagger/dagger-for-github@v8.2.0
+              with:
+                version: v0.18.19
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -713,56 +553,16 @@ jobs:
                 DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
               shell: bash
         timeout-minutes: 20
-    php-dev:
+    php:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
             - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
-        name: php-dev
+        name: php
         steps:
-            - name: scripts/install-dagger.sh
-              id: install-dagger
-              run: |
-                #!/bin/bash
-
-                set -o pipefail
-                # Fallback to /usr/local for backwards compatability
-                prefix_dir="${RUNNER_TEMP:-/usr/local}"
-
-                # Ensure the dir is writable otherwise fallback to tmpdir
-                if [[ ! -d "$prefix_dir" ]] || [[ ! -w "$prefix_dir" ]]; then
-                  prefix_dir="$(mktemp -d)"
-                fi
-                printf '%s/bin' "$prefix_dir" >>$GITHUB_PATH
-
-                # If the dagger version is 'latest', set the version back to an empty
-                # string. This allows the install script to detect and install the latest
-                # version itself
-                if [[ "$DAGGER_VERSION" == "latest" ]]; then
-                  DAGGER_VERSION=
-                fi
-
-                # The install.sh script creates path ${prefix_dir}/bin
-                curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
-              env:
-                DAGGER_VERSION: v0.18.19
-              shell: bash
-            - name: scripts/start-dev-dagger.sh
-              id: start-dev-dagger
-              run: |
-                #!/bin/bash --noprofile --norc -e -o pipefail
-
-                cd $(mktemp -d)
-                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree | export ."
-
-                ./hack/build
-
-                export _EXPERIMENTAL_DAGGER_CLI_BIN=$(realpath ./bin/dagger)
-                echo "_EXPERIMENTAL_DAGGER_CLI_BIN=$_EXPERIMENTAL_DAGGER_CLI_BIN" >>"${GITHUB_ENV}"
-              env:
-                _EXPERIMENTAL_DAGGER_DEV_CONTAINER: dagger-engine.dev-${{ github.run_id }}-${{ github.job }}
-                _EXPERIMENTAL_DAGGER_DEV_IMAGE: localhost/dagger-engine.dev:${{ github.run_id }}-${{ github.job }}
-                DAGGER_REF: ${{ github.sha }}
-              shell: bash
+            - name: Install Dagger
+              uses: dagger/dagger-for-github@v8.2.0
+              with:
+                version: v0.18.19
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -887,56 +687,16 @@ jobs:
                 DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
               shell: bash
         timeout-minutes: 20
-    python-dev:
+    python:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
             - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
-        name: python-dev
+        name: python
         steps:
-            - name: scripts/install-dagger.sh
-              id: install-dagger
-              run: |
-                #!/bin/bash
-
-                set -o pipefail
-                # Fallback to /usr/local for backwards compatability
-                prefix_dir="${RUNNER_TEMP:-/usr/local}"
-
-                # Ensure the dir is writable otherwise fallback to tmpdir
-                if [[ ! -d "$prefix_dir" ]] || [[ ! -w "$prefix_dir" ]]; then
-                  prefix_dir="$(mktemp -d)"
-                fi
-                printf '%s/bin' "$prefix_dir" >>$GITHUB_PATH
-
-                # If the dagger version is 'latest', set the version back to an empty
-                # string. This allows the install script to detect and install the latest
-                # version itself
-                if [[ "$DAGGER_VERSION" == "latest" ]]; then
-                  DAGGER_VERSION=
-                fi
-
-                # The install.sh script creates path ${prefix_dir}/bin
-                curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
-              env:
-                DAGGER_VERSION: v0.18.19
-              shell: bash
-            - name: scripts/start-dev-dagger.sh
-              id: start-dev-dagger
-              run: |
-                #!/bin/bash --noprofile --norc -e -o pipefail
-
-                cd $(mktemp -d)
-                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree | export ."
-
-                ./hack/build
-
-                export _EXPERIMENTAL_DAGGER_CLI_BIN=$(realpath ./bin/dagger)
-                echo "_EXPERIMENTAL_DAGGER_CLI_BIN=$_EXPERIMENTAL_DAGGER_CLI_BIN" >>"${GITHUB_ENV}"
-              env:
-                _EXPERIMENTAL_DAGGER_DEV_CONTAINER: dagger-engine.dev-${{ github.run_id }}-${{ github.job }}
-                _EXPERIMENTAL_DAGGER_DEV_IMAGE: localhost/dagger-engine.dev:${{ github.run_id }}-${{ github.job }}
-                DAGGER_REF: ${{ github.sha }}
-              shell: bash
+            - name: Install Dagger
+              uses: dagger/dagger-for-github@v8.2.0
+              with:
+                version: v0.18.19
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -1061,56 +821,16 @@ jobs:
                 DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
               shell: bash
         timeout-minutes: 20
-    rust-dev:
+    rust:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
             - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
-        name: rust-dev
+        name: rust
         steps:
-            - name: scripts/install-dagger.sh
-              id: install-dagger
-              run: |
-                #!/bin/bash
-
-                set -o pipefail
-                # Fallback to /usr/local for backwards compatability
-                prefix_dir="${RUNNER_TEMP:-/usr/local}"
-
-                # Ensure the dir is writable otherwise fallback to tmpdir
-                if [[ ! -d "$prefix_dir" ]] || [[ ! -w "$prefix_dir" ]]; then
-                  prefix_dir="$(mktemp -d)"
-                fi
-                printf '%s/bin' "$prefix_dir" >>$GITHUB_PATH
-
-                # If the dagger version is 'latest', set the version back to an empty
-                # string. This allows the install script to detect and install the latest
-                # version itself
-                if [[ "$DAGGER_VERSION" == "latest" ]]; then
-                  DAGGER_VERSION=
-                fi
-
-                # The install.sh script creates path ${prefix_dir}/bin
-                curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
-              env:
-                DAGGER_VERSION: v0.18.19
-              shell: bash
-            - name: scripts/start-dev-dagger.sh
-              id: start-dev-dagger
-              run: |
-                #!/bin/bash --noprofile --norc -e -o pipefail
-
-                cd $(mktemp -d)
-                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree | export ."
-
-                ./hack/build
-
-                export _EXPERIMENTAL_DAGGER_CLI_BIN=$(realpath ./bin/dagger)
-                echo "_EXPERIMENTAL_DAGGER_CLI_BIN=$_EXPERIMENTAL_DAGGER_CLI_BIN" >>"${GITHUB_ENV}"
-              env:
-                _EXPERIMENTAL_DAGGER_DEV_CONTAINER: dagger-engine.dev-${{ github.run_id }}-${{ github.job }}
-                _EXPERIMENTAL_DAGGER_DEV_IMAGE: localhost/dagger-engine.dev:${{ github.run_id }}-${{ github.job }}
-                DAGGER_REF: ${{ github.sha }}
-              shell: bash
+            - name: Install Dagger
+              uses: dagger/dagger-for-github@v8.2.0
+              with:
+                version: v0.18.19
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -1235,56 +955,16 @@ jobs:
                 DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
               shell: bash
         timeout-minutes: 20
-    typescript-dev:
+    typescript:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
             - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
-        name: typescript-dev
+        name: typescript
         steps:
-            - name: scripts/install-dagger.sh
-              id: install-dagger
-              run: |
-                #!/bin/bash
-
-                set -o pipefail
-                # Fallback to /usr/local for backwards compatability
-                prefix_dir="${RUNNER_TEMP:-/usr/local}"
-
-                # Ensure the dir is writable otherwise fallback to tmpdir
-                if [[ ! -d "$prefix_dir" ]] || [[ ! -w "$prefix_dir" ]]; then
-                  prefix_dir="$(mktemp -d)"
-                fi
-                printf '%s/bin' "$prefix_dir" >>$GITHUB_PATH
-
-                # If the dagger version is 'latest', set the version back to an empty
-                # string. This allows the install script to detect and install the latest
-                # version itself
-                if [[ "$DAGGER_VERSION" == "latest" ]]; then
-                  DAGGER_VERSION=
-                fi
-
-                # The install.sh script creates path ${prefix_dir}/bin
-                curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
-              env:
-                DAGGER_VERSION: v0.18.19
-              shell: bash
-            - name: scripts/start-dev-dagger.sh
-              id: start-dev-dagger
-              run: |
-                #!/bin/bash --noprofile --norc -e -o pipefail
-
-                cd $(mktemp -d)
-                dagger shell -M -c "git https://github.com/dagger/dagger.git | ref $DAGGER_REF | tree | export ."
-
-                ./hack/build
-
-                export _EXPERIMENTAL_DAGGER_CLI_BIN=$(realpath ./bin/dagger)
-                echo "_EXPERIMENTAL_DAGGER_CLI_BIN=$_EXPERIMENTAL_DAGGER_CLI_BIN" >>"${GITHUB_ENV}"
-              env:
-                _EXPERIMENTAL_DAGGER_DEV_CONTAINER: dagger-engine.dev-${{ github.run_id }}-${{ github.job }}
-                _EXPERIMENTAL_DAGGER_DEV_IMAGE: localhost/dagger-engine.dev:${{ github.run_id }}-${{ github.job }}
-                DAGGER_REF: ${{ github.sha }}
-              shell: bash
+            - name: Install Dagger
+              uses: dagger/dagger-for-github@v8.2.0
+              with:
+                version: v0.18.19
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
