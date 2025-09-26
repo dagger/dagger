@@ -44,6 +44,8 @@ type Job struct {
 	// This is for a special "public" token which can safely be shared publicly.
 	// To get one, contact support@dagger.io
 	PublicToken string
+	// CloudEngine indicates whether to use Dagger Cloud Engine to run this workflow.
+	CloudEngine bool
 	// Redirect logs to an artifact
 	UploadLogs bool
 	// Explicitly stop the dagger engine after completing the workflow.
@@ -104,6 +106,9 @@ func (gha *Gha) Job(
 	// Redirect logs to an artifact
 	// +optional
 	uploadLogs bool,
+	// cloudEngine indicates whether to use Dagger Cloud Engine to run this workflow.
+	// +optional
+	cloudEngine bool,
 ) *Job {
 	j := &Job{
 		Condition:        condition,
@@ -122,6 +127,7 @@ func (gha *Gha) Job(
 		UploadLogs:       uploadLogs,
 		DaggerVersion:    daggerVersion,
 		DaggerDev:        daggerDev,
+		CloudEngine:      cloudEngine,
 	}
 	j.applyDefaults(gha.JobDefaults)
 	return j
@@ -174,5 +180,6 @@ func (j *Job) applyDefaults(other *Job) *Job {
 	setDefault(&j.UploadLogs, other.UploadLogs)
 	mergeDefault(&j.SetupCommands, other.SetupCommands)
 	mergeDefault(&j.TeardownCommands, other.TeardownCommands)
+	setDefault(&j.CloudEngine, other.CloudEngine)
 	return j
 }
