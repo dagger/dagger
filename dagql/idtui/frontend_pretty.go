@@ -684,7 +684,7 @@ func (fe *frontendPretty) renderKeymap(out io.Writer, style lipgloss.Style, keys
 			keyStyle = keyStyle.Foreground(nil)
 		}
 		if showedKey {
-			fmt.Fprint(w, style.Render(" · "))
+			fmt.Fprint(w, style.Render(" "+DotTiny+" "))
 		}
 		fmt.Fprint(w, keyStyle.Bold(true).Render(mainKey))
 		fmt.Fprint(w, keyStyle.Render(" "+key.Help().Desc))
@@ -821,11 +821,11 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 func (fe *frontendPretty) keymapView() string {
 	outBuf := new(strings.Builder)
 	out := NewOutput(outBuf, termenv.WithProfile(fe.profile))
-	if fe.CloudEngine {
+	if fe.UsingCloudEngine {
 		fmt.Fprint(out, lipgloss.NewStyle().
 			Foreground(lipgloss.ANSIColor(termenv.ANSIBrightMagenta)).
-			Render("⬢ cloud"))
-		fmt.Fprint(out, KeymapStyle.Render(" "))
+			Render(CloudIcon+" cloud"))
+		fmt.Fprint(out, KeymapStyle.Render(" "+VertBoldDash3+" "))
 	}
 	fe.renderKeymap(out, KeymapStyle, fe.keys(out))
 	return outBuf.String()
