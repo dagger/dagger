@@ -531,6 +531,26 @@ func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
 	return h.llmSession, h.llmErr
 }
 
+func (h *shellCallHandler) KeyBindings() []key.Binding {
+	return []key.Binding{
+		key.NewBinding(
+			key.WithKeys("!"),
+			key.WithHelp("!", "run shell"),
+			idtui.KeyEnabled(h.mode == modePrompt),
+		),
+		key.NewBinding(
+			key.WithKeys(">"),
+			key.WithHelp(">", "run prompt"),
+			idtui.KeyEnabled(h.mode == modeShell),
+		),
+		key.NewBinding(
+			key.WithKeys("ctrl+u"),
+			key.WithHelp("ctrl+u", "upload changes"),
+			idtui.KeyEnabled(h.mode == modePrompt),
+		),
+	}
+}
+
 func (h *shellCallHandler) ReactToInput(ctx context.Context, msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case ">":
@@ -552,7 +572,21 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, msg tea.KeyMsg) tea
 					// Show error in sidebar
 					Frontend.SetSidebarContent(idtui.SidebarSection{
 						Title:   "Changes",
-						Content: termenv.String("SYNC ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
+						Content: termenv.String("SAVE ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
+					})
+				}
+				return idtui.UpdatePromptMsg{}
+			}
+		}
+	case "ctrl+u":
+		if h.llmSession != nil {
+			return func() tea.Msg {
+				if err := h.llmSession.SyncFromLocal(ctx); err != nil {
+					slog.Error("failed to load current working directory into agent workspace", "error", err.Error())
+					// Show error in sidebar
+					Frontend.SetSidebarContent(idtui.SidebarSection{
+						Title:   "Changes",
+						Content: termenv.String("UPLOAD ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
 					})
 				}
 				return idtui.UpdatePromptMsg{}
@@ -599,21 +633,6 @@ func (h *shellCallHandler) SaveBeforeHistory() {
 func (h *shellCallHandler) RestoreAfterHistory() {
 	h.mode = h.savedMode
 	h.savedMode = modeUnset
-}
-
-func (h *shellCallHandler) KeyBindings() []key.Binding {
-	return []key.Binding{
-		key.NewBinding(
-			key.WithKeys("!"),
-			key.WithHelp("!", "run shell"),
-			idtui.KeyEnabled(h.mode == modePrompt),
-		),
-		key.NewBinding(
-			key.WithKeys(">"),
-			key.WithHelp(">", "run prompt"),
-			idtui.KeyEnabled(h.mode == modeShell),
-		),
-	}
 }
 
 func newTerminalWriter(fn func([]byte) (int, error)) *terminalWriter {
