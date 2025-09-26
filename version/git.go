@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"slices"
 	"strings"
 
 	"golang.org/x/mod/semver"
@@ -13,69 +12,30 @@ import (
 
 // Git is an opinionated helper for performing various commands on our dagger repo.
 type Git struct {
+	Repo *dagger.GitRepository
+
 	Directory *dagger.Directory
 
-	// +private
-	Container *dagger.Container
-	// +private
-	Valid bool
+	Container *dagger.Container // +private
 }
 
-func git(ctx context.Context, gitDir *dagger.Directory, dir *dagger.Directory) (*Git, error) {
-	ctr := dag.Wolfi().
-		Container(dagger.WolfiContainerOpts{Packages: []string{"git"}}).
-		WithWorkdir("/src")
+func git(repo *dagger.GitRepository, dir *dagger.Directory) (*Git, error) {
+	checkout := repo.Head().Tree(dagger.GitRefTreeOpts{Depth: -1})
 
+	ctr := dag.Container().From("alpine/git:latest")
+	// ctr := dag.Wolfi().Container(dagger.WolfiContainerOpts{Packages: []string{"git"}})
+	ctr = ctr.WithWorkdir("/src")
+	if repo != nil {
+		ctr = ctr.WithDirectory(".", checkout)
+	}
 	if dir != nil {
 		ctr = ctr.WithDirectory(".", dir)
 	}
 
-	if gitDir != nil {
-		ctr = ctr.WithDirectory(".", gitDir)
-	}
-
-	valid := false
-	entries, err := ctr.Directory(".").Entries(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if slices.Contains(entries, ".git/") {
-		valid = true
-	}
-
-	if valid {
-		// enter detached head state, then we can rewrite all our refs however we like later
-		ctr = ctr.WithExec([]string{"sh", "-c", "git checkout -q $(git rev-parse HEAD)"})
-
-		// manually add a remote (since .git/config was removed earlier)
-		ctr = ctr.WithExec([]string{"git", "remote", "add", "origin", "https://github.com/dagger/dagger.git"})
-
-		// do various unshallowing operations (only the bare minimum is
-		// provided by the core git functions which are used by our remote git
-		// module sources)
-		maxDepth := "2147483647" // see https://git-scm.com/docs/shallow
-		ctr = ctr.
-			WithExec([]string{
-				"git", "fetch",
-				// force so that local tags get overridden if they were wrong
-				"--force",
-				// we need all the tags, so we can find all the release tags later
-				"--tags",
-				// we need the unshallowed history of our branches, so we
-				// can determine which tags are in it later
-				"--depth=" + maxDepth,
-				"origin",
-				// update HEAD
-				"HEAD",
-				// update main
-				"refs/heads/main:refs/heads/main",
-			})
-	}
-
 	return &Git{
+		Repo:      repo,
+		Directory: dag.Directory().WithDirectory(".git", checkout.Directory(".git")),
 		Container: ctr,
-		Directory: dag.Directory().WithDirectory(".git", ctr.Directory(".git")),
-		Valid:     valid,
 	}, nil
 }
 
@@ -125,10 +85,6 @@ func (git *Git) VersionTags(
 	// Optional commit sha to get tags for
 	commit string, // +optional
 ) ([]VersionTag, error) {
-	if !git.Valid {
-		return nil, nil
-	}
-
 	component = strings.TrimSuffix(component, "/")
 	componentFilter := "v*"
 	if component != "" {
@@ -193,10 +149,6 @@ func (git *Git) Branches(
 	// Optional commit sha to get branches for
 	commit string, // +optional
 ) ([]Branch, error) {
-	if !git.Valid {
-		return nil, nil
-	}
-
 	branchArgs := []string{
 		"git",
 		"branch",
@@ -247,10 +199,6 @@ func (git *Git) Head(ctx context.Context) (*Commit, error) {
 }
 
 func (git *Git) Commit(ctx context.Context, ref string) (*Commit, error) {
-	if !git.Valid {
-		return nil, nil
-	}
-
 	raw, err := git.Container.
 		WithExec([]string{
 			"git",
@@ -274,24 +222,8 @@ func (git *Git) Commit(ctx context.Context, ref string) (*Commit, error) {
 	}, nil
 }
 
-func (git *Git) MergeBase(ctx context.Context, ref string, ref2 string) (*Commit, error) {
-	if !git.Valid {
-		return nil, nil
-	}
-
-	raw, err := git.Container.
-		WithExec([]string{
-			"git",
-			"merge-base",
-			ref, ref2,
-		}).
-		Stdout(ctx)
-	if err != nil {
-		return nil, err
-	}
-	raw = strings.TrimSpace(raw)
-
-	return git.Commit(ctx, raw)
+func (git *Git) MergeBase(ctx context.Context, ref string, ref2 string) (string, error) {
+	return git.Repo.Ref(ref).CommonAncestor(git.Repo.Ref(ref2)).Commit(ctx)
 }
 
 // Return whether the current git state is dirty
@@ -304,10 +236,6 @@ func (git *Git) Dirty(ctx context.Context) (bool, error) {
 }
 
 func (git *Git) status(ctx context.Context) (string, error) {
-	if !git.Valid {
-		return "", nil
-	}
-
 	args := []string{"git", "status", "--porcelain", "--"}
 	for _, ignore := range ignores {
 		pathspec := ":(exclude)" + ignore
@@ -321,10 +249,6 @@ func (git *Git) status(ctx context.Context) (string, error) {
 }
 
 func (git *Git) FileAt(ctx context.Context, filename string, ref string) (string, error) {
-	if !git.Valid {
-		return "", nil
-	}
-
 	data, err := git.Container.WithExec([]string{"git", "show", ref + ":" + filename}).Stdout(ctx)
 	if err != nil {
 		var execErr *dagger.ExecError
