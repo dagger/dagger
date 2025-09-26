@@ -277,6 +277,24 @@ func (sdk *goSDK) ModuleDefs(
 			},
 		},
 		dagql.Selector{
+			Field: "withoutFile",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath, "dagger.gen.go")),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withoutDirectory",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath, "internal")),
+				},
+			},
+		},
+		dagql.Selector{
 			Field: "withWorkdir",
 			Args: []dagql.NamedInput{
 				{
