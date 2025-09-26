@@ -132,10 +132,10 @@ func (ci *CI) Generate(
 	// +defaultPath="/"
 	// +ignore=["*", "!.github"]
 	repository *dagger.Directory,
-) *dagger.Directory {
+) *dagger.Changeset {
 	return ci.Workflows.Generate(dagger.GhaGenerateOpts{
 		Directory: repository,
-	})
+	}).Changes(repository)
 }
 
 func (ci *CI) Check(ctx context.Context,
@@ -143,7 +143,7 @@ func (ci *CI) Check(ctx context.Context,
 	// +ignore=["*", "!.github"]
 	repository *dagger.Directory,
 ) error {
-	return dag.Dirdiff().AssertEqual(ctx, repository, ci.Generate(repository), []string{".github/workflows"})
+	return dag.Dirdiff().AssertNoChanges(ctx, ci.Generate(repository))
 }
 
 // Add a workflow with our project-specific defaults
@@ -312,6 +312,7 @@ func (ci *CI) withEvalsWorkflow() *CI {
 			"core/schema/llm.go",
 			"core/schema/env.go",
 			"modules/evaluator/**",
+			"modules/evals/**",
 		},
 	}).WithJob(gha.Job(
 		"testdev",
