@@ -28,7 +28,20 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 	if err != nil {
 		return nil, fmt.Errorf("failed to find decl for method %s: %w", fn.Name(), err)
 	}
-	spec.doc = funcDecl.Doc.Text()
+
+	docPragmas, docComment := parsePragmaComment(funcDecl.Doc.Text())
+	spec.doc = docComment
+
+	if _, ok := docPragmas["cache-per-session"]; ok {
+		spec.cachePerSession = true
+	}
+	if v, ok := docPragmas["cache-ttl"]; ok {
+		spec.cacheTTL, ok = v.(string)
+		if !ok {
+			return nil, fmt.Errorf("cache-ttl pragma %q, must be a valid string", v)
+		}
+	}
+
 	spec.sourceMap = ps.sourceMap(funcDecl)
 
 	sig, ok := fn.Type().(*types.Signature)
@@ -81,9 +94,11 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 }
 
 type funcTypeSpec struct {
-	name      string
-	doc       string
-	sourceMap *sourceMap
+	name            string
+	doc             string
+	sourceMap       *sourceMap
+	cachePerSession bool
+	cacheTTL        string
 
 	argSpecs []paramSpec
 
@@ -112,6 +127,14 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 	if spec.doc != "" {
 		fnTypeDefCode = dotLine(fnTypeDefCode, "WithDescription").Call(Lit(strings.TrimSpace(spec.doc)))
 	}
+
+	if spec.cachePerSession {
+		fnTypeDefCode = dotLine(fnTypeDefCode, "WithCachePerSession").Call()
+	}
+	if spec.cacheTTL != "" {
+		fnTypeDefCode = dotLine(fnTypeDefCode, "WithCacheTTL").Call(Lit(strings.TrimSpace(spec.cacheTTL)))
+	}
+
 	if spec.sourceMap != nil {
 		fnTypeDefCode = dotLine(fnTypeDefCode, "WithSourceMap").Call(spec.sourceMap.TypeDefCode())
 	}
