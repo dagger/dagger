@@ -103,6 +103,8 @@ type Params struct {
 	Stdout io.Writer
 
 	ImageLoaderBackend imageload.Backend
+
+	EnvFileName string
 }
 
 type Client struct {
@@ -145,6 +147,7 @@ type Client struct {
 
 func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, rerr error) {
 	c := &Client{Params: params}
+	slog.Info("client.Connect", "envFileName", c.Params.EnvFileName)
 
 	if c.ID == "" {
 		c.ID = os.Getenv("DAGGER_SESSION_CLIENT_ID")
@@ -1169,6 +1172,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		cloudOrg = o
 	}
 
+	slog.Info("clientMetadata()", "EnvFileName", c.EnvFileName)
 	return engine.ClientMetadata{
 		ClientID:                  c.ID,
 		ClientVersion:             clientVersion,
@@ -1185,6 +1189,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		InteractiveCommand:        c.InteractiveCommand,
 		SSHAuthSocketPath:         sshAuthSock,
 		AllowedLLMModules:         c.AllowedLLMModules,
+		EnvFileName:               c.EnvFileName,
 	}
 }
 

@@ -895,11 +895,16 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 		clientVersion = engine.Version
 	}
 	allowedLLMModules := execMD.AllowedLLMModules
-	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
+	envFileName := ""
+	if md, err := engine.ClientMetadataFromHTTPHeaders(r.Header); err != nil {
+		slog.Error("retrieve client metadata from http headers of nested client: %w", err)
+	} else if md != nil {
 		clientVersion = md.ClientVersion
 		allowedLLMModules = md.AllowedLLMModules
+		envFileName = md.EnvFileName
 	}
 
+	slog.Info("serveHTTPToNestedClient(): envFileName=%q", envFileName)
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
 		ClientMetadata: &engine.ClientMetadata{
 			ClientID:          execMD.ClientID,
@@ -911,6 +916,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			Labels:            map[string]string{},
 			SSHAuthSocketPath: execMD.SSHAuthSocketPath,
 			AllowedLLMModules: allowedLLMModules,
+			EnvFileName:       envFileName,
 		},
 		CallID:              execMD.CallID,
 		CallerClientID:      execMD.CallerClientID,

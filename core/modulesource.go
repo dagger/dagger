@@ -262,6 +262,10 @@ func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, string, er
 	if err != nil {
 		return nil, "", err
 	}
+	envFileName, err := CurrentEnvFileName(ctx)
+	if err != nil {
+		return nil, "", err
+	}
 
 	// FIXME: .env must be at the root of the module directory
 	// If the user calls dagger from a subdirectory of the module, and that subdirectory contains a more
@@ -279,13 +283,13 @@ func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, string, er
 			Field: "directory",
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.String(moduleDirPath)},
-				{Name: "include", Value: dagql.ArrayInput[dagql.String]{".env"}},
+				{Name: "include", Value: dagql.ArrayInput[dagql.String]{dagql.String(envFileName)}},
 			},
 		},
 		dagql.Selector{
 			Field: "exists",
 			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(".env")},
+				{Name: "path", Value: dagql.String(envFileName)},
 			},
 		},
 	); err != nil {
@@ -299,7 +303,7 @@ func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, string, er
 	if !envFileExists {
 		return nil, "", nil
 	}
-	envFilePath := path.Join(moduleDirPath, ".env")
+	envFilePath := path.Join(moduleDirPath, envFileName)
 	var envFile *EnvFile
 	if err := dag.Select(ctx, dag.Root(), &envFile,
 		dagql.Selector{Field: "host"},
@@ -326,16 +330,20 @@ func (src *ModuleSource) outerEnvFile(ctx context.Context) (*EnvFile, string, er
 	if err != nil {
 		return nil, "", err
 	}
+	envFileName, err := CurrentEnvFileName(ctx)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get current env file name: %w", err)
+	}
 	var envFilePath dagql.String
 	if err := dag.Select(ctx, dag.Root(), &envFilePath,
 		dagql.Selector{Field: "host"},
 		dagql.Selector{Field: "findUp",
 			Args: []dagql.NamedInput{
-				{Name: "name", Value: dagql.NewString(".env")},
+				{Name: "name", Value: dagql.String(envFileName)},
 			},
 		},
 	); err != nil {
-		return nil, "", fmt.Errorf("failed to find-up outer .env: %s", err.Error())
+		return nil, "", fmt.Errorf("failed to find-up %q: %s", envFileName, err.Error())
 	}
 	if envFilePath == "" {
 		return &EnvFile{}, "", nil

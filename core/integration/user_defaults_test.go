@@ -223,6 +223,78 @@ func (UserDefaultsSuite) TestDependencies(ctx context.Context, t *testctx.T) {
 
 var nestedExec = dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}
 
+func (UserDefaultsSuite) TestCustomEnvFile(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := nestedDaggerContainer(t, c, "go", "defaults")
+	goodOuterEnv := c.EnvFile().
+		WithVariable("DEFAULTS_GREETING", "yay").
+		AsFile()
+	goodInnerEnv := c.EnvFile().
+		WithVariable("GREETING", "yay").
+		AsFile()
+	badOuterEnv := c.EnvFile().
+		WithVariable("DEFAULTS_MESSAGE_NAME", "fool").
+		AsFile()
+	badInnerEnv := c.EnvFile().
+		WithVariable("MESSAGE_NAME", "fool").
+		AsFile()
+	for _, tc := range []struct {
+		name string
+		ctr  *dagger.Container
+	}{
+		{
+			"inner .env",
+			base.
+				WithWorkdir("defaults").
+				WithFile(".env", badInnerEnv).
+				WithFile("custom-env", goodInnerEnv),
+		},
+		{
+			"outer .env inner workdir",
+			base.
+				WithFile(".env", badOuterEnv).
+				WithFile("custom-env", goodOuterEnv).
+				WithWorkdir("defaults"),
+		},
+		{
+			"outer .env outer workdir",
+			base.
+				WithFile(".env", badOuterEnv).
+				WithFile("custom-env", goodOuterEnv).
+				WithEnvVariable("DAGGER_MODULE", "./defaults"),
+		},
+	} {
+		tc := tc
+		t.Run(tc.name+" usage", func(ctx context.Context, t *testctx.T) {
+			stdout, err := tc.ctr.
+				WithExec([]string{"dagger", "--help"}, nestedExec).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, stdout, "--env-file")
+			stdout, err = tc.ctr.
+				WithExec([]string{"dagger", "core", "version"}, nestedExec).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, stdout, "-dev-")
+		})
+		t.Run(tc.name+" flag", func(ctx context.Context, t *testctx.T) {
+			stdout, err := tc.ctr.
+				WithExec([]string{"dagger", "--env-file=custom-env", "call", "message"}, nestedExec).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "yay, world!", stdout, "Custom .env must be loaded, regular .env must NOT be loaded")
+		})
+		t.Run(tc.name+" env var", func(ctx context.Context, t *testctx.T) {
+			stdout, err := tc.ctr.
+				WithEnvVariable("DAGGER_ENV_FILE", "custom-env").
+				WithExec([]string{"dagger", "call", "message"}, nestedExec).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "yay, world!", stdout, "Custom .env must be loaded, regular .env must NOT be loaded")
+		})
+	}
+}
+
 func (UserDefaultsSuite) TestConstructorOptional(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nestedDaggerContainer(t, c, "go", "defaults").

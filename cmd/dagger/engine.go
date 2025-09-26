@@ -125,6 +125,9 @@ func withEngine(
 			params.PromptHandler = Frontend
 		}
 
+		slog.Info(fmt.Sprintf("CLI: passing --env-file=%q to client params", envFileName))
+		params.EnvFileName = envFileName
+
 		// Connect to and run with the engine
 		sess, ctx, err := client.Connect(ctx, params)
 		if err != nil {
