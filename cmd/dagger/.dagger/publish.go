@@ -226,6 +226,9 @@ func (cli *DaggerCli) goreleaserBinaries() *dagger.Directory {
 			if arch == "arm" && os == "darwin" {
 				continue
 			}
+			if arch == "arm" && os == "windows" {
+				continue
+			}
 
 			platform := os + "/" + arch
 			if arch == "arm" {

@@ -2040,7 +2040,7 @@ func (s *moduleSourceSchema) runCodegen(
 	// this scopes the cache key of codegen calls to an exact content hash detached
 	// from irrelevant details like specific host paths, specific git repos+commits, etc.
 	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-		ResultKey: srcInst.Self().Digest,
+		CallKey: srcInst.Self().Digest,
 	}
 	_, err = dag.Cache.GetOrInitializeValue(ctx, cacheKey, srcInst)
 	if err != nil {
@@ -2376,7 +2376,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		return nil, fmt.Errorf("failed to create temporary module instance: %w", err)
 	}
 	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-		ResultKey: string(tmpModInst.ID().Digest()),
+		CallKey: string(tmpModInst.ID().Digest()),
 	}
 	_, err = dag.Cache.GetOrInitializeValue(ctx, cacheKey, tmpModInst)
 	if err != nil {
@@ -2393,7 +2393,6 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize module: %w", err)
 		}
-
 		initialized = resultInst.Self()
 	} else {
 		runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
@@ -2428,7 +2427,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 				// APIs that are cached per-client when local sources are involved) in the cache key of this
 				// function call. That would needlessly invalidate the cache more than is needed, similar to how
 				// we want to scope the codegen cache keys by the content digested source instance above.
-				OverrideCallDigestCacheKey: tmpModInst.ID().Digest().String(),
+				OverridePersistenceKey: tmpModInst.ID().Digest().String(),
 			})
 			if err != nil {
 				return fmt.Errorf("failed to call module %q to get functions: %w", modName, err)
@@ -2583,7 +2582,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	// this scopes the cache key of codegen calls to an exact content hash detached
 	// from irrelevant details like specific host paths, specific git repos+commits, etc.
 	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-		ResultKey: src.Self().Digest,
+		CallKey: src.Self().Digest,
 	}
 	_, err = dag.Cache.GetOrInitializeValue(ctx, cacheKey, src)
 	if err != nil {

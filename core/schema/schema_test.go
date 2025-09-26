@@ -14,7 +14,9 @@ import (
 func TestCoreModTypeDefs(t *testing.T) {
 	ctx := context.Background()
 	root := &core.Query{}
-	dag := dagql.NewServer(root, dagql.NewSessionCache(cache.NewCache[string, dagql.AnyResult]()))
+	baseCache, err := cache.NewCache[string, dagql.AnyResult](ctx, "")
+	require.NoError(t, err)
+	dag := dagql.NewServer(root, dagql.NewSessionCache(baseCache))
 	coreMod := &CoreMod{Dag: dag}
 	coreModDeps := core.NewModDeps(root, []core.Mod{coreMod})
 	require.NoError(t, coreMod.Install(ctx, dag))

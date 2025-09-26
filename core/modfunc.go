@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -28,9 +29,12 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 )
+
+const defaultCacheTTLSeconds = 7 * 24 * 60 * 60 // 1 week
 
 type ModuleFunction struct {
 	mod     *Module
@@ -108,7 +112,8 @@ type CallOpts struct {
 	// some corner cases we may calling a function internally within a separate dagql
 	// call and don't want the current call digest mixed in, e.g. during the special
 	// function call that retrieves the module typedefs.
-	OverrideCallDigestCacheKey string
+	// TODO: UPDATE ABOVE DOC STRING
+	OverridePersistenceKey string
 }
 
 type CallInput struct {
@@ -573,6 +578,21 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		}
 	}
 
+	if fn.metadata.CachePerSession || fn.mod.DisableDefaultFunctionCaching {
+		// Scope the exec cache key to the current session ID. It will still be
+		// cached in the context of the session but invalidated across
+		// different sessions.
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		dgstInputs = append(dgstInputs, clientMetadata.SessionID)
+	} else if fn.metadata.CacheTTLSeconds.Valid {
+		cacheCfg.TTL = fn.metadata.CacheTTLSeconds.Value.Int64()
+	} else {
+		cacheCfg.TTL = defaultCacheTTLSeconds
+	}
+
 	cacheCfg.Digest = dagql.HashFrom(dgstInputs...)
 	return cacheCfg, nil
 }
@@ -612,31 +632,13 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 
 	var cacheMixins []string
 	callKey := dagql.CurrentID(ctx).Digest().String()
-	if opts.OverrideCallDigestCacheKey != "" {
-		callKey = opts.OverrideCallDigestCacheKey
+	if opts.OverridePersistenceKey != "" {
+		callKey = opts.OverridePersistenceKey
 	}
 	cacheMixins = append(cacheMixins, callKey)
 
-	var expirationMixin string
-	var setExpiration func(context.Context) error
-	expirationCache := query.CallExpirationCache()
-	if opts.CachePerSession || mod.DisableDefaultFunctionCaching {
-		// Scope the exec cache key to the current session ID. It will still be
-		// cached in the context of the session but invalidated across
-		// different sessions.
-		expirationMixin = clientMetadata.SessionID
-	} else {
-		ttl := opts.CacheTTLSeconds
-		if ttl == 0 {
-			// TODO: default 1w for now, needs more thought
-			ttl = 7 * 24 * 60 * 60
-		}
-		expirationMixin, setExpiration, err = expirationCache.GetOrInitExpiration(ctx, callKey, ttl, clientMetadata.ClientID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get expiration: %w", err)
-		}
-	}
-	cacheMixins = append(cacheMixins, expirationMixin)
+	storageKey := cache.CurrentStorageKey(ctx)
+	cacheMixins = append(cacheMixins, storageKey)
 
 	execMD.CacheMixin = dagql.HashFrom(cacheMixins...)
 
@@ -827,7 +829,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("convert return value: %w", err)
 	}
 
-	safeToCache := setExpiration != nil
+	safeToPersistCache := true
 	if returnValue != nil {
 		// Get the client ID actually used during the function call - this might not
 		// be the same as execMD.ClientID if the function call was cached at the
@@ -858,18 +860,13 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 			// this being non-nil indicates there were secrets created by direct SetSecret calls in the
 			// returned value. This means we cannot use a persistently cached result, so invalidate the
 			// cache for this call in the future.
-			safeToCache = false
+			safeToPersistCache = false
 		}
 
 		returnValue = returnValue.WithPostCall(secretTransferPostCall)
 	}
-
-	if safeToCache && setExpiration != nil {
-		if err := setExpiration(ctx); err != nil {
-			// TODO: lower to just logging
-			// slog.Warn("failed to set expiration", "err", err)
-			return nil, fmt.Errorf("failed to set expiration: %w", err)
-		}
+	if returnValue != nil {
+		returnValue = returnValue.WithSafeToPersistCache(safeToPersistCache)
 	}
 
 	return returnValue, nil

@@ -2,6 +2,6 @@ package modfunccache
 
 type Call struct {
 	Key        string
-	Mixin      string
+	StorageKey string
 	Expiration int64
 }

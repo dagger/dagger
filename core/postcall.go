@@ -145,7 +145,7 @@ func ResourceTransferPostCall(
 			// cache results such that a function call return value result inherently results in any referenced
 			// secrets also staying in cache.
 			cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-				ResultKey: string(secret.inst.ID().Digest()),
+				CallKey: string(secret.inst.ID().Digest()),
 			}
 			_, err = destDag.Cache.GetOrInitializeWithCallbacks(ctx, cacheKey,
 				func(ctx context.Context) (*dagql.CacheValWithCallbacks, error) {

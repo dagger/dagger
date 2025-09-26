@@ -129,9 +129,6 @@ type Server interface {
 
 	// Open a client's telemetry database.
 	ClientTelemetry(ctc context.Context, sessID, clientID string) (*clientdb.Queries, func() error, error)
-
-	// The global call expiration cache
-	CallExpirationCache() *CallExpirationCache
 }
 
 type queryKey struct{}
