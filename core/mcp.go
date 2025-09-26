@@ -48,9 +48,9 @@ type LLMTool struct {
 	// Whether the tool schema is strict.
 	// https://platform.openai.com/docs/guides/structured-outputs?api-mode=chat
 	Strict bool `json:"-"`
-	// Whether this tool automatically runs with context (i.e. the workspace) from
-	// the LLM's Env. True for tools from Env.withModule or Env.withMCPServer.
-	Contextual bool `json:"-"`
+	// Whether we should hide the LLM tool call span in favor of just showing its
+	// child spans.
+	HideSelf bool `json:"-"`
 	// Whether the tool is read-only (from MCP ReadOnlyHint annotation)
 	ReadOnly bool `json:"-"`
 	// GraphQL API field that this tool corresponds to
@@ -324,7 +324,6 @@ func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
 				Server:      serverName,
 				Description: tool.Description,
 				Schema:      anied,
-				Contextual:  true,
 				ReadOnly:    isReadOnly,
 				Call: func(ctx context.Context, args any) (any, error) {
 					res, err := sess.CallTool(ctx, &mcp.CallToolParams{
@@ -524,7 +523,7 @@ func (m *MCP) typeTools(allTools map[string]LLMTool, srv *dagql.Server, schema *
 			Description: strings.TrimSpace(field.Description),
 			Schema:      toolSchema,
 			Strict:      false, // unused
-			Contextual:  autoConstruct != nil,
+			HideSelf:    autoConstruct == nil,
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
 				argsMap, ok := args.(map[string]any)
 				if !ok {
@@ -1083,11 +1082,9 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 		attribute.StringSlice(telemetry.LLMToolArgNamesAttr, toolArgNames),
 		attribute.StringSlice(telemetry.LLMToolArgValuesAttr, toolArgValues),
 	}
-	if !tool.Contextual ||
-		(tool.Name == "CallMethod" || tool.Name == "ChainMethods") {
-		// For non-contextual methods, or plumbing methods, don't show this span
-		// since it'll just be ugly. Just show the underlying function call that it
-		// makes.
+	if tool.HideSelf {
+		// Hide spans which are better represented by the child spans that they
+		// spawn, i.e. CallMethod, ChainMethods, or direct object-method tools.
 		attrs = append(attrs, attribute.Bool(telemetry.UIPassthroughAttr, true))
 	}
 	if tool.Server != "" {
@@ -1576,7 +1573,11 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 				if err != nil {
 					return nil, err
 				}
-				return dest, nil
+				m.env = dest
+				return toolStructuredResponse(map[string]any{
+					"output": args.Name,
+					"hint":   "To save a value to the output, use the Save tool.",
+				})
 			}),
 		})
 	}
@@ -1770,6 +1771,7 @@ func (m *MCP) staticMethodCallingTools(srv *dagql.Server, allMethods map[string]
 		}, LLMTool{
 			Name:        "CallMethod",
 			Description: "Call a method on an object. Methods must be selected with SelectMethods before calling them. Self represents the object to call the method on, and args specify any additional parameters to pass.",
+			HideSelf:    true,
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -1797,6 +1799,7 @@ func (m *MCP) staticMethodCallingTools(srv *dagql.Server, allMethods map[string]
 			Description: `Invoke multiple methods sequentially, passing the result of one method as the receiver of the next
 
 NOTE: you must select methods before chaining them`,
+			HideSelf: true,
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{

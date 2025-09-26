@@ -2,12 +2,29 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 
 	"github.com/dagger/dagger/modules/dirdiff/internal/dagger"
 )
 
 type Dirdiff struct{}
+
+// AssertNoChanges asserts that a changeset is empty.
+func (dd *Dirdiff) AssertNoChanges(
+	ctx context.Context,
+	changes *dagger.Changeset,
+) error {
+	patch, err := changes.AsPatch().Contents(ctx)
+	if err != nil {
+		return err
+	}
+	if patch == "" {
+		return nil
+	}
+	fmt.Print(patch)
+	return fmt.Errorf("changes detected")
+}
 
 // Return an error if two directories are not identical at the given paths.
 // Paths not specified in the arguments are not compared.

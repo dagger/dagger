@@ -172,11 +172,6 @@ func init() {
 	rootCmd.PersistentFlags().BoolP("help", "h", false, "Print usage")
 	rootCmd.PersistentFlags().Lookup("help").Hidden = true
 
-	// this flag changes the behaviour of a few commands, e.g. call, functions, core, shell, etc.
-	// all those functions will run in a remote cloud engine which gets created at execution time
-	rootCmd.PersistentFlags().BoolVar(&useCloudEngine, "cloud", useCloudEngine, "Run in a Dagger Cloud Engine")
-	rootCmd.PersistentFlags().Lookup("cloud").Hidden = true
-
 	disableFlagsInUseLine(rootCmd)
 }
 
@@ -342,6 +337,11 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&dotFocusField, "dot-focus-field", "", "In dot output, filter out vertices that aren't this field or descendents of this field")
 	flags.BoolVar(&dotShowInternal, "dot-show-internal", false, "In dot output, if true then include calls and spans marked as internal")
 
+	// this flag changes the behaviour of a few commands, e.g. call, functions, core, shell, etc.
+	// all those functions will run in a remote cloud engine which gets created at execution time
+	flags.BoolVar(&useCloudEngine, "cloud", useCloudEngine, "Run in a Dagger Cloud Engine")
+	flags.Lookup("cloud").Hidden = true
+
 	for _, fl := range []string{
 		"workdir",
 		"dot-output",
@@ -443,7 +443,7 @@ func main() {
 	opts.DotOutputFilePath = dotOutputFilePath
 	opts.DotFocusField = dotFocusField
 	opts.DotShowInternal = dotShowInternal
-	opts.CloudEngine = useCloudEngine || strings.HasPrefix(RunnerHost, "dagger-cloud://")
+	opts.UsingCloudEngine = useCloudEngine || strings.HasPrefix(RunnerHost, "dagger-cloud://")
 	if progress == "auto" {
 		if env := os.Getenv("DAGGER_PROGRESS"); env != "" {
 			progress = env

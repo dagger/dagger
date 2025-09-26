@@ -51,6 +51,7 @@ func (es *Evals) Check(
 		"coreApi",
 		"moduleDependencies",
 		"responses",
+		"writable",
 		"modelContextProtocol",
 	} {
 		// TODO: replace with self-calls
