@@ -1,55 +1,20 @@
 {
   "name": "List",
   "objects": {
-    "Integer": {
-      "name": "Integer",
-      "description": "",
-      "constructor": {
-        "arguments": {
-          "value": {
-            "name": "value",
-            "description": "",
-            "type": {
-              "kind": "INTEGER_KIND"
-            },
-            "isVariadic": false,
-            "isNullable": false,
-            "isOptional": false
-          }
-        }
-      },
-      "methods": {
-        "positive": {
-          "name": "positive",
-          "description": "",
-          "arguments": {},
-          "returnType": {
-            "kind": "BOOLEAN_KIND"
-          }
-        }
-      },
-      "properties": {
-        "value": {
-          "name": "value",
-          "description": "",
-          "type": {
-            "kind": "INTEGER_KIND"
-          },
-          "isExposed": true
-        }
-      }
-    },
     "List": {
       "name": "List",
       "description": "",
+      "deprecated": "",
       "methods": {
         "create": {
           "name": "create",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "n": {
               "name": "n",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {
@@ -72,10 +37,12 @@
         "floats": {
           "name": "floats",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "n": {
               "name": "n",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {
@@ -96,6 +63,48 @@
         }
       },
       "properties": {}
+    },
+    "Integer": {
+      "name": "Integer",
+      "description": "",
+      "deprecated": "",
+      "constructor": {
+        "arguments": {
+          "value": {
+            "name": "value",
+            "description": "",
+            "deprecated": "",
+            "type": {
+              "kind": "INTEGER_KIND"
+            },
+            "isVariadic": false,
+            "isNullable": false,
+            "isOptional": false
+          }
+        }
+      },
+      "methods": {
+        "positive": {
+          "name": "positive",
+          "description": "",
+          "deprecated": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "BOOLEAN_KIND"
+          }
+        }
+      },
+      "properties": {
+        "value": {
+          "name": "value",
+          "description": "",
+          "deprecated": "",
+          "type": {
+            "kind": "INTEGER_KIND"
+          },
+          "isExposed": true
+        }
+      }
     }
   },
   "enums": {},

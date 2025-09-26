@@ -76,7 +76,16 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 		return nil, fmt.Errorf("failed to find decl for named type %s: %w", spec.name, err)
 	}
 	if doc := docForAstSpec(astSpec); doc != nil {
-		spec.doc = doc.Text()
+		docPragmas, docComment := parsePragmaComment(doc.Text())
+		comment := strings.TrimSpace(docComment)
+		if v, ok := docPragmas["deprecated"]; ok {
+			if v == nil {
+				spec.deprecated = ""
+			} else {
+				spec.deprecated, _ = v.(string)
+			}
+		}
+		spec.doc = comment
 	}
 
 	spec.sourceMap = ps.sourceMap(astSpec)
@@ -134,6 +143,13 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 				fieldSpec.isPrivate, _ = v.(bool)
 			}
 		}
+		if v, ok := pragmas["deprecated"]; ok {
+			if v == nil {
+				fieldSpec.deprecated = ""
+			} else {
+				fieldSpec.deprecated, _ = v.(string)
+			}
+		}
 
 		fieldSpec.doc = comment
 
@@ -157,6 +173,7 @@ type parsedObjectType struct {
 	moduleName string
 	doc        string
 	sourceMap  *sourceMap
+	deprecated string
 
 	fields      []*fieldSpec
 	methods     []*funcTypeSpec
@@ -174,6 +191,9 @@ func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 	withObjectOptsCode := []Code{}
 	if spec.doc != "" {
 		withObjectOptsCode = append(withObjectOptsCode, Id("Description").Op(":").Lit(strings.TrimSpace(spec.doc)))
+	}
+	if spec.deprecated != "" {
+		withObjectOptsCode = append(withObjectOptsCode, Id("Deprecated").Op(":").Lit(strings.TrimSpace(spec.deprecated)))
 	}
 	if spec.sourceMap != nil {
 		withObjectOptsCode = append(withObjectOptsCode, Id("SourceMap").Op(":").Add(spec.sourceMap.TypeDefCode()))
@@ -211,6 +231,9 @@ func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 		}
 		if field.sourceMap != nil {
 			withFieldOpts = append(withFieldOpts, Id("SourceMap").Op(":").Add(field.sourceMap.TypeDefCode()))
+		}
+		if field.deprecated != "" {
+			withFieldOpts = append(withFieldOpts, Id("Deprecated").Op(":").Lit(strings.TrimSpace(field.deprecated)))
 		}
 		if len(withFieldOpts) > 0 {
 			withFieldArgsCode = append(withFieldArgsCode,
@@ -518,10 +541,11 @@ func (spec *parsedObjectType) setFieldsToMarshalStructCode(field *fieldSpec) *St
 }
 
 type fieldSpec struct {
-	name      string
-	doc       string
-	sourceMap *sourceMap
-	typeSpec  ParsedType
+	name       string
+	doc        string
+	deprecated string
+	sourceMap  *sourceMap
+	typeSpec   ParsedType
 
 	// isPrivate is true if the field is marked with the +private pragma
 	isPrivate bool

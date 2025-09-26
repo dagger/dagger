@@ -4,14 +4,17 @@
     "OptionalParameter": {
       "name": "OptionalParameter",
       "description": "OptionalParameter class",
+      "deprecated": "",
       "methods": {
         "helloWorld": {
           "name": "helloWorld",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "name": {
               "name": "name",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -27,10 +30,12 @@
         "isTrue": {
           "name": "isTrue",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "value": {
               "name": "value",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "BOOLEAN_KIND"
               },
@@ -46,10 +51,12 @@
         "add": {
           "name": "add",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "a": {
               "name": "a",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "INTEGER_KIND"
               },
@@ -61,6 +68,7 @@
             "b": {
               "name": "b",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "INTEGER_KIND"
               },
@@ -77,10 +85,12 @@
         "sayBool": {
           "name": "sayBool",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "value": {
               "name": "value",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "BOOLEAN_KIND"
               },
@@ -97,10 +107,12 @@
         "foo": {
           "name": "foo",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "a": {
               "name": "a",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -111,6 +123,7 @@
             "b": {
               "name": "b",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -121,6 +134,7 @@
             "c": {
               "name": "c",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -131,6 +145,7 @@
             "d": {
               "name": "d",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -142,6 +157,7 @@
             "e": {
               "name": "e",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -153,6 +169,7 @@
             "f": {
               "name": "f",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -169,10 +186,12 @@
         "array": {
           "name": "array",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "a": {
               "name": "a",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {
@@ -192,6 +211,7 @@
             "b": {
               "name": "b",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {
@@ -205,6 +225,7 @@
             "c": {
               "name": "c",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {

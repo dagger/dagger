@@ -4,14 +4,17 @@
     "Scalar": {
       "name": "Scalar",
       "description": "",
+      "deprecated": "",
       "methods": {
         "fromPlatform": {
           "name": "fromPlatform",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "platform": {
               "name": "platform",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "SCALAR_KIND",
                 "name": "Platform"
@@ -28,10 +31,12 @@
         "fromPlatforms": {
           "name": "fromPlatforms",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "platforms": {
               "name": "platforms",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {

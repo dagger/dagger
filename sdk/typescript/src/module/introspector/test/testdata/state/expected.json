@@ -5,14 +5,17 @@
     "State": {
       "name": "State",
       "description": "State module",
+      "deprecated": "",
       "methods": {
         "base": {
           "name": "base",
           "description": "Returns a base Alpine container",
+          "deprecated": "",
           "arguments": {
             "version": {
               "name": "version",
               "description": "version to use (default to: 3.16.2)",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -29,10 +32,12 @@
         "install": {
           "name": "install",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "pkgs": {
               "name": "pkgs",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {
@@ -52,10 +57,12 @@
         "exec": {
           "name": "exec",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "cmd": {
               "name": "cmd",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {
@@ -76,6 +83,7 @@
         "version": {
           "name": "version",
           "description": "",
+          "deprecated": "",
           "type": {
             "kind": "STRING_KIND"
           },
@@ -84,6 +92,7 @@
         "user": {
           "name": "user",
           "description": "",
+          "deprecated": "",
           "type": {
             "kind": "STRING_KIND"
           },
@@ -92,6 +101,7 @@
         "packages": {
           "name": "packages",
           "description": "packages to install",
+          "deprecated": "",
           "type": {
             "kind": "LIST_KIND",
             "typeDef": {
@@ -103,6 +113,7 @@
         "ctr": {
           "name": "ctr",
           "description": "",
+          "deprecated": "",
           "type": {
             "kind": "OBJECT_KIND",
             "name": "Container"

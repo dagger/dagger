@@ -4,14 +4,17 @@
     "CoreEnums": {
       "name": "CoreEnums",
       "description": "",
+      "deprecated": "",
       "methods": {
         "toImageLayerCompression": {
           "name": "toImageLayerCompression",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "compression": {
               "name": "compression",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -28,10 +31,12 @@
         "fromImageLayerCompression": {
           "name": "fromImageLayerCompression",
           "description": "",
+          "deprecated": "",
           "arguments": {
             "compression": {
               "name": "compression",
               "description": "",
+              "deprecated": "",
               "type": {
                 "kind": "ENUM_KIND",
                 "name": "ImageLayerCompression"

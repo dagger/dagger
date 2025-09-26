@@ -3,32 +3,13 @@
   "objects": {
     "Context": {
       "name": "Context",
+      "deprecated": "",
       "description": "",
       "methods": {
         "helloWorld": {
           "name": "helloWorld",
           "description": "",
-          "arguments": {
-            "dir": {
-              "name": "dir",
-              "description": "",
-              "type": {
-                "kind": "OBJECT_KIND",
-                "name": "Directory"
-              },
-              "isVariadic": false,
-              "isNullable": false,
-              "isOptional": false,
-              "defaultPath": "."
-            }
-          },
-          "returnType": {
-            "kind": "STRING_KIND"
-          }
-        },
-        "helloWorldIgnored": {
-          "name": "helloWorldIgnored",
-          "description": "",
+          "deprecated": "",
           "arguments": {
             "dir": {
               "name": "dir",
@@ -41,6 +22,30 @@
               "isNullable": false,
               "isOptional": false,
               "defaultPath": ".",
+              "deprecated": ""
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "helloWorldIgnored": {
+          "name": "helloWorldIgnored",
+          "description": "",
+          "deprecated": "",
+          "arguments": {
+            "dir": {
+              "name": "dir",
+              "description": "",
+              "type": {
+                "kind": "OBJECT_KIND",
+                "name": "Directory"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false,
+              "defaultPath": ".",
+              "deprecated": "",
               "ignore": [
                 "dir"
               ]
