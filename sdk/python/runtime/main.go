@@ -7,8 +7,9 @@ import (
 	_ "embed"
 	"fmt"
 	"path"
-	"python-sdk/internal/dagger"
 	"strings"
+
+	"python-sdk/internal/dagger"
 )
 
 const (
@@ -18,6 +19,7 @@ const (
 	SDKGenPath            = "src/dagger/client/gen.py"
 	UserGenPath           = "src/dagger_gen.py"
 	SchemaPath            = "/schema.json"
+	TypeDefsPath          = "/module.json"
 	VenvPath              = "/opt/venv"
 	ProjectCfg            = "pyproject.toml"
 	PipCompileLock        = "requirements.lock"
@@ -177,6 +179,31 @@ func (m *PythonSdk) ModuleRuntime(
 		return nil, err
 	}
 	return m.WithInstall().Container, nil
+}
+
+// Container for executing the Python module runtime
+func (m *PythonSdk) ModuleDefs(
+	ctx context.Context,
+	modSource *dagger.ModuleSource,
+	introspectionJSON *dagger.File,
+) (*dagger.Module, error) {
+	_ = introspectionJSON
+	// Ignore introspection to avoid calling codegen first
+	ctr, err := m.ModuleRuntime(ctx, modSource, nil)
+	if err != nil {
+		return nil, err
+	}
+	modID, err := ctr.
+		WithEnvVariable("DAGGER_MODULE_FILE", TypeDefsPath).
+		WithExec([]string{RuntimeExecutablePath, "--register"}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		}).
+		File(TypeDefsPath).
+		Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return dag.LoadModuleFromID(dagger.ModuleID(modID)), nil
 }
 
 // Common steps for the ModuleRuntime and Codegen functions
