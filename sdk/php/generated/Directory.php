@@ -242,9 +242,9 @@ class Directory extends Client\AbstractObject implements Client\IdAble
      * Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
      */
     public function search(
+        string $pattern,
         ?array $paths = null,
         ?array $globs = null,
-        string $pattern,
         ?bool $literal = false,
         ?bool $multiline = false,
         ?bool $dotall = false,
@@ -255,13 +255,13 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         ?int $limit = null,
     ): array {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('search');
+        $leafQueryBuilder->setArgument('pattern', $pattern);
         if (null !== $paths) {
         $leafQueryBuilder->setArgument('paths', $paths);
         }
         if (null !== $globs) {
         $leafQueryBuilder->setArgument('globs', $globs);
         }
-        $leafQueryBuilder->setArgument('pattern', $pattern);
         if (null !== $literal) {
         $leafQueryBuilder->setArgument('literal', $literal);
         }

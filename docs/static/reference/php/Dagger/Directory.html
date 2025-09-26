@@ -326,7 +326,7 @@
                     array
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_search">search</a>(array|null $paths = null, array|null $globs = null, string $pattern, bool|null $literal = false, bool|null $multiline = false, bool|null $dotall = false, bool|null $insensitive = false, bool|null $skipIgnored = false, bool|null $skipHidden = false, bool|null $filesOnly = false, int|null $limit = null)
+                    <a href="#method_search">search</a>(string $pattern, array|null $paths = null, array|null $globs = null, bool|null $literal = false, bool|null $multiline = false, bool|null $dotall = false, bool|null $insensitive = false, bool|null $skipIgnored = false, bool|null $skipHidden = false, bool|null $filesOnly = false, int|null $limit = null)
         
                                             <p><p>Searches for content matching the given regular expression or literal string.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -1351,7 +1351,7 @@
                     <h3 id="method_search">
         <div class="location">at line 244</div>
         <code>                    array
-    <strong>search</strong>(array|null $paths = null, array|null $globs = null, string $pattern, bool|null $literal = false, bool|null $multiline = false, bool|null $dotall = false, bool|null $insensitive = false, bool|null $skipIgnored = false, bool|null $skipHidden = false, bool|null $filesOnly = false, int|null $limit = null)
+    <strong>search</strong>(string $pattern, array|null $paths = null, array|null $globs = null, bool|null $literal = false, bool|null $multiline = false, bool|null $dotall = false, bool|null $insensitive = false, bool|null $skipIgnored = false, bool|null $skipHidden = false, bool|null $filesOnly = false, int|null $limit = null)
         </code>
     </h3>
     <div class="details">    
@@ -1366,6 +1366,11 @@
 
                     <table class="table table-condensed">
                     <tr>
+                <td>string</td>
+                <td>$pattern</td>
+                <td></td>
+            </tr>
+                    <tr>
                 <td>array|null</td>
                 <td>$paths</td>
                 <td></td>
@@ -1373,11 +1378,6 @@
                     <tr>
                 <td>array|null</td>
                 <td>$globs</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>string</td>
-                <td>$pattern</td>
                 <td></td>
             </tr>
                     <tr>
