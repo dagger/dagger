@@ -210,10 +210,21 @@ module.exports = {
       collapsible: true,
       collapsed: true,
       items: [
-        "reference/container-runtimes/kubernetes",
+        "reference/container-runtimes/index",
+        "reference/container-runtimes/docker",
         "reference/container-runtimes/podman",
         "reference/container-runtimes/nerdctl",
         "reference/container-runtimes/apple-container",
+      ],
+    },
+    {
+      type: "category",
+      label: "Deployment",
+      collapsible: true,
+      collapsed: true,
+      items: [
+        "reference/deployment/kubernetes",
+        "reference/deployment/openshift",
       ],
     },
     {

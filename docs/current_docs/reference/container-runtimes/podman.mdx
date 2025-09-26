@@ -8,29 +8,30 @@ slug: /reference/container-runtimes/podman
 
 Dagger can be used with any OCI-compatible container runtime, including Podman.
 
-## How it works
-
-By default, Dagger tries to invoke the `docker` executable. Since Podman is CLI-compatible with Docker, it can be used as a drop-in replacement. This is as simple as creating a symbolic link to the Podman executable in your system path and naming it `docker`.
-
 ## Prerequisites
 
-- Podman installed and running on the host system.
-- Podman machine configured for [rootful container execution](https://docs.podman.io/en/stable/markdown/podman-machine-set.1.html#rootful).
+Ensure that podman is installed and running on your system:
 
-## Example
-
-To use Podman with Dagger, create a symbolic link as below:
-
-```shell
-sudo ln -s $(which podman) /usr/local/bin/docker
+```console
+$ podman info
+host:
+  arch: amd64
+  buildahVersion: 1.41.4
+  ...
 ```
+
+:::warning
+Podman must be configured for [rootful container execution](https://docs.podman.io/en/stable/markdown/podman-machine-set.1.html#rootful).
+:::
+
+You can install podman using the [official instructions](https://podman.io/getting-started/installation).
 
 :::note
 Podman Desktop on Mac and RHEL 8.x users may need to additionally execute `modprobe iptable_nat`.
 
 To access the virtual machine used by Podman Desktop on Mac, use the commands below:
 
-```shell
+```console
 # list podman machines
 podman machine list
 
@@ -41,6 +42,18 @@ podman machine ssh podman-machine-default
 sudo modprobe iptable_nat
 ```
 :::
+
+## Example
+
+```console
+$ podman ps
+CONTAINER ID   IMAGE                                COMMAND                  CREATED       STATUS       PORTS                                         NAMES
+$ dagger core version
+v0.18.19
+$ podman ps
+CONTAINER ID   IMAGE                                COMMAND                  CREATED       STATUS       PORTS                                         NAMES
+27d47c3d5a10   registry.dagger.io/engine:v0.18.19   "dagger-entrypoint.s…"   6 days ago    Up 4 hours                                                 dagger-engine-v0.18.19
+```
 
 ## Resources
 
