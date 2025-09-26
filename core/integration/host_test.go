@@ -337,23 +337,27 @@ func (HostSuite) TestDirectoryGitIgnore(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("don't load files ignored by .gitignore", func(ctx context.Context, t *testctx.T) {
-		dir := t.TempDir()
+		hostDir := t.TempDir()
 
-		require.NoError(t, os.MkdirAll(filepath.Join(dir, ".git"), 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("bar/\nbaz.txt\n"), 0o600))
-		require.NoError(t, os.MkdirAll(filepath.Join(dir, "foo/"), 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "foo/foo.txt"), []byte("1"), 0o600))
-		require.NoError(t, os.MkdirAll(filepath.Join(dir, "bar/"), 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "bar/bar.txt"), []byte("1"), 0o600))
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "baz.txt"), []byte("1"), 0o600))
+		require.NoError(t, os.MkdirAll(filepath.Join(hostDir, ".git"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(hostDir, ".gitignore"), []byte("bar/\nbaz.txt\n"), 0o600))
+		require.NoError(t, os.MkdirAll(filepath.Join(hostDir, "foo/"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(hostDir, "foo/foo.txt"), []byte("1"), 0o600))
+		require.NoError(t, os.MkdirAll(filepath.Join(hostDir, "bar/"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(hostDir, "bar/bar.txt"), []byte("1"), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(hostDir, "baz.txt"), []byte("1"), 0o600))
 
 		// sanity check!
-		entries, err := c.Host().Directory(filepath.Join(dir, "foo/"), dagger.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
+		rootEntries, err := c.Host().Directory(hostDir, dagger.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{"foo.txt"}, entries)
+		require.Equal(t, []string{".git/", ".gitignore", "foo/"}, rootEntries)
 
-		entries, err = c.Host().Directory(filepath.Join(dir, "bar/"), dagger.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
-		require.Error(t, err, fmt.Errorf("expected error, got: %#v", entries))
+		fooEntries, err := c.Host().Directory(filepath.Join(hostDir, "foo/"), dagger.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"foo.txt"}, fooEntries)
+
+		barEntries, err := c.Host().Directory(filepath.Join(hostDir, "bar/"), dagger.HostDirectoryOpts{Gitignore: true}).Entries(ctx)
+		require.Error(t, err, fmt.Errorf("expected error, got: %#v (root entries: %#v)", barEntries, rootEntries))
 		requireErrOut(t, err, "no such file or directory")
 	})
 
