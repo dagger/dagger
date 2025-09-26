@@ -2,16 +2,19 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/sources/local"
+
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-type Host struct {
-}
+type Host struct{}
 
 func (*Host) Type() *ast.Type {
 	return &ast.Type{
@@ -24,8 +27,8 @@ func (*Host) TypeDescription() string {
 	return "Information about the host environment."
 }
 
-// find-up a given soughtName in curDirPath and its parent directories, return the dir
-// it was found in, if any
+// find-up a given soughtName in curDirPath and its parent directories,
+// return the absolute path to the dir it was found in, if any
 func (Host) FindUp(
 	ctx context.Context,
 	statFS StatFS,
@@ -79,4 +82,43 @@ func (Host) FindUpAll(
 	}
 
 	return found, nil
+}
+
+func (*Host) Directory(ctx context.Context, rootPath string, filter CopyFilter, gitIgnore bool, noCache bool, relPath string) (*Directory, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current query: %w", err)
+	}
+
+	bkGroupSession, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	snapshotOpts := local.SnapshotSyncOpts{
+		IncludePatterns: filter.Include,
+		ExcludePatterns: filter.Exclude,
+		GitIgnore:       gitIgnore,
+		RelativePath:    relPath,
+	}
+
+	if noCache {
+		snapshotOpts.CacheBuster = rand.Text()
+	}
+
+	ref, err := query.LocalSource().Snapshot(ctx, bkGroupSession, query.BuildkitSession(), rootPath, snapshotOpts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get snapshot: %w", err)
+	}
+
+	dir := NewDirectory(nil, "/", query.Platform(), nil)
+	dir.Result = ref
+
+	return dir, nil
+}
+
+func (h *Host) Clone() *Host {
+	cp := *h
+
+	return &cp
 }

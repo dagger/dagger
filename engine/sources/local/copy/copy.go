@@ -115,7 +115,8 @@ func Copy(ctx context.Context, srcRoot, src, dstRoot, dst string, opts ...Opt) e
 		if err != nil {
 			return err
 		}
-		if err := c.copy(ctx, srcFollowed, "", dst, false, patternmatcher.MatchInfo{}, patternmatcher.MatchInfo{}); err != nil {
+
+		if err := c.copy(ctx, srcFollowed, ci.BaseCopyPath, dst, false, patternmatcher.MatchInfo{}, patternmatcher.MatchInfo{}); err != nil {
 			return err
 		}
 	}
@@ -182,6 +183,12 @@ type CopyInfo struct {
 	// replace any existing symlink or file)
 	AlwaysReplaceExistingDestPaths bool
 	ChangeFunc                     fsutil.ChangeFunc
+
+	// BaseCopyPath represents the starting directory for the copy operation.
+	// This is necessary when the rootPath differs from the source path on the host.
+	// This situation occurs when `UseGitignore` is enabled, as patterns may be
+	// sourced from directories higher up than the requested directory.
+	BaseCopyPath string
 }
 
 type Opt func(*CopyInfo)

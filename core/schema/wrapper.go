@@ -125,10 +125,12 @@ func DagOpDirectoryWrapper[T dagql.Typed, A DagOpInternalArgsIface](
 		if args.InDagOp() {
 			return fn(ctx, self, args)
 		}
+
 		dir, err := DagOpDirectory(ctx, srv, self.Self(), args, "", fn, opts...)
 		if err != nil {
 			return inst, err
 		}
+
 		return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 	}
 }
@@ -174,6 +176,9 @@ func getSelfDigest(a any) (digest.Digest, error) {
 		// FIXME this seems weird?
 		return "", nil
 	case *core.Query:
+		// FIXME this seems weird?
+		return "", nil
+	case *core.Host:
 		// FIXME this seems weird?
 		return "", nil
 	default:
