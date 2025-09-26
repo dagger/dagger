@@ -534,13 +534,29 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 	return inst, nil
 }
 
-func IsRemotePublic(ctx context.Context, remote *gitutil.GitURL) (bool, error) {
+func IsRemotePublic(ctx context.Context, remote *gitutil.GitURL) (r bool, rerr error) {
+	lockResult, err := core.LockfileGetGitPublic(ctx, remote.Remote())
+	if err != nil {
+		return false, fmt.Errorf("lookup lockfile for git remote public status: %w", err)
+	}
+	if lockResult != nil {
+		return *lockResult, nil
+	}
 	// check if repo is public
 	repo := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
 		Name: "origin",
 		URLs: []string{remote.Remote()},
 	})
-	_, err := repo.ListContext(ctx, &git.ListOptions{Auth: nil})
+	// Catch lookup result to add it to the lockfile
+	defer func() {
+		if rerr != nil {
+			return
+		}
+		if err := core.LockfileSetGitPublic(ctx, remote.Remote(), r); err != nil {
+			slog.Info("update lockfile for git remote public status: %w", err)
+		}
+	}()
+	_, err = repo.ListContext(ctx, &git.ListOptions{Auth: nil})
 	if err != nil {
 		// Some Git hosts (Azure Repos and custom portals) return a 200 HTML login page for unauthenticated refs: go-git reports ErrInvalidPktLen
 		// treat as auth-required/private

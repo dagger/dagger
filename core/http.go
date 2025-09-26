@@ -26,6 +26,7 @@ func DoHTTPRequest(
 	req *http.Request,
 	filename string,
 	permissions int,
+	lockDigest *string,
 ) (_ bkcache.ImmutableRef, _ digest.Digest, _ *http.Response, rerr error) {
 	cache := query.BuildkitCache()
 
@@ -110,6 +111,10 @@ func DoHTTPRequest(
 		if err != nil {
 			return nil, "", nil, err
 		}
+		contentDgst := md.getHTTPChecksum()
+		if err := LockfileSetHTTP(ctx, url, contentDgst.String()); err != nil {
+			return nil, "", nil, fmt.Errorf("write cached http digest to lockfile: %w", err)
+		}
 		return snap, md.getHTTPChecksum(), resp, nil
 	}
 
@@ -162,11 +167,15 @@ func DoHTTPRequest(
 	if err != nil {
 		return nil, "", nil, err
 	}
+
 	defer snap.Release(context.WithoutCancel(ctx))
 	bkref = nil
 
 	contentDgst := digest.NewDigest(digest.SHA256, h)
-
+	// Update lockfile with content digest
+	if err := LockfileSetHTTP(ctx, url, contentDgst.String()); err != nil {
+		return nil, "", nil, fmt.Errorf("update http lockfile: %w", err)
+	}
 	md := cacheRefMetadata{snap}
 	if respETag := resp.Header.Get("ETag"); respETag != "" {
 		respETag = etagValue(respETag)

@@ -817,14 +817,28 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	// Doesn't have a digest, resolve that now and re-call this field using the canonical
 	// digested ref instead. This ensures the ID returned here is always stable w/ the
 	// digested image ref.
-	_, digest, _, err := bk.ResolveImageConfig(ctx, refName.String(), sourceresolver.Opt{
-		Platform: ptr(platform.Spec()),
-		ImageOpt: &sourceresolver.ResolveImageOpt{
-			ResolveMode: llb.ResolveModeDefault.String(),
-		},
-	})
+
+	// Lookup our client lock file
+	lockedDigest, err := core.LockfileGetContainer(ctx, refName.String(), platform.Format())
 	if err != nil {
-		return inst, fmt.Errorf("failed to resolve image %q (platform: %q): %w", refName.String(), platform.Format(), err)
+		return inst, fmt.Errorf("resolve image ref from lockfile: %w", err)
+	}
+	digest := digest.Digest(lockedDigest)
+	if digest == "" {
+		// Fall back to actual remote lookup
+		_, digest, _, err = bk.ResolveImageConfig(ctx, refName.String(), sourceresolver.Opt{
+			Platform: ptr(platform.Spec()),
+			ImageOpt: &sourceresolver.ResolveImageOpt{
+				ResolveMode: llb.ResolveModeDefault.String(),
+			},
+		})
+		if err != nil {
+			return inst, fmt.Errorf("failed to resolve image %q (platform: %q): %w", refName.String(), platform.Format(), err)
+		}
+		// Update the lockfile with the real lookup result
+		if err := core.LockfileSetContainer(ctx, refName.String(), platform.Format(), digest.String()); err != nil {
+			return inst, fmt.Errorf("update lockfile: %w", err)
+		}
 	}
 	refName, err = reference.WithDigest(refName, digest)
 	if err != nil {
@@ -846,7 +860,6 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	if err != nil {
 		return inst, err
 	}
-
 	return inst, nil
 }
 

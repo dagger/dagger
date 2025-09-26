@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/opencontainers/go-digest"
 )
 
 var _ SchemaResolvers = &httpSchema{}
@@ -36,6 +38,7 @@ type httpArgs struct {
 	Permissions             *int
 	AuthHeader              dagql.Optional[core.SecretID]
 	ExperimentalServiceHost dagql.Optional[core.ServiceID]
+	LockDigest              *string
 
 	FSDagOpInternalArgs
 	RefID string `internal:"true" default:"" name:"refID"`
@@ -58,11 +61,35 @@ func (s *httpSchema) httpPath(ctx context.Context, parent *core.Query, args http
 }
 
 func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Query], args httpArgs) (inst dagql.ObjectResult[*core.File], rerr error) {
+	if args.LockDigest == nil {
+		lockDigest, err := core.LockfileGetHTTP(ctx, args.URL)
+		if err != nil {
+			slog.Info("lockfile lookup failed for http operation.", "url", args.URL)
+		} else {
+			slog.Debug("lockfile get http", "url", args.URL, "result", lockDigest)
+			args.LockDigest = &lockDigest
+		}
+	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dagql server: %w", err)
 	}
-
+	if args.LockDigest != nil {
+		// Try zero round-trip cache lookup
+		cache := parent.Self().BuildkitCache()
+		if snap, err := core.SearchHTTPByContentDigest(ctx, cache, digest.Digest(*args.LockDigest)); err == nil {
+			// Found in cache by content digest - no HTTP request needed!
+			slog.Debug("http cache hit by content digest", "url", args.URL, "digest", *args.LockDigest)
+			filename, err := s.httpPath(ctx, parent.Self(), args)
+			if err != nil {
+				return inst, err
+			}
+			file := core.NewFile(nil, filename, parent.Self().Platform(), nil)
+			file.Result = snap
+			return dagql.NewObjectResultForCurrentID(ctx, srv, file)
+		}
+		// Not found by content digest, continue with normal flow
+	}
 	if args.InDagOp() {
 		cache := parent.Self().BuildkitCache()
 		snap, err := cache.Get(ctx, args.RefID, nil)
@@ -134,12 +161,18 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 	if authHeader != "" {
 		req.Header.Add("Authorization", authHeader)
 	}
-	snap, dgst, resp, err := core.DoHTTPRequest(ctx, parent.Self(), req, filename, permissions)
+	snap, dgst, resp, err := core.DoHTTPRequest(ctx, parent.Self(), req, filename, permissions, args.LockDigest)
 	if err != nil {
 		return inst, err
 	}
 	defer resp.Body.Close()
 	defer snap.Release(context.WithoutCancel(ctx))
+
+	if args.LockDigest != nil && *args.LockDigest != "" {
+		if dgst.String() != *args.LockDigest {
+			return inst, fmt.Errorf("lock digest validation failed: expected %s, got %s", *args.LockDigest, dgst)
+		}
+	}
 
 	// also mixin the checksum
 	newID := dagql.CurrentID(ctx).

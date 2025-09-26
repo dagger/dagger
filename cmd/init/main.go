@@ -24,6 +24,7 @@ import (
 	"github.com/dagger/dagger/engine/client/secretprovider"
 	"github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/engine/session/h2c"
+	"github.com/dagger/dagger/engine/session/lockfile"
 )
 
 func main() {
@@ -280,6 +281,20 @@ func mainSession() error {
 		// Git attachable
 		git.NewGitAttachable(ctx),
 	}
+
+	// lockfile attachable
+	var lockfileAttachable *lockfile.LockfileAttachable
+	workdir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get working directory: %w", err)
+	}
+	if la, err := lockfile.NewLockfileAttachable(workdir); err != nil {
+		// Just warn, don't fail - lockfile is optional
+		fmt.Fprintf(os.Stderr, "Warning: failed to initialize lockfile: %v\n", err)
+	} else {
+		lockfileAttachable = la
+		attachables = append(attachables, lockfileAttachable)
+	}
 	// filesync
 	filesyncer, err := client.NewFilesyncer()
 	if err != nil {
@@ -292,6 +307,11 @@ func mainSession() error {
 		return err
 	}
 	defer sessionSrv.Stop()
+
+	// Defer lockfile close AFTER sessionSrv.Stop() so it runs BEFORE stop
+	if lockfileAttachable != nil {
+		defer lockfileAttachable.Close()
+	}
 
 	if err := pipeW.Close(); err != nil {
 		return err

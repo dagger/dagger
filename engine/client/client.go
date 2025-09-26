@@ -38,6 +38,8 @@ import (
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/net/http2"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/dagger/dagger/engine/session/lockfile"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
@@ -387,6 +389,18 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		// Git attachable
 		git.NewGitAttachable(ctx),
 	}
+
+	// lockfile attachable
+	workingDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get working directory for lockfile: %w", err)
+	}
+	lockfileAttachable, err := lockfile.NewLockfileAttachable(workingDir)
+	if err != nil {
+		return fmt.Errorf("failed to initialize lockfile: %w", err)
+	}
+	attachables = append(attachables, lockfileAttachable)
+	defer lockfileAttachable.Close()
 
 	if c.Params.Stdin != nil && c.Params.Stdout != nil {
 		// pipe
