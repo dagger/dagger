@@ -174,6 +174,34 @@ func CurrentDagqlCache(ctx context.Context) (*dagql.SessionCache, error) {
 	return cache, nil
 }
 
+func CurrentMainClient(ctx context.Context) (*engine.ClientMetadata, error) {
+	q, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current query: %w", err)
+	}
+	clientMetadata, err := q.NonModuleParentClientMetadata(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("non-module parent client metadata: %w", err)
+	}
+	return clientMetadata, nil
+}
+
+func CurrentEnvFileName(ctx context.Context) (string, error) {
+	q, err := CurrentQuery(ctx)
+	if err != nil {
+		return "", fmt.Errorf("current query: %w", err)
+	}
+	clientMetadata, err := q.MainClientCallerMetadata(ctx)
+	if err != nil {
+		return "", fmt.Errorf("main client caller metadata: %w", err)
+	}
+	name := clientMetadata.EnvFileName
+	if name == "" {
+		name = ".env"
+	}
+	return name, nil
+}
+
 func NewRoot(srv Server) *Query {
 	return &Query{Server: srv}
 }

@@ -64,6 +64,7 @@ const (
 
 	DaggerSessionPortEnv  = "DAGGER_SESSION_PORT"
 	DaggerSessionTokenEnv = "DAGGER_SESSION_TOKEN"
+	DaggerEnvFileNameEnv  = "DAGGER_ENV_FILE"
 
 	// this is set by buildkit, we cannot change
 	BuildkitSessionIDHeader = "x-docker-expose-session-uuid"
@@ -936,6 +937,10 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	ctx = trace.ContextWithSpanContext(ctx, w.causeCtx)
 
 	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+w.execMD.SecretToken)
+
+	if w.execMD.EnvFileName != "" && w.execMD.EnvFileName != ".env" {
+		state.spec.Process.Env = append(state.spec.Process.Env, DaggerEnvFileNameEnv+"="+w.execMD.EnvFileName)
+	}
 
 	w.execMD.ClientStableID = randid.NewID()
 

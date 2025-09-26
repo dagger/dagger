@@ -125,6 +125,8 @@ func withEngine(
 			params.PromptHandler = Frontend
 		}
 
+		params.EnvFileName = envFileName
+
 		// Connect to and run with the engine
 		sess, ctx, err := client.Connect(ctx, params)
 		if err != nil {

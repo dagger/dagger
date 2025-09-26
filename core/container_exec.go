@@ -92,6 +92,7 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 	execMD.CallerClientID = clientMetadata.ClientID
 	execMD.SessionID = clientMetadata.SessionID
 	execMD.AllowedLLMModules = clientMetadata.AllowedLLMModules
+	execMD.EnvFileName = clientMetadata.EnvFileName
 
 	if execMD.CallID == nil {
 		execMD.CallID = dagql.CurrentID(ctx)

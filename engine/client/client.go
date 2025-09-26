@@ -103,6 +103,8 @@ type Params struct {
 	Stdout io.Writer
 
 	ImageLoaderBackend imageload.Backend
+
+	EnvFileName string
 }
 
 type Client struct {
@@ -1185,6 +1187,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		InteractiveCommand:        c.InteractiveCommand,
 		SSHAuthSocketPath:         sshAuthSock,
 		AllowedLLMModules:         c.AllowedLLMModules,
+		EnvFileName:               c.EnvFileName,
 	}
 }
 

@@ -104,6 +104,9 @@ type ExecutionMetadata struct {
 	// any value of "all" bypasses restrictions, a nil slice imposes them
 	AllowedLLMModules []string
 
+	// Path to the .env file to load (default: ".env")
+	EnvFileName string
+
 	// If set (typically via "_EXPERIMENTAL_DAGGER_VERSION" env var), this forces the client
 	// to be at the specified version. Currently only used for integ testing.
 	ClientVersionOverride string
