@@ -19,7 +19,7 @@ export type DaggerArguments = { [name: string]: DaggerArgument }
 export class DaggerArgument extends Locatable {
   public name: string
   public description: string
-  public deprecated: string
+  public deprecated?: string
   private _typeRef?: string
   public type?: TypeDef<TypeDefKind>
   public isVariadic: boolean
