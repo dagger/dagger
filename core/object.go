@@ -332,9 +332,11 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		spec := dagql.FieldSpec{
 			Name: gqlFieldName(mod.Name()),
 			// Description: "TODO", // XXX(vito)
-			Type:             obj,
-			Module:           obj.Module.IDModule(),
-			DeprecatedReason: objDef.Deprecated,
+			Type:   obj,
+			Module: obj.Module.IDModule(),
+		}
+		if objDef.Deprecated != nil {
+			spec.DeprecatedReason = objDef.Deprecated
 		}
 
 		if objDef.SourceMap.Valid {
@@ -427,11 +429,13 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fiel
 
 func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 	spec := &dagql.FieldSpec{
-		Name:             field.Name,
-		Description:      field.Description,
-		Type:             field.TypeDef.ToTyped(),
-		Module:           mod.IDModule(),
-		DeprecatedReason: field.Deprecated,
+		Name:        field.Name,
+		Description: field.Description,
+		Type:        field.TypeDef.ToTyped(),
+		Module:      mod.IDModule(),
+	}
+	if field.Deprecated != nil {
+		spec.DeprecatedReason = field.Deprecated
 	}
 	spec.Directives = append(spec.Directives, &ast.Directive{
 		Name: trivialFieldDirectiveName,
