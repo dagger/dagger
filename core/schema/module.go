@@ -292,7 +292,7 @@ func (s *moduleSchema) typeDefWithObject(ctx context.Context, def *core.TypeDef,
 	Name        string
 	Description string `default:""`
 	SourceMap   dagql.Optional[core.SourceMapID]
-	Deprecated  string `default:""`
+	Deprecated  *string
 }) (*core.TypeDef, error) {
 	if args.Name == "" {
 		return nil, fmt.Errorf("object type def must have a name")
@@ -324,7 +324,7 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 	TypeDef     core.TypeDefID
 	Description string `default:""`
 	SourceMap   dagql.Optional[core.SourceMapID]
-	Deprecated  string `default:""`
+	Deprecated  *string
 }) (*core.TypeDef, error) {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -396,7 +396,7 @@ func (s *moduleSchema) typeDefWithEnumValue(ctx context.Context, def *core.TypeD
 	Value       string
 	Description string `default:""`
 	SourceMap   dagql.Optional[core.SourceMapID]
-	Deprecated  string `default:""`
+	Deprecated  *string
 }) (*core.TypeDef, error) {
 	sourceMap, err := s.loadSourceMap(ctx, args.SourceMap)
 	if err != nil {
@@ -410,7 +410,7 @@ func (s *moduleSchema) typeDefWithEnumMember(ctx context.Context, def *core.Type
 	Value       string `default:""`
 	Description string `default:""`
 	SourceMap   dagql.Optional[core.SourceMapID]
-	Deprecated  string `default:""`
+	Deprecated  *string
 }) (*core.TypeDef, error) {
 	sourceMap, err := s.loadSourceMap(ctx, args.SourceMap)
 	if err != nil {
@@ -481,7 +481,7 @@ func (s *moduleSchema) functionWithDescription(ctx context.Context, fn *core.Fun
 }
 
 func (s *moduleSchema) functionWithDeprecated(ctx context.Context, fn *core.Function, args struct {
-	Deprecated string
+	Deprecated *string
 }) (*core.Function, error) {
 	return fn.WithDeprecated(args.Deprecated), nil
 }
@@ -494,7 +494,7 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 	DefaultPath  string    `default:""`
 	Ignore       []string  `default:"[]"`
 	SourceMap    dagql.Optional[core.SourceMapID]
-	Deprecated   string `default:""`
+	Deprecated   *string
 }) (*core.Function, error) {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
