@@ -50,10 +50,7 @@ export class Register {
       const objectOpts: TypeDefWithObjectOpts = {
         description: object.description,
         sourceMap: addSourceMap(object),
-      }
-
-      if (object.deprecated) {
-        objectOpts.deprecated = object.deprecated
+        deprecated: object.deprecated,
       }
 
       // Register the class Typedef object in Dagger
@@ -70,11 +67,8 @@ export class Register {
           const fieldOpts = {
             description: field.description,
             sourceMap: addSourceMap(field),
+            deprecated: field.deprecated,
           } as TypeDefWithFieldOpts
-
-          if (field.deprecated) {
-            fieldOpts.deprecated = field.deprecated
-          }
 
           typeDef = typeDef.withField(
             field.alias ?? field.name,
@@ -106,10 +100,7 @@ export class Register {
           value: value.value,
           description: value.description,
           sourceMap: addSourceMap(value),
-        }
-
-        if (value.deprecated) {
-          memberOpts.deprecated = value.deprecated
+          deprecated: value.deprecated,
         }
 
         typeDef = typeDef.withEnumMember(value.name, memberOpts)
@@ -168,8 +159,8 @@ export class Register {
       }
     }
 
-    if (fct.deprecated) {
-      fnDef = fnDef.withDeprecated(fct.deprecated)
+    if (fct.deprecated !== undefined) {
+      fnDef = fnDef.withDeprecated({ deprecated: fct.deprecated })
     }
 
     return fnDef
@@ -184,10 +175,7 @@ export class Register {
         const opts: FunctionWithArgOpts = {
           description: arg.description,
           sourceMap: addSourceMap(arg),
-        }
-
-        if (arg.deprecated) {
-          opts.deprecated = arg.deprecated
+          deprecated: arg.deprecated,
         }
 
         let typeDef = addTypeDef(arg.type!)

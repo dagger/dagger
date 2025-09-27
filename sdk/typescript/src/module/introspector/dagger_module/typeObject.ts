@@ -33,7 +33,7 @@ import {
 export class DaggerTypeObject extends Locatable implements DaggerObjectBase {
   public name: string
   public description: string
-  public deprecated: string
+  public deprecated?: string
   public _constructor = undefined
   public methods = {}
   public properties: DaggerObjectTypeProperties = {}

@@ -21,7 +21,7 @@ export class DaggerProperty
 {
   public name: string
   public description: string
-  public deprecated: string
+  public deprecated?: string
   public alias: string | undefined
   public isExposed: boolean
 

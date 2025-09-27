@@ -12,7 +12,7 @@ export class DaggerEnumValue extends Locatable implements DaggerEnumBaseValue {
   public name: string
   public value: string
   public description: string
-  public deprecated: string
+  public deprecated?: string
 
   private symbol: ts.Symbol
 

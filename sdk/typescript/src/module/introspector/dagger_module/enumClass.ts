@@ -16,7 +16,7 @@ export class DaggerEnumClassValue
   public name: string
   public value: string
   public description: string
-  public deprecated: string
+  public deprecated?: string
 
   private symbol: ts.Symbol
 

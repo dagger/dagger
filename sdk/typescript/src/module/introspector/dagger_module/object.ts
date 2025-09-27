@@ -26,7 +26,7 @@ import { References } from "./reference.js"
 export class DaggerObject extends Locatable implements DaggerObjectBase {
   public name: string
   public description: string
-  public deprecated: string
+  public deprecated?: string
   public _constructor: DaggerConstructor | undefined = undefined
   public methods: DaggerFunctions = {}
   public properties: DaggerProperties = {}

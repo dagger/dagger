@@ -19,7 +19,7 @@ export type DaggerInterfaceFunctions = {
 export class DaggerInterfaceFunction extends Locatable {
   public name: string
   public description: string
-  public deprecated: string
+  public deprecated?: string
   private _returnTypeRef?: string
   public returnType?: TypeDef<TypeDefKind>
   public arguments: DaggerArguments = {}
