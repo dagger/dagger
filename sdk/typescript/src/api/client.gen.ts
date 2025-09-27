@@ -1261,6 +1261,13 @@ export type FunctionWithCachePolicyOpts = {
   timeToLive?: string
 }
 
+export type FunctionWithDeprecatedOpts = {
+  /**
+   * If deprecated, the reason or migration path.
+   */
+  deprecated?: string
+}
+
 /**
  * The `FunctionArgID` scalar type represents an identifier for an object of type FunctionArg.
  */
@@ -7086,10 +7093,10 @@ export class Function_ extends BaseClient {
 
   /**
    * Returns the function with the given deprecated string.
-   * @param deprecated If deprecated, the reason or migration path.
+   * @param opts.deprecated If deprecated, the reason or migration path.
    */
-  withDeprecated = (deprecated: string): Function_ => {
-    const ctx = this._ctx.select("withDeprecated", { deprecated })
+  withDeprecated = (opts?: FunctionWithDeprecatedOpts): Function_ => {
+    const ctx = this._ctx.select("withDeprecated", { ...opts })
     return new Function_(ctx)
   }
 

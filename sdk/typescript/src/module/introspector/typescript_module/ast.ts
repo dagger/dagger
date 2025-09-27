@@ -21,7 +21,7 @@ export type ResolvedNodeWithSymbol<T extends keyof DeclarationsMap> = {
 
 export type SymbolDoc = {
   description: string
-  deprecated: string
+  deprecated?: string
 }
 
 export class AST {
@@ -206,17 +206,27 @@ export class AST {
       .displayPartsToString(symbol.getDocumentationComment(this.checker))
       .trim()
 
-    let deprecated = ""
+    let deprecated: string | undefined
+    let hasDeprecatedTag = false
+
     for (const tag of symbol.getJsDocTags()) {
       if (tag.name !== "deprecated") continue
+
+      hasDeprecatedTag = true
       const text =
-        tag.text?.map((part) => ("text" in part ? part.text : part)).join("") ??
-        ""
+        tag.text?.map((part) => ("text" in part ? part.text : part)).join("") ?? ""
       deprecated = text.trim()
       break
     }
 
-    return { description, deprecated }
+    if (!hasDeprecatedTag) {
+      return { description }
+    }
+
+    return {
+      description,
+      deprecated: deprecated ?? "",
+    }
   }
 
   public getSymbolOrThrow(node: ts.Node): ts.Symbol {
