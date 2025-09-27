@@ -64,6 +64,7 @@ const (
 
 	DaggerSessionPortEnv  = "DAGGER_SESSION_PORT"
 	DaggerSessionTokenEnv = "DAGGER_SESSION_TOKEN"
+	DaggerEnvFileNameEnv  = "DAGGER_ENV_FILE"
 
 	// this is set by buildkit, we cannot change
 	BuildkitSessionIDHeader = "x-docker-expose-session-uuid"

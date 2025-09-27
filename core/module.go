@@ -22,6 +22,9 @@ type Module struct {
 	// The source of the module
 	Source dagql.Nullable[dagql.ObjectResult[*ModuleSource]] `field:"true" name:"source" doc:"The source for the module."`
 
+	// The original source of the module. Only different than Source when loaded from a blueprint.
+	OriginalSource dagql.Nullable[dagql.ObjectResult[*ModuleSource]] `field:"true" name:"source" doc:"The source for the module."`
+
 	// The source to load contextual dirs/files from, which may be different than Source for blueprints
 	ContextSource dagql.Nullable[dagql.ObjectResult[*ModuleSource]]
 
@@ -81,6 +84,43 @@ func (mod *Module) GetSource() *ModuleSource {
 		return nil
 	}
 	return mod.Source.Value.Self()
+}
+
+func (mod *Module) GetOriginalSource() *ModuleSource {
+	if !mod.OriginalSource.Valid {
+		return nil
+	}
+	return mod.OriginalSource.Value.Self()
+}
+
+// Return all local defaults for this module
+func (mod *Module) LocalDefaults(ctx context.Context) (*EnvFile, error) {
+	defaults := NewEnvFile(true)
+	src := mod.GetOriginalSource()
+	if src == nil {
+		return defaults, nil
+	}
+	// Add local defaults from the module source
+	defaults = defaults.WithEnvFiles(src.LocalDefaults)
+	// If the module source has a blueprint, also add local defaults from that
+	if bp := src.Blueprint.Self(); bp != nil {
+		defaults = defaults.WithEnvFiles(bp.LocalDefaults)
+	}
+	return defaults, nil
+}
+
+// Return local defaults for the specified object
+// An empty string as object name means the constructor.
+func (mod *Module) ObjectLocalDefaults(ctx context.Context, objName string) (*EnvFile, error) {
+	modDefaults, err := mod.LocalDefaults(ctx)
+	if err != nil {
+		return nil, err
+	}
+	isMainObject := objName == "" || strings.EqualFold(objName, strings.ReplaceAll(mod.OriginalName, "-", ""))
+	if isMainObject {
+		return modDefaults, nil
+	}
+	return modDefaults.LookupPrefix(ctx, objName)
 }
 
 func (mod *Module) IDModule() *call.Module {

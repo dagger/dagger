@@ -254,6 +254,20 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
+  User-defined defaults read from local .env files
+  """
+  @spec local_defaults(t()) :: Dagger.EnvFile.t()
+  def local_defaults(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("localDefaults")
+
+    %Dagger.EnvFile{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
   The name of the module, including any setting via the withName API.
   """
   @spec module_name(t()) :: {:ok, String.t()} | {:error, term()}

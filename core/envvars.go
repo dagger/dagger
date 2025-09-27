@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -30,6 +31,12 @@ func (EnvVariable) Description() string {
 	return "A simple key value object that represents an environment variable."
 }
 
+func NewEnvFile(expand bool) *EnvFile {
+	return &EnvFile{
+		Expand: expand,
+	}
+}
+
 // EnvFile represents a collection of environment variables that can be manipulated
 type EnvFile struct {
 	// Variables stored as key-value pairs, preserving order and allowing duplicates
@@ -48,10 +55,37 @@ func (*EnvFile) TypeDescription() string {
 	return "A collection of environment variables."
 }
 
+// Len returns the number of variables in the EnvFile
+func (ef *EnvFile) Len() int {
+	return len(ef.Environ)
+}
+
 // WithVariable adds a new environment variable to the EnvFile
 func (ef *EnvFile) WithVariable(name, value string) *EnvFile {
 	ef = ef.Clone()
 	ef.add(name, value)
+	return ef
+}
+
+func (ef *EnvFile) WithVariables(variables []EnvVariable) *EnvFile {
+	ef = ef.Clone()
+	for _, v := range variables {
+		ef.add(v.Name, v.Value)
+	}
+	return ef
+}
+
+// WithVariables adds multiple environment variables to the EnvFile
+func (ef *EnvFile) WithEnvFiles(others ...*EnvFile) *EnvFile {
+	ef = ef.Clone()
+	for _, other := range others {
+		if other == nil {
+			continue
+		}
+		// Last variable assignment wins: other file's variables win over
+		// our own.
+		ef.Environ = append(ef.Environ, other.Environ...)
+	}
 	return ef
 }
 
@@ -92,8 +126,11 @@ func (ef *EnvFile) variablesRaw(_ context.Context) (vars []EnvVariable, _ error)
 	return vars, nil
 }
 
-func (ef *EnvFile) variables(_ context.Context) (vars []EnvVariable, _ error) {
-	all, err := dotenv.All(ef.Environ)
+func (ef *EnvFile) variables(ctx context.Context) (vars []EnvVariable, _ error) {
+	hostGetEnv := func(name string) string {
+		return Host{}.GetEnv(ctx, name)
+	}
+	all, err := dotenv.All(ef.Environ, hostGetEnv)
 	if err != nil {
 		return nil, err
 	}
@@ -101,6 +138,46 @@ func (ef *EnvFile) variables(_ context.Context) (vars []EnvVariable, _ error) {
 		vars = append(vars, EnvVariable{Name: name, Value: value})
 	}
 	return vars, nil
+}
+
+// Search an envfile for variables matching the given module name prefix,
+// and return matching variables as a new envfile, with prefix removed
+// Example:
+//
+//	envfile: `
+//	  MY_MODULE_TOKEN=topsecret
+//	  UNRELATED_SOURCE=.
+//	  MY_MODULE_DEBUG=true
+//	`
+//	modName: "my-module"
+//
+//	result: `
+//	  TOKEN=topsecret
+//	  DEBUG=true
+//	`
+//
+// Note: case-insensitive search will be needed to match the resulting variables
+// against variable names
+// Note: all variables are expanded.
+func (ef *EnvFile) LookupPrefix(ctx context.Context, prefix string) (*EnvFile, error) {
+	vars, err := ef.Variables(ctx, false)
+	if err != nil {
+		return nil, fmt.Errorf("Evaluate env file: %w", err)
+	}
+	result := &EnvFile{
+		Expand: ef.Expand,
+	}
+	for _, variable := range vars {
+		// eg. "my-module"
+		modPrefix := strings.ReplaceAll(prefix, "-", "_") + "_"
+
+		// Does "my_module_token" start with "my_module_"? (case-insensitive)
+		if len(variable.Name) < len(modPrefix) || !strings.EqualFold(variable.Name[:len(modPrefix)], modPrefix) {
+			continue
+		}
+		result = result.WithVariable(variable.Name[len(modPrefix):], variable.Value)
+	}
+	return result, nil
 }
 
 // Return true if the variable exists
@@ -114,7 +191,23 @@ func (ef *EnvFile) Lookup(ctx context.Context, name string, raw bool) (string, b
 		value, found := dotenv.LookupRaw(ef.Environ, name)
 		return value, found, nil
 	}
-	return dotenv.Lookup(ef.Environ, name)
+	hostGetEnv := func(name string) string {
+		return Host{}.GetEnv(ctx, name)
+	}
+	return dotenv.Lookup(ef.Environ, name, hostGetEnv)
+}
+
+func (ef *EnvFile) LookupCaseInsensitive(ctx context.Context, name string) (string, bool, error) {
+	all, err := ef.Variables(ctx, false)
+	if err != nil {
+		return "", false, err
+	}
+	for _, kv := range all {
+		if strings.EqualFold(kv.Name, name) {
+			return kv.Value, true, nil
+		}
+	}
+	return "", false, nil
 }
 
 func (ef *EnvFile) add(name, value string) {

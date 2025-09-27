@@ -506,6 +506,9 @@ func (s *moduleSourceSchema) localModuleSource(
 		}
 	}
 
+	if err := localSrc.LoadLocalDefaults(ctx); err != nil {
+		return inst, fmt.Errorf("load local defaults: %w", err)
+	}
 	localSrc.Digest = localSrc.CalcDigest().String()
 
 	return dagql.NewResultForCurrentID(ctx, localSrc)
@@ -663,6 +666,9 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return inst, err
 	}
 
+	if err := gitSrc.LoadLocalDefaults(ctx); err != nil {
+		return inst, fmt.Errorf("load local defaults: %w", err)
+	}
 	gitSrc.Digest = gitSrc.CalcDigest().String()
 
 	inst, err = dagql.NewResultForCurrentID(ctx, gitSrc)
@@ -825,6 +831,9 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
 
+	if err := dirSrc.LoadLocalDefaults(ctx); err != nil {
+		return inst, fmt.Errorf("load local defaults: %w", err)
+	}
 	dirSrc.Digest = dirSrc.CalcDigest().String()
 	return inst, nil
 }
@@ -1038,6 +1047,9 @@ func (s *moduleSourceSchema) moduleSourceWithSourceSubpath(
 		return nil, fmt.Errorf("failed to reload module source context: %w", err)
 	}
 
+	if err := src.LoadLocalDefaults(ctx); err != nil {
+		return nil, fmt.Errorf("load local defaults: %w", err)
+	}
 	src.Digest = src.CalcDigest().String()
 	return src, nil
 }
@@ -1071,6 +1083,10 @@ func (s *moduleSourceSchema) moduleSourceWithName(
 		src.ModuleOriginalName = args.Name
 	}
 
+	// Reload local defaults with new name
+	if err := src.LoadLocalDefaults(ctx); err != nil {
+		return nil, fmt.Errorf("load local defaults: %w", err)
+	}
 	src.Digest = src.CalcDigest().String()
 	return src, nil
 }
@@ -1142,6 +1158,10 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 		return nil, fmt.Errorf("failed to load sdk for module source: %w", err)
 	}
 
+	// New SDK means new exposed functions and types. Different .env entries might match.
+	if err := src.LoadLocalDefaults(ctx); err != nil {
+		return nil, fmt.Errorf("load local defaults: %w", err)
+	}
 	src.Digest = src.CalcDigest().String()
 	return src, nil
 }
@@ -2374,7 +2394,9 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 	// Create module with blueprint source for SDK operations
 	mod := &core.Module{
-		Source:        dagql.NonNull(src),
+		Source:         dagql.NonNull(src),
+		OriginalSource: dagql.NonNull(originalSrc),
+
 		ContextSource: dagql.NonNull(originalSrc),
 
 		NameField:    src.Self().ModuleName,
@@ -2437,7 +2459,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		}
 	}
 
-	if blueprintSrc.Self() != nil {
+	if bp := blueprintSrc.Self(); bp != nil {
 		// Show the downstream module name to clients, not the blueprint name
 		// NOTE: we don't change OriginalName, that's used internally at runtime
 		mod.NameField = originalSrc.Self().ModuleName
@@ -2447,7 +2469,6 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", modName, err)
 	}
-
 	return inst, nil
 }
 

@@ -49,10 +49,21 @@ type Server interface {
 	// the session, typically the CLI invoked by the user)
 	MainClientCallerMetadata(context.Context) (*engine.ClientMetadata, error)
 
-	// The nearest ancestor client that is not a module (either a caller from the host like the CLI
-	// or a nested exec). Useful for figuring out where local sources should be resolved from through
+	// Metadata about the main client, aka "non-module parent client", aka "NMPC".
+	//
+	// The NMPC is the nearest ancestor client that is not a module.
+	// It is either a caller from the host like the CLI or a nested exec.
+	// Useful for figuring out where local sources should be resolved from through
 	// chains of dependency modules.
 	NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error)
+
+	// Modules served to the main client, aka "non-module parent client", aka "NMPC".
+	//
+	// The NMPC is the nearest ancestor client that is not a module.
+	// It is either a caller from the host like the CLI or a nested exec.
+	// Useful for figuring out where local sources should be resolved from through
+	// chains of dependency modules.
+	NonModuleParentClientModules(context.Context) ([]Mod, error)
 
 	// The default deps of every user module (currently just core)
 	DefaultDeps(context.Context) (*ModDeps, error)
@@ -161,6 +172,34 @@ func CurrentDagqlCache(ctx context.Context) (*dagql.SessionCache, error) {
 		return nil, fmt.Errorf("query cache: %w", err)
 	}
 	return cache, nil
+}
+
+func CurrentMainClient(ctx context.Context) (*engine.ClientMetadata, error) {
+	q, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current query: %w", err)
+	}
+	clientMetadata, err := q.NonModuleParentClientMetadata(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("non-module parent client metadata: %w", err)
+	}
+	return clientMetadata, nil
+}
+
+func CurrentEnvFileName(ctx context.Context) (string, error) {
+	q, err := CurrentQuery(ctx)
+	if err != nil {
+		return "", fmt.Errorf("current query: %w", err)
+	}
+	clientMetadata, err := q.MainClientCallerMetadata(ctx)
+	if err != nil {
+		return "", fmt.Errorf("main client caller metadata: %w", err)
+	}
+	name := clientMetadata.EnvFileName
+	if name == "" {
+		name = ".env"
+	}
+	return name, nil
 }
 
 func NewRoot(srv Server) *Query {

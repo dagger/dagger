@@ -10,14 +10,14 @@ import (
 
 // Evaluate an array of key=value strings in the dotenv syntax,
 // and return a map of evaluated variables
-func All(environ []string) (map[string]string, error) {
+func All(environ []string, systemLookup func(string) string) (map[string]string, error) {
 	vars := make(map[string]string, len(environ))
 	for _, line := range environ {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue // skip empty lines
 		}
-		name, value, err := parseEnvLine(line, vars)
+		name, value, err := parseEnvLine(line, vars, systemLookup)
 		if err != nil {
 			return vars, err
 		}
@@ -45,8 +45,8 @@ func AllRaw(environ []string) map[string]string {
 
 // Evaluate an array of key=value strings in the dotenv syntax,
 // and return the value of the specified variable
-func Lookup(environ []string, name string) (string, bool, error) {
-	vars, err := All(environ)
+func Lookup(environ []string, name string, systemLookup func(string) string) (string, bool, error) {
+	vars, err := All(environ, systemLookup)
 	if err != nil {
 		return "", false, err
 	}
@@ -77,7 +77,7 @@ func Exists(environ []string, name string) bool {
 }
 
 // parseEnvLine parses one line of a dotenv file into (key, value).
-func parseEnvLine(line string, lookup map[string]string) (string, string, error) {
+func parseEnvLine(line string, lookup map[string]string, systemLookup func(string) string) (string, string, error) {
 	// For simple KEY=VALUE assignments without quotes or $ expansion,
 	// handle them directly to avoid shell parser issues with special chars like ()
 	if idx := strings.Index(line, "="); idx != -1 {
@@ -120,7 +120,7 @@ func parseEnvLine(line string, lookup map[string]string) (string, string, error)
 	var words []string
 	// Catch the 'foo=a' part of 'foo=a b c'
 	if assign.Value != nil {
-		assignExpanded, err := expandShellWord(assign.Value, lookup)
+		assignExpanded, err := expandShellWord(assign.Value, lookup, systemLookup)
 		if err != nil {
 			return key, "", fmt.Errorf("%s: shell parse error: %w", key, err)
 		}
@@ -129,7 +129,7 @@ func parseEnvLine(line string, lookup map[string]string) (string, string, error)
 	// Catch the 'b c' part of 'foo=a b c'
 	// The shell parser sees those as command arguments
 	for _, arg := range call.Args {
-		argExpanded, err := expandShellWord(arg, lookup)
+		argExpanded, err := expandShellWord(arg, lookup, systemLookup)
 		if err != nil {
 			return key, "", err
 		}
@@ -178,14 +178,17 @@ func containsShellFeatures(value string) bool {
 }
 
 // expandWord flattens a *syntax.Word into a string.
-func expandShellWord(w *syntax.Word, lookup map[string]string) (string, error) {
+func expandShellWord(w *syntax.Word, lookup map[string]string, systemLookup func(string) string) (string, error) {
 	cfg := &expand.Config{
 		Env: expand.FuncEnviron(func(name string) string {
 			value, ok := lookup[name]
-			if !ok {
+			if ok {
+				return value
+			}
+			if systemLookup == nil {
 				return ""
 			}
-			return value
+			return systemLookup(name)
 		}),
 		NoUnset: true,
 	}
