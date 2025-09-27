@@ -945,7 +945,7 @@ type FieldSpec struct {
 	// should not be displayed in telemetry.
 	Sensitive bool
 	// DeprecatedReason deprecates the field and provides a reason.
-	DeprecatedReason string
+	DeprecatedReason *string
 	// ExperimentalReason marks the field as experimental and provides a reason.
 	ExperimentalReason string
 	// Module is the module that provides the field's implementation.
@@ -983,7 +983,7 @@ func (spec FieldSpec) FieldDefinition(view call.View) *ast.FieldDefinition {
 	if len(spec.Directives) > 0 {
 		def.Directives = slices.Clone(spec.Directives)
 	}
-	if spec.DeprecatedReason != "" {
+	if spec.DeprecatedReason != nil {
 		def.Directives = append(def.Directives, deprecated(spec.DeprecatedReason))
 	}
 	if spec.ExperimentalReason != "" {
@@ -1003,7 +1003,7 @@ type InputSpec struct {
 	// Default is the default value of the argument.
 	Default Input
 	// DeprecatedReason deprecates the input and provides a reason.
-	DeprecatedReason string
+	DeprecatedReason *string
 	// ExperimentalReason marks the field as experimental and provides a reason.
 	ExperimentalReason string
 	// Sensitive indicates that the value of this arg is sensitive and should be
@@ -1036,7 +1036,7 @@ func (spec *InputSpec) merge(other *InputSpec) {
 	if other.Default != nil {
 		spec.Default = other.Default
 	}
-	if other.DeprecatedReason != "" {
+	if other.DeprecatedReason != nil {
 		spec.DeprecatedReason = other.DeprecatedReason
 	}
 	if other.Sensitive {
@@ -1093,11 +1093,13 @@ func (arg Argument) View(view ViewFilter) Argument {
 
 func (arg Argument) Deprecated(paras ...string) Argument {
 	if len(paras) == 0 && arg.Spec.Description != "" {
-		arg.Spec.DeprecatedReason = arg.Spec.Description
+		reason := arg.Spec.Description
+		arg.Spec.DeprecatedReason = &reason
 		arg.Spec.Description = deprecationDescription(arg.Spec.Description)
 		return arg
 	}
-	arg.Spec.DeprecatedReason = FormatDescription(paras...)
+	reason := FormatDescription(paras...)
+	arg.Spec.DeprecatedReason = &reason
 	return arg
 }
 
@@ -1206,7 +1208,7 @@ func (specs InputSpecs) ArgumentDefinitions(view call.View) []*ast.ArgumentDefin
 		if len(arg.Directives) > 0 {
 			schemaArg.Directives = slices.Clone(arg.Directives)
 		}
-		if arg.DeprecatedReason != "" {
+		if arg.DeprecatedReason != nil {
 			schemaArg.Directives = append(schemaArg.Directives, deprecated(arg.DeprecatedReason))
 		}
 		if arg.ExperimentalReason != "" {
@@ -1266,14 +1268,19 @@ func (fields Fields[T]) Install(server *Server) {
 	}
 	for _, field := range objectFields {
 		name := field.Name
+		spec := &FieldSpec{
+			Name:               name,
+			Type:               field.Value,
+			Description:        field.Field.Tag.Get("doc"),
+			ExperimentalReason: field.Field.Tag.Get("experimental"),
+		}
+		if dep, ok := field.Field.Tag.Lookup("deprecated"); ok {
+			reason := dep // keep "" if that’s what the module author wrote: @deprecated("") != @deprecated()
+			spec.DeprecatedReason = &reason
+		}
+
 		fields = append(fields, Field[T]{
-			Spec: &FieldSpec{
-				Name:               name,
-				Type:               field.Value,
-				Description:        field.Field.Tag.Get("doc"),
-				DeprecatedReason:   field.Field.Tag.Get("deprecated"),
-				ExperimentalReason: field.Field.Tag.Get("experimental"),
-			},
+			Spec: spec,
 			Func: func(ctx context.Context, self ObjectResult[T], args map[string]Input, view call.View) (AnyResult, error) {
 				t, found, err := getField(ctx, self.Self(), false, name)
 				if err != nil {
@@ -1401,7 +1408,8 @@ func (field Field[T]) Deprecated(paras ...string) Field[T] {
 	if field.Spec.extend {
 		panic("cannot call on extended field")
 	}
-	field.Spec.DeprecatedReason = FormatDescription(paras...)
+	reason := FormatDescription(paras...)
+	field.Spec.DeprecatedReason = &reason
 	return field
 }
 
@@ -1472,13 +1480,17 @@ func InputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 			Description:        field.Field.Tag.Get("doc"),
 			Type:               input,
 			Default:            inputDef,
-			DeprecatedReason:   field.Field.Tag.Get("deprecated"),
 			ExperimentalReason: field.Field.Tag.Get("experimental"),
 			Sensitive:          field.Field.Tag.Get("sensitive") == "true",
 			Internal:           field.Field.Tag.Get("internal") == "true",
 		}
-		if spec.Description == "" && spec.DeprecatedReason != "" {
-			spec.Description = deprecationDescription(spec.DeprecatedReason)
+		if dep, ok := field.Field.Tag.Lookup("deprecated"); ok {
+			reason := dep
+			spec.DeprecatedReason = &reason
+		}
+
+		if spec.Description == "" && spec.DeprecatedReason != nil {
+			spec.Description = deprecationDescription(*spec.DeprecatedReason)
 		}
 		if spec.Description == "" && spec.ExperimentalReason != "" {
 			spec.Description = experimentalDescription(spec.ExperimentalReason)

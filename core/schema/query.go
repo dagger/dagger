@@ -255,7 +255,7 @@ func dagqlToCodegenField(dagqlField *introspection.Field) *codegenintrospection.
 	f.IsDeprecated = dagqlField.IsDeprecated()
 
 	if reason := dagqlField.DeprecationReason(); reason != nil {
-		f.DeprecationReason = *reason
+		f.DeprecationReason = reason
 	}
 
 	dagqlDirectives := dagqlField.Directives()
@@ -297,7 +297,7 @@ func dagqlToCodegenEnumValue(dagqlInputValue *introspection.EnumValue) codegenin
 	v.IsDeprecated = dagqlInputValue.IsDeprecated()
 
 	if reason := dagqlInputValue.DeprecationReason(); reason != nil {
-		v.DeprecationReason = *reason
+		v.DeprecationReason = reason
 	}
 
 	dagqlDirectives := dagqlInputValue.Directives()
