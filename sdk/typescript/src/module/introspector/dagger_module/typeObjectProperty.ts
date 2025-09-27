@@ -22,7 +22,7 @@ export class DaggerObjectTypeProperty
 {
   public name: string
   public description: string
-  public deprecated: string
+  public deprecated?: string
   public alias = undefined
   public isExposed: boolean = true
 
