@@ -349,7 +349,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	// all those functions will run in a remote cloud engine which gets created at execution time
 	flags.BoolVar(&useCloudEngine, "cloud", useCloudEngine, "Run in a Dagger Cloud Engine")
 	flags.Lookup("cloud").Hidden = true
-	flags.StringVar(&envFileName, "env-file", ".env", "Filename of environment file to load")
+	flags.StringVar(&envFileName, "env-file", envFileName, "Filename of environment file to load")
 
 	for _, fl := range []string{
 		"workdir",
