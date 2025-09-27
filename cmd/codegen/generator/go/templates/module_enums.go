@@ -155,12 +155,12 @@ func (ps *parseState) parseGoEnum(t *types.Basic, named *types.Named) (*parsedEn
 			maps.Copy(pragmas, linePragmas)
 		}
 
-		if v, ok := pragmas["deprecated"]; ok {
-			if v == nil {
-				valueSpec.deprecated = ""
-			} else {
-				valueSpec.deprecated, _ = v.(string)
+		if raw, ok := pragmas["deprecated"]; ok {
+			reason := ""
+			if str, _ := raw.(string); str != "" {
+				reason = str
 			}
+			valueSpec.deprecated = &reason
 		}
 		valueSpec.doc = comment
 
@@ -215,7 +215,7 @@ type parsedEnumMember struct {
 	name         string
 	value        string
 	doc          string
-	deprecated   string
+	deprecated   *string
 	sourceMap    *sourceMap
 }
 
@@ -249,8 +249,8 @@ func (spec *parsedEnumType) TypeDefCode() (*Statement, error) {
 		if val.doc != "" {
 			withEnumMemberOpts = append(withEnumMemberOpts, Id("Description").Op(":").Lit(strings.TrimSpace(val.doc)))
 		}
-		if val.deprecated != "" {
-			withEnumMemberOpts = append(withEnumMemberOpts, Id("Deprecated").Op(":").Lit(strings.TrimSpace(val.deprecated)))
+		if val.deprecated != nil {
+			withEnumMemberOpts = append(withEnumMemberOpts, Id("Deprecated").Op(":").Lit(strings.TrimSpace(*val.deprecated)))
 		}
 		if val.sourceMap != nil {
 			withEnumMemberOpts = append(withEnumMemberOpts, Id("SourceMap").Op(":").Add(val.sourceMap.TypeDefCode()))
