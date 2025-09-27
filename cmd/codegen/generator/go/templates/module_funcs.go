@@ -37,9 +37,10 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 
 	if v, ok := docPragmas["deprecated"]; ok {
 		if v == nil {
-			spec.deprecated = ""
+			spec.deprecated = nil
 		} else {
-			spec.deprecated, _ = v.(string)
+			deprecationReason, _ := v.(string)
+			spec.deprecated = &deprecationReason
 		}
 	}
 
@@ -102,7 +103,7 @@ type funcTypeSpec struct {
 
 	argSpecs []paramSpec
 
-	deprecated string
+	deprecated *string
 
 	returnSpec   ParsedType // nil if void return
 	returnsError bool
@@ -156,8 +157,10 @@ func (spec *funcTypeSpec) TypeDefFunc(dag *dagger.Client) (*dagger.Function, err
 	if spec.sourceMap != nil {
 		fnTypeDef = fnTypeDef.WithSourceMap(spec.sourceMap.TypeDef(dag))
 	}
-	if spec.deprecated != "" {
-		fnTypeDef = fnTypeDef.WithDeprecated(spec.deprecated)
+	if spec.deprecated != nil {
+		fnTypeDef = fnTypeDef.WithDeprecated(dagger.FunctionWithDeprecatedOpts{
+			Deprecated: *spec.deprecated,
+		})
 	}
 
 	for _, argSpec := range spec.argSpecs {
@@ -207,8 +210,8 @@ func (spec *funcTypeSpec) TypeDefFunc(dag *dagger.Client) (*dagger.Function, err
 			argOpts.DefaultPath = argSpec.defaultPath
 		}
 
-		if argSpec.deprecated != "" {
-			argOpts.Deprecated = argSpec.deprecated
+		if argSpec.deprecated != nil {
+			argOpts.Deprecated = *argSpec.deprecated
 		}
 
 		if len(argSpec.ignore) > 0 {
@@ -358,13 +361,13 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 		}
 		optional = true // If defaultPath is set, the argument becomes optional
 	}
-	deprecated := ""
+	var deprecated *string
 	if v, ok := pragmas["deprecated"]; ok {
-		if v == nil {
-			deprecated = ""
-		} else {
-			deprecated, _ = v.(string)
+		reason := ""
+		if str, _ := v.(string); str != "" {
+			reason = str
 		}
+		deprecated = &reason
 	}
 
 	ignore := []string{}
@@ -427,7 +430,7 @@ type paramSpec struct {
 	defaultValue    any
 	hasDefaultValue bool
 
-	deprecated string
+	deprecated *string
 
 	// paramType is the full type declared in the function signature, which may
 	// include pointer types, etc

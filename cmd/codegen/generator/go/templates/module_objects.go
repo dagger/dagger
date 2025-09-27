@@ -79,12 +79,12 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 	if doc := docForAstSpec(astSpec); doc != nil {
 		docPragmas, docComment := parsePragmaComment(doc.Text())
 		comment := strings.TrimSpace(docComment)
-		if v, ok := docPragmas["deprecated"]; ok {
-			if v == nil {
-				spec.deprecated = ""
-			} else {
-				spec.deprecated, _ = v.(string)
+		if raw, ok := docPragmas["deprecated"]; ok {
+			reason := ""
+			if str, _ := raw.(string); str != "" {
+				reason = str
 			}
+			spec.deprecated = &reason
 		}
 		spec.doc = comment
 	}
@@ -144,12 +144,12 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 				fieldSpec.isPrivate, _ = v.(bool)
 			}
 		}
-		if v, ok := pragmas["deprecated"]; ok {
-			if v == nil {
-				fieldSpec.deprecated = ""
-			} else {
-				fieldSpec.deprecated, _ = v.(string)
+		if raw, ok := pragmas["deprecated"]; ok {
+			reason := ""
+			if str, _ := raw.(string); str != "" {
+				reason = str
 			}
+			fieldSpec.deprecated = &reason
 		}
 
 		fieldSpec.doc = comment
@@ -174,7 +174,7 @@ type parsedObjectType struct {
 	moduleName string
 	doc        string
 	sourceMap  *sourceMap
-	deprecated string
+	deprecated *string
 
 	fields      []*fieldSpec
 	methods     []*funcTypeSpec
@@ -190,8 +190,8 @@ func (spec *parsedObjectType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, erro
 	if spec.doc != "" {
 		withObjectOpts.Description = strings.TrimSpace(spec.doc)
 	}
-	if spec.deprecated != "" {
-		withObjectOpts.Deprecated = strings.TrimSpace(spec.deprecated)
+	if spec.deprecated != nil {
+		withObjectOpts.Deprecated = strings.TrimSpace(*spec.deprecated)
 	}
 	if spec.sourceMap != nil {
 		withObjectOpts.SourceMap = spec.sourceMap.TypeDef(dag)
@@ -225,8 +225,8 @@ func (spec *parsedObjectType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, erro
 		if field.sourceMap != nil {
 			withFieldOpts.SourceMap = field.sourceMap.TypeDef(dag)
 		}
-		if field.deprecated != "" {
-			withFieldOpts.Deprecated = strings.TrimSpace(field.deprecated)
+		if field.deprecated != nil {
+			withFieldOpts.Deprecated = strings.TrimSpace(*field.deprecated)
 		}
 		typeDefObject = typeDefObject.WithField(field.name, fieldTypeDef, withFieldOpts)
 	}
@@ -531,7 +531,7 @@ func (spec *parsedObjectType) setFieldsToMarshalStructCode(field *fieldSpec) *St
 type fieldSpec struct {
 	name       string
 	doc        string
-	deprecated string
+	deprecated *string
 	sourceMap  *sourceMap
 	typeSpec   ParsedType
 
