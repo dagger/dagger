@@ -4,12 +4,10 @@
     "Minimal": {
       "name": "Minimal",
       "description": "This is the Minimal object",
-      "deprecated": "",
       "methods": {
         "hello": {
           "name": "hello",
           "description": "",
-          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "STRING_KIND"
@@ -18,12 +16,10 @@
         "echo": {
           "name": "echo",
           "description": "",
-          "deprecated": "",
           "arguments": {
             "msg": {
               "name": "msg",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -39,12 +35,10 @@
         "echoOpts": {
           "name": "echoOpts",
           "description": "EchoOpts does some opts things",
-          "deprecated": "",
           "arguments": {
             "msg": {
               "name": "msg",
               "description": "the message to echo",
-              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -55,7 +49,6 @@
             "suffix": {
               "name": "suffix",
               "description": "String to append to the echoed message",
-              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -67,7 +60,6 @@
             "times": {
               "name": "times",
               "description": "number of times to repeat the message",
-              "deprecated": "",
               "type": {
                 "kind": "INTEGER_KIND"
               },
@@ -84,12 +76,10 @@
         "echoMaybe": {
           "name": "echoMaybe",
           "description": "",
-          "deprecated": "",
           "arguments": {
             "msg": {
               "name": "msg",
               "description": "the message to echo",
-              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -100,7 +90,6 @@
             "isQuestion": {
               "name": "isQuestion",
               "description": "set to true to add a question mark.",
-              "deprecated": "",
               "type": {
                 "kind": "BOOLEAN_KIND"
               },
@@ -117,12 +106,10 @@
         "echoOptional": {
           "name": "echoOptional",
           "description": "",
-          "deprecated": "",
           "arguments": {
             "msg": {
               "name": "msg",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -139,12 +126,10 @@
         "echoOptionalSlice": {
           "name": "echoOptionalSlice",
           "description": "",
-          "deprecated": "",
           "arguments": {
             "msg": {
               "name": "msg",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {
@@ -166,12 +151,10 @@
         "echoes": {
           "name": "echoes",
           "description": "",
-          "deprecated": "",
           "arguments": {
             "msgs": {
               "name": "msgs",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {
@@ -193,12 +176,10 @@
         "echoesVariadic": {
           "name": "echoesVariadic",
           "description": "",
-          "deprecated": "",
           "arguments": {
             "msgs": {
               "name": "msgs",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {
@@ -217,7 +198,6 @@
         "helloVoid": {
           "name": "helloVoid",
           "description": "",
-          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "VOID_KIND"
@@ -228,7 +208,6 @@
         "foo": {
           "name": "foo",
           "description": "This is a field",
-          "deprecated": "",
           "type": {
             "kind": "STRING_KIND"
           },

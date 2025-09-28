@@ -5,13 +5,11 @@
     "Constructor": {
       "name": "Constructor",
       "description": "Constructor class",
-      "deprecated": "",
       "constructor": {
         "arguments": {
           "name": {
             "name": "name",
             "description": "",
-            "deprecated": "",
             "type": {
               "kind": "STRING_KIND"
             },
@@ -26,12 +24,10 @@
         "sayHello": {
           "name": "sayHello",
           "description": "",
-          "deprecated": "",
           "arguments": {
             "name": {
               "name": "name",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -49,7 +45,6 @@
         "name": {
           "name": "name",
           "description": "",
-          "deprecated": "",
           "type": {
             "kind": "STRING_KIND"
           },
