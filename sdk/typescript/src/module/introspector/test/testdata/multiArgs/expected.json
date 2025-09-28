@@ -4,17 +4,14 @@
     "MultiArgs": {
       "name": "MultiArgs",
       "description": "",
-      "deprecated": "",
       "methods": {
         "compute": {
           "name": "compute",
           "description": "",
-          "deprecated": "",
           "arguments": {
             "a": {
               "name": "a",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "INTEGER_KIND"
               },
@@ -25,7 +22,6 @@
             "b": {
               "name": "b",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "INTEGER_KIND"
               },
@@ -36,7 +32,6 @@
             "c": {
               "name": "c",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "FLOAT_KIND"
               },
