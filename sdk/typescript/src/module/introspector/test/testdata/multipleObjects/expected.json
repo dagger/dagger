@@ -5,12 +5,10 @@
     "MultipleObjects": {
       "name": "MultipleObjects",
       "description": "Foo class",
-      "deprecated": "",
       "methods": {
         "bar": {
           "name": "bar",
           "description": "Return Bar object",
-          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "OBJECT_KIND",
@@ -23,17 +21,14 @@
     "Bar": {
       "name": "Bar",
       "description": "Bar class",
-      "deprecated": "",
       "methods": {
         "exec": {
           "name": "exec",
           "description": "Execute the command and return its result",
-          "deprecated": "",
           "arguments": {
             "cmd": {
               "name": "cmd",
               "description": "Command to execute",
-              "deprecated": "",
               "type": {
                 "kind": "LIST_KIND",
                 "typeDef": {

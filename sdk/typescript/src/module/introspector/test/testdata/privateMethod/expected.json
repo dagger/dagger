@@ -5,17 +5,14 @@
     "PrivateMethod": {
       "name": "PrivateMethod",
       "description": "PrivateMethod class",
-      "deprecated": "",
       "methods": {
         "greeting": {
           "name": "greeting",
           "description": "",
-          "deprecated": "",
           "arguments": {
             "name": {
               "name": "name",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -31,12 +28,10 @@
         "helloWorld": {
           "name": "helloWorld",
           "description": "",
-          "deprecated": "",
           "arguments": {
             "name": {
               "name": "name",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
