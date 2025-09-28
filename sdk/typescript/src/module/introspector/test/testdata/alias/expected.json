@@ -4,13 +4,11 @@
     "Alias": {
       "name": "Alias",
       "description": "",
-      "deprecated": "",
       "constructor": {
         "arguments": {
           "ctr": {
             "name": "ctr",
             "description": "",
-            "deprecated": "",
             "type": {
               "kind": "OBJECT_KIND",
               "name": "Container"
@@ -25,7 +23,6 @@
         "testBar": {
           "name": "bar",
           "description": "",
-          "deprecated": "",
           "alias": "testBar",
           "arguments": {},
           "returnType": {
@@ -36,13 +33,11 @@
         "bar": {
           "name": "customBar",
           "description": "",
-          "deprecated": "",
           "alias": "bar",
           "arguments": {
             "baz": {
               "name": "baz",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -53,7 +48,6 @@
             "foo": {
               "name": "foo",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "INTEGER_KIND"
               },
@@ -70,7 +64,6 @@
         "version": {
           "name": "displayVersion",
           "description": "",
-          "deprecated": "",
           "alias": "version",
           "arguments": {},
           "returnType": {
@@ -80,13 +73,11 @@
         "greet": {
           "name": "helloWorld",
           "description": "",
-          "deprecated": "",
           "alias": "greet",
           "arguments": {
             "name": {
               "name": "name",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -102,13 +93,11 @@
         "customGreet": {
           "name": "customHelloWorld",
           "description": "",
-          "deprecated": "",
           "alias": "customGreet",
           "arguments": {
             "name": {
               "name": "name",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -126,7 +115,6 @@
         "prefix": {
           "name": "gretingPrefix",
           "description": "",
-          "deprecated": "",
           "alias": "prefix",
           "type": {
             "kind": "STRING_KIND"
@@ -136,7 +124,6 @@
         "container": {
           "name": "ctr",
           "description": "",
-          "deprecated": "",
           "alias": "container",
           "type": {
             "kind": "OBJECT_KIND",
@@ -149,13 +136,11 @@
     "Bar": {
       "name": "Bar",
       "description": "",
-      "deprecated": "",
       "constructor": {
         "arguments": {
           "baz": {
             "name": "baz",
             "description": "",
-            "deprecated": "",
             "type": {
               "kind": "STRING_KIND"
             },
@@ -167,7 +152,6 @@
           "foo": {
             "name": "foo",
             "description": "",
-            "deprecated": "",
             "type": {
               "kind": "INTEGER_KIND"
             },
@@ -182,7 +166,6 @@
         "zoo": {
           "name": "za",
           "description": "",
-          "deprecated": "",
           "alias": "zoo",
           "arguments": {},
           "returnType": {
@@ -194,7 +177,6 @@
         "bar": {
           "name": "baz",
           "description": "",
-          "deprecated": "",
           "alias": "bar",
           "type": {
             "kind": "STRING_KIND"
@@ -204,7 +186,6 @@
         "oof": {
           "name": "foo",
           "description": "",
-          "deprecated": "",
           "alias": "oof",
           "type": {
             "kind": "INTEGER_KIND"

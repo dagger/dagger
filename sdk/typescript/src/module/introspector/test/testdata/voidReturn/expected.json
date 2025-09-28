@@ -4,17 +4,14 @@
     "VoidReturn": {
       "name": "VoidReturn",
       "description": "VoidReturn class",
-      "deprecated": "",
       "methods": {
         "helloWorld": {
           "name": "helloWorld",
           "description": "",
-          "deprecated": "",
           "arguments": {
             "name": {
               "name": "name",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -30,12 +27,10 @@
         "asyncHelloWorld": {
           "name": "asyncHelloWorld",
           "description": "",
-          "deprecated": "",
           "arguments": {
             "name": {
               "name": "name",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
