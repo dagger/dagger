@@ -3,13 +3,11 @@
   "objects": {
     "Context": {
       "name": "Context",
-      "deprecated": "",
       "description": "",
       "methods": {
         "helloWorld": {
           "name": "helloWorld",
           "description": "",
-          "deprecated": "",
           "arguments": {
             "dir": {
               "name": "dir",
@@ -21,8 +19,7 @@
               "isVariadic": false,
               "isNullable": false,
               "isOptional": false,
-              "defaultPath": ".",
-              "deprecated": ""
+              "defaultPath": "."
             }
           },
           "returnType": {
@@ -32,7 +29,6 @@
         "helloWorldIgnored": {
           "name": "helloWorldIgnored",
           "description": "",
-          "deprecated": "",
           "arguments": {
             "dir": {
               "name": "dir",
@@ -45,7 +41,6 @@
               "isNullable": false,
               "isOptional": false,
               "defaultPath": ".",
-              "deprecated": "",
               "ignore": [
                 "dir"
               ]

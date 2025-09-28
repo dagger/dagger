@@ -4,7 +4,6 @@
     "MultipleObjectsAsFields": {
       "name": "MultipleObjectsAsFields",
       "description": "",
-      "deprecated": "",
       "constructor": {
         "arguments": {}
       },
@@ -13,7 +12,6 @@
         "test": {
           "name": "test",
           "description": "",
-          "deprecated": "",
           "type": {
             "kind": "OBJECT_KIND",
             "name": "Test"
@@ -23,7 +21,6 @@
         "lint": {
           "name": "lint",
           "description": "",
-          "deprecated": "",
           "type": {
             "kind": "OBJECT_KIND",
             "name": "Lint"
@@ -35,12 +32,10 @@
     "Test": {
       "name": "Test",
       "description": "",
-      "deprecated": "",
       "methods": {
         "echo": {
           "name": "echo",
           "description": "",
-          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "STRING_KIND"
@@ -52,12 +47,10 @@
     "Lint": {
       "name": "Lint",
       "description": "",
-      "deprecated": "",
       "methods": {
         "echo": {
           "name": "echo",
           "description": "",
-          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "STRING_KIND"

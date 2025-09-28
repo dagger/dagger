@@ -2,7 +2,10 @@ import { func, object } from "../../../../decorators.js"
 
 @object()
 export class DeprecatedFunctions {
-	/** @deprecated Use `current` instead. */
+	/**
+	 * @deprecated Use `current` instead.
+	 * Legacy behaviour is kept only for compatibility.
+	 */
 	@func()
 	legacy(): string {
 		return "legacy"

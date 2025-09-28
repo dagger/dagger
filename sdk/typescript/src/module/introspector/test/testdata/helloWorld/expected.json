@@ -4,17 +4,14 @@
     "HelloWorld": {
       "name": "HelloWorld",
       "description": "HelloWorld class",
-      "deprecated": "",
       "methods": {
         "helloWorld": {
           "name": "helloWorld",
           "description": "",
-          "deprecated": "",
           "arguments": {
             "name": {
               "name": "name",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },

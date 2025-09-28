@@ -4,12 +4,10 @@
     "DeprecationArgs": {
       "name": "DeprecationArgs",
       "description": "",
-      "deprecated": "",
       "methods": {
         "legacy": {
           "name": "legacy",
           "description": "",
-          "deprecated": "",
           "arguments": {
             "input": {
               "name": "input",
@@ -25,7 +23,6 @@
             "other": {
               "name": "other",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },
@@ -41,12 +38,10 @@
         "current": {
           "name": "current",
           "description": "",
-          "deprecated": "",
           "arguments": {
             "other": {
               "name": "other",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "STRING_KIND"
               },

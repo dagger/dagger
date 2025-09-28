@@ -4,12 +4,10 @@
     "Interface": {
       "name": "Interface",
       "description": "",
-      "deprecated": "",
       "methods": {
         "hello": {
           "name": "hello",
           "description": "",
-          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "STRING_KIND"
@@ -18,7 +16,6 @@
         "iface": {
           "name": "iface",
           "description": "",
-          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "INTERFACE_KIND",
@@ -38,7 +35,6 @@
         "foo": {
           "name": "foo",
           "description": "Foo fct",
-          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "STRING_KIND"
@@ -47,12 +43,10 @@
         "count": {
           "name": "count",
           "description": "",
-          "deprecated": "",
           "arguments": {
             "n": {
               "name": "n",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "INTEGER_KIND"
               },
@@ -71,12 +65,10 @@
         "withClass": {
           "name": "withClass",
           "description": "",
-          "deprecated": "",
           "arguments": {
             "c": {
               "name": "c",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "OBJECT_KIND",
                 "name": "Container"
@@ -93,7 +85,6 @@
         "outClass": {
           "name": "outClass",
           "description": "",
-          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "OBJECT_KIND",
@@ -103,7 +94,6 @@
         "self": {
           "name": "self",
           "description": "",
-          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "INTERFACE_KIND",
@@ -113,12 +103,10 @@
         "withSelf": {
           "name": "withSelf",
           "description": "",
-          "deprecated": "",
           "arguments": {
             "i": {
               "name": "i",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "INTERFACE_KIND",
                 "name": "IFace"
@@ -135,7 +123,6 @@
         "method": {
           "name": "method",
           "description": "",
-          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "VOID_KIND"

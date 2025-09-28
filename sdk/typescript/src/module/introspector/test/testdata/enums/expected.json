@@ -4,17 +4,14 @@
     "Enums": {
       "name": "Enums",
       "description": "",
-      "deprecated": "",
       "methods": {
         "setStatus": {
           "name": "setStatus",
           "description": "",
-          "deprecated": "",
           "arguments": {
             "status": {
               "name": "status",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "ENUM_KIND",
                 "name": "Status"
@@ -32,7 +29,6 @@
         "getStatus": {
           "name": "getStatus",
           "description": "",
-          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "ENUM_KIND",
@@ -44,7 +40,6 @@
         "status": {
           "name": "status",
           "description": "",
-          "deprecated": "",
           "type": {
             "kind": "ENUM_KIND",
             "name": "Status"

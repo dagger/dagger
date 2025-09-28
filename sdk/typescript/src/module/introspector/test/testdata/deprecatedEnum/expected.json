@@ -4,17 +4,14 @@
     "DeprecatedEnums": {
       "name": "DeprecatedEnums",
       "description": "",
-      "deprecated": "",
       "methods": {
         "useMode": {
           "name": "useMode",
           "description": "",
-          "deprecated": "",
           "arguments": {
             "mode": {
               "name": "mode",
               "description": "",
-              "deprecated": "",
               "type": {
                 "kind": "ENUM_KIND",
                 "name": "LegacyMode"
@@ -41,8 +38,7 @@
         "Alpha": {
           "name": "Alpha",
           "value": "alpha",
-          "description": "",
-          "deprecated": ""
+          "description": ""
         },
         "Beta": {
           "name": "Beta",
@@ -53,8 +49,7 @@
         "Gamma": {
           "name": "Gamma",
           "value": "gamma",
-          "description": "",
-          "deprecated": ""
+          "description": ""
         }
       }
     }

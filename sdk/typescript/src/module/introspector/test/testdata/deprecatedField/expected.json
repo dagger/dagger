@@ -4,12 +4,10 @@
     "DeprecatedFields": {
       "name": "DeprecatedFields",
       "description": "Module exposing deprecated fields.",
-      "deprecated": "",
       "methods": {
         "record": {
           "name": "record",
           "description": "",
-          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "OBJECT_KIND",
@@ -30,7 +28,6 @@
         "latestField": {
           "name": "latestField",
           "description": "",
-          "deprecated": "",
           "type": {
             "kind": "STRING_KIND"
           },
@@ -54,7 +51,6 @@
         "message": {
           "name": "message",
           "description": "",
-          "deprecated": "",
           "type": {
             "kind": "STRING_KIND"
           },

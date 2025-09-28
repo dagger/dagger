@@ -4,12 +4,11 @@
     "DeprecatedFunctions": {
       "name": "DeprecatedFunctions",
       "description": "",
-      "deprecated": "",
       "methods": {
         "legacy": {
           "name": "legacy",
           "description": "",
-          "deprecated": "Use `current` instead.",
+          "deprecated": "Use `current` instead.\nLegacy behaviour is kept only for compatibility.",
           "arguments": {},
           "returnType": {
             "kind": "STRING_KIND"
@@ -27,7 +26,6 @@
         "current": {
           "name": "current",
           "description": "",
-          "deprecated": "",
           "arguments": {},
           "returnType": {
             "kind": "STRING_KIND"
