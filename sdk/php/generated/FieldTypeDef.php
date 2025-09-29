@@ -16,6 +16,15 @@ namespace Dagger;
 class FieldTypeDef extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * The reason this enum member is deprecated, if any.
+     */
+    public function deprecated(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('deprecated');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'deprecated');
+    }
+
+    /**
      * A doc string for the field, if any.
      */
     public function description(): string
