@@ -695,7 +695,7 @@ class _ObjectField:
 
         return "\n\n".join("\n".join(section) for section in _out())
 
-    def deprecated(self, prefix='"', suffix='"') -> str:
+    def deprecated(self, prefix='"', suffix='"') -> str | None:
         return self._rewrite_notice(self.graphql.deprecation_reason, prefix, suffix)
 
     def experimental(self, prefix='"', suffix='"') -> str:
@@ -708,12 +708,14 @@ class _ObjectField:
                 reason = args["reason"]
         return self._rewrite_notice(reason, prefix, suffix)
 
-    def _rewrite_notice(self, reason, prefix='"', suffix='"') -> str:
+    def _rewrite_notice(self, reason, prefix='"', suffix='"') -> str | None:
         def _format_name(m):
             name = format_name(m.group().strip("`"))
             return f"{prefix}{name}{suffix}"
 
-        return DEPRECATION_RE.sub(_format_name, reason) if reason else ""
+        if reason is None:
+            return None
+        return DEPRECATION_RE.sub(_format_name, reason)
 
 
 @dataclass
