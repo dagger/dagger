@@ -454,11 +454,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		CacheAccessor: srv.workerCache,
 	})
 
-	// TODO: remove in favor of global LocalSource, we just want to make
-	// sure that this local is never called.
-	dummyLs := local.NewDummySource()
-	srv.workerSourceManager.Register(dummyLs)
-
 	bs, err := blob.NewSource(blob.Opt{
 		CacheAccessor: srv.workerCache,
 	})

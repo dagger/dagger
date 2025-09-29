@@ -16,10 +16,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/session/filesync"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
-	"github.com/dagger/dagger/internal/buildkit/solver"
-	"github.com/dagger/dagger/internal/buildkit/solver/pb"
-	"github.com/dagger/dagger/internal/buildkit/source"
-	srctypes "github.com/dagger/dagger/internal/buildkit/source/types"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/moby/locker"
 	fstypes "github.com/tonistiigi/fsutil/types"
@@ -375,22 +371,4 @@ type CacheRefMetadata struct {
 
 func (md CacheRefMetadata) setSharedKey(key string) error {
 	return md.SetString(keySharedKey, key, sharedKeyIndex+key)
-}
-
-type DummySource struct{}
-
-func NewDummySource() source.Source {
-	return &DummySource{}
-}
-
-func (*DummySource) Schemes() []string {
-	return []string{srctypes.LocalScheme}
-}
-
-func (*DummySource) Identifier(scheme, ref string, attrs map[string]string, platform *pb.Platform) (source.Identifier, error) {
-	return nil, errors.New("DummySource.Identifier has been called")
-}
-
-func (*DummySource) Resolve(ctx context.Context, id source.Identifier, sm *session.Manager, _ solver.Vertex) (source.SourceInstance, error) {
-	return nil, errors.New("DummySource.Resolve has been called")
 }
