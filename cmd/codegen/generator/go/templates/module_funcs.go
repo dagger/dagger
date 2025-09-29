@@ -159,7 +159,7 @@ func (spec *funcTypeSpec) TypeDefFunc(dag *dagger.Client) (*dagger.Function, err
 	}
 	if spec.deprecated != nil {
 		fnTypeDef = fnTypeDef.WithDeprecated(dagger.FunctionWithDeprecatedOpts{
-			Deprecated: *spec.deprecated,
+			Deprecated: strings.TrimSpace(*spec.deprecated),
 		})
 	}
 
