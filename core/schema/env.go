@@ -47,7 +47,7 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("workspace").Doc("The directory to set as the host filesystem"),
 			),
-		dagql.FuncWithCacheKey("withCurrentModule", s.withCurrentModule, dagql.CachePerClient).
+		dagql.NodeFuncWithCacheKey("withCurrentModule", s.withCurrentModule, dagql.CachePerClient).
 			Doc(
 				"Installs the current module into the environment, exposing its functions to the model",
 				"Contextual path arguments will be populated using the environment's workspace.",
@@ -222,16 +222,32 @@ func (s environmentSchema) withModule(ctx context.Context, env *core.Env, args s
 	return env.WithModule(mod.Self()), nil
 }
 
-func (s environmentSchema) withCurrentModule(ctx context.Context, env *core.Env, _ struct{}) (*core.Env, error) {
+func (s environmentSchema) withCurrentModule(ctx context.Context, env dagql.ObjectResult[*core.Env], _ struct{}) (res dagql.ObjectResult[*core.Env], _ error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get current query: %w", err)
+		return res, fmt.Errorf("failed to get current query: %w", err)
 	}
 	mod, err := query.CurrentModule(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get current module: %w", err)
+		return res, fmt.Errorf("failed to get current module: %w", err)
 	}
-	return env.WithModule(mod), nil
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+	err = srv.Select(ctx, env, &res, dagql.Selector{
+		Field: "withModule",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "module",
+				Value: dagql.NewID[*core.Module](mod.ResultID),
+			},
+		},
+	})
+	if err != nil {
+		return res, fmt.Errorf("failed to install current module: %w", err)
+	}
+	return res, nil
 }
 
 func (s environmentSchema) withStringInput(ctx context.Context, env *core.Env, args struct {
