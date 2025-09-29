@@ -1,9 +1,14 @@
 package main
 
 import (
+	"context"
 	"testing"
 
+	"dagger.io/dagger"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/util/gitutil"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
@@ -33,4 +38,27 @@ func TestGitSourceArgRef(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+func (DaggerCMDSuite) TestShellPromptFileSyncing(ctx context.Context, t *testctx.T) {
+	dag, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { dag.Close() })
+
+	handler := &shellCallHandler{
+		dag:      dag,
+		llmModel: llmModel,
+		mode:     modeShell,
+	}
+
+	require.NoError(t, handler.Initialize(ctx))
+
+	// TODO: extraneous assertion, depending on test scope
+	require.Equal(t, idtui.UpdatePromptMsg{},
+		handler.ReactToInput(ctx, tea.KeyMsg{
+			Type:  tea.KeyRunes,
+			Runes: []rune{'>'},
+		})())
+
+	handler.Handle(ctx, "")
 }
