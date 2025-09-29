@@ -1333,12 +1333,6 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Attribute\\DaggerFunction::__construct",
-			"p": "Dagger/Attribute/DaggerFunction.html#method___construct",
-			"d": ""
-		},
-		{
-			"t": "M",
 			"n": "Dagger\\Attribute\\DefaultPath::__construct",
 			"p": "Dagger/Attribute/DefaultPath.html#method___construct",
 			"d": null

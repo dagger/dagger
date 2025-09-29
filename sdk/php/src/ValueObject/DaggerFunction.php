@@ -36,15 +36,13 @@ final readonly class DaggerFunction
      */
     public static function fromReflection(ReflectionMethod $method): self
     {
-        $daggerFunction = (current($method
-            ->getAttributes(Attribute\DaggerFunction::class)) ?: null)
-            ?->newInstance()
-        ?? throw new RuntimeException(sprintf(
-            'Method "%s" is not considered a dagger function without the %s attribute',
-            $method->getName(),
-            Attribute\DaggerFunction::class
-        ));
-
+        if ($method->getAttributes(Attribute\DaggerFunction::class) === []) {
+            throw new RuntimeException(sprintf(
+                'Method "%s" is not considered a dagger function without the %s attribute',
+                $method->getName(),
+                Attribute\DaggerFunction::class
+            ));
+        }
 
         $description = (current($method
             ->getAttributes(Attribute\Doc::class)) ?: null)
@@ -65,7 +63,7 @@ final readonly class DaggerFunction
             ) :
             new self(
                 name: $method->name,
-                description: $description ?? $daggerFunction?->description,
+                description: $description,
                 arguments: $parameters,
                 returnType: self::getReturnType($method),
             );
