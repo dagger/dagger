@@ -180,7 +180,8 @@ defmodule Dagger.TypeDef do
   @spec with_enum_member(t(), String.t(), [
           {:value, String.t() | nil},
           {:description, String.t() | nil},
-          {:source_map, Dagger.SourceMapID.t() | nil}
+          {:source_map, Dagger.SourceMapID.t() | nil},
+          {:deprecated, String.t() | nil}
         ]) :: Dagger.TypeDef.t()
   def with_enum_member(%__MODULE__{} = type_def, name, optional_args \\ []) do
     query_builder =
@@ -190,6 +191,7 @@ defmodule Dagger.TypeDef do
       |> QB.maybe_put_arg("value", optional_args[:value])
       |> QB.maybe_put_arg("description", optional_args[:description])
       |> QB.maybe_put_arg("sourceMap", optional_args[:source_map])
+      |> QB.maybe_put_arg("deprecated", optional_args[:deprecated])
 
     %Dagger.TypeDef{
       query_builder: query_builder,
@@ -205,7 +207,8 @@ defmodule Dagger.TypeDef do
   """
   @spec with_enum_value(t(), String.t(), [
           {:description, String.t() | nil},
-          {:source_map, Dagger.SourceMapID.t() | nil}
+          {:source_map, Dagger.SourceMapID.t() | nil},
+          {:deprecated, String.t() | nil}
         ]) :: Dagger.TypeDef.t()
   def with_enum_value(%__MODULE__{} = type_def, value, optional_args \\ []) do
     query_builder =
@@ -214,6 +217,7 @@ defmodule Dagger.TypeDef do
       |> QB.put_arg("value", value)
       |> QB.maybe_put_arg("description", optional_args[:description])
       |> QB.maybe_put_arg("sourceMap", optional_args[:source_map])
+      |> QB.maybe_put_arg("deprecated", optional_args[:deprecated])
 
     %Dagger.TypeDef{
       query_builder: query_builder,
@@ -226,7 +230,8 @@ defmodule Dagger.TypeDef do
   """
   @spec with_field(t(), String.t(), Dagger.TypeDef.t(), [
           {:description, String.t() | nil},
-          {:source_map, Dagger.SourceMapID.t() | nil}
+          {:source_map, Dagger.SourceMapID.t() | nil},
+          {:deprecated, String.t() | nil}
         ]) :: Dagger.TypeDef.t()
   def with_field(%__MODULE__{} = type_def_, name, type_def, optional_args \\ []) do
     query_builder =
@@ -236,6 +241,7 @@ defmodule Dagger.TypeDef do
       |> QB.put_arg("typeDef", Dagger.ID.id!(type_def))
       |> QB.maybe_put_arg("description", optional_args[:description])
       |> QB.maybe_put_arg("sourceMap", optional_args[:source_map])
+      |> QB.maybe_put_arg("deprecated", optional_args[:deprecated])
 
     %Dagger.TypeDef{
       query_builder: query_builder,
@@ -317,7 +323,8 @@ defmodule Dagger.TypeDef do
   """
   @spec with_object(t(), String.t(), [
           {:description, String.t() | nil},
-          {:source_map, Dagger.SourceMapID.t() | nil}
+          {:source_map, Dagger.SourceMapID.t() | nil},
+          {:deprecated, String.t() | nil}
         ]) :: Dagger.TypeDef.t()
   def with_object(%__MODULE__{} = type_def, name, optional_args \\ []) do
     query_builder =
@@ -326,6 +333,7 @@ defmodule Dagger.TypeDef do
       |> QB.put_arg("name", name)
       |> QB.maybe_put_arg("description", optional_args[:description])
       |> QB.maybe_put_arg("sourceMap", optional_args[:source_map])
+      |> QB.maybe_put_arg("deprecated", optional_args[:deprecated])
 
     %Dagger.TypeDef{
       query_builder: query_builder,
