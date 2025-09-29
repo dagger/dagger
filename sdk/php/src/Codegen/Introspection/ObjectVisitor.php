@@ -55,7 +55,8 @@ class ObjectVisitor extends AbstractVisitor
 
             $method->setReturnType($returnTypeClassName);
 
-            foreach ($field->args as $arg) {
+            $fieldArgs = $this->sortMethodArguments($field->args);
+            foreach ($fieldArgs as $arg) {
                 $this->generateMethodArgument($arg, $method);
             }
 
@@ -63,7 +64,7 @@ class ObjectVisitor extends AbstractVisitor
 
             if (Helpers::isScalar($returnType) || Helpers::isList($returnType) || Helpers::isEnumType($returnType)) {
                 $method->addBody('$leafQueryBuilder = new \Dagger\Client\QueryBuilder(?);', [$fieldName]);
-                $this->generateMethodArgumentsBody($method, $field->args, 'leafQueryBuilder');
+                $this->generateMethodArgumentsBody($method, $fieldArgs, 'leafQueryBuilder');
                 if (Helpers::isCustomScalar($returnType) && !Helpers::isVoidType($returnType)) {
                     $method->addBody(
                         'return new ' . $returnTypeClassName . '((string)$this->queryLeaf($leafQueryBuilder, ?));',
@@ -88,7 +89,7 @@ class ObjectVisitor extends AbstractVisitor
                 }
             } else {
                 $method->addBody('$innerQueryBuilder = new \Dagger\Client\QueryBuilder(?);', [$fieldName]);
-                $this->generateMethodArgumentsBody($method, $field->args, 'innerQueryBuilder');
+                $this->generateMethodArgumentsBody($method, $fieldArgs, 'innerQueryBuilder');
                 $method->addBody(
                     'return new ' .
                     Helpers::formatPhpFqcn(Helpers::formatType($returnType)) .
@@ -126,6 +127,20 @@ class ObjectVisitor extends AbstractVisitor
         } else {
             return Helpers::formatPhpFqcn(Helpers::formatType($type));
         }
+    }
+
+    /**
+     * @param list<Argument> $args
+     *
+     * @return list<Argument>
+     */
+    private function sortMethodArguments(array $args): array
+    {
+        usort($args, static function (Argument $a, Argument $b) {
+            return $b->isRequired() <=> $a->isRequired();
+        });
+
+        return $args;
     }
 
     private function generateMethodArgument(Argument $arg, Method $method): void
