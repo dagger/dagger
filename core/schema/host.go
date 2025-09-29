@@ -143,9 +143,6 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Host]{
-		// TODO: Updated: converted to dagOp
-		// NOTE: (for near future) we can support force reloading by adding a new arg to this function and providing
-		// a custom cache key function that uses a random value when that arg is true.
 		dagql.NodeFuncWithCacheKey("directory", s.directory, dagql.CacheAsRequested).
 			Doc(`Accesses a directory on the host.`).
 			Args(
@@ -245,83 +242,83 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	copyPath := path.Clean(args.Path)
-	initialAbsCopyPath, err := bk.AbsPath(ctx, copyPath)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get host absolute path for %s: %w", copyPath, err)
-	}
-
-	// Relpath is the actual path the user wants to copy, relative to the absRootCopyPath.
-	// If `args.GitIgnore` is set, absRootCopyPath changes to the .git directory location
-	// so we can load .gitignore patterns from there.
-	// Then we copy everything from relPathFromRoot which is the actual path the caller
-	// wants to copy.
-	absRootCopyPath := initialAbsCopyPath
-	relPathFromRoot := "."
-
-	if args.Gitignore {
-		// If `args.GitIgnoreRoot` is set, we use it as the root to load .gitignores
-		// patterns from.
-		// Otherwise, we search for a .git directory to be the new root.
-		if args.GitIgnoreRoot != "" {
-			gitRootPath := args.GitIgnoreRoot
-			absRootCopyPath, err = bk.AbsPath(ctx, gitRootPath)
-			if err != nil {
-				return inst, fmt.Errorf("failed to get absolute path from git ignore root %s: %w", gitRootPath, err)
-			}
-		} else {
-			dotGitPath, found, err := host.Self().FindUp(ctx, core.NewCallerStatFS(bk), initialAbsCopyPath, ".git")
-			if err != nil {
-				return inst, fmt.Errorf("failed to find up .git: %w", err)
-			}
-			if found {
-				absRootCopyPath = dotGitPath
-			}
-		}
-
-		// Compute the relative path to know what the caller actually wants to copy.
-		relPathFromRoot, err = filepath.Rel(absRootCopyPath, initialAbsCopyPath)
-		if err != nil {
-			return inst, fmt.Errorf("failed to get relative path from %q: %w", initialAbsCopyPath, err)
-		}
-	}
-
-	// If relPathFromRoot is different from the rootCopyPath, we include everything
-	// inside the relPathFromRoot directory by default.
-	includePatterns := make([]string, 0, 1+len(args.Include))
-	if relPathFromRoot != "." {
-		includePatterns = append(includePatterns, "!*", relPathFromRoot)
-	}
-	for _, include := range args.Include {
-		include, negative := strings.CutPrefix(include, "!")
-		if !filepath.IsLocal(include) {
-			continue
-		}
-		include = filepath.Join(relPathFromRoot, include)
-		if negative {
-			include = "!" + include
-		}
-		includePatterns = append(includePatterns, include)
-	}
-
-	excludePatterns := make([]string, 0, len(args.Exclude))
-	for _, exclude := range args.Exclude {
-		exclude, negative := strings.CutPrefix(exclude, "!")
-		if !filepath.IsLocal(exclude) {
-			continue
-		}
-		exclude = filepath.Join(relPathFromRoot, exclude)
-		if negative {
-			exclude = "!" + exclude
-		}
-		excludePatterns = append(excludePatterns, exclude)
-	}
-
 	// The operation is not wrapped in dagOp at the schema level, so we manually handle
 	// it inside the resolver.
 	// That's because it's more convenient to call `MakeDirectoryContentHashed` here
 	// that having an option in the `dagOpDirectoryWrapper`
 	if args.InDagOp() {
+		copyPath := path.Clean(args.Path)
+		initialAbsCopyPath, err := bk.AbsPath(ctx, copyPath)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get host absolute path for %s: %w", copyPath, err)
+		}
+
+		// Relpath is the actual path the user wants to copy, relative to the absRootCopyPath.
+		// If `args.GitIgnore` is set, absRootCopyPath changes to the .git directory location
+		// so we can load .gitignore patterns from there.
+		// Then we copy everything from relPathFromRoot which is the actual path the caller
+		// wants to copy.
+		absRootCopyPath := initialAbsCopyPath
+		relPathFromRoot := "."
+
+		if args.Gitignore {
+			// If `args.GitIgnoreRoot` is set, we use it as the root to load .gitignores
+			// patterns from.
+			// Otherwise, we search for a .git directory to be the new root.
+			if args.GitIgnoreRoot != "" {
+				gitRootPath := args.GitIgnoreRoot
+				absRootCopyPath, err = bk.AbsPath(ctx, gitRootPath)
+				if err != nil {
+					return inst, fmt.Errorf("failed to get absolute path from git ignore root %s: %w", gitRootPath, err)
+				}
+			} else {
+				dotGitPath, found, err := host.Self().FindUp(ctx, core.NewCallerStatFS(bk), initialAbsCopyPath, ".git")
+				if err != nil {
+					return inst, fmt.Errorf("failed to find up .git: %w", err)
+				}
+				if found {
+					absRootCopyPath = dotGitPath
+				}
+			}
+
+			// Compute the relative path to know what the caller actually wants to copy.
+			relPathFromRoot, err = filepath.Rel(absRootCopyPath, initialAbsCopyPath)
+			if err != nil {
+				return inst, fmt.Errorf("failed to get relative path from %q: %w", initialAbsCopyPath, err)
+			}
+		}
+
+		// If relPathFromRoot is different from the rootCopyPath, we include everything
+		// inside the relPathFromRoot directory by default.
+		includePatterns := make([]string, 0, 1+len(args.Include))
+		if relPathFromRoot != "." {
+			includePatterns = append(includePatterns, "!*", relPathFromRoot)
+		}
+		for _, include := range args.Include {
+			include, negative := strings.CutPrefix(include, "!")
+			if !filepath.IsLocal(include) {
+				continue
+			}
+			include = filepath.Join(relPathFromRoot, include)
+			if negative {
+				include = "!" + include
+			}
+			includePatterns = append(includePatterns, include)
+		}
+
+		excludePatterns := make([]string, 0, len(args.Exclude))
+		for _, exclude := range args.Exclude {
+			exclude, negative := strings.CutPrefix(exclude, "!")
+			if !filepath.IsLocal(exclude) {
+				continue
+			}
+			exclude = filepath.Join(relPathFromRoot, exclude)
+			if negative {
+				exclude = "!" + exclude
+			}
+			excludePatterns = append(excludePatterns, exclude)
+		}
+
 		dir, err := host.Self().Directory(ctx, absRootCopyPath, core.CopyFilter{
 			Include: includePatterns,
 			Exclude: excludePatterns,
