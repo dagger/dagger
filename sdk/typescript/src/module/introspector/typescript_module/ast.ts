@@ -214,7 +214,8 @@ export class AST {
 
       hasDeprecatedTag = true
       const text =
-        tag.text?.map((part) => ("text" in part ? part.text : part)).join("") ?? ""
+        tag.text?.map((part) => ("text" in part ? part.text : part)).join("") ??
+        ""
       deprecated = text.trim()
       break
     }

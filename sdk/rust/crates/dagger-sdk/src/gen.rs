@@ -6226,6 +6226,11 @@ pub struct EnumValueTypeDef {
     pub graphql_client: DynGraphQLClient,
 }
 impl EnumValueTypeDef {
+    /// The reason this enum member is deprecated, if any.
+    pub async fn deprecated(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("deprecated");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// A doc string for the enum member, if any.
     pub async fn description(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("description");
@@ -7628,6 +7633,11 @@ pub struct FieldTypeDef {
     pub graphql_client: DynGraphQLClient,
 }
 impl FieldTypeDef {
+    /// The reason this enum member is deprecated, if any.
+    pub async fn deprecated(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("deprecated");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// A doc string for the field, if any.
     pub async fn description(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("description");
@@ -8041,6 +8051,9 @@ pub struct FunctionWithArgOpts<'a> {
     /// A default value to use for this argument if not explicitly set by the caller, if any
     #[builder(setter(into, strip_option), default)]
     pub default_value: Option<Json>,
+    /// If deprecated, the reason or migration path.
+    #[builder(setter(into, strip_option), default)]
+    pub deprecated: Option<&'a str>,
     /// A doc string for the argument, if any
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
@@ -8057,6 +8070,12 @@ pub struct FunctionWithCachePolicyOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub time_to_live: Option<&'a str>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct FunctionWithDeprecatedOpts<'a> {
+    /// If deprecated, the reason or migration path.
+    #[builder(setter(into, strip_option), default)]
+    pub deprecated: Option<&'a str>,
+}
 impl Function {
     /// Arguments accepted by the function, if any.
     pub fn args(&self) -> Vec<FunctionArg> {
@@ -8066,6 +8085,11 @@ impl Function {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }]
+    }
+    /// The reason this function is deprecated, if any.
+    pub async fn deprecated(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("deprecated");
+        query.execute(self.graphql_client.clone()).await
     }
     /// A doc string for the function, if any.
     pub async fn description(&self) -> Result<String, DaggerError> {
@@ -8160,6 +8184,9 @@ impl Function {
         if let Some(source_map) = opts.source_map {
             query = query.arg("sourceMap", source_map);
         }
+        if let Some(deprecated) = opts.deprecated {
+            query = query.arg("deprecated", deprecated);
+        }
         Function {
             proc: self.proc.clone(),
             selection: query,
@@ -8196,6 +8223,35 @@ impl Function {
         query = query.arg("policy", policy);
         if let Some(time_to_live) = opts.time_to_live {
             query = query.arg("timeToLive", time_to_live);
+        }
+        Function {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Returns the function with the given deprecated string.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_deprecated(&self) -> Function {
+        let query = self.selection.select("withDeprecated");
+        Function {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Returns the function with the given deprecated string.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_deprecated_opts<'a>(&self, opts: FunctionWithDeprecatedOpts<'a>) -> Function {
+        let mut query = self.selection.select("withDeprecated");
+        if let Some(deprecated) = opts.deprecated {
+            query = query.arg("deprecated", deprecated);
         }
         Function {
             proc: self.proc.clone(),
@@ -8253,6 +8309,11 @@ impl FunctionArg {
     /// A default value to use for this argument when not explicitly set by the caller, if any.
     pub async fn default_value(&self) -> Result<Json, DaggerError> {
         let query = self.selection.select("defaultValue");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The reason this function is deprecated, if any.
+    pub async fn deprecated(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("deprecated");
         query.execute(self.graphql_client.clone()).await
     }
     /// A doc string for the argument, if any.
@@ -10316,6 +10377,11 @@ impl ObjectTypeDef {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// The reason this enum member is deprecated, if any.
+    pub async fn deprecated(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("deprecated");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The doc string for the object, if any.
     pub async fn description(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("description");
@@ -12329,6 +12395,9 @@ pub struct TypeDefWithEnumOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct TypeDefWithEnumMemberOpts<'a> {
+    /// If deprecated, the reason or migration path.
+    #[builder(setter(into, strip_option), default)]
+    pub deprecated: Option<&'a str>,
     /// A doc string for the member, if any
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
@@ -12341,6 +12410,9 @@ pub struct TypeDefWithEnumMemberOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct TypeDefWithEnumValueOpts<'a> {
+    /// If deprecated, the reason or migration path.
+    #[builder(setter(into, strip_option), default)]
+    pub deprecated: Option<&'a str>,
     /// A doc string for the value, if any
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
@@ -12350,6 +12422,9 @@ pub struct TypeDefWithEnumValueOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct TypeDefWithFieldOpts<'a> {
+    /// If deprecated, the reason or migration path.
+    #[builder(setter(into, strip_option), default)]
+    pub deprecated: Option<&'a str>,
     /// A doc string for the field, if any
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
@@ -12366,6 +12441,8 @@ pub struct TypeDefWithInterfaceOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct TypeDefWithObjectOpts<'a> {
+    #[builder(setter(into, strip_option), default)]
+    pub deprecated: Option<&'a str>,
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
     #[builder(setter(into, strip_option), default)]
@@ -12541,6 +12618,9 @@ impl TypeDef {
         if let Some(source_map) = opts.source_map {
             query = query.arg("sourceMap", source_map);
         }
+        if let Some(deprecated) = opts.deprecated {
+            query = query.arg("deprecated", deprecated);
+        }
         TypeDef {
             proc: self.proc.clone(),
             selection: query,
@@ -12580,6 +12660,9 @@ impl TypeDef {
         }
         if let Some(source_map) = opts.source_map {
             query = query.arg("sourceMap", source_map);
+        }
+        if let Some(deprecated) = opts.deprecated {
+            query = query.arg("deprecated", deprecated);
         }
         TypeDef {
             proc: self.proc.clone(),
@@ -12637,6 +12720,9 @@ impl TypeDef {
         }
         if let Some(source_map) = opts.source_map {
             query = query.arg("sourceMap", source_map);
+        }
+        if let Some(deprecated) = opts.deprecated {
+            query = query.arg("deprecated", deprecated);
         }
         TypeDef {
             proc: self.proc.clone(),
@@ -12757,6 +12843,9 @@ impl TypeDef {
         }
         if let Some(source_map) = opts.source_map {
             query = query.arg("sourceMap", source_map);
+        }
+        if let Some(deprecated) = opts.deprecated {
+            query = query.arg("deprecated", deprecated);
         }
         TypeDef {
             proc: self.proc.clone(),
