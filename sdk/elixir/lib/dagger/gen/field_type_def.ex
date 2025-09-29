@@ -18,6 +18,17 @@ defmodule Dagger.FieldTypeDef do
   @type t() :: %__MODULE__{}
 
   @doc """
+  The reason this enum member is deprecated, if any.
+  """
+  @spec deprecated(t()) :: {:ok, String.t() | nil} | {:error, term()}
+  def deprecated(%__MODULE__{} = field_type_def) do
+    query_builder =
+      field_type_def.query_builder |> QB.select("deprecated")
+
+    Client.execute(field_type_def.client, query_builder)
+  end
+
+  @doc """
   A doc string for the field, if any.
   """
   @spec description(t()) :: {:ok, String.t()} | {:error, term()}
