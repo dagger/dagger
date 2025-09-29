@@ -299,17 +299,21 @@ func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirect
 	case TypeDefKindList:
 		modType, ok, err = mod.modTypeForList(ctx, typeDef, checkDirectDeps)
 	case TypeDefKindObject:
-		modType, ok, err = mod.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
-		if ok || err != nil {
-			return modType, ok, err
-		}
 		modType, ok = mod.modTypeForObject(typeDef)
-	case TypeDefKindInterface:
-		modType, ok, err = mod.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
-		if ok || err != nil {
-			return modType, ok, err
+		if !ok {
+			modType, ok, err = mod.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
+			if ok || err != nil {
+				return modType, ok, err
+			}
 		}
+	case TypeDefKindInterface:
 		modType, ok = mod.modTypeForInterface(typeDef)
+		if !ok {
+			modType, ok, err = mod.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
+			if ok || err != nil {
+				return modType, ok, err
+			}
+		}
 	case TypeDefKindScalar:
 		modType, ok, err = mod.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
 		if ok || err != nil {
@@ -318,11 +322,13 @@ func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirect
 		modType, ok = nil, false
 		slog.ExtraDebug("module did not find scalar", "mod", mod.Name(), "scalar", typeDef.AsScalar.Value.Name)
 	case TypeDefKindEnum:
-		modType, ok, err = mod.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
-		if ok || err != nil {
-			return modType, ok, err
-		}
 		modType, ok = mod.modTypeForEnum(typeDef)
+		if !ok {
+			modType, ok, err = mod.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
+			if ok || err != nil {
+				return modType, ok, err
+			}
+		}
 	default:
 		return nil, false, fmt.Errorf("unexpected type def kind %s", typeDef.Kind)
 	}
