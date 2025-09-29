@@ -180,6 +180,11 @@ func (local *localFS) Sync( //nolint:gocyclo
 
 	only := map[string]struct{}{}
 
+	// We assert if we find a file/dir in the given relative path to correctly return
+	// an error if nothing exist in there.
+	// See explanations here: https://github.com/dagger/dagger/pull/10995#issuecomment-3347636652
+	relPathFound := false
+
 	// Hardlinks are a bit hard; we can't create them until their source file exists but we sync in files asynchronously.
 	// To deal with this we keep track of the hardlinks we need to make and apply them all at once after everything else
 	// is done.
@@ -207,6 +212,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 
 				path, ok := strings.CutPrefix(path, local.copyPath)
 				if cacheCtx != nil && ok {
+					relPathFound = true
 					if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
 						return fmt.Errorf("failed to handle change in content hasher: %w", err)
 					}
@@ -232,6 +238,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 
 				path, ok := strings.CutPrefix(path, local.copyPath)
 				if cacheCtx != nil && ok {
+					relPathFound = true
 					if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
 						return fmt.Errorf("failed to handle change in content hasher: %w", err)
 					}
@@ -264,6 +271,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 
 					path, ok := strings.CutPrefix(path, local.copyPath)
 					if cacheCtx != nil && ok {
+						relPathFound = true
 						if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
 							return fmt.Errorf("failed to handle change in content hasher: %w", err)
 						}
@@ -298,6 +306,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 
 			path, ok := strings.CutPrefix(path, local.copyPath)
 			if cacheCtx != nil && ok {
+				relPathFound = true
 				if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
 					return fmt.Errorf("failed to handle change in content hasher: %w", err)
 				}
@@ -326,6 +335,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 
 		path, ok := strings.CutPrefix(hardlink.path, local.copyPath)
 		if cacheCtx != nil && ok {
+			relPathFound = true
 			if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
 				return nil, fmt.Errorf("failed to handle change in content hasher: %w", err)
 			}
@@ -339,6 +349,11 @@ func (local *localFS) Sync( //nolint:gocyclo
 
 	ctx, copySpan := newSpan(ctx, "copy")
 	defer telemetry.End(copySpan, func() error { return rerr })
+
+	// If we didn't find any files/dir in the given relative path, we can early return an error.
+	if local.copyPath != "" && !relPathFound {
+		return nil, fmt.Errorf("%s: no such file or directory", local.copyPath)
+	}
 
 	dgst, err := cacheCtx.Checksum(ctx, newCopyRef, "/", bkcontenthash.ChecksumOpts{}, session)
 	if err != nil {

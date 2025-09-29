@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"fmt"
 	"io"
 	"os"
 	"path"
@@ -92,7 +91,6 @@ type cacheManager struct {
 }
 
 func (cm *cacheManager) Checksum(ctx context.Context, ref cache.ImmutableRef, p string, opts ChecksumOpts, s session.Group) (digest.Digest, error) {
-	fmt.Printf("[CHECKSUM] ref: %#v\n", ref)
 	if ref == nil {
 		if p == "/" {
 			return digest.FromBytes(nil), nil
