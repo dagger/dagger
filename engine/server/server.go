@@ -449,7 +449,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	logrus.Infof("found worker %q, labels=%v, platforms=%v", workerID, baseLabels, FormatPlatforms(srv.enabledPlatforms))
 	archutil.WarnIfUnsupported(srv.enabledPlatforms)
 
-	// TODO: remove in favor of global core.LocalSource()
 	srv.workerLocalSource = local.NewLocalSource(local.LocalSourceOpt{
 		CacheAccessor: srv.workerCache,
 	})
