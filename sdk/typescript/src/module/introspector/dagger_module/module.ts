@@ -139,6 +139,24 @@ export class DaggerModule {
         continue
       }
 
+      // Check for user-defined enum first to avoid shadowing by core types
+      const enumRef = this.ast.findResolvedNodeByName(
+        reference,
+        ts.SyntaxKind.EnumDeclaration,
+      )
+      if (enumRef && !enumRef.file.fileName.endsWith(CLIENT_GEN_FILE)) {
+        // Typescript enum declaration cannot be decorated, so we don't check it.
+        const daggerEnum = new DaggerEnum(enumRef.node, this.ast)
+        this.enums[daggerEnum.name] = daggerEnum
+        this.references[daggerEnum.name] = {
+          kind: TypeDefKind.EnumKind,
+          name: daggerEnum.name,
+        }
+
+        // There should be no reference in enums.
+        continue
+      }
+
       const classRef = this.ast.findResolvedNodeByName(
         reference,
         ts.SyntaxKind.ClassDeclaration,
@@ -182,28 +200,12 @@ export class DaggerModule {
         )
       }
 
-      const enumRef = this.ast.findResolvedNodeByName(
-        reference,
-        ts.SyntaxKind.EnumDeclaration,
-      )
-      if (enumRef) {
-        if (enumRef.file.fileName.endsWith(CLIENT_GEN_FILE)) {
-          this.references[reference] = {
-            kind: TypeDefKind.EnumKind,
-            name: reference,
-          }
-          continue
-        }
-
-        // Typescript enum declaration cannot be decorated, so we don't check it.
-        const daggerEnum = new DaggerEnum(enumRef.node, this.ast)
-        this.enums[daggerEnum.name] = daggerEnum
-        this.references[daggerEnum.name] = {
+      // Check for core enum after checking for user-defined class
+      if (enumRef && enumRef.file.fileName.endsWith(CLIENT_GEN_FILE)) {
+        this.references[reference] = {
           kind: TypeDefKind.EnumKind,
-          name: daggerEnum.name,
+          name: reference,
         }
-
-        // There should be no reference in enums.
         continue
       }
 
