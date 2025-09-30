@@ -21,13 +21,13 @@ jobs:
     cli-test-publish:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.0' || 'ubuntu-24.04' }}
         name: cli-test-publish
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -155,13 +155,13 @@ jobs:
     engine-test-publish:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-4x8' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.0' || 'ubuntu-24.04' }}
         name: engine-test-publish
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -289,13 +289,13 @@ jobs:
     lint:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-32x64' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.0' || 'ubuntu-24.04' }}
         name: lint
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -423,13 +423,13 @@ jobs:
     scan-engine:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-4x8' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.0' || 'ubuntu-24.04' }}
         name: scan-engine
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -557,13 +557,13 @@ jobs:
     scripts:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-4x8' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.0' || 'ubuntu-24.04' }}
         name: scripts
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -696,7 +696,7 @@ jobs:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -837,7 +837,7 @@ jobs:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -978,7 +978,7 @@ jobs:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -1119,7 +1119,7 @@ jobs:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -1260,7 +1260,7 @@ jobs:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -1401,7 +1401,7 @@ jobs:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -1542,7 +1542,7 @@ jobs:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -1683,7 +1683,7 @@ jobs:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -1824,7 +1824,7 @@ jobs:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -1965,7 +1965,7 @@ jobs:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |

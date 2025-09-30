@@ -21,13 +21,13 @@ jobs:
     dotnet:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.0' || 'ubuntu-24.04' }}
         name: dotnet
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -155,13 +155,13 @@ jobs:
     elixir:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.0' || 'ubuntu-24.04' }}
         name: elixir
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -289,13 +289,13 @@ jobs:
     go:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.0' || 'ubuntu-24.04' }}
         name: go
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -423,13 +423,13 @@ jobs:
     java:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.0' || 'ubuntu-24.04' }}
         name: java
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -557,13 +557,13 @@ jobs:
     php:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.0' || 'ubuntu-24.04' }}
         name: php
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -691,13 +691,13 @@ jobs:
     python:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.0' || 'ubuntu-24.04' }}
         name: python
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -825,13 +825,13 @@ jobs:
     rust:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.0' || 'ubuntu-24.04' }}
         name: rust
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |
@@ -959,13 +959,13 @@ jobs:
     typescript:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.0' || 'ubuntu-24.04' }}
         name: typescript
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |

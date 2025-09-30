@@ -21,13 +21,13 @@ jobs:
     helm:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.18.19' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.0' || 'ubuntu-24.04' }}
         name: Helm
         steps:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/warm-engine.sh
               id: warm-engine
               run: |

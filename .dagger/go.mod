@@ -2,7 +2,7 @@ module github.com/dagger/dagger/.dagger
 
 go 1.24.4
 
-require github.com/dagger/dagger/engine/distconsts v0.18.19
+require github.com/dagger/dagger/engine/distconsts v0.19.0
 
 replace (
 	github.com/dagger/dagger/engine/distconsts => ../engine/distconsts
@@ -10,7 +10,7 @@ replace (
 )
 
 require (
-	github.com/99designs/gqlgen v0.17.79
+	github.com/99designs/gqlgen v0.17.80
 	github.com/BurntSushi/toml v0.3.1
 	github.com/Khan/genqlient v0.8.1
 	github.com/containerd/platforms v0.2.1
