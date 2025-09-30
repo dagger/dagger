@@ -14,6 +14,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/moby/patternmatcher/ignorefile"
+	"github.com/opencontainers/go-digest"
 )
 
 type directorySchema struct{}
@@ -1106,7 +1107,12 @@ func maintainContentHashing[A any](
 		if err != nil {
 			return res, err
 		}
-		if parent.ID().HasCustomDigest() { // in practice right now, a custom digest is always a content hash
+
+		// in practice right now, a custom digest is always a content hash
+		// *unless* it's been manually rewritten using dagql.HashFrom (e.g. in
+		// the case of GitRef.tree - that case is manually rewritten to avoid
+		// accidental collisions later)
+		if parent.ID().HasCustomDigest() && parent.ID().Digest().Algorithm() == digest.SHA256 {
 			query, err := core.CurrentQuery(ctx)
 			if err != nil {
 				return res, err
