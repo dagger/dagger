@@ -277,10 +277,7 @@ func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
 			allTools.Add(t)
 		}
 	}
-	if err := m.loadBuiltins(srv, allTools, objectMethods); err != nil {
-		return nil, err
-	}
-
+	m.loadBuiltins(srv, allTools, objectMethods)
 	return allTools.Order, nil
 }
 
@@ -1470,7 +1467,7 @@ func (m *MCP) saveTool(srv *dagql.Server) LLMTool {
 	}
 }
 
-func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSet) error {
+func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSet) {
 	schema := srv.Schema()
 
 	if m.env.Self().writable {
@@ -1650,8 +1647,6 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSe
 			},
 		})
 	}
-
-	return nil
 }
 
 func (m *MCP) readLogsTool(srv *dagql.Server) LLMToolFunc {
