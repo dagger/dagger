@@ -213,19 +213,21 @@ class Module:
         # Enum types
         for name, cls in self._enums.items():
             enum_def = dag.type_def().with_enum(name, description=get_doc(cls))
-            member_docs = extract_enum_member_doc(cls)
+        member_docs = extract_enum_member_doc(cls)
 
-            for member in cls:
-                # Get description from either description attribute or AST doc
-                description = getattr(member, "description", None)
-                if description is None:
-                    description = member_docs.get(member.name)
+        for member in cls:
+            description = getattr(member, "description", None)
+            meta = member_docs.get(member.name)
 
-                enum_def = enum_def.with_enum_member(
-                    member.name,
-                    value=str(member.value),
-                    description=description,
-                )
+            if description is None and meta and meta.description is not None:
+                description = meta.description
+
+            enum_def = enum_def.with_enum_member(
+                member.name,
+                value=str(member.value),
+                description=description,
+                deprecated=meta.deprecated if meta else None,
+            )
             mod = mod.with_enum(enum_def)
 
         return await mod.id()
