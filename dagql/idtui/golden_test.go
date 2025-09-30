@@ -214,13 +214,14 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 				require.NotEmpty(t, db.Spans.Order)
 				var depCalled, rootCalled bool
 				for _, s := range db.Spans.Order {
-					if s.Name == "Versioned.hello" {
+					switch s.Name {
+					case "Versioned.hello":
 						require.Equal(t, "Viztest.TraceRemoteFunctionCalls", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
 						require.Equal(t, "github.com/dagger/dagger/viztest", strings.Split(strAttr(t, s, telemetry.ModuleCallerRefAttr), "@")[0])
 						require.Equal(t, "Versioned.hello", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
 						require.Equal(t, "github.com/dagger/dagger-test-modules/versioned@73670b0338c02cdd190f56b34c6e25066c7c8875", strAttr(t, s, telemetry.ModuleRefAttr))
 						depCalled = true
-					} else if s.Name == "Viztest.traceRemoteFunctionCalls" {
+					case "Viztest.traceRemoteFunctionCalls":
 						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
 						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerRefAttr))
 						require.Equal(t, "Viztest.traceRemoteFunctionCalls", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
@@ -238,24 +239,24 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 			Function: "fn",
 			DBTest: func(t *testctx.T, db *dagui.DB) {
 				require.NotEmpty(t, db.Spans.Order)
-				var depCalled, rootCalled bool
+				calledNames := []string{}
 				for _, s := range db.Spans.Order {
-					if s.Name == "DepAlias.fn" {
+					calledNames = append(calledNames, s.Name)
+					switch s.Name {
+					case "DepAlias.fn":
 						require.Equal(t, "RootMod.Fn", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
 						require.Equal(t, "github.com/dagger/dagger-test-modules@73670b0338c02cdd190f56b34c6e25066c7c8875", strAttr(t, s, telemetry.ModuleCallerRefAttr))
 						require.Equal(t, "DepAlias.fn", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
 						require.Equal(t, "github.com/dagger/dagger-test-modules/dep@73670b0338c02cdd190f56b34c6e25066c7c8875", strAttr(t, s, telemetry.ModuleRefAttr))
-						depCalled = true
-					} else if s.Name == "RootMod.fn" {
+					case "RootMod.fn":
 						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
 						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerRefAttr))
 						require.Equal(t, "RootMod.fn", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
 						require.Equal(t, "github.com/dagger/dagger-test-modules@73670b0338c02cdd190f56b34c6e25066c7c8875", strAttr(t, s, telemetry.ModuleRefAttr))
-						rootCalled = true
 					}
 				}
-				require.True(t, rootCalled)
-				require.True(t, depCalled)
+				require.Contains(t, calledNames, "DepAlias.fn")
+				require.Contains(t, calledNames, "RootMod.fn")
 			},
 		},
 	} {
