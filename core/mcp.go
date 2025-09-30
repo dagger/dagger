@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"dagger.io/dagger/telemetry"
@@ -88,6 +89,8 @@ type MCP struct {
 	mcpServers map[string]*MCPServerConfig
 	// Persistent MCP sessions.
 	mcpSessions map[string]*mcp.ClientSession
+	// Synchronize any concurrent tool call results.
+	mu *sync.Mutex
 }
 
 // MCPServerConfig represents configuration for an external MCP server
@@ -126,6 +129,7 @@ func newMCP(env dagql.ObjectResult[*Env]) *MCP {
 		idByHash:        map[digest.Digest]string{},
 		mcpServers:      make(map[string]*MCPServerConfig),
 		mcpSessions:     map[string]*mcp.ClientSession{},
+		mu:              &sync.Mutex{},
 	}
 }
 
@@ -179,11 +183,14 @@ func (m *MCP) Clone() *MCP {
 	cp.mcpServers = maps.Clone(cp.mcpServers)
 	cp.mcpSessions = maps.Clone(cp.mcpSessions)
 	cp.returned = false
+	cp.mu = &sync.Mutex{}
 	return &cp
 }
 
 // Lookup an input binding
 func (m *MCP) Input(ctx context.Context, key string) (*Binding, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	// next check for values by ID
 	if val, exists := m.objsByID[key]; exists {
 		bnd, err := val(ctx, m.env)
@@ -619,7 +626,7 @@ func (m *MCP) call(ctx context.Context,
 	} else if selfType == srv.Root().ObjectType().TypeName() || autoConstruct != nil {
 		// no self provided; either targeting Query, or auto-constructing from it
 		target = srv.Root()
-	} else if latest := m.typeCounts[selfType]; latest > 0 {
+	} else if latest := m.TypeCounts()[selfType]; latest > 0 {
 		// default to the newest object of this type
 		target, err = m.GetObject(ctx, fmt.Sprintf("%s#%d", selfType, latest), selfType)
 		if err != nil {
@@ -1589,7 +1596,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 		})
 	}
 
-	if len(m.typeCounts) > 0 {
+	if len(m.TypeCounts()) > 0 {
 		builtins = append(builtins, LLMTool{
 			Name:        "ListObjects",
 			Description: "List available objects.",
@@ -1606,8 +1613,9 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 					Description string `json:"description"`
 				}
 				var objects []objDesc
-				for _, typeName := range slices.Sorted(maps.Keys(m.typeCounts)) {
-					count := m.typeCounts[typeName]
+				counts := m.TypeCounts()
+				for _, typeName := range slices.Sorted(maps.Keys(counts)) {
+					count := counts[typeName]
 					for i := 1; i <= count; i++ {
 						bnd, found, err := m.Input(ctx, fmt.Sprintf("%s#%d", typeName, i))
 						if err != nil {
@@ -2254,10 +2262,18 @@ func (m *MCP) typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any,
 
 const jsonSchemaIDAttr = "x-id-type"
 
+func (m *MCP) TypeCounts() map[string]int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return maps.Clone(m.typeCounts)
+}
+
 func (m *MCP) toolObjectResponse(ctx context.Context, srv *dagql.Server, target dagql.AnyObjectResult, objID string) (string, error) {
 	schema := srv.Schema()
 	typeName := target.Type().Name()
+	m.mu.Lock()
 	_, known := m.typeCounts[typeName]
+	m.mu.Unlock()
 	res := map[string]any{
 		"result": objID,
 	}
@@ -2303,13 +2319,15 @@ func (m *MCP) IngestBy(obj dagql.AnyObjectResult, desc string, hash digest.Diges
 	if id == nil {
 		return ""
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	typeName := id.Type().NamedType()
 	llmID, ok := m.idByHash[hash]
 	if !ok {
 		m.typeCounts[typeName]++
 		llmID = fmt.Sprintf("%s#%d", typeName, m.typeCounts[typeName])
 		if desc == "" {
-			desc = m.describe(id)
+			desc = m.describeLocked(id)
 		}
 		m.idByHash[hash] = llmID
 		m.objsByID[llmID] = func(context.Context, dagql.ObjectResult[*Env]) (*Binding, error) {
@@ -2330,6 +2348,8 @@ func (m *MCP) IngestContextual(
 	typeName string,
 	create func(ctx context.Context, env dagql.ObjectResult[*Env]) (dagql.AnyResult, error),
 ) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	llmID, ok := m.idByHash[hash]
 	if !ok {
 		m.typeCounts[typeName]++
@@ -2351,7 +2371,7 @@ func (m *MCP) IngestContextual(
 	return llmID
 }
 
-func (m *MCP) describe(id *call.ID) string {
+func (m *MCP) describeLocked(id *call.ID) string {
 	str := new(strings.Builder)
 	if recv := id.Receiver(); recv != nil {
 		if llmID, ok := m.idByHash[recv.Digest()]; ok {
@@ -2372,14 +2392,14 @@ func (m *MCP) describe(id *call.ID) string {
 			}
 			str.WriteString(arg.Name())
 			str.WriteString(": ")
-			str.WriteString(m.displayLit(arg.Value()))
+			str.WriteString(m.displayLitLocked(arg.Value()))
 		}
 		str.WriteString(")")
 	}
 	return str.String()
 }
 
-func (m *MCP) displayLit(lit call.Literal) string {
+func (m *MCP) displayLitLocked(lit call.Literal) string {
 	switch x := lit.(type) {
 	case *call.LiteralID:
 		// For ID arguments, try to use LLM IDs
@@ -2394,7 +2414,7 @@ func (m *MCP) displayLit(lit call.Literal) string {
 			if i > 0 {
 				list += ","
 			}
-			list += m.displayLit(value)
+			list += m.displayLitLocked(value)
 			return nil
 		})
 		list += "]"
@@ -2405,7 +2425,7 @@ func (m *MCP) displayLit(lit call.Literal) string {
 			if i > 0 {
 				obj += ","
 			}
-			obj += name + ": " + m.displayLit(value)
+			obj += name + ": " + m.displayLitLocked(value)
 			return nil
 		})
 		obj += "}"
@@ -2422,12 +2442,7 @@ func (m *MCP) Types() []string {
 			m.Ingest(obj, input.Description)
 		}
 	}
-
-	types := make([]string, 0, len(m.typeCounts))
-	for typ := range m.typeCounts {
-		types = append(types, typ)
-	}
-	return types
+	return slices.Collect(maps.Keys(m.TypeCounts()))
 }
 
 func toolStructuredResponse(val any) (string, error) {
