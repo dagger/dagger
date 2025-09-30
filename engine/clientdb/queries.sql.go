@@ -179,7 +179,7 @@ WITH RECURSIVE descendant_spans AS (
   FROM spans s
   WHERE s.parent_span_id = ?
   UNION ALL
-  SELECT s.span_id
+  SELECT DISTINCT s.span_id
   FROM spans s
   INNER JOIN descendant_spans ds ON s.parent_span_id = ds.span_id
 )
