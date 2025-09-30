@@ -55,6 +55,7 @@ type Model struct {
 }
 
 var daggerToOpenRouter = map[string]string{
+	"claude-sonnet-4-5": "anthropic/claude-sonnet-4.5",
 	"claude-sonnet-4-0": "anthropic/claude-sonnet-4",
 }
 

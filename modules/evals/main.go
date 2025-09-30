@@ -13,7 +13,7 @@ var SmartModels = []string{
 	"gemini-2.0-flash",
 	"claude-3-5-sonnet-latest",
 	"claude-3-7-sonnet-latest",
-	"claude-sonnet-4-0",
+	"claude-sonnet-4-5",
 }
 
 // Dagger's eval suite.
