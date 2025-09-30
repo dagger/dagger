@@ -1,45 +1,46 @@
 Expected stderr:
 
 ▼ connect X.Xs
-├─● starting engine X.Xs
-├─● connecting to engine X.Xs
-╰─● starting session X.Xs
+├╴✔ starting engine X.Xs
+├╴▼ connecting to engine X.Xs
+│ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
+╰╴✔ starting session X.Xs
  
 ▼ load module: ./viztest X.Xs
-├─● finding module configuration X.Xs
-├─● initializing module X.Xs
-├─● inspecting module metadata X.Xs
-╰─● loading type definitions X.Xs
+├╴✔ finding module configuration X.Xs
+├╴✔ initializing module X.Xs
+├╴✔ inspecting module metadata X.Xs
+╰╴✔ loading type definitions X.Xs
  
-● parsing command line arguments X.Xs
+✔ parsing command line arguments X.Xs
 
-● viztest: Viztest! X.Xs
+✔ viztest: Viztest! X.Xs
 ▼ .nestedStatuses(fail: true): String! X.Xs ERROR
 ! oh no
-╰─▼ custom status X.Xs ERROR
+╰╴▼ custom status X.Xs ERROR
   ! oh no
-  ├─● container: Container! X.Xs
-  ├─$ .from(address: "alpine"): Container! X.Xs CACHED
-  ├─▼ .withExec(args: ["echo", "outer: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
+  ├╴✔ container: Container! X.Xs
+  ├╴$ .from(address: "alpine"): Container! X.Xs CACHED
+  ├╴▼ .withExec(args: ["echo", "outer: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
   │ ┃ outer: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
-  ├─▼ .stdout: String! X.Xs
+  ├╴▼ .stdout: String! X.Xs
   │ ┃ outer: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
   │
-  ├─▼ sub status X.Xs
-  │ ├─▼ Container.withExec(args: ["echo", "sub 1: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
+  ├╴▼ sub status X.Xs
+  │ ├╴▼ Container.withExec(args: ["echo", "sub 1: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
   │ │ ┃ sub 1: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
-  │ ╰─▼ .stdout: String! X.Xs
+  │ ╰╴▼ .stdout: String! X.Xs
   │   ┃ sub 1: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
   │  
-  ├─▼ sub status X.Xs
-  │ ├─▼ Container.withExec(args: ["echo", "sub 2: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
+  ├╴▼ sub status X.Xs
+  │ ├╴▼ Container.withExec(args: ["echo", "sub 2: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
   │ │ ┃ sub 2: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
-  │ ╰─▼ .stdout: String! X.Xs
+  │ ╰╴▼ .stdout: String! X.Xs
   │   ┃ sub 2: 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
   │  
-  ╰─▼ another sub status X.Xs ERROR
+  ╰╴▼ another sub status X.Xs ERROR
     ! oh no
-    ╰─✘ sub status X.Xs ERROR
+    ╰╴✘ sub status X.Xs ERROR
       ! oh no
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
