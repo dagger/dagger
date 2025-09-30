@@ -21,6 +21,6 @@ Expected stderr:
   ✔ .withExec(args: ["sleep", "1"]): Container! X.Xs
   ✘ .withExec(args: ["false"]): Container! X.Xs ERROR
   ! process "false" did not complete successfully: exit code: 1
-  ○ .withExec(args: ["sleep", "1"]): Container! X.Xs
+  ∅ .withExec(args: ["sleep", "1"]): Container! X.Xs SKIPPED
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
