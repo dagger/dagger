@@ -175,6 +175,11 @@ class Module:
                 if doc := func.doc:
                     func_def = func_def.with_description(doc)
 
+                if func.cache_ttl is not None:
+                    func_def = func_def.with_cache_ttl(func.cache_ttl)
+                if func.cache_per_session:
+                    func_def = func_def.with_cache_per_session()
+
                 for param in func.parameters.values():
                     arg_def = to_typedef(
                         param.resolved_type,
@@ -584,6 +589,8 @@ class Module:
         *,
         name: APIName | None = None,
         doc: str | None = None,
+        cache_ttl: str | None = None,
+        cache_per_session: bool = False,
     ) -> Func[P, R] | Callable[[Func[P, R]], Func[P, R]]:
         """Exposes a Python function as a :py:class:`dagger.Function`.
 
@@ -615,7 +622,7 @@ class Module:
             # TODO: Use beartype to validate
             assert callable(func), f"Expected a callable, got {type(func)}."
 
-            meta = FunctionDefinition(name, doc)
+            meta = FunctionDefinition(name, doc, cache_ttl, cache_per_session)
 
             if inspect.isclass(func):
                 return Constructor(func, meta)
