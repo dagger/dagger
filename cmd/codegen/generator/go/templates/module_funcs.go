@@ -114,7 +114,7 @@ func (spec *funcTypeSpec) TypeDefFunc(dag *dagger.Client) (*dagger.Function, err
 		fnTypeDef = fnTypeDef.WithDescription(strings.TrimSpace(spec.doc))
 	}
 	if spec.sourceMap != nil {
-		fnTypeDef.WithSourceMap(spec.sourceMap.TypeDef(dag))
+		fnTypeDef = fnTypeDef.WithSourceMap(spec.sourceMap.TypeDef(dag))
 	}
 
 	for _, argSpec := range spec.argSpecs {
