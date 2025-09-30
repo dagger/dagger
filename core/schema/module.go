@@ -122,6 +122,9 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
 			),
+
+		dagql.Func("module", s.currentModuleModule).
+			Doc("The module that current module points to"),
 	}.Install(dag)
 
 	dagql.Fields[*core.Function]{
@@ -705,6 +708,14 @@ func (s *moduleSchema) currentModuleName(
 	args struct{},
 ) (string, error) {
 	return curMod.Module.NameField, nil
+}
+
+func (s *moduleSchema) currentModuleModule(
+	ctx context.Context,
+	curMod *core.CurrentModule,
+	args struct{},
+) (inst *core.Module, err error) {
+	return curMod.Module, nil
 }
 
 func (s *moduleSchema) currentModuleSource(
