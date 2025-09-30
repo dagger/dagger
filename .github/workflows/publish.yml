@@ -101,7 +101,7 @@ jobs:
         env:
           RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
         with:
-          function: --github-token=env:RELEASE_DAGGER_CI_TOKEN bump --to=${{ github.ref_name }} --github-assignee=${{ github.actor }}
+          function: open-pr --to="${{ github.ref_name }}" --github-token=env:RELEASE_DAGGER_CI_TOKEN --github-assignee="${{ github.actor }}"
           module: github.com/dagger/dagger.io/infra/dagger-version-manager@main
 
   # TODO: daggerize provisioning tests
