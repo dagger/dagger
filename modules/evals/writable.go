@@ -26,11 +26,11 @@ func (e *Writable) Prompt(base *dagger.LLM) *dagger.LLM {
 			Writable:   true,
 			Privileged: true,
 		})).
-		WithPrompt("Declare a new File output, `helloFile`, and save a new File to it with the contents 'Hello, world!'").
+		WithPrompt(`Create a new file, hello.txt, with the contents "Hello, world!".`).
 		Loop().
-		WithPrompt("Declare a String output, `food`.").
+		WithPrompt(`Save the File as a new output, "helloFile".`).
 		Loop().
-		WithPrompt("Save the value 'potato' as `food`.")
+		WithPrompt(`Now declare another output "food" of type String, and save it as "potato".`)
 }
 
 func (e *Writable) Check(ctx context.Context, prompt *dagger.LLM) error {

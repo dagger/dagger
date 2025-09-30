@@ -200,7 +200,6 @@ func (m *MCP) Clone() *MCP {
 func (m *MCP) Input(ctx context.Context, key string) (*Binding, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	// next check for values by ID
 	if val, exists := m.objsByID[key]; exists {
 		bnd, err := val(ctx, m.env)
 		if err != nil {
@@ -1383,94 +1382,91 @@ func toolErrorMessage(err error) string {
 	return errResponse
 }
 
-func (m *MCP) saveTool() LLMTool {
-	props := map[string]any{}
-	required := []string{}
+func (m *MCP) saveTool(srv *dagql.Server) LLMTool {
+	desc := "Save an output that has been requested by the user."
 
-	desc := "Save your work, making the requested outputs available to the user:\n"
-
-	var outputs []string
-	for name, b := range m.env.Self().outputsByName {
-		required = append(required, name)
-
-		typeName := b.ExpectedType
-
-		outputs = append(outputs,
-			fmt.Sprintf("- %s (%s): %s", name, typeName, b.Description))
-
-		argSchema := map[string]any{
-			"type": "string",
+	checklist := func() string {
+		var list []string
+		for name, b := range m.env.Self().outputsByName {
+			checked := " "
+			if b.Value != nil {
+				checked = "x"
+			}
+			list = append(list,
+				fmt.Sprintf("- [%s] %s (%s): %s", checked, name, b.ExpectedType, b.Description))
 		}
 
-		var desc string
-		if typeName == "String" {
-			desc = b.Description
-		} else {
-			argSchema[jsonSchemaIDAttr] = typeName
-			desc = fmt.Sprintf("(%s ID) %s", typeName, b.Description)
-		}
+		sort.Strings(list)
 
-		argSchema["description"] = desc
-
-		props[name] = argSchema
+		return strings.Join(list, "\n")
 	}
 
-	// append outputs
-	sort.Strings(outputs)
-	for _, out := range outputs {
-		desc += fmt.Sprintf("\n%s", out)
-	}
+	desc += "\n\nThe following checklist describes the desired outputs:"
+	desc += "\n\n" + checklist()
 
 	return LLMTool{
 		Name:        "Save",
 		Description: desc,
 		Schema: map[string]any{
-			"type":                 "object",
-			"properties":           props,
-			"required":             required,
+			"type": "object",
+			"properties": map[string]any{
+				"name": map[string]any{
+					"type":        "string",
+					"description": "The name of the output, following shell naming conventions ([a-z][a-z0-9_]*).",
+				},
+				"value": map[string]any{
+					"type":        "string",
+					"description": "The value to save for the output.",
+				},
+			},
+			"required":             []string{"name", "value"},
 			"additionalProperties": false,
 		},
 		Strict: true,
-		Call: func(ctx context.Context, args any) (any, error) {
-			vals, ok := args.(map[string]any)
+		Call: ToolFunc(srv, func(ctx context.Context, args struct {
+			Name  string
+			Value string
+		}) (any, error) {
+			output, ok := m.env.Self().outputsByName[args.Name]
 			if !ok {
-				return nil, fmt.Errorf("invalid arguments: %T", args)
+				return nil, fmt.Errorf("unknown output: %q - please declare it first", args.Name)
 			}
-			for name, output := range m.env.Self().outputsByName {
-				arg, ok := vals[name]
-				if !ok {
-					return nil, fmt.Errorf("required output %s not provided", name)
+			if output.ExpectedType == "String" {
+				output.Value = dagql.String(args.Value)
+			} else {
+				bnd, ok, err := m.Input(ctx, args.Value)
+				if err != nil {
+					return nil, err
 				}
-				argStr, ok := arg.(string)
 				if !ok {
-					return nil, fmt.Errorf("invalid type for argument %s: %T", name, arg)
+					return nil, fmt.Errorf("object not found for argument %s: %s", args.Name, args.Value)
 				}
-				if output.ExpectedType == "String" {
-					output.Value = dagql.String(argStr)
-				} else {
-					bnd, ok, err := m.Input(ctx, argStr)
-					if err != nil {
-						return nil, err
-					}
-					if !ok {
-						return nil, fmt.Errorf("object not found for argument %s: %s", name, argStr)
-					}
 
-					obj := bnd.Value
-					actualType := obj.Type().Name()
-					if output.ExpectedType != actualType {
-						return nil, fmt.Errorf("incompatible types: %s must be %s, got %s", name, output.ExpectedType, actualType)
-					}
+				obj := bnd.Value
+				actualType := obj.Type().Name()
+				if output.ExpectedType != actualType {
+					return nil, fmt.Errorf("incompatible types: %s must be %s, got %s", args.Name, output.ExpectedType, actualType)
+				}
 
-					// Propagate description from output to binding so that outputs are
-					// described under `Available objects:`
-					bnd.Description = output.Description
-					output.Value = obj
+				// Propagate description from output to binding so that outputs are
+				// described under `Available objects:`
+				bnd.Description = output.Description
+				output.Value = obj
+			}
+
+			// If all outputs have been saved, we can flag the MCP as having completed
+			// its task.
+			var anyNotSaved bool
+			for _, output := range m.env.Self().outputsByName {
+				if output.Value == nil {
+					anyNotSaved = true
+					break
 				}
 			}
-			m.returned = true
-			return "ok", nil
-		},
+			m.returned = !anyNotSaved
+
+			return checklist(), nil
+		}),
 	}
 }
 
@@ -1628,7 +1624,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSe
 	})
 
 	if len(m.env.Self().outputsByName) > 0 {
-		allTools.Add(m.saveTool())
+		allTools.Add(m.saveTool(srv))
 	}
 
 	if len(m.env.Self().inputsByName) > 0 {
