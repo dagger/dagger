@@ -49,7 +49,7 @@ type Evaluator struct {
 const MinSuccessRate = 0.8
 
 func New(
-	// The AI model name to use for the evaluator agent (e.g., "gpt-4o", "claude-sonnet-4-0").
+	// The AI model name to use for the evaluator agent (e.g., "gpt-4o", "claude-sonnet-4-5").
 	// If not specified, uses the default model configured in the environment.
 	// +optional
 	model string,

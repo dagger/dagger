@@ -54,7 +54,7 @@ var testedModels = []string{
 	"gpt-4.1",
 	// "qwen2.5-coder:14b",
 	"gemini-2.0-flash",
-	"claude-sonnet-4-0",
+	"claude-sonnet-4-5",
 }
 
 // Set the system prompt for future evaluations.

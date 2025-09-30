@@ -53,6 +53,7 @@ var anthropicRetryable = []string{
 	// there's gotta be a better way to do this...
 	string(constant.RateLimitError("").Default()),
 	string(constant.OverloadedError("").Default()),
+	"Internal server error",
 }
 
 func (c *AnthropicClient) IsRetryable(err error) bool {

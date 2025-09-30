@@ -27,7 +27,7 @@ func (e *Responses) Prompt(base *dagger.LLM) *dagger.LLM {
 			WithFileInput("hello_file",
 				dag.File("foo.txt", "Hello, world!"),
 				"The file to inspect.").
-			WithModuleSourceInput("module",
+			WithModuleSourceInput("my_module",
 				dag.ModuleSource("github.com/dagger/dagger-test-modules/llm-dir-module-depender"),
 				"The module source to inspect.").
 			WithDirectoryInput("some_dir",
@@ -36,7 +36,7 @@ func (e *Responses) Prompt(base *dagger.LLM) *dagger.LLM {
 					WithNewFile("file-2", ""),
 				"The directory to inspect.").
 			WithStringOutput("module_config_exists",
-				"Whether the module config exists (true/false).").
+				"Whether the module config exists for the my_module input (true/false).").
 			WithStringOutput("file_contents",
 				"The contents of the file.").
 			WithStringOutput("file_size",

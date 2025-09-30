@@ -39,7 +39,7 @@ func (e *ModelContextProtocol) Prompt(base *dagger.LLM) *dagger.LLM {
 		WithPrompt(`Please make the following changes to the workspace:
 
 1. Update the README.md file to add a "Getting Started" section with installation instructions
-2. Remove main.go - we don't need it anymore.
+2. Use Bash to rm main.go - we don't need it anymore.
 3. Create a new file called "config.json" with some basic configuration settings
 
 Make sure to use the file editing tools available through the MCP server to make these changes.`)
