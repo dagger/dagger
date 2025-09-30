@@ -1,6 +1,0 @@
-kind: Deprecated
-body: Marks the TypeScript SDK @enumType() decorator as deprecated; native TypeScript enum declarations remain the recommended (and already supported) alternative.
-time: 2025-09-17T15:50:09.175300775-07:00
-custom:
-    Author: grouville
-    PR: "11076"

@@ -1,6 +1,0 @@
-kind: Added
-body: 'engine: support registry mirror configs on `engine.json`'
-time: 2025-09-12T16:36:22.510006635-03:00
-custom:
-    Author: matipan
-    PR: "11040"

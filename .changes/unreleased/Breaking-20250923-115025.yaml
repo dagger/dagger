@@ -1,9 +1,0 @@
-kind: Breaking
-body: |-
-    Remove `LocalCache.keepBytes` field
-
-    Instead use the more specific `LocalCache.reservedSpace`, which it was an alias for.
-time: 2025-09-23T11:50:25.572327827+01:00
-custom:
-    Author: jedevc
-    PR: "11115"
