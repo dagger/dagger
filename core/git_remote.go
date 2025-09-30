@@ -83,10 +83,19 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (*gitutil.Remote, e
 	}
 	defer cleanup()
 
-	out, err := git.LsRemote(ctx, repo.URL.Remote())
+	url := repo.URL.Remote()
+	locked, err := LockfileGetGitLsRemote(ctx, url)
 	if err != nil {
 		return nil, err
 	}
+	if locked != nil {
+		return locked, nil
+	}
+	out, err := git.LsRemote(ctx, url)
+	if err != nil {
+		return nil, err
+	}
+	LockfileSetGitLsRemote(ctx, url, out)
 	return out, nil
 }
 

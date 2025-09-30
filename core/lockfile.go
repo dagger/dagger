@@ -9,6 +9,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/session/lockfile"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
+	"github.com/dagger/dagger/util/gitutil"
 )
 
 func LockfileGetHTTP(ctx context.Context, url string) (string, error) {
@@ -30,6 +31,43 @@ func LockfileSetHTTP(ctx context.Context, url, digest string) error {
 	args := []any{url}
 	return lockfileSet(ctx, "core", "http.get", args, digest)
 }
+
+func LockfileGetGitLsRemote(ctx context.Context, url string) (*gitutil.Remote, error) {
+	raw, err := lockfileGet(ctx, "core", "git.refs", []any{url})
+	if err != nil {
+		return nil, err
+	}
+	if raw == nil {
+		return nil, nil
+	}
+	var result gitutil.Remote
+	// FIXME: encode to a more repeatable form
+	if s, ok := raw.(string); ok {
+		if err := json.Unmarshal([]byte(s), &result); err != nil {
+			return nil, err
+		}
+		return &result, nil
+	}
+	return nil, nil
+}
+
+func LockfileSetGitLsRemote(ctx context.Context, url string, info *gitutil.Remote) error {
+	args := []any{url}
+	resultJSON, err := json.Marshal(info)
+	if err != nil {
+		return err
+	}
+	return lockfileSet(ctx, "core", "git.refs", args, string(resultJSON))
+}
+
+// gitutil
+//type Remote struct {
+//	Refs    []*Ref
+//	Symrefs map[string]string
+//
+//	// override what HEAD points to, if set
+//	Head *Ref
+//}
 
 func LockfileGetGitPublic(ctx context.Context, url string) (*bool, error) {
 	args := []any{url}
