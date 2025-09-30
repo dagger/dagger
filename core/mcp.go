@@ -369,6 +369,7 @@ func (m *MCP) updateEnvWorkspace(ctx context.Context, workspace dagql.ObjectResu
 
 	var newEnv dagql.ObjectResult[*Env]
 	if err := srv.Select(ctx, m.env, &newEnv, dagql.Selector{
+		View:  srv.View,
 		Field: "withWorkspace",
 		Args: []dagql.NamedInput{
 			{
@@ -678,6 +679,7 @@ func (m *MCP) call(ctx context.Context,
 	if changes, ok := dagql.UnwrapAs[dagql.ObjectResult[*Changeset]](val); ok {
 		var newWS dagql.ObjectResult[*Directory]
 		if err := srv.Select(ctx, m.env.Self().Workspace, &newWS, dagql.Selector{
+			View:  srv.View,
 			Field: "withChanges",
 			Args: []dagql.NamedInput{
 				{
@@ -840,6 +842,7 @@ func (m *MCP) toolCallToSelections(
 	}
 
 	sel := dagql.Selector{
+		View:  srv.View,
 		Field: fieldDef.Name,
 	}
 	field, ok := targetObjType.FieldSpec(fieldDef.Name, call.View(engine.Version))
@@ -912,6 +915,7 @@ func (m *MCP) toolCallToSelections(
 			// If the Object supports "sync", auto-select it.
 			//
 			syncSel := dagql.Selector{
+				View:  srv.View,
 				Field: sync.Name,
 			}
 			sels = append(sels, syncSel)
@@ -954,6 +958,7 @@ func (m *MCP) maybeLoadContextualArg(ctx context.Context, srv *dagql.Server, env
 			dirArg = workspace
 		default:
 			if err := srv.Select(ctx, workspace, &dirArg, dagql.Selector{
+				View:  srv.View,
 				Field: "directory",
 				Args: []dagql.NamedInput{
 					{
@@ -973,6 +978,7 @@ func (m *MCP) maybeLoadContextualArg(ctx context.Context, srv *dagql.Server, env
 	case "FileID":
 		var fileArg dagql.ObjectResult[*File]
 		if err := srv.Select(ctx, workspace, &fileArg, dagql.Selector{
+			View:  srv.View,
 			Field: "file",
 			Args: []dagql.NamedInput{
 				{
@@ -1558,6 +1564,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 			}) (any, error) {
 				var dest dagql.ObjectResult[*Env]
 				err := srv.Select(ctx, m.env, &dest, dagql.Selector{
+					View:  srv.View,
 					Field: "with" + args.Type + "Output",
 					Args: []dagql.NamedInput{
 						{
@@ -2261,6 +2268,7 @@ func (m *MCP) toolObjectResponse(ctx context.Context, srv *dagql.Server, target 
 			continue
 		}
 		val, err := target.Select(ctx, srv, dagql.Selector{
+			View:  srv.View,
 			Field: field.Name,
 		})
 		if err != nil {
