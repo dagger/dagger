@@ -242,15 +242,17 @@ class Module:
             member_docs = extract_enum_member_doc(cls)
 
             for member in cls:
-                # Get description from either description attribute or AST doc
                 description = getattr(member, "description", None)
-                if description is None:
-                    description = member_docs.get(member.name)
+                meta = member_docs.get(member.name)
+
+                if description is None and meta and meta.description is not None:
+                    description = meta.description
 
                 enum_def = enum_def.with_enum_member(
                     member.name,
                     value=str(member.value),
                     description=description,
+                    deprecated=meta.deprecated if meta else None,
                 )
             mod = mod.with_enum(enum_def)
 

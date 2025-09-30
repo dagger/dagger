@@ -36,6 +36,12 @@ if typing.TYPE_CHECKING:
     from dagger.mod._resolver import ObjectType
 
 
+@dataclasses.dataclass(slots=True)
+class EnumMemberDoc:
+    description: str | None = None
+    deprecated: str | None = None
+
+
 async def await_maybe(value: AwaitableOrValue[T]) -> T:
     return await value if inspect.iscoroutine(value) else cast(T, value)
 
@@ -284,9 +290,42 @@ def _extract_doc_from_next_stmt(class_body: list[ast.stmt], index: int) -> str |
     return None
 
 
-def extract_enum_member_doc(cls: type[enum.Enum]) -> dict[str, str]:
+def _parse_enum_docstring(text: str) -> EnumMemberDoc:
+    description_lines: list[str] = []
+    deprecated_lines: list[str] = []
+    lines = text.splitlines()
+    it = iter(enumerate(lines))
+    for i, raw_line in it:
+        stripped = raw_line.strip()
+        if stripped.startswith(".. deprecated::"):
+            # capture first line after the directive
+            remainder = stripped[len(".. deprecated::") :].strip()
+            if remainder:
+                deprecated_lines.append(remainder)
+           # grab any indented continuation lines
+            for _, cont in it:
+                cont_stripped = cont.strip()
+                if not cont_stripped:
+                    continue
+                if cont.startswith("   ") or cont.startswith("\t"):
+                    deprecated_lines.append(cont_stripped)
+                    continue
+               # hit a non-indented line: feed it back into the outer loop
+                description_lines.append(cont_stripped)
+                break
+        else:
+            description_lines.append(stripped)
+    description = "\n".join(line for line in description_lines if line).strip()
+    deprecated = "\n".join(line for line in deprecated_lines if line).strip()
+    return EnumMemberDoc(
+        description=description or None,
+        deprecated=deprecated or None,
+    )
+
+
+def extract_enum_member_doc(cls: type[enum.Enum]) -> dict[str, EnumMemberDoc]:
     """Extract docstrings for enum members by parsing the AST."""
-    member_docs: dict[str, str] = {}
+    member_docs: dict[str, EnumMemberDoc] = {}
 
     with contextlib.suppress(OSError, TypeError, SyntaxError):
         source = inspect.getsource(cls)
@@ -311,6 +350,6 @@ def extract_enum_member_doc(cls: type[enum.Enum]) -> dict[str, str]:
                         member_name = target.id
                         doc = _extract_doc_from_next_stmt(class_node.body, i)
                         if doc:
-                            member_docs[member_name] = doc
+                            member_docs[member_name] = _parse_enum_docstring(doc)
 
     return member_docs
