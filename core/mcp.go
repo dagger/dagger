@@ -21,6 +21,7 @@ import (
 	"github.com/dagger/dagger/core/prompts"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
@@ -61,6 +62,14 @@ type LLMTool struct {
 }
 
 type LLMToolFunc = func(context.Context, any) (any, error)
+
+type LLMToolSet = dagui.OrderedSet[string, LLMTool]
+
+func NewLLMToolSet() *LLMToolSet {
+	return dagui.NewOrderedSet[string, LLMTool](func(t LLMTool) string {
+		return t.Name
+	})
+}
 
 // Internal implementation of the MCP standard,
 // for exposing a Dagger environment to a LLM via tool calling.
@@ -252,41 +261,28 @@ func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
 		return nil, err
 	}
 
-	var allTools []LLMTool
-
-	// Append MCP server provided tools
-	if err := m.syncMCPSessions(ctx); err != nil {
+	allTools := NewLLMToolSet()
+	if err := m.loadMCPTools(ctx, allTools); err != nil {
 		return nil, err
 	}
-	mcpTools, err := m.mcpTools(ctx)
-	if err != nil {
+	if err := m.loadModuleTools(srv, allTools); err != nil {
 		return nil, err
 	}
-	allTools = append(allTools, mcpTools...)
-
-	// Append module tools
-	moduleTools, err := m.autoConstructingModuleTools(srv)
-	if err != nil {
-		return nil, err
-	}
-	allTools = append(allTools, directlyExposeTools(moduleTools)...)
-
-	objectTools, err := m.reachableObjectTools(srv)
-	if err != nil {
+	objectMethods := NewLLMToolSet()
+	if err := m.loadReachableObjectMethods(srv, objectMethods); err != nil {
 		return nil, err
 	}
 	if !m.staticTools {
-		// Append dynamically discovered object tools
-		allTools = append(allTools, directlyExposeTools(objectTools)...)
+		// directly expose object methods as a dynamic toolchain
+		for _, t := range objectMethods.Order {
+			allTools.Add(t)
+		}
 	}
-	// Append built-in Dagger tools
-	builtins, err := m.Builtins(srv, objectTools)
-	if err != nil {
+	if err := m.loadBuiltins(srv, allTools, objectMethods); err != nil {
 		return nil, err
 	}
-	allTools = append(allTools, builtins...)
 
-	return allTools, nil
+	return allTools.Order, nil
 }
 
 func (m *MCP) syncMCPSessions(ctx context.Context) error {
@@ -311,23 +307,25 @@ func (m *MCP) syncMCPSessions(ctx context.Context) error {
 	return nil
 }
 
-func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
-	var tools []LLMTool
+func (m *MCP) loadMCPTools(ctx context.Context, allTools *LLMToolSet) error {
+	if err := m.syncMCPSessions(ctx); err != nil {
+		return err
+	}
 	for serverName, sess := range m.mcpSessions {
 		for tool, err := range sess.Tools(ctx, nil) {
 			if err != nil {
-				return nil, err
+				return err
 			}
 			anied, err := toAny(tool.InputSchema)
 			if err != nil {
-				return nil, err
+				return err
 			}
 
 			// Check if the tool is read-only from MCP annotations
 			isReadOnly := tool.Annotations != nil && tool.Annotations.ReadOnlyHint
 
-			tools = append(tools, LLMTool{
-				Name:        serverName + "_" + tool.Name,
+			allTools.Add(LLMTool{
+				Name:        tool.Name,
 				Server:      serverName,
 				Description: tool.Description,
 				Schema:      anied,
@@ -365,7 +363,7 @@ func (m *MCP) mcpTools(ctx context.Context) ([]LLMTool, error) {
 			})
 		}
 	}
-	return tools, nil
+	return nil
 }
 
 func (m *MCP) updateEnvWorkspace(ctx context.Context, workspace dagql.ObjectResult[*Directory]) error {
@@ -399,9 +397,8 @@ func toAny(v any) (res map[string]any, rerr error) {
 	return res, json.Unmarshal(pl, &res)
 }
 
-func (m *MCP) autoConstructingModuleTools(srv *dagql.Server) (map[string]LLMTool, error) {
+func (m *MCP) loadModuleTools(srv *dagql.Server, allTools *LLMToolSet) error {
 	schema := srv.Schema()
-	moduleTools := map[string]LLMTool{}
 	for _, mod := range m.env.Self().installedModules {
 		modTypeName := strcase.ToCamel(mod.Name())
 		modTypeDef := schema.Types[modTypeName]
@@ -422,14 +419,14 @@ func (m *MCP) autoConstructingModuleTools(srv *dagql.Server) (map[string]LLMTool
 			}
 			if hasRequiredArgs {
 				// FIXME: better error
-				return nil, fmt.Errorf("module %s constructor has required arguments", mod.Name())
+				return fmt.Errorf("TODO: module %s constructor cannot have required arguments", mod.Name())
 			}
-			if err := m.typeTools(moduleTools, srv, schema, modTypeDef, def); err != nil {
-				return nil, err
+			if err := m.typeTools(allTools, srv, schema, modTypeDef, def); err != nil {
+				return err
 			}
 		}
 	}
-	return moduleTools, nil
+	return nil
 }
 
 // ToolFunc reuses our regular GraphQL args handling sugar for tools.
@@ -466,8 +463,7 @@ func ToolFunc[T any](srv *dagql.Server, fn func(context.Context, T) (any, error)
 	}
 }
 
-func (m *MCP) reachableObjectTools(srv *dagql.Server) (map[string]LLMTool, error) {
-	allTools := map[string]LLMTool{}
+func (m *MCP) loadReachableObjectMethods(srv *dagql.Server, allTools *LLMToolSet) error {
 	schema := srv.Schema()
 	typeNames := m.Types()
 	if m.env.Self().IsPrivileged() {
@@ -476,16 +472,16 @@ func (m *MCP) reachableObjectTools(srv *dagql.Server) (map[string]LLMTool, error
 	for _, typeName := range typeNames {
 		typeDef, ok := schema.Types[typeName]
 		if !ok {
-			return nil, fmt.Errorf("type %q not found", typeName)
+			return fmt.Errorf("type %q not found", typeName)
 		}
 		if err := m.typeTools(allTools, srv, schema, typeDef, nil); err != nil {
-			return nil, fmt.Errorf("load %q tools: %w", typeName, err)
+			return fmt.Errorf("load %q tools: %w", typeName, err)
 		}
 	}
-	return allTools, nil
+	return nil
 }
 
-func (m *MCP) typeTools(allTools map[string]LLMTool, srv *dagql.Server, schema *ast.Schema, typeDef *ast.Definition, autoConstruct *ObjectTypeDef) error {
+func (m *MCP) typeTools(allTools *LLMToolSet, srv *dagql.Server, schema *ast.Schema, typeDef *ast.Definition, autoConstruct *ObjectTypeDef) error {
 	for _, field := range typeDef.Fields {
 		if strings.HasPrefix(field.Name, "_") {
 			continue
@@ -520,12 +516,12 @@ func (m *MCP) typeTools(allTools map[string]LLMTool, srv *dagql.Server, schema *
 		}
 		var toolName string
 		if typeDef.Name == schema.Query.Name ||
-			(autoConstruct != nil && allTools[toolName].Name == "") {
+			(autoConstruct != nil && allTools.Map[toolName].Name == "") {
 			toolName = field.Name
 		} else {
-			toolName = typeDef.Name + "." + field.Name
+			toolName = typeDef.Name + "_" + field.Name
 		}
-		allTools[toolName] = LLMTool{
+		allTools.Add(LLMTool{
 			Name:        toolName,
 			Field:       field,
 			Description: strings.TrimSpace(field.Description),
@@ -539,7 +535,7 @@ func (m *MCP) typeTools(allTools map[string]LLMTool, srv *dagql.Server, schema *
 				}
 				return m.call(ctx, srv, schema, typeDef.Name, field, argsMap, autoConstruct)
 			},
-		}
+		})
 	}
 	return nil
 }
@@ -1019,48 +1015,18 @@ func (m *MCP) BlockFunction(ctx context.Context, typeName, funcName string) erro
 	return nil
 }
 
-// LookupTool looks for a tool identified by a name, which may be qualified
-// (claude_Read) or unqualified (Read).
-//
-// This handles the case where a tool's description or MCP server's instructions
-// mentions tools by unqualified name. Some models will try to call those
-// directly even though they have been provided with a qualified name. Annoying
-// to deal with, but we can try to be durable to it as long as it's not
-// ambiguous.
+// LookupTool looks for a tool identified by a name.
 func (m *MCP) LookupTool(name string, tools []LLMTool) (*LLMTool, error) {
 	var tool *LLMTool
-	var ambiguousTools []*LLMTool
 	for _, t := range tools {
 		if t.Name == name {
 			tool = &t
 			break
 		}
-		if t.Server != "" && strings.TrimPrefix(t.Name, t.Server+"_") == name {
-			ambiguousTools = append(ambiguousTools, &t)
-		}
 	}
-
-	switch len(ambiguousTools) {
-	case 0:
-		// no ambiguous tools, nothing to do
-	case 1:
-		// exactly one ambiguous tool, use it
-		tool = ambiguousTools[0]
-	default:
-		// multiple ambiguous tools, error out
-		return nil, fmt.Errorf("tool name '%s' is ambiguous; please specify one of: %s", name, func() string {
-			var names []string
-			for _, t := range ambiguousTools {
-				names = append(names, t.Name)
-			}
-			return strings.Join(names, ", ")
-		}())
-	}
-
 	if tool == nil {
 		return nil, fmt.Errorf("tool %q is not available", name)
 	}
-
 	return tool, nil
 }
 
@@ -1417,12 +1383,7 @@ func toolErrorMessage(err error) string {
 	return errResponse
 }
 
-func (m *MCP) returnBuiltin() (LLMTool, bool) {
-	if len(m.env.Self().outputsByName) == 0 {
-		// no outputs desired
-		return LLMTool{}, false
-	}
-
+func (m *MCP) saveTool() LLMTool {
 	props := map[string]any{}
 	required := []string{}
 
@@ -1510,13 +1471,11 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 			m.returned = true
 			return "ok", nil
 		},
-	}, true
+	}
 }
 
-func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMTool, error) {
+func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSet) error {
 	schema := srv.Schema()
-
-	builtins := []LLMTool{}
 
 	if m.env.Self().writable {
 		allTypes := map[string]dagql.Type{
@@ -1540,7 +1499,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 			}
 			allTypes[name] = objectType
 		}
-		builtins = append(builtins, LLMTool{
+		allTools.Add(LLMTool{
 			Name:        "DeclareOutput",
 			Description: "Declare a new output that can have a value saved to it",
 			Schema: map[string]any{
@@ -1597,7 +1556,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 	}
 
 	if len(m.TypeCounts()) > 0 {
-		builtins = append(builtins, LLMTool{
+		allTools.Add(LLMTool{
 			Name:        "ListObjects",
 			Description: "List available objects.",
 			Schema: map[string]any{
@@ -1637,10 +1596,10 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 	}
 
 	if m.staticTools {
-		builtins = append(builtins, m.staticMethodCallingTools(srv, allMethods)...)
+		m.staticMethodCallingTools(srv, objectMethods)
 	}
 
-	builtins = append(builtins, LLMTool{
+	allTools.Add(LLMTool{
 		Name:        "ReadLogs",
 		Description: "Read logs from the most recent execution. Can filter with grep pattern or read the last N lines.",
 		Schema: map[string]any{
@@ -1668,12 +1627,12 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 		Call:   m.readLogsTool(srv),
 	})
 
-	if returnTool, ok := m.returnBuiltin(); ok {
-		builtins = append(builtins, returnTool)
+	if len(m.env.Self().outputsByName) > 0 {
+		allTools.Add(m.saveTool())
 	}
 
 	if len(m.env.Self().inputsByName) > 0 {
-		builtins = append(builtins, LLMTool{
+		allTools.Add(LLMTool{
 			Name:        "UserProvidedValues",
 			Description: "Read the inputs supplied by the user.",
 			Schema: map[string]any{
@@ -1696,7 +1655,7 @@ func (m *MCP) Builtins(srv *dagql.Server, allMethods map[string]LLMTool) ([]LLMT
 		})
 	}
 
-	return builtins, nil
+	return nil
 }
 
 func (m *MCP) readLogsTool(srv *dagql.Server) LLMToolFunc {
@@ -1746,7 +1705,7 @@ func (m *MCP) readLogsTool(srv *dagql.Server) LLMToolFunc {
 	})
 }
 
-func (m *MCP) staticMethodCallingTools(srv *dagql.Server, allMethods map[string]LLMTool) []LLMTool {
+func (m *MCP) staticMethodCallingTools(srv *dagql.Server, objectMethods *LLMToolSet) []LLMTool {
 	var tools []LLMTool
 
 	tools = append(tools, LLMTool{
@@ -1759,10 +1718,10 @@ func (m *MCP) staticMethodCallingTools(srv *dagql.Server, allMethods map[string]
 			"additionalProperties": false,
 		},
 		Strict: true,
-		Call:   m.listMethodsTool(srv, allMethods),
+		Call:   m.listMethodsTool(srv, objectMethods),
 	})
 
-	if len(allMethods) > 0 {
+	if len(objectMethods.Order) > 0 {
 		tools = append(tools, LLMTool{
 			Name:        "SelectMethods",
 			Description: "Select methods for interacting with the available objects. Never guess - only select methods previously returned by ListMethods.",
@@ -1782,7 +1741,7 @@ func (m *MCP) staticMethodCallingTools(srv *dagql.Server, allMethods map[string]
 				"additionalProperties": false,
 			},
 			Strict: true,
-			Call:   m.selectMethodsTool(srv, allMethods),
+			Call:   m.selectMethodsTool(srv, objectMethods),
 		}, LLMTool{
 			Name:        "CallMethod",
 			Description: "Call a method on an object. Methods must be selected with SelectMethods before calling them. Self represents the object to call the method on, and args specify any additional parameters to pass.",
@@ -1808,7 +1767,7 @@ func (m *MCP) staticMethodCallingTools(srv *dagql.Server, allMethods map[string]
 				"additionalProperties": false,
 			},
 			Strict: false,
-			Call:   m.callMethodTool(allMethods),
+			Call:   m.callMethodTool(objectMethods),
 		}, LLMTool{
 			Name: "ChainMethods",
 			Description: `Invoke multiple methods sequentially, passing the result of one method as the receiver of the next
@@ -1846,14 +1805,14 @@ NOTE: you must select methods before chaining them`,
 				"additionalProperties": false,
 			},
 			Strict: false,
-			Call:   m.chainMethodsTool(srv, allMethods),
+			Call:   m.chainMethodsTool(srv, objectMethods),
 		})
 	}
 
 	return tools
 }
 
-func (m *MCP) listMethodsTool(srv *dagql.Server, allMethods map[string]LLMTool) LLMToolFunc {
+func (m *MCP) listMethodsTool(srv *dagql.Server, objectMethods *LLMToolSet) LLMToolFunc {
 	return ToolFunc(srv, func(ctx context.Context, args struct{}) (any, error) {
 		type toolDesc struct {
 			Name         string            `json:"name"`
@@ -1861,7 +1820,7 @@ func (m *MCP) listMethodsTool(srv *dagql.Server, allMethods map[string]LLMTool) 
 			RequiredArgs map[string]string `json:"required_args,omitempty"`
 		}
 		var methods []toolDesc
-		for _, method := range allMethods {
+		for _, method := range objectMethods.Order {
 			reqArgs := map[string]string{}
 			var returns string
 			if method.Field != nil {
@@ -1887,7 +1846,7 @@ func (m *MCP) listMethodsTool(srv *dagql.Server, allMethods map[string]LLMTool) 
 	})
 }
 
-func (m *MCP) selectMethodsTool(srv *dagql.Server, allMethods map[string]LLMTool) LLMToolFunc {
+func (m *MCP) selectMethodsTool(srv *dagql.Server, objectMethods *LLMToolSet) LLMToolFunc {
 	return ToolFunc(srv, func(ctx context.Context, args struct {
 		Methods []string
 	}) (any, error) {
@@ -1911,7 +1870,7 @@ func (m *MCP) selectMethodsTool(srv *dagql.Server, allMethods map[string]LLMTool
 		var selectedMethods []methodDef
 		var unknownMethods []string
 		for methodName := range methodCounts {
-			method, found := allMethods[methodName]
+			method, found := objectMethods.Map[methodName]
 			if found {
 				var returns string
 				if method.Field != nil {
@@ -1946,7 +1905,7 @@ func (m *MCP) selectMethodsTool(srv *dagql.Server, allMethods map[string]LLMTool
 	})
 }
 
-func (m *MCP) callMethodTool(allMethods map[string]LLMTool) LLMToolFunc {
+func (m *MCP) callMethodTool(objectMethods *LLMToolSet) LLMToolFunc {
 	return func(ctx context.Context, argsAny any) (_ any, rerr error) {
 		var call struct {
 			Self   string         `json:"self"`
@@ -1971,14 +1930,14 @@ func (m *MCP) callMethodTool(allMethods map[string]LLMTool) LLMToolFunc {
 				return nil, fmt.Errorf("invalid ID format: %q", call.Self)
 			}
 			typeName := matches[idRegex.SubexpIndex("type")]
-			if !strings.Contains(call.Method, ".") {
-				// allow omitting the TypeName. prefix, which models are more prone
+			if !strings.Contains(call.Method, "_") {
+				// allow omitting the TypeName_ prefix, which models are more prone
 				// to guessing
-				call.Method = fmt.Sprintf("%s.%s", typeName, call.Method)
+				call.Method = fmt.Sprintf("%s_%s", typeName, call.Method)
 			}
 		}
 		var method LLMTool
-		method, found := allMethods[call.Method]
+		method, found := objectMethods.Map[call.Method]
 		if !found {
 			return nil, fmt.Errorf("method not defined: %q; use ListMethods first", call.Method)
 		}
@@ -1989,7 +1948,7 @@ func (m *MCP) callMethodTool(allMethods map[string]LLMTool) LLMToolFunc {
 	}
 }
 
-func (m *MCP) chainMethodsTool(srv *dagql.Server, allMethods map[string]LLMTool) LLMToolFunc {
+func (m *MCP) chainMethodsTool(srv *dagql.Server, objectMethods *LLMToolSet) LLMToolFunc {
 	schema := srv.Schema()
 	return func(ctx context.Context, argsAny any) (_ any, rerr error) {
 		var toolArgs struct {
@@ -2003,13 +1962,13 @@ func (m *MCP) chainMethodsTool(srv *dagql.Server, allMethods map[string]LLMTool)
 		if err := json.Unmarshal(pl, &toolArgs); err != nil {
 			return nil, err
 		}
-		if err := m.validateAndNormalizeChain(ctx, toolArgs.Self, toolArgs.Chain, allMethods, schema); err != nil {
+		if err := m.validateAndNormalizeChain(ctx, toolArgs.Self, toolArgs.Chain, objectMethods, schema); err != nil {
 			return nil, err
 		}
 		var res any
 		for i, call := range toolArgs.Chain {
 			var tool LLMTool
-			tool, found := allMethods[call.Method]
+			tool, found := objectMethods.Map[call.Method]
 			if !found {
 				return nil, fmt.Errorf("tool not found: %q", call.Method)
 			}
@@ -2035,25 +1994,12 @@ func (m *MCP) chainMethodsTool(srv *dagql.Server, allMethods map[string]LLMTool)
 	}
 }
 
-func directlyExposeTools(allMethods map[string]LLMTool) []LLMTool {
-	staticTools := slices.Collect(maps.Values(allMethods))
-	for i := range staticTools {
-		// sanitize tool names; Foo.bar is more intuitive for CallMethod form
-		staticTools[i].Name = regexp.MustCompile(`[^a-zA-Z0-9_-]`).
-			ReplaceAllString(staticTools[i].Name, "_")
-	}
-	sort.Slice(staticTools, func(i, j int) bool {
-		return staticTools[i].Name < staticTools[j].Name
-	})
-	return staticTools
-}
-
 type ChainedCall struct {
 	Method string         `json:"method"`
 	Args   map[string]any `json:"args"`
 }
 
-func (m *MCP) validateAndNormalizeChain(ctx context.Context, self string, calls []ChainedCall, allMethods map[string]LLMTool, schema *ast.Schema) error {
+func (m *MCP) validateAndNormalizeChain(ctx context.Context, self string, calls []ChainedCall, objectMethods *LLMToolSet, schema *ast.Schema) error {
 	if len(calls) == 0 {
 		return errors.New("no methods called")
 	}
@@ -2071,12 +2017,12 @@ func (m *MCP) validateAndNormalizeChain(ctx context.Context, self string, calls 
 			errs = errors.Join(errs, fmt.Errorf("calls[%d]: method name cannot be empty", i))
 			continue
 		}
-		if !strings.Contains(call.Method, ".") && currentType != nil {
+		if !strings.Contains(call.Method, "_") && currentType != nil {
 			// add type prefix to method name
-			call.Method = currentType.Name() + "." + call.Method
+			call.Method = currentType.Name() + "_" + call.Method
 			calls[i] = call
 		}
-		method, found := allMethods[call.Method]
+		method, found := objectMethods.Map[call.Method]
 		if !found {
 			errs = errors.Join(errs, fmt.Errorf("calls[%d]: unknown method: %q", i, call.Method))
 			continue
