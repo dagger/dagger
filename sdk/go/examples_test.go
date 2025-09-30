@@ -2,6 +2,7 @@ package dagger_test
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"strconv"
 	"strings"
@@ -155,7 +156,7 @@ func ExampleContainer_WithMountedCache() {
 	}
 	defer client.Close()
 
-	cacheKey := "example-cache"
+	cacheKey := "example-cache-" + rand.Text()
 
 	cache := client.CacheVolume(cacheKey)
 
