@@ -3400,6 +3400,20 @@ class Container(Type):
 class CurrentModule(Type):
     """Reflective module API provided to functions at runtime."""
 
+    async def dependencies(self) -> list["Module"]:
+        """The dependencies of the module."""
+        _args: list[Arg] = []
+        _ctx = self._select("dependencies", _args)
+        return await _ctx.execute_object_list(Module)
+
+    def generated_context_directory(self) -> "Directory":
+        """The generated files and directories made on top of the module source's
+        context directory.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("generatedContextDirectory", _args)
+        return Directory(_ctx)
+
     async def id(self) -> CurrentModuleID:
         """A unique identifier for this CurrentModule.
 

@@ -1883,6 +1883,79 @@ func (p *Playground) DoThing(ctx context.Context) error {
 }
 
 func (ModuleSuite) TestCurrentModuleAPI(ctx context.Context, t *testctx.T) {
+	t.Run("generatedContextDirectory", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			WithNewFile("/work/main.go", `package main
+
+			import "context"
+			import "dagger/test/internal/dagger"
+
+			type Test struct {}
+
+			func (m *Test) Fn(ctx context.Context) *dagger.Directory {
+				return dag.CurrentModule().GeneratedContextDirectory()
+			}
+			`,
+			).
+			With(daggerCall("fn", "export", "--path=./out")).
+			Directory("out").
+			Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "dagger.gen.go")
+	})
+
+	t.Run("dependencies", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--sdk=go", "depA")).
+			With(daggerExec("init", "--sdk=go", "depB")).
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			With(daggerExec("install", "./depA")).
+			With(daggerExec("install", "./depB")).
+			WithNewFile("/work/main.go", `package main
+
+			import "context"
+			import "sort"
+			import "strings"
+
+			type Test struct {}
+
+			func (m *Test) Fn(ctx context.Context) (string, error) {
+				deps, err := dag.CurrentModule().Dependencies(ctx)
+				if err != nil {
+					return "", err
+				}
+
+				var depNames []string
+				for _, dep := range deps {
+					depName, err := dep.Name(ctx)
+					if err != nil {
+						return "", err
+					}
+
+					depNames = append(depNames, depName)
+				}
+
+				sort.Strings(depNames)
+
+				return strings.Join(depNames, ","), nil
+			}
+			`,
+			).
+			With(daggerCall("fn")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, out, "depA,depB")
+	})
+
 	t.Run("name", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 

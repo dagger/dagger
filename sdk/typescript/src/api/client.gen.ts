@@ -4568,6 +4568,29 @@ export class CurrentModule extends BaseClient {
   }
 
   /**
+   * The dependencies of the module.
+   */
+  dependencies = async (): Promise<Module_[]> => {
+    type dependencies = {
+      id: ModuleID
+    }
+
+    const ctx = this._ctx.select("dependencies").select("id")
+
+    const response: Awaited<dependencies[]> = await ctx.execute()
+
+    return response.map((r) => new Client(ctx.copy()).loadModuleFromID(r.id))
+  }
+
+  /**
+   * The generated files and directories made on top of the module source's context directory.
+   */
+  generatedContextDirectory = (): Directory => {
+    const ctx = this._ctx.select("generatedContextDirectory")
+    return new Directory(ctx)
+  }
+
+  /**
    * The name of the module being executed in
    */
   name = async (): Promise<string> => {

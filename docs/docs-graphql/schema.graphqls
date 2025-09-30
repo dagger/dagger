@@ -1463,6 +1463,14 @@ scalar ContainerID
 
 """Reflective module API provided to functions at runtime."""
 type CurrentModule {
+  """The dependencies of the module."""
+  dependencies: [Module!]!
+
+  """
+  The generated files and directories made on top of the module source's context directory.
+  """
+  generatedContextDirectory: Directory!
+
   """A unique identifier for this CurrentModule."""
   id: CurrentModuleID!
 

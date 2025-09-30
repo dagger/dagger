@@ -5022,6 +5022,24 @@ pub struct CurrentModuleWorkdirOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 impl CurrentModule {
+    /// The dependencies of the module.
+    pub fn dependencies(&self) -> Vec<Module> {
+        let query = self.selection.select("dependencies");
+        vec![Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }]
+    }
+    /// The generated files and directories made on top of the module source's context directory.
+    pub fn generated_context_directory(&self) -> Directory {
+        let query = self.selection.select("generatedContextDirectory");
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// A unique identifier for this CurrentModule.
     pub async fn id(&self) -> Result<CurrentModuleId, DaggerError> {
         let query = self.selection.select("id");
