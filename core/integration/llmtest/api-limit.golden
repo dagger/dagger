@@ -8,14 +8,13 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_Eey2LsfcdFnfUeD4bCHPXyA6",
+        "id": "call_EWSB10di7AfVusXRvKR3A8xy",
         "function": {
           "name": "Container_withExec",
           "arguments": {
             "args": [
-              "sh",
-              "-c",
-              "echo $PATH"
+              "printenv",
+              "PATH"
             ],
             "self": "Container#1"
           }
@@ -24,27 +23,27 @@
       }
     ],
     "token_usage": {
-      "input_tokens": 5510,
-      "output_tokens": 29,
+      "input_tokens": 5483,
+      "output_tokens": 25,
       "cached_token_reads": 0,
       "cached_token_writes": 0,
-      "total_tokens": 5539
+      "total_tokens": 5508
     }
   },
   {
     "role": "user",
     "content": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n\n{\n  \"result\": \"Container#2\"\n}",
-    "tool_call_id": "call_Eey2LsfcdFnfUeD4bCHPXyA6"
+    "tool_call_id": "call_EWSB10di7AfVusXRvKR3A8xy"
   },
   {
     "role": "assistant",
     "content": "The value of PATH in the Alpine Linux container is:\n/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     "token_usage": {
-      "input_tokens": 5601,
+      "input_tokens": 5570,
       "output_tokens": 32,
       "cached_token_reads": 0,
       "cached_token_writes": 0,
-      "total_tokens": 5633
+      "total_tokens": 5602
     }
   },
   {
@@ -56,14 +55,13 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_vMP4nSYdIL3kbEg9tbCj91Tc",
+        "id": "call_cnUG7qUmBc1fEaVprLFh77xp",
         "function": {
           "name": "Container_withExec",
           "arguments": {
             "args": [
-              "sh",
-              "-c",
-              "echo $TERM"
+              "printenv",
+              "TERM"
             ],
             "self": "Container#2"
           }
@@ -72,55 +70,28 @@
       }
     ],
     "token_usage": {
-      "input_tokens": 5647,
-      "output_tokens": 29,
+      "input_tokens": 5616,
+      "output_tokens": 25,
       "cached_token_reads": 0,
       "cached_token_writes": 0,
-      "total_tokens": 5676
+      "total_tokens": 5641
     }
   },
   {
     "role": "user",
-    "content": "{\n  \"result\": \"Container#3\"\n}",
-    "tool_call_id": "call_vMP4nSYdIL3kbEg9tbCj91Tc"
+    "content": "select: process \"printenv TERM\" did not complete successfully: exit code: 1\n\n\u003c_type\u003e\nEXEC_ERROR\n\u003c/_type\u003e\n\n\u003ccmd\u003e\n[\"printenv\",\"TERM\"]\n\u003c/cmd\u003e\n\n\u003cexitCode\u003e\n1\n\u003c/exitCode\u003e\n\n\u003cstderr\u003e\n\n\u003c/stderr\u003e\n\n\u003cstdout\u003e\n\n\u003c/stdout\u003e",
+    "tool_call_id": "call_cnUG7qUmBc1fEaVprLFh77xp",
+    "tool_errored": true
   },
   {
     "role": "assistant",
-    "content": "",
-    "tool_calls": [
-      {
-        "id": "call_EYxBlsxhafynqzTtjma5rYgh",
-        "function": {
-          "name": "Container_stdout",
-          "arguments": {
-            "self": "Container#3"
-          }
-        },
-        "type": "function"
-      }
-    ],
+    "content": "The TERM environment variable is not set in this Alpine Linux container. That is why there was no output when trying to print its value.",
     "token_usage": {
-      "input_tokens": 5696,
-      "output_tokens": 16,
+      "input_tokens": 5715,
+      "output_tokens": 28,
       "cached_token_reads": 0,
       "cached_token_writes": 0,
-      "total_tokens": 5712
-    }
-  },
-  {
-    "role": "user",
-    "content": "\n",
-    "tool_call_id": "call_EYxBlsxhafynqzTtjma5rYgh"
-  },
-  {
-    "role": "assistant",
-    "content": "The TERM environment variable is not set in this Alpine Linux container (its value is empty).",
-    "token_usage": {
-      "input_tokens": 5721,
-      "output_tokens": 19,
-      "cached_token_reads": 0,
-      "cached_token_writes": 0,
-      "total_tokens": 5740
+      "total_tokens": 5743
     }
   }
 ]
