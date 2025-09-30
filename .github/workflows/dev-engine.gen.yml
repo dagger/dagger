@@ -26,7 +26,7 @@ jobs:
             - name: Install Dagger
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                version: v0.18.19
+                version: v0.19.0
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger
               run: |
