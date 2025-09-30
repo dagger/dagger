@@ -1475,10 +1475,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSe
 
 	if m.env.Self().writable {
 		allTypes := map[string]dagql.Type{
-			"String":  dagql.String(""),
-			"Int":     dagql.Int(0),
-			"Float":   dagql.Float(0.0),
-			"Boolean": dagql.Boolean(false),
+			"String": dagql.String(""),
 		}
 		for name := range schema.Types {
 			if strings.HasPrefix(name, "_") {
@@ -1511,8 +1508,8 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSe
 						"enum":        slices.Sorted(maps.Keys(allTypes)),
 					},
 					"description": map[string]any{
-						"type":        "string",
-						"description": "A description of the output.",
+						"type":        []string{"string", "null"},
+						"description": "An optional description of the output.",
 					},
 				},
 				"required":             []string{"name", "type", "description"},
@@ -1522,8 +1519,11 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSe
 			Call: ToolFunc(srv, func(ctx context.Context, args struct {
 				Name        string
 				Type        string
-				Description string
+				Description string `default:""`
 			}) (any, error) {
+				if _, ok := allTypes[args.Type]; !ok {
+					return nil, fmt.Errorf("unknown type: %q", args.Type)
+				}
 				var dest dagql.ObjectResult[*Env]
 				err := srv.Select(ctx, m.env, &dest, dagql.Selector{
 					View:  srv.View,
