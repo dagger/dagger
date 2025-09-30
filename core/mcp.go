@@ -156,6 +156,9 @@ func (m *MCP) DefaultSystemPrompt() string {
 	if len(env.outputsByName) > 0 {
 		promptFiles = append(promptFiles, "outputs.md")
 	}
+	if env.writable {
+		promptFiles = append(promptFiles, "writable.md")
+	}
 	var prompt string
 	for _, file := range promptFiles {
 		content, err := prompts.FS.ReadFile(file)
@@ -173,7 +176,9 @@ func (m *MCP) DefaultSystemPrompt() string {
 			if prompt != "" {
 				prompt += "\n\n"
 			}
-			prompt += fmt.Sprintf("The following values have been provided:\n\n```\n%s\n```", values)
+			prompt += "## User-provided values\n\n"
+			prompt += "The following values have been provided:\n\n"
+			prompt += fmt.Sprintf("```\n%s\n```", values)
 		}
 	}
 	return prompt
