@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"sort"
 	"strconv"
 
 	"github.com/dagger/dagger/engine"
@@ -32,42 +34,78 @@ func LockfileSetHTTP(ctx context.Context, url, digest string) error {
 	return lockfileSet(ctx, "core", "http.get", args, digest)
 }
 
+func LockfileSetGitLsRemote(ctx context.Context, url string, info *gitutil.Remote) error {
+	// Set the head
+	if info.Head != nil {
+		if err := lockfileSet(ctx, "core", "git.head", []any{url}, info.Head.Name); err != nil {
+			return err
+		}
+		if err := lockfileSet(ctx, "core", "git.ref", []any{url, info.Head.Name}, info.Head.SHA); err != nil {
+			return err
+		}
+	}
+
+	// Set all refs
+	refNames := make([]string, len(info.Refs))
+	for i, ref := range info.Refs {
+		refNames[i] = ref.Name
+		if err := lockfileSet(ctx, "core", "git.ref", []any{url, ref.Name}, ref.SHA); err != nil {
+			return err
+		}
+	}
+	if err := lockfileSet(ctx, "core", "git.refs", []any{url}, refNames); err != nil {
+		return err
+	}
+
+	// Set symrefs
+	if err := lockfileSetStringMap(ctx, "core", "git.symrefs", []any{url}, info.Symrefs); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func LockfileGetGitLsRemote(ctx context.Context, url string) (*gitutil.Remote, error) {
-	raw, err := lockfileGet(ctx, "core", "git.refs", []any{url})
+	var result gitutil.Remote
+	headName, err := lockfileGetString(ctx, "core", "git.head", []any{url})
 	if err != nil {
 		return nil, err
 	}
-	if raw == nil {
-		return nil, nil
-	}
-	var result gitutil.Remote
-	// FIXME: encode to a more repeatable form
-	if s, ok := raw.(string); ok {
-		if err := json.Unmarshal([]byte(s), &result); err != nil {
+	if headName != nil {
+		headSHA, err := lockfileGetString(ctx, "core", "git.ref", []any{url, *headName})
+		if err != nil {
 			return nil, err
 		}
-		return &result, nil
+		if headSHA != nil {
+			result.Head = &gitutil.Ref{
+				Name: *headName,
+				SHA:  *headSHA,
+			}
+		}
 	}
-	return nil, nil
-}
-
-func LockfileSetGitLsRemote(ctx context.Context, url string, info *gitutil.Remote) error {
-	args := []any{url}
-	resultJSON, err := json.Marshal(info)
+	refs, err := lockfileGetStringArray(ctx, "core", "git.refs", []any{url})
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return lockfileSet(ctx, "core", "git.refs", args, string(resultJSON))
+	for _, ref := range refs {
+		sha, err := lockfileGetString(ctx, "core", "git.ref", []any{url, ref})
+		if err != nil {
+			return nil, err
+		}
+		if sha != nil {
+			result.Refs = append(result.Refs, &gitutil.Ref{
+				Name: ref,
+				SHA:  *sha,
+			})
+		}
+	}
+	symrefs, err := lockfileGetStringMap(ctx, "core", "git.symrefs", []any{url})
+	if err != nil {
+		return nil, err
+	}
+	result.Symrefs = symrefs
+	return &result, nil
 }
-
-// gitutil
-//type Remote struct {
-//	Refs    []*Ref
-//	Symrefs map[string]string
-//
-//	// override what HEAD points to, if set
-//	Head *Ref
-//}
 
 func LockfileGetGitPublic(ctx context.Context, url string) (*bool, error) {
 	args := []any{url}
@@ -163,6 +201,88 @@ func lockfileSet(ctx context.Context, module, function string, args []any, resul
 		})
 		return err
 	})
+}
+
+func lockfileGetString(ctx context.Context, module, function string, args []any) (*string, error) {
+	raw, err := lockfileGet(ctx, module, function, args)
+	if err != nil {
+		return nil, err
+	}
+	if raw == nil {
+		return nil, nil
+	}
+	if s, ok := raw.(string); ok {
+		return &s, nil
+	}
+	return nil, nil
+}
+
+func lockfileSetStringMap(ctx context.Context, module, function string, args []any, data map[string]string) error {
+	// Convert map to sorted array of tuples
+	keys := make([]string, 0, len(data))
+	for key := range data {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	tuples := make([][]string, len(keys))
+	for i, key := range keys {
+		tuples[i] = []string{key, data[key]}
+	}
+
+	return lockfileSet(ctx, module, function, args, tuples)
+}
+
+func lockfileGetStringMap(ctx context.Context, module, function string, args []any) (map[string]string, error) {
+	raw, err := lockfileGet(ctx, module, function, args)
+	if err != nil {
+		return nil, err
+	}
+	if raw == nil {
+		return nil, nil
+	}
+	if arr, ok := raw.([]interface{}); ok {
+		result := make(map[string]string)
+		for i, item := range arr {
+			if tuple, ok := item.([]interface{}); ok && len(tuple) == 2 {
+				if key, ok := tuple[0].(string); ok {
+					if value, ok := tuple[1].(string); ok {
+						result[key] = value
+					} else {
+						return nil, fmt.Errorf("failed to decode lockfile string map: tuple value at index %d is not a string, got %T: %v", i, tuple[1], tuple[1])
+					}
+				} else {
+					return nil, fmt.Errorf("failed to decode lockfile string map: tuple key at index %d is not a string, got %T: %v", i, tuple[0], tuple[0])
+				}
+			} else {
+				return nil, fmt.Errorf("failed to decode lockfile string map: item at index %d is not a 2-element tuple, got %T with length %d: %v", i, item, len(tuple), item)
+			}
+		}
+		return result, nil
+	}
+	return nil, fmt.Errorf("failed to decode lockfile string map: raw data is not an array, got %T: %v", raw, raw)
+}
+
+func lockfileGetStringArray(ctx context.Context, module, function string, args []any) ([]string, error) {
+	raw, err := lockfileGet(ctx, module, function, args)
+	if err != nil {
+		return nil, err
+	}
+	if raw == nil {
+		return nil, nil
+	}
+	if arr, ok := raw.([]interface{}); ok {
+		result := make([]string, len(arr))
+		for i, item := range arr {
+			if s, ok := item.(string); ok {
+				result[i] = s
+			} else {
+				return nil, nil
+			}
+		}
+		return result, nil
+	}
+	return nil, nil
 }
 
 func lockfileGet(ctx context.Context, module, function string, args []any) (any, error) {

@@ -566,7 +566,7 @@ func IsRemotePublic(ctx context.Context, remote *gitutil.GitURL) (r bool, rerr e
 		if errors.Is(err, transport.ErrAuthenticationRequired) {
 			return false, nil
 		}
-		return false, err
+		return false, fmt.Errorf("check repo %q for auth: %w", err)
 	}
 	return true, nil
 }
