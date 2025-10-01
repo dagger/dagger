@@ -65,7 +65,18 @@ engine:
   ### Configure the port settings for the Dagger Engine
   #
   # port: 1234 # The container port that the Dagger Engine will listen on.
-  # hostPort: 1234    # Optional: Expose the engine port directly on the host node
+
+  ### Configure multiple ports for the Dagger Engine
+  # This allows defining all ports in a structured way
+  # Example configuration:
+  # containerPorts:
+  #   - name: dagger
+  #     containerPort: 1234 # Needs to be the same as engine.port if both are set
+  #     protocol: TCP
+  #     hostPort: 1234  # Optional: Expose the engine port directly on the host node
+  #   - name: metrics
+  #     containerPort: 8080
+  #     protocol: TCP
 
   ### Customize Dagger Engine start args
   args: []
