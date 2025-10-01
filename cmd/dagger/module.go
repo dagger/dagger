@@ -46,10 +46,13 @@ var (
 	installName string
 
 	initBlueprint string
+	initEject     bool
+	initTemplate  string
 
 	developSDK        string
 	developSourcePath string
 	developRecursive  bool
+	developEject      bool
 
 	force bool
 )
@@ -133,6 +136,8 @@ func init() {
 	moduleInitCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate. See https://spdx.org/licenses/")
 	moduleInitCmd.Flags().StringSliceVar(&moduleIncludes, "include", nil, "Paths to include when loading the module. Only needed when extra paths are required to build the module. They are expected to be relative to the directory containing the module's dagger.json file (the module source root).")
 	moduleInitCmd.Flags().StringVar(&initBlueprint, "blueprint", "", "Reference another module as blueprint")
+	moduleInitCmd.Flags().BoolVar(&initEject, "eject", false, "Eject from blueprint and create passthrough functions (requires --sdk and --blueprint)")
+	moduleInitCmd.Flags().StringVar(&initTemplate, "template", "", "Create module from template with passthrough functions (requires --sdk, shorthand for --eject --blueprint)")
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
 	modulePublishCmd.Flags().StringVarP(&moduleURL, "mod", "m", "", "Module reference to publish, remote git repo (defaults to current directory)")
@@ -151,6 +156,7 @@ func init() {
 	moduleDevelopCmd.Flags().StringVar(&developSDK, "sdk", "", "Install the given Dagger SDK. Can be builtin (go, python, typescript) or a module address")
 	moduleDevelopCmd.Flags().StringVar(&developSourcePath, "source", "", "Source directory used by the installed SDK. Defaults to module root")
 	moduleDevelopCmd.Flags().BoolVarP(&developRecursive, "recursive", "r", false, "Develop recursively into local dependencies")
+	moduleDevelopCmd.Flags().BoolVar(&developEject, "eject", false, "Eject from blueprint and create passthrough functions (requires --sdk)")
 	moduleDevelopCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate. See https://spdx.org/licenses/")
 	moduleDevelopCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
 	moduleDevelopCmd.Flags().Lookup("compat").NoOptDefVal = "skip"
@@ -274,18 +280,42 @@ dagger init --sdk=go
 			}
 			// engine version must be set before setting blueprint
 			modSrc = modSrc.WithEngineVersion(modules.EngineVersionLatest)
+
+			// Handle template flag (shorthand for --eject --blueprint)
+			if initTemplate != "" {
+				if initBlueprint != "" {
+					return fmt.Errorf("cannot specify both --template and --blueprint")
+				}
+				if sdk == "" {
+					return fmt.Errorf("--template requires --sdk to be specified")
+				}
+				initBlueprint = initTemplate
+				initEject = true
+			}
+
 			// Install blueprint if specified
 			if initBlueprint != "" {
-				// Validate that we don't have both SDK and blueprint
-				if sdk != "" {
-					return fmt.Errorf("cannot specify both --sdk and --blueprint; use one or the other")
+				// Validate flags
+				if !initEject && sdk != "" {
+					return fmt.Errorf("cannot specify both --sdk and --blueprint without --eject; use --eject to convert blueprint to dependency")
 				}
-				// Create a new module source for the blueprint installation
+				if initEject && sdk == "" {
+					return fmt.Errorf("--eject requires --sdk to be specified")
+				}
+
+				// Create a new module source for the blueprint
 				blueprintSrc := dag.ModuleSource(initBlueprint, dagger.ModuleSourceOpts{
 					DisableFindUp: true,
 				})
-				// Install the blueprint
-				modSrc = modSrc.WithBlueprint(blueprintSrc)
+
+				if initEject {
+					// Eject: Convert blueprint to dependency and generate passthrough code
+					modSrc = modSrc.WithDependencies([]*dagger.ModuleSource{blueprintSrc})
+					// The engine will generate passthrough code for the SDK
+				} else {
+					// Regular blueprint usage
+					modSrc = modSrc.WithBlueprint(blueprintSrc)
+				}
 			}
 
 			// Export generated files, including dagger.json
@@ -306,7 +336,11 @@ dagger init --sdk=go
 			// Print success message to user
 			infoMessage := []any{"Initialized module", moduleName, "in", srcRootAbsPath}
 			if initBlueprint != "" {
-				infoMessage = append(infoMessage, "with blueprint", initBlueprint)
+				if initEject {
+					infoMessage = append(infoMessage, "ejected from template", initBlueprint)
+				} else {
+					infoMessage = append(infoMessage, "with blueprint", initBlueprint)
+				}
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), infoMessage...)
 			return nil
@@ -614,6 +648,31 @@ This command is idempotent: you can run it at any time, any number of times. It 
 
 					if engineVersion := getCompatVersion(); engineVersion != "" {
 						modSrc = modSrc.WithEngineVersion(engineVersion)
+					}
+
+					// Handle eject flag
+					if developEject {
+						if developSDK == "" {
+							return fmt.Errorf("--eject requires --sdk to be specified")
+						}
+
+						// Check if module has a blueprint
+						blueprintSrc := modSrc.Blueprint()
+						if blueprintSrc == nil {
+							return fmt.Errorf("module does not have a blueprint to eject from")
+						}
+
+						// Get blueprint reference before removing it
+						blueprintRef, err := blueprintSrc.AsString(ctx)
+						if err != nil {
+							return fmt.Errorf("failed to get blueprint reference: %w", err)
+						}
+
+						// Remove blueprint and add as dependency
+						modSrc = modSrc.WithoutBlueprint()
+						modSrc = modSrc.WithDependencies([]*dagger.ModuleSource{blueprintSrc})
+
+						fmt.Fprintf(cmd.OutOrStdout(), "Ejecting from blueprint %s\n", blueprintRef)
 					}
 
 					modSDK, err := modSrc.SDK().Source(ctx)
