@@ -713,8 +713,8 @@ func (m *Caller) Run(ctx context.Context) (string, error) {
 		).
 		With(daggerCall("run")).
 		Stdout(ctx)
-	require.Equal(t, "1 /cache/svc.txt", strings.TrimSpace(out))
 	require.NoError(t, err)
+	require.Equal(t, "1 /cache/svc.txt", strings.TrimSpace(out))
 }
 
 func (ServiceSuite) TestPorts(ctx context.Context, t *testctx.T) {
