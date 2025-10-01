@@ -64,6 +64,8 @@ type Service struct {
 	ExecMD                        *buildkit.ExecutionMetadata
 	ExecMeta                      *executor.Meta
 
+	Watch bool
+
 	// TunnelUpstream is the service that this service is tunnelling to.
 	TunnelUpstream dagql.ObjectResult[*Service]
 	// TunnelPorts configures the port forwarding rules for the tunnel.
@@ -308,7 +310,19 @@ func (svc *Service) Start(
 ) (running *RunningService, err error) {
 	switch {
 	case svc.Container != nil:
-		return svc.startContainer(ctx, id, sio)
+		if svc.Watch {
+			host := svc.CustomHostname
+			if host == "" {
+				host = network.HostHash(id.Digest())
+			}
+			return svc.watchContainer(ctx, id, host, sio)
+		}
+
+		host, err := svc.Hostname(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		return svc.startContainer(ctx, id, host, sio)
 	case svc.TunnelUpstream.Self() != nil:
 		return svc.startTunnel(ctx)
 	case len(svc.HostSockets) > 0:
@@ -318,10 +332,117 @@ func (svc *Service) Start(
 	}
 }
 
+func (svc *Service) watchContainer(ctx context.Context, id *call.ID, host string, sio *ServiceIO) (*RunningService, error) {
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result, err := dagql.NewObjectResultForID(svc, srv, id)
+	if err != nil {
+		return nil, err
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx = context.WithoutCancel(ctx)
+	ctx, cancel := context.WithCancel(ctx)
+
+	watcher, err := bk.Watcher(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var running *RunningService
+
+	ch := make(chan dagql.ObjectResult[*Service], 1)
+	ch <- result
+	ready := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case result, ok := <-ch:
+				if !ok {
+					return
+				}
+
+				// stop the previous container
+				if running != nil {
+					running.Stop(ctx, false)
+				}
+
+				// start the new one
+				// XXX: can we somehow start the new one *before* stopping the old one?
+				running, err = result.Self().startContainer(ctx, result.ID(), host, sio)
+				if err != nil {
+					slog.Error("failed to start watched service", "id", result.ID().Digest(), "error", err)
+					continue
+				}
+
+				if ready != nil {
+					close(ready)
+					ready = nil
+				}
+
+				slog.Info("watched service updated", "id", result.ID().Digest())
+			}
+		}
+	}()
+	go Watch(ctx, srv, watcher, result, ch)
+
+	<-ready
+
+	stop := func(ctx context.Context, force bool) error {
+		cancel()
+		<-done
+		if running != nil {
+			return running.Stop(ctx, force)
+		}
+		return nil
+	}
+	wait := func(ctx context.Context) error {
+		<-done
+		if running != nil {
+			return running.Wait(ctx)
+		}
+		return nil
+	}
+	exec := func(ctx context.Context, cmd []string, env []string, sio *ServiceIO) error {
+		if running == nil {
+			return fmt.Errorf("service not running")
+		}
+		if running.Exec == nil {
+			return fmt.Errorf("service does not support exec")
+		}
+		return running.Exec(ctx, cmd, env, sio)
+	}
+	_ = exec
+
+	return &RunningService{
+		Host:  running.Host,
+		Ports: running.Ports,
+		Stop:  stop,
+		Wait:  wait,
+		// Exec:    exec, // XXX: this is *possible*, but something is wrong with the current impl
+		// ContainerID: svcID,
+	}, nil
+}
+
 //nolint:gocyclo
 func (svc *Service) startContainer(
 	ctx context.Context,
 	id *call.ID,
+	host string,
 	sio *ServiceIO,
 ) (running *RunningService, rerr error) {
 	var cleanup cleanups.Cleanups
@@ -334,11 +455,6 @@ func (svc *Service) startContainer(
 	dig := id.Digest()
 
 	slog := slog.With("service", dig.String(), "id", id.DisplaySelf())
-
-	host, err := svc.Hostname(ctx, id)
-	if err != nil {
-		return nil, err
-	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {

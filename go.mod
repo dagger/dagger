@@ -68,6 +68,7 @@ require (
 	github.com/docker/go-units v0.5.0
 	github.com/dschmidt/go-layerfs v0.2.0
 	github.com/dustin/go-humanize v1.0.1
+	github.com/fsnotify/fsnotify v1.6.0
 	github.com/go-git/go-git/v5 v5.16.2
 	github.com/gofrs/flock v0.12.1
 	github.com/gogo/googleapis v1.4.1

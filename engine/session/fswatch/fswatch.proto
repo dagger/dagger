@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package dagger.fswatch;
+
+option go_package = "fswatch";
+
+service FSWatch {
+  rpc Watch(stream WatchRequest) returns (stream WatchResponse);
+}
+
+message WatchRequest {
+  oneof request {
+    UpdateWatch update_watch = 1;
+  }
+}
+
+message UpdateWatch {
+  repeated string paths = 1;
+}
+
+message WatchResponse {
+  oneof event {
+    FileEvents file_events = 1;
+  }
+}
+
+message FileEvents {
+  repeated FileEvent events = 1;
+}
+
+message FileEvent {
+  string path = 1;
+  FileEventType type = 2;
+}
+
+enum FileEventType {
+  CREATE = 0;
+  WRITE = 1;
+  REMOVE = 2;
+  RENAME = 3;
+  CHMOD = 4;
+}

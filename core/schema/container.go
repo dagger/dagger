@@ -755,6 +755,9 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			Doc(`EXPERIMENTAL API! Subject to change/removal at any time.`,
 				`Configures all available GPUs on the host to be accessible to this container.`,
 				`This currently works for Nvidia devices only.`),
+
+		// XXX: make generic like Syncable?
+		dagql.NodeFunc("watch", s.watch),
 	}.Install(srv)
 
 	dagql.Fields[*core.TerminalLegacy]{
@@ -2589,6 +2592,60 @@ func (s *containerSchema) terminal(
 	}
 
 	return ctr, nil
+}
+
+func (s *containerSchema) watch(ctx context.Context, ctr dagql.ObjectResult[*core.Container], args struct{}) (inst dagql.Nullable[core.Void], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	watcher, err := bk.Watcher(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	_, err = ctr.Self().Evaluate(ctx)
+	if err != nil {
+		slog.Error("failed to evaluate watched container", "id", ctr.ID(), "error", err)
+	}
+
+	ch := make(chan dagql.ObjectResult[*core.Container])
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case ctr, ok := <-ch:
+				if !ok {
+					return
+				}
+
+				_, err = ctr.Self().Evaluate(ctx)
+				if err != nil {
+					slog.Error("failed to evaluate watched container", "id", ctr.ID(), "error", err)
+					continue
+				}
+
+				slog.Info("watched container updated", "id", ctr.ID())
+			}
+		}
+	}()
+
+	err = core.Watch(ctx, srv, watcher, ctr, ch)
+	if err != nil {
+		return inst, err
+	}
+	return inst, nil
 }
 
 func (s *containerSchema) terminalLegacy(

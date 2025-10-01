@@ -52,6 +52,7 @@ import (
 	"github.com/dagger/dagger/engine/client/imageload"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/client/secretprovider"
+	"github.com/dagger/dagger/engine/session/fswatch"
 	"github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/engine/session/h2c"
 	"github.com/dagger/dagger/engine/session/pipe"
@@ -407,6 +408,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 			return fmt.Errorf("new filesyncer: %w", err)
 		}
 		attachables = append(attachables, filesyncer.AsSource(), filesyncer.AsTarget())
+		attachables = append(attachables, fswatch.FSWatcherAttachable{})
 	}
 	if c.Params.PromptHandler != nil {
 		attachables = append(attachables, prompt.NewPromptAttachable(c.Params.PromptHandler))
