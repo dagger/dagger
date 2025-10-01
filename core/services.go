@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
@@ -126,26 +127,17 @@ func (ss *Services) Get(ctx context.Context, id *call.ID, clientSpecific bool) (
 	}
 }
 
-type Startable interface {
-	Start(
-		ctx context.Context,
-		id *call.ID,
-		io *ServiceIO,
-	) (*RunningService, error)
-}
-
 // Start starts the given service, returning the running service. If the
 // service is already running, it is returned immediately. If the service is
 // already starting, it waits for it to finish and returns the running service.
 // If the service failed to start, it tries again.
-func (ss *Services) Start(ctx context.Context, id *call.ID, svc Startable, clientSpecific bool) (*RunningService, error) {
-	return ss.StartWithIO(ctx, id, svc, clientSpecific, nil)
+func (ss *Services) Start(ctx context.Context, svc dagql.ObjectResult[*Service], clientSpecific bool) (*RunningService, error) {
+	return ss.StartWithIO(ctx, svc, clientSpecific, nil)
 }
 
 func (ss *Services) StartWithIO(
 	ctx context.Context,
-	id *call.ID,
-	svc Startable,
+	svc dagql.ObjectResult[*Service],
 	clientSpecific bool,
 	sio *ServiceIO,
 ) (*RunningService, error) {
@@ -154,7 +146,7 @@ func (ss *Services) StartWithIO(
 		return nil, err
 	}
 
-	dig := id.Digest()
+	dig := svc.ID().Digest()
 	key := ServiceKey{
 		Digest:    dig,
 		SessionID: clientMetadata.SessionID,
@@ -191,7 +183,7 @@ dance:
 
 	svcCtx, stop := context.WithCancelCause(context.WithoutCancel(ctx))
 
-	running, err := svc.Start(svcCtx, id, sio)
+	running, err := svc.Self().Start(svcCtx, svc.ID(), sio)
 	if err != nil {
 		stop(err)
 		ss.l.Lock()
@@ -234,7 +226,7 @@ func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings)
 	eg := new(errgroup.Group)
 	for i, bnd := range bindings {
 		eg.Go(func() error {
-			runningSvc, err := ss.Start(ctx, bnd.Service.ID(), bnd.Service.Self(), false)
+			runningSvc, err := ss.Start(ctx, bnd.Service, false)
 			if err != nil {
 				return fmt.Errorf("start %s (%s): %w", bnd.Hostname, bnd.Aliases, err)
 			}

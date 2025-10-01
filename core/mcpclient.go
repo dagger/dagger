@@ -34,8 +34,7 @@ func (t *ServiceMCPTransport) Connect(ctx context.Context) (mcp.Connection, erro
 	stdoutR, stdoutW := io.Pipe()
 	svc, err := svcs.StartWithIO(
 		ctx,
-		t.Service.ID(),
-		t.Service.Self(),
+		t.Service,
 		true, // per-client instances
 		&ServiceIO{
 			Stdin:  stdinR,
