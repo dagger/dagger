@@ -671,6 +671,8 @@ func (m *Foo) CheckEnv() string {
 		var withoutSDKConfigSupport = `package main
 
 import (
+	"context"
+
 	"dagger/coolsdk/internal/dagger"
 )
 
@@ -690,6 +692,10 @@ func New(
 func (m *Coolsdk) WithDaggerJson(modSource *dagger.ModuleSource) *dagger.ModuleSource {
 	return modSource.ContextDirectory().WithNewFile("dagger.json", ` + fmt.Sprintf("`%s`", daggerjsonGoSDK) + `).
 		AsModuleSource()
+}
+
+func (m *Coolsdk) ModuleDefs(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File) (*dagger.Module, error) {
+	return m.WithDaggerJson(modSource).WithSDK("go").AsModule(), nil
 }
 
 func (m *Coolsdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.Container {
@@ -883,10 +889,16 @@ func (m *Test) Fn() *dagger.Directory {
 			customSDKSource: `package main
 
 import (
+	"context"
+
 	"dagger/coolsdk/internal/dagger"
 )
 
 type Coolsdk struct {}
+
+func (m *Coolsdk) ModuleDefs(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File) (*dagger.Module, error) {
+	return modSource.WithSDK("go").AsModule(), nil
+}
 
 func (m *Coolsdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.Container {
 	return modSource.WithSDK("go").AsModule().Runtime().WithEnvVariable("COOL", "true")
@@ -1063,10 +1075,16 @@ func (ConfigSuite) TestContextDefaultsToSourceRoot(ctx context.Context, t *testc
 		WithNewFile("main.go", `package main
 
 import (
+	"context""
+
 	"dagger/cool-sdk/internal/dagger"
 )
 
 type CoolSdk struct {}
+
+func (m *CoolSdk) ModuleDefs(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File) (*dagger.Module, error) {
+	return modSource.WithSDK("go").AsModule(), nil
+}
 
 func (m *CoolSdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.Container {
 	return modSource.WithSDK("go").AsModule().Runtime().
