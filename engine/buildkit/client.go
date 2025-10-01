@@ -39,6 +39,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/session/fswatch"
 	"github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/engine/session/h2c"
 	"github.com/dagger/dagger/engine/session/pipe"
@@ -470,7 +471,17 @@ func (c *Client) ListenHostToContainer(
 				conn, err := c.Dialer.Dial(proto, upstream)
 				if err != nil {
 					bklog.G(ctx).Warnf("failed to dial %s %s: %s", proto, upstream, err)
-					return
+					sendL.Lock()
+					err = listener.Send(&h2c.ListenRequest{
+						ConnId: connID,
+						Close:  true,
+					})
+					sendL.Unlock()
+					if err != nil {
+						return
+					}
+					continue
+					// return
 				}
 
 				connsL.Lock()
@@ -485,7 +496,7 @@ func (c *Client) ListenHostToContainer(
 					for {
 						n, err := conn.Read(data)
 						if err != nil {
-							return
+							break
 						}
 
 						sendL.Lock()
@@ -495,9 +506,16 @@ func (c *Client) ListenHostToContainer(
 						})
 						sendL.Unlock()
 						if err != nil {
-							return
+							break
 						}
 					}
+
+					sendL.Lock()
+					err = listener.Send(&h2c.ListenRequest{
+						ConnId: connID,
+						Close:  true,
+					})
+					sendL.Unlock()
 				}()
 			}
 
@@ -875,6 +893,22 @@ func callerSupports(caller bksession.Caller, desc *grpc.ServiceDesc) bool {
 		}
 	}
 	return true
+}
+
+func (c *Client) Watcher(
+	ctx context.Context,
+) (fswatch.FSWatchClient, error) {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	caller, err := c.GetClientCaller(md.ClientID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client caller: %w", err)
+	}
+
+	client := fswatch.NewFSWatchClient(caller.Conn())
+	return client, nil
 }
 
 type ImageWriter struct {
