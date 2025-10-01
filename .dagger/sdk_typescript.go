@@ -4,22 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path"
 	"strings"
 
-	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/mod/semver"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
+	"github.com/dagger/dagger/util/parallel"
 )
 
 // TODO: use dev module (this is just the mage port)
 
 const (
-	typescriptRuntimeSubdir    = "sdk/typescript/runtime"
-	typescriptGeneratedAPIPath = "sdk/typescript/src/api/client.gen.ts"
-
 	nodePreviousLTS = "20.18.1"
 	nodeCurrentLTS  = "22.11.0"
 
@@ -30,131 +25,119 @@ type TypescriptSDK struct {
 	Dagger *DaggerDev // +private
 }
 
+func (t TypescriptSDK) Name() string {
+	return "typescript"
+}
+
 // Lint the Typescript SDK
-func (t TypescriptSDK) Lint(ctx context.Context) (rerr error) {
-	eg := errgroup.Group{}
+func (t TypescriptSDK) CheckLint(ctx context.Context) (rerr error) {
+	return parallel.New().
+		WithJob("check typescript format", t.CheckLintTypescript).
+		WithJob("check docs snippets format", t.CheckLintSnippets).
+		WithJob("lint the typescript runtime, which is written in Go", t.CheckGoLint).
+		Run(ctx)
+}
 
+// CheckTypescriptFormat checks the formatting of the Typescript SDK code
+func (t TypescriptSDK) CheckLintTypescript(ctx context.Context) error {
 	base := t.nodeJsBase()
+	_, err := base.WithExec([]string{"yarn", "lint"}).Sync(ctx)
+	return err
+}
 
-	eg.Go(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "lint the Typescript SDK code")
-		defer func() {
-			if rerr != nil {
-				span.SetStatus(codes.Error, rerr.Error())
-			}
-			span.End()
-		}()
-		_, err := base.WithExec([]string{"yarn", "lint"}).Sync(ctx)
-		return err
-	})
-
-	eg.Go(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "lint Typescript snippets in the docs")
-		defer func() {
-			if rerr != nil {
-				span.SetStatus(codes.Error, rerr.Error())
-			}
-			span.End()
-		}()
-		path := "docs/current_docs"
-		_, err := base.
-			WithDirectory(
-				fmt.Sprintf("/%s", path),
-				t.Dagger.Source.Directory(path),
-				dagger.ContainerWithDirectoryOpts{
-					Include: []string{
-						"**/*.mts",
-						"**/*.mjs",
-						"**/*.ts",
-						"**/*.js",
-						"*prettier*",
-						"*eslint*",
-					},
+// CheckDocsSnippetsFormat checks the formatting of Typescript snippets in the docs
+func (t TypescriptSDK) CheckLintSnippets(ctx context.Context) error {
+	base := t.nodeJsBase()
+	path := "docs/current_docs"
+	_, err := base.
+		WithDirectory(
+			fmt.Sprintf("/%s", path),
+			t.Dagger.Source.Directory(path),
+			dagger.ContainerWithDirectoryOpts{
+				Include: []string{
+					"**/*.mts",
+					"**/*.mjs",
+					"**/*.ts",
+					"**/*.js",
+					"*prettier*",
+					"*eslint*",
 				},
-			).
-			WithExec([]string{"yarn", "docs:lint"}).
-			Sync(ctx)
-		return err
-	})
+			},
+		).
+		WithExec([]string{"yarn", "docs:lint"}).
+		Sync(ctx)
+	return err
+}
 
-	eg.Go(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "check that the generated client library is up-to-date")
-		defer func() {
-			if rerr != nil {
-				span.SetStatus(codes.Error, rerr.Error())
-			}
-			span.End()
-		}()
-		before := t.Dagger.Source
-		after, err := t.Generate(ctx)
-		if err != nil {
-			return err
-		}
-		return dag.
-			Dirdiff().
-			AssertEqual(ctx, before, after, []string{typescriptGeneratedAPIPath})
-	})
+// CheckGoFormat checks the formatting of the typescript runtime, which is written in Go
+func (t TypescriptSDK) CheckGoLint(ctx context.Context) (rerr error) {
+	return t.godev().CheckLint(ctx)
+}
 
-	eg.Go(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "lint the typescript runtime, which is written in Go")
-		defer func() {
-			if rerr != nil {
-				span.SetStatus(codes.Error, rerr.Error())
-			}
-			span.End()
-		}()
-		return dag.
-			Go(t.Dagger.SourceDeveloped(typescriptRuntimeSubdir)).
-			Lint(ctx, dagger.GoLintOpts{Packages: []string{typescriptRuntimeSubdir}})
-	})
+func (t TypescriptSDK) godev() *dagger.Go {
+	return dag.Go(t.RuntimeSource())
+}
 
-	return eg.Wait()
+func (t TypescriptSDK) RuntimeSource() *dagger.Directory {
+	return t.Dagger.Source.Filter(dagger.DirectoryFilterOpts{
+		Include: []string{"sdk/typescript/runtime"},
+	})
 }
 
 // Test the Typescript SDK
 func (t TypescriptSDK) Test(ctx context.Context) (rerr error) {
-	installer := t.Dagger.installer("sdk")
-
-	eg := errgroup.Group{}
-
+	jobs := parallel.New()
 	// Loop over the LTS and Maintenance versions and test them
 	for _, version := range []string{nodeCurrentLTS, nodePreviousLTS} {
-		base := t.nodeJsBaseFromVersion(version).With(installer)
-
-		eg.Go(func() error {
-			_, err := base.
-				WithExec([]string{"yarn", "test:node", "-i", "-g", "Automatic Provisioned CLI Binary"}).
+		base := t.
+			nodeJsBaseFromVersion(version).
+			With(t.Dagger.devEngineSidecar())
+		jobs = jobs.WithJob(
+			fmt.Sprintf("test with node version %s", version),
+			func(ctx context.Context) error {
+				_, err := base.
+					WithExec([]string{"yarn", "test:node", "-i", "-g", "Automatic Provisioned CLI Binary"}).
+					Sync(ctx)
+				return err
+			},
+		)
+	}
+	jobs = jobs.WithJob(
+		fmt.Sprintf("test with bun version %s", bunVersion),
+		func(ctx context.Context) error {
+			_, err := t.bunJsBase().
+				With(t.Dagger.devEngineSidecar()).
+				WithExec([]string{"bun", "test:bun", "-i", "-g", "Automatic Provisioned CLI Binary"}).
 				Sync(ctx)
 			return err
-		})
-	}
-
-	eg.Go(func() error {
-		_, err := t.bunJsBase().
-			With(installer).
-			WithExec([]string{"bun", "test:bun", "-i", "-g", "Automatic Provisioned CLI Binary"}).
-			Sync(ctx)
-		return err
-	})
-
-	return eg.Wait()
+		},
+	)
+	return jobs.Run(ctx)
 }
 
-// Regenerate the Typescript SDK API
-func (t TypescriptSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	installer := t.Dagger.installer("sdk")
-	generated := t.nodeJsBase().
-		With(installer).
+// Regenerate the Typescript client bindings
+func (t TypescriptSDK) Generate(ctx context.Context) (*dagger.Changeset, error) {
+	return t.NodeJsContainer("").
+		WithMountedDirectory(".", t.Dagger.Source).
+		WithExec([]string{"yarn", "--cwd", "sdk/typescript", "install"}).
+		With(t.Dagger.devEngineSidecar()).
 		WithFile("/usr/local/bin/codegen", t.Dagger.codegenBinary()).
-		WithExec([]string{"codegen", "generate-library", "--lang", "typescript", "-o", path.Dir(typescriptGeneratedAPIPath)}).
-		WithExec([]string{"yarn", "fmt", typescriptGeneratedAPIPath}).
-		File(typescriptGeneratedAPIPath)
-	return dag.Directory().WithFile(typescriptGeneratedAPIPath, generated), nil
+		WithExec([]string{
+			"codegen", "generate-library", "--lang", "typescript", "-o", "./sdk/typescript/src/api/",
+		}).
+		WithExec([]string{
+			"yarn", "--cwd", "sdk/typescript", "eslint", "--max-warnings=0", "--fix", "./src/api/",
+		}).
+		Directory(".").
+		// FIXME: more efficient way to exclude node_modules from the diff?
+		WithoutDirectory("sdk/typescript/node_modules").
+		// FIXME: since we know this is purely additive, compare to empty dir for more efficient diff?
+		Changes(t.Dagger.Source).Sync(ctx)
 }
 
 // Test the publishing process
-func (t TypescriptSDK) TestPublish(ctx context.Context, tag string) error {
-	return t.Publish(ctx, tag, true, nil)
+func (t TypescriptSDK) CheckReleaseDryRun(ctx context.Context) error {
+	return t.Publish(ctx, "HEAD", true, nil)
 }
 
 // Publish the Typescript SDK
@@ -206,7 +189,7 @@ always-auth=true`, plaintext)
 }
 
 // Bump the Typescript SDK's Engine dependency
-func (t TypescriptSDK) Bump(ctx context.Context, version string) (*dagger.Directory, error) {
+func (t TypescriptSDK) Bump(_ context.Context, version string) (*dagger.Changeset, error) {
 	// trim leading v from version
 	version = strings.TrimPrefix(version, "v")
 
@@ -215,12 +198,30 @@ func (t TypescriptSDK) Bump(ctx context.Context, version string) (*dagger.Direct
 
 	// NOTE: if you change this path, be sure to update .github/workflows/publish.yml so that
 	// provision tests run whenever this file changes.
-	return dag.Directory().WithNewFile("sdk/typescript/src/provisioning/default.ts", engineReference), nil
+	layer := t.Dagger.Source.WithNewFile("sdk/typescript/src/provisioning/default.ts", engineReference)
+	return layer.Changes(t.Dagger.Source), nil
 }
 
 func (t TypescriptSDK) nodeJsBase() *dagger.Container {
 	// Use the LTS version by default
 	return t.nodeJsBaseFromVersion(nodePreviousLTS)
+}
+
+// Return an actual nodejs base image
+// A base image does not have application source code mounted
+// This allows cleaner control over mounting later, for example
+// for the purposes of generating changes before/after running the container
+func (t TypescriptSDK) NodeJsContainer(
+	// +optional
+	version string,
+) *dagger.Container {
+	if version == "" {
+		version = nodePreviousLTS
+	}
+	return dag.Container().
+		From("node:"+version+"-alpine").
+		WithMountedCache("/usr/local/share/.cache/yarn", dag.CacheVolume("yarn_cache:"+version)).
+		WithWorkdir("/app")
 }
 
 func (t TypescriptSDK) nodeJsBaseFromVersion(nodeVersion string) *dagger.Container {

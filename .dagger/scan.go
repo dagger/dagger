@@ -4,10 +4,11 @@ import (
 	"context"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
-	"golang.org/x/sync/errgroup"
+	"github.com/dagger/dagger/util/parallel"
 )
 
-func (dev *DaggerDev) Scan(ctx context.Context) error {
+// Scan source code and artifacts for security vulnerabilities
+func (dev *DaggerDev) CheckScan(ctx context.Context) error {
 	ignoreFiles := dag.Directory().WithDirectory("/", dev.Source, dagger.DirectoryWithDirectoryOpts{
 		Include: []string{
 			".trivyignore",
@@ -36,54 +37,49 @@ func (dev *DaggerDev) Scan(ctx context.Context) error {
 		commonArgs = append(commonArgs, "--ignorefile=/mnt/ignores/"+ignoreFileNames[0])
 	}
 
-	eg := errgroup.Group{}
+	return parallel.New().
+		WithJob("scan the source code", func(ctx context.Context) error {
+			args := []string{
+				"trivy",
+				"fs",
+				"--scanners=vuln",
+				"--pkg-types=library",
+			}
+			args = append(args, commonArgs...)
+			args = append(args, "/mnt/src")
 
-	eg.Go(func() error {
-		// scan the source code
-		args := []string{
-			"trivy",
-			"fs",
-			"--scanners=vuln",
-			"--pkg-types=library",
-		}
-		args = append(args, commonArgs...)
-		args = append(args, "/mnt/src")
+			// HACK: filter out directories that present occasional issues
+			src := dev.Source
+			src = src.
+				WithoutDirectory("docs").
+				WithoutDirectory("sdk/rust/examples").
+				WithoutDirectory("sdk/rust/crates/dagger-sdk/examples").
+				WithoutDirectory("core/integration/testdata").
+				WithoutDirectory("dagql/idtui/viztest")
 
-		// HACK: filter out directories that present occasional issues
-		src := dev.Source
-		src = src.
-			WithoutDirectory("docs").
-			WithoutDirectory("sdk/rust/examples").
-			WithoutDirectory("sdk/rust/crates/dagger-sdk/examples").
-			WithoutDirectory("core/integration/testdata").
-			WithoutDirectory("dagql/idtui/viztest")
+			_, err := ctr.
+				WithMountedDirectory("/mnt/src", src).
+				WithExec(args).
+				Sync(ctx)
+			return err
+		}).
+		// this can catch dependencies that are only discoverable in the final build
+		WithJob("scan the engine image", func(ctx context.Context) error {
+			args := []string{
+				"trivy",
+				"image",
+				"--pkg-types=os,library",
+			}
+			args = append(args, commonArgs...)
+			engineTarball := "/mnt/engine.tar"
+			args = append(args, "--input", engineTarball)
 
-		_, err := ctr.
-			WithMountedDirectory("/mnt/src", src).
-			WithExec(args).
-			Sync(ctx)
-		return err
-	})
-
-	eg.Go(func() error {
-		// scan the engine image - this can catch dependencies that are only
-		// discoverable in the final build
-		args := []string{
-			"trivy",
-			"image",
-			"--pkg-types=os,library",
-		}
-		args = append(args, commonArgs...)
-		engineTarball := "/mnt/engine.tar"
-		args = append(args, "--input", engineTarball)
-
-		target := dag.DaggerEngine().Container()
-		_, err = ctr.
-			WithMountedFile(engineTarball, target.AsTarball()).
-			WithExec(args).
-			Sync(ctx)
-		return err
-	})
-
-	return eg.Wait()
+			target := dag.DaggerEngine().Container()
+			_, err = ctr.
+				WithMountedFile(engineTarball, target.AsTarball()).
+				WithExec(args).
+				Sync(ctx)
+			return err
+		}).
+		Run(ctx)
 }

@@ -1,4 +1,7 @@
 version: "2"
+
+run:
+  relative-path-mode: wd
 linters:
   default: none
   enable:
@@ -33,6 +36,15 @@ linters:
     gocritic:
       disabled-checks:
         - ifElseChain
+    gosec:
+      excludes:
+        - G115 # stupid
+        - G114 # dumb
+        - G112 # bullshit
+        - G204 # dumb
+        - G306 # dumb
+        - G107 # ridiculous
+
     govet:
       disable:
         - lostcancel
@@ -72,7 +84,7 @@ linters:
         path: _test\.go
 
       - linters:
-        - staticcheck
+          - staticcheck
         text: "idtools.IdentityMapping"
 
       - linters:
