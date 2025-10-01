@@ -119,7 +119,7 @@ defmodule Dagger.ClientTest do
   end
 
   test "container with mounted cache", %{dag: dag} do
-    cache_key = "example-cache"
+    cache_key = "example-cache-" <> Integer.to_string(Enum.random(1..1_000_000_000))
     filename = DateTime.utc_now() |> Calendar.strftime("%Y-%m-%d-%H-%M-%S")
 
     container =

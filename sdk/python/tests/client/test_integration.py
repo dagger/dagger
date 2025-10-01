@@ -1,4 +1,6 @@
 import pathlib
+import random
+import string
 from datetime import datetime
 from textwrap import dedent
 
@@ -105,7 +107,7 @@ async def test_container_with_mounted_directory(alpine_image: str):
 
 
 async def test_container_with_mounted_cache(alpine_image: str):
-    cache_key = "example-cache"
+    cache_key = "example-cache-" + "".join(random.choices(string.hexdigits, k=16))
     filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
 
     container = (
