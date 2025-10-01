@@ -18,10 +18,6 @@
       "source": "../dagger"
     },
     {
-      "name": "dirdiff",
-      "source": "../../modules/dirdiff"
-    },
-    {
       "name": "go",
       "source": "../../modules/go"
     },
