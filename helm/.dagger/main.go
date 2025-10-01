@@ -28,7 +28,7 @@ type Helm struct {
 }
 
 // Lint the helm chart
-func (h *Helm) Lint(ctx context.Context) error {
+func (h *Helm) CheckLint(ctx context.Context) error {
 	_, err := h.chart().
 		WithExec([]string{"helm", "lint"}).
 		WithExec([]string{"helm", "lint", "--debug", "--namespace=dagger", "--set=magicache.token=hello-world", "--set=magicache.enabled=true"}).
@@ -235,6 +235,14 @@ func (h *Helm) SetVersion(
 		File("Chart.yaml")
 
 	return updatedChartYaml, nil
+}
+
+func (h *Helm) CheckReleaseDryRun(ctx context.Context) error {
+	return h.Publish(ctx,
+		"main", // target
+		nil,    // githubToken
+		true,   // dryRun
+	)
 }
 
 // Package & publish chart to our registry + github release

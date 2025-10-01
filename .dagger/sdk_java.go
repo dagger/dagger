@@ -20,8 +20,12 @@ type JavaSDK struct {
 	Dagger *DaggerDev // +private
 }
 
+func (t JavaSDK) Name() string {
+	return "java"
+}
+
 // Lint the Java SDK
-func (t JavaSDK) Lint(ctx context.Context) error {
+func (t JavaSDK) CheckLint(ctx context.Context) error {
 	_, err := t.Maven(ctx).
 		WithExec([]string{"mvn", "fmt:check"}).
 		Sync(ctx)
@@ -30,23 +34,18 @@ func (t JavaSDK) Lint(ctx context.Context) error {
 
 // Test the Java SDK
 func (t JavaSDK) Test(ctx context.Context) error {
-	installer := t.Dagger.installer("sdk")
 	_, err := t.Maven(ctx).
-		With(installer).
+		With(t.Dagger.devEngineSidecar()).
 		WithExec([]string{"mvn", "clean", "verify", "-Ddaggerengine.version=local"}).
 		Sync(ctx)
 	return err
 }
 
 // Regenerate the Java SDK API
-func (t JavaSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	return dag.Directory(), nil
-}
-
-// Test the publishing process
-func (t JavaSDK) TestPublish(ctx context.Context, tag string) error {
-	// FIXME: we don't have a working test-publish implementation
-	return nil
+func (t JavaSDK) Generate(ctx context.Context) (*dagger.Changeset, error) {
+	return dag.Directory().
+		Changes(dag.Directory()).
+		Sync(ctx)
 }
 
 // Publish the Java SDK
@@ -77,7 +76,7 @@ func (t JavaSDK) Publish(
 var stableVersionRe = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 
 // Bump the Java SDK's Engine dependency
-func (t JavaSDK) Bump(ctx context.Context, version string) (*dagger.Directory, error) {
+func (t JavaSDK) Bump(ctx context.Context, version string) (*dagger.Changeset, error) {
 	version = strings.TrimPrefix(version, "v")
 	v := version
 	if !stableVersionRe.MatchString(v) {
@@ -119,11 +118,13 @@ func (t JavaSDK) Bump(ctx context.Context, version string) (*dagger.Directory, e
 	for _, pom := range poms {
 		bumped = bumped.WithFile(pom, bumpCtr.File(pom))
 	}
-	return bumped, nil
+	return bumped.
+		Changes(dag.Directory()).
+		Sync(ctx)
 }
 
 // Bump dependencies in the Java SDK
-func (t JavaSDK) BumpDeps(ctx context.Context) *dagger.Directory {
+func (t JavaSDK) BumpDeps(ctx context.Context) *dagger.Changeset {
 	poms := []string{
 		"/sdk/java/dagger-codegen-maven-plugin/pom.xml",
 		"/sdk/java/dagger-java-annotation-processor/pom.xml",
@@ -141,7 +142,7 @@ func (t JavaSDK) BumpDeps(ctx context.Context) *dagger.Directory {
 	for _, pom := range poms {
 		bumped = bumped.WithFile(pom, bumpCtr.File(pom))
 	}
-	return bumped
+	return bumped.Changes(dag.Directory())
 }
 
 func (t JavaSDK) Maven(ctx context.Context) *dagger.Container {

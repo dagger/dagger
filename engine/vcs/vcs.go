@@ -140,7 +140,7 @@ func (v *Cmd) run1(dir string, cmdline string, keyval []string, verbose bool) ([
 		return nil, err
 	}
 
-	cmd := exec.Command(v.Cmd, args...) //nolint:gosec
+	cmd := exec.Command(v.Cmd, args...)
 	cmd.Dir = dir
 	cmd.Env = envForDir(cmd.Dir)
 	if ShowCmd {

@@ -4,15 +4,12 @@
   "sdk": {
     "source": "go"
   },
+  "include": [
+    "../../go.sum",
+    "../../go.mod",
+    "../../util/parallel"
+  ],
   "dependencies": [
-    {
-      "name": "dirdiff",
-      "source": "../dirdiff"
-    },
-    {
-      "name": "golangci",
-      "source": "../golangci"
-    },
     {
       "name": "wolfi",
       "source": "../wolfi"

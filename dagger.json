@@ -6,12 +6,23 @@
   },
   "include": [
     "engine/distconsts/**/*",
-    "sdk/typescript/runtime/**/*"
+    "sdk/typescript/runtime/**/*",
+    "go.mod",
+    "go.sum",
+    "util/parallel"
   ],
   "dependencies": [
     {
       "name": "alpine",
       "source": "modules/alpine"
+    },
+    {
+      "name": "changelog",
+      "source": ".changes"
+    },
+    {
+      "name": "ci",
+      "source": ".github"
     },
     {
       "name": "dagger-cli",
@@ -20,10 +31,6 @@
     {
       "name": "dagger-engine",
       "source": "cmd/engine"
-    },
-    {
-      "name": "dirdiff",
-      "source": "modules/dirdiff"
     },
     {
       "name": "docs",

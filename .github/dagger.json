@@ -6,10 +6,6 @@
   },
   "dependencies": [
     {
-      "name": "dirdiff",
-      "source": "../modules/dirdiff"
-    },
-    {
       "name": "gha",
       "source": "../modules/gha"
     }

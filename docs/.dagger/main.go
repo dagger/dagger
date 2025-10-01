@@ -11,8 +11,6 @@ import (
 	"strings"
 
 	"github.com/netlify/open-api/v2/go/models"
-	"go.opentelemetry.io/otel/codes"
-	"golang.org/x/sync/errgroup"
 )
 
 func New(
@@ -46,15 +44,6 @@ type Docs struct {
 }
 
 const (
-	generatedSchemaPath           = "docs/docs-graphql/schema.graphqls"
-	generatedCliZenPath           = "docs/current_docs/reference/cli/index.mdx"
-	generatedAPIReferencePath     = "docs/static/api/reference/index.html"
-	generatedDaggerJSONSchemaPath = "docs/static/reference/dagger.schema.json"
-	generatedEngineJSONSchemaPath = "docs/static/reference/engine.schema.json"
-)
-
-const (
-	changieVersion      = "1.21.0"
 	markdownlintVersion = "0.31.1"
 )
 
@@ -88,114 +77,77 @@ func (d Docs) Server() *dagger.Container {
 }
 
 // Lint documentation files
-func (d Docs) Lint(ctx context.Context) (rerr error) {
-	eg := errgroup.Group{}
-
-	// Markdown
-	eg.Go(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "lint markdown files")
-		defer func() {
-			if rerr != nil {
-				span.SetStatus(codes.Error, rerr.Error())
-			}
-			span.End()
-		}()
-		_, err := dag.Container().
-			From("tmknom/markdownlint:"+markdownlintVersion).
-			WithMountedDirectory("/src", d.Source).
-			WithMountedFile("/src/.markdownlint.yaml", d.Source.File(".markdownlint.yaml")).
-			WithMountedFile("/src/.markdownlintignore", d.Source.File("docs/.markdownlintignore")).
-			WithWorkdir("/src").
-			WithExec([]string{
-				"markdownlint",
-				"-c",
-				".markdownlint.yaml",
-				"--",
-				"./docs",
-				"README.md",
-			}).
-			Sync(ctx)
-		return err
-	})
-
-	eg.Go(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "check that generated docs are up-to-date")
-		defer func() {
-			if rerr != nil {
-				span.SetStatus(codes.Error, rerr.Error())
-			}
-			span.End()
-		}()
-		before := d.Source
-		after, err := d.Generate(ctx)
-		if err != nil {
-			return err
-		}
-		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{
-			generatedSchemaPath,
-			generatedCliZenPath,
-			generatedAPIReferencePath,
-			generatedDaggerJSONSchemaPath,
-			generatedEngineJSONSchemaPath,
-		})
-	})
-
-	eg.Go(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "check that changelog is up-do-date")
-		defer func() {
-			if rerr != nil {
-				span.SetStatus(codes.Error, rerr.Error())
-			}
-			span.End()
-		}()
-		before := d.Source
-		// FIXME: spin out a changie module
-		after := dag.
-			Container().
-			From("ghcr.io/miniscruff/changie:v"+changieVersion).
-			WithMountedDirectory("/src", d.Source).
-			WithWorkdir("/src").
-			WithExec([]string{"/changie", "merge"}).
-			Directory("/src")
-		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{"CHANGELOG.md"})
-	})
-
-	eg.Go(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "check that site builds")
-		defer func() {
-			if rerr != nil {
-				span.SetStatus(codes.Error, rerr.Error())
-			}
-			span.End()
-		}()
-		_, err := d.Site().Sync(ctx)
-		return err
-	})
-
-	// Go is already linted by engine:lint
-	// Python is already linted by sdk:python:lint
-	// TypeScript is already linted at sdk:typescript:lint
-	return eg.Wait()
+func (d Docs) CheckLint(ctx context.Context) error {
+	_, err := dag.Container().
+		From("tmknom/markdownlint:"+markdownlintVersion).
+		WithMountedDirectory("/src", d.Source).
+		WithMountedFile("/src/.markdownlint.yaml", d.Source.File(".markdownlint.yaml")).
+		WithMountedFile("/src/.markdownlintignore", d.Source.File("docs/.markdownlintignore")).
+		WithWorkdir("/src").
+		WithExec([]string{
+			"markdownlint",
+			"-c",
+			".markdownlint.yaml",
+			"--",
+			"./docs",
+			"README.md",
+		}).
+		Sync(ctx)
+	return err
 }
 
 // Regenerate the API schema and CLI reference docs
-func (d Docs) Generate(ctx context.Context) (*dagger.Directory, error) {
-	dir := dag.Directory().
-		WithDirectory("", d.GenerateSchema("")).
-		WithDirectory("", d.GenerateSchemaReference("")).
-		WithDirectory("", d.GenerateCli()).
-		WithDirectory("", d.GenerateConfigSchemas())
+func (d Docs) Generate(
+	ctx context.Context,
+	// Dagger version to generate API docs for
+	// +optional
+	version string,
+) (*dagger.Changeset, error) {
+	src := d.Source
+	// 1. Generate the GraphQL schema
+	withGqlSchema := dag.Go(src).Env().
+		WithExec([]string{"go", "run", "./cmd/introspect", "--version=" + version, "schema"}, dagger.ContainerWithExecOpts{
+			RedirectStdout: "docs/docs-graphql/schema.graphqls",
+		}).
+		Directory(".")
 
-	return dir, nil
-}
+	// 2. Generate the API reference docs
+	withApiReference := dag.Container().
+		From("node:22").
+		WithMountedDirectory("/src", withGqlSchema).
+		WithMountedDirectory("/mnt/spectaql", spectaql()).
+		WithWorkdir("/src/docs").
+		WithExec([]string{"yarn", "add", "file:/mnt/spectaql"}).
+		// -t specifies the target directory where spectaql will write the generated output
+		WithExec([]string{"yarn", "run", "spectaql", "./docs-graphql/config.yml", "-t", "./static/api/reference/"}).
+		Directory("/src").
+		WithoutDirectory("docs/node_modules").
+		WithFile("docs/yarn.lock", src.File("docs/yarn.lock")).
+		WithFile("docs/package.json", src.File("docs/package.json"))
+	// 3. Generate CLI reference
+	withCliReference := src.WithFile("docs/current_docs/reference/cli/index.mdx", dag.DaggerCli().Reference(
+		dagger.DaggerCliReferenceOpts{
+			Frontmatter:         cliZenFrontmatter,
+			IncludeExperimental: true,
+		},
+	))
+	// 4. Generate config file schemas?
+	withConfigSchemas := dag.Go(src).Env().
+		WithExec([]string{"go", "run", "./cmd/json-schema", "dagger.json"}, dagger.ContainerWithExecOpts{
+			RedirectStdout: "docs/static/reference/dagger.schema.json",
+		}).
+		WithExec([]string{"go", "run", "./cmd/json-schema", "engine.json"}, dagger.ContainerWithExecOpts{
+			RedirectStdout: "docs/static/reference/engine.schema.json",
+		}).
+		Directory(".")
 
-// Regenerate the CLI reference docs
-func (d Docs) GenerateCli() *dagger.Directory {
-	generated := dag.DaggerCli().Reference(dagger.DaggerCliReferenceOpts{
-		Frontmatter:         cliZenFrontmatter,
-		IncludeExperimental: true,
-	})
-	return dag.Directory().WithFile(generatedCliZenPath, generated)
+	changes := src.
+		WithChanges(withGqlSchema.Changes(src)).
+		WithChanges(withApiReference.Changes(src)).
+		WithChanges(withCliReference.Changes(src)).
+		WithChanges(withConfigSchemas.Changes(src)).
+		Changes(src)
+	return changes, nil
 }
 
 func formatJSONFile(ctx context.Context, f *dagger.File) (*dagger.File, error) {
@@ -218,20 +170,6 @@ func formatJSONFile(ctx context.Context, f *dagger.File) (*dagger.File, error) {
 	return dag.File(name, out.String()), nil
 }
 
-// Regenerate the API schema
-func (d Docs) GenerateSchema(
-	version string, // +optional
-) *dagger.Directory {
-	schema := dag.
-		Go(d.Source).
-		Env().
-		WithExec([]string{"go", "run", "./cmd/introspect", "--version=" + version, "schema"}, dagger.ContainerWithExecOpts{
-			RedirectStdout: "schema.graphqls",
-		}).
-		File("schema.graphqls")
-	return dag.Directory().WithFile(generatedSchemaPath, schema)
-}
-
 func (d Docs) Introspection(
 	version string, // +optional
 ) *dagger.File {
@@ -244,43 +182,8 @@ func (d Docs) Introspection(
 		File("introspection.json")
 }
 
-// Regenerate the API Reference documentation
-func (d Docs) GenerateSchemaReference(
-	version string, // +optional
-) *dagger.Directory {
-	generatedHTML := dag.Container().
-		From("node:22").
-		WithMountedDirectory("/src", d.Source.WithDirectory(".", d.GenerateSchema(version))).
-		WithWorkdir("/src/docs").
-		WithMountedDirectory("/mnt/spectaql", spectaql()).
-		WithExec([]string{"yarn", "add", "file:/mnt/spectaql"}).
-		WithExec([]string{"yarn", "run", "spectaql", "./docs-graphql/config.yml", "-t", "."}).
-		File("index.html")
-	return dag.Directory().WithFile(generatedAPIReferencePath, generatedHTML)
-}
-
-// Regenerate the config schemas
-func (d Docs) GenerateConfigSchemas() *dagger.Directory {
-	ctr := dag.Go(d.Source).Env()
-
-	daggerJSONSchema := ctr.
-		WithExec([]string{"go", "run", "./cmd/json-schema", "dagger.json"}, dagger.ContainerWithExecOpts{
-			RedirectStdout: "dagger.schema.json",
-		}).
-		File("dagger.schema.json")
-	engineJSONSchema := ctr.
-		WithExec([]string{"go", "run", "./cmd/json-schema", "engine.json"}, dagger.ContainerWithExecOpts{
-			RedirectStdout: "engine.schema.json",
-		}).
-		File("engine.schema.json")
-	return dag.
-		Directory().
-		WithFile(generatedDaggerJSONSchemaPath, daggerJSONSchema).
-		WithFile(generatedEngineJSONSchemaPath, engineJSONSchema)
-}
-
 // Bump the Go SDK's Engine dependency
-func (d Docs) Bump(version string) (*dagger.Directory, error) {
+func (d Docs) Bump(version string) (*dagger.Changeset, error) {
 	// trim leading v from version
 	version = strings.TrimPrefix(version, "v")
 
@@ -289,8 +192,8 @@ func (d Docs) Bump(version string) (*dagger.Directory, error) {
 export const daggerVersion = "%s";
 `, version)
 
-	dir := dag.Directory().WithNewFile("docs/current_docs/partials/version.js", versionFile)
-	return dir, nil
+	layer := d.Source.WithNewFile("docs/current_docs/partials/version.js", versionFile)
+	return layer.Changes(d.Source), nil
 }
 
 // Deploys a current build of the docs.

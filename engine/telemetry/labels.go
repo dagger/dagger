@@ -515,7 +515,6 @@ func fetchRef(repo *git.Repository, workdir string, remote string, target string
 	dest := fmt.Sprintf("refs/dagger/%s", target)
 
 	// Fetch from the origin remote
-	//nolint:gosec
 	cmd := exec.Command("git", "fetch", "--depth", "1", remote, fmt.Sprintf("+%s:%s", src, dest))
 	cmd.Dir = workdir
 	out, err := cmd.CombinedOutput()
