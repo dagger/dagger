@@ -104,6 +104,15 @@ func (id *ID) Args() []*Argument {
 	return id.args
 }
 
+func (id *ID) Arg(name string) *Argument {
+	for _, arg := range id.args {
+		if arg.pb.Name == name {
+			return arg
+		}
+	}
+	return nil
+}
+
 // If the field returns a list, this is the index of the element to select.
 // Note that this defaults to zero, which means there is no selection of
 // an element in the list. Non-zero indexes are 1-based.

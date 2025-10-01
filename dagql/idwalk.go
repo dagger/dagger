@@ -67,16 +67,16 @@ func (idWalker *IDWalker) walkLiteral(lit call.Literal) error {
 	case *call.LiteralID:
 		return idWalker.walkID(x.Value(), false)
 	case *call.LiteralList:
-		if err := x.Range(func(_ int, v call.Literal) error {
-			return idWalker.walkLiteral(v)
-		}); err != nil {
-			return err
+		for _, v := range x.Values() {
+			if err := idWalker.walkLiteral(v); err != nil {
+				return err
+			}
 		}
 	case *call.LiteralObject:
-		if err := x.Range(func(_ int, _ string, v call.Literal) error {
-			return idWalker.walkLiteral(v)
-		}); err != nil {
-			return err
+		for _, v := range x.Args() {
+			if err := idWalker.walkLiteral(v.Value()); err != nil {
+				return err
+			}
 		}
 	default:
 		// NOTE: not handling any primitive types right now, could be added
