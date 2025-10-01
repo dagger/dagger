@@ -136,34 +136,35 @@ class PythonSdkDev:
             dagger.File,
             Doc("Result of the introspection query"),
         ],
-    ) -> dagger.Directory:
+    ) -> dagger.Changeset:
         """Generate the client bindings for the core API."""
-        path = "src/dagger/client/gen.py"
-        self.container = self.container.with_file(
-            path,
-            (
-                self.container.with_workdir("codegen")
-                .with_mounted_file("/schema.json", introspection_json)
-                .with_exec(
-                    [
-                        "uv",
-                        "run",
-                        "python",
-                        "-m",
-                        "codegen",
-                        "generate",
-                        "-i",
-                        "/schema.json",
-                        "-o",
-                        "gen.py",
-                    ]
-                )
-                .file("gen.py")
-            ),
+        path = "/src/sdk/python/src/dagger/client/gen.py"
+        src = self.container.directory(".")
+        return (
+            self.container.with_mounted_file("/schema.json", introspection_json)
+            .with_exec(
+                [
+                    "uv",
+                    "run",
+                    "python",
+                    "-m",
+                    "codegen",
+                    "generate",
+                    "-i",
+                    "/schema.json",
+                    "-o",
+                    path,
+                ]
+            )
+            .changes(src)
         )
         # Ensure it's in a clean directory to avoid pulling in caches or
         # uv.lock file updates.
-        return dag.directory().with_file(path, self.format(paths=(path,)).file(path))
+        return (
+            dag.directory()
+            .with_file(path, self.format(paths=(path,)).file(path))
+            .changes(dag.directory())
+        )
 
     @function
     async def typecheck(self) -> str:
