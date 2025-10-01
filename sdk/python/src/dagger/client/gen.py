@@ -13,157 +13,188 @@ from dagger.client.base import Enum, Input, Root, Scalar, Type
 
 class AddressID(Scalar):
     """The `AddressID` scalar type represents an identifier for an object
-    of type Address."""
+    of type Address.
+    """
 
 
 class BindingID(Scalar):
     """The `BindingID` scalar type represents an identifier for an object
-    of type Binding."""
+    of type Binding.
+    """
 
 
 class CacheVolumeID(Scalar):
     """The `CacheVolumeID` scalar type represents an identifier for an
-    object of type CacheVolume."""
+    object of type CacheVolume.
+    """
 
 
 class ChangesetID(Scalar):
     """The `ChangesetID` scalar type represents an identifier for an
-    object of type Changeset."""
+    object of type Changeset.
+    """
 
 
 class CloudID(Scalar):
     """The `CloudID` scalar type represents an identifier for an object of
-    type Cloud."""
+    type Cloud.
+    """
 
 
 class ContainerID(Scalar):
     """The `ContainerID` scalar type represents an identifier for an
-    object of type Container."""
+    object of type Container.
+    """
 
 
 class CurrentModuleID(Scalar):
     """The `CurrentModuleID` scalar type represents an identifier for an
-    object of type CurrentModule."""
+    object of type CurrentModule.
+    """
 
 
 class DirectoryID(Scalar):
     """The `DirectoryID` scalar type represents an identifier for an
-    object of type Directory."""
+    object of type Directory.
+    """
 
 
 class EngineCacheEntryID(Scalar):
     """The `EngineCacheEntryID` scalar type represents an identifier for
-    an object of type EngineCacheEntry."""
+    an object of type EngineCacheEntry.
+    """
 
 
 class EngineCacheEntrySetID(Scalar):
     """The `EngineCacheEntrySetID` scalar type represents an identifier
-    for an object of type EngineCacheEntrySet."""
+    for an object of type EngineCacheEntrySet.
+    """
 
 
 class EngineCacheID(Scalar):
     """The `EngineCacheID` scalar type represents an identifier for an
-    object of type EngineCache."""
+    object of type EngineCache.
+    """
 
 
 class EngineID(Scalar):
     """The `EngineID` scalar type represents an identifier for an object
-    of type Engine."""
+    of type Engine.
+    """
 
 
 class EnumTypeDefID(Scalar):
     """The `EnumTypeDefID` scalar type represents an identifier for an
-    object of type EnumTypeDef."""
+    object of type EnumTypeDef.
+    """
 
 
 class EnumValueTypeDefID(Scalar):
     """The `EnumValueTypeDefID` scalar type represents an identifier for
-    an object of type EnumValueTypeDef."""
+    an object of type EnumValueTypeDef.
+    """
 
 
 class EnvFileID(Scalar):
     """The `EnvFileID` scalar type represents an identifier for an object
-    of type EnvFile."""
+    of type EnvFile.
+    """
 
 
 class EnvID(Scalar):
     """The `EnvID` scalar type represents an identifier for an object of
-    type Env."""
+    type Env.
+    """
 
 
 class EnvVariableID(Scalar):
     """The `EnvVariableID` scalar type represents an identifier for an
-    object of type EnvVariable."""
+    object of type EnvVariable.
+    """
 
 
 class ErrorID(Scalar):
     """The `ErrorID` scalar type represents an identifier for an object of
-    type Error."""
+    type Error.
+    """
 
 
 class ErrorValueID(Scalar):
     """The `ErrorValueID` scalar type represents an identifier for an
-    object of type ErrorValue."""
+    object of type ErrorValue.
+    """
 
 
 class FieldTypeDefID(Scalar):
     """The `FieldTypeDefID` scalar type represents an identifier for an
-    object of type FieldTypeDef."""
+    object of type FieldTypeDef.
+    """
 
 
 class FileID(Scalar):
     """The `FileID` scalar type represents an identifier for an object of
-    type File."""
+    type File.
+    """
 
 
 class FunctionArgID(Scalar):
     """The `FunctionArgID` scalar type represents an identifier for an
-    object of type FunctionArg."""
+    object of type FunctionArg.
+    """
 
 
 class FunctionCallArgValueID(Scalar):
     """The `FunctionCallArgValueID` scalar type represents an identifier
-    for an object of type FunctionCallArgValue."""
+    for an object of type FunctionCallArgValue.
+    """
 
 
 class FunctionCallID(Scalar):
     """The `FunctionCallID` scalar type represents an identifier for an
-    object of type FunctionCall."""
+    object of type FunctionCall.
+    """
 
 
 class FunctionID(Scalar):
     """The `FunctionID` scalar type represents an identifier for an object
-    of type Function."""
+    of type Function.
+    """
 
 
 class GeneratedCodeID(Scalar):
     """The `GeneratedCodeID` scalar type represents an identifier for an
-    object of type GeneratedCode."""
+    object of type GeneratedCode.
+    """
 
 
 class GitRefID(Scalar):
     """The `GitRefID` scalar type represents an identifier for an object
-    of type GitRef."""
+    of type GitRef.
+    """
 
 
 class GitRepositoryID(Scalar):
     """The `GitRepositoryID` scalar type represents an identifier for an
-    object of type GitRepository."""
+    object of type GitRepository.
+    """
 
 
 class HostID(Scalar):
     """The `HostID` scalar type represents an identifier for an object of
-    type Host."""
+    type Host.
+    """
 
 
 class InputTypeDefID(Scalar):
     """The `InputTypeDefID` scalar type represents an identifier for an
-    object of type InputTypeDef."""
+    object of type InputTypeDef.
+    """
 
 
 class InterfaceTypeDefID(Scalar):
     """The `InterfaceTypeDefID` scalar type represents an identifier for
-    an object of type InterfaceTypeDef."""
+    an object of type InterfaceTypeDef.
+    """
 
 
 class JSON(Scalar):
@@ -172,113 +203,135 @@ class JSON(Scalar):
 
 class JSONValueID(Scalar):
     """The `JSONValueID` scalar type represents an identifier for an
-    object of type JSONValue."""
+    object of type JSONValue.
+    """
 
 
 class LLMID(Scalar):
     """The `LLMID` scalar type represents an identifier for an object of
-    type LLM."""
+    type LLM.
+    """
 
 
 class LLMTokenUsageID(Scalar):
     """The `LLMTokenUsageID` scalar type represents an identifier for an
-    object of type LLMTokenUsage."""
+    object of type LLMTokenUsage.
+    """
 
 
 class LabelID(Scalar):
     """The `LabelID` scalar type represents an identifier for an object of
-    type Label."""
+    type Label.
+    """
 
 
 class ListTypeDefID(Scalar):
     """The `ListTypeDefID` scalar type represents an identifier for an
-    object of type ListTypeDef."""
+    object of type ListTypeDef.
+    """
 
 
 class ModuleConfigClientID(Scalar):
     """The `ModuleConfigClientID` scalar type represents an identifier for
-    an object of type ModuleConfigClient."""
+    an object of type ModuleConfigClient.
+    """
 
 
 class ModuleID(Scalar):
     """The `ModuleID` scalar type represents an identifier for an object
-    of type Module."""
+    of type Module.
+    """
 
 
 class ModuleSourceID(Scalar):
     """The `ModuleSourceID` scalar type represents an identifier for an
-    object of type ModuleSource."""
+    object of type ModuleSource.
+    """
 
 
 class ObjectTypeDefID(Scalar):
     """The `ObjectTypeDefID` scalar type represents an identifier for an
-    object of type ObjectTypeDef."""
+    object of type ObjectTypeDef.
+    """
 
 
 class Platform(Scalar):
     """The platform config OS and architecture in a Container.  The format
     is [os]/[platform]/[version] (e.g., "darwin/arm64/v7",
-    "windows/amd64", "linux/arm64")."""
+    "windows/amd64", "linux/arm64").
+    """
 
 
 class PortID(Scalar):
     """The `PortID` scalar type represents an identifier for an object of
-    type Port."""
+    type Port.
+    """
 
 
 class SDKConfigID(Scalar):
     """The `SDKConfigID` scalar type represents an identifier for an
-    object of type SDKConfig."""
+    object of type SDKConfig.
+    """
 
 
 class ScalarTypeDefID(Scalar):
     """The `ScalarTypeDefID` scalar type represents an identifier for an
-    object of type ScalarTypeDef."""
+    object of type ScalarTypeDef.
+    """
 
 
 class SearchResultID(Scalar):
     """The `SearchResultID` scalar type represents an identifier for an
-    object of type SearchResult."""
+    object of type SearchResult.
+    """
 
 
 class SearchSubmatchID(Scalar):
     """The `SearchSubmatchID` scalar type represents an identifier for an
-    object of type SearchSubmatch."""
+    object of type SearchSubmatch.
+    """
 
 
 class SecretID(Scalar):
     """The `SecretID` scalar type represents an identifier for an object
-    of type Secret."""
+    of type Secret.
+    """
 
 
 class ServiceID(Scalar):
     """The `ServiceID` scalar type represents an identifier for an object
-    of type Service."""
+    of type Service.
+    """
 
 
 class SocketID(Scalar):
     """The `SocketID` scalar type represents an identifier for an object
-    of type Socket."""
+    of type Socket.
+    """
 
 
 class SourceMapID(Scalar):
     """The `SourceMapID` scalar type represents an identifier for an
-    object of type SourceMap."""
+    object of type SourceMap.
+    """
 
 
 class TerminalID(Scalar):
     """The `TerminalID` scalar type represents an identifier for an object
-    of type Terminal."""
+    of type Terminal.
+    """
 
 
 class TypeDefID(Scalar):
     """The `TypeDefID` scalar type represents an identifier for an object
-    of type TypeDef."""
+    of type TypeDef.
+    """
 
 
 class Void(Scalar):
     """The absence of a value.  A Null Void is used as a placeholder for
-    resolvers that do not return anything."""
+    resolvers that do not return anything.
+    """
 
 
 class CacheSharingMode(Enum):
@@ -506,7 +559,8 @@ class PortForward(Input):
 class Address(Type):
     """A standardized address to load containers, directories, secrets,
     and other object types. Address format depends on the type, and is
-    validated at type selection."""
+    validated at type selection.
+    """
 
     def container(self) -> "Container":
         """Load a container from the address."""
@@ -904,7 +958,8 @@ class CacheVolume(Type):
 @typecheck
 class Changeset(Type):
     """A comparison between two directories representing changes that can
-    be applied."""
+    be applied.
+    """
 
     async def added_paths(self) -> list[str]:
         """Files and directories that were added in the newer directory.
@@ -1345,7 +1400,7 @@ class Container(Type):
         expected_type: ExistsType | None = None,
         do_not_follow_symlinks: bool | None = False,
     ) -> bool:
-        """check if a file or directory exists
+        """Check if a file or directory exists
 
         Parameters
         ----------
@@ -3457,7 +3512,7 @@ class Directory(Type):
         expected_type: ExistsType | None = None,
         do_not_follow_symlinks: bool | None = False,
     ) -> bool:
-        """check if a file or directory exists
+        """Check if a file or directory exists
 
         Parameters
         ----------
@@ -6079,7 +6134,8 @@ class FieldTypeDef(Type):
     """A definition of a field on a custom object defined in a Module.  A
     field on an object has a static value, as opposed to a function on an
     object whose value is computed by invoking code (and can accept
-    arguments)."""
+    arguments).
+    """
 
     async def description(self) -> str:
         """A doc string for the field, if any.
@@ -6528,7 +6584,8 @@ class File(Type):
 class Function(Type):
     """Function represents a resolver provided by a Module.  A function
     always evaluates against a parent object and is given a set of named
-    arguments."""
+    arguments.
+    """
 
     async def args(self) -> list["FunctionArg"]:
         """Arguments accepted by the function, if any."""
@@ -6698,7 +6755,8 @@ class Function(Type):
 class FunctionArg(Type):
     """An argument accepted by a function.  This is a specification for an
     argument at function definition time, not an argument passed at
-    function call time."""
+    function call time.
+    """
 
     async def default_path(self) -> str:
         """Only applies to arguments of type File or Directory. If the argument
@@ -7305,7 +7363,7 @@ class GitRepository(Type):
         *,
         patterns: list[str] | None = None,
     ) -> list[str]:
-        """branches that match any of the given glob patterns.
+        """Branches that match any of the given glob patterns.
 
         Parameters
         ----------
@@ -7417,7 +7475,7 @@ class GitRepository(Type):
         *,
         patterns: list[str] | None = None,
     ) -> list[str]:
-        """tags that match any of the given glob patterns.
+        """Tags that match any of the given glob patterns.
 
         Parameters
         ----------
@@ -7685,7 +7743,8 @@ class InputTypeDef(Type):
     args. This is currently only used to represent pre-existing usage of
     graphql input types in the core API. It is not used by user modules
     and shouldn't ever be as user module accept input objects via their id
-    rather than graphql input types."""
+    rather than graphql input types.
+    """
 
     async def fields(self) -> list[FieldTypeDef]:
         """Static fields defined on this input object, if any."""
@@ -8090,7 +8149,7 @@ class JSONValue(Type):
 @typecheck
 class LLM(Type):
     def attempt(self, number: int) -> Self:
-        """create a branch in the LLM's history"""
+        """Create a branch in the LLM's history"""
         _args = [
             Arg("number", number),
         ]
@@ -8098,7 +8157,7 @@ class LLM(Type):
         return LLM(_ctx)
 
     def bind_result(self, name: str) -> Binding:
-        """returns the type of the current state"""
+        """Returns the type of the current state"""
         _args = [
             Arg("name", name),
         ]
@@ -8106,7 +8165,7 @@ class LLM(Type):
         return Binding(_ctx)
 
     def env(self) -> Env:
-        """return the LLM's current environment"""
+        """Return the LLM's current environment"""
         _args: list[Arg] = []
         _ctx = self._select("env", _args)
         return Env(_ctx)
@@ -8132,7 +8191,7 @@ class LLM(Type):
         return await _ctx.execute(bool)
 
     async def history(self) -> list[str]:
-        """return the llm message history
+        """Return the llm message history
 
         Returns
         -------
@@ -8153,7 +8212,7 @@ class LLM(Type):
         return await _ctx.execute(list[str])
 
     async def history_json(self) -> JSON:
-        """return the raw llm message history as json
+        """Return the raw llm message history as json
 
         Returns
         -------
@@ -8196,7 +8255,7 @@ class LLM(Type):
         return await _ctx.execute(LLMID)
 
     async def last_reply(self) -> str:
-        """return the last llm reply from the history
+        """Return the last llm reply from the history
 
         Returns
         -------
@@ -8225,7 +8284,7 @@ class LLM(Type):
         return LLM(_ctx)
 
     async def model(self) -> str:
-        """return the model used by the llm
+        """Return the model used by the llm
 
         Returns
         -------
@@ -8246,7 +8305,7 @@ class LLM(Type):
         return await _ctx.execute(str)
 
     async def provider(self) -> str:
-        """return the provider used by the llm
+        """Return the provider used by the llm
 
         Returns
         -------
@@ -8281,7 +8340,7 @@ class LLM(Type):
         return await self._ctx.execute_sync(self, "step", _args)
 
     async def sync(self) -> Self:
-        """synchronize LLM state
+        """Synchronize LLM state
 
         Raises
         ------
@@ -8297,13 +8356,13 @@ class LLM(Type):
         return self.sync().__await__()
 
     def token_usage(self) -> "LLMTokenUsage":
-        """returns the token usage of the current state"""
+        """Returns the token usage of the current state"""
         _args: list[Arg] = []
         _ctx = self._select("tokenUsage", _args)
         return LLMTokenUsage(_ctx)
 
     async def tools(self) -> str:
-        """print documentation for available tools
+        """Print documentation for available tools
 
         Returns
         -------
@@ -8343,7 +8402,7 @@ class LLM(Type):
         return LLM(_ctx)
 
     def with_env(self, env: Env) -> Self:
-        """allow the LLM to interact with an environment via MCP"""
+        """Allow the LLM to interact with an environment via MCP"""
         _args = [
             Arg("env", env),
         ]
@@ -8368,7 +8427,7 @@ class LLM(Type):
         return LLM(_ctx)
 
     def with_model(self, model: str) -> Self:
-        """swap out the llm model
+        """Swap out the llm model
 
         Parameters
         ----------
@@ -8382,7 +8441,7 @@ class LLM(Type):
         return LLM(_ctx)
 
     def with_prompt(self, prompt: str) -> Self:
-        """append a prompt to the llm context
+        """Append a prompt to the llm context
 
         Parameters
         ----------
@@ -8396,7 +8455,7 @@ class LLM(Type):
         return LLM(_ctx)
 
     def with_prompt_file(self, file: File) -> Self:
-        """append the contents of a file to the llm context
+        """Append the contents of a file to the llm context
 
         Parameters
         ----------
@@ -8985,7 +9044,8 @@ class ModuleConfigClient(Type):
 @typecheck
 class ModuleSource(Type):
     """The source needed to load and run a module, along with any metadata
-    about the source such as versions/urls/etc."""
+    about the source such as versions/urls/etc.
+    """
 
     def as_module(self) -> Module:
         """Load the source as a module. If this is a local source, the parent
@@ -9956,7 +10016,7 @@ class Client(Root):
     """The root of the DAG."""
 
     def address(self, value: str) -> Address:
-        """initialize an address to load directories, containers, secrets or
+        """Initialize an address to load directories, containers, secrets or
         other object types.
         """
         _args = [
@@ -11238,7 +11298,8 @@ class SearchSubmatch(Type):
 @typecheck
 class Secret(Type):
     """A reference to a secret value, which can be handled more safely
-    than the value itself."""
+    than the value itself.
+    """
 
     async def id(self) -> SecretID:
         """A unique identifier for this Secret.

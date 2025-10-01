@@ -35,14 +35,6 @@ func New(
 	}
 }
 
-// Bump the engine version used by all SDKs and the Helm chart
-func (r *Releaser) Bump(version string) *dagger.Directory {
-	return dag.Directory().
-		WithDirectory("", r.Dagger.SDK().All().Bump(version)).
-		WithDirectory("", dag.Docs().Bump(version)).
-		WithFile("helm/dagger/Chart.yaml", dag.Helm().SetVersion(version))
-}
-
 type ReleaseReport struct {
 	Ref     string
 	Commit  string
@@ -120,6 +112,10 @@ func (report *ReleaseReport) hasErrors() bool {
 		}
 	}
 	return false
+}
+
+func (r *Releaser) Bump(ctx context.Context, version string) (*dagger.Changeset, error) {
+	return r.Dagger.Bump(version).Sync(ctx)
 }
 
 func (r *Releaser) Publish(
@@ -211,7 +207,7 @@ func (r *Releaser) Publish(
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
 	} else {
-		err = dag.DaggerCli().TestPublish(ctx)
+		err = dag.DaggerCli().CheckReleaseDryRun(ctx)
 		if err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
