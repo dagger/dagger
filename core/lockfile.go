@@ -104,6 +104,9 @@ func LockfileGetGitLsRemote(ctx context.Context, url string) (*gitutil.Remote, e
 		return nil, err
 	}
 	result.Symrefs = symrefs
+	if result.Head == nil && len(result.Refs) == 0 && len(result.Symrefs) == 0 {
+		return nil, nil
+	}
 	return &result, nil
 }
 
