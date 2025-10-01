@@ -4,6 +4,11 @@
   "sdk": {
     "source": "go"
   },
+  "include": [
+    "../../go.mod",
+    "../../go.sum",
+    "../../util/parallel"
+  ],
   "dependencies": [
     {
       "name": "alpine",

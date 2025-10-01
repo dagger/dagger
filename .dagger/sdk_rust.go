@@ -7,21 +7,17 @@ import (
 	"strings"
 
 	"golang.org/x/mod/semver"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/BurntSushi/toml"
 	"github.com/dagger/dagger/.dagger/internal/dagger"
+	"github.com/dagger/dagger/util/parallel"
 )
 
 const (
-	rustGeneratedAPIPath  = "sdk/rust/crates/dagger-sdk/src/gen.rs"
 	rustVersionFilePath   = "sdk/rust/crates/dagger-sdk/src/core/version.rs"
 	rustCargoTomlFilePath = "sdk/rust/Cargo.toml"
 	rustCargoLockFilePath = "sdk/rust/Cargo.lock"
 
-	// https://hub.docker.com/_/rust
-	rustDockerStable = "rust:1.77-bookworm"
-	cargoChefVersion = "0.1.62"
 	cargoEditVersion = "0.13.0"
 )
 
@@ -29,42 +25,34 @@ type RustSDK struct {
 	Dagger *DaggerDev // +private
 }
 
+func (r RustSDK) Name() string {
+	return "rust"
+}
+
 // Lint the Rust SDK
-func (r RustSDK) Lint(ctx context.Context) error {
-	base := r.rustBase(rustDockerStable)
-
-	eg := errgroup.Group{}
-	eg.Go(func() error {
-		_, err := base.
-			WithExec([]string{"cargo", "check", "--all", "--release"}).
-			Sync(ctx)
-		return err
-	})
-
-	eg.Go(func() error {
-		_, err := base.
-			WithExec([]string{"cargo", "fmt", "--check"}).
-			Sync(ctx)
-		return err
-	})
-
-	eg.Go(func() error {
-		before := r.Dagger.Source
-		after, err := r.Generate(ctx)
-		if err != nil {
+// Note: technically this is a code format check, not a lint check
+func (r RustSDK) CheckLint(ctx context.Context) error {
+	ctr := r.DevContainer()
+	return parallel.New().
+		WithJob("check rust format", func(ctx context.Context) error {
+			_, err := ctr.
+				WithExec([]string{"cargo", "fmt", "--check"}).
+				Sync(ctx)
 			return err
-		}
-		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{"sdk/rust"})
-	})
-
-	return eg.Wait()
+		}).
+		WithJob("check rust compilation", func(ctx context.Context) error {
+			_, err := ctr.
+				WithExec([]string{"cargo", "check", "--all", "--release"}).
+				Sync(ctx)
+			return err
+		}).
+		Run(ctx)
 }
 
 // Test the Rust SDK
 func (r RustSDK) Test(ctx context.Context) error {
-	installer := r.Dagger.installer("sdk")
-	_, err := r.rustBase(rustDockerStable).
-		With(installer).
+	_, err := r.DevContainer().
+		With(r.Dagger.devEngineSidecar()).
 		WithExec([]string{"rustc", "--version"}).
 		WithExec([]string{"cargo", "test", "--release", "--all"}).
 		Sync(ctx)
@@ -72,24 +60,29 @@ func (r RustSDK) Test(ctx context.Context) error {
 }
 
 // Regenerate the Rust SDK API
-func (r RustSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	installer := r.Dagger.installer("sdk")
-	introspection := r.Dagger.introspection(installer)
-	generated := r.rustBase(rustDockerStable).
-		WithMountedFile("/introspection.json", introspection).
-		WithExec([]string{"cargo", "run", "-p", "dagger-bootstrap", "generate", "/introspection.json", "--output", fmt.Sprintf("/%s", rustGeneratedAPIPath)}).
+func (r RustSDK) Generate(ctx context.Context) (*dagger.Changeset, error) {
+	genClientPath := "crates/dagger-sdk/src/gen.rs"
+	relLayer := r.DevContainer().
+		WithMountedFile("/introspection.json", r.Dagger.introspectionJSON()).
+		WithExec([]string{"cargo", "run", "-p", "dagger-bootstrap", "generate", "/introspection.json", "--output", genClientPath}).
 		WithExec([]string{"cargo", "fix", "--all", "--allow-no-vcs"}).
 		WithExec([]string{"cargo", "fmt"}).
-		File(strings.TrimPrefix(rustGeneratedAPIPath, "sdk/rust/"))
-
-	return dag.Directory().
-		WithDirectory("sdk/rust", r.Dagger.Source.Directory("sdk/rust")).
-		WithFile(rustGeneratedAPIPath, generated), nil
+		Directory(".").
+		Filter(dagger.DirectoryFilterOpts{
+			Include: []string{genClientPath},
+		})
+	absLayer := dag.Directory().
+		WithDirectory("sdk/rust", relLayer)
+	return absLayer.Changes(dag.Directory()).Sync(ctx)
 }
 
 // Test the publishing process
-func (r RustSDK) TestPublish(ctx context.Context, tag string) error {
-	return r.Publish(ctx, tag, true, nil)
+func (r RustSDK) CheckReleaseDryRun(ctx context.Context) error {
+	branch, err := r.Dagger.CurrentGitBranch(ctx)
+	if err != nil {
+		return err
+	}
+	return r.Publish(ctx, branch, true, nil)
 }
 
 // Publish the Rust SDK
@@ -113,7 +106,7 @@ func (r RustSDK) Publish(
 
 	crate := "dagger-sdk"
 	base := r.
-		rustBase(rustDockerStable).
+		DevContainer().
 		WithExec([]string{
 			"cargo", "install", "cargo-edit@" + cargoEditVersion, "--locked",
 		}).
@@ -181,7 +174,7 @@ func (r RustSDK) Publish(
 }
 
 // Bump the Rust SDK's Engine dependency
-func (r RustSDK) Bump(ctx context.Context, version string) (*dagger.Directory, error) {
+func (r RustSDK) Bump(ctx context.Context, version string) (*dagger.Changeset, error) {
 	versionStr := `pub const DAGGER_ENGINE_VERSION: &'static str = "([0-9\.-a-zA-Z]+)";`
 	versionStrf := `pub const DAGGER_ENGINE_VERSION: &'static str = "%s";`
 	version = strings.TrimPrefix(version, "v")
@@ -202,8 +195,7 @@ func (r RustSDK) Bump(ctx context.Context, version string) (*dagger.Directory, e
 	)
 
 	crate := "dagger-sdk"
-	base := r.
-		rustBase(rustDockerStable).
+	base := r.DevContainer().
 		WithExec([]string{
 			"cargo", "install", "cargo-edit@" + cargoEditVersion, "--locked",
 		}).
@@ -211,12 +203,19 @@ func (r RustSDK) Bump(ctx context.Context, version string) (*dagger.Directory, e
 			"cargo", "set-version", "-p", crate, version,
 		})
 
-	return dag.Directory().WithNewFile(rustVersionFilePath, versionBumpedContents).
+	layer := dag.Directory().WithNewFile(rustVersionFilePath, versionBumpedContents).
 		WithFile(rustCargoTomlFilePath, base.File("Cargo.toml")).
-		WithFile(rustCargoLockFilePath, base.File("Cargo.lock")), nil
+		WithFile(rustCargoLockFilePath, base.File("Cargo.lock"))
+	return layer.Changes(dag.Directory()).Sync(ctx)
 }
 
-func (r RustSDK) rustBase(image string) *dagger.Container {
+// Return a Rust dev container with the dagger source mounted and
+// the workdir set to ./sdk/rust within it
+func (r RustSDK) DevContainer() *dagger.Container {
+	// https://hub.docker.com/_/rust
+	rustImage := "rust:1.77-bookworm"
+	cargoChefVersion := "0.1.62"
+
 	const appDir = "sdk/rust"
 
 	src := dag.Directory().WithDirectory("/", r.Dagger.Source.Directory(appDir))
@@ -224,7 +223,7 @@ func (r RustSDK) rustBase(image string) *dagger.Container {
 	mountPath := fmt.Sprintf("/%s", appDir)
 
 	base := dag.Container().
-		From(image).
+		From(rustImage).
 		WithDirectory(mountPath, src, dagger.ContainerWithDirectoryOpts{
 			Include: []string{
 				"**/Cargo.toml",
@@ -235,7 +234,7 @@ func (r RustSDK) rustBase(image string) *dagger.Container {
 		}).
 		WithWorkdir(mountPath).
 		WithEnvVariable("CARGO_HOME", "/root/.cargo").
-		WithMountedCache("/root/.cargo", dag.CacheVolume("rust-cargo-"+image)).
+		WithMountedCache("/root/.cargo", dag.CacheVolume("rust-cargo-"+rustImage)).
 		// combine into one layer so there's no assumptions on state of cache volume across steps
 		WithExec([]string{"sh", "-c",
 			strings.Join([]string{

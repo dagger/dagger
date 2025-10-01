@@ -6,10 +6,6 @@
   },
   "dependencies": [
     {
-      "name": "dirdiff",
-      "source": "../dirdiff"
-    },
-    {
       "name": "golangci",
       "source": "../golangci"
     },

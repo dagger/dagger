@@ -438,10 +438,49 @@ func (p Go) Lint(
 		eg.Go(func() (rerr error) {
 			ctx, span := Tracer().Start(ctx, "tidy "+path.Clean(pkg))
 			defer telemetry.End(span, func() error { return rerr })
-			beforeTidy := p.Source.Directory(pkg)
-			afterTidy := p.Env(defaultPlatform).WithWorkdir(pkg).WithExec([]string{"go", "mod", "tidy"}).Directory(".")
-			return dag.Dirdiff().AssertEqual(ctx, beforeTidy, afterTidy, []string{"go.mod", "go.sum"})
+			beforeTidy := p.Source.
+				Directory(pkg).
+				Filter(dagger.DirectoryFilterOpts{Include: []string{"go.mod", "go.sum"}})
+			afterTidy := p.Env(defaultPlatform).
+				WithWorkdir(pkg).
+				WithExec([]string{"go", "mod", "tidy"}).
+				Directory(".").
+				Filter(dagger.DirectoryFilterOpts{Include: []string{"go.mod", "go.sum"}})
+			summary, err := changesetSummary(ctx, afterTidy.Changes(beforeTidy))
+			if err != nil {
+				return err
+			}
+			if len(summary) != 0 {
+				return fmt.Errorf("'go mod tidy' must be run.\n%s", strings.Join(summary, "\n"))
+			}
+			return nil
 		})
 	}
 	return eg.Wait()
+}
+
+func changesetSummary(ctx context.Context, cs *dagger.Changeset) ([]string, error) {
+	var summary []string
+	modified, err := cs.ModifiedPaths(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, modifiedPath := range modified {
+		summary = append(summary, "modified:\t"+modifiedPath)
+	}
+	added, err := cs.AddedPaths(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, addedPath := range added {
+		summary = append(summary, "added:\t"+addedPath)
+	}
+	removed, err := cs.RemovedPaths(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, removedPath := range removed {
+		summary = append(summary, "removed:\t"+removedPath)
+	}
+	return summary, nil
 }

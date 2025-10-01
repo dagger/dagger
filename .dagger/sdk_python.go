@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.opentelemetry.io/otel/codes"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/dagger/dagger/.dagger/internal/dagger"
+	"github.com/dagger/dagger/util/parallel"
 )
 
 const (
@@ -21,110 +19,86 @@ type PythonSDK struct {
 	Dagger *DaggerDev // +private
 }
 
-// Lint the Python SDK
-func (t PythonSDK) Lint(ctx context.Context) (rerr error) {
-	eg := errgroup.Group{}
+func (t PythonSDK) Name() string {
+	return "python"
+}
 
-	// TODO: create function in PythonSDKDev to lint any directory as input
-	// but reusing the same linter configuration in the SDK.
-	eg.Go(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "lint Python code in the SDK and docs")
-		defer func() {
-			if rerr != nil {
-				span.SetStatus(codes.Error, rerr.Error())
-			}
-			span.End()
-		}()
-		// Preserve same file hierarchy for docs because of extend rules in .ruff.toml
-		_, err := dag.PythonSDKDev().
-			WithDirectory(
-				dag.Directory().
-					WithDirectory(
-						"",
-						t.Dagger.Source,
-						dagger.DirectoryWithDirectoryOpts{
-							Include: []string{
-								"docs/current_docs/**/*.py",
-								"**/.ruff.toml",
-							},
+// CheckPythonFormat checks the Python code formatting
+func (t PythonSDK) CheckLintPython(ctx context.Context) error {
+	// Preserve same file hierarchy for docs because of extend rules in .ruff.toml
+	_, err := dag.PythonSDKDev().
+		WithDirectory(
+			dag.Directory().
+				WithDirectory(
+					"",
+					t.Dagger.Source,
+					dagger.DirectoryWithDirectoryOpts{
+						Include: []string{
+							"docs/current_docs/**/*.py",
+							"**/.ruff.toml",
 						},
-					),
-			).
-			Lint(ctx, dagger.PythonSDKDevLintOpts{Paths: []string{"../.."}})
+					},
+				),
+		).
+		Lint(ctx, dagger.PythonSDKDevLintOpts{Paths: []string{"../.."}})
+	return err
+}
 
-		return err
-	})
+// CheckGoFormat checks the Go code formatting for the Python runtime
+func (t PythonSDK) CheckLintGo(ctx context.Context) error {
+	return dag.
+		Go(t.Dagger.SourceDeveloped(pythonRuntimeSubdir)).
+		Lint(ctx, dagger.GoLintOpts{Packages: []string{pythonRuntimeSubdir}})
+}
 
-	eg.Go(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "check that the generated client library is up-to-date")
-		defer func() {
-			if rerr != nil {
-				span.SetStatus(codes.Error, rerr.Error())
-			}
-			span.End()
-		}()
-		before := t.Dagger.Source
-		after, err := t.Generate(ctx)
-		if err != nil {
-			return err
-		}
-		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{pythonGeneratedAPIPath})
-	})
-
-	eg.Go(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "lint the python runtime, which is written in Go")
-		defer func() {
-			if rerr != nil {
-				span.SetStatus(codes.Error, rerr.Error())
-			}
-			span.End()
-		}()
-		return dag.
-			Go(t.Dagger.SourceDeveloped(pythonRuntimeSubdir)).
-			Lint(ctx, dagger.GoLintOpts{Packages: []string{pythonRuntimeSubdir}})
-	})
-
-	return eg.Wait()
+// Lint the Python SDK
+func (t PythonSDK) Lint(ctx context.Context) error {
+	return parallel.New().
+		WithJob("lint Python code in the SDK and docs", t.CheckLintPython).
+		WithJob("lint the python runtime, which is written in Go", t.CheckLintGo).
+		Run(ctx)
 }
 
 // Test the Python SDK
 func (t PythonSDK) Test(ctx context.Context) (rerr error) {
-	installer := t.Dagger.installer("sdk")
-	base := dag.PythonSDKDev().Container().With(installer)
+	base := dag.PythonSDKDev().Container().With(t.Dagger.devEngineSidecar())
 	dev := dag.PythonSDKDev(dagger.PythonSDKDevOpts{Container: base})
 
 	versions, err := dag.PythonSDKDev().SupportedVersions(ctx)
 	if err != nil {
 		return err
 	}
-
-	eg := errgroup.Group{}
+	jobs := parallel.New()
 	for _, version := range versions {
-		eg.Go(func() error {
-			_, err := dev.
-				Test(dagger.PythonSDKDevTestOpts{Version: version}).
-				Default().
-				Sync(ctx)
-			return err
-		})
+		jobs = jobs.WithJob(
+			fmt.Sprintf("test with python version %s", version),
+			func(ctx context.Context) error {
+				_, err := dev.
+					Test(dagger.PythonSDKDevTestOpts{Version: version}).
+					Default().
+					Sync(ctx)
+				return err
+			},
+		)
 	}
-
-	return eg.Wait()
+	return jobs.Run(ctx)
 }
 
 // Regenerate the Python SDK API
-func (t PythonSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	installer := t.Dagger.installer("sdk")
-	introspection := t.Dagger.introspection(installer)
-	return dag.Directory().WithDirectory(
-		pythonSubdir,
-		dag.PythonSDKDev().Generate(introspection),
-	), nil
+func (t PythonSDK) Generate(ctx context.Context) (*dagger.Changeset, error) {
+	// FIXME: underlying python-sdk-dev module doesn't support changeset
+	relLayer := dag.PythonSDKDev().Generate(t.Dagger.introspectionJSON())
+	absLayer := dag.Directory().WithDirectory("sdk/python", relLayer)
+	return absLayer.Changes(dag.Directory()).Sync(ctx)
 }
 
 // Test the publishing process
-func (t PythonSDK) TestPublish(ctx context.Context, tag string) error {
-	return t.Publish(ctx, tag, true, "", nil)
+func (t PythonSDK) CheckReleaseDryRun(ctx context.Context) error {
+	branch, err := t.Dagger.CurrentGitBranch(ctx)
+	if err != nil {
+		return err
+	}
+	return t.Publish(ctx, branch, true, "", nil)
 }
 
 // Publish the Python SDK
@@ -163,12 +137,13 @@ func (t PythonSDK) Publish(
 }
 
 // Bump the Python SDK's Engine dependency
-func (t PythonSDK) Bump(ctx context.Context, version string) (*dagger.Directory, error) {
+func (t PythonSDK) Bump(ctx context.Context, version string) (*dagger.Changeset, error) {
 	// trim leading v from version
 	version = strings.TrimPrefix(version, "v")
 	engineReference := fmt.Sprintf("# Code generated by dagger. DO NOT EDIT.\n\nCLI_VERSION = %q\n", version)
 
 	// NOTE: if you change this path, be sure to update .github/workflows/publish.yml so that
 	// provision tests run whenever this file changes.
-	return dag.Directory().WithNewFile("sdk/python/src/dagger/_engine/_version.py", engineReference), nil
+	layer := dag.Directory().WithNewFile("sdk/python/src/dagger/_engine/_version.py", engineReference)
+	return layer.Changes(dag.Directory()).Sync(ctx)
 }

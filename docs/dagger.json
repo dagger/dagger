@@ -10,10 +10,6 @@
       "source": "../cmd/dagger"
     },
     {
-      "name": "dirdiff",
-      "source": "../modules/dirdiff"
-    },
-    {
       "name": "docusaurus",
       "source": "github.com/levlaz/daggerverse/docusaurus@docusaurus/v0.10.0",
       "pin": "929a29a0d03c66dc10c6d4ec7484e7bd897c38fe"
