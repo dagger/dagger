@@ -91,10 +91,7 @@ func init() {
 }
 
 func init() {
-	envFileName = os.Getenv("DAGGER_ENV_FILE")
-	if envFileName == "" {
-		envFileName = ".env"
-	}
+	envFileName = cmp.Or(os.Getenv("DAGGER_ENV_FILE"), ".env")
 }
 
 var (
