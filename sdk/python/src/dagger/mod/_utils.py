@@ -21,7 +21,7 @@ from cattrs.cols import is_sequence
 from graphql.pyutils import snake_to_camel
 
 from dagger.client.base import Type
-from dagger.mod._arguments import DefaultPath, Ignore, Name
+from dagger.mod._arguments import DefaultPath, Deprecated, Ignore, Name
 from dagger.mod._types import ContextPath
 
 asyncify = anyio.to_thread.run_sync
@@ -123,6 +123,13 @@ def get_default_path(obj: Any) -> ContextPath | None:
 def get_alt_name(annotation: type) -> str | None:
     """Get an alternative name in last Name() of an annotated type."""
     return annotated.name if (annotated := get_meta(annotation, Name)) else None
+
+
+def get_deprecated(obj: Any) -> str | None:
+    """Get the deprecation metadata from an annotated type."""
+    if meta := get_meta(obj, Deprecated):
+        return meta.reason
+    return None
 
 
 def is_union(th: TypeHint) -> bool:
