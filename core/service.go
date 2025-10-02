@@ -670,7 +670,6 @@ func (svc *Service) startContainer(
 		}
 
 		return &RunningService{
-			Service:     svc,
 			Host:        fullHost,
 			Ports:       ctr.Ports,
 			Stop:        stopSvc,
@@ -846,9 +845,8 @@ func (svc *Service) startTunnel(ctx context.Context) (running *RunningService, r
 	}
 
 	return &RunningService{
-		Service: svc,
-		Host:    dialHost,
-		Ports:   ports,
+		Host:  dialHost,
+		Ports: ports,
 		Stop: func(_ context.Context, _ bool) error {
 			stop(errors.New("service stop called"))
 			svcs.Detach(svcCtx, upstream)
@@ -953,9 +951,8 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 		}
 
 		return &RunningService{
-			Service: svc,
-			Host:    fullHost,
-			Ports:   checkPorts,
+			Host:  fullHost,
+			Ports: checkPorts,
 			Stop: func(context.Context, bool) (rerr error) {
 				defer telemetry.End(span, func() error { return rerr })
 				stop(errors.New("service stop called"))
