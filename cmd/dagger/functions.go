@@ -733,7 +733,7 @@ func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response a
 			return nil
 		}
 
-		return idtui.SummarizePatch(idtui.NewOutput(&summary), patch, -1)
+		return idtui.SummarizePatch(idtui.NewOutput(&summary), patch, 50)
 	})(); err != nil {
 		return err
 	}
