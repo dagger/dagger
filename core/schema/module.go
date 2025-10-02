@@ -103,6 +103,12 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 	}.Install(dag)
 
 	dagql.Fields[*core.CurrentModule]{
+		dagql.Func("dependencies", s.currentModuleDependencies).
+			Doc(`The dependencies of the module.`),
+
+		dagql.NodeFunc("generatedContextDirectory", s.currentModuleGeneratedContextDirectory).
+			Doc("The generated files and directories made on top of the module source's context directory."),
+
 		dagql.Func("name", s.currentModuleName).
 			Doc(`The name of the module being executed in`),
 
@@ -122,9 +128,6 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve (e.g., "README.md").`),
 			),
-
-		dagql.Func("module", s.currentModuleModule).
-			Doc("The module that current module points to"),
 	}.Install(dag)
 
 	dagql.Fields[*core.Function]{
@@ -710,12 +713,41 @@ func (s *moduleSchema) currentModuleName(
 	return curMod.Module.NameField, nil
 }
 
-func (s *moduleSchema) currentModuleModule(
+func (s *moduleSchema) currentModuleGeneratedContextDirectory(
 	ctx context.Context,
-	curMod *core.CurrentModule,
+	mod dagql.ObjectResult[*core.CurrentModule],
 	args struct{},
-) (inst *core.Module, err error) {
-	return curMod.Module, nil
+) (inst dagql.Result[*core.Directory], err error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	err = dag.Select(ctx, mod.Self().Module.Source.Value, &inst,
+		dagql.Selector{
+			Field: "generatedContextDirectory",
+		},
+	)
+	return inst, err
+}
+
+func (s *moduleSchema) currentModuleDependencies(
+	ctx context.Context,
+	mod *core.CurrentModule,
+	args struct{},
+) (dagql.Array[*core.Module], error) {
+	depMods := make([]*core.Module, 0, len(mod.Module.Deps.Mods))
+	for _, dep := range mod.Module.Deps.Mods {
+		switch dep := dep.(type) {
+		case *core.Module:
+			depMods = append(depMods, dep)
+		case *CoreMod:
+			// skip
+		default:
+			return nil, fmt.Errorf("unexpected mod dependency type %T", dep)
+		}
+	}
+	return depMods, nil
 }
 
 func (s *moduleSchema) currentModuleSource(
