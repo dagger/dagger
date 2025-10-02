@@ -39,9 +39,6 @@ type Services struct {
 
 // RunningService represents a service that is actively running.
 type RunningService struct {
-	// Service is the service that has been started.
-	Service *Service
-
 	// Key is the unique identifier for the service.
 	Key ServiceKey
 
