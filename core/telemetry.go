@@ -271,6 +271,8 @@ func logResult(ctx context.Context, res dagql.AnyResult, self dagql.AnyObjectRes
 	}
 	if str, ok := dagql.UnwrapAs[dagql.String](res); ok {
 		fmt.Fprint(stdio.Stdout, str)
+	} else if _, ok := dagql.UnwrapAs[dagql.IDType](res); ok {
+		// Don't print IDs; they can get quite large
 	} else if lit, ok := dagql.UnwrapAs[call.Literate](res); ok {
 		fmt.Fprint(stdio.Stdout, lit.ToLiteral().Display())
 	}
