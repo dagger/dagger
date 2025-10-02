@@ -28,6 +28,7 @@ from dagger.mod._utils import (
     get_alt_constructor,
     get_alt_name,
     get_default_path,
+    get_deprecated,
     get_doc,
     get_ignore,
     is_nullable,
@@ -148,6 +149,7 @@ class Function(Generic[P, R]):
             doc=get_doc(param.annotation),
             ignore=get_ignore(param.annotation),
             default_path=get_default_path(param.annotation),
+            deprecated=get_deprecated(param.annotation),
             conv=self.converter,
         )
 
