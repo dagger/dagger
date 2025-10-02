@@ -45,6 +45,7 @@ func (es *Evals) Check(
 		"basic",
 		"buildMulti",
 		"buildMultiNoVar",
+		"buildMultiStatic",
 		"workspacePattern",
 		"readImplicitVars",
 		"undoChanges",

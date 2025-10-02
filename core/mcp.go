@@ -1594,7 +1594,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSe
 	}
 
 	if m.staticTools {
-		m.staticMethodCallingTools(srv, objectMethods)
+		m.loadStaticMethodCallingTools(srv, allTools, objectMethods)
 	}
 
 	allTools.Add(LLMTool{
@@ -1701,10 +1701,8 @@ func (m *MCP) readLogsTool(srv *dagql.Server) LLMToolFunc {
 	})
 }
 
-func (m *MCP) staticMethodCallingTools(srv *dagql.Server, objectMethods *LLMToolSet) []LLMTool {
-	var tools []LLMTool
-
-	tools = append(tools, LLMTool{
+func (m *MCP) loadStaticMethodCallingTools(srv *dagql.Server, allTools *LLMToolSet, objectMethods *LLMToolSet) {
+	allTools.Add(LLMTool{
 		Name:        "ListMethods",
 		Description: "List the methods that can be selected.",
 		Schema: map[string]any{
@@ -1717,95 +1715,95 @@ func (m *MCP) staticMethodCallingTools(srv *dagql.Server, objectMethods *LLMTool
 		Call:   m.listMethodsTool(srv, objectMethods),
 	})
 
-	if len(objectMethods.Order) > 0 {
-		tools = append(tools, LLMTool{
-			Name:        "SelectMethods",
-			Description: "Select methods for interacting with the available objects. Never guess - only select methods previously returned by ListMethods.",
-			Schema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"methods": map[string]any{
-						"type": "array",
-						"items": map[string]any{
-							"type":        "string",
-							"description": "The name of the method to select, as seen in ListMethods.",
-						},
-						"description": "The methods to select.",
-					},
-				},
-				"required":             []string{"methods"},
-				"additionalProperties": false,
-			},
-			Strict: true,
-			Call:   m.selectMethodsTool(srv, objectMethods),
-		}, LLMTool{
-			Name:        "CallMethod",
-			Description: "Call a method on an object. Methods must be selected with SelectMethods before calling them. Self represents the object to call the method on, and args specify any additional parameters to pass.",
-			HideSelf:    true,
-			Schema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"method": map[string]any{
+	allTools.Add(LLMTool{
+		Name:        "SelectMethods",
+		Description: "Select methods for interacting with the available objects. Never guess - only select methods previously returned by ListMethods.",
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"methods": map[string]any{
+					"type": "array",
+					"items": map[string]any{
 						"type":        "string",
-						"description": "The name of the method to call.",
+						"description": "The name of the method to select, as seen in ListMethods.",
 					},
-					"self": map[string]any{
-						"type":        []string{"string", "null"},
-						"description": "The object to call the method on. Not specified for top-level methods.",
-					},
-					"args": map[string]any{
-						"type":                 []string{"object", "null"},
-						"description":          "The arguments to pass to the method.",
-						"additionalProperties": true,
-					},
+					"description": "The methods to select.",
 				},
-				"required":             []string{"method", "self", "args"},
-				"additionalProperties": false,
 			},
-			Strict: false,
-			Call:   m.callMethodTool(objectMethods),
-		}, LLMTool{
-			Name: "ChainMethods",
-			Description: `Invoke multiple methods sequentially, passing the result of one method as the receiver of the next
+			"required":             []string{"methods"},
+			"additionalProperties": false,
+		},
+		Strict: true,
+		Call:   m.selectMethodsTool(srv, objectMethods),
+	})
+
+	allTools.Add(LLMTool{
+		Name:        "CallMethod",
+		Description: "Call a method on an object. Methods must be selected with SelectMethods before calling them. Self represents the object to call the method on, and args specify any additional parameters to pass.",
+		HideSelf:    true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"method": map[string]any{
+					"type":        "string",
+					"description": "The name of the method to call.",
+				},
+				"self": map[string]any{
+					"type":        []string{"string", "null"},
+					"description": "The object to call the method on. Not specified for top-level methods.",
+				},
+				"args": map[string]any{
+					"type":                 []string{"object", "null"},
+					"description":          "The arguments to pass to the method.",
+					"additionalProperties": true,
+				},
+			},
+			"required":             []string{"method", "self", "args"},
+			"additionalProperties": false,
+		},
+		Strict: false,
+		Call:   m.callMethodTool(objectMethods),
+	})
+
+	allTools.Add(LLMTool{
+		Name: "ChainMethods",
+		Description: `Invoke multiple methods sequentially, passing the result of one method as the receiver of the next
 
 NOTE: you must select methods before chaining them`,
-			HideSelf: true,
-			Schema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"self": map[string]any{
-						"type":        []string{"string", "null"},
-						"description": "The object to call the method on. Not specified for top-level methods.",
-					},
-					"chain": map[string]any{
-						"type": "array",
-						"items": map[string]any{
-							"type": "object",
-							"properties": map[string]any{
-								"method": map[string]any{
-									"type":        "string",
-									"description": "The name of the method to call.",
-								},
-								"args": map[string]any{
-									"type":                 "object",
-									"description":          "The arguments to pass to the method.",
-									"additionalProperties": true,
-								},
-							},
-							"required": []string{"method", "args"},
-						},
-						"description": "The chain of method calls.",
-					},
+		HideSelf: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"self": map[string]any{
+					"type":        []string{"string", "null"},
+					"description": "The object to call the method on. Not specified for top-level methods.",
 				},
-				"required":             []string{"chain", "self"},
-				"additionalProperties": false,
+				"chain": map[string]any{
+					"type": "array",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"method": map[string]any{
+								"type":        "string",
+								"description": "The name of the method to call.",
+							},
+							"args": map[string]any{
+								"type":                 "object",
+								"description":          "The arguments to pass to the method.",
+								"additionalProperties": true,
+							},
+						},
+						"required": []string{"method", "args"},
+					},
+					"description": "The chain of method calls.",
+				},
 			},
-			Strict: false,
-			Call:   m.chainMethodsTool(srv, objectMethods),
-		})
-	}
-
-	return tools
+			"required":             []string{"chain", "self"},
+			"additionalProperties": false,
+		},
+		Strict: false,
+		Call:   m.chainMethodsTool(srv, objectMethods),
+	})
 }
 
 func (m *MCP) listMethodsTool(srv *dagql.Server, objectMethods *LLMToolSet) LLMToolFunc {
