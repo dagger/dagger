@@ -73,6 +73,27 @@ def test_function_deprecated_metadata():
     assert fn.deprecated == "Use new method instead"
 
 
+def test_function_argument_deprecated_metadata():
+    mod = Module()
+
+    @mod.object_type
+    class Foo:
+        @mod.function
+        def legacy(
+            self,
+            value: Annotated[str, dagger.Deprecated("Use new argument instead")],
+            empty: Annotated[str, dagger.Deprecated()],
+            current: str,
+        ) -> str:
+            return value
+
+    fn = mod.get_object("Foo").functions["legacy"]
+
+    assert fn.parameters["value"].deprecated == "Use new argument instead"
+    assert fn.parameters["empty"].deprecated == ""
+    assert fn.parameters["current"].deprecated is None
+
+
 def test_field_deprecated_metadata():
     mod = Module()
 

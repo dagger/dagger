@@ -222,6 +222,7 @@ class Module:
                         default_value=param.default_value,
                         default_path=param.default_path,
                         ignore=param.ignore,
+                        deprecated=param.deprecated,
                     )
 
                 type_def = (
