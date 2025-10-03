@@ -51,6 +51,7 @@ func (span *Span) Snapshot() SpanSnapshot {
 	span.ChildCount = countChildren(span.ChildSpans, FrontendOpts{})
 	span.Failed_, span.FailedReason_ = span.FailedReason()
 	span.Cached_, span.CachedReason_ = span.CachedReason()
+	span.Skipped_, span.SkippedReason_ = span.SkippedReason()
 	span.Pending_, span.PendingReason_ = span.PendingReason()
 	span.Canceled_, span.CanceledReason_ = span.CanceledReason()
 	snapshot := span.SpanSnapshot
@@ -150,6 +151,8 @@ type SpanSnapshot struct {
 	FailedReason_   []string `json:",omitempty"`
 	Cached_         bool     `json:",omitempty"`
 	CachedReason_   []string `json:",omitempty"`
+	Skipped_        bool     `json:",omitempty"`
+	SkippedReason_  []string `json:",omitempty"`
 	Pending_        bool     `json:",omitempty"`
 	PendingReason_  []string `json:",omitempty"`
 	Canceled_       bool     `json:",omitempty"`
@@ -644,7 +647,25 @@ func (span *Span) CachedReason() (bool, []string) {
 			// buildkit bug caused us to never see the span. or, another parallel
 			// client completed it. in all of those cases, we'll at least consider
 			// it cached so it's not stuck 'pending' forever.
-			track(effect, span.db.CompletedEffects[effect])
+
+			// When a dagop is performed, a multiple-layer-deep style cache hit can
+			// occur. This occurs when a dagop is cached, and it's underlying ops
+			// don't have to be re-evaluated (since it's cached). As a result
+			// no solve request (for the underlying ops) will ever be submitted to
+			// buildkit which means no spans will be triggered. As a result it's not
+			// possible to know if these spans are missing due to a deep cache, or
+			// an upstream op that failed -- as a result we will introduce a notion
+			// of "skipped" ops.
+
+			// TODO: when the buildkit scheduler is completely removed
+			// this notion of skipped ops should be removed.
+
+			if completed, ok := span.db.CompletedEffects[effect]; ok {
+				track(effect, completed)
+			} else {
+				reasons = append(reasons, fmt.Sprintf("%s was skipped", effect))
+				states[false]++
+			}
 		}
 	}
 	if len(states) == 1 && states[true] > 0 {
@@ -653,6 +674,34 @@ func (span *Span) CachedReason() (bool, []string) {
 	}
 	// some effects were not cached
 	return false, reasons
+}
+
+func (span *Span) IsSkipped() bool {
+	cached, _ := span.SkippedReason()
+	return cached
+}
+
+func (span *Span) SkippedReason() (bool, []string) {
+	if span.Final {
+		return span.Skipped_, span.SkippedReason_
+	}
+	reasons := []string{}
+	var skipped bool
+	for _, effect := range span.EffectIDs {
+		// first check for spans we've seen for the effect
+		effectSpans := span.db.EffectSpans[effect]
+		if effectSpans == nil || len(effectSpans.Order) == 0 {
+			// A span was expected, but we never got one -- this could be due to
+			// an upstream failure, or a deep-cache. Either way we don't actually know
+			// if it was Cached or Cancelled, so we will simply say it was Skipped, and
+			// re-evaluate how we deal with this in the future.
+			if _, ok := span.db.CompletedEffects[effect]; !ok {
+				reasons = append(reasons, fmt.Sprintf("%s was skipped", effect))
+				skipped = true
+			}
+		}
+	}
+	return skipped, reasons
 }
 
 func (span *Span) HasParent(parent *Span) bool {

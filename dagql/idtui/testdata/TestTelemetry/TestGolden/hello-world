@@ -18,8 +18,8 @@ Expected stderr:
  
 ✔ parsing command line arguments X.Xs
 
-✔ viztest: Viztest! X.Xs
-▼ .helloWorld: String! X.Xs
+$ viztest: Viztest! X.Xs CACHED
+▼ .helloWorld: String! X.Xs CACHED
 ┃ Hello, world!
 
 

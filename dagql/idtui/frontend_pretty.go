@@ -2237,7 +2237,7 @@ func statusIcon(span *dagui.Span) (string, bool) {
 		return DotHalf, true
 	} else if span.IsCached() {
 		return IconCached, false
-	} else if span.IsCanceled() {
+	} else if span.IsCanceled() || span.IsSkipped() {
 		return IconSkipped, false
 	} else if span.IsFailedOrCausedFailure() {
 		return IconFailure, true
@@ -2291,9 +2291,14 @@ func (fe *frontendPretty) renderStatus(out TermOutput, span *dagui.Span) {
 				out.String("jump ↴").Foreground(color),
 			)
 		}
-	} else if !span.IsRunningOrEffectsRunning() && span.IsCached() {
-		fmt.Fprint(out, out.String(" "))
-		fmt.Fprint(out, out.String("CACHED").Foreground(termenv.ANSIBlue))
+	} else if !span.IsRunningOrEffectsRunning() {
+		if span.IsCached() {
+			fmt.Fprint(out, out.String(" "))
+			fmt.Fprint(out, out.String("CACHED").Foreground(termenv.ANSIBlue))
+		} else if span.IsSkipped() {
+			fmt.Fprint(out, out.String(" "))
+			fmt.Fprint(out, out.String("SKIPPED").Foreground(termenv.ANSIBlue))
+		}
 	}
 }
 
