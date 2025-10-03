@@ -394,8 +394,11 @@ func (w *Workflow) asWorkflow() api.Workflow {
 	jobs := map[string]api.Job{}
 	for _, job := range w.Jobs {
 		steps := []api.JobStep{}
-		steps = append(steps, job.installDaggerSteps()...)
-		steps = append(steps, job.warmEngineStep())
+		// Only append the install step when using a Dev engine
+		if job.DaggerDev != "" {
+			steps = append(steps, job.installDaggerSteps()...)
+			steps = append(steps, job.warmEngineStep())
+		}
 		for _, cmd := range job.SetupCommands {
 			steps = append(steps, api.JobStep{
 				Name:  cmd,
@@ -409,10 +412,6 @@ func (w *Workflow) asWorkflow() api.Workflow {
 		steps = append(steps, job.checkoutStep())
 		callStep := job.callDaggerStep()
 		steps = append(steps, callStep)
-		if job.UploadLogs {
-			steps = append(steps, job.uploadJobOutputStep(callStep, "stderr_file"))
-			steps = append(steps, job.uploadEngineLogsStep()...)
-		}
 		if job.StopEngine {
 			steps = append(steps, job.stopEngineStep())
 		}
