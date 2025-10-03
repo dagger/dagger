@@ -2280,6 +2280,8 @@ type ContainerAsServiceArgs struct {
 	// Skip the init process injected into containers by default so that the
 	// user's process is PID 1
 	NoInit bool `default:"false"`
+
+	Watch bool `default:"false"`
 }
 
 func (container *Container) AsService(ctx context.Context, args ContainerAsServiceArgs) (*Service, error) {
@@ -2309,6 +2311,7 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 	return &Service{
 		Creator:                       trace.SpanContextFromContext(ctx),
 		Container:                     container,
+		Watch:                         args.Watch,
 		Args:                          cmdargs,
 		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
 		InsecureRootCapabilities:      args.InsecureRootCapabilities,
