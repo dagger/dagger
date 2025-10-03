@@ -125,10 +125,12 @@ func DagOpDirectoryWrapper[T dagql.Typed, A DagOpInternalArgsIface](
 		if args.InDagOp() {
 			return fn(ctx, self, args)
 		}
+
 		dir, err := DagOpDirectory(ctx, srv, self.Self(), args, "", fn, opts...)
 		if err != nil {
 			return inst, err
 		}
+
 		return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 	}
 }
@@ -182,7 +184,7 @@ func getSelfDigest(a any) (digest.Digest, []llb.State, error) {
 			deps = append(deps, llb.NewState(op))
 		}
 		return dgst, deps, err
-	case *core.GitRef, *core.Changeset, *core.Query:
+	case *core.GitRef, *core.Changeset, *core.Query, *core.Host:
 		// FIXME: these are weird
 		return "", nil, nil // fallback to using dagop ID
 	default:
