@@ -21,7 +21,7 @@ func (sdk *moduleDefs) ModuleDefs(
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load typedefs object")
 	defer telemetry.End(span, func() error { return rerr })
 
-	dag, err := sdk.mod.dag(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
 	}
