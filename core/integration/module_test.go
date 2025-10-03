@@ -2086,14 +2086,29 @@ func (ModuleSuite) TestCustomSDK(ctx context.Context, t *testctx.T) {
 
 import (
 	"context"
+	"encoding/json"
 
 	"dagger/cool-sdk/internal/dagger"
 )
 
 type CoolSdk struct {}
 
-func (m *CoolSdk) ModuleDefs(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File) (*dagger.Module, error) {
-	return modSource.WithSDK("go").AsModule(), nil
+func (m *CoolSdk) ModuleDefs(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
+	mod := modSource.WithSDK("go").AsModule()
+	modID, err := mod.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	b, err := json.Marshal(modID)
+	if err != nil {
+		return nil, err
+	}
+	return dag.Container().
+		From("alpine").
+		WithNewFile(outputFilePath, string(b)).
+		WithEntrypoint([]string{
+			"sh", "-c", "",
+		}), nil
 }
 
 func (m *CoolSdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.Container {
@@ -2173,6 +2188,7 @@ func (m *Test) Fn() string {
 
 import (
 	"context"
+	"encoding/json"
 
 	"dagger/cool-sdk/internal/dagger"
 )
@@ -2180,12 +2196,25 @@ import (
 type CoolSdk struct {}
 
 
-func (m *CoolSdk) ModuleDefs(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File) (*dagger.Module, error) {
+func (m *CoolSdk) ModuleDefs(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
 	// return hardcoded typedefs; this module will thus only work during init, but that's all we're testing here
-	return dag.Module().WithObject(dag.TypeDef().
+	mod := dag.Module().WithObject(dag.TypeDef().
 		WithObject("Test").
-		WithFunction(dag.Function("CoolFn", dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true)))),
-		nil
+		WithFunction(dag.Function("CoolFn", dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true))))
+	modID, err := mod.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	b, err := json.Marshal(modID)
+	if err != nil {
+		return nil, err
+	}
+	return dag.Container().
+		From("alpine").
+		WithNewFile(outputFilePath, string(b)).
+		WithEntrypoint([]string{
+			"sh", "-c", "",
+		}), nil
 }
 
 func (m *CoolSdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.Container {
