@@ -2958,7 +2958,7 @@ func (r *CurrentModule) MarshalJSON() ([]byte, error) {
 }
 
 // The generated files and directories made on top of the module source's context directory.
-func (r *Module) GeneratedContextDirectory() *Directory {
+func (r *CurrentModule) GeneratedContextDirectory() *Directory {
 	q := r.query.Select("generatedContextDirectory")
 
 	return &Directory{
