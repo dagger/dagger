@@ -179,8 +179,10 @@ func (UserDefaultsSuite) TestSystemVariables(ctx context.Context, t *testctx.T) 
 		WithEnvVariable("SYSTEM_GREETING", "live long and prosper").
 		WithExec([]string{"dagger", "call", "message"}, nestedExec).
 		Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "live long and prosper, world!", output, "output should include the system env variable")
+	// FIXME System env variable lookup is temporarily disabled
+	// see https://github.com/dagger/dagger/pull/11034#discussion_r2401382370
+	require.Error(t, err)
+	require.NotEqual(t, "live long and prosper, world!", output, "output should NOT include the system env variable (feature temporarily disabled)")
 }
 
 func (UserDefaultsSuite) TestRequiredDirectory(ctx context.Context, t *testctx.T) {
