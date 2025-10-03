@@ -87,6 +87,9 @@ type ClientMetadata struct {
 
 	// Modules permitted to access LLM APIs or "all" to bypass restrictions for any loaded module.
 	AllowedLLMModules []string `json:"allowed_llm_modules"`
+
+	// Path to the .env file to load (default: ".env")
+	EnvFileName string `json:"env_file_name"`
 }
 
 type clientMetadataCtxKey struct{}

@@ -369,10 +369,10 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	if err != nil {
 		return fmt.Errorf("failed to create function: %w", err)
 	}
-
+	fn.mergeUserDefaultsTypeDefs(ctx)
 	spec, err := fn.metadata.FieldSpec(ctx, mod)
 	if err != nil {
-		return fmt.Errorf("failed to get field spec: %w", err)
+		return fmt.Errorf("failed to get field spec for constructor: %w", err)
 	}
 	spec.Name = gqlFieldName(mod.Name())
 	spec.Module = obj.Module.IDModule()
@@ -459,6 +459,21 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 	}
 }
 
+// objFun creates a dagql.Field for a function defined on a module object type.
+// This is used during the GraphQL schema installation process to convert
+// user-defined functions in module object types into callable GraphQL fields.
+//
+// Flow:
+// 1. Called from ModuleObject.functions() during ModuleObject.Install()
+// 2. Creates a ModFunction wrapper around the user's function definition
+// 3. Generates a GraphQL field spec from the function signature
+// 4. Returns a dagql.Field that can handle GraphQL calls by:
+//   - Converting GraphQL arguments to CallInput format
+//   - Calling the underlying ModFunction with the parent object context
+//   - Returning the function result as a dagql.AnyResult
+//
+// The resulting field enables users to call their custom functions as GraphQL
+// fields on their object types, with proper argument handling and caching.
 func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Function, dag *dagql.Server) (dagql.Field[*ModuleObject], error) {
 	var f dagql.Field[*ModuleObject]
 	modFun, err := NewModFunction(
@@ -470,6 +485,11 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 	)
 	if err != nil {
 		return f, fmt.Errorf("failed to create function %q: %w", fun.Name, err)
+	}
+	// Apply local user defaults to the function's arguments, so that they show
+	// up in installed typedefs (for introspection)
+	if err := modFun.mergeUserDefaultsTypeDefs(ctx); err != nil {
+		return f, fmt.Errorf("failed to merge user defaults for %q: %w", fun.Name, err)
 	}
 	spec, err := fun.FieldSpec(ctx, mod)
 	if err != nil {

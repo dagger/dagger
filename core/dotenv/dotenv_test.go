@@ -45,6 +45,15 @@ func TestAllExpansion(t *testing.T) {
 			},
 		},
 		{
+			name: "cycle detection",
+			environ: []string{
+				"A=$B",
+				"B=$C",
+				"C=$A",
+			},
+			wantError: true,
+		},
+		{
 			name: "unquoted multiple words collapse to one",
 			environ: []string{
 				"FOO=a b c",
@@ -81,12 +90,15 @@ func TestAllExpansion(t *testing.T) {
 			wantError: true,
 		},
 		{
-			name: "order matters",
+			name: "order doesn't matter",
 			environ: []string{
 				"BAZ=$FOO-baz",
 				"FOO=bar",
 			},
-			wantError: true,
+			want: map[string]string{
+				"FOO": "bar",
+				"BAZ": "bar-baz",
+			},
 		},
 		{
 			name: "expansion with default value",
@@ -197,14 +209,12 @@ func TestAllExpansion(t *testing.T) {
 			},
 		},
 		{
-			name: "self reference",
+			name: "can't self reference",
 			environ: []string{
 				"FOO=bar",
 				"FOO=$FOO-suffix",
 			},
-			want: map[string]string{
-				"FOO": "bar-suffix",
-			},
+			wantError: true,
 		},
 		{
 			name: "braced variable expansion",
@@ -241,7 +251,7 @@ func TestAllExpansion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := All(tt.environ)
+			got, err := All(tt.environ, nil)
 			if tt.wantError {
 				require.Error(t, err, tt.name)
 			} else {
@@ -257,7 +267,7 @@ func TestLookup(t *testing.T) {
 		"FOO=bar",
 		"BAZ=$FOO-baz",
 	}
-	val, ok, err := Lookup(environ, "BAZ")
+	val, ok, err := Lookup(environ, "BAZ", nil)
 	require.NoError(t, err)
 	require.True(t, ok, "Lookup should find BAZ")
 	require.Equal(t, "bar-baz", val)

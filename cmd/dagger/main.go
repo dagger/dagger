@@ -56,6 +56,7 @@ var (
 
 	workdir string
 
+	envFileName              string
 	silent                   bool
 	verbose                  int
 	quiet, _                 = strconv.Atoi(os.Getenv("DAGGER_QUIET"))
@@ -87,6 +88,10 @@ func init() {
 	if progress == "" {
 		progress = "auto"
 	}
+}
+
+func init() {
+	envFileName = cmp.Or(os.Getenv("DAGGER_ENV_FILE"), ".env")
 }
 
 var (
@@ -341,6 +346,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	// all those functions will run in a remote cloud engine which gets created at execution time
 	flags.BoolVar(&useCloudEngine, "cloud", useCloudEngine, "Run in a Dagger Cloud Engine")
 	flags.Lookup("cloud").Hidden = true
+	flags.StringVar(&envFileName, "env-file", envFileName, "Filename of environment file to load")
 
 	for _, fl := range []string{
 		"workdir",

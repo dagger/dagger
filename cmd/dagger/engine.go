@@ -125,6 +125,9 @@ func withEngine(
 			params.PromptHandler = Frontend
 		}
 
+		slog.Info(fmt.Sprintf("CLI: passing --env-file=%q to client params", envFileName))
+		params.EnvFileName = envFileName
+
 		// Connect to and run with the engine
 		sess, ctx, err := client.Connect(ctx, params)
 		if err != nil {
@@ -164,6 +167,9 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
 
 	// Set up global slog to log to the primary span output.
 	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
+
+	// Set the root span as the target for "global logs"
+	ctx = telemetry.ContextWithGlobalLogsSpan(ctx)
 
 	// Set the span as the primary span for the frontend.
 	Frontend.SetPrimary(dagui.SpanID{SpanID: span.SpanContext().SpanID()})

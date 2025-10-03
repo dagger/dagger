@@ -8626,6 +8626,15 @@ func (r *Module) Interfaces(ctx context.Context) ([]TypeDef, error) {
 	return convert(response), nil
 }
 
+// User-defined defaults values, loaded from local .env files.
+func (r *Module) LocalDefaults() *EnvFile {
+	q := r.query.Select("localDefaults")
+
+	return &EnvFile{
+		query: q,
+	}
+}
+
 // The name of the module
 func (r *Module) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
@@ -9180,6 +9189,15 @@ func (r *ModuleSource) LocalContextDirectoryPath(ctx context.Context) (string, e
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// User-defined defaults read from local .env files
+func (r *ModuleSource) LocalDefaults() *EnvFile {
+	q := r.query.Select("localDefaults")
+
+	return &EnvFile{
+		query: q,
+	}
 }
 
 // The name of the module, including any setting via the withName API.
