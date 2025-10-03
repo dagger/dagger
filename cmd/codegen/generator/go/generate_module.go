@@ -84,8 +84,8 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 
 	if len(initialGoFiles) == 0 {
 		// write an initial main.go if no main pkg exists yet
-		dependencies := extractDependenciesFromSchema(schema)
-		moduleSource := generateModuleSource(schema, pkgInfo, moduleConfig.ModuleName, dependencies)
+		dependencies := schema.ExtractDependencies()
+		moduleSource := generateModuleSource(pkgInfo, moduleConfig.ModuleName, dependencies)
 		if err := mfs.WriteFile(StarterTemplateFile, []byte(moduleSource), 0600); err != nil {
 			return nil, err
 		}
@@ -256,43 +256,25 @@ func (g *GoGenerator) syncModReplaceAndTidy(mod *modfile.File, genSt *generator.
 }
 
 // dependencyModule represents a dependency module with its name and functions
+// This is an internal struct used during code generation.
 type dependencyModule struct {
 	moduleName string
 	functions  []*introspection.Field
 }
 
-// extractDependenciesFromSchema extracts all non-core dependencies from the schema
-func extractDependenciesFromSchema(schema *introspection.Schema) []generator.ModuleSourceDependency {
-	if schema == nil {
-		return nil
-	}
-
-	queryType := schema.Query()
-	if queryType == nil {
-		return nil
-	}
-
-	var dependencies []generator.ModuleSourceDependency
-
-	for _, field := range queryType.Fields {
-		// Check if this field returns an object type (indicating it's a module)
-		if field.TypeRef != nil && field.TypeRef.IsObject() {
-			dependencies = append(dependencies, generator.ModuleSourceDependency{
-				Name: field.Name,
-			})
-		}
-	}
-
-	return dependencies
-}
-
 // generateModuleSource generates the initial main.go source for a new module.
 // If the module has dependencies, it generates passthrough functions for them.
 // Otherwise, it generates the default starter functions (containerEcho and grepDir).
-func generateModuleSource(schema *introspection.Schema, pkgInfo *PackageInfo, moduleName string, dependencies []generator.ModuleSourceDependency) string {
+func generateModuleSource(pkgInfo *PackageInfo, moduleName string, dependencies []*introspection.DependencyModule) string {
 	if len(dependencies) > 0 {
-		// Generate passthrough functions for dependencies
-		depModules := extractDependencyModulesFromSchema(schema, dependencies)
+		// Convert DependencyModule to internal dependencyModule format
+		var depModules []dependencyModule
+		for _, dep := range dependencies {
+			depModules = append(depModules, dependencyModule{
+				moduleName: dep.Name,
+				functions:  dep.Functions,
+			})
+		}
 		if len(depModules) > 0 {
 			return generatePassthroughModuleSource(pkgInfo, moduleName, depModules)
 		}
@@ -300,71 +282,6 @@ func generateModuleSource(schema *introspection.Schema, pkgInfo *PackageInfo, mo
 
 	// No dependencies, generate default starter module
 	return baseModuleSource(pkgInfo, moduleName)
-}
-
-// extractDependencyModulesFromSchema extracts dependency modules from the schema
-// matching the provided dependency list.
-func extractDependencyModulesFromSchema(schema *introspection.Schema, dependencies []generator.ModuleSourceDependency) []dependencyModule {
-	if schema == nil || len(dependencies) == 0 {
-		return nil
-	}
-
-	queryType := schema.Query()
-	if queryType == nil {
-		return nil
-	}
-
-	// Create a map of dependency names for quick lookup
-	depNames := make(map[string]bool)
-	for _, dep := range dependencies {
-		depNames[dep.Name] = true
-	}
-
-	var depModules []dependencyModule
-
-	for _, field := range queryType.Fields {
-		// Check if this field is one of our dependencies
-		if !depNames[field.Name] {
-			continue
-		}
-
-		// If SourceMap Filename is not empty, it's a dependency module and not a core type
-		if field.TypeRef != nil &&
-			field.TypeRef.IsObject() &&
-			field.Directives.SourceMap() != nil &&
-			field.Directives.SourceMap().Filename != "" {
-			// Get the actual type name
-			typeName := getTypeName(field.TypeRef)
-			if typeName != "" {
-				// This is a dependency module, get all of its functions
-				depType := schema.Types.Get(typeName)
-				if depType != nil {
-					depModules = append(depModules, dependencyModule{
-						moduleName: field.Name,
-						functions:  depType.Fields,
-					})
-				}
-			}
-		}
-	}
-
-	return depModules
-}
-
-// getTypeName extracts the type name from a TypeRef, unwrapping NON_NULL and LIST
-func getTypeName(typeRef *introspection.TypeRef) string {
-	if typeRef == nil {
-		return ""
-	}
-
-	switch typeRef.Kind {
-	case introspection.TypeKindObject, introspection.TypeKindScalar, introspection.TypeKindEnum:
-		return typeRef.Name
-	case introspection.TypeKindNonNull, introspection.TypeKindList:
-		return getTypeName(typeRef.OfType)
-	default:
-		return ""
-	}
 }
 
 // generatePassthroughModuleSource generates a module with passthrough functions
