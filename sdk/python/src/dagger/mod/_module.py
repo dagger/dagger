@@ -114,9 +114,10 @@ class Module:
         """Register the module and its types with the Dagger API."""
         try:
             result = await self._typedefs()
+            output = json.dumps(result)
         except TypeError as e:
             raise RegistrationError(str(e), e) from e
-        await anyio.Path(TYPE_DEF_FILE).write_text(result)
+        await anyio.Path(TYPE_DEF_FILE).write_text(output)
 
     async def _typedefs(self) -> dagger.ModuleID:  # noqa: C901, PLR0912
         if not self._main_name:

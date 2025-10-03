@@ -26,7 +26,7 @@ export async function entrypoint(files: string[]) {
           process.env.TYPEDEF_OUTPUT_FILE ?? "/module-id.json"
         const moduleID = await new Register(scanResult).run()
 
-        await fs.promises.writeFile(outputFilePath, moduleID)
+        await fs.promises.writeFile(outputFilePath, JSON.stringify(moduleID))
 
         return
       }

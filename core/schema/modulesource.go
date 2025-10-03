@@ -2369,7 +2369,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 	typeDefsImpl, typeDefsEnabled := src.Self().SDKImpl.AsModuleDefs()
 	if typeDefsEnabled {
 		var resultInst dagql.ObjectResult[*core.Module]
-		resultInst, err = typeDefsImpl.ModuleDefs(ctx, mod.Deps, srcInstContentHashed)
+		resultInst, err = typeDefsImpl.ModuleDefs(ctx, mod.Deps, srcInstContentHashed, mod.ResultID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize module: %w", err)
 		}
