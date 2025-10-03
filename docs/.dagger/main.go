@@ -17,6 +17,19 @@ import (
 
 func New(
 	// +defaultPath="/"
+	// +ignore=[
+	// "bin",
+	// ".git",
+	// "**/node_modules",
+	// "**/.venv",
+	// "**/__pycache__",
+	// "docs/node_modules",
+	// "sdk/typescript/node_modules",
+	// "sdk/typescript/dist",
+	// "sdk/rust/examples/backend/target",
+	// "sdk/rust/target",
+	// "sdk/php/vendor"
+	// ]
 	source *dagger.Directory,
 	// +defaultPath="nginx.conf"
 	nginxConfig *dagger.File,
