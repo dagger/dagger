@@ -81,20 +81,27 @@ func (d *daggerCloudDriver) Provision(ctx context.Context, _ *url.URL, opts *Dri
 		return nil, errors.New("please run `dagger login <org>` first or configure a DAGGER_CLOUD_TOKEN")
 	}
 
-	return d.create(ctx, client)
-}
+	var (
+		module, function string
+		execCmd          []string
+	)
+	if opts != nil {
+		module = opts.Module
+		function = opts.Function
+		execCmd = opts.ExecCmd
+	}
 
-func (d *daggerCloudDriver) ImageLoader(ctx context.Context) imageload.Backend {
-	return nil
-}
-
-func (d *daggerCloudDriver) create(ctx context.Context, client *cloud.Client) (*daggerCloudConnector, error) {
-	engineSpec, err := client.Engine(ctx)
+	engineSpec, err := client.Engine(ctx, cloud.EngineRequest{Module: module, Function: function, ExecCmd: execCmd})
 	if err != nil {
 		if errors.Is(err, cloud.ErrNoOrg) {
 			return nil, errors.New("please associate this Engine with an org by running `dagger login <org>")
 		}
 		return nil, err
 	}
+
 	return &daggerCloudConnector{EngineSpec: *engineSpec}, nil
+}
+
+func (d *daggerCloudDriver) ImageLoader(ctx context.Context) imageload.Backend {
+	return nil
 }

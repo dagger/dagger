@@ -46,7 +46,7 @@ var shellCmd = &cobra.Command{
 	Short: "Run an interactive dagger shell",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cmd.SetContext(idtui.WithPrintTraceLink(cmd.Context(), true))
-		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
+		return withEngine(cmd.Context(), initModuleParams(args), func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
 			handler := &shellCallHandler{
 				dag:      dag,

@@ -56,7 +56,7 @@ available functions.
 	),
 	GroupID: moduleGroup.ID,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (rerr error) {
+		return withEngine(cmd.Context(), initModuleParams(args), func(ctx context.Context, engineClient *client.Client) (rerr error) {
 			mod, err := initializeDefaultModule(ctx, engineClient.Dagger())
 			if err != nil {
 				return err
