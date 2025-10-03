@@ -172,7 +172,7 @@ type Field struct {
 	TypeRef           *TypeRef    `json:"type"`
 	Args              InputValues `json:"args"`
 	IsDeprecated      bool        `json:"isDeprecated"`
-	DeprecationReason string      `json:"deprecationReason"`
+	DeprecationReason *string     `json:"deprecationReason"`
 	Directives        Directives  `json:"directives"`
 
 	ParentObject *Type `json:"-"`
@@ -275,11 +275,13 @@ func (i InputValues) HasOptionals() bool {
 }
 
 type InputValue struct {
-	Name         string     `json:"name"`
-	Description  string     `json:"description"`
-	DefaultValue *string    `json:"defaultValue"`
-	TypeRef      *TypeRef   `json:"type"`
-	Directives   Directives `json:"directives"`
+	Name              string     `json:"name"`
+	Description       string     `json:"description"`
+	DefaultValue      *string    `json:"defaultValue"`
+	TypeRef           *TypeRef   `json:"type"`
+	Directives        Directives `json:"directives"`
+	IsDeprecated      bool       `json:"isDeprecated"`
+	DeprecationReason *string    `json:"deprecationReason"`
 }
 
 func (v InputValue) IsOptional() bool {
@@ -308,7 +310,7 @@ type EnumValue struct {
 	Name              string     `json:"name"`
 	Description       string     `json:"description"`
 	IsDeprecated      bool       `json:"isDeprecated"`
-	DeprecationReason string     `json:"deprecationReason"`
+	DeprecationReason *string    `json:"deprecationReason"`
 	Directives        Directives `json:"directives"`
 }
 

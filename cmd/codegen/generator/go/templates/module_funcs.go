@@ -28,8 +28,20 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 	if err != nil {
 		return nil, fmt.Errorf("failed to find decl for method %s: %w", fn.Name(), err)
 	}
-	spec.doc = funcDecl.Doc.Text()
 	spec.sourceMap = ps.sourceMap(funcDecl)
+
+	if doc := funcDecl.Doc; doc != nil {
+		docPragmas, docComment := parsePragmaComment(doc.Text())
+		comment := strings.TrimSpace(docComment)
+		if raw, ok := docPragmas["deprecated"]; ok {
+			reason := ""
+			if str, _ := raw.(string); str != "" {
+				reason = str
+			}
+			spec.deprecated = &reason
+		}
+		spec.doc = comment
+	}
 
 	sig, ok := fn.Type().(*types.Signature)
 	if !ok {
@@ -87,6 +99,8 @@ type funcTypeSpec struct {
 
 	argSpecs []paramSpec
 
+	deprecated *string
+
 	returnSpec   ParsedType // nil if void return
 	returnsError bool
 
@@ -114,6 +128,12 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 	}
 	if spec.sourceMap != nil {
 		fnTypeDefCode = dotLine(fnTypeDefCode, "WithSourceMap").Call(spec.sourceMap.TypeDefCode())
+	}
+	if spec.deprecated != nil {
+		withDeprecatedOpts := Id("dagger").Dot("FunctionWithDeprecatedOpts").Values(
+			Id("Deprecated").Op(":").Lit(strings.TrimSpace(*spec.deprecated)),
+		)
+		fnTypeDefCode = dotLine(fnTypeDefCode, "WithDeprecated").Call(withDeprecatedOpts)
 	}
 
 	for _, argSpec := range spec.argSpecs {
@@ -161,6 +181,10 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 
 		if argSpec.defaultPath != "" {
 			argOptsCode = append(argOptsCode, Id("DefaultPath").Op(":").Lit(argSpec.defaultPath))
+		}
+
+		if argSpec.deprecated != nil {
+			argOptsCode = append(argOptsCode, Id("Deprecated").Op(":").Lit(strings.TrimSpace(*argSpec.deprecated)))
 		}
 
 		if len(argSpec.ignore) > 0 {
@@ -320,6 +344,14 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 		}
 		optional = true // If defaultPath is set, the argument becomes optional
 	}
+	var deprecated *string
+	if v, ok := pragmas["deprecated"]; ok {
+		reason := ""
+		if str, _ := v.(string); str != "" {
+			reason = str
+		}
+		deprecated = &reason
+	}
 
 	ignore := []string{}
 	if v, ok := pragmas["ignore"]; ok {
@@ -362,6 +394,7 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, d
 		hasDefaultValue: hasDefaultValue,
 		description:     comment,
 		defaultPath:     defaultPath,
+		deprecated:      deprecated,
 		ignore:          ignore,
 	}, nil
 }
@@ -379,6 +412,8 @@ type paramSpec struct {
 	// Set a default value for the argument. Value must be a json-encoded literal value
 	defaultValue    any
 	hasDefaultValue bool
+
+	deprecated *string
 
 	// paramType is the full type declared in the function signature, which may
 	// include pointer types, etc
