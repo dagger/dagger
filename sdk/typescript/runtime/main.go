@@ -31,7 +31,6 @@ const (
 	schemaPath             = "/schema.json"
 	dependenciesConfigPath = "/dependencies.json"
 	codegenBinPath         = "/codegen"
-	moduleIDPath           = "/module-id.json"
 )
 
 // ModuleRuntime implements the `ModuleRuntime` method from the SDK module interface.
@@ -66,7 +65,8 @@ func (t *TypescriptSdk) ModuleDefs(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
-) (*dagger.Module, error) {
+	outputFilePath string,
+) (*dagger.Container, error) {
 	cfg, err := analyzeModuleConfig(ctx, modSource)
 	if err != nil {
 		return nil, fmt.Errorf("failed to analyze module config: %w", err)
@@ -83,22 +83,14 @@ func (t *TypescriptSdk) ModuleDefs(
 		return nil, err
 	}
 
-	modID, err := runtime.
-		Container().
-		WithMountedFile(runtime.cfg.entrypointPath(), entrypointFile()).
-		WithEnvVariable("REGISTER_TYPEDEF", "true").
-		WithEnvVariable("TYPEDEF_OUTPUT_FILE", moduleIDPath).
-		WithEnvVariable("MODULE_NAME", runtime.cfg.name).
-		WithExec(runtime.runtimeCmd(), dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		}).
-		File(moduleIDPath).
-		Contents(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get module ID: %w", err)
-	}
-
-	return dag.LoadModuleFromID(dagger.ModuleID(modID)), nil
+	return runtime.
+			Container().
+			WithMountedFile(runtime.cfg.entrypointPath(), entrypointFile()).
+			WithEnvVariable("REGISTER_TYPEDEF", "true").
+			WithEnvVariable("TYPEDEF_OUTPUT_FILE", outputFilePath).
+			WithEnvVariable("MODULE_NAME", runtime.cfg.name).
+			WithEntrypoint(runtime.runtimeCmd()),
+		nil
 }
 
 // Codegen implements the `Codegen` method from the SDK module interface.

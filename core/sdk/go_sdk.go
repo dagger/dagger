@@ -10,9 +10,11 @@ import (
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/mitchellh/mapstructure"
 )
 
@@ -226,6 +228,7 @@ func (sdk *goSDK) ModuleDefs(
 	ctx context.Context,
 	deps *core.ModDeps,
 	src dagql.ObjectResult[*core.ModuleSource],
+	currentModuleID *call.ID,
 ) (inst dagql.ObjectResult[*core.Module], rerr error) {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -244,6 +247,17 @@ func (sdk *goSDK) ModuleDefs(
 	srcSubpath := src.Self().SourceSubpath
 
 	ctr, err = sdk.base(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	execMD := buildkit.ExecutionMetadata{
+		ClientID: identity.NewID(),
+		CallID:   dagql.CurrentID(ctx),
+		ExecID:   identity.NewID(),
+		Internal: true,
+	}
+	execMD.EncodedModuleID, err = currentModuleID.Encode()
 	if err != nil {
 		return inst, err
 	}
@@ -320,6 +334,10 @@ func (sdk *goSDK) ModuleDefs(
 				{
 					Name:  "experimentalPrivilegedNesting",
 					Value: dagql.Boolean(true),
+				},
+				{
+					Name:  "execMD",
+					Value: dagql.NewSerializedString(&execMD),
 				},
 			},
 		},
