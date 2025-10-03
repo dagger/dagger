@@ -192,12 +192,19 @@ func (e *DaggerEngine) Service(
 
 // Generate any engine-related files
 // Note: this is codegen of the 'go generate' variety, not 'dagger develop'
-func (e *DaggerEngine) Generate() *dagger.Directory {
-	generated := dag.Go(e.Source.WithoutDirectory("sdk")).Env()
-	original := generated.Directory(".")
-
-	// protobuf dependencies
-	generated = generated.
+func (e *DaggerEngine) Generate(
+	ctx context.Context,
+	// In check mode, return an error if generated files were not already up-to-date
+	// Use this in CI or other post-commit check.
+	// TLDR: fail if the diff isn't empty
+	// +optional
+	check bool,
+) (*dagger.Changeset, error) {
+	// FIXME: do we still need to remove ./sdk?
+	// Not sure if it's a stopgap for absence of Changeset, or actually
+	// part of the logic (ie. 'go generate' will fail if run against SDKs)
+	src := e.Source.WithoutDirectory("sdk")
+	changes := dag.Go(src).Env().
 		WithExec([]string{"go", "install", "google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2"}).
 		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogo@v1.3.2"}).
 		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2"}).
@@ -205,23 +212,27 @@ func (e *DaggerEngine) Generate() *dagger.Directory {
 		WithExec([]string{"go", "install", "google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.4.0"}).
 		WithMountedDirectory("./github.com/gogo/googleapis", dag.Git("https://github.com/gogo/googleapis.git").Tag("v1.4.1").Tree()).
 		WithMountedDirectory("./github.com/gogo/protobuf", dag.Git("https://github.com/gogo/protobuf.git").Tag("v1.3.2").Tree()).
-		WithMountedDirectory("./github.com/tonistiigi/fsutil", dag.Git("https://github.com/tonistiigi/fsutil.git").Commit("069baf6a66f5c63a82fb679ff2319ed2ee970fbd").Tree())
-
-	generated = generated.
+		WithMountedDirectory("./github.com/tonistiigi/fsutil", dag.Git("https://github.com/tonistiigi/fsutil.git").Commit("069baf6a66f5c63a82fb679ff2319ed2ee970fbd").Tree()).
 		WithExec([]string{"go", "generate", "-v", "./..."}).
-		WithoutMount("./github.com/gogo/googleapis").
-		WithoutMount("./github.com/gogo/protobuf").
-		WithoutMount("./github.com/tonistiigi/fsutil").
-		WithoutDirectory("github.com")
-
-	return original.Diff(generated.Directory("."))
+		Directory(".").
+		Changes(src)
+	if check {
+		diffSize, err := changes.AsPatch().Size(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if diffSize != 0 {
+			return changes, fmt.Errorf("check failed: generated engine files were not up-to-date")
+		}
+	}
+	return changes, nil
 }
 
-// Lint any generated engine-related files
+// DEPRECATED: confusing name
+// +deprecated
 func (e *DaggerEngine) LintGenerate(ctx context.Context) error {
-	before := dag.Go(e.Source.WithoutDirectory("sdk")).Env().Directory(".")
-	after := before.WithDirectory(".", e.Generate())
-	return dag.Dirdiff().AssertEqual(ctx, before, after, []string{"."})
+	_, err := e.Generate(ctx, true)
+	return err
 }
 
 var targets = []struct {

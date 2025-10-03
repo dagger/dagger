@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -218,30 +219,62 @@ func (dev *DaggerDev) Bench() *Bench {
 }
 
 // Run all code generation - SDKs, docs, etc
-func (dev *DaggerDev) Generate(ctx context.Context) (*dagger.Directory, error) {
-	var docs, sdks, engine *dagger.Directory
+func (dev *DaggerDev) Generate(
+	ctx context.Context,
+	// Return an error if generated files were not already up-to-date
+	// Use this in CI, when it's too late to generate but you need to check
+	// that developers remembered to generate before committing
+	// +optional
+	check bool,
+) (*dagger.Changeset, error) {
+	var docs, sdks, engine *dagger.Changeset
 	var eg errgroup.Group
 
+	// 1. Generate docs
 	eg.Go(func() error {
 		var err error
-		docs = dag.Docs().Generate()
-		docs, err = docs.Sync(ctx)
+		docs, err = dag.Docs().Generate(dagger.DocsGenerateOpts{
+			Check: check,
+		}).Sync(ctx)
 		return err
 	})
 
+	// 2. Generate all SDKs
+	// NOTE: those don't return a Changeset yet, so we wrap them
 	eg.Go(func() error {
-		var err error
-		sdks, err = dev.SDK().All().Generate(ctx)
+		// FIXME: this is a stopgap wrapper,
+		// until we can convert each SDK generate() to return Changeset
+		// (not easy because that code is super complex...)
+		sdksLayer, err := dev.SDK().All().Generate(ctx)
 		if err != nil {
 			return err
 		}
-		sdks, err = sdks.Sync(ctx)
-		return err
+		sdksLayer, err = sdksLayer.Sync(ctx)
+		if err != nil {
+			return err
+		}
+		// We received a layer directory: a purely additive changeset, represented as a dir.
+		// To convert to a changeset, we record changes from an empty dir
+		sdks = sdksLayer.Changes(dag.Directory())
+		// FIXME: once SDK generate functions support the "check" argument
+		// we can remove this final check
+		if check {
+			diffSize, err := sdks.AsPatch().Size(ctx)
+			if err != nil {
+				return err
+			}
+			if diffSize != 0 {
+				return fmt.Errorf("generated files are not up-to-date")
+			}
+		}
+		return nil
 	})
 
 	eg.Go(func() error {
 		var err error
-		engine = dag.DaggerEngine().Generate()
+		engine = dag.DaggerEngine().Generate(dagger.DaggerEngineGenerateOpts{
+			Check: check,
+		})
 		engine, err = engine.Sync(ctx)
 		return err
 	})
@@ -249,11 +282,12 @@ func (dev *DaggerDev) Generate(ctx context.Context) (*dagger.Directory, error) {
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
-
-	return dag.Directory().
-		WithDirectory("", docs).
-		WithDirectory("", sdks).
-		WithDirectory("", engine), nil
+	return dev.Source.
+			WithChanges(docs).
+			WithChanges(sdks).
+			WithChanges(engine).
+			Changes(dev.Source),
+		nil
 }
 
 // Develop Dagger SDKs

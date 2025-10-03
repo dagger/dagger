@@ -98,6 +98,12 @@ func New() *CI {
 		withWorkflow(
 			ci.AltRunnerWithCache,
 			false,
+			"Check generated files",
+			"check --targets=generated",
+		).
+		withWorkflow(
+			ci.AltRunnerWithCache,
+			false,
 			"docs",
 			"check --targets=docs",
 		).
