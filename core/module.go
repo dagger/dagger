@@ -83,6 +83,46 @@ func (mod *Module) GetSource() *ModuleSource {
 	return mod.Source.Value.Self()
 }
 
+// The "context source" is the module used as the execution context for the module.
+// Usually it's simply the module source itself. But when using blueprints, it will
+// point to the downstrea, module applying the blueprint, not the blueprint itself.
+func (mod *Module) GetContextSource() *ModuleSource {
+	if !mod.ContextSource.Valid {
+		return nil
+	}
+	return mod.ContextSource.Value.Self()
+}
+
+// Return all local defaults for this module
+func (mod *Module) UserDefaults(ctx context.Context) (*EnvFile, error) {
+	defaults := NewEnvFile(true)
+	src := mod.GetContextSource()
+	if src == nil {
+		return defaults, nil
+	}
+	// Add local defaults from the module source
+	defaults = defaults.WithEnvFiles(src.UserDefaults)
+	// If the module source has a blueprint, also add local defaults from that
+	if bp := src.Blueprint.Self(); bp != nil {
+		defaults = defaults.WithEnvFiles(bp.UserDefaults)
+	}
+	return defaults, nil
+}
+
+// Return local defaults for the specified object
+// An empty string as object name means the constructor.
+func (mod *Module) ObjectUserDefaults(ctx context.Context, objName string) (*EnvFile, error) {
+	modDefaults, err := mod.UserDefaults(ctx)
+	if err != nil {
+		return nil, err
+	}
+	isMainObject := objName == "" || strings.EqualFold(objName, strings.ReplaceAll(mod.OriginalName, "-", ""))
+	if isMainObject {
+		return modDefaults, nil
+	}
+	return modDefaults.Namespace(ctx, objName)
+}
+
 func (mod *Module) IDModule() *call.Module {
 	if !mod.Source.Valid {
 		panic("no module source")
