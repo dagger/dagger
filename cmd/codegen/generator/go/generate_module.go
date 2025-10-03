@@ -422,6 +422,7 @@ func generatePassthroughModuleSource(pkgInfo *PackageInfo, moduleName string, de
 			// Add context parameter if needed
 			if needsContext {
 				params = append([]string{"ctx context.Context"}, params...)
+				callArgs = append([]string{"ctx"}, callArgs...)
 			}
 
 			// Format return type
@@ -522,13 +523,8 @@ func formatGoType(typeRef *introspection.TypeRef) string {
 
 	switch typeRef.Kind {
 	case introspection.TypeKindNonNull:
-		// For non-null, just recurse without the pointer
-		inner := formatGoType(typeRef.OfType)
-		// Remove pointer if present
-		if strings.HasPrefix(inner, "*") {
-			return inner[1:]
-		}
-		return inner
+		// For non-null, just recurse
+		return formatGoType(typeRef.OfType)
 	case introspection.TypeKindList:
 		return "[]" + formatGoType(typeRef.OfType)
 	case introspection.TypeKindScalar:
