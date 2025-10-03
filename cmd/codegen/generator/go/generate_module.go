@@ -51,7 +51,7 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 		Overlay: overlay,
 	}
 
-	pkgInfo, partial, err := g.bootstrapMod(mfs, genSt)
+	pkgInfo, partial, err := g.bootstrapMod(mfs, genSt, false)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap package: %w", err)
 	}
@@ -112,7 +112,7 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 	return genSt, nil
 }
 
-func (g *GoGenerator) bootstrapMod(mfs *memfs.FS, genSt *generator.GeneratedState) (*PackageInfo, bool, error) {
+func (g *GoGenerator) bootstrapMod(mfs *memfs.FS, genSt *generator.GeneratedState, noTidy bool) (*PackageInfo, bool, error) {
 	moduleConfig := g.Config.ModuleConfig
 
 	var needsRegen bool
@@ -157,8 +157,10 @@ func (g *GoGenerator) bootstrapMod(mfs *memfs.FS, genSt *generator.GeneratedStat
 		return nil, false, fmt.Errorf("existing go.mod has unsupported version %v (highest supported version is %v)", goMod.Go.Version, goVersion)
 	}
 
-	if err := g.syncModReplaceAndTidy(goMod, genSt, daggerModPath); err != nil {
-		return nil, false, err
+	if !noTidy {
+		if err := g.syncModReplaceAndTidy(goMod, genSt, daggerModPath); err != nil {
+			return nil, false, err
+		}
 	}
 
 	// try and find a go.sum next to the go.mod, and use that to pin
