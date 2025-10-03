@@ -862,6 +862,8 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 				ref, err = getResult(mnt.DirectorySource.Self().LLB, mnt.DirectorySource.Self().Result)
 			case mnt.FileSource != nil:
 				ref, err = getResult(mnt.FileSource.Self().LLB, mnt.FileSource.Self().Result)
+			default:
+				err = fmt.Errorf("mount %d has no source", mountIdx)
 			}
 		}
 		if err != nil {
