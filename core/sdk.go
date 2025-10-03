@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 )
 
 /*
@@ -187,7 +188,8 @@ type ModuleDefs interface {
 		  moduleDefs(
 		    modSource: ModuleSource!
 		    introspectionJSON: File!
-		  ): Module!
+			outputFilePath: String!
+		  ): Container!
 		```
 	*/
 	ModuleDefs(
@@ -198,6 +200,9 @@ type ModuleDefs interface {
 
 		// Current instance of the module source.
 		dagql.ObjectResult[*ModuleSource],
+
+		// Call ID to perform the call against the right module
+		*call.ID,
 	) (dagql.ObjectResult[*Module], error)
 }
 
