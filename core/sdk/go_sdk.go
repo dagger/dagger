@@ -227,7 +227,7 @@ func (sdk *goSDK) ModuleDefs(
 	deps *core.ModDeps,
 	src dagql.ObjectResult[*core.ModuleSource],
 ) (inst dagql.ObjectResult[*core.Module], rerr error) {
-	dag, err := sdk.root.Server.Server(ctx)
+	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag for go module sdk codegen: %w", err)
 	}
