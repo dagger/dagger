@@ -544,10 +544,24 @@ func (m *MCP) typeTools(allTools *LLMToolSet, srv *dagql.Server, schema *ast.Sch
 		if slices.Contains(m.blockedMethods[typeDef.Name], field.Name) {
 			continue
 		}
-		if field.Directives.ForName(trivialFieldDirectiveName) != nil {
-			// skip trivial fields on objects, only expose "real" functions
-			// with implementations
-			continue
+		// Check if this is a trivial field (field accessor with no logic)
+		isTrivial := field.Directives.ForName(trivialFieldDirectiveName) != nil
+
+		// Skip trivial fields that return scalars/non-objects since they're shown in toolObjectResponse
+		if isTrivial {
+			// But DO expose trivial fields that return objects, as these are field accessors
+			// like sdk().rust() that the LLM needs to navigate the object graph
+			fieldType := field.Type
+			if fieldType.Elem != nil {
+				// Skip arrays for now (too complex)
+				continue
+			}
+			typeDef, isObject := schema.Types[fieldType.NamedType]
+			if !isObject || typeDef.Kind != ast.Object {
+				// Not an object type - skip it (scalars shown in toolObjectResponse)
+				continue
+			}
+			// Fall through - this is an object-returning field accessor, expose it as a tool
 		}
 		if field.Directives.ForName(deprecatedDirectiveName) != nil {
 			// don't expose deprecated APIs
