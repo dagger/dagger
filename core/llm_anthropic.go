@@ -67,7 +67,7 @@ func (c *AnthropicClient) IsRetryable(err error) bool {
 }
 
 //nolint:gocyclo
-func (c *AnthropicClient) SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (res *LLMResponse, rerr error) {
+func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool) (res *LLMResponse, rerr error) {
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	defer stdio.Close()
 
@@ -133,7 +133,11 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*ModelMessage
 		// add tool usage blocks first so they get cached when setting
 		// CacheControl below
 		for _, call := range msg.ToolCalls {
-			blocks = append(blocks, anthropic.NewToolUseBlock(call.ID, call.Function.Arguments, call.Function.Name))
+			var args map[string]any
+			if err := json.Unmarshal(call.Arguments.Bytes(), &args); err != nil {
+				return nil, err
+			}
+			blocks = append(blocks, anthropic.NewToolUseBlock(call.CallID, args, call.Name))
 		}
 
 		// enable caching based on simple token usage heuristic
@@ -255,27 +259,18 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*ModelMessage
 
 	// Process the accumulated content into a generic LLMResponse.
 	var content string
-	var toolCalls []LLMToolCall
+	var toolCalls []*LLMToolCall
 	for _, block := range acc.Content {
 		switch b := block.AsAny().(type) {
 		case anthropic.TextBlock:
 			// Append text from text blocks.
 			content += b.Text
 		case anthropic.ToolUseBlock:
-			var args map[string]any
-			if len(b.Input) > 0 {
-				if err := json.Unmarshal([]byte(b.Input), &args); err != nil {
-					return nil, fmt.Errorf("failed to unmarshal tool input: %w", err)
-				}
-			}
 			// Map tool-use blocks to our generic tool call structure.
-			toolCalls = append(toolCalls, LLMToolCall{
-				ID: b.ID,
-				Function: FuncCall{
-					Name:      b.Name,
-					Arguments: args,
-				},
-				Type: "function",
+			toolCalls = append(toolCalls, &LLMToolCall{
+				CallID:    b.ID,
+				Name:      b.Name,
+				Arguments: JSON(b.Input),
 			})
 		}
 	}

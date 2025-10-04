@@ -116,6 +116,9 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc("returns the token usage of the current state"),
 	}.Install(srv)
 	dagql.Fields[*core.LLMTokenUsage]{}.Install(srv)
+	dagql.Fields[*core.LLMMessage]{}.Install(srv)
+	dagql.Fields[*core.LLMToolCall]{}.Install(srv)
+	core.LLMMessageRoles.Install(srv)
 }
 
 func (s *llmSchema) withEnv(ctx context.Context, llm *core.LLM, args struct {

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -66,7 +67,7 @@ func (c *GenaiClient) convertToolsToGenai(tools []LLMTool) ([]*genai.Tool, error
 	}, nil
 }
 
-func (c *GenaiClient) prepareGenaiHistory(history []*ModelMessage) (genaiHistory []*genai.Content, systemInstruction *genai.Content, err error) {
+func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory []*genai.Content, systemInstruction *genai.Content, err error) {
 	systemInstruction = &genai.Content{
 		Parts: []*genai.Part{},
 		Role:  "system",
@@ -113,10 +114,14 @@ func (c *GenaiClient) prepareGenaiHistory(history []*ModelMessage) (genaiHistory
 
 		// add tool calls
 		for _, call := range msg.ToolCalls {
+			var args map[string]any
+			if err := json.Unmarshal(call.Arguments.Bytes(), &args); err != nil {
+				return nil, nil, err
+			}
 			content.Parts = append(content.Parts, &genai.Part{
 				FunctionCall: &genai.FunctionCall{
-					Name: call.ID,
-					Args: call.Function.Arguments,
+					Name: call.CallID,
+					Args: args,
 				},
 			})
 		}
@@ -137,7 +142,7 @@ func (c *GenaiClient) processStreamResponse(
 	stream iter.Seq2[*genai.GenerateContentResponse, error],
 	stdout io.Writer,
 	onTokenUsage func(*genai.GenerateContentResponseUsageMetadata) LLMTokenUsage,
-) (content string, toolCalls []LLMToolCall, tokenUsage LLMTokenUsage, err error) {
+) (content string, toolCalls []*LLMToolCall, tokenUsage LLMTokenUsage, err error) {
 	for res, err := range stream {
 		if err != nil {
 			if apiErr, ok := err.(*apierror.APIError); ok {
@@ -167,10 +172,14 @@ func (c *GenaiClient) processStreamResponse(
 				fmt.Fprint(stdout, x)
 				content += x
 			} else if x := part.FunctionCall; x != nil {
-				toolCalls = append(toolCalls, LLMToolCall{
-					ID:       x.Name,
-					Function: FuncCall{Name: x.Name, Arguments: x.Args},
-					Type:     "function",
+				bytes, err := json.Marshal(x.Args)
+				if err != nil {
+					return content, toolCalls, tokenUsage, err
+				}
+				toolCalls = append(toolCalls, &LLMToolCall{
+					CallID:    x.Name,
+					Name:      x.Name,
+					Arguments: JSON(bytes),
 				})
 			} else {
 				slog.Warn("ignoring unhandled genai part", "part", fmt.Sprintf("%+v", part), "content", fmt.Sprintf("%+v", candidate.Content))
@@ -196,7 +205,7 @@ func (c *GenaiClient) IsRetryable(err error) bool {
 	}
 }
 
-func (c *GenaiClient) SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
+func (c *GenaiClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
 		log.String(telemetry.ContentTypeAttr, "text/markdown"))
 	defer stdio.Close()

@@ -25,6 +25,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/secretprovider"
 )
@@ -61,6 +62,8 @@ func resolveModelAlias(maybeAlias string) string {
 
 // An instance of a LLM (large language model), with its state and tool calling environment
 type LLM struct {
+	Messages []*LLMMessage `field:"true" doc:"The full message history."`
+
 	// The environment accessible to the LLM, exposed over MCP
 	mcp *MCP
 
@@ -75,9 +78,6 @@ type LLM struct {
 	syncOneStep bool
 	once        *sync.Once
 	err         error
-
-	// History of messages
-	messages []*ModelMessage
 
 	// Whether to disable the default system prompt
 	disableDefaultSystemPrompt bool
@@ -95,13 +95,13 @@ type LLMProvider string
 
 // LLMClient interface defines the methods that each provider must implement
 type LLMClient interface {
-	SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (*LLMResponse, error)
+	SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool) (*LLMResponse, error)
 	IsRetryable(err error) bool
 }
 
 type LLMResponse struct {
 	Content    string
-	ToolCalls  []LLMToolCall
+	ToolCalls  []*LLMToolCall
 	TokenUsage LLMTokenUsage
 }
 
@@ -120,25 +120,71 @@ func (*LLMTokenUsage) Type() *ast.Type {
 	}
 }
 
-// ModelMessage represents a generic message in the LLM conversation
-type ModelMessage struct {
-	Role        string        `json:"role"`
-	Content     string        `json:"content"`
-	ToolCalls   []LLMToolCall `json:"tool_calls,omitempty"`
-	ToolCallID  string        `json:"tool_call_id,omitempty"`
-	ToolErrored bool          `json:"tool_errored,omitempty"`
-	TokenUsage  LLMTokenUsage `json:"token_usage,omitzero"`
+// LLMMessage represents a generic message in the LLM conversation
+type LLMMessage struct {
+	Role        LLMMessageRole `field:"true" json:"role"`
+	Content     string         `field:"true" json:"content"`
+	ToolCalls   []*LLMToolCall `field:"true" json:"tool_calls,omitempty"`
+	ToolCallID  string         `field:"true" json:"tool_call_id,omitempty"`
+	ToolErrored bool           `field:"true" json:"tool_errored,omitempty"`
+
+	// NB: this isn't exposed as a field, since it will only be present on
+	// response messages, but shamefully initially because it's annoying to make
+	// it a pointer
+	TokenUsage LLMTokenUsage `json:"token_usage,omitzero"`
+}
+
+func (*LLMMessage) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "LLMMessage",
+		NonNull:   true,
+	}
+}
+
+type LLMMessageRole string
+
+var LLMMessageRoles = dagql.NewEnum[LLMMessageRole]()
+
+var (
+	LLMMessageRoleUser      = LLMMessageRoles.Register("LLM_ROLE_USER", "A user prompt or tool response.")
+	LLMMessageRoleAssistant = LLMMessageRoles.Register("LLM_ROLE_ASSISTANT", "A reply from the model.")
+	LLMMessageRoleSystem    = LLMMessageRoles.Register("LLM_ROLE_SYSTEM", "A system prompt.")
+)
+
+func (LLMMessageRole) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "LLMMessageRole",
+		NonNull:   true,
+	}
+}
+
+func (mode LLMMessageRole) TypeDescription() string {
+	return "The role that generated a message."
+}
+
+func (mode LLMMessageRole) Decoder() dagql.InputDecoder {
+	return LLMMessageRoles
+}
+
+func (mode LLMMessageRole) ToLiteral() call.Literal {
+	return LLMMessageRoles.Literal(mode)
+}
+
+func (role LLMMessageRole) String() string {
+	return string(role)
 }
 
 type LLMToolCall struct {
-	ID       string   `json:"id"`
-	Function FuncCall `json:"function"`
-	Type     string   `json:"type"`
+	CallID    string `field:"true" json:"id"`
+	Name      string `field:"true" json:"name"`
+	Arguments JSON   `field:"true" json:"arguments"`
 }
 
-type FuncCall struct {
-	Name      string         `json:"name"`
-	Arguments map[string]any `json:"arguments"`
+func (*LLMToolCall) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "LLMToolCall",
+		NonNull:   true,
+	}
 }
 
 const (
@@ -188,7 +234,7 @@ func (r *LLMRouter) isReplay(model string) bool {
 	return strings.HasPrefix(model, "replay-") || strings.HasPrefix(model, "replay/")
 }
 
-func (r *LLMRouter) getReplay(model string) (messages []*ModelMessage, _ error) {
+func (r *LLMRouter) getReplay(model string) (messages []*LLMMessage, _ error) {
 	model, ok := strings.CutPrefix(model, "replay-")
 	if !ok {
 		model, ok = strings.CutPrefix(model, "replay/")
@@ -494,7 +540,7 @@ func (*LLM) Type() *ast.Type {
 
 func (llm *LLM) Clone() *LLM {
 	cp := *llm
-	cp.messages = slices.Clone(cp.messages)
+	cp.Messages = slices.Clone(cp.Messages)
 	cp.mcp = cp.mcp.Clone()
 	cp.endpoint = llm.endpoint
 	cp.endpointMtx = &sync.Mutex{}
@@ -573,7 +619,7 @@ func (llm *LLM) WithPrompt(
 		return fmt.Sprintf("$%s", key)
 	})
 	llm = llm.Clone()
-	llm.messages = append(llm.messages, &ModelMessage{
+	llm.Messages = append(llm.Messages, &LLMMessage{
 		Role:    "user",
 		Content: prompt,
 	})
@@ -611,7 +657,7 @@ func (llm *LLM) WithoutSystemPrompts() *LLM {
 // Append a system prompt message to the history
 func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
 	llm = llm.Clone()
-	llm.messages = append(llm.messages, &ModelMessage{
+	llm.Messages = append(llm.Messages, &LLMMessage{
 		Role:    "system",
 		Content: prompt,
 	})
@@ -649,8 +695,8 @@ func (llm *LLM) LastReply(ctx context.Context) (string, error) {
 	if err := llm.Sync(ctx); err != nil {
 		return "", err
 	}
-	reply := "(no reply)"
-	for _, msg := range llm.messages {
+	var reply string = "(no reply)"
+	for _, msg := range llm.Messages {
 		if msg.Role != "assistant" {
 			continue
 		}
@@ -663,18 +709,18 @@ func (llm *LLM) LastReply(ctx context.Context) (string, error) {
 	return reply, nil
 }
 
-func (llm *LLM) messagesWithSystemPrompt() []*ModelMessage {
+func (llm *LLM) messagesWithSystemPrompt() []*LLMMessage {
 	var systemPrompt string
 	if !llm.disableDefaultSystemPrompt {
 		systemPrompt = llm.mcp.DefaultSystemPrompt()
 	}
 	if systemPrompt != "" {
-		return append([]*ModelMessage{{
+		return append([]*LLMMessage{{
 			Role:    "system",
 			Content: systemPrompt,
-		}}, llm.messages...)
+		}}, llm.Messages...)
 	}
-	return llm.messages
+	return llm.Messages
 }
 
 type ModelFinishedError struct {
@@ -733,9 +779,9 @@ func (llm *LLM) Interject(ctx context.Context) error {
 		log.String(telemetry.ContentTypeAttr, "text/markdown"))
 	defer stdio.Close()
 	var lastAssistantMessage string
-	for i := len(llm.messages) - 1; i >= 0; i-- {
-		if llm.messages[i].Role == "assistant" {
-			lastAssistantMessage = llm.messages[i].Content
+	for i := len(llm.Messages) - 1; i >= 0; i-- {
+		if llm.Messages[i].Role == "assistant" {
+			lastAssistantMessage = llm.Messages[i].Content
 			break
 		}
 	}
@@ -750,7 +796,7 @@ func (llm *LLM) Interject(ctx context.Context) error {
 		return errors.New("no interjection provided; giving up")
 	}
 	fmt.Fprint(stdio.Stdout, msg)
-	llm.messages = append(llm.messages, &ModelMessage{
+	llm.Messages = append(llm.Messages, &LLMMessage{
 		Role:    "user",
 		Content: msg,
 	})
@@ -791,7 +837,7 @@ func (llm *LLM) autoInterject(ctx context.Context) (bool, error) {
 
 func (llm *LLM) loop(ctx context.Context) error {
 	var hasUserMessage bool
-	for _, message := range llm.messages {
+	for _, message := range llm.Messages {
 		if message.Role == "user" {
 			hasUserMessage = true
 			break
@@ -822,7 +868,7 @@ func (llm *LLM) loop(ctx context.Context) error {
 
 		messagesToSend := llm.messagesWithSystemPrompt()
 
-		var newMessages []*ModelMessage
+		var newMessages []*LLMMessage
 		for _, msg := range slices.Backward(messagesToSend) {
 			if msg.Role == "assistant" || msg.ToolCallID != "" {
 				// only display messages appended since the last response
@@ -835,9 +881,9 @@ func (llm *LLM) loop(ctx context.Context) error {
 			func() {
 				var emoji string
 				switch msg.Role {
-				case "user":
+				case LLMMessageRoleUser:
 					emoji = "🧑"
-				case "system":
+				case LLMMessageRoleSystem:
 					emoji = "⚙️"
 				}
 				ctx, span := Tracer(ctx).Start(ctx, "LLM prompt",
@@ -845,8 +891,8 @@ func (llm *LLM) loop(ctx context.Context) error {
 					trace.WithAttributes(
 						attribute.String(telemetry.UIActorEmojiAttr, emoji),
 						attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageSent),
-						attribute.String(telemetry.LLMRoleAttr, msg.Role),
-						attribute.Bool(telemetry.UIInternalAttr, msg.Role == "system"),
+						attribute.String(telemetry.LLMRoleAttr, msg.Role.String()),
+						attribute.Bool(telemetry.UIInternalAttr, msg.Role == LLMMessageRoleSystem),
 					))
 				defer span.End()
 				stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
@@ -911,7 +957,7 @@ func (llm *LLM) loop(ctx context.Context) error {
 		}
 
 		// Add the model reply to the history
-		llm.messages = append(llm.messages, &ModelMessage{
+		llm.Messages = append(llm.Messages, &LLMMessage{
 			Role:       "assistant",
 			Content:    res.Content,
 			ToolCalls:  res.ToolCalls,
@@ -932,7 +978,7 @@ func (llm *LLM) loop(ctx context.Context) error {
 		}
 
 		// Run tool calls in batch with efficient MCP syncing
-		llm.messages = append(llm.messages, llm.mcp.CallBatch(ctx, tools, res.ToolCalls)...)
+		llm.Messages = append(llm.Messages, llm.mcp.CallBatch(ctx, tools, res.ToolCalls)...)
 
 		if llm.mcp.Returned() {
 			// we returned; exit the loop, since some models just keep going
@@ -947,7 +993,7 @@ func (llm *LLM) loop(ctx context.Context) error {
 }
 
 func (llm *LLM) HasPrompt() bool {
-	return len(llm.messages) > 0 && llm.messages[len(llm.messages)-1].Role == "user"
+	return len(llm.Messages) > 0 && llm.Messages[len(llm.Messages)-1].Role == "user"
 }
 
 func (llm *LLM) allowed(ctx context.Context) error {
@@ -998,8 +1044,8 @@ func (llm *LLM) History(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	var history []string
-	var lastRole string
-	for _, msg := range llm.messages {
+	var lastRole LLMMessageRole
+	for _, msg := range llm.Messages {
 		if len(history) > 0 && lastRole != msg.Role {
 			// add a blank line when roles change
 			history = append(history, "")
@@ -1007,7 +1053,7 @@ func (llm *LLM) History(ctx context.Context) ([]string, error) {
 		}
 		content := squash(msg.Content)
 		switch msg.Role {
-		case "user":
+		case LLMMessageRoleUser:
 			var item string
 			if msg.ToolCallID != "" {
 				item += "🛠️ 💬 "
@@ -1019,16 +1065,12 @@ func (llm *LLM) History(ctx context.Context) ([]string, error) {
 			}
 			item += content
 			history = append(history, item)
-		case "assistant":
+		case LLMMessageRoleAssistant:
 			if len(content) > 0 {
 				history = append(history, "🤖 💬 "+content)
 			}
 			for _, call := range msg.ToolCalls {
-				args, err := json.Marshal(call.Function.Arguments)
-				if err != nil {
-					return nil, err
-				}
-				item := fmt.Sprintf("🤖 🛠️ %s %s", call.Function.Name, args)
+				item := fmt.Sprintf("🤖 🛠️ %s %s", call.Name, call.Arguments)
 				history = append(history, item)
 			}
 		}
@@ -1046,7 +1088,7 @@ func (llm *LLM) HistoryJSON(ctx context.Context) (JSON, error) {
 	if err := llm.Sync(ctx); err != nil {
 		return nil, err
 	}
-	result, err := json.MarshalIndent(llm.messages, "", "  ")
+	result, err := json.MarshalIndent(llm.Messages, "", "  ")
 	if err != nil {
 		return nil, err
 	}
@@ -1061,25 +1103,6 @@ func (llm *LLM) WithEnv(env dagql.ObjectResult[*Env]) *LLM {
 
 func (llm *LLM) Env() dagql.ObjectResult[*Env] {
 	return llm.mcp.env
-}
-
-// A variable in the LLM environment
-type LLMVariable struct {
-	// The name of the variable
-	Name string `field:"true"`
-	// The type name of the variable's value
-	TypeName string `field:"true"`
-	// A hash of the variable's value, used to detect changes
-	Hash string `field:"true"`
-}
-
-var _ dagql.Typed = (*LLMVariable)(nil)
-
-func (v *LLMVariable) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: "LLMVariable",
-		NonNull:   true,
-	}
 }
 
 func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) (dagql.Nullable[*Binding], error) {
@@ -1104,7 +1127,7 @@ func (llm *LLM) TokenUsage(ctx context.Context, dag *dagql.Server) (*LLMTokenUsa
 		return nil, err
 	}
 	var res LLMTokenUsage
-	for _, msg := range llm.messages {
+	for _, msg := range llm.Messages {
 		res.InputTokens += msg.TokenUsage.InputTokens
 		res.OutputTokens += msg.TokenUsage.OutputTokens
 		res.CachedTokenReads += msg.TokenUsage.CachedTokenReads
