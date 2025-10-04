@@ -2181,6 +2181,11 @@ func (m *MCP) toolObjectResponse(ctx context.Context, srv *dagql.Server, target 
 		if err != nil {
 			return "", err
 		}
+		if _, isObj := srv.ObjectType(val.Type().Name()); isObj {
+			// skip any fields that reference objects, to avoid dumping entire
+			// ModuleObjects
+			continue
+		}
 		datum, err := m.sanitizeResult(val)
 		if err != nil {
 			return "", err
