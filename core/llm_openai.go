@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"dagger.io/dagger/telemetry"
@@ -52,7 +51,7 @@ func (c *OpenAIClient) IsRetryable(err error) bool {
 	return false
 }
 
-func (c *OpenAIClient) SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
+func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
 		log.String(telemetry.ContentTypeAttr, "text/markdown"))
 	defer stdio.Close()
@@ -97,15 +96,11 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*ModelMessage, t
 			assistantMsg := openai.AssistantMessage(msg.Content)
 			calls := make([]openai.ChatCompletionMessageToolCallParam, len(msg.ToolCalls))
 			for i, call := range msg.ToolCalls {
-				args, err := json.Marshal(call.Function.Arguments)
-				if err != nil {
-					return nil, fmt.Errorf("failed to marshal tool call arguments: %w", err)
-				}
 				calls[i] = openai.ChatCompletionMessageToolCallParam{
-					ID: call.ID,
+					ID: call.CallID,
 					Function: openai.ChatCompletionMessageToolCallFunctionParam{
-						Name:      call.Function.Name,
-						Arguments: string(args),
+						Name:      call.Name,
+						Arguments: call.Arguments.String(),
 					},
 				}
 			}
@@ -264,26 +259,17 @@ func (c *OpenAIClient) queryWithoutStreaming(
 	return compl, nil
 }
 
-func convertOpenAIToolCalls(calls []openai.ChatCompletionMessageToolCall) ([]LLMToolCall, error) {
-	var toolCalls []LLMToolCall
+func convertOpenAIToolCalls(calls []openai.ChatCompletionMessageToolCall) ([]*LLMToolCall, error) {
+	var toolCalls []*LLMToolCall
 	for _, call := range calls {
 		if call.Function.Name == "" {
 			slog.Warn("skipping tool call with empty name", "toolCall", call)
 			continue
 		}
-		args := map[string]any{}
-		if call.Function.Arguments != "" {
-			if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal tool call arguments: %w", err)
-			}
-		}
-		toolCalls = append(toolCalls, LLMToolCall{
-			ID: call.ID,
-			Function: FuncCall{
-				Name:      call.Function.Name,
-				Arguments: args,
-			},
-			Type: string(call.Type),
+		toolCalls = append(toolCalls, &LLMToolCall{
+			CallID:    call.ID,
+			Name:      call.Function.Name,
+			Arguments: JSON(call.Function.Arguments),
 		})
 	}
 	return toolCalls, nil
