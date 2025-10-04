@@ -9,10 +9,10 @@ import (
 )
 
 type LLMReplayer struct {
-	messages []*ModelMessage
+	messages []*LLMMessage
 }
 
-func newHistoryReplay(messages []*ModelMessage) *LLMReplayer {
+func newHistoryReplay(messages []*LLMMessage) *LLMReplayer {
 	return &LLMReplayer{messages: messages}
 }
 
@@ -20,7 +20,7 @@ func (*LLMReplayer) IsRetryable(err error) bool {
 	return false
 }
 
-func (c *LLMReplayer) SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
+func (c *LLMReplayer) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
 	if len(history) > 0 && history[0].Role == "system" {
 		// HACK: drop the default system prompt, since we don't return it in
 		// HistoryJSON

@@ -954,13 +954,16 @@ func (m *MCP) LookupTool(name string, tools []LLMTool) (*LLMTool, error) {
 	return tool, nil
 }
 
-func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (res string, failed bool) {
-	tool, err := m.LookupTool(toolCall.Function.Name, tools)
+func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) (res string, failed bool) {
+	tool, err := m.LookupTool(toolCall.Name, tools)
 	if err != nil {
 		return err.Error(), true
 	}
 
-	args := toolCall.Function.Arguments
+	var args map[string]any
+	if err := json.Unmarshal(toolCall.Arguments, &args); err != nil {
+		return fmt.Sprintf("failed to parse tool arguments: %s", err), true
+	}
 
 	var toolArgNames []string
 	var toolArgValues []string
@@ -1015,7 +1018,7 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 		fmt.Fprintln(stdio.Stdout, res)
 	}()
 
-	result, err := tool.Call(EnvIDToContext(ctx, m.env.ID()), toolCall.Function.Arguments)
+	result, err := tool.Call(EnvIDToContext(ctx, m.env.ID()), args)
 	if err != nil {
 		return toolErrorMessage(err), true
 	}
@@ -1034,15 +1037,15 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 
 // CallBatch executes a batch of tool calls, handling MCP server syncing efficiently by
 // grouping calls by destructiveness and server to avoid workspace conflicts
-func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToolCall) []*ModelMessage {
+func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall) []*LLMMessage {
 	// Group tool calls by their characteristics
-	readOnlyMCPCalls := make(map[string][]LLMToolCall)    // server -> read-only calls
-	destructiveMCPCalls := make(map[string][]LLMToolCall) // server -> destructive calls
-	regularCalls := make([]LLMToolCall, 0)
-	destructiveCalls := make([]LLMToolCall, 0)
+	readOnlyMCPCalls := make(map[string][]*LLMToolCall)    // server -> read-only calls
+	destructiveMCPCalls := make(map[string][]*LLMToolCall) // server -> destructive calls
+	regularCalls := make([]*LLMToolCall, 0)
+	destructiveCalls := make([]*LLMToolCall, 0)
 
 	for _, toolCall := range toolCalls {
-		tool, err := m.LookupTool(toolCall.Function.Name, tools)
+		tool, err := m.LookupTool(toolCall.Name, tools)
 		if err != nil {
 			// Couldn't find the tool, just call it regularly and let it fail with the
 			// tool not found (or ambiguous) error
@@ -1069,7 +1072,7 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToo
 		}
 	}
 
-	var allResults []*ModelMessage
+	var allResults []*LLMMessage
 
 	// 1. Execute all regular read-only (non-MCP) calls in parallel
 	if len(regularCalls) > 0 {
@@ -1077,7 +1080,7 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToo
 	}
 
 	// 2. Execute all read-only MCP calls in parallel (safe across servers)
-	var readOnlyToolCalls []LLMToolCall
+	var readOnlyToolCalls []*LLMToolCall
 	for _, calls := range readOnlyMCPCalls {
 		readOnlyToolCalls = append(readOnlyToolCalls, calls...)
 	}
@@ -1088,10 +1091,10 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToo
 	// 3. Execute destructive non-MCP calls sequentially (they modify Env/Changeset state)
 	for _, call := range destructiveCalls {
 		result, isError := m.Call(ctx, tools, call)
-		allResults = append(allResults, &ModelMessage{
+		allResults = append(allResults, &LLMMessage{
 			Role:        "user",
 			Content:     result,
-			ToolCallID:  call.ID,
+			ToolCallID:  call.CallID,
 			ToolErrored: isError,
 		})
 	}
@@ -1106,7 +1109,7 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToo
 }
 
 // callBatchMCPServer executes a batch of calls for a single MCP server with proper workspace syncing
-func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls []LLMToolCall, serverName string) []*ModelMessage {
+func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, serverName string) []*LLMMessage {
 	mcpSrv, ok := m.mcpServers[serverName]
 	if !ok {
 		// Fall back to individual calls if server not found
@@ -1126,7 +1129,7 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 	}
 
 	// Use runAndSnapshotChanges to sync workspace and execute all tool calls atomically
-	var results []*ModelMessage
+	var results []*LLMMessage
 	snapshot, hasChanges, err := mcpSrv.Service.Self().runAndSnapshotChanges(
 		ctx,
 		sess.ID(),
@@ -1154,16 +1157,16 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 }
 
 // callBatchRegular is the original parallel execution logic without MCP-specific syncing
-func (m *MCP) callBatchRegular(ctx context.Context, tools []LLMTool, toolCalls []LLMToolCall) []*ModelMessage {
+func (m *MCP) callBatchRegular(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall) []*LLMMessage {
 	// Run tool calls in parallel using the existing pool logic
-	toolCallsPool := pool.NewWithResults[*ModelMessage]()
+	toolCallsPool := pool.NewWithResults[*LLMMessage]()
 	for _, toolCall := range toolCalls {
-		toolCallsPool.Go(func() *ModelMessage {
+		toolCallsPool.Go(func() *LLMMessage {
 			content, isError := m.Call(ctx, tools, toolCall)
-			return &ModelMessage{
+			return &LLMMessage{
 				Role:        "user", // Anthropic only allows tool call results in user messages
 				Content:     content,
-				ToolCallID:  toolCall.ID,
+				ToolCallID:  toolCall.CallID,
 				ToolErrored: isError,
 			}
 		})
