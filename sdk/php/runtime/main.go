@@ -89,7 +89,7 @@ func (m *PhpSdk) CodegenBase(
 		WithDirectory("/sdk", m.SourceDir).
 		WithWorkdir("/sdk").
 		// Needed to run codegen
-		WithExec([]string{"composer", "install"})
+		WithExec([]string{"composer", "install", "--no-dev"})
 
 	sdkDir := ctr.
 		WithMountedFile("/schema.json", introspectionJSON).
