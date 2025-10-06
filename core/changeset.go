@@ -137,6 +137,7 @@ removed:
 		}
 		ch.RemovedPaths = append(ch.RemovedPaths, fp)
 	}
+	ch.allRemovedPaths = allRemovedPaths
 
 	return nil
 }
@@ -148,6 +149,9 @@ type Changeset struct {
 	AddedPaths    []string `field:"true" doc:"Files and directories that were added in the newer directory."`
 	ModifiedPaths []string `field:"true" doc:"Files and directories that existed before and were updated in the newer directory."`
 	RemovedPaths  []string `field:"true" doc:"Files and directories that were removed. Directories are indicated by a trailing slash, and their child paths are not included."`
+
+	// same as above, but includes all removed paths (children of removed dirs too)
+	allRemovedPaths []string
 }
 
 func (*Changeset) Type() *ast.Type {
@@ -298,7 +302,7 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 						return err
 					}
 				}
-				for _, removed := range ch.RemovedPaths {
+				for _, removed := range ch.allRemovedPaths {
 					if strings.HasSuffix(removed, "/") {
 						continue
 					}
