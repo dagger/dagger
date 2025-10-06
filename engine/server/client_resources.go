@@ -20,13 +20,13 @@ func (srv *Server) AddClientResourcesFromID(ctx context.Context, id *resource.ID
 }
 
 func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *daggerClient, id *resource.ID, sourceClientID string, skipTopLevel bool) error {
-	walked, err := dagql.WalkID(&id.ID, skipTopLevel)
+	walked, err := dagql.CollectIDs(&id.ID, skipTopLevel)
 	if err != nil {
 		return fmt.Errorf("failed to walk ID: %w", err)
 	}
 
-	secretIDs := dagql.WalkedIDs[*core.Secret](walked)
-	socketIDs := dagql.WalkedIDs[*core.Socket](walked)
+	secretIDs := dagql.CollectedIDs[*core.Secret](walked)
+	socketIDs := dagql.CollectedIDs[*core.Socket](walked)
 
 	// Filter out resources that this client already knows about. This is important for the case
 	// where the sourceClientID isn't found, which can happen due to caching skipping the client's
