@@ -711,9 +711,6 @@ func (llm *LLM) WithMCPServer(name string, svc dagql.ObjectResult[*Service]) *LL
 
 // Return the last message sent by the agent
 func (llm *LLM) LastReply(ctx context.Context) (string, error) {
-	if err := llm.Sync(ctx); err != nil {
-		return "", err
-	}
 	var reply string = "(no reply)"
 	for _, msg := range llm.Messages {
 		if msg.Role != "assistant" {
@@ -752,6 +749,8 @@ func (err *ModelFinishedError) Error() string {
 
 // Send configures the LLM to only evaluate one step when syncing.
 func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
+	origEnv := llm.Env()
+
 	llm = llm.Clone()
 
 	b := backoff.NewExponentialBackOff()
@@ -894,6 +893,19 @@ func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 		})
 	}
 
+	// Persist any env changes
+	if llm.Env().ID().Digest() != origEnv.ID().Digest() {
+		sels = append(sels, dagql.Selector{
+			Field: "withEnv",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "env",
+					Value: dagql.NewID[*Env](llm.Env().ID()),
+				},
+			},
+		})
+	}
+
 	var stepped dagql.ObjectResult[*LLM]
 	err = srv.Select(ctx, inst, &stepped, sels...)
 	if err != nil {
@@ -903,24 +915,16 @@ func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 	return stepped, nil
 }
 
-// send the context to the LLM endpoint, process replies and tool calls; continue in a loop
+// Loop sends the context to the LLM endpoint, processes replies and tool calls; continues in a loop
 // Synchronize LLM state:
 // 1. Send context to LLM endpoint
 // 2. Process replies and tool calls
 // 3. Continue in a loop until no tool calls, or caps are reached
-func (llm *LLM) Sync(ctx context.Context) (inst dagql.ObjectResult[*LLM], _ error) {
+func (llm *LLM) Loop(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
 	if err := llm.allowed(ctx); err != nil {
 		return inst, err
 	}
-	err := llm.loop(ctx)
-	if err != nil && ctx.Err() == nil {
-		// Consider an interrupt to be successful, so we can still use the result
-		// of a partially completed sequence (e.g. accessing its Env). The user
-		// must append another prompt to interject and continue. (This matches the
-		// behavior of Claude Code and presumably other chat agents.)
-		llm.err = err
-	}
-	return llm.err
+	return llm.loop(ctx, inst)
 }
 
 func (llm *LLM) Interject(ctx context.Context) error {
@@ -1086,9 +1090,6 @@ func squash(str string) string {
 }
 
 func (llm *LLM) History(ctx context.Context) ([]string, error) {
-	if err := llm.Sync(ctx); err != nil {
-		return nil, err
-	}
 	var history []string
 	var lastRole LLMMessageRole
 	for _, msg := range llm.Messages {
@@ -1131,9 +1132,6 @@ func (llm *LLM) History(ctx context.Context) ([]string, error) {
 }
 
 func (llm *LLM) HistoryJSON(ctx context.Context) (JSON, error) {
-	if err := llm.Sync(ctx); err != nil {
-		return nil, err
-	}
 	result, err := json.MarshalIndent(llm.Messages, "", "  ")
 	if err != nil {
 		return nil, err
@@ -1153,9 +1151,6 @@ func (llm *LLM) Env() dagql.ObjectResult[*Env] {
 
 func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) (dagql.Nullable[*Binding], error) {
 	var res dagql.Nullable[*Binding]
-	if err := llm.Sync(ctx); err != nil {
-		return res, err
-	}
 	if llm.mcp.LastResult() == nil {
 		return res, nil
 	}
@@ -1169,9 +1164,6 @@ func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) 
 }
 
 func (llm *LLM) TokenUsage(ctx context.Context, dag *dagql.Server) (*LLMTokenUsage, error) {
-	if err := llm.Sync(ctx); err != nil {
-		return nil, err
-	}
 	var res LLMTokenUsage
 	for _, msg := range llm.Messages {
 		res.InputTokens += msg.TokenUsage.InputTokens
