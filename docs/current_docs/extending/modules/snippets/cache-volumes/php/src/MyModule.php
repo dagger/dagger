@@ -20,8 +20,7 @@ class MyModule
     public function build(
       #[Doc('Source code location')]
       Directory $source,
-    ): Container
-    {
+    ): Container {
         return dag()
             ->container()
             ->from('node:21')
