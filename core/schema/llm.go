@@ -69,6 +69,26 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("prompt").Doc("The system prompt to send"),
 			),
+		dagql.Func("withResponse", s.withResponse).
+			Doc("Append an assistant response to the message history").
+			Args(
+				dagql.Arg("content").Doc("The response content"),
+				dagql.Arg("tokenUsage").Doc("Token usage statistics for the response"),
+			),
+		dagql.Func("withToolCall", s.withToolCall).
+			Doc("Append a tool call to the last assistant message").
+			Args(
+				dagql.Arg("callID").Doc("The unique ID for this tool call"),
+				dagql.Arg("tool").Doc("The name of the tool to call"),
+				dagql.Arg("arguments").Doc("The arguments to pass to the tool"),
+			),
+		dagql.Func("withToolResponse", s.withToolResponse).
+			Doc("Append a tool response to the message history").
+			Args(
+				dagql.Arg("callID").Doc("The ID of the tool call this is responding to"),
+				dagql.Arg("content").Doc("The response content from the tool"),
+				dagql.Arg("errored").Doc("Whether the tool call resulted in an error"),
+			),
 		dagql.Func("withoutDefaultSystemPrompt", s.withoutDefaultSystemPrompt).
 			Doc("Disable the default system prompt"),
 		dagql.Func("withBlockedFunction", s.withBlockedFunction).
@@ -132,6 +152,7 @@ func (s *llmSchema) withStaticTools(ctx context.Context, llm *core.LLM, args str
 }
 
 func (s *llmSchema) env(ctx context.Context, llm *core.LLM, args struct{}) (res dagql.ObjectResult[*core.Env], _ error) {
+	// TODO: we shouldn't need these Sync calls anymore
 	if err := llm.Sync(ctx); err != nil {
 		return res, err
 	}
@@ -178,6 +199,33 @@ func (s *llmSchema) withSystemPrompt(ctx context.Context, llm *core.LLM, args st
 	Prompt string
 }) (*core.LLM, error) {
 	return llm.WithSystemPrompt(args.Prompt), nil
+}
+
+func (s *llmSchema) withResponse(ctx context.Context, llm *core.LLM, args struct {
+	Content    string
+	TokenUsage dagql.Optional[core.LLMTokenUsage]
+}) (*core.LLM, error) {
+	var tokenUsage core.LLMTokenUsage
+	if args.TokenUsage.Valid {
+		tokenUsage = args.TokenUsage.Value
+	}
+	return llm.WithResponse(args.Content, tokenUsage), nil
+}
+
+func (s *llmSchema) withToolCall(ctx context.Context, llm *core.LLM, args struct {
+	CallID    string
+	Tool      string
+	Arguments core.JSON
+}) (*core.LLM, error) {
+	return llm.WithToolCall(args.CallID, args.Tool, args.Arguments), nil
+}
+
+func (s *llmSchema) withToolResponse(ctx context.Context, llm *core.LLM, args struct {
+	CallID  string
+	Content string
+	Errored bool
+}) (*core.LLM, error) {
+	return llm.WithToolResponse(args.CallID, args.Content, args.Errored), nil
 }
 
 func (s *llmSchema) withoutDefaultSystemPrompt(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
