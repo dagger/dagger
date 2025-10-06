@@ -1,0 +1,6 @@
+kind: Changed
+body: Only install module production dependencies
+time: 2025-10-06T14:53:21.055535+02:00
+custom:
+  Author: TomChv
+  PR: "11182"
