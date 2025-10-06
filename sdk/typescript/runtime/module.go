@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"typescript-sdk/internal/dagger"
 	"typescript-sdk/tsdistconsts"
 
+	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/iancoleman/strcase"
 	"golang.org/x/mod/semver"
 )
@@ -330,16 +334,64 @@ func (m *moduleRuntimeContainer) generateClient(introspectionJSON *dagger.File) 
 		File("/src/api/client.gen.ts")
 }
 
-// Add the default template typescript file to the user's module
-func (m *moduleRuntimeContainer) withInitTemplate() *moduleRuntimeContainer {
+// Add the default template typescript file to the user's module.
+// If the module has dependencies, generate passthrough functions.
+func (m *moduleRuntimeContainer) withInitTemplate(ctx context.Context, introspectionJSON *dagger.File) *moduleRuntimeContainer {
 	name := m.cfg.name
 
-	m.ctr = m.ctr.WithDirectory(
-		"src",
-		templateDirectory().Directory("src"),
-		dagger.ContainerWithDirectoryOpts{Include: []string{"*.ts"}},
-	).
-		WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/QuickStart/%s/g", strcase.ToCamel(name)), "src/index.ts"})
+	// Parse introspection JSON to check for dependencies
+	introspectionContent, err := introspectionJSON.Contents(ctx)
+	if err != nil {
+		// Fall back to default template on error
+		m.ctr = m.ctr.WithDirectory(
+			"src",
+			templateDirectory().Directory("src"),
+			dagger.ContainerWithDirectoryOpts{Include: []string{"*.ts"}},
+		).
+			WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/QuickStart/%s/g", strcase.ToCamel(name)), "src/index.ts"})
+		return m
+	}
+
+	var response introspection.Response
+	if err := json.Unmarshal([]byte(introspectionContent), &response); err != nil {
+		// Fall back to default template on error
+		m.ctr = m.ctr.WithDirectory(
+			"src",
+			templateDirectory().Directory("src"),
+			dagger.ContainerWithDirectoryOpts{Include: []string{"*.ts"}},
+		).
+			WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/QuickStart/%s/g", strcase.ToCamel(name)), "src/index.ts"})
+		return m
+	}
+
+	schema := response.Schema
+	if schema == nil {
+		// Fall back to default template if schema is nil
+		m.ctr = m.ctr.WithDirectory(
+			"src",
+			templateDirectory().Directory("src"),
+			dagger.ContainerWithDirectoryOpts{Include: []string{"*.ts"}},
+		).
+			WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/QuickStart/%s/g", strcase.ToCamel(name)), "src/index.ts"})
+		return m
+	}
+
+	// Extract dependencies
+	dependencies := schema.ExtractDependencies()
+	if len(dependencies) == 0 {
+		// No dependencies, use default template
+		m.ctr = m.ctr.WithDirectory(
+			"src",
+			templateDirectory().Directory("src"),
+			dagger.ContainerWithDirectoryOpts{Include: []string{"*.ts"}},
+		).
+			WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/QuickStart/%s/g", strcase.ToCamel(name)), "src/index.ts"})
+		return m
+	}
+
+	// Generate passthrough module
+	passthroughCode := generateTypeScriptPassthrough(name, dependencies)
+	m.ctr = m.ctr.WithNewFile("src/index.ts", passthroughCode)
 
 	return m
 }
@@ -370,4 +422,142 @@ func (m *moduleRuntimeContainer) withEntrypoint() *moduleRuntimeContainer {
 	}
 
 	return m
+}
+
+// generateTypeScriptPassthrough generates TypeScript code with passthrough functions for dependencies
+func generateTypeScriptPassthrough(moduleName string, dependencies []*introspection.DependencyModule) string {
+	var sb strings.Builder
+
+	moduleClassName := strcase.ToCamel(moduleName)
+
+	// Module header comment
+	sb.WriteString(fmt.Sprintf(`/**
+ * A generated module for %s functions
+ *
+ * This module has been generated from a blueprint and provides passthrough
+ * functions to the original module.
+ */
+import { dag, object, func } from "@dagger.io/dagger"
+
+@object()
+export class %s {
+`, moduleClassName, moduleClassName))
+
+	// Generate passthrough functions for each dependency
+	for _, dep := range dependencies {
+		depAccessor := dep.Name // Keep camelCase for TypeScript
+
+		for _, field := range dep.Functions {
+			// Skip deprecated functions
+			if field.IsDeprecated {
+				continue
+			}
+
+			// Skip internal Id function
+			if strings.ToLower(field.Name) == "id" {
+				continue
+			}
+
+			funcName := field.Name // Keep camelCase for TypeScript
+
+			// Build parameter list (only required args)
+			var params []string
+			var argsList []string
+
+			for _, arg := range field.Args {
+				// Skip optional arguments
+				if arg.TypeRef.IsOptional() {
+					continue
+				}
+
+				argName := arg.Name
+				argType := formatTypeScriptType(arg.TypeRef)
+				params = append(params, fmt.Sprintf("%s: %s", argName, argType))
+				argsList = append(argsList, argName)
+			}
+
+			// Determine return type
+			returnType := formatTypeScriptType(field.TypeRef)
+
+			// Generate function with decorators
+			sb.WriteString("\n  /**\n")
+			if field.Description != "" {
+				lines := strings.Split(strings.TrimSpace(field.Description), "\n")
+				for _, line := range lines {
+					sb.WriteString(fmt.Sprintf("   * %s\n", line))
+				}
+			} else {
+				sb.WriteString(fmt.Sprintf("   * Calls the %s function from the %s dependency\n", field.Name, dep.Name))
+			}
+			sb.WriteString("   */\n")
+			sb.WriteString("  @func()\n")
+
+			// Generate function signature
+			if len(params) > 0 {
+				sb.WriteString(fmt.Sprintf("  %s(%s): %s {\n", funcName, strings.Join(params, ", "), returnType))
+			} else {
+				sb.WriteString(fmt.Sprintf("  %s(): %s {\n", funcName, returnType))
+			}
+
+			// Build the function call
+			if len(argsList) > 0 {
+				sb.WriteString(fmt.Sprintf("    return dag.%s().%s(%s)\n", depAccessor, funcName, strings.Join(argsList, ", ")))
+			} else {
+				sb.WriteString(fmt.Sprintf("    return dag.%s().%s()\n", depAccessor, funcName))
+			}
+			sb.WriteString("  }\n")
+		}
+	}
+
+	sb.WriteString("}\n")
+	return sb.String()
+}
+
+// formatTypeScriptType maps GraphQL types to TypeScript types
+func formatTypeScriptType(typeRef *introspection.TypeRef) string {
+	if typeRef == nil {
+		return "void"
+	}
+
+	// Unwrap to get the base type
+	unwrapped := typeRef.UnwrappedType()
+	if unwrapped == nil {
+		return "void"
+	}
+
+	var tsType string
+	switch unwrapped.Name {
+	case "String":
+		tsType = "string"
+	case "Int":
+		tsType = "number"
+	case "Float":
+		tsType = "number"
+	case "Boolean":
+		tsType = "boolean"
+	case "Void":
+		tsType = "void"
+	default:
+		// For object types, use the type name as-is (they'll be imported from the SDK)
+		tsType = unwrapped.Name
+	}
+
+	// Handle lists
+	if typeRef.Kind == introspection.TypeKindList || (typeRef.OfType != nil && typeRef.OfType.Kind == introspection.TypeKindList) {
+		// Check if it's a list by walking the type
+		current := typeRef
+		isList := false
+		for current != nil {
+			if current.Kind == introspection.TypeKindList {
+				isList = true
+				break
+			}
+			current = current.OfType
+		}
+		if isList {
+			tsType = tsType + "[]"
+		}
+	}
+
+	return tsType
 }

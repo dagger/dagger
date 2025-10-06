@@ -50,3 +50,8 @@ replace go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp => go.opente
 replace go.opentelemetry.io/otel/log => go.opentelemetry.io/otel/log v0.8.0
 
 replace go.opentelemetry.io/otel/sdk/log => go.opentelemetry.io/otel/sdk/log v0.8.0
+
+// TODO: remove this replace - only needed for testing this PR
+replace github.com/dagger/dagger => github.com/kpenfound/dagger v0.0.0-20251003164339-3d21f8fd4be4
+
+replace dagger.io/dagger => github.com/kpenfound/dagger/sdk/go v0.0.0-20251003164339-3d21f8fd4be4

@@ -89,7 +89,7 @@ func (t *TypescriptSdk) Codegen(
 	}
 
 	if len(sourcesFiles) == 0 {
-		runtimeBaseCtr = runtimeBaseCtr.withInitTemplate()
+		runtimeBaseCtr = runtimeBaseCtr.withInitTemplate(ctx, introspectionJSON)
 	}
 
 	// Extract codegen directory
