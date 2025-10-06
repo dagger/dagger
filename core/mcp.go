@@ -385,6 +385,8 @@ func (m *MCP) updateEnvWorkspace(ctx context.Context, workspace dagql.ObjectResu
 	}); err != nil {
 		return err
 	}
+	// This Env update will be propagated back to the LLM through the withEnv
+	// selector in Step().
 	m.env = newEnv
 	return nil
 }
@@ -693,7 +695,8 @@ func (m *MCP) call(ctx context.Context,
 	// everything else; no object is actually returned, instead it directly
 	// updates the MCP environment.
 	if newEnv, ok := dagql.UnwrapAs[dagql.ObjectResult[*Env]](val); ok {
-		// Swap out the Env for the updated one
+		// Swap out the Env for the updated one. This will be propagated back to
+		// the LLM through the withEnv selector in Step().
 		m.env = newEnv
 		// No particular message needed here. At one point we diffed the Env.workspace
 		// and printed which files were modified, but it's not really necessary to
@@ -1503,6 +1506,8 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSe
 				if err != nil {
 					return nil, err
 				}
+				// This Env update will be propagated back to the LLM through the
+				// withEnv selector in Step().
 				m.env = dest
 				return toolStructuredResponse(map[string]any{
 					"output": args.Name,
@@ -2224,6 +2229,10 @@ func (m *MCP) Ingest(obj dagql.AnyObjectResult, desc string) string {
 	return m.IngestBy(obj, desc, hash)
 }
 
+// IngestBy adds an object to the MCP's object registry. This mutates the MCP's
+// internal maps (objsByID, idByHash, typeCounts), but since the MCP is cloned
+// at the start of each Step(), these mutations are isolated and propagated when
+// the stepped LLM is returned.
 func (m *MCP) IngestBy(obj dagql.AnyObjectResult, desc string, hash digest.Digest) string {
 	id := obj.ID()
 	if id == nil {
