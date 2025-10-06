@@ -373,6 +373,21 @@ func (id *ID) WithArgument(arg *Argument) *ID {
 	return id.With(WithArgs(newArgs...))
 }
 
+func (id *ID) WithReceiver(recv *ID) *ID {
+	if id == nil {
+		return nil
+	}
+	return recv.Append(
+		id.pb.Type.ToAST(),
+		id.pb.Field,
+		View(id.pb.View),
+		id.module,
+		int(id.pb.Nth),
+		"", // reset to default digest
+		id.args...,
+	)
+}
+
 func (id *ID) Encode() (string, error) {
 	if id == nil {
 		return "", nil
