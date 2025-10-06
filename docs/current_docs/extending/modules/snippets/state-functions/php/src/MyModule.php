@@ -10,22 +10,13 @@ use Dagger\Attribute\{DaggerObject, DaggerFunction, Doc};
 class MyModule
 {
     #[DaggerFunction]
-    #[Doc('The greeting to use')]
-    public $greeting;
-
-    #[Doc('Who to greet')]
-    private $name;
-
-    #[DaggerFunction]
     public function __construct(
+        #[DaggerFunction]
         #[Doc('The greeting to use')]
-        string $greeting = 'Hello',
+        public string $greeting = 'Hello',
         #[Doc('Who to greet')]
-        string $name = 'World',
-    ) {
-        $this->greeting = $greeting;
-        $this->name = $name;
-    }
+        private string $name = 'World',
+    ) {}
 
     #[DaggerFunction]
     #[Doc('Return the greeting message')]
