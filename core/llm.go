@@ -859,7 +859,7 @@ func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 			Field: "withToolCall",
 			Args: []dagql.NamedInput{
 				{
-					Name:  "callID",
+					Name:  "call",
 					Value: dagql.NewString(call.CallID),
 				},
 				{
@@ -878,7 +878,7 @@ func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 			Field: "withToolResponse",
 			Args: []dagql.NamedInput{
 				{
-					Name:  "callID",
+					Name:  "call",
 					Value: dagql.NewString(msg.ToolCallID),
 				},
 				{
