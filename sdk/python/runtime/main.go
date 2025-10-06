@@ -187,9 +187,7 @@ func (m *PythonSdk) ModuleDefs(
 	introspectionJSON *dagger.File,
 	outputFilePath string,
 ) (*dagger.Container, error) {
-	_ = introspectionJSON
-	// Ignore introspection to avoid calling codegen first
-	ctr, err := m.ModuleRuntime(ctx, modSource, nil)
+	ctr, err := m.ModuleRuntime(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, err
 	}
