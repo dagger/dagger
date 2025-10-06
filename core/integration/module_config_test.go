@@ -1203,7 +1203,7 @@ func (tc vcsTestCase) token() string {
 	return string(decodedToken)
 }
 
-const vcsTestCaseCommit = "6b79f76b1c61cd444ab193da32874f9a81c6ae1f"
+const vcsTestCaseCommit = "0cabe03cc0a9079e738c92b2c589d81fd560011f"
 
 var vcsTestCases = []vcsTestCase{
 	// Test cases for public repositories using Go-style references, without '.git' suffix (optional)
