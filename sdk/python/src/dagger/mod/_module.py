@@ -178,7 +178,7 @@ class Module:
                     func_def = func_def.with_description(doc)
 
                 if deprecated := func.deprecated:
-                    func_def = func_def.with_deprecated(deprecated)
+                    func_def = func_def.with_deprecated(deprecated=deprecated)
 
                 for param in func.parameters.values():
                     arg_def = to_typedef(
