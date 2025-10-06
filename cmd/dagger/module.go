@@ -47,7 +47,6 @@ var (
 
 	initBlueprint string
 	initEject     bool
-	initTemplate  string
 
 	developSDK        string
 	developSourcePath string
@@ -137,7 +136,6 @@ func init() {
 	moduleInitCmd.Flags().StringSliceVar(&moduleIncludes, "include", nil, "Paths to include when loading the module. Only needed when extra paths are required to build the module. They are expected to be relative to the directory containing the module's dagger.json file (the module source root).")
 	moduleInitCmd.Flags().StringVar(&initBlueprint, "blueprint", "", "Reference another module as blueprint")
 	moduleInitCmd.Flags().BoolVar(&initEject, "eject", false, "Eject from blueprint and create passthrough functions (requires --sdk and --blueprint)")
-	moduleInitCmd.Flags().StringVar(&initTemplate, "template", "", "Create module from template with passthrough functions (requires --sdk, shorthand for --eject --blueprint)")
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
 	modulePublishCmd.Flags().StringVarP(&moduleURL, "mod", "m", "", "Module reference to publish, remote git repo (defaults to current directory)")
@@ -281,18 +279,6 @@ dagger init --sdk=go
 			// engine version must be set before setting blueprint
 			modSrc = modSrc.WithEngineVersion(modules.EngineVersionLatest)
 
-			// Handle template flag (shorthand for --eject --blueprint)
-			if initTemplate != "" {
-				if initBlueprint != "" {
-					return fmt.Errorf("cannot specify both --template and --blueprint")
-				}
-				if sdk == "" {
-					return fmt.Errorf("--template requires --sdk to be specified")
-				}
-				initBlueprint = initTemplate
-				initEject = true
-			}
-
 			// Install blueprint if specified
 			if initBlueprint != "" {
 				// Validate flags
@@ -337,7 +323,7 @@ dagger init --sdk=go
 			infoMessage := []any{"Initialized module", moduleName, "in", srcRootAbsPath}
 			if initBlueprint != "" {
 				if initEject {
-					infoMessage = append(infoMessage, "ejected from template", initBlueprint)
+					infoMessage = append(infoMessage, "ejected from blueprint", initBlueprint)
 				} else {
 					infoMessage = append(infoMessage, "with blueprint", initBlueprint)
 				}
