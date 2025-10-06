@@ -6289,7 +6289,69 @@ func (m *Test) UseMode(mode Mode) Mode {
     Zeta = "zeta",
   }`
 
-	// pySrc := `...` // wip
+	const pySrc = `import enum
+from typing import Annotated
+
+import dagger
+
+
+@dagger.object_type(
+    deprecated="This module is deprecated and will be removed in future versions."
+)
+class Test:
+    legacy_field: str = dagger.field(
+        name="legacyField",
+        default="",
+        deprecated="This field is deprecated and will be removed in future versions.",
+    )
+
+    @dagger.function(name="echoString")
+    def echo_string(
+        self,
+        input: Annotated[
+            str, dagger.Deprecated("Use 'other' instead of 'input'.")
+        ],
+        other: str,
+    ) -> str:
+        return input
+
+    @dagger.function(name="legacySummarize", deprecated="Prefer EchoString instead.")
+    def legacy_summarize(self, note: str) -> "LegacyRecord":
+        return LegacyRecord(note=note)
+
+    @dagger.function(name="useMode")
+    def use_mode(self, mode: "Mode") -> "Mode":
+        return mode
+
+
+@dagger.object_type(
+    deprecated="This type is deprecated and kept only for retro-compatibility."
+)
+class LegacyRecord:
+    note: str = dagger.field(
+        deprecated="This field is deprecated and will be removed in future versions."
+    )
+
+
+@dagger.enum_type
+class Mode(enum.Enum):
+    """Mode is deprecated; use zeta instead."""
+
+    ALPHA = "alpha"
+    """Alpha mode.
+
+    .. deprecated:: alpha is deprecated; use zeta instead
+    """
+
+    BETA = "beta"
+    """Beta mode.
+
+    .. deprecated:: beta is deprecated; use zeta instead
+    """
+
+    ZETA = "zeta"
+    """ infos """
+`
 
 	cases := []sdkCase{
 		{
@@ -6308,16 +6370,16 @@ func (m *Test) UseMode(mode Mode) Mode {
 				return os.WriteFile(filepath.Join(srcDir, "index.ts"), []byte(tsSrc), 0o644)
 			},
 		},
-		// {
-		// 	sdk: "python",
-		// 	writeFiles: func(dir string) error {
-		// 		pyDir := filepath.Join(dir, "src", "test")
-		// 		if err := os.MkdirAll(pyDir, 0o755); err != nil {
-		// 			return err
-		// 		}
-		// 		return os.WriteFile(filepath.Join(pyDir, "__init__.py"), []byte(pySrc), 0o644)
-		// 	},
-		// },
+		{
+			sdk: "python",
+			writeFiles: func(dir string) error {
+				pyDir := filepath.Join(dir, "src", "test")
+				if err := os.MkdirAll(pyDir, 0o755); err != nil {
+					return err
+				}
+				return os.WriteFile(filepath.Join(pyDir, "__init__.py"), []byte(pySrc), 0o644)
+			},
+		},
 	}
 
 	const introspect = `
