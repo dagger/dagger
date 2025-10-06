@@ -23,7 +23,7 @@ class MyModule
                 // ERROR: cat: read error: Is a directory
                 ->withExec(['cat', '/'])
                 ->stdout();
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return 'Test pipeline failure: ' . $e->stderr();
         }
     }
