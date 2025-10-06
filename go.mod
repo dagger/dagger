@@ -90,6 +90,7 @@ require (
 	github.com/in-toto/in-toto-golang v0.9.0
 	github.com/invopop/jsonschema v0.13.0
 	github.com/jackpal/gateway v1.1.1
+	github.com/jedevc/diffparser v0.0.0-20251006145221-cebbf07eb779
 	github.com/jedevc/go-libsecret v0.0.0-20250327192457-f925a032ae4f
 	github.com/joho/godotenv v1.5.1
 	github.com/juju/ansiterm v1.0.0
@@ -152,7 +153,6 @@ require (
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
 	github.com/vito/midterm v0.2.3
-	github.com/waigani/diffparser v0.0.0-20190828052634-7391f219313d
 	github.com/zeebo/xxh3 v1.0.2
 	go.etcd.io/bbolt v1.4.3
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.63.0
@@ -197,7 +197,7 @@ require (
 require (
 	cloud.google.com/go v0.116.0 // indirect
 	cloud.google.com/go/auth v0.16.2 // indirect
-	cloud.google.com/go/compute/metadata v0.7.0 // indirect
+	cloud.google.com/go/compute/metadata v0.8.0 // indirect
 	dario.cat/mergo v1.0.1 // indirect
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6 // indirect
 	github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20231105174938-2b5cbb29f3e2 // indirect

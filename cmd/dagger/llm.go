@@ -164,18 +164,18 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 
 		dirDiff := s.afterFS.Changes(s.beforeFS)
 
-		patch, err := dirDiff.AsPatch().Contents(ctx)
+		preview, err := idtui.PreviewPatch(ctx, dirDiff)
 		if err != nil {
 			return s, err
 		}
 
-		if len(patch) > 0 {
+		if preview != nil {
 			Frontend.SetSidebarContent(idtui.SidebarSection{
 				Title: "Changes",
 				ContentFunc: func(width int) string {
 					var buf strings.Builder
 					out := idtui.NewOutput(&buf)
-					if err := idtui.SummarizePatch(out, patch, width); err != nil {
+					if err := preview.Summarize(out, width); err != nil {
 						return "ERROR: " + err.Error()
 					}
 					return buf.String()
