@@ -25,11 +25,11 @@ func ResourceTransferPostCall(
 	secretsByDgst := map[digest.Digest]dagql.ID[*Secret]{}
 	socketsByDgst := map[digest.Digest]dagql.ID[*Socket]{}
 	for _, id := range ids {
-		walked, err := dagql.WalkID(&id.ID, false)
+		walked, err := dagql.CollectIDs(&id.ID, false)
 		if err != nil {
 			return nil, false, fmt.Errorf("failed to walk ID: %w", err)
 		}
-		secretIDs := dagql.WalkedIDs[*Secret](walked)
+		secretIDs := dagql.CollectedIDs[*Secret](walked)
 		for _, secretID := range secretIDs {
 			secretsByDgst[SecretIDDigest(secretID.ID())] = secretID
 		}
