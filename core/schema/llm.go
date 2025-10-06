@@ -198,14 +198,20 @@ func (s *llmSchema) withSystemPrompt(ctx context.Context, llm *core.LLM, args st
 }
 
 func (s *llmSchema) withResponse(ctx context.Context, llm *core.LLM, args struct {
-	Content    string
-	TokenUsage dagql.Optional[dagql.InputObject[core.LLMTokenUsage]]
+	Content           string
+	InputTokens       int64 `default:"0"`
+	OutputTokens      int64 `default:"0"`
+	CachedTokenReads  int64 `default:"0"`
+	CachedTokenWrites int64 `default:"0"`
+	TotalTokens       int64 `default:"0"`
 }) (*core.LLM, error) {
-	var tokenUsage core.LLMTokenUsage
-	if args.TokenUsage.Valid {
-		tokenUsage = args.TokenUsage.Value.Value
-	}
-	return llm.WithResponse(args.Content, tokenUsage), nil
+	return llm.WithResponse(args.Content, core.LLMTokenUsage{
+		InputTokens:       args.InputTokens,
+		OutputTokens:      args.OutputTokens,
+		CachedTokenReads:  args.CachedTokenReads,
+		CachedTokenWrites: args.CachedTokenWrites,
+		TotalTokens:       args.TotalTokens,
+	}), nil
 }
 
 func (s *llmSchema) withToolCall(ctx context.Context, llm *core.LLM, args struct {
