@@ -1,6 +1,6 @@
 # Dagger Python SDK
 
-[![PyPI Version](https://img.shields.io/pypi/v/dagger-io)](https://pypi.org/project/dagger-io/) 
+[![PyPI Version](https://img.shields.io/pypi/v/dagger-io)](https://pypi.org/project/dagger-io/)
 [![Conda Version](https://img.shields.io/conda/vn/conda-forge/dagger-io.svg)](https://anaconda.org/conda-forge/dagger-io)
 [![Supported Python Versions](https://img.shields.io/pypi/pyversions/dagger-io.svg)](https://pypi.org/project/dagger-io/)
 [![License](https://img.shields.io/pypi/l/dagger-io.svg)](https://pypi.python.org/pypi/dagger-io)
@@ -43,20 +43,20 @@ import sys
 
 import anyio
 import dagger
+from dagger import dag
 
 
 async def main(args: list[str]):
-    async with dagger.Connection() as client:
+    async with dagger.connection():
         # build container with cowsay entrypoint
         ctr = (
-            client.container()
+            dag.container()
             .from_("python:alpine")
             .with_exec(["pip", "install", "cowsay"])
-            .with_entrypoint(["cowsay"])
         )
 
         # run cowsay with requested message
-        result = await ctr.with_exec(args).stdout()
+        result = await ctr.with_exec(["cowsay", *args]).stdout()
 
     print(result)
 
@@ -87,7 +87,7 @@ If you need to debug, you can stream the logs from the engine with the `log_outp
 
 ```python
 config = dagger.Config(log_output=sys.stderr)
-async with dagger.Connection(config) as client:
+async with dagger.connection(config):
     ...
 ```
 
@@ -99,42 +99,39 @@ async with dagger.Connection(config) as client:
 
 ## Development
 
-This library is maintained with [Poetry](https://python-poetry.org/docs/).
-
-If you already have a [Python 3.10 or later](https://docs.python.org/3/using/index.html) interpreter in your `$PATH`, you can let [Poetry manage](https://python-poetry.org/docs/basic-usage/#using-your-virtual-environment) the [virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments) automatically. Otherwise you need to activate it first, before installing dependencies:
-
-```shell
-poetry install
-```
-
-The following commands are available:
-- `poe test`: Run tests.
-- `poe fmt`: Re-format code following common styling conventions.
-- `poe lint`: Check for linting violations.
-- `poe generate`: Regenerate API client after changes to the codegen.
-- `poe docs`: Build reference docs locally.
-
-### Engine changes
-
-Testing and regenerating the client may fail if there’s changes in the engine code that haven’t been released yet. 
-
-The simplest way to run those commands locally with the most updated engine version is to build it using [Dagger’s CI pipelines](https://github.com/dagger/dagger/blob/main/internal/mage/sdk/python.go) :
+The SDK is managed with a Dagger module in `./dev`. To see which tasks are
+available run:
 
 ```shell
-../../hack/make sdk:python:test
-../../hack/make sdk:python:generate
+dagger call -m dev
 ```
 
-You can also build the CLI and use it directly within the Python SDK:
+### Common tasks
+
+Run pytest in supported Python versions:
 
 ```shell
-../../hack/dev poe test
+dagger call -m dev test default
 ```
 
-Or build it separately and tell the SDK to use it directly (or any other CLI binary):
-
+Check for linting violations:
 ```shell
-../../hack/make
-_EXPERIMENTAL_DAGGER_CLI_BIN=../../bin/dagger poe test
+dagger call -m dev lint
 ```
 
+Re-format code following common styling conventions:
+```shell
+dagger call -m dev format export --path=.
+```
+
+Update pinned development dependencies:
+```shell
+uv lock -U
+```
+
+Build and preview the reference documentation:
+```shell
+dagger call -m dev docs preview up
+```
+
+Add `--help` to any command to check all the available options.

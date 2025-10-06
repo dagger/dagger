@@ -1,0 +1,22 @@
+<Project Sdk="MSTest.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <RootNamespace>Dagger.SDK.SourceGenerator.Tests</RootNamespace>
+        <TestingExtensionsProfile>Default</TestingExtensionsProfile>
+        <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+        <TestingPlatformShowTestsFailure>true</TestingPlatformShowTestsFailure>
+        <LangVersion>default</LangVersion>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Dagger.SDK.SourceGenerator\Dagger.SDK.SourceGenerator.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing" Version="1.1.2" />
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.11.0" />
+    </ItemGroup>
+
+</Project>

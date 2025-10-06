@@ -1,0 +1,7 @@
+{
+  "name": "nested-dep",
+  "engineVersion": "v0.18.10",
+  "sdk": {
+    "source": "go"
+  }
+}

@@ -1,22 +1,40 @@
+version: 2
+
 includes:
   - from_file:
       path: ./.goreleaser.common.yml
 
 nightly:
-  # name_template will override .Version for nightly builds:
+  # version_template will override .Version for nightly builds:
   # https://goreleaser.com/customization/nightlies/#how-it-works
-  name_template: "{{ .FullCommit }}"
+  version_template: "{{ .FullCommit }}"
 
 archives:
   - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
+    id: sha
     files:
       - LICENSE
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
+  - name_template: "{{ .ProjectName }}_head_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
+    id: head
+    files:
+      - LICENSE
+    format_overrides:
+      - goos: windows
+        formats: [zip]
 
 blobs:
   - provider: s3
+    ids:
+      - sha
     region: "{{ .Env.AWS_REGION }}"
     bucket: "{{ .Env.AWS_BUCKET }}"
-    folder: "dagger/main/{{ .Version }}"
+    directory: "dagger/main/{{ .Version }}"
+  - provider: s3
+    ids:
+      - head
+    region: "{{ .Env.AWS_REGION }}"
+    bucket: "{{ .Env.AWS_BUCKET }}"
+    directory: "dagger/main/head"

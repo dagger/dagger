@@ -79,16 +79,6 @@ It's typically run persistently, as opposed to sessions which only last for the 
 
 ## FAQ
 
-### What are the steps for using a custom runner?
-
-There are more [details](#runner-details) worth reviewing, but the consolidated steps are:
-
-1. Determine the runner version required by checking the release notes of the SDK you intend to use.
-1. If changes to the base image are needed, make those and push them somewhere. If no changes are needed, just use it as is.
-1. Start the runner image in your target of choice, keeping the [requirements](#execution-requirements) and [configuration](#configuration) in mind.
-1. Export the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable with [a value pointing to your target](#connection-interface).
-1. Call `dagger run` or execute SDK code directly with that environment variable set.
-
 ### What compatibility is there between SDK, CLI and Runner versions?
 
 This is only needed if you are using a custom provisioned runner or a pre-installed CLI. If you are just using an SDK directly a CLI and runner will be provisioned automatically at compatible versions.
@@ -98,70 +88,27 @@ The CLI+Runner share a version number. SDKs have their own version number, but t
 To ensure that an SDK will be used with a compatible CLI and runner:
 
 1. Check the release notes of the SDK, which will point to the required CLI+Runner version.
-1. If using a custom provisioned runner, use the base image at that version as detailed in [Distribution and Versioning].
-1. If using a pre-installed CLI, install the CLI at that version as detailed in [Versioning](#versioning).
+1. If using a custom provisioned runner, use the base image at that version as detailed in the [Dagger installation documentation](https://docs.dagger.io/install).
+1. If using a pre-installed CLI, install the CLI at that version as detailed in the [Dagger installation documentation](https://docs.dagger.io/install).
 1. Once the runner and/or CLI are setup, you are safe to upgrade your SDK to the newest version.
 
-## Runner Details
+### Can I run the Dagger Engine as a "rootless" container?
 
-### Distribution and Versioning
+Not at this time. "Rootless mode" means running the Dagger Engine as a container without the `--privileged` flag. In this case, the container would not run as the "root" user of the system. Currently, the Dagger Engine cannot be run as a rootless container; network and filesystem constraints related to rootless usage would currently significantly limit its capabilities and performance.
 
-The runner is distributed as a container image at `registry.dagger.io/engine`.
+#### Filesystem constraints
 
-- Tags are made for the version of each release.
-- For example, the [`v0.3.7` release](https://github.com/dagger/dagger/releases/tag/v0.3.7) has a corresponding image at `registry.dagger.io/engine:v0.3.7`
+The Dagger Engine relies on the `overlayfs` snapshotter for efficient construction of container filesystems. However, only relatively recent Linux kernel versions fully support `overlayfs` inside of rootless user namespaces. On older kernels, there are fallback options such as [`fuse-overlayfs`](https://github.com/containers/fuse-overlayfs), but they come with their own complications in terms of degraded performance and host-specific setup.
 
-### Execution Requirements
+We've not yet invested in the significant work it would take to support+document running optimally on each kernel version, hence the limitation at this time.
 
-1. The runner container currently needs root capabilities, including among others `CAP_SYS_ADMIN`, in order to execute pipelines.
-   - For example, this will be granted when using the `--privileged` flag of `docker run`.
-   - There is an issue for [supporting rootless execution](https://github.com/dagger/dagger/issues/1287).
-1. The runner container should be given a volume at `/var/lib/dagger`.
-   - Otherwise runner execution may be extremely slow. This is due to the fact that it relies on overlayfs mounts for efficient operation, which isn't possible when `/var/lib/dagger` is itself an overlayfs.
-   - For example, this can be provided to a `docker run` command as `-v dagger-engine:/var/lib/dagger`
-1. The container image comes with a default entrypoint which should be used to start the runner, no extra args are needed.
-1. The container image comes with a default config file at `/etc/dagger/engine.toml`
-   - The `insecure-entitlements = ["security.insecure"]` setting enables use of the `InsecureRootCapabilities` flag in `WithExec`. Removing that line will result in an error when trying to use that flag.
+#### Network constraints
 
-### Configuration
+Running the Dagger Engine in rootless mode constrains network management due to the fact that it's not possible for a rootless container to move a network device from the host network namespace to its own network namespace.
 
-Right now very few configuration knobs are suppported as we are still working out the best interface for exposing them.
+It is possible to use userspace TCP/IP implementations such as [slirp](https://github.com/rootless-containers/slirp4netns) as a workaround, but they often significantly decrease network performance. This [comparison table of network drivers](https://github.com/rootless-containers/rootlesskit/blob/master/docs/network.md#network-drivers) shows that `slirp` is at least five times slower than a root-privileged network driver.
 
-Currently supported is:
-
-1. Custom CA Certs - If you need any extra CA certs to be included in order to, e.g. push images to a private registry, they can be included under `/etc/ssl/certs` in the runner image.
-   - This can be accomplished by building a custom engine image using ours as a base or by mounting them into a container created from our image at runtime.
-1. Disabling Privileged Execs - By default, the Dagger engine allows execs to run with root capabilities when the `InsecureRootCapabilities` field is set to true in the `WithExec` API. This can be disabled by overriding the default engine config at `/etc/dagger/engine.toml` to
-   1. Remove `insecure-entitlements = ["security.insecure"]`
-
-> **Warning**
-> The entrypoint currently invokes `buildkitd`, so there are numerous flags available there in addition to buildkit configuration files. However, this is just an implementation detail and it's highly likely the entrypoint may end up pointing to a different wrapper around `buildkitd` with a different interface in the near future, so any reliance on extra entrypoint flags or configuration files should be considered subject to breakage at any time.
-
-### Connection Interface
-
-After the runner starts up, the CLI needs to connect to it. In the default path, this will all happen automatically.
-
-However if the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` env var is set, then the CLI will instead connect to the endpoint specified there. It currently accepts values in the following format:
-
-1. `docker-container://<container name>` - Connect to the runner inside the given docker container.
-   - Requires the docker CLI be present and usable. Will result in shelling out to `docker exec`.
-1. `podman-container://<container name>` - Connect to the runner inside the given podman container.
-1. `kube-pod://<podname>?context=<context>&namespace=<namespace>&container=<container>` - Connect to the runner inside the given k8s pod. Query strings params like context and namespace are optional.
-1. `unix://<path to unix socket>` - Connect to the runner over the provided unix socket.
-1. `tcp://<addr:port>` - Connect to the runner over tcp to the provided addr+port. No encryption will be setup.
-
-> **Warning**
-> Dagger itself does not setup any encryption of data sent on this wire, so it relies on the underlying connection type to implement this when needed. If you are using a connection type that does not layer encryption then all queries and responses will be sent in plaintext over the wire from the CLI to the Runner.
-
-## CLI Details
-
-### Versioning
-
-The CLI is released in tandem with the runner and thus shares a version number with it.
-
-As of right now, each CLI version is expected to be used only with a runner image at the corresponding version. Backwards/forwards compatibility is not guaranteed yet.
-
-Instructions on installing the CLI, including at a particular version, can be found in [our docs](https://docs.dagger.io/cli/465058/install).
+Newer options for more performant userspace network stacks have arisen in recent years, but they are generally either reliant on relatively recent kernel versions or in a nascent stage that would require significant validation around robustness+security.
 
 # Appendix
 

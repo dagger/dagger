@@ -1,0 +1,13 @@
+{
+  "name": "dep",
+  "engineVersion": "v0.18.10",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "nested-dep",
+      "source": "nested-dep"
+    }
+  ]
+}

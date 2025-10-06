@@ -1,0 +1,12 @@
+The `Service` type represents a content-addressed service providing TCP connectivity.
+
+### Common operations
+
+Some of the common operations you can perform with a `Service` include:
+
+| Field | Description |
+|-------|-------------|
+| `endpoint` | Returns a URL or host:port pair to reach the service |
+| `hostname` | Returns a hostname to reach the service |
+| `ports` | Returns the list of ports provided by the service |
+| `up` | Creates a tunnel that forwards traffic from the caller's network to the service  |

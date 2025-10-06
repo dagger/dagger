@@ -1,9 +1,0 @@
-build: {
-      bash.#Run & {
-        workdir: "./src"
-        input:   deps.node.output
-        script: contents: #"""
-          npm ci
-          """#
-      }
-    }

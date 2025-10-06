@@ -1,0 +1,133 @@
+---
+slug: /extending/llm
+description: "Learn how to integrate with Large Language Models (LLMs) in Dagger"
+---
+
+# LLM Integration
+
+Dagger's `LLM` type includes API methods to attach objects to a Large Language Model (LLM), send prompts, and receive responses.
+
+## Prompts
+
+Use the `LLM.withPrompt()` API method to append prompts to the LLM context:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+llm |
+  with-prompt "What tools do you have available?"
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+llm |
+  with-prompt "What tools do you have available?"
+```
+</TabItem>
+</Tabs>
+
+For longer or more complex prompts, use the `LLM.withPromptFile()` API method to read the prompt from a text file:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+llm |
+  with-prompt-file ./prompt.txt
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+llm |
+  with-prompt-file ./prompt.txt
+```
+</TabItem>
+</Tabs>
+
+
+## Responses and Variables
+
+Use the `LLM.lastReply()` API method to obtain the last reply from the LLM, or the `LLM.history()` API method to get the complete message history.
+
+:::important
+Most LLM services impose rate limits (restrictions on the number of requests they will accept within a given time period). Dagger handles this gracefully with built-in rate limit detection and automatic retry with exponential backoff.
+:::
+
+Dagger supports the use of variables in prompts. This allows you to interpolate results of other operations into an LLM prompt:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+source=\$(container |
+  from alpine |
+  with-directory /src https://github.com/dagger/dagger |
+  directory /src)
+environment=\$(env |
+  with-directory-input 'source' \$source 'a directory with source code')
+llm |
+  with-env \$environment |
+  with-prompt "The directory also has some tools available." |
+  with-prompt "Use the tools in the directory to read the first paragraph of the README.md file in the directory." |
+  with-prompt "Reply with only the selected text." |
+  last-reply
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+source=$(container |
+  from alpine |
+  with-directory /src https://github.com/dagger/dagger |
+  directory /src)
+environment=$(env |
+  with-directory-input 'source' $source 'a directory with source code')
+llm |
+  with-env $environment |
+  with-prompt "The directory also has some tools available." |
+  with-prompt "Use the tools in the directory to read the first paragraph of the README.md file in the directory." |
+  with-prompt "Reply with only the selected text." |
+  last-reply
+```
+</TabItem>
+</Tabs>
+
+## Environments
+
+Dagger [modules](../../introduction/features/reusability.mdx) are collections of Dagger Functions. When you give a Dagger module to the `LLM` type, every Dagger Function is turned into a tool that the LLM can call.
+
+Environments configure any number of inputs and outputs for the LLM. For example, an environment might provide a `Directory`, a `Container`, a custom module, and a `string` variable. The LLM can use the scalars and the functions of these objects to complete the assigned task.
+
+The documentation for the modules are provided to the LLM, so make sure to provide helpful documentation in your Dagger Functions. The LLM should be able to figure out how to use the tools on its own. Don't worry about describing the objects too much in your prompts because it will be redundant with this automatic documentation.
+
+Consider the following Dagger Function:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+```go file=../../getting-started/quickstarts/agent/snippets/part1/go/main.go
+```
+</TabItem>
+<TabItem value="python" label="Python">
+```python file=../../getting-started/quickstarts/agent/snippets/part1/python/src/coding_agent/main.py
+```
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+```typescript file=../../getting-started/quickstarts/agent/snippets/part1/typescript/src/index.ts
+```
+</TabItem>
+<TabItem value="php" label="PHP">
+```php file=../../getting-started/quickstarts/agent/snippets/part1/php/src/CodingAgent.php
+```
+</TabItem>
+<TabItem value="java" label="Java">
+```java file=../../getting-started/quickstarts/agent/snippets/part1/java/src/main/java/io/dagger/modules/codingagent/CodingAgent.java
+```
+</TabItem>
+</Tabs>
+
+Here, an instance a `Container` is attached as an input to the `Env` environment. The `Container` is a type with a number of functions useful for a coding environment such as `WithNewFile()`, `File().Contents()`, and `WithExec()`. When this environment is attached to an `LLM`, the LLM can call any of these Dagger Functions to change the state of the `Container` and complete the assigned task.
+
+In the `Env`, a `Container` instance called `completed` is specified as a desired output of the LLM. This means that the LLM should return the `Container` instance as a result of completing its task. The resulting `Container` object is then available for further processing or for use in other Dagger Functions.

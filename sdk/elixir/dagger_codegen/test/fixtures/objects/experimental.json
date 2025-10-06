@@ -1,0 +1,66 @@
+{
+  "description": "The root of the DAG.",
+  "directives": [],
+  "enumValues": [],
+  "fields": [
+    {
+      "args": [
+        {
+          "defaultValue": "false",
+          "deprecationReason": null,
+          "description": "Give the environment the same privileges as the caller: core API including host access, current module, and dependencies",
+          "directives": [],
+          "isDeprecated": false,
+          "name": "privileged",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Boolean",
+            "ofType": null
+          }
+        },
+        {
+          "defaultValue": "false",
+          "deprecationReason": null,
+          "description": "Allow new outputs to be declared and saved in the environment",
+          "directives": [],
+          "isDeprecated": false,
+          "name": "writable",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Boolean",
+            "ofType": null
+          }
+        }
+      ],
+      "deprecationReason": null,
+      "description": "Initialize a new environment",
+      "directives": [
+        {
+          "args": [
+            {
+              "name": "reason",
+              "value": "\"Environments are not yet stabilized\""
+            }
+          ],
+          "name": "experimental"
+        }
+      ],
+      "isDeprecated": false,
+      "name": "env",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "OBJECT",
+          "name": "Env",
+          "ofType": null
+        }
+      }
+    }
+  ],
+  "inputFields": [],
+  "interfaces": [],
+  "kind": "OBJECT",
+  "name": "Query",
+  "possibleTypes": []
+}

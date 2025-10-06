@@ -1,0 +1,7 @@
+{
+  "name": "dotnet-sdk-dev",
+  "engineVersion": "v0.19.0",
+  "sdk": {
+    "source": "go"
+  }
+}

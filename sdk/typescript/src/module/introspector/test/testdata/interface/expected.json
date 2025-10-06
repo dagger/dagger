@@ -1,0 +1,134 @@
+{
+  "name": "Interface",
+  "objects": {
+    "Interface": {
+      "name": "Interface",
+      "description": "",
+      "methods": {
+        "hello": {
+          "name": "hello",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "iface": {
+          "name": "iface",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "INTERFACE_KIND",
+            "name": "IFace"
+          }
+        }
+      },
+      "properties": {}
+    }
+  },
+  "enums": {},
+  "interfaces": {
+    "IFace": {
+      "name": "IFace",
+      "description": "Example of iface",
+      "functions": {
+        "foo": {
+          "name": "foo",
+          "description": "Foo fct",
+          "arguments": {},
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "count": {
+          "name": "count",
+          "description": "",
+          "arguments": {
+            "n": {
+              "name": "n",
+              "description": "",
+              "type": {
+                "kind": "INTEGER_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "LIST_KIND",
+            "typeDef": {
+              "kind": "INTEGER_KIND"
+            }
+          }
+        },
+        "self": {
+          "name": "self",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "INTERFACE_KIND",
+            "name": "IFace"
+          }
+        },
+        "withClass": {
+          "name": "withClass",
+          "description": "",
+          "arguments": {
+            "c": {
+              "name": "c",
+              "description": "",
+              "type": {
+                "kind": "OBJECT_KIND",
+                "name": "Container"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "outClass": {
+          "name": "outClass",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "Container"
+          }
+        },
+        "withSelf": {
+          "name": "withSelf",
+          "description": "",
+          "arguments": {
+            "i": {
+              "name": "i",
+              "description": "",
+              "type": {
+                "kind": "INTERFACE_KIND",
+                "name": "IFace"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "VOID_KIND"
+          }
+        },
+        "method": {
+          "name": "method",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "VOID_KIND"
+          }
+        }
+      }
+    }
+  }
+}

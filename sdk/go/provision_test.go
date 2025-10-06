@@ -19,7 +19,7 @@ import (
 	"testing/fstest"
 	"time"
 
-	"dagger.io/dagger/internal/engineconn"
+	"dagger.io/dagger/engineconn"
 	"github.com/adrg/xdg"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -82,7 +82,7 @@ func TestProvision(t *testing.T) {
 		checksumFileContents := fmt.Sprintf("%x  %s\n", checksum, archiveName)
 		checksumPath := path.Join(basePath, "checksums.txt")
 
-		go http.Serve(l, http.FileServer(http.FS(fstest.MapFS{ //nolint:gosec
+		go http.Serve(l, http.FileServer(http.FS(fstest.MapFS{
 			checksumPath: &fstest.MapFile{
 				Data:    []byte(checksumFileContents),
 				Mode:    0o644,
@@ -127,10 +127,14 @@ func TestProvision(t *testing.T) {
 
 	entries, err := os.ReadDir(cacheDir)
 	require.NoError(t, err)
-	require.Len(t, entries, 1)
-	entry := entries[0]
-	require.True(t, entry.Type().IsRegular())
-	require.True(t, strings.HasPrefix(entry.Name(), "dagger-"))
+
+	daggers := []string{}
+	for _, ent := range entries {
+		if strings.HasPrefix(ent.Name(), "dagger-") {
+			daggers = append(daggers, ent.Name())
+		}
+	}
+	require.Len(t, daggers, 1)
 }
 
 func createCLIArchive(t *testing.T, binPath string) *bytes.Buffer {

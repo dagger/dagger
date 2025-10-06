@@ -2,79 +2,74 @@
 
 The intent behind this README is to answer contributor questions regarding [docs.dagger.io](https://docs.dagger.io).
 
+## What is the structure of the documentation in the repository?
+
+The documentation website (source code, assets and content) live in the `/docs` directory.
+
+Within this directory, the content is separated into:
+
+- `/current_docs`: the current docs shown on docs.dagger.io
+- `/versioned_docs`: the next version(s) of the docs, if available
+- `/archived_docs`: the site template for the docs archive. Related instructions are in [ARCHIVING.md](./ARCHIVING.md)
+
 ## What happens to a new doc page after the PR gets merged?
 
-It gets automatically deployed to [docs.dagger.io](https://docs.dagger.io).
+It gets automatically deployed to [devel.docs.dagger.io](https://devel.docs.dagger.io).
 
-The doc URL will use the `slug` property from the doc markdown metadata.
+You can use this staging website to test the documentation, including:
 
-Given `slug: /1001/install/`, the live URL will be [docs.dagger.io/1001/install](https://docs.dagger.io/1001/install)
+- verifying that the new content appears in the navigation
+- verifying internal and external links work correctly
+- verifying that images appear correctly
+- etc.
 
-## How can I run docs locally?
+The doc URL will use the `slug` property from the doc markdown metadata. Given
+`slug: /1001/install/`, the live URL will be [devel.docs.dagger.io/1001/install](https://devel.docs.dagger.io/1001/install)
 
-You will need to have `yarn` and Node.js v16 installed.
+It must be manually deployed to [docs.dagger.io](https://docs.dagger.io). Only
+a certain group of people can deploy via Netlify. For those with permission,
+follow these steps:
 
-From the root of the repo run the following command: `make web`
+1. Log in to the [Netlify dashboard for https://docs.dagger.io](https://app.netlify.com/sites/docs-dagger-io).
+2. Refer to the list of "production deploys" and select the one you wish to
+   deploy. Usually, this will be the most recent one. You can confirm this by
+   checking the deployment hash against the latest commit hash in the
+   [dagger/dagger repository main branch](https://github.com/dagger/dagger).
+3. On the deployment page, click the "Preview" button to once again
+   preview/check the deployment. You can also check the deployment log to
+   confirm there were no errors during the documentation build process.
+4. If you are satisfied with the preview, click the "Publish deploy" button.
+   This will publish the selected deployment on <https://docs.dagger.io>.
+
+> [!NOTE]
+>
+> There have been cases where Netlify builds have failed with errors,
+> but the same build succeeds when performed locally. In the past, one reason
+> for this has been Netlify's use of a stale cache. In case you encounter
+> this error, click "Options -> Clear cache and retry with latest branch commit"
+> to recreate the deployment with a clean cache.
+
+## How can I test my docs change/PR?
+
+### Locally
+
+You will need to have `yarn` and Node.js v18 installed.
+
+From the `/docs` directory, run the following command: `yarn install && yarn start`
 
 This will install all dependencies, start the docs web server locally and open [localhost:3000](http://localhost:3000/) in your browser.
 
-## How can I add a new doc page?
+### With a Dagger module
 
-```bash
-.
-├── docs/
-│   └── new.sh            1. $ ./new.sh my-doc-title
-├── Makefile (repo root)  2. $ make web
-└── website/              3. $ npx docusaurus build
+```console
+# test PR 7422
+dagger call -m github.com/dagger/dagger/docs@pull/7422/head docs server as-service up
+
+## get markdown lint report for PR 7422
+dagger call -m github.com/dagger/dagger/linters/markdown \
+ lint --source https://github.com/dagger/dagger#pull/7422/head \
+ json
 ```
-
-1. From the `docs` dir, run `./new.sh my-doc-title`
-   This will create a new Markdown file for the new doc page with a random ID, e.g `docs/f1a2c-my-doc-title.md`
-
-2. After executing the `./new.sh` command, make sure to previsualize the new doc by running the `make web` command from the root directory. This will trigger `docusaurus start`, [creating a local dev server](https://docusaurus.io/docs/cli#docusaurus-start-sitedir).  
-   `make web` **is required** when creating a new doc because it exports a new `_redirects` file, located in `/website/static/_redirects`. This is a configuration file that maps the docs ID with their respective filename, so every doc can also be reached with only the UUID in the URL.  
-   Try it out and you'll see how `https://docs.dagger.io/1247` redirects to `https://docs.dagger.io/1247/dagger-fs`  
-   Don't worry if the redirection doesn't work in your new doc, as it's a server-side implementation that will only take effect in production. Just make sure it has the same format as the rest of the mappings in the `_redirects` file.
-
-3. Once created and previsualized, run `npx docusaurus build` from the `/website` directory. This command verifies no links are broken when parsing markdown, among other things, so it's a good way to "test" your new doc.
-
-This new doc will not be added to the navigation.
-We prefer to keep the organisation of doc pages, and writing them separate.
-For the time being - 2022 Q1 - the focus is on writing self-contained doc content.
-Don't worry about where to fit this content, it's enough to keep this in mind: [Writing effective documentation](https://www.youtube.com/watch?v=R6zeikbTgVc&t=19s).
-
-### Adding or editing a Quickstart page
-
-> **Note**
-> "Step", "`.mdx` file" and "doc" are used interchangeably.
-> **Note**
->The new format of the step only affects the steps that have an embedded Playground instance. If no embed is present in the step (no `<QuickstartDoc>` component is present in the `.mdx` file), the default Docusarus theme is used.  
-
-The new layout is based on two columns for wide screens. The embed is placed as `sticky` on the right. This allows the user to scroll through the doc content and keep the editor visible.  
-To add or edit a step, be sure to:  
-
-- Create an object with the SDK name as properties and their Playground ID as their value, then pass it to the `<QuickstartDoc>` component as an "embeds" prop.
-
-```jsx
-export const ids = {
-    Go: "ho4ZF-6naKv",
-    Node: "aPB-msb5UEn",
-    Python: "tqaPp2aVr_L"
-}
-
-<QuickstartDoc embeds={ids}>
-```
-
-- Encapsulate the whole quickstart content inside the `<QuickstartDoc>` component. This will pass all the content as children. This component will take care of rendering each column accordingly.
-- Use the `<Embed>` component instead of the native `<iframe>` element. This component makes sure to add a spinner while the `<iframe>` is loading, besides taking care of some custom styling.  
-- Make sure the `<TabItem>` `value` prop has the same values as the `ids` object property names. Use `value=Node` instead of value="Node.js" on the prop, as property names cannot contain dots in JS.
-
-See [children](https://beta.reactjs.org/reference/react/Children) and [tabs](https://docusaurus.io/docs/markdown-features/tabs) for implementation context.
-
-## Debugging
-
-A [debug plugin](https://docusaurus.io/docs/api/plugins/@docusaurus/plugin-debug) is available at `http://localhost:3000/__docusaurus/debug`.  
-This is a great resource to help you solve common problems that show up in your terminal when starting a local dev server.
 
 ## What else should I keep in mind as I add new doc pages?
 

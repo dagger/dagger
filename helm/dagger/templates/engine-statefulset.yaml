@@ -1,0 +1,210 @@
+{{- if eq .Values.engine.kind "StatefulSet" -}}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "dagger.fullname" . }}-engine
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dagger.labels" . | nindent 4 }}
+spec:
+  # DO NOT RUN MORE THAN 1 REPLICA IF USING HOSTPATH.
+  # Only one (1) Engine is able to hold the lock, other replicas will not be able to start.
+  # If using persistent volumes, this is not an issue. Use more than 1 replica if you know that you need it.
+  replicas: 1
+  podManagementPolicy: {{ .Values.engine.statefulSet.podManagementPolicy }}
+  selector:
+    matchLabels:
+      name: {{ include "dagger.fullname" . }}-engine
+  {{- if and .Values.engine.statefulSet.persistentVolumeClaim.enabled .Values.engine.statefulSet.persistentVolumeClaimRetentionPolicy }}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: {{ .Values.engine.statefulSet.persistentVolumeClaimRetentionPolicy.whenDeleted }}
+    whenScaled: {{ .Values.engine.statefulSet.persistentVolumeClaimRetentionPolicy.whenScaled }}
+  {{- end }}
+  template:
+    metadata:
+      {{- if (or .Values.engine.config .Values.engine.configJson .Values.magicache.enabled .Values.engine.annotations) }}
+      annotations:
+        {{- if (or .Values.engine.config .Values.engine.configJson) }}
+        checksum/config: {{ include (print $.Template.BasePath "/engine-config.yaml") . | sha256sum }}
+        {{- end }}
+        {{- if .Values.magicache.enabled }}
+        checksum/secret: {{ include (print $.Template.BasePath "/magicache-secret.yaml") . | sha256sum }}
+        {{- end }}
+      {{- with .Values.engine.annotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- end }}
+      labels:
+        name: {{ include "dagger.fullname" . }}-engine
+        {{- include "dagger.labels" . | nindent 8 }}
+    spec:
+      {{- with .Values.engine.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.engine.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.engine.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 1001
+        fsGroup: 1001
+        fsGroupChangePolicy: "OnRootMismatch"
+      serviceAccountName: {{ include "dagger.serviceAccountName" . }}
+      {{- if .Values.engine.priorityClassName }}
+      priorityClassName: {{ .Values.engine.priorityClassName }}
+      {{- end }}
+      {{- with .Values.engine.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: dagger-engine
+          image: {{ if .Values.engine.image.ref }}{{ .Values.engine.image.ref }}{{ else }}registry.dagger.io/engine:v{{ .Chart.Version }}{{ end }}
+          imagePullPolicy: {{ .Values.engine.image.pullPolicy }}
+          {{- if or .Values.engine.port .Values.engine.args }}
+          args:
+            {{- if .Values.engine.port }}
+            - "--addr"
+            - "tcp://0.0.0.0:{{ .Values.engine.port }}"
+            - "--addr"
+            - "unix:///run/dagger/engine.sock"
+            {{- end }}
+            {{- if .Values.engine.args }}
+            {{- toYaml .Values.engine.args | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          {{- if (or .Values.engine.env .Values.magicache.enabled) }}
+          env:
+            {{- if .Values.engine.env }}
+            {{- toYaml .Values.engine.env | nindent 12 }}
+            {{- end }}
+            {{- if .Values.magicache.enabled }}
+            - name: _EXPERIMENTAL_DAGGER_CACHESERVICE_URL
+              value: {{ required "A magicache url is required" .Values.magicache.url }}
+            {{- end }}
+          {{- end }}
+          {{- if .Values.magicache.enabled }}
+          envFrom:
+            - secretRef:
+              {{- if .Values.magicache.secretName }}
+              name: {{ .Values.magicache.secretName }}
+              {{- else }}
+              name: {{ include "dagger.fullname" . }}-magicache-token
+              {{- end }}
+          {{- end }}
+          {{- if or .Values.engine.containerPorts .Values.engine.port }}
+          ports:
+            {{- if .Values.engine.containerPorts }}
+            {{- range .Values.engine.containerPorts }}
+            - name: {{ .name }}
+              containerPort: {{ .containerPort }}
+              protocol: {{ .protocol | default "TCP" }}
+              {{- if .hostPort }}
+              hostPort: {{ .hostPort }}
+              {{- end }}
+            {{- end }}
+            {{- else if .Values.engine.port }}
+            - name: dagger
+              containerPort: {{ .Values.engine.port }}
+              protocol: TCP
+              {{- if .Values.engine.hostPort }}
+              hostPort: {{ .Values.engine.hostPort }}
+              {{- end }}
+            {{- end }}
+          {{- end }}
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+                - ALL
+          resources: {{- toYaml .Values.engine.resources | nindent 12 }}
+          {{- if .Values.engine.lifecycle }}
+          lifecycle:
+            {{- if .Values.engine.lifecycle.preStop }}
+            preStop:
+              {{- toYaml .Values.engine.lifecycle.preStop | nindent 14 }}
+            {{- end }}
+          {{- end }}
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -exc
+                - |-
+                  dagger core version
+            {{- if .Values.engine.readinessProbeSettings }}
+            {{- toYaml .Values.engine.readinessProbeSettings | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/dagger
+            {{- if .Values.engine.hostPath.runVolume.enabled }}
+            - name: run
+              mountPath: /run/dagger
+            {{- end }}
+            {{- if .Values.engine.config }}
+            - name: config
+              mountPath: /etc/dagger/engine.toml
+              subPath: engine.toml
+            {{- end }}
+            {{- if .Values.engine.configJson }}
+            - name: config
+              mountPath: /etc/dagger/engine.json
+              subPath: engine.json
+            {{- end }}
+            {{- with .Values.engine.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+        {{- with .Values.engine.sidecars }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.engine.terminationGracePeriodSeconds }}
+      volumes:
+        {{- if .Values.engine.hostPath.dataVolume.enabled }}
+        - name: data
+          hostPath:
+            path: /var/lib/dagger-{{ include "dagger.fullname" . }}
+        {{- end }}
+        {{- if .Values.engine.hostPath.runVolume.enabled }}
+        - name: run
+          hostPath:
+            path: /run/dagger-{{ include "dagger.fullname" . }}
+        {{- end }}
+        {{- if (or .Values.engine.config .Values.engine.configJson) }}
+        - name: config
+          configMap:
+            name: {{ include "dagger.fullname" . }}-engine-config
+            items:
+              {{- if .Values.engine.config }}
+              - key: engine.toml
+                path: engine.toml
+              {{- end }}
+              {{- if .Values.engine.configJson }}
+              - key: engine.json
+                path: engine.json
+              {{- end }}
+        {{- end }}
+        {{- with .Values.engine.volumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+  {{- if .Values.engine.statefulSet.persistentVolumeClaim.enabled }}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      {{- with .Values.engine.statefulSet.persistentVolumeClaim.storageClassName }}
+      storageClassName: {{ . }}
+      {{- end }}
+      accessModes:
+        {{- toYaml .Values.engine.statefulSet.persistentVolumeClaim.accessModes | nindent 8 }}
+      resources:
+        {{- toYaml .Values.engine.statefulSet.persistentVolumeClaim.resources | nindent 8 }}
+  {{- end }}
+{{- end }}

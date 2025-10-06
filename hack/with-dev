@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+# hack/with-dev runs the specified command in the created dev environment.
+
+set -e -u
+
+export DAGGER_SRC_ROOT="$(cd $(dirname $(realpath "${BASH_SOURCE[0]}"))/.. && pwd)"
+export DAGGER_BIN_ROOT="${DAGGER_SRC_ROOT}/bin"
+
+export _EXPERIMENTAL_DAGGER_CLI_BIN=$DAGGER_BIN_ROOT/dagger
+if [[ "$(uname -s)" != "Linux" ]]; then
+    export _TEST_DAGGER_CLI_LINUX_BIN=$DAGGER_BIN_ROOT/dagger-linux
+fi
+export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev
+export _DAGGER_TESTS_ENGINE_TAR=$DAGGER_BIN_ROOT/engine.tar
+export PATH=$DAGGER_BIN_ROOT:$PATH
+
+export PATH=$DAGGER_SRC_ROOT/bin:$PATH
+exec "$@"

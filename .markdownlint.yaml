@@ -12,6 +12,9 @@ MD013: false
 # MD033 - Inline HTML. Needed for tabs in docusaurus
 MD033: false
 
+#MD034/no-bare-urls - Secrets schema use a full URL: http://example.com?token
+MD034: false
+
 # MD041 - Display Caution block before a top-level heading
 MD041: false
 

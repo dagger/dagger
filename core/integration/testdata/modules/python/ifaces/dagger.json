@@ -1,0 +1,18 @@
+{
+  "name": "caller",
+  "engineVersion": "v0.18.4-250415212740-f47c672df3e3",
+  "sdk": {
+    "source": "python"
+  },
+  "dependencies": [
+    {
+      "name": "impl",
+      "source": "impl"
+    },
+    {
+      "name": "test",
+      "source": "test"
+    }
+  ],
+  "source": ".dagger"
+}

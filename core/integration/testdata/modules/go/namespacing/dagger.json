@@ -1,0 +1,8 @@
+{
+  "name": "test",
+  "sdk": "go",
+  "dependencies": [
+    "sub1",
+    "sub2"
+  ]
+}

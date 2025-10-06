@@ -1,0 +1,38 @@
+/**
+* A coding agent for developing new features
+*
+* @params assignment Assignment to complete
+* @params source Optional Directory to develop on
+*/
+@func()
+async develop(
+    assignment: string,
+    @argument({ defaultPath: '/' }) source: Directory
+): Promise<Directory> {
+    // Environment with agent inputs and outputs
+    const environment = dag
+        .env()
+        .withStringInput('assignment', assignment, 'the assignment to complete')
+        .withWorkspaceInput(
+        'workspace',
+        dag.workspace(source),
+        'the workspace with tools to edit and test code'
+        )
+        .withWorkspaceOutput('completed', 'the workspace with the completed assignment')
+
+    // Detailed prompt stored in markdown file
+    const promptFile = dag.currentModule().source().file('develop_prompt.md')
+
+    // Put it all together to form the agent
+    const work = dag.llm().withEnv(environment).withPromptFile(promptFile)
+
+    // Get the output from the agent
+    const completed = work.env().output('completed').asWorkspace()
+    const completedDirectory = completed.source().withoutDirectory('node_modules')
+
+    // Make sure the tests really pass
+    await this.test(completedDirectory)
+
+    // Return the Directory with the assignment completed
+    return completedDirectory
+}

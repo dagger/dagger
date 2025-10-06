@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package dagger.pipe;
+
+option go_package = "pipe";
+
+service Pipe {
+  rpc IO(stream Data) returns (stream Data);
+}
+
+message Data {
+  bytes data = 1;
+}

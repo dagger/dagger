@@ -1,0 +1,97 @@
+---
+slug: /extending/error-handling
+description: "Learn how to handle errors in Dagger workflows"
+---
+
+# Error Handling
+
+Dagger modules handle errors in the same way as the language they are written in. This allows you to support any kind of error handling that your application requires. You can also use error handling to verify user input.
+
+Here is an example Dagger Function that performs division and throws an error if the denominator is zero:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=./snippets/error-handling/go/main.go
+```
+
+Error handling in Go modules follows typical Go error patterns with explicit `error` return values and `if err != nil` checks. You can also use error handling to verify user input.
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=./snippets/error-handling/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=./snippets/error-handling/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="php" label="PHP">
+
+```php file=./snippets/error-handling/php/src/MyModule.php
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+```java file=./snippets/error-handling/java/MyModule.java
+```
+
+</TabItem>
+</Tabs>
+
+Here is an example call for this Dagger Function:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'divide 4 2'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+divide 4 2
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call divide --a=4 --b=2
+```
+</TabItem>
+</Tabs>
+
+The result will be:
+
+```shell
+2
+```
+
+Here is another example call for this Dagger Function, this time dividing by zero:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'divide 4 0'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+divide 4 0
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call divide --a=4 --b=0
+```
+</TabItem>
+</Tabs>
+
+The result will be:
+
+```
+cannot divide by zero
+```

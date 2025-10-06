@@ -1,9 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/goreleaser/goreleaser/v2.7.0/www/docs/static/schema-pro.json
+
+version: 2
+
 includes:
   - from_file:
       path: ./.goreleaser.common.yml
 
 snapshot:
-  name_template: "{{ .Tag }}-next"
+  version_template: "{{ .Tag }}-next"
 
 archives:
   - name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
@@ -11,59 +15,82 @@ archives:
       - LICENSE
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
 
 # https://goreleaser.com/customization/homebrew/
 brews:
-  - tap:
-      owner: "{{ .Env.HOMEBREW_TAP_OWNER }}"
+  - repository:
+      owner: "{{ .Env.GH_ORG_NAME }}"
       name: homebrew-tap
     name: dagger
     commit_author:
       name: dagger-bot
       email: noreply@dagger.io
     url_template: "https://{{ .Env.ARTEFACTS_FQDN }}/dagger/releases/{{ .Version }}/{{ .ArtifactName }}"
-    homepage: "https://github.com/dagger/dagger"
-    description: "Dagger is a programmable deployment system."
+    homepage: "https://dagger.io"
+    description: "Dagger is an integrated platform to orchestrate the delivery of applications"
     test: |
       system "#{bin}/dagger version"
+
+# https://goreleaser.com/customization/nix/
+nix:
+  - name: dagger
+    repository:
+      owner: "{{ .Env.GH_ORG_NAME }}"
+      name: nix
+    commit_author:
+      name: dagger-bot
+      email: noreply@dagger.io
+    url_template: "https://{{ .Env.ARTEFACTS_FQDN }}/dagger/releases/{{ .Version }}/{{ .ArtifactName }}"
+    homepage: "https://dagger.io"
+    description: "Dagger is an integrated platform to orchestrate the delivery of applications"
+    license: "asl20"
+    post_install: |
+      installShellCompletion --cmd dagger \
+        --bash <($out/bin/dagger completion bash) \
+        --fish <($out/bin/dagger completion fish) \
+        --zsh <($out/bin/dagger completion zsh)
+
+# https://goreleaser.com/customization/winget/
+winget:
+  - name: dagger
+    repository:
+      owner: "{{ .Env.GH_ORG_NAME }}"
+      name: winget-pkgs
+      branch: "{{ .ProjectName }}-{{ .Version }}"
+      pull_request:
+        enabled: true
+        check_boxes: true
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
+    commit_author:
+      name: dagger-bot
+      email: noreply@dagger.io
+    url_template: "https://{{ .Env.ARTEFACTS_FQDN }}/dagger/releases/{{ .Version }}/{{ .ArtifactName }}"
+    homepage: "https://dagger.io"
+    publisher: Dagger
+    short_description: "Dagger is an integrated platform to orchestrate the delivery of applications"
+    license: "asl20"
+    publisher_url: "https://dagger.io"
+    publisher_support_url: https://github.com/dagger/dagger/issues/new/choose
+    path: manifests/d/Dagger/Cli/{{ .Version }}
+    package_identifier: Dagger.Cli
+    use: archive
+    skip_upload: false
+    tags:
+      - dagger
+      - cli
+      - cicd
+      - workflows
+      - sandbox
+      - containers
+      - devops
+      - llm
 
 blobs:
   - provider: s3
     region: "{{ .Env.AWS_REGION }}"
     bucket: "{{ .Env.AWS_BUCKET }}"
-    folder: "dagger/releases/{{ .Version }}"
-
-publishers:
-  - name: publish-latest-version
-    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://{{ .Env.AWS_BUCKET }}/dagger/latest_version"
-    env:
-      - PATH={{ .Env.PATH }}
-      - AWS_EC2_METADATA_DISABLED=true
-      - AWS_ACCESS_KEY_ID={{ .Env.AWS_ACCESS_KEY_ID }}
-      - AWS_SECRET_ACCESS_KEY={{ .Env.AWS_SECRET_ACCESS_KEY }}
-      - AWS_REGION={{ .Env.AWS_REGION }}
-  - name: publish-latest
-    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://{{ .Env.AWS_BUCKET }}/dagger/versions/latest"
-    env:
-      - PATH={{ .Env.PATH }}
-      - AWS_EC2_METADATA_DISABLED=true
-      - AWS_ACCESS_KEY_ID={{ .Env.AWS_ACCESS_KEY_ID }}
-      - AWS_SECRET_ACCESS_KEY={{ .Env.AWS_SECRET_ACCESS_KEY }}
-      - AWS_REGION={{ .Env.AWS_REGION }}
-  - name: publish-latest-major-minor
-    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://{{ .Env.AWS_BUCKET }}/dagger/versions/{{ .Major }}.{{ .Minor }}"
-    env:
-      - PATH={{ .Env.PATH }}
-      - AWS_EC2_METADATA_DISABLED=true
-      - AWS_ACCESS_KEY_ID={{ .Env.AWS_ACCESS_KEY_ID }}
-      - AWS_SECRET_ACCESS_KEY={{ .Env.AWS_SECRET_ACCESS_KEY }}
-      - AWS_REGION={{ .Env.AWS_REGION }}
-
-# https://goreleaser.com/customization/release/
-release:
-  footer: |
-    ## What to do next?
-    - Read the [documentation](https://docs.dagger.io)
-    - Join our [Discord server](https://discord.gg/dagger-io)
-    - Follow us on [Twitter](https://twitter.com/dagger_io)
+    directory: "dagger/releases/{{ .Version }}"

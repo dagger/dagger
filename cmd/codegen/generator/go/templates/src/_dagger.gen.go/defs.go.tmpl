@@ -1,0 +1,254 @@
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"os"
+	"reflect"
+	"strconv"
+	"strings"
+
+	"github.com/Khan/genqlient/graphql"
+	"github.com/vektah/gqlparser/v2/gqlerror"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+
+{{ if IsModuleCode }}
+	"{{.PackageImport}}/internal/querybuilder"
+	"{{.PackageImport}}/internal/telemetry"
+{{ end }}
+
+{{- if IsStandaloneClient }}
+	"dagger.io/dagger/querybuilder"
+	"dagger.io/dagger"
+{{ end }}
+)
+
+func Tracer() trace.Tracer {
+	return otel.Tracer("dagger.io/sdk.go")
+}
+
+// reassigned at runtime after the span is initialized
+var marshalCtx = context.Background()
+
+{{ if IsModuleCode }}
+// SetMarshalContext is a hack that lets us set the ctx to use for
+// MarshalJSON implementations that get an object's ID.
+func SetMarshalContext(ctx context.Context) {
+	marshalCtx = ctx
+}
+{{ end }}
+
+// assertNotNil panic if the given value is nil.
+// This function is used to validate that input with pointer type are not nil.
+// See https://github.com/dagger/dagger/issues/5696 for more context.
+func assertNotNil(argName string, value any) {
+	// We use reflect because just comparing value to nil is not working since
+	// the value is wrapped into a type when passed as parameter.
+	// E.g., nil become (*dagger.File)(nil).
+	if reflect.ValueOf(value).IsNil() {
+		panic(fmt.Sprintf("unexpected nil pointer for argument %q", argName))
+	}
+}
+
+type DaggerObject = querybuilder.GraphQLMarshaller
+
+type gqlExtendedError struct {
+	inner *gqlerror.Error
+}
+
+// Same as telemetry.ExtendedError, but without the dependency, to simplify
+// client generation.
+type extendedError interface {
+	error
+	Extensions() map[string]any
+}
+
+func (e gqlExtendedError) Unwrap() error {
+	return e.inner
+}
+
+var _ extendedError = gqlExtendedError{}
+
+func (e gqlExtendedError) Error() string {
+	return e.inner.Message
+}
+
+func (e gqlExtendedError) Extensions() map[string]any {
+	return e.inner.Extensions
+}
+
+// getCustomError parses a GraphQL error into a more specific error type.
+func getCustomError(err error) error {
+	var gqlErr *gqlerror.Error
+	if !errors.As(err, &gqlErr) {
+		return nil
+	}
+
+	ext := gqlErr.Extensions
+
+	typ, ok := ext["_type"].(string)
+	if !ok {
+		return gqlExtendedError{gqlErr}
+	}
+
+	if typ == "EXEC_ERROR" {
+		e := &ExecError{
+			original: gqlErr,
+		}
+		if code, ok := ext["exitCode"].(float64); ok {
+			e.ExitCode = int(code)
+		}
+		if args, ok := ext["cmd"].([]interface{}); ok {
+			cmd := make([]string, len(args))
+			for i, v := range args {
+				cmd[i] = v.(string)
+			}
+			e.Cmd = cmd
+		}
+		if stdout, ok := ext["stdout"].(string); ok {
+			e.Stdout = stdout
+		}
+		if stderr, ok := ext["stderr"].(string); ok {
+			e.Stderr = stderr
+		}
+		return e
+	}
+
+	return gqlExtendedError{gqlErr}
+}
+
+// ExecError is an API error from an exec operation.
+type ExecError struct {
+	original *gqlerror.Error
+	Cmd      []string
+	ExitCode int
+	Stdout   string
+	Stderr   string
+}
+
+var _ extendedError = (*ExecError)(nil)
+
+func (e *ExecError) Error() string {
+	return e.Message()
+}
+
+func (e *ExecError) Extensions() map[string]any {
+	return e.original.Extensions
+}
+
+func (e *ExecError) Message() string {
+	return e.original.Error()
+}
+
+func (e *ExecError) Unwrap() error {
+	return e.original
+}
+{{ range .Types }}
+{{ if eq .Kind "SCALAR" }}{{ template "_types/scalar.go.tmpl" . }}{{ end }}
+{{ if eq .Kind "OBJECT" }}{{ template "_types/object.go.tmpl" . }}{{ end }}
+{{ if eq .Kind "INPUT_OBJECT" }}{{ template "_types/input.go.tmpl" . }}{{ end }}
+{{ if eq .Kind "ENUM" }}{{ template "_types/enum.go.tmpl" . }}{{ end }}
+{{ end }}
+
+{{ if IsModuleCode }}
+type Client struct {
+	query *querybuilder.Selection
+	client graphql.Client
+}
+
+var dag *Client
+
+func init() {
+	gqlClient, q := getClientParams()
+	dag = &Client{
+		query: q.Client(gqlClient),
+		client: gqlClient,
+	}
+}
+
+func Connect() *Client {
+	return dag
+}
+
+// GraphQLClient returns the underlying graphql.Client
+func (c *Client) GraphQLClient() graphql.Client {
+	return c.client
+}
+
+func getClientParams() (graphql.Client, *querybuilder.Selection) {
+	portStr, ok := os.LookupEnv("DAGGER_SESSION_PORT")
+	if !ok {
+		panic("DAGGER_SESSION_PORT is not set")
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		panic(fmt.Errorf("DAGGER_SESSION_PORT %q is invalid: %w", portStr, err))
+	}
+
+	sessionToken := os.Getenv("DAGGER_SESSION_TOKEN")
+	if sessionToken == "" {
+		panic("DAGGER_SESSION_TOKEN is not set")
+	}
+
+	host := fmt.Sprintf("127.0.0.1:%d", port)
+
+	dialTransport := &http.Transport{
+		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+			return net.Dial("tcp", host)
+		},
+	}
+	httpClient := &http.Client{
+		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			r.SetBasicAuth(sessionToken, "")
+
+			// detect $TRACEPARENT set by 'dagger run'
+			r = r.WithContext(fallbackSpanContext(r.Context()))
+
+			// propagate span context via headers (i.e. for Dagger-in-Dagger)
+			telemetry.Propagator.Inject(r.Context(), propagation.HeaderCarrier(r.Header))
+
+			return dialTransport.RoundTrip(r)
+		}),
+	}
+	gqlClient := errorWrappedClient{graphql.NewClient(fmt.Sprintf("http://%s/query", host), httpClient)}
+
+	return gqlClient, querybuilder.Query()
+}
+
+func fallbackSpanContext(ctx context.Context) context.Context {
+	if trace.SpanContextFromContext(ctx).IsValid() {
+		return ctx
+	}
+	return telemetry.Propagator.Extract(ctx, telemetry.NewEnvCarrier(true))
+}
+
+// TODO: pollutes namespace, move to non internal package in dagger.io/dagger
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+type errorWrappedClient struct {
+	graphql.Client
+}
+
+func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Request, resp *graphql.Response) error {
+	err := c.Client.MakeRequest(ctx, req, resp)
+	if err != nil {
+		if e := getCustomError(err); e != nil {
+			return e
+		}
+		return err
+	}
+	return nil
+}
+{{ end }}
+
+{{ if IsStandaloneClient }}
+{{ template "_dagger.gen.go/client.go.tmpl" . }}
+{{ end }}

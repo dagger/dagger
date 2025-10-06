@@ -1,0 +1,28 @@
+@use "./custom";
+
+.tag {
+  background-color: var(--ifm-menu-color-background-hover);
+  border-radius: .5rem;
+  color: var(--ifm-menu-color-active);
+  display: flex;
+  font-size: 0.8rem;
+  padding: .25rem .5rem;
+  white-space: nowrap;
+  z-index: 3;
+
+  html[data-theme="dark"] & {
+    color: white;
+  }
+}
+
+.close {
+  padding: 5px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+
+  html[data-theme="dark"] & g {
+    stroke: white !important;
+  }
+}

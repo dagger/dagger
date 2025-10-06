@@ -1,0 +1,105 @@
+linters:
+  disable-all: true
+  enable:
+    - bodyclose
+    - dogsled
+    - dupl
+    - errorlint
+    - gocritic
+    - gocyclo
+    - gofmt
+    - goimports
+    - goprintffuncname
+    - gosec
+    - gosimple
+    - govet
+    - ineffassign
+    - misspell
+    - nakedret
+    - nolintlint
+    - revive
+    - rowserrcheck
+    - staticcheck
+    - stylecheck
+    - typecheck
+    - unconvert
+    - unused
+    - unparam
+    - whitespace
+    - gomodguard
+    - nilerr
+
+  exclusions:
+    rules:
+      - linters:
+        - staticcheck
+        text: "idtools.IdentityMapping"
+      - path: internal/buildkit/
+        linters:
+          - gocyclo
+          - dupl
+          - unconvert
+          - dogsled
+          - gofmt
+          - nakedret
+          - gosimple
+          - stylecheck
+          - unparam
+          - nolintlint
+          - goimports
+      - path: internal/buildkit/
+        text: "singleCaseSwitch"
+        linters:
+          - gocritic
+      - path: internal/buildkit/
+        text: "SA1019"
+        linters:
+          - staticcheck
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        # tests are very repetitive
+        - dupl
+        # tests are allowed to do silly things
+        - gosec
+    - path: docs/
+      linters:
+        # example dagger module code might use extra ctx/err in signatures for clarity
+        - unparam
+    - text: ".* always receives .*"
+      linters:
+        # this is sometimes done for clarity
+        - unparam
+
+  exclude-dirs:
+    # these files are already linted in sdk/go
+    - internal/telemetry
+    - internal/querybuilder
+
+linters-settings:
+  revive:
+    rules:
+      # This rule is annoying. Often you want to name the parameters for
+      # clarity because it conforms to an interface. Additionally, unparam
+      # finds a good number of cases for this anyways (with fewer false
+      # positives).
+      - name: unused-parameter
+        severity: warning
+        disabled: true
+
+  govet:
+    enable:
+    disable:
+      - lostcancel
+
+  errorlint:
+    errorf: true
+    errorf-multi: true
+    asserts: false
+    comparison: false
+
+  gocritic:
+    disabled-checks:
+      - ifElseChain

@@ -1,0 +1,29 @@
+{
+  "name": "daggermodule/php-sdk-dev",
+  "description": "Dagger PHP SDK Dev Module",
+  "version": "1.0.0",
+  "minimum-stability": "stable",
+  "license": "Apache-2.0",
+  "authors": [
+  ],
+  "repositories": [
+    {
+      "type": "path",
+      "url": "./sdk"
+    }
+  ],
+  "require": {
+    "php": "^8.1",
+    "dagger/dagger": "*@dev"
+  },
+  "autoload": {
+    "psr-4": {
+      "DaggerModule\\": "src/"
+    }
+  },
+  "config": {
+    "platform": {
+      "php": "8.3.7"
+    }
+  }
+}

@@ -1,44 +1,87 @@
 package main
 
 import (
-	"github.com/moby/buildkit/cmd/buildkitd/config"
+	"os"
+	"path/filepath"
+
+	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
+	"github.com/dagger/dagger/internal/buildkit/util/appdefaults"
+	"github.com/dagger/dagger/internal/buildkit/util/archutil"
+	"github.com/moby/sys/userns"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
+
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/distconsts"
+	"github.com/dagger/dagger/engine/server"
 )
 
-// engineDefaultStateDir is the directory that we map to a volume by default.
-const engineDefaultStateDir = "/var/lib/dagger"
-
-// engineDefaultShimBin is the path to the shim binary we use as our oci runtime.
-const engineDefaultShimBin = "/usr/local/bin/dagger-shim"
-
-// servicesDNSEnvName is the feature flag for enabling the services network
-// stack.
-const servicesDNSEnvName = "_EXPERIMENTAL_DAGGER_SERVICES_DNS"
-
-func setDaggerDefaults(cfg *config.Config, cniConfigPath string) error {
-	if cfg.Root == "" {
-		cfg.Root = engineDefaultStateDir
+func defaultBuildkitConfigPath() string {
+	if userns.RunningInUserNS() {
+		return filepath.Join(appdefaults.UserConfigDir(), "buildkitd.toml")
 	}
-
-	if cfg.Workers.OCI.Binary == "" {
-		cfg.Workers.OCI.Binary = engineDefaultShimBin
-	}
-
-	if cniConfigPath != "" {
-		setNetworkDefaults(&cfg.Workers.OCI.NetworkConfig, cniConfigPath)
-
-		// we don't use containerd, but make it match anyway
-		setNetworkDefaults(&cfg.Workers.Containerd.NetworkConfig, cniConfigPath)
-	}
-
-	return nil
+	return filepath.Join(appdefaults.ConfigDir, "buildkitd.toml")
 }
 
-func setNetworkDefaults(cfg *config.NetworkConfig, cniConfigPath string) {
+func defaultBuildkitConfig() (bkconfig.Config, error) {
+	cfg, err := bkconfig.LoadFile(defaultBuildkitConfigPath())
+	if err != nil {
+		var pe *os.PathError
+		if !errors.As(err, &pe) {
+			return bkconfig.Config{}, err
+		}
+		logrus.Warnf("failed to load default config: %v", err)
+	}
+	setDefaultBuildkitConfig(&cfg, nil)
+
+	return cfg, nil
+}
+
+func setDefaultBuildkitConfig(cfg *bkconfig.Config, netConf *networkConfig) {
+	if cfg.Root == "" {
+		cfg.Root = distconsts.EngineDefaultStateDir
+	}
+
+	// always include default addresses
+	cfg.GRPC.Address = append([]string{appdefaults.Address, engine.DefaultEngineSockAddr}, cfg.GRPC.Address...)
+
+	isTrue := true
+	cfg.Workers.OCI.Enabled = &isTrue
+
+	if cfg.Workers.OCI.Binary == "" {
+		cfg.Workers.OCI.Binary = distconsts.RuncPath
+	}
+
+	if cfg.DNS == nil {
+		cfg.DNS = &bkconfig.DNSConfig{}
+	}
+
+	if netConf != nil {
+		// set dnsmasq as the default nameserver
+		cfg.DNS.Nameservers = []string{netConf.Bridge.String()}
+
+		if netConf.CNIConfigPath != "" {
+			setNetworkDefaults(&cfg.Workers.OCI.NetworkConfig, netConf.CNIConfigPath)
+		}
+	}
+
+	if cfg.Workers.OCI.Platforms == nil {
+		cfg.Workers.OCI.Platforms = server.FormatPlatforms(archutil.SupportedPlatforms(false))
+	}
+	if cfg.Workers.Containerd.Platforms == nil {
+		cfg.Workers.Containerd.Platforms = server.FormatPlatforms(archutil.SupportedPlatforms(false))
+	}
+}
+
+func setNetworkDefaults(cfg *bkconfig.NetworkConfig, cniConfigPath string) {
 	if cfg.Mode == "" {
 		cfg.Mode = "cni"
 	}
 	if cfg.CNIConfigPath == "" {
 		cfg.CNIConfigPath = cniConfigPath
+	}
+	if cfg.CNIBinaryPath == "" {
+		cfg.CNIBinaryPath = appdefaults.DefaultCNIBinDir
 	}
 	if cfg.CNIPoolSize == 0 {
 		cfg.CNIPoolSize = 16

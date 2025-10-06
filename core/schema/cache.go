@@ -1,48 +1,110 @@
 package schema
 
 import (
+	"context"
+	"errors"
+
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/router"
+	"github.com/dagger/dagger/dagql"
 )
 
-type cacheSchema struct {
-	*baseSchema
-}
+type cacheSchema struct{}
 
-var _ router.ExecutableSchema = &cacheSchema{}
+var _ SchemaResolvers = &cacheSchema{}
 
 func (s *cacheSchema) Name() string {
 	return "cache"
 }
 
-func (s *cacheSchema) Schema() string {
-	return Cache
+func (s *cacheSchema) Install(srv *dagql.Server) {
+	dagql.Fields[*core.Query]{
+		dagql.NodeFuncWithCacheKey("cacheVolume", s.cacheVolume, s.cacheVolumeCacheKey).
+			Doc("Constructs a cache volume for a given cache key.").
+			Args(
+				dagql.Arg("key").Doc(`A string identifier to target this cache volume (e.g., "modules-cache").`),
+			),
+	}.Install(srv)
+
+	dagql.Fields[*core.CacheVolume]{}.Install(srv)
 }
 
-var cacheIDResolver = stringResolver(core.CacheID(""))
-
-func (s *cacheSchema) Resolvers() router.Resolvers {
-	return router.Resolvers{
-		"CacheID": cacheIDResolver,
-		"Query": router.ObjectResolver{
-			"cacheVolume": router.ToResolver(s.cacheVolume),
-		},
-		"CacheVolume": router.ObjectResolver{},
-	}
-}
-
-func (s *cacheSchema) Dependencies() []router.ExecutableSchema {
+func (s *cacheSchema) Dependencies() []SchemaResolvers {
 	return nil
 }
 
 type cacheArgs struct {
-	Key string
+	Key       string
+	Namespace string `internal:"true" default:""`
 }
 
-func (s *cacheSchema) cacheVolume(ctx *router.Context, parent any, args cacheArgs) (*core.CacheVolume, error) {
-	// TODO(vito): inject some sort of scope/session/project/user derived value
-	// here instead of a static value
-	//
-	// we have to inject something so we can tell it's a valid ID
-	return core.NewCache(args.Key)
+func (s *cacheSchema) cacheVolumeCacheKey(ctx context.Context, parent dagql.ObjectResult[*core.Query], args cacheArgs, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
+	if args.Namespace != "" {
+		return &cacheCfg, nil
+	}
+
+	m, err := parent.Self().CurrentModule(ctx)
+	if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
+		return nil, err
+	}
+	namespaceKey := namespaceFromModule(m)
+	cacheCfg.Digest = dagql.HashFrom(cacheCfg.Digest.String(), namespaceKey)
+	return &cacheCfg, nil
+}
+
+func (s *cacheSchema) cacheVolume(ctx context.Context, parent dagql.ObjectResult[*core.Query], args cacheArgs) (dagql.Result[*core.CacheVolume], error) {
+	var inst dagql.Result[*core.CacheVolume]
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	if args.Namespace != "" {
+		return dagql.NewResultForCurrentID(ctx, core.NewCache(args.Namespace+":"+args.Key))
+	}
+
+	m, err := parent.Self().CurrentModule(ctx)
+	if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
+		return inst, err
+	}
+	namespaceKey := namespaceFromModule(m)
+	err = srv.Select(ctx, srv.Root(), &inst, dagql.Selector{
+		Field: "cacheVolume",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "key",
+				Value: dagql.NewString(args.Key),
+			},
+			{
+				Name:  "namespace",
+				Value: dagql.NewString(namespaceKey),
+			},
+		},
+	})
+	if err != nil {
+		return inst, err
+	}
+
+	return inst, nil
+}
+
+func namespaceFromModule(m *core.Module) string {
+	if m == nil {
+		return "mainClient"
+	}
+
+	src := m.Source.Value
+	name := src.Self().ModuleOriginalName
+
+	var symbolic string
+	switch src.Self().Kind {
+	case core.ModuleSourceKindLocal:
+		symbolic = src.Self().SourceRootSubpath
+	case core.ModuleSourceKindGit:
+		symbolic = src.Self().Git.Symbolic
+	case core.ModuleSourceKindDir:
+		symbolic = m.Source.Value.ID().Digest().String()
+	}
+
+	return "mod(" + name + symbolic + ")"
 }

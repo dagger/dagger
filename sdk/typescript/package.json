@@ -1,0 +1,73 @@
+{
+  "name": "@dagger.io/dagger",
+  "version": "0.0.0",
+  "author": "hello@dagger.io",
+  "license": "Apache-2.0",
+  "types": "./dist/src/index.d.ts",
+  "type": "module",
+  "files": [
+    "dist/"
+  ],
+  "exports": {
+    ".": "./dist/src/index.js",
+    "./telemetry": "./dist/src/telemetry/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "dist/src/index.js",
+  "dependencies": {
+    "@grpc/grpc-js": "^1.14.0",
+    "@lifeomic/axios-fetch": "^3.1.0",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/core": "^2.1.0",
+    "@opentelemetry/exporter-jaeger": "^2.1.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.205.0",
+    "@opentelemetry/sdk-metrics": "^2.1.0",
+    "@opentelemetry/sdk-node": "^0.205.0",
+    "@opentelemetry/semantic-conventions": "^1.37.0",
+    "adm-zip": "^0.5.16",
+    "env-paths": "^3.0.0",
+    "execa": "^9.6.0",
+    "graphql": "^16.11.0",
+    "graphql-request": "^7.2.0",
+    "graphql-tag": "^2.12.6",
+    "node-color-log": "^13.0.3",
+    "node-fetch": "^3.3.2",
+    "reflect-metadata": "^0.2.2",
+    "tar": "^7.5.1",
+    "typescript": "^5.9.2"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "test": "yarn run test:node",
+    "test:bun": "bun run --bun mocha",
+    "test:node": "mocha",
+    "test:generate-scan": "tsx ./introspector/test/testdata/generate_expected_scan.ts",
+    "lint": "yarn eslint --max-warnings=0 .",
+    "fmt": "yarn eslint --max-warnings=0 --fix .",
+    "docs:lint": "cd ../../docs/current_docs && eslint -c ../../sdk/typescript/eslint-docs.config.js --max-warnings=0 ./**/*.ts",
+    "docs:fmt": "cd ../../docs/current_docs && eslint --fix -c ../../sdk/typescript/eslint-docs.config.js --max-warnings=0 ./**/*.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "@trivago/prettier-plugin-sort-imports": "^5.2.2",
+    "@types/adm-zip": "^0.5.7",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "~24.5.2",
+    "@types/tar": "^6.1.13",
+    "@typescript-eslint/eslint-plugin": "^8.44.1",
+    "@typescript-eslint/parser": "^8.44.1",
+    "eslint": "^9.36.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "mocha": "^11.7.2",
+    "prettier": "^3.6.2",
+    "rollup": "^4.52.3",
+    "rollup-plugin-dts": "^6.2.3",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.20.6",
+    "typescript-eslint": "^8.44.1"
+  }
+}

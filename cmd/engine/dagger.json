@@ -1,0 +1,38 @@
+{
+  "name": "dagger-engine",
+  "engineVersion": "v0.19.0",
+  "sdk": {
+    "source": "go"
+  },
+  "include": [
+    "../../engine/distconsts/**/*",
+    "../../sdk/typescript/runtime/**/*"
+  ],
+  "dependencies": [
+    {
+      "name": "alpine",
+      "source": "../../modules/alpine"
+    },
+    {
+      "name": "dagger-cli",
+      "source": "../dagger"
+    },
+    {
+      "name": "dirdiff",
+      "source": "../../modules/dirdiff"
+    },
+    {
+      "name": "go",
+      "source": "../../modules/go"
+    },
+    {
+      "name": "version",
+      "source": "../../version"
+    },
+    {
+      "name": "wolfi",
+      "source": "../../modules/wolfi"
+    }
+  ],
+  "source": ".dagger"
+}

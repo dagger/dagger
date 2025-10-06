@@ -1,0 +1,7 @@
+{
+  "name": "value-set",
+  "engineVersion": "v0.18.9",
+  "sdk": {
+    "source": "php"
+  }
+}

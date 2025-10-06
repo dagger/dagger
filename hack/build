@@ -1,0 +1,37 @@
+#!/usr/bin/env -S dagger shell --no-mod
+
+# hack/build builds the engine and cli from local code, and additionally starts
+# the engine in the host's docker runtime.
+
+# HACK: strip "build" from the script path to get the parent module
+.cd ${0%/build}/..
+
+CONTAINER=${_EXPERIMENTAL_DAGGER_DEV_CONTAINER:-dagger-engine.dev}
+VOLUME=$CONTAINER
+IMAGE=${_EXPERIMENTAL_DAGGER_DEV_IMAGE:-localhost/dagger-engine.dev}
+
+cli |\
+    dev-binaries --runner-host="docker-image://$IMAGE?container=$CONTAINER&volume=$VOLUME&cleanup=false" --platform=current |\
+    export ./bin &
+cli_pid=$!
+
+.deps | dagger-engine |\
+    container ${_EXPERIMENTAL_DAGGER_GPU_SUPPORT:+--gpu-support} |\
+    as-tarball --forced-compression=gzip |\
+    export ./bin/engine.tar &
+engine_pid=$!
+
+.deps | dagger-engine |\
+    # HACK: /var/run/docker.sock is a linux default
+    load-to-docker ${DOCKER_HOST:-/var/run/docker.sock} \
+        ${IMAGE:+--name=${IMAGE-}} \
+        ${_EXPERIMENTAL_DAGGER_GPU_SUPPORT:+--gpu-support} |\
+    start \
+        --name=$CONTAINER \
+        --debug \
+        ${DAGGER_EXTRA_HOSTS:+--extra-hosts=${DAGGER_EXTRA_HOSTS-}} \
+        ${DAGGER_CLOUD_TOKEN:+--cloud-token=env://DAGGER_CLOUD_TOKEN} \
+        ${DAGGER_CLOUD_URL:+--cloud-url=${DAGGER_CLOUD_URL-}} &
+start_pid=$!
+
+.wait $cli_pid $engine_pid $start_pid

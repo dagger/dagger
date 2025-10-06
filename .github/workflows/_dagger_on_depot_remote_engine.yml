@@ -1,0 +1,49 @@
+name: Dagger on Depot - Remote Engine
+
+on:
+  workflow_call:
+    inputs:
+      function:
+        description: "Dagger function"
+        type: string
+        required: true
+      timeout:
+        description: "Timeout if not finished after this many minutes"
+        type: number
+        default: 10
+        required: false
+      dagger:
+        description: "Dagger version"
+        type: string
+        default: "0.19.0"
+        required: false
+      ubuntu:
+        description: "Ubuntu version"
+        type: string
+        default: "24.04"
+        required: false
+
+jobs:
+  remote-dagger-engine:
+    if: ${{ github.repository == 'dagger/dagger' }}
+    runs-on: depot-ubuntu-${{ inputs.ubuntu }},dagger=${{ inputs.dagger }}
+    timeout-minutes: ${{ inputs.timeout }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      - name: Warm up Engine
+        run: dagger core version
+      - name: ${{ inputs.function }}
+        uses: ./.github/actions/call-ci-alt-runner
+        with:
+          module: github.com/${{ github.repository }}@${{ github.sha }}
+          function: ${{ inputs.function }}
+          version: v${{ inputs.dagger }}
+          dev-engine: ${{ inputs.dev }}
+      - name: ${{ inputs.function }} (CACHE TEST)
+        uses: ./.github/actions/call-ci-alt-runner
+        with:
+          module: github.com/${{ github.repository }}@${{ github.sha }}
+          function: ${{ inputs.function }}
+          version: v${{ inputs.dagger }}
+          dev-engine: ${{ inputs.dev }}

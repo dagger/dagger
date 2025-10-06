@@ -1,0 +1,508 @@
+html,
+body,
+#content {
+    height: 100%;
+}
+
+/* Site menu */
+
+#site-nav.navbar-default {
+    margin: 0;
+    border-radius: 0;
+    border-bottom: 1px solid #ccc;
+    background-color: #edf3fe;
+    background-image: none;
+}
+
+#site-nav.navbar-default .navbar-brand,
+#site-nav.navbar-default .navbar-nav > li > a {
+    color: #000;
+}
+
+#site-nav.navbar-default .navbar-nav > li > a:hover {
+    text-decoration: underline;
+}
+
+#navbar-elements {
+    float: right;
+}
+
+@media (max-width: 768px) {
+    #navbar-elements {
+        float: none !important;
+    }
+}
+
+/* Namespace breadcrumbs */
+
+.namespace-breadcrumbs .breadcrumb {
+    margin: 0 0 12px;
+    border-radius: 0 0 4px 4px;
+    padding-left: 35px;
+}
+
+.namespace-breadcrumbs .breadcrumb > li + li:before {
+    content: "";
+}
+.namespace-breadcrumbs .breadcrumb > .backslash {
+    color: #ccc;
+}
+
+/* Site columns */
+
+#right-column {
+    margin-left: 20%;
+}
+
+#page-content {
+    padding: 0 30px;
+}
+
+#left-column {
+    width: 20%;
+    position: fixed;
+    height: 100%;
+    border-right: 1px solid #ccc;
+    line-height: 18px;
+    font-size: 13px;
+    display: flex;
+    flex-flow: column;
+}
+
+@media (max-width: 991px) {
+    #left-column {
+        display: none;
+    }
+    #right-column {
+        width: 100%;
+        margin-left: 0;
+    }
+}
+
+/* API Tree */
+
+#api-tree {
+    background: linear-gradient(to bottom, #fff, #fff 50%, #edf3fe 50%, #edf3fe);
+    background-size: 100% 56px;
+    overflow: auto;
+    height: 100%;
+    background-attachment: local;
+}
+
+#api-tree ul {
+    list-style-type: none;
+    margin: 0;
+    padding: 0;
+}
+
+#api-tree ul li {
+    padding: 0;
+    margin: 0;
+}
+
+/* Prevents the menu from jittering on lad */
+#api-tree .icon-play {
+    width: 26px;
+}
+
+#api-tree ul li .hd {
+    padding: 5px;
+}
+
+#api-tree li .hd:nth-child(even) {
+    background-color: #edf3fe;
+}
+
+#api-tree ul li.opened > .hd span {
+    -webkit-transform: rotate(90deg);
+    -moz-transform: rotate(90deg);
+    -o-transform: rotate(90deg);
+    -ms-transform: rotate(90deg);
+    transform: rotate(90deg);
+}
+
+#api-tree .bd {
+    display: none;
+}
+
+#api-tree li.opened > .bd {
+    display: block;
+}
+
+#api-tree li .hd:hover {
+    background-color: #eee;
+}
+
+#api-tree li.active > .hd {
+    background-color: #3875d7;
+}
+
+#api-tree li.active > .hd a {
+    color: #eee;
+    font-weight: bold;
+}
+
+#api-tree a {
+    color: #222;
+}
+
+#api-tree div.leaf a {
+    margin-left: 20px;
+}
+
+#api-tree .hd span {
+    padding: 0px 8px;
+    font-size: 15px;
+    line-height: 85%;
+}
+
+/* Control panel, search form, version drop-down */
+
+#control-panel {
+    background: #e8e8e8;
+    border-bottom: 1px solid #666;
+    padding: 4px;
+}
+
+#control-panel form, #control-panel > .search-bar {
+    margin: 4px 4px 5px 4px;
+}
+
+#control-panel > .search-bar > .progress {
+    height: 5px;
+    margin-bottom: 0px;
+}
+
+#control-panel > .search-bar > .progress > .progress-bar {
+    background: #30a0e0;
+}
+
+/* Source: https://stackoverflow.com/a/38229228/5155484 */
+
+.progress-bar.indeterminate {
+    position: relative;
+    animation: progress-indeterminate 3s linear infinite;
+}
+
+@keyframes progress-indeterminate {
+    from { left: -25%; width: 25%; }
+    to { left: 100%; width: 25%;}
+}
+
+#search-form {
+    position: relative;
+}
+
+#search-form input {
+    width: 100%;
+    padding-left: 28px;
+}
+
+#search-form span.icon-search {
+    position: absolute;
+    left: 5px;
+    top: 8px;
+    font-size: 20px;
+    z-index: 2;
+}
+
+/** Typeahead */
+
+.auto-complete-results {
+    width: 100%;
+    z-index: 1;
+}
+
+.auto-complete-dropdown-menu {
+    overflow: auto;
+    max-height: 260px;
+    margin-top: 9px;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    box-shadow: 0 5px 10px rgba(0, 0, 0, 0.2);
+    padding: 8px;
+}
+
+.auto-complete-result {
+    padding: 8px;
+    border-bottom: 1px solid #ccc;
+    font-size: 1.1em;
+}
+
+.auto-complete-selected, .auto-complete-result:hover {
+    background-color: #3875d7;
+    color: #fff;
+}
+
+.auto-complete-selected > mark.auto-complete-highlight, .auto-complete-result:hover > mark.auto-complete-highlight {
+    color: #fff;
+}
+
+.auto-complete-highlight {
+    padding: 0px;
+    font-weight: bold;
+    background-color: transparent;
+}
+
+/** General typography **/
+
+.navbar {
+    border-bottom: 0;
+}
+
+.page-header {
+    margin: 0 0 20px;
+}
+
+abbr[title],
+abbr[data-original-title],
+abbr {
+    border-bottom: none;
+    cursor: pointer;
+}
+
+a abbr {
+    cursor: pointer;
+}
+
+.method-description table,
+.description table {
+    border: solid 1px #ccc;
+    padding: 1em;
+    margin: 1em;
+}
+
+.method-description td,
+.method-description th,
+.description td,
+.description th {
+    padding: 0.75em 1.25em;
+}
+
+.method-description tbody tr:nth-child(even),
+.description tbody tr:nth-child(even) {
+    background: #edf3fe;
+}
+
+.method-description tbody tr:nth-child(odd),
+.description tbody tr:nth-child(odd) {
+    background: #fff;
+}
+
+.method-description thead tr,
+.description thead tr {
+    background: #edf3fe;
+}
+
+/** General Doctum styling **/
+
+.underlined > .row {
+    padding: 8px 0;
+    border-bottom: 1px solid #ddd;
+}
+
+#footer {
+    text-align: right;
+    margin: 30px;
+    font-size: 11px;
+}
+
+.description {
+    margin: 10px 0;
+    padding: 10px;
+    background-color: #efefef;
+}
+
+.description p {
+    padding: 0;
+    margin: 8px 0;
+}
+
+.method-description {
+    margin: 0 0 24px 0;
+}
+
+.details {
+    padding-left: 30px;
+}
+
+#method-details .method-item {
+    margin-bottom: 30px;
+}
+
+.method-item h3,
+.method-item h3 code {
+    background-color: #eee;
+}
+
+.method-item h3 {
+    padding: 4px;
+    margin-bottom: 20px;
+    font-size: 20px;
+}
+
+.location {
+    font-size: 11px;
+    float: right;
+    font-style: italic;
+}
+
+.namespace-list a {
+    padding: 3px 8px;
+    margin: 0 5px 5px 0;
+    border: 1px solid #ddd;
+    background-color: #f9f9f9;
+    display: inline-block;
+    border-radius: 4px;
+}
+
+.no-description {
+    color: #ccc;
+    font-size: 90%;
+}
+
+.type {
+    overflow-wrap: break-word;
+}
+
+/* Namespaces page */
+
+.namespaces {
+    clear: both;
+}
+
+.namespaces .namespace-container {
+    float: left;
+    margin: 0 14px 14px 0;
+    min-width: 30%;
+}
+
+.namespaces h2 {
+    margin: 0 0 20px 0;
+}
+
+.namespace-container > h2 {
+    background-color: #edf3fe;
+    padding: 4px 4px 4px 8px;
+    font-size: 25px;
+    margin: 20px 0;
+}
+
+@media (max-width: 991px) {
+    .namespaces .namespace-container {
+        margin-right: 0;
+        width: 100%;
+    }
+}
+
+/** Code and pre tags **/
+
+tt,
+code,
+pre {
+    font-family: Consolas, "Liberation Mono", Menlo, Courier, monospace;
+}
+
+code {
+    padding: 0;
+    padding-top: 0.2em;
+    padding-bottom: 0.2em;
+    margin: 0;
+    font-size: 85%;
+    background-color: rgba(0, 0, 0, 0.04);
+    border-radius: 3px;
+    color: #333;
+}
+
+pre {
+    padding: 16px;
+    overflow: auto;
+    font-size: 85%;
+    line-height: 1.45;
+    background-color: #f7f7f7;
+    border-radius: 3px;
+}
+
+pre.examples {
+    padding: 1rem;
+}
+
+#page-content > h2 {
+    background-color: #edf3fe;
+    padding: 4px 4px 4px 8px;
+    font-size: 25px;
+    margin: 20px 0;
+}
+
+
+/** Doc index **/
+
+dt {
+    font-weight: normal;
+}
+
+dd {
+    margin-left: 30px;
+    line-height: 1.5em;
+}
+
+#doc-index h2 {
+    font-weight: bold;
+    margin: 30px 0;
+}
+
+#doc-index .pagination {
+    margin: 0;
+}
+
+/* Search page */
+
+.search-results {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+}
+
+.search-results li {
+    list-style-type: none;
+    margin: 0;
+    padding: 14px 0;
+    border-bottom: 1px solid #ccc;
+}
+
+.search-results > li > h2 {
+    background: none;
+    margin: 0;
+    padding: 0;
+    font-size: 18px;
+}
+
+.search-results  > li > h2 > a {
+    float: left;
+    display: block;
+    margin: 0 0 4px 0;
+}
+
+.search-results .search-type {
+    float: right;
+    margin: 0 0 4px 0;
+}
+
+.search-results .search-from {
+    margin: 0 0 12px 0;
+    font-size: 12px;
+    color: #999;
+}
+
+.search-results .search-from a {
+    font-style: italic;
+}
+
+.search-results .search-description {
+    margin: 8px 0 0 30px;
+}
+
+.search-description {
+    white-space: pre;
+}

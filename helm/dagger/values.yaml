@@ -1,0 +1,213 @@
+nameOverride: ""
+fullnameOverride: ""
+
+engine:
+  ### Customize your Dagger Engine
+  # https://docs.dagger.io/configuration/engine/#configuration
+  #
+  # configJson: |
+  #   {
+  #     "logLevel": "info"
+  #   }
+
+  ### Alternative: Configure Dagger Engine using TOML format.
+  #   Configuration using json should be the default choice, and will take
+  #   precedence over toml if both are provided, however you can use toml for
+  #   any settings that are not supported in the json format.
+  #   https://github.com/moby/buildkit/blob/5997099827e676c4b6ce5774c98ade2483e0afe7/cmd/buildkitd/config/config.go
+  #
+  # config: |
+  #   debug = true
+  #   insecure-entitlements = ["security.insecure"]
+  #   [registry."registry:5000"]
+  #     http = true
+  #   [registry."docker.io"]
+  #     mirrors = ["mirror.gcr.io"]
+  #   [log]
+  #     format = "json"
+
+  annotations: {}
+
+  labels: {}
+
+  ### `DaemonSet` guarantees a single Engine per K8s node (default behaviour)
+  #
+  # Set to `StatefulSet` for running multiple Engines per K8s node
+  kind: DaemonSet
+
+  ### StatefulSet specific configuration
+  #
+  statefulSet:
+    # PVC retention policy (applies to all PVCs)
+    # Only available in Kubernetes 1.23+
+    persistentVolumeClaimRetentionPolicy:
+      # Options: Delete, Retain
+      whenDeleted: Retain
+      # Options: Delete, Retain
+      whenScaled: Retain
+
+    # Use PersistentVolumeClaim for data volume
+    persistentVolumeClaim:
+      enabled: false
+      # PVC specifications
+      storageClassName: ""
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+
+    # Controls how pods are created during initial scale up,
+    # when replacing pods, and when scaling down.
+    # Options: OrderedReady, Parallel (default: OrderedReady)
+    podManagementPolicy: OrderedReady
+
+  ### Configure the port settings for the Dagger Engine
+  #
+  # port: 1234 # The container port that the Dagger Engine will listen on.
+
+  ### Configure multiple ports for the Dagger Engine
+  # This allows defining all ports in a structured way
+  # Example configuration:
+  # containerPorts:
+  #   - name: dagger
+  #     containerPort: 1234 # Needs to be the same as engine.port if both are set
+  #     protocol: TCP
+  #     hostPort: 1234  # Optional: Expose the engine port directly on the host node
+  #   - name: metrics
+  #     containerPort: 8080
+  #     protocol: TCP
+
+  ### Customize Dagger Engine start args
+  args: []
+
+  ### Customize Dagger Engine environment variables
+  env: []
+
+  resources:
+    limits: {}
+    # limits:
+    #    cpu: "1"
+    #    memory: 1Gi
+    requests: {}
+    # requests:
+    #    cpu: "1"
+    #    memory: 1Gi
+
+  image:
+    ### Set a ref if you want to use a custom Dagger image
+    #   NOTE: you will need to ensure that a compatible dagger CLI is embedded in the image, otherwise readiness probes will fail
+    #   In the example below, we are configuring the latest, unreleased bleeding edge version
+    #
+    # ref: registry.dagger.io/engine:main
+    pullPolicy: IfNotPresent
+
+  ### Image pull secret to use for registry authentication.
+  imagePullSecrets: []
+  # imagePullSecrets:
+  #   - name: image-pull-secret
+
+  # nodeSelector:
+  #   app: dagger
+
+  ### Set taints & tolerations for this workload
+  #
+  # tolerations:
+  #   - effect: NoSchedule
+  #     key: dagger-runner
+  #     operator: Exists
+  # affinity:
+  #   nodeAffinity:
+  #     requiredDuringSchedulingIgnoredDuringExecution:
+  #       nodeSelectorTerms:
+  #       - matchExpressions:
+  #         - key: actions-runner
+  #           operator: Exists
+
+  ### Set priorityClassName to avoid eviction
+  priorityClassName: ""
+
+  ### Set runtimeClassName to use a custom runtimeClass
+  runtimeClassName: ""
+
+  readinessProbeSettings:
+    initialDelaySeconds: 5
+    timeoutSeconds: 14
+    periodSeconds: 15
+    successThreshold: 1
+    failureThreshold: 10
+
+  ### The Engine may need to finish operations in flight, or sync its state to a remote destination.
+  #   We give it ample time by setting this value to 5 mins by default.
+  #   You may want to adjust this to fit your workloads so that the Engine stops quicker.
+  terminationGracePeriodSeconds: 300
+
+  newServiceAccount:
+    # name: "dagger-helm"
+    create: false
+    annotations: []
+
+  existingServiceAccount:
+    {}
+    # name: "default"
+
+  ### Configure lifecycle hooks for the Dagger Engine
+  #
+  lifecycle:
+    # PreStop hook executed before container termination
+    preStop:
+      # exec:
+      #   command: ["/bin/sh", "-c", "sleep 10"]  # Example: graceful shutdown delay
+
+  ### HostPath Volume configuration
+  #
+  hostPath:
+    # Use hostPath for data volume
+    dataVolume:
+      # When disabled, PVC will be used if configured above
+      enabled: true
+
+    # Use hostPath for run volume
+    runVolume:
+      # When disabled, no run volume will be mounted
+      enabled: true
+
+  ### Additional volumes to mount in the Dagger Engine container
+  #
+  # Additional volume mounts for the container
+  volumeMounts: []
+  # - name: config-volume
+  #   mountPath: /etc/config
+  # - name: cache-volume
+  #   mountPath: /var/cache
+
+  # Additional volumes for the pod
+  volumes: []
+  # - name: config-volume
+  #   configMap:
+  #     name: my-config
+  # - name: cache-volume
+  #   emptyDir: {}
+  # - name: shared-data
+  #   persistentVolumeClaim:
+  #     claimName: my-pvc
+
+  # Additional sidecars to run alongside the Dagger Engine
+  # sidecars:
+  #   - name: my-sidecar
+  #     image: busybox
+  #     args: ["sleep", "3600"]
+  #     volumeMounts:
+  #       - name: data
+  #         mountPath: /data
+
+magicache:
+  enabled: false
+  url: https://api.dagger.cloud/magicache
+  ### Create your token via https://docs.dagger.io/manuals/user/cloud-get-started/#step-2-connect-to-dagger-cloud
+  #
+  # token: YOUR_DAGGER_CLOUD_TOKEN
+
+  ### If secretName is set, a new secret will NOT be created
+  #
+  # secretName: EXISTING_SECRET_NAME

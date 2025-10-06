@@ -1,0 +1,2100 @@
+# This file was generated. See https://daggerverse.dev/mod/github.com/dagger/dagger/modules/gha
+name: Engine & CLI
+"on":
+    push:
+        branches:
+            - main
+            - releases/**
+    pull_request:
+        types:
+            - opened
+            - reopened
+            - synchronize
+            - ready_for_review
+    workflow_dispatch: {}
+permissions:
+    contents: read
+concurrency:
+    group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+    cancel-in-progress: true
+jobs:
+    cli-test-publish:
+        runs-on:
+            - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.0' || 'ubuntu-24.04' }}
+        name: cli-test-publish
+        steps:
+            - name: Install Dagger
+              uses: dagger/dagger-for-github@v8.2.0
+              with:
+                version: v0.19.0
+            - name: scripts/warm-engine.sh
+              id: warm-engine
+              run: |
+                #!/bin/bash
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                  export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                which dagger
+                dagger version
+                dagger core version
+              shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
+            - name: scripts/exec.sh
+              id: exec
+              run: |
+                #!/bin/bash --noprofile --norc -e -o pipefail
+
+                if [[ -n "$DEBUG" && "$DEBUG" != "0" ]]; then
+                	set -x
+                	env
+                	which dagger
+                	pwd
+                	ls -l
+                	ps aux
+                fi
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                	export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                	unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
+                export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
+
+                # Ensure the command is provided as an environment variable
+                if [ -z "$COMMAND" ]; then
+                	echo "Error: Please set the COMMAND environment variable."
+                	exit 1
+                fi
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                	echo >>.env
+                	echo "$DOTENV" >>.env
+                fi
+
+                tmp=$(mktemp -d -t dagger-gha-XXXXXX)
+                echo '$' "$COMMAND"
+
+                # Run the command, capturing stdout and stderr
+                set +e
+                eval "$COMMAND" >$tmp/stdout.txt 2> >(tee $tmp/stderr.txt | (grep --line-buffered -m1 -oP 'https://dagger\.cloud/[^/]+/traces/[a-zA-Z0-9]+' | tee $tmp/trace-url.txt | awk '{print "Full trace at " $0}' && cat >/dev/null))
+                EXIT_CODE=$?
+                set -e
+                # Wait for all background jobs to finish
+                wait
+
+                # Extra trace URL
+                TRACE_URL=$(cat $tmp/trace-url.txt)
+
+                {
+                	echo -e "## Command\n"
+                	echo '```bash'
+                	if [[ -n "$DAGGER_MODULE" ]]; then
+                		echo -e "DAGGER_MODULE=\"$DAGGER_MODULE\""' \\ \n\t'"$COMMAND"
+                	else
+                		echo -e "$COMMAND"
+                	fi
+                	echo '```'
+
+                	# print a warning if the command failed
+                	if [[ $EXIT_CODE -ne 0 ]]; then
+                		echo -e "> [!CAUTION]\n>"
+                		echo "> Command failed with exit code ${EXIT_CODE}:"
+                		echo '> ```'
+                		cat $tmp/stderr.txt | grep -P -A25 '^Error: ' | sed -e 's/^/> /'
+                		echo '> ```'
+                	else
+                		echo -e "> [!NOTE]\n>"
+                		echo "> Command succeeded with exit code ${EXIT_CODE}."
+                	fi
+
+                	echo -e "## Dagger trace\n"
+                	if [[ "$TRACE_URL" == *"rotate dagger.cloud token for full url"* ]]; then
+                		cat <<-EOF
+                			Cloud token must be rotated. Please follow these steps:
+
+                			1. Go to [Dagger Cloud](https://dagger.cloud)
+                			2. Click on your profile icon in the bottom left corner
+                			3. Click on "Organization Settings"
+                			4. Click on "Regenerate token"
+                			5. Update the [\`DAGGER_CLOUD_TOKEN\` secret in your GitHub repository settings](https://github.com/${GITHUB_REPOSITORY:?Error: GITHUB_REPOSITORY is not set}/settings/secrets/actions/DAGGER_CLOUD_TOKEN)
+                		EOF
+                	elif [ -n "$TRACE_URL" ]; then
+                		echo "[$TRACE_URL]($TRACE_URL)"
+                	else
+                		echo "No trace available. To setup: [https://dagger.cloud/traces/setup](https://dagger.cloud/traces/setup)"
+                	fi
+
+                	echo -e "## Dagger version\n"
+                	echo '```bash'
+                	dagger version || true
+                	echo '```'
+                } >"${GITHUB_STEP_SUMMARY}"
+
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
+                cat $tmp/stdout.txt
+                exit $EXIT_CODE
+              env:
+                COMMAND: dagger call test-publish
+                DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_MODULE: github.com/${{ github.repository }}/cmd/dagger@${{ github.sha }}
+              shell: bash
+        timeout-minutes: 20
+    engine-test-publish:
+        runs-on:
+            - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-4x8' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.0' || 'ubuntu-24.04' }}
+        name: engine-test-publish
+        steps:
+            - name: Install Dagger
+              uses: dagger/dagger-for-github@v8.2.0
+              with:
+                version: v0.19.0
+            - name: scripts/warm-engine.sh
+              id: warm-engine
+              run: |
+                #!/bin/bash
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                  export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                which dagger
+                dagger version
+                dagger core version
+              shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
+            - name: scripts/exec.sh
+              id: exec
+              run: |
+                #!/bin/bash --noprofile --norc -e -o pipefail
+
+                if [[ -n "$DEBUG" && "$DEBUG" != "0" ]]; then
+                	set -x
+                	env
+                	which dagger
+                	pwd
+                	ls -l
+                	ps aux
+                fi
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                	export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                	unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
+                export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
+
+                # Ensure the command is provided as an environment variable
+                if [ -z "$COMMAND" ]; then
+                	echo "Error: Please set the COMMAND environment variable."
+                	exit 1
+                fi
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                	echo >>.env
+                	echo "$DOTENV" >>.env
+                fi
+
+                tmp=$(mktemp -d -t dagger-gha-XXXXXX)
+                echo '$' "$COMMAND"
+
+                # Run the command, capturing stdout and stderr
+                set +e
+                eval "$COMMAND" >$tmp/stdout.txt 2> >(tee $tmp/stderr.txt | (grep --line-buffered -m1 -oP 'https://dagger\.cloud/[^/]+/traces/[a-zA-Z0-9]+' | tee $tmp/trace-url.txt | awk '{print "Full trace at " $0}' && cat >/dev/null))
+                EXIT_CODE=$?
+                set -e
+                # Wait for all background jobs to finish
+                wait
+
+                # Extra trace URL
+                TRACE_URL=$(cat $tmp/trace-url.txt)
+
+                {
+                	echo -e "## Command\n"
+                	echo '```bash'
+                	if [[ -n "$DAGGER_MODULE" ]]; then
+                		echo -e "DAGGER_MODULE=\"$DAGGER_MODULE\""' \\ \n\t'"$COMMAND"
+                	else
+                		echo -e "$COMMAND"
+                	fi
+                	echo '```'
+
+                	# print a warning if the command failed
+                	if [[ $EXIT_CODE -ne 0 ]]; then
+                		echo -e "> [!CAUTION]\n>"
+                		echo "> Command failed with exit code ${EXIT_CODE}:"
+                		echo '> ```'
+                		cat $tmp/stderr.txt | grep -P -A25 '^Error: ' | sed -e 's/^/> /'
+                		echo '> ```'
+                	else
+                		echo -e "> [!NOTE]\n>"
+                		echo "> Command succeeded with exit code ${EXIT_CODE}."
+                	fi
+
+                	echo -e "## Dagger trace\n"
+                	if [[ "$TRACE_URL" == *"rotate dagger.cloud token for full url"* ]]; then
+                		cat <<-EOF
+                			Cloud token must be rotated. Please follow these steps:
+
+                			1. Go to [Dagger Cloud](https://dagger.cloud)
+                			2. Click on your profile icon in the bottom left corner
+                			3. Click on "Organization Settings"
+                			4. Click on "Regenerate token"
+                			5. Update the [\`DAGGER_CLOUD_TOKEN\` secret in your GitHub repository settings](https://github.com/${GITHUB_REPOSITORY:?Error: GITHUB_REPOSITORY is not set}/settings/secrets/actions/DAGGER_CLOUD_TOKEN)
+                		EOF
+                	elif [ -n "$TRACE_URL" ]; then
+                		echo "[$TRACE_URL]($TRACE_URL)"
+                	else
+                		echo "No trace available. To setup: [https://dagger.cloud/traces/setup](https://dagger.cloud/traces/setup)"
+                	fi
+
+                	echo -e "## Dagger version\n"
+                	echo '```bash'
+                	dagger version || true
+                	echo '```'
+                } >"${GITHUB_STEP_SUMMARY}"
+
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
+                cat $tmp/stdout.txt
+                exit $EXIT_CODE
+              env:
+                COMMAND: dagger call publish --image=dagger-engine.dev --tag=main --dry-run
+                DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_MODULE: github.com/${{ github.repository }}/cmd/engine@${{ github.sha }}
+              shell: bash
+        timeout-minutes: 20
+    lint:
+        runs-on:
+            - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-32x64' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.0' || 'ubuntu-24.04' }}
+        name: lint
+        steps:
+            - name: Install Dagger
+              uses: dagger/dagger-for-github@v8.2.0
+              with:
+                version: v0.19.0
+            - name: scripts/warm-engine.sh
+              id: warm-engine
+              run: |
+                #!/bin/bash
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                  export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                which dagger
+                dagger version
+                dagger core version
+              shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
+            - name: scripts/exec.sh
+              id: exec
+              run: |
+                #!/bin/bash --noprofile --norc -e -o pipefail
+
+                if [[ -n "$DEBUG" && "$DEBUG" != "0" ]]; then
+                	set -x
+                	env
+                	which dagger
+                	pwd
+                	ls -l
+                	ps aux
+                fi
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                	export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                	unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
+                export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
+
+                # Ensure the command is provided as an environment variable
+                if [ -z "$COMMAND" ]; then
+                	echo "Error: Please set the COMMAND environment variable."
+                	exit 1
+                fi
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                	echo >>.env
+                	echo "$DOTENV" >>.env
+                fi
+
+                tmp=$(mktemp -d -t dagger-gha-XXXXXX)
+                echo '$' "$COMMAND"
+
+                # Run the command, capturing stdout and stderr
+                set +e
+                eval "$COMMAND" >$tmp/stdout.txt 2> >(tee $tmp/stderr.txt | (grep --line-buffered -m1 -oP 'https://dagger\.cloud/[^/]+/traces/[a-zA-Z0-9]+' | tee $tmp/trace-url.txt | awk '{print "Full trace at " $0}' && cat >/dev/null))
+                EXIT_CODE=$?
+                set -e
+                # Wait for all background jobs to finish
+                wait
+
+                # Extra trace URL
+                TRACE_URL=$(cat $tmp/trace-url.txt)
+
+                {
+                	echo -e "## Command\n"
+                	echo '```bash'
+                	if [[ -n "$DAGGER_MODULE" ]]; then
+                		echo -e "DAGGER_MODULE=\"$DAGGER_MODULE\""' \\ \n\t'"$COMMAND"
+                	else
+                		echo -e "$COMMAND"
+                	fi
+                	echo '```'
+
+                	# print a warning if the command failed
+                	if [[ $EXIT_CODE -ne 0 ]]; then
+                		echo -e "> [!CAUTION]\n>"
+                		echo "> Command failed with exit code ${EXIT_CODE}:"
+                		echo '> ```'
+                		cat $tmp/stderr.txt | grep -P -A25 '^Error: ' | sed -e 's/^/> /'
+                		echo '> ```'
+                	else
+                		echo -e "> [!NOTE]\n>"
+                		echo "> Command succeeded with exit code ${EXIT_CODE}."
+                	fi
+
+                	echo -e "## Dagger trace\n"
+                	if [[ "$TRACE_URL" == *"rotate dagger.cloud token for full url"* ]]; then
+                		cat <<-EOF
+                			Cloud token must be rotated. Please follow these steps:
+
+                			1. Go to [Dagger Cloud](https://dagger.cloud)
+                			2. Click on your profile icon in the bottom left corner
+                			3. Click on "Organization Settings"
+                			4. Click on "Regenerate token"
+                			5. Update the [\`DAGGER_CLOUD_TOKEN\` secret in your GitHub repository settings](https://github.com/${GITHUB_REPOSITORY:?Error: GITHUB_REPOSITORY is not set}/settings/secrets/actions/DAGGER_CLOUD_TOKEN)
+                		EOF
+                	elif [ -n "$TRACE_URL" ]; then
+                		echo "[$TRACE_URL]($TRACE_URL)"
+                	else
+                		echo "No trace available. To setup: [https://dagger.cloud/traces/setup](https://dagger.cloud/traces/setup)"
+                	fi
+
+                	echo -e "## Dagger version\n"
+                	echo '```bash'
+                	dagger version || true
+                	echo '```'
+                } >"${GITHUB_STEP_SUMMARY}"
+
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
+                cat $tmp/stdout.txt
+                exit $EXIT_CODE
+              env:
+                COMMAND: dagger call lint
+                DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+              shell: bash
+        timeout-minutes: 20
+    scan-engine:
+        runs-on:
+            - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-4x8' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.0' || 'ubuntu-24.04' }}
+        name: scan-engine
+        steps:
+            - name: Install Dagger
+              uses: dagger/dagger-for-github@v8.2.0
+              with:
+                version: v0.19.0
+            - name: scripts/warm-engine.sh
+              id: warm-engine
+              run: |
+                #!/bin/bash
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                  export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                which dagger
+                dagger version
+                dagger core version
+              shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
+            - name: scripts/exec.sh
+              id: exec
+              run: |
+                #!/bin/bash --noprofile --norc -e -o pipefail
+
+                if [[ -n "$DEBUG" && "$DEBUG" != "0" ]]; then
+                	set -x
+                	env
+                	which dagger
+                	pwd
+                	ls -l
+                	ps aux
+                fi
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                	export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                	unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
+                export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
+
+                # Ensure the command is provided as an environment variable
+                if [ -z "$COMMAND" ]; then
+                	echo "Error: Please set the COMMAND environment variable."
+                	exit 1
+                fi
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                	echo >>.env
+                	echo "$DOTENV" >>.env
+                fi
+
+                tmp=$(mktemp -d -t dagger-gha-XXXXXX)
+                echo '$' "$COMMAND"
+
+                # Run the command, capturing stdout and stderr
+                set +e
+                eval "$COMMAND" >$tmp/stdout.txt 2> >(tee $tmp/stderr.txt | (grep --line-buffered -m1 -oP 'https://dagger\.cloud/[^/]+/traces/[a-zA-Z0-9]+' | tee $tmp/trace-url.txt | awk '{print "Full trace at " $0}' && cat >/dev/null))
+                EXIT_CODE=$?
+                set -e
+                # Wait for all background jobs to finish
+                wait
+
+                # Extra trace URL
+                TRACE_URL=$(cat $tmp/trace-url.txt)
+
+                {
+                	echo -e "## Command\n"
+                	echo '```bash'
+                	if [[ -n "$DAGGER_MODULE" ]]; then
+                		echo -e "DAGGER_MODULE=\"$DAGGER_MODULE\""' \\ \n\t'"$COMMAND"
+                	else
+                		echo -e "$COMMAND"
+                	fi
+                	echo '```'
+
+                	# print a warning if the command failed
+                	if [[ $EXIT_CODE -ne 0 ]]; then
+                		echo -e "> [!CAUTION]\n>"
+                		echo "> Command failed with exit code ${EXIT_CODE}:"
+                		echo '> ```'
+                		cat $tmp/stderr.txt | grep -P -A25 '^Error: ' | sed -e 's/^/> /'
+                		echo '> ```'
+                	else
+                		echo -e "> [!NOTE]\n>"
+                		echo "> Command succeeded with exit code ${EXIT_CODE}."
+                	fi
+
+                	echo -e "## Dagger trace\n"
+                	if [[ "$TRACE_URL" == *"rotate dagger.cloud token for full url"* ]]; then
+                		cat <<-EOF
+                			Cloud token must be rotated. Please follow these steps:
+
+                			1. Go to [Dagger Cloud](https://dagger.cloud)
+                			2. Click on your profile icon in the bottom left corner
+                			3. Click on "Organization Settings"
+                			4. Click on "Regenerate token"
+                			5. Update the [\`DAGGER_CLOUD_TOKEN\` secret in your GitHub repository settings](https://github.com/${GITHUB_REPOSITORY:?Error: GITHUB_REPOSITORY is not set}/settings/secrets/actions/DAGGER_CLOUD_TOKEN)
+                		EOF
+                	elif [ -n "$TRACE_URL" ]; then
+                		echo "[$TRACE_URL]($TRACE_URL)"
+                	else
+                		echo "No trace available. To setup: [https://dagger.cloud/traces/setup](https://dagger.cloud/traces/setup)"
+                	fi
+
+                	echo -e "## Dagger version\n"
+                	echo '```bash'
+                	dagger version || true
+                	echo '```'
+                } >"${GITHUB_STEP_SUMMARY}"
+
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
+                cat $tmp/stdout.txt
+                exit $EXIT_CODE
+              env:
+                COMMAND: dagger call scan
+                DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+              shell: bash
+        timeout-minutes: 20
+    scripts:
+        runs-on:
+            - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-4x8' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.0' || 'ubuntu-24.04' }}
+        name: scripts
+        steps:
+            - name: Install Dagger
+              uses: dagger/dagger-for-github@v8.2.0
+              with:
+                version: v0.19.0
+            - name: scripts/warm-engine.sh
+              id: warm-engine
+              run: |
+                #!/bin/bash
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                  export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                which dagger
+                dagger version
+                dagger core version
+              shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
+            - name: scripts/exec.sh
+              id: exec
+              run: |
+                #!/bin/bash --noprofile --norc -e -o pipefail
+
+                if [[ -n "$DEBUG" && "$DEBUG" != "0" ]]; then
+                	set -x
+                	env
+                	which dagger
+                	pwd
+                	ls -l
+                	ps aux
+                fi
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                	export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                	unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
+                export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
+
+                # Ensure the command is provided as an environment variable
+                if [ -z "$COMMAND" ]; then
+                	echo "Error: Please set the COMMAND environment variable."
+                	exit 1
+                fi
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                	echo >>.env
+                	echo "$DOTENV" >>.env
+                fi
+
+                tmp=$(mktemp -d -t dagger-gha-XXXXXX)
+                echo '$' "$COMMAND"
+
+                # Run the command, capturing stdout and stderr
+                set +e
+                eval "$COMMAND" >$tmp/stdout.txt 2> >(tee $tmp/stderr.txt | (grep --line-buffered -m1 -oP 'https://dagger\.cloud/[^/]+/traces/[a-zA-Z0-9]+' | tee $tmp/trace-url.txt | awk '{print "Full trace at " $0}' && cat >/dev/null))
+                EXIT_CODE=$?
+                set -e
+                # Wait for all background jobs to finish
+                wait
+
+                # Extra trace URL
+                TRACE_URL=$(cat $tmp/trace-url.txt)
+
+                {
+                	echo -e "## Command\n"
+                	echo '```bash'
+                	if [[ -n "$DAGGER_MODULE" ]]; then
+                		echo -e "DAGGER_MODULE=\"$DAGGER_MODULE\""' \\ \n\t'"$COMMAND"
+                	else
+                		echo -e "$COMMAND"
+                	fi
+                	echo '```'
+
+                	# print a warning if the command failed
+                	if [[ $EXIT_CODE -ne 0 ]]; then
+                		echo -e "> [!CAUTION]\n>"
+                		echo "> Command failed with exit code ${EXIT_CODE}:"
+                		echo '> ```'
+                		cat $tmp/stderr.txt | grep -P -A25 '^Error: ' | sed -e 's/^/> /'
+                		echo '> ```'
+                	else
+                		echo -e "> [!NOTE]\n>"
+                		echo "> Command succeeded with exit code ${EXIT_CODE}."
+                	fi
+
+                	echo -e "## Dagger trace\n"
+                	if [[ "$TRACE_URL" == *"rotate dagger.cloud token for full url"* ]]; then
+                		cat <<-EOF
+                			Cloud token must be rotated. Please follow these steps:
+
+                			1. Go to [Dagger Cloud](https://dagger.cloud)
+                			2. Click on your profile icon in the bottom left corner
+                			3. Click on "Organization Settings"
+                			4. Click on "Regenerate token"
+                			5. Update the [\`DAGGER_CLOUD_TOKEN\` secret in your GitHub repository settings](https://github.com/${GITHUB_REPOSITORY:?Error: GITHUB_REPOSITORY is not set}/settings/secrets/actions/DAGGER_CLOUD_TOKEN)
+                		EOF
+                	elif [ -n "$TRACE_URL" ]; then
+                		echo "[$TRACE_URL]($TRACE_URL)"
+                	else
+                		echo "No trace available. To setup: [https://dagger.cloud/traces/setup](https://dagger.cloud/traces/setup)"
+                	fi
+
+                	echo -e "## Dagger version\n"
+                	echo '```bash'
+                	dagger version || true
+                	echo '```'
+                } >"${GITHUB_STEP_SUMMARY}"
+
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
+                cat $tmp/stdout.txt
+                exit $EXIT_CODE
+              env:
+                COMMAND: dagger call check --targets=scripts
+                DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+              shell: bash
+        timeout-minutes: 20
+    test-call-and-shell:
+        runs-on:
+            - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
+        name: test-call-and-shell
+        steps:
+            - name: Install Dagger
+              uses: dagger/dagger-for-github@v8.2.0
+              with:
+                version: v0.19.0
+            - name: scripts/warm-engine.sh
+              id: warm-engine
+              run: |
+                #!/bin/bash
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                  export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                which dagger
+                dagger version
+                dagger core version
+              shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
+            - name: scripts/exec.sh
+              id: exec
+              run: |
+                #!/bin/bash --noprofile --norc -e -o pipefail
+
+                if [[ -n "$DEBUG" && "$DEBUG" != "0" ]]; then
+                	set -x
+                	env
+                	which dagger
+                	pwd
+                	ls -l
+                	ps aux
+                fi
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                	export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                	unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
+                export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
+
+                # Ensure the command is provided as an environment variable
+                if [ -z "$COMMAND" ]; then
+                	echo "Error: Please set the COMMAND environment variable."
+                	exit 1
+                fi
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                	echo >>.env
+                	echo "$DOTENV" >>.env
+                fi
+
+                tmp=$(mktemp -d -t dagger-gha-XXXXXX)
+                echo '$' "$COMMAND"
+
+                # Run the command, capturing stdout and stderr
+                set +e
+                eval "$COMMAND" >$tmp/stdout.txt 2> >(tee $tmp/stderr.txt | (grep --line-buffered -m1 -oP 'https://dagger\.cloud/[^/]+/traces/[a-zA-Z0-9]+' | tee $tmp/trace-url.txt | awk '{print "Full trace at " $0}' && cat >/dev/null))
+                EXIT_CODE=$?
+                set -e
+                # Wait for all background jobs to finish
+                wait
+
+                # Extra trace URL
+                TRACE_URL=$(cat $tmp/trace-url.txt)
+
+                {
+                	echo -e "## Command\n"
+                	echo '```bash'
+                	if [[ -n "$DAGGER_MODULE" ]]; then
+                		echo -e "DAGGER_MODULE=\"$DAGGER_MODULE\""' \\ \n\t'"$COMMAND"
+                	else
+                		echo -e "$COMMAND"
+                	fi
+                	echo '```'
+
+                	# print a warning if the command failed
+                	if [[ $EXIT_CODE -ne 0 ]]; then
+                		echo -e "> [!CAUTION]\n>"
+                		echo "> Command failed with exit code ${EXIT_CODE}:"
+                		echo '> ```'
+                		cat $tmp/stderr.txt | grep -P -A25 '^Error: ' | sed -e 's/^/> /'
+                		echo '> ```'
+                	else
+                		echo -e "> [!NOTE]\n>"
+                		echo "> Command succeeded with exit code ${EXIT_CODE}."
+                	fi
+
+                	echo -e "## Dagger trace\n"
+                	if [[ "$TRACE_URL" == *"rotate dagger.cloud token for full url"* ]]; then
+                		cat <<-EOF
+                			Cloud token must be rotated. Please follow these steps:
+
+                			1. Go to [Dagger Cloud](https://dagger.cloud)
+                			2. Click on your profile icon in the bottom left corner
+                			3. Click on "Organization Settings"
+                			4. Click on "Regenerate token"
+                			5. Update the [\`DAGGER_CLOUD_TOKEN\` secret in your GitHub repository settings](https://github.com/${GITHUB_REPOSITORY:?Error: GITHUB_REPOSITORY is not set}/settings/secrets/actions/DAGGER_CLOUD_TOKEN)
+                		EOF
+                	elif [ -n "$TRACE_URL" ]; then
+                		echo "[$TRACE_URL]($TRACE_URL)"
+                	else
+                		echo "No trace available. To setup: [https://dagger.cloud/traces/setup](https://dagger.cloud/traces/setup)"
+                	fi
+
+                	echo -e "## Dagger version\n"
+                	echo '```bash'
+                	dagger version || true
+                	echo '```'
+                } >"${GITHUB_STEP_SUMMARY}"
+
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
+                cat $tmp/stdout.txt
+                exit $EXIT_CODE
+              env:
+                COMMAND: dagger call test specific --race=true --parallel=16 --run='TestCall|TestShell|TestDaggerCMD'
+                DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                NO_OUTPUT: "true"
+              shell: bash
+            - name: Upload call logs
+              uses: actions/upload-artifact@v4
+              with:
+                name: call-logs-${{ runner.name }}-${{ github.job }}exec
+                overwrite: "true"
+                path: ${{ steps.exec.outputs.stderr_file }}
+              if: always()
+        timeout-minutes: 30
+    test-cgroupsv-2:
+        runs-on:
+            - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
+        name: test-cgroupsv2
+        steps:
+            - name: Install Dagger
+              uses: dagger/dagger-for-github@v8.2.0
+              with:
+                version: v0.19.0
+            - name: scripts/warm-engine.sh
+              id: warm-engine
+              run: |
+                #!/bin/bash
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                  export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                which dagger
+                dagger version
+                dagger core version
+              shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
+            - name: scripts/exec.sh
+              id: exec
+              run: |
+                #!/bin/bash --noprofile --norc -e -o pipefail
+
+                if [[ -n "$DEBUG" && "$DEBUG" != "0" ]]; then
+                	set -x
+                	env
+                	which dagger
+                	pwd
+                	ls -l
+                	ps aux
+                fi
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                	export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                	unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
+                export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
+
+                # Ensure the command is provided as an environment variable
+                if [ -z "$COMMAND" ]; then
+                	echo "Error: Please set the COMMAND environment variable."
+                	exit 1
+                fi
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                	echo >>.env
+                	echo "$DOTENV" >>.env
+                fi
+
+                tmp=$(mktemp -d -t dagger-gha-XXXXXX)
+                echo '$' "$COMMAND"
+
+                # Run the command, capturing stdout and stderr
+                set +e
+                eval "$COMMAND" >$tmp/stdout.txt 2> >(tee $tmp/stderr.txt | (grep --line-buffered -m1 -oP 'https://dagger\.cloud/[^/]+/traces/[a-zA-Z0-9]+' | tee $tmp/trace-url.txt | awk '{print "Full trace at " $0}' && cat >/dev/null))
+                EXIT_CODE=$?
+                set -e
+                # Wait for all background jobs to finish
+                wait
+
+                # Extra trace URL
+                TRACE_URL=$(cat $tmp/trace-url.txt)
+
+                {
+                	echo -e "## Command\n"
+                	echo '```bash'
+                	if [[ -n "$DAGGER_MODULE" ]]; then
+                		echo -e "DAGGER_MODULE=\"$DAGGER_MODULE\""' \\ \n\t'"$COMMAND"
+                	else
+                		echo -e "$COMMAND"
+                	fi
+                	echo '```'
+
+                	# print a warning if the command failed
+                	if [[ $EXIT_CODE -ne 0 ]]; then
+                		echo -e "> [!CAUTION]\n>"
+                		echo "> Command failed with exit code ${EXIT_CODE}:"
+                		echo '> ```'
+                		cat $tmp/stderr.txt | grep -P -A25 '^Error: ' | sed -e 's/^/> /'
+                		echo '> ```'
+                	else
+                		echo -e "> [!NOTE]\n>"
+                		echo "> Command succeeded with exit code ${EXIT_CODE}."
+                	fi
+
+                	echo -e "## Dagger trace\n"
+                	if [[ "$TRACE_URL" == *"rotate dagger.cloud token for full url"* ]]; then
+                		cat <<-EOF
+                			Cloud token must be rotated. Please follow these steps:
+
+                			1. Go to [Dagger Cloud](https://dagger.cloud)
+                			2. Click on your profile icon in the bottom left corner
+                			3. Click on "Organization Settings"
+                			4. Click on "Regenerate token"
+                			5. Update the [\`DAGGER_CLOUD_TOKEN\` secret in your GitHub repository settings](https://github.com/${GITHUB_REPOSITORY:?Error: GITHUB_REPOSITORY is not set}/settings/secrets/actions/DAGGER_CLOUD_TOKEN)
+                		EOF
+                	elif [ -n "$TRACE_URL" ]; then
+                		echo "[$TRACE_URL]($TRACE_URL)"
+                	else
+                		echo "No trace available. To setup: [https://dagger.cloud/traces/setup](https://dagger.cloud/traces/setup)"
+                	fi
+
+                	echo -e "## Dagger version\n"
+                	echo '```bash'
+                	dagger version || true
+                	echo '```'
+                } >"${GITHUB_STEP_SUMMARY}"
+
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
+                cat $tmp/stdout.txt
+                exit $EXIT_CODE
+              env:
+                COMMAND: dagger call test specific --race=true --parallel=16 --run='TestProvision|TestTelemetry'
+                DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                NO_OUTPUT: "true"
+              shell: bash
+            - name: Upload call logs
+              uses: actions/upload-artifact@v4
+              with:
+                name: call-logs-${{ runner.name }}-${{ github.job }}exec
+                overwrite: "true"
+                path: ${{ steps.exec.outputs.stderr_file }}
+              if: always()
+        timeout-minutes: 30
+    test-cli-engine:
+        runs-on:
+            - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
+        name: test-cli-engine
+        steps:
+            - name: Install Dagger
+              uses: dagger/dagger-for-github@v8.2.0
+              with:
+                version: v0.19.0
+            - name: scripts/warm-engine.sh
+              id: warm-engine
+              run: |
+                #!/bin/bash
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                  export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                which dagger
+                dagger version
+                dagger core version
+              shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
+            - name: scripts/exec.sh
+              id: exec
+              run: |
+                #!/bin/bash --noprofile --norc -e -o pipefail
+
+                if [[ -n "$DEBUG" && "$DEBUG" != "0" ]]; then
+                	set -x
+                	env
+                	which dagger
+                	pwd
+                	ls -l
+                	ps aux
+                fi
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                	export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                	unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
+                export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
+
+                # Ensure the command is provided as an environment variable
+                if [ -z "$COMMAND" ]; then
+                	echo "Error: Please set the COMMAND environment variable."
+                	exit 1
+                fi
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                	echo >>.env
+                	echo "$DOTENV" >>.env
+                fi
+
+                tmp=$(mktemp -d -t dagger-gha-XXXXXX)
+                echo '$' "$COMMAND"
+
+                # Run the command, capturing stdout and stderr
+                set +e
+                eval "$COMMAND" >$tmp/stdout.txt 2> >(tee $tmp/stderr.txt | (grep --line-buffered -m1 -oP 'https://dagger\.cloud/[^/]+/traces/[a-zA-Z0-9]+' | tee $tmp/trace-url.txt | awk '{print "Full trace at " $0}' && cat >/dev/null))
+                EXIT_CODE=$?
+                set -e
+                # Wait for all background jobs to finish
+                wait
+
+                # Extra trace URL
+                TRACE_URL=$(cat $tmp/trace-url.txt)
+
+                {
+                	echo -e "## Command\n"
+                	echo '```bash'
+                	if [[ -n "$DAGGER_MODULE" ]]; then
+                		echo -e "DAGGER_MODULE=\"$DAGGER_MODULE\""' \\ \n\t'"$COMMAND"
+                	else
+                		echo -e "$COMMAND"
+                	fi
+                	echo '```'
+
+                	# print a warning if the command failed
+                	if [[ $EXIT_CODE -ne 0 ]]; then
+                		echo -e "> [!CAUTION]\n>"
+                		echo "> Command failed with exit code ${EXIT_CODE}:"
+                		echo '> ```'
+                		cat $tmp/stderr.txt | grep -P -A25 '^Error: ' | sed -e 's/^/> /'
+                		echo '> ```'
+                	else
+                		echo -e "> [!NOTE]\n>"
+                		echo "> Command succeeded with exit code ${EXIT_CODE}."
+                	fi
+
+                	echo -e "## Dagger trace\n"
+                	if [[ "$TRACE_URL" == *"rotate dagger.cloud token for full url"* ]]; then
+                		cat <<-EOF
+                			Cloud token must be rotated. Please follow these steps:
+
+                			1. Go to [Dagger Cloud](https://dagger.cloud)
+                			2. Click on your profile icon in the bottom left corner
+                			3. Click on "Organization Settings"
+                			4. Click on "Regenerate token"
+                			5. Update the [\`DAGGER_CLOUD_TOKEN\` secret in your GitHub repository settings](https://github.com/${GITHUB_REPOSITORY:?Error: GITHUB_REPOSITORY is not set}/settings/secrets/actions/DAGGER_CLOUD_TOKEN)
+                		EOF
+                	elif [ -n "$TRACE_URL" ]; then
+                		echo "[$TRACE_URL]($TRACE_URL)"
+                	else
+                		echo "No trace available. To setup: [https://dagger.cloud/traces/setup](https://dagger.cloud/traces/setup)"
+                	fi
+
+                	echo -e "## Dagger version\n"
+                	echo '```bash'
+                	dagger version || true
+                	echo '```'
+                } >"${GITHUB_STEP_SUMMARY}"
+
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
+                cat $tmp/stdout.txt
+                exit $EXIT_CODE
+              env:
+                COMMAND: dagger call test specific --race=true --parallel=16 --run='TestCLI|TestEngine'
+                DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                NO_OUTPUT: "true"
+              shell: bash
+            - name: Upload call logs
+              uses: actions/upload-artifact@v4
+              with:
+                name: call-logs-${{ runner.name }}-${{ github.job }}exec
+                overwrite: "true"
+                path: ${{ steps.exec.outputs.stderr_file }}
+              if: always()
+        timeout-minutes: 30
+    test-client-generator:
+        runs-on:
+            - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
+        name: test-client-generator
+        steps:
+            - name: Install Dagger
+              uses: dagger/dagger-for-github@v8.2.0
+              with:
+                version: v0.19.0
+            - name: scripts/warm-engine.sh
+              id: warm-engine
+              run: |
+                #!/bin/bash
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                  export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                which dagger
+                dagger version
+                dagger core version
+              shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
+            - name: scripts/exec.sh
+              id: exec
+              run: |
+                #!/bin/bash --noprofile --norc -e -o pipefail
+
+                if [[ -n "$DEBUG" && "$DEBUG" != "0" ]]; then
+                	set -x
+                	env
+                	which dagger
+                	pwd
+                	ls -l
+                	ps aux
+                fi
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                	export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                	unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
+                export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
+
+                # Ensure the command is provided as an environment variable
+                if [ -z "$COMMAND" ]; then
+                	echo "Error: Please set the COMMAND environment variable."
+                	exit 1
+                fi
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                	echo >>.env
+                	echo "$DOTENV" >>.env
+                fi
+
+                tmp=$(mktemp -d -t dagger-gha-XXXXXX)
+                echo '$' "$COMMAND"
+
+                # Run the command, capturing stdout and stderr
+                set +e
+                eval "$COMMAND" >$tmp/stdout.txt 2> >(tee $tmp/stderr.txt | (grep --line-buffered -m1 -oP 'https://dagger\.cloud/[^/]+/traces/[a-zA-Z0-9]+' | tee $tmp/trace-url.txt | awk '{print "Full trace at " $0}' && cat >/dev/null))
+                EXIT_CODE=$?
+                set -e
+                # Wait for all background jobs to finish
+                wait
+
+                # Extra trace URL
+                TRACE_URL=$(cat $tmp/trace-url.txt)
+
+                {
+                	echo -e "## Command\n"
+                	echo '```bash'
+                	if [[ -n "$DAGGER_MODULE" ]]; then
+                		echo -e "DAGGER_MODULE=\"$DAGGER_MODULE\""' \\ \n\t'"$COMMAND"
+                	else
+                		echo -e "$COMMAND"
+                	fi
+                	echo '```'
+
+                	# print a warning if the command failed
+                	if [[ $EXIT_CODE -ne 0 ]]; then
+                		echo -e "> [!CAUTION]\n>"
+                		echo "> Command failed with exit code ${EXIT_CODE}:"
+                		echo '> ```'
+                		cat $tmp/stderr.txt | grep -P -A25 '^Error: ' | sed -e 's/^/> /'
+                		echo '> ```'
+                	else
+                		echo -e "> [!NOTE]\n>"
+                		echo "> Command succeeded with exit code ${EXIT_CODE}."
+                	fi
+
+                	echo -e "## Dagger trace\n"
+                	if [[ "$TRACE_URL" == *"rotate dagger.cloud token for full url"* ]]; then
+                		cat <<-EOF
+                			Cloud token must be rotated. Please follow these steps:
+
+                			1. Go to [Dagger Cloud](https://dagger.cloud)
+                			2. Click on your profile icon in the bottom left corner
+                			3. Click on "Organization Settings"
+                			4. Click on "Regenerate token"
+                			5. Update the [\`DAGGER_CLOUD_TOKEN\` secret in your GitHub repository settings](https://github.com/${GITHUB_REPOSITORY:?Error: GITHUB_REPOSITORY is not set}/settings/secrets/actions/DAGGER_CLOUD_TOKEN)
+                		EOF
+                	elif [ -n "$TRACE_URL" ]; then
+                		echo "[$TRACE_URL]($TRACE_URL)"
+                	else
+                		echo "No trace available. To setup: [https://dagger.cloud/traces/setup](https://dagger.cloud/traces/setup)"
+                	fi
+
+                	echo -e "## Dagger version\n"
+                	echo '```bash'
+                	dagger version || true
+                	echo '```'
+                } >"${GITHUB_STEP_SUMMARY}"
+
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
+                cat $tmp/stdout.txt
+                exit $EXIT_CODE
+              env:
+                COMMAND: dagger call test specific --race=true --parallel=16 --run='TestClientGenerator'
+                DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                NO_OUTPUT: "true"
+              shell: bash
+            - name: Upload call logs
+              uses: actions/upload-artifact@v4
+              with:
+                name: call-logs-${{ runner.name }}-${{ github.job }}exec
+                overwrite: "true"
+                path: ${{ steps.exec.outputs.stderr_file }}
+              if: always()
+        timeout-minutes: 30
+    test-container:
+        runs-on:
+            - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
+        name: test-container
+        steps:
+            - name: Install Dagger
+              uses: dagger/dagger-for-github@v8.2.0
+              with:
+                version: v0.19.0
+            - name: scripts/warm-engine.sh
+              id: warm-engine
+              run: |
+                #!/bin/bash
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                  export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                which dagger
+                dagger version
+                dagger core version
+              shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
+            - name: scripts/exec.sh
+              id: exec
+              run: |
+                #!/bin/bash --noprofile --norc -e -o pipefail
+
+                if [[ -n "$DEBUG" && "$DEBUG" != "0" ]]; then
+                	set -x
+                	env
+                	which dagger
+                	pwd
+                	ls -l
+                	ps aux
+                fi
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                	export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                	unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
+                export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
+
+                # Ensure the command is provided as an environment variable
+                if [ -z "$COMMAND" ]; then
+                	echo "Error: Please set the COMMAND environment variable."
+                	exit 1
+                fi
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                	echo >>.env
+                	echo "$DOTENV" >>.env
+                fi
+
+                tmp=$(mktemp -d -t dagger-gha-XXXXXX)
+                echo '$' "$COMMAND"
+
+                # Run the command, capturing stdout and stderr
+                set +e
+                eval "$COMMAND" >$tmp/stdout.txt 2> >(tee $tmp/stderr.txt | (grep --line-buffered -m1 -oP 'https://dagger\.cloud/[^/]+/traces/[a-zA-Z0-9]+' | tee $tmp/trace-url.txt | awk '{print "Full trace at " $0}' && cat >/dev/null))
+                EXIT_CODE=$?
+                set -e
+                # Wait for all background jobs to finish
+                wait
+
+                # Extra trace URL
+                TRACE_URL=$(cat $tmp/trace-url.txt)
+
+                {
+                	echo -e "## Command\n"
+                	echo '```bash'
+                	if [[ -n "$DAGGER_MODULE" ]]; then
+                		echo -e "DAGGER_MODULE=\"$DAGGER_MODULE\""' \\ \n\t'"$COMMAND"
+                	else
+                		echo -e "$COMMAND"
+                	fi
+                	echo '```'
+
+                	# print a warning if the command failed
+                	if [[ $EXIT_CODE -ne 0 ]]; then
+                		echo -e "> [!CAUTION]\n>"
+                		echo "> Command failed with exit code ${EXIT_CODE}:"
+                		echo '> ```'
+                		cat $tmp/stderr.txt | grep -P -A25 '^Error: ' | sed -e 's/^/> /'
+                		echo '> ```'
+                	else
+                		echo -e "> [!NOTE]\n>"
+                		echo "> Command succeeded with exit code ${EXIT_CODE}."
+                	fi
+
+                	echo -e "## Dagger trace\n"
+                	if [[ "$TRACE_URL" == *"rotate dagger.cloud token for full url"* ]]; then
+                		cat <<-EOF
+                			Cloud token must be rotated. Please follow these steps:
+
+                			1. Go to [Dagger Cloud](https://dagger.cloud)
+                			2. Click on your profile icon in the bottom left corner
+                			3. Click on "Organization Settings"
+                			4. Click on "Regenerate token"
+                			5. Update the [\`DAGGER_CLOUD_TOKEN\` secret in your GitHub repository settings](https://github.com/${GITHUB_REPOSITORY:?Error: GITHUB_REPOSITORY is not set}/settings/secrets/actions/DAGGER_CLOUD_TOKEN)
+                		EOF
+                	elif [ -n "$TRACE_URL" ]; then
+                		echo "[$TRACE_URL]($TRACE_URL)"
+                	else
+                		echo "No trace available. To setup: [https://dagger.cloud/traces/setup](https://dagger.cloud/traces/setup)"
+                	fi
+
+                	echo -e "## Dagger version\n"
+                	echo '```bash'
+                	dagger version || true
+                	echo '```'
+                } >"${GITHUB_STEP_SUMMARY}"
+
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
+                cat $tmp/stdout.txt
+                exit $EXIT_CODE
+              env:
+                COMMAND: dagger call test specific --race=true --parallel=16 --run='TestContainer|TestDockerfile'
+                DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                NO_OUTPUT: "true"
+              shell: bash
+            - name: Upload call logs
+              uses: actions/upload-artifact@v4
+              with:
+                name: call-logs-${{ runner.name }}-${{ github.job }}exec
+                overwrite: "true"
+                path: ${{ steps.exec.outputs.stderr_file }}
+              if: always()
+        timeout-minutes: 30
+    test-everything-else:
+        runs-on:
+            - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-32x64' || 'ubuntu-24.04' }}
+        name: test-everything-else
+        steps:
+            - name: Install Dagger
+              uses: dagger/dagger-for-github@v8.2.0
+              with:
+                version: v0.19.0
+            - name: scripts/warm-engine.sh
+              id: warm-engine
+              run: |
+                #!/bin/bash
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                  export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                which dagger
+                dagger version
+                dagger core version
+              shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
+            - name: scripts/exec.sh
+              id: exec
+              run: |
+                #!/bin/bash --noprofile --norc -e -o pipefail
+
+                if [[ -n "$DEBUG" && "$DEBUG" != "0" ]]; then
+                	set -x
+                	env
+                	which dagger
+                	pwd
+                	ls -l
+                	ps aux
+                fi
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                	export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                	unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
+                export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
+
+                # Ensure the command is provided as an environment variable
+                if [ -z "$COMMAND" ]; then
+                	echo "Error: Please set the COMMAND environment variable."
+                	exit 1
+                fi
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                	echo >>.env
+                	echo "$DOTENV" >>.env
+                fi
+
+                tmp=$(mktemp -d -t dagger-gha-XXXXXX)
+                echo '$' "$COMMAND"
+
+                # Run the command, capturing stdout and stderr
+                set +e
+                eval "$COMMAND" >$tmp/stdout.txt 2> >(tee $tmp/stderr.txt | (grep --line-buffered -m1 -oP 'https://dagger\.cloud/[^/]+/traces/[a-zA-Z0-9]+' | tee $tmp/trace-url.txt | awk '{print "Full trace at " $0}' && cat >/dev/null))
+                EXIT_CODE=$?
+                set -e
+                # Wait for all background jobs to finish
+                wait
+
+                # Extra trace URL
+                TRACE_URL=$(cat $tmp/trace-url.txt)
+
+                {
+                	echo -e "## Command\n"
+                	echo '```bash'
+                	if [[ -n "$DAGGER_MODULE" ]]; then
+                		echo -e "DAGGER_MODULE=\"$DAGGER_MODULE\""' \\ \n\t'"$COMMAND"
+                	else
+                		echo -e "$COMMAND"
+                	fi
+                	echo '```'
+
+                	# print a warning if the command failed
+                	if [[ $EXIT_CODE -ne 0 ]]; then
+                		echo -e "> [!CAUTION]\n>"
+                		echo "> Command failed with exit code ${EXIT_CODE}:"
+                		echo '> ```'
+                		cat $tmp/stderr.txt | grep -P -A25 '^Error: ' | sed -e 's/^/> /'
+                		echo '> ```'
+                	else
+                		echo -e "> [!NOTE]\n>"
+                		echo "> Command succeeded with exit code ${EXIT_CODE}."
+                	fi
+
+                	echo -e "## Dagger trace\n"
+                	if [[ "$TRACE_URL" == *"rotate dagger.cloud token for full url"* ]]; then
+                		cat <<-EOF
+                			Cloud token must be rotated. Please follow these steps:
+
+                			1. Go to [Dagger Cloud](https://dagger.cloud)
+                			2. Click on your profile icon in the bottom left corner
+                			3. Click on "Organization Settings"
+                			4. Click on "Regenerate token"
+                			5. Update the [\`DAGGER_CLOUD_TOKEN\` secret in your GitHub repository settings](https://github.com/${GITHUB_REPOSITORY:?Error: GITHUB_REPOSITORY is not set}/settings/secrets/actions/DAGGER_CLOUD_TOKEN)
+                		EOF
+                	elif [ -n "$TRACE_URL" ]; then
+                		echo "[$TRACE_URL]($TRACE_URL)"
+                	else
+                		echo "No trace available. To setup: [https://dagger.cloud/traces/setup](https://dagger.cloud/traces/setup)"
+                	fi
+
+                	echo -e "## Dagger version\n"
+                	echo '```bash'
+                	dagger version || true
+                	echo '```'
+                } >"${GITHUB_STEP_SUMMARY}"
+
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
+                cat $tmp/stdout.txt
+                exit $EXIT_CODE
+              env:
+                COMMAND: dagger call test specific --race=true --parallel=16 --skip='TestProvision|TestTelemetry|TestModule|TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestJava|TestContainer|TestDockerfile|TestLLM|TestCLI|TestEngine|TestClientGenerator|TestInterface|TestCall|TestShell|TestDaggerCMD'
+                DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                NO_OUTPUT: "true"
+              shell: bash
+            - name: Upload call logs
+              uses: actions/upload-artifact@v4
+              with:
+                name: call-logs-${{ runner.name }}-${{ github.job }}exec
+                overwrite: "true"
+                path: ${{ steps.exec.outputs.stderr_file }}
+              if: always()
+        timeout-minutes: 30
+    test-interface:
+        runs-on:
+            - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
+        name: test-interface
+        steps:
+            - name: Install Dagger
+              uses: dagger/dagger-for-github@v8.2.0
+              with:
+                version: v0.19.0
+            - name: scripts/warm-engine.sh
+              id: warm-engine
+              run: |
+                #!/bin/bash
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                  export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                which dagger
+                dagger version
+                dagger core version
+              shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
+            - name: scripts/exec.sh
+              id: exec
+              run: |
+                #!/bin/bash --noprofile --norc -e -o pipefail
+
+                if [[ -n "$DEBUG" && "$DEBUG" != "0" ]]; then
+                	set -x
+                	env
+                	which dagger
+                	pwd
+                	ls -l
+                	ps aux
+                fi
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                	export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                	unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
+                export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
+
+                # Ensure the command is provided as an environment variable
+                if [ -z "$COMMAND" ]; then
+                	echo "Error: Please set the COMMAND environment variable."
+                	exit 1
+                fi
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                	echo >>.env
+                	echo "$DOTENV" >>.env
+                fi
+
+                tmp=$(mktemp -d -t dagger-gha-XXXXXX)
+                echo '$' "$COMMAND"
+
+                # Run the command, capturing stdout and stderr
+                set +e
+                eval "$COMMAND" >$tmp/stdout.txt 2> >(tee $tmp/stderr.txt | (grep --line-buffered -m1 -oP 'https://dagger\.cloud/[^/]+/traces/[a-zA-Z0-9]+' | tee $tmp/trace-url.txt | awk '{print "Full trace at " $0}' && cat >/dev/null))
+                EXIT_CODE=$?
+                set -e
+                # Wait for all background jobs to finish
+                wait
+
+                # Extra trace URL
+                TRACE_URL=$(cat $tmp/trace-url.txt)
+
+                {
+                	echo -e "## Command\n"
+                	echo '```bash'
+                	if [[ -n "$DAGGER_MODULE" ]]; then
+                		echo -e "DAGGER_MODULE=\"$DAGGER_MODULE\""' \\ \n\t'"$COMMAND"
+                	else
+                		echo -e "$COMMAND"
+                	fi
+                	echo '```'
+
+                	# print a warning if the command failed
+                	if [[ $EXIT_CODE -ne 0 ]]; then
+                		echo -e "> [!CAUTION]\n>"
+                		echo "> Command failed with exit code ${EXIT_CODE}:"
+                		echo '> ```'
+                		cat $tmp/stderr.txt | grep -P -A25 '^Error: ' | sed -e 's/^/> /'
+                		echo '> ```'
+                	else
+                		echo -e "> [!NOTE]\n>"
+                		echo "> Command succeeded with exit code ${EXIT_CODE}."
+                	fi
+
+                	echo -e "## Dagger trace\n"
+                	if [[ "$TRACE_URL" == *"rotate dagger.cloud token for full url"* ]]; then
+                		cat <<-EOF
+                			Cloud token must be rotated. Please follow these steps:
+
+                			1. Go to [Dagger Cloud](https://dagger.cloud)
+                			2. Click on your profile icon in the bottom left corner
+                			3. Click on "Organization Settings"
+                			4. Click on "Regenerate token"
+                			5. Update the [\`DAGGER_CLOUD_TOKEN\` secret in your GitHub repository settings](https://github.com/${GITHUB_REPOSITORY:?Error: GITHUB_REPOSITORY is not set}/settings/secrets/actions/DAGGER_CLOUD_TOKEN)
+                		EOF
+                	elif [ -n "$TRACE_URL" ]; then
+                		echo "[$TRACE_URL]($TRACE_URL)"
+                	else
+                		echo "No trace available. To setup: [https://dagger.cloud/traces/setup](https://dagger.cloud/traces/setup)"
+                	fi
+
+                	echo -e "## Dagger version\n"
+                	echo '```bash'
+                	dagger version || true
+                	echo '```'
+                } >"${GITHUB_STEP_SUMMARY}"
+
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
+                cat $tmp/stdout.txt
+                exit $EXIT_CODE
+              env:
+                COMMAND: dagger call test specific --race=true --parallel=16 --run='TestInterface'
+                DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                NO_OUTPUT: "true"
+              shell: bash
+            - name: Upload call logs
+              uses: actions/upload-artifact@v4
+              with:
+                name: call-logs-${{ runner.name }}-${{ github.job }}exec
+                overwrite: "true"
+                path: ${{ steps.exec.outputs.stderr_file }}
+              if: always()
+        timeout-minutes: 30
+    test-llm:
+        runs-on:
+            - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
+        name: test-LLM
+        steps:
+            - name: Install Dagger
+              uses: dagger/dagger-for-github@v8.2.0
+              with:
+                version: v0.19.0
+            - name: scripts/warm-engine.sh
+              id: warm-engine
+              run: |
+                #!/bin/bash
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                  export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                which dagger
+                dagger version
+                dagger core version
+              shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
+            - name: scripts/exec.sh
+              id: exec
+              run: |
+                #!/bin/bash --noprofile --norc -e -o pipefail
+
+                if [[ -n "$DEBUG" && "$DEBUG" != "0" ]]; then
+                	set -x
+                	env
+                	which dagger
+                	pwd
+                	ls -l
+                	ps aux
+                fi
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                	export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                	unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
+                export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
+
+                # Ensure the command is provided as an environment variable
+                if [ -z "$COMMAND" ]; then
+                	echo "Error: Please set the COMMAND environment variable."
+                	exit 1
+                fi
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                	echo >>.env
+                	echo "$DOTENV" >>.env
+                fi
+
+                tmp=$(mktemp -d -t dagger-gha-XXXXXX)
+                echo '$' "$COMMAND"
+
+                # Run the command, capturing stdout and stderr
+                set +e
+                eval "$COMMAND" >$tmp/stdout.txt 2> >(tee $tmp/stderr.txt | (grep --line-buffered -m1 -oP 'https://dagger\.cloud/[^/]+/traces/[a-zA-Z0-9]+' | tee $tmp/trace-url.txt | awk '{print "Full trace at " $0}' && cat >/dev/null))
+                EXIT_CODE=$?
+                set -e
+                # Wait for all background jobs to finish
+                wait
+
+                # Extra trace URL
+                TRACE_URL=$(cat $tmp/trace-url.txt)
+
+                {
+                	echo -e "## Command\n"
+                	echo '```bash'
+                	if [[ -n "$DAGGER_MODULE" ]]; then
+                		echo -e "DAGGER_MODULE=\"$DAGGER_MODULE\""' \\ \n\t'"$COMMAND"
+                	else
+                		echo -e "$COMMAND"
+                	fi
+                	echo '```'
+
+                	# print a warning if the command failed
+                	if [[ $EXIT_CODE -ne 0 ]]; then
+                		echo -e "> [!CAUTION]\n>"
+                		echo "> Command failed with exit code ${EXIT_CODE}:"
+                		echo '> ```'
+                		cat $tmp/stderr.txt | grep -P -A25 '^Error: ' | sed -e 's/^/> /'
+                		echo '> ```'
+                	else
+                		echo -e "> [!NOTE]\n>"
+                		echo "> Command succeeded with exit code ${EXIT_CODE}."
+                	fi
+
+                	echo -e "## Dagger trace\n"
+                	if [[ "$TRACE_URL" == *"rotate dagger.cloud token for full url"* ]]; then
+                		cat <<-EOF
+                			Cloud token must be rotated. Please follow these steps:
+
+                			1. Go to [Dagger Cloud](https://dagger.cloud)
+                			2. Click on your profile icon in the bottom left corner
+                			3. Click on "Organization Settings"
+                			4. Click on "Regenerate token"
+                			5. Update the [\`DAGGER_CLOUD_TOKEN\` secret in your GitHub repository settings](https://github.com/${GITHUB_REPOSITORY:?Error: GITHUB_REPOSITORY is not set}/settings/secrets/actions/DAGGER_CLOUD_TOKEN)
+                		EOF
+                	elif [ -n "$TRACE_URL" ]; then
+                		echo "[$TRACE_URL]($TRACE_URL)"
+                	else
+                		echo "No trace available. To setup: [https://dagger.cloud/traces/setup](https://dagger.cloud/traces/setup)"
+                	fi
+
+                	echo -e "## Dagger version\n"
+                	echo '```bash'
+                	dagger version || true
+                	echo '```'
+                } >"${GITHUB_STEP_SUMMARY}"
+
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
+                cat $tmp/stdout.txt
+                exit $EXIT_CODE
+              env:
+                COMMAND: dagger call test specific --race=true --parallel=16 --run='TestLLM'
+                DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                NO_OUTPUT: "true"
+              shell: bash
+            - name: Upload call logs
+              uses: actions/upload-artifact@v4
+              with:
+                name: call-logs-${{ runner.name }}-${{ github.job }}exec
+                overwrite: "true"
+                path: ${{ steps.exec.outputs.stderr_file }}
+              if: always()
+        timeout-minutes: 30
+    test-module-runtimes:
+        runs-on:
+            - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-32x64' || 'ubuntu-24.04' }}
+        name: test-module-runtimes
+        steps:
+            - name: Install Dagger
+              uses: dagger/dagger-for-github@v8.2.0
+              with:
+                version: v0.19.0
+            - name: scripts/warm-engine.sh
+              id: warm-engine
+              run: |
+                #!/bin/bash
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                  export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                which dagger
+                dagger version
+                dagger core version
+              shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
+            - name: scripts/exec.sh
+              id: exec
+              run: |
+                #!/bin/bash --noprofile --norc -e -o pipefail
+
+                if [[ -n "$DEBUG" && "$DEBUG" != "0" ]]; then
+                	set -x
+                	env
+                	which dagger
+                	pwd
+                	ls -l
+                	ps aux
+                fi
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                	export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                	unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
+                export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
+
+                # Ensure the command is provided as an environment variable
+                if [ -z "$COMMAND" ]; then
+                	echo "Error: Please set the COMMAND environment variable."
+                	exit 1
+                fi
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                	echo >>.env
+                	echo "$DOTENV" >>.env
+                fi
+
+                tmp=$(mktemp -d -t dagger-gha-XXXXXX)
+                echo '$' "$COMMAND"
+
+                # Run the command, capturing stdout and stderr
+                set +e
+                eval "$COMMAND" >$tmp/stdout.txt 2> >(tee $tmp/stderr.txt | (grep --line-buffered -m1 -oP 'https://dagger\.cloud/[^/]+/traces/[a-zA-Z0-9]+' | tee $tmp/trace-url.txt | awk '{print "Full trace at " $0}' && cat >/dev/null))
+                EXIT_CODE=$?
+                set -e
+                # Wait for all background jobs to finish
+                wait
+
+                # Extra trace URL
+                TRACE_URL=$(cat $tmp/trace-url.txt)
+
+                {
+                	echo -e "## Command\n"
+                	echo '```bash'
+                	if [[ -n "$DAGGER_MODULE" ]]; then
+                		echo -e "DAGGER_MODULE=\"$DAGGER_MODULE\""' \\ \n\t'"$COMMAND"
+                	else
+                		echo -e "$COMMAND"
+                	fi
+                	echo '```'
+
+                	# print a warning if the command failed
+                	if [[ $EXIT_CODE -ne 0 ]]; then
+                		echo -e "> [!CAUTION]\n>"
+                		echo "> Command failed with exit code ${EXIT_CODE}:"
+                		echo '> ```'
+                		cat $tmp/stderr.txt | grep -P -A25 '^Error: ' | sed -e 's/^/> /'
+                		echo '> ```'
+                	else
+                		echo -e "> [!NOTE]\n>"
+                		echo "> Command succeeded with exit code ${EXIT_CODE}."
+                	fi
+
+                	echo -e "## Dagger trace\n"
+                	if [[ "$TRACE_URL" == *"rotate dagger.cloud token for full url"* ]]; then
+                		cat <<-EOF
+                			Cloud token must be rotated. Please follow these steps:
+
+                			1. Go to [Dagger Cloud](https://dagger.cloud)
+                			2. Click on your profile icon in the bottom left corner
+                			3. Click on "Organization Settings"
+                			4. Click on "Regenerate token"
+                			5. Update the [\`DAGGER_CLOUD_TOKEN\` secret in your GitHub repository settings](https://github.com/${GITHUB_REPOSITORY:?Error: GITHUB_REPOSITORY is not set}/settings/secrets/actions/DAGGER_CLOUD_TOKEN)
+                		EOF
+                	elif [ -n "$TRACE_URL" ]; then
+                		echo "[$TRACE_URL]($TRACE_URL)"
+                	else
+                		echo "No trace available. To setup: [https://dagger.cloud/traces/setup](https://dagger.cloud/traces/setup)"
+                	fi
+
+                	echo -e "## Dagger version\n"
+                	echo '```bash'
+                	dagger version || true
+                	echo '```'
+                } >"${GITHUB_STEP_SUMMARY}"
+
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
+                cat $tmp/stdout.txt
+                exit $EXIT_CODE
+              env:
+                COMMAND: dagger call test specific --race=true --parallel=16 --run='TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestJava'
+                DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                NO_OUTPUT: "true"
+              shell: bash
+            - name: Upload call logs
+              uses: actions/upload-artifact@v4
+              with:
+                name: call-logs-${{ runner.name }}-${{ github.job }}exec
+                overwrite: "true"
+                path: ${{ steps.exec.outputs.stderr_file }}
+              if: always()
+        timeout-minutes: 30
+    test-modules:
+        runs-on:
+            - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-32x64' || 'ubuntu-24.04' }}
+        name: test-modules
+        steps:
+            - name: Install Dagger
+              uses: dagger/dagger-for-github@v8.2.0
+              with:
+                version: v0.19.0
+            - name: scripts/warm-engine.sh
+              id: warm-engine
+              run: |
+                #!/bin/bash
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                  export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                which dagger
+                dagger version
+                dagger core version
+              shell: bash
+            - name: Checkout
+              uses: actions/checkout@v4
+            - name: scripts/exec.sh
+              id: exec
+              run: |
+                #!/bin/bash --noprofile --norc -e -o pipefail
+
+                if [[ -n "$DEBUG" && "$DEBUG" != "0" ]]; then
+                	set -x
+                	env
+                	which dagger
+                	pwd
+                	ls -l
+                	ps aux
+                fi
+
+                # Detect if a dev engine is available, if so: use that
+                # We don't rely on PATH because the GHA runner messes with that
+                if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
+                	export PATH="$(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN):$PATH"
+                	unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+                fi
+
+                GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
+                export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
+
+                # Ensure the command is provided as an environment variable
+                if [ -z "$COMMAND" ]; then
+                	echo "Error: Please set the COMMAND environment variable."
+                	exit 1
+                fi
+
+                # Append values to .env
+                if [[ -n "$DOTENV" ]]; then
+                	echo >>.env
+                	echo "$DOTENV" >>.env
+                fi
+
+                tmp=$(mktemp -d -t dagger-gha-XXXXXX)
+                echo '$' "$COMMAND"
+
+                # Run the command, capturing stdout and stderr
+                set +e
+                eval "$COMMAND" >$tmp/stdout.txt 2> >(tee $tmp/stderr.txt | (grep --line-buffered -m1 -oP 'https://dagger\.cloud/[^/]+/traces/[a-zA-Z0-9]+' | tee $tmp/trace-url.txt | awk '{print "Full trace at " $0}' && cat >/dev/null))
+                EXIT_CODE=$?
+                set -e
+                # Wait for all background jobs to finish
+                wait
+
+                # Extra trace URL
+                TRACE_URL=$(cat $tmp/trace-url.txt)
+
+                {
+                	echo -e "## Command\n"
+                	echo '```bash'
+                	if [[ -n "$DAGGER_MODULE" ]]; then
+                		echo -e "DAGGER_MODULE=\"$DAGGER_MODULE\""' \\ \n\t'"$COMMAND"
+                	else
+                		echo -e "$COMMAND"
+                	fi
+                	echo '```'
+
+                	# print a warning if the command failed
+                	if [[ $EXIT_CODE -ne 0 ]]; then
+                		echo -e "> [!CAUTION]\n>"
+                		echo "> Command failed with exit code ${EXIT_CODE}:"
+                		echo '> ```'
+                		cat $tmp/stderr.txt | grep -P -A25 '^Error: ' | sed -e 's/^/> /'
+                		echo '> ```'
+                	else
+                		echo -e "> [!NOTE]\n>"
+                		echo "> Command succeeded with exit code ${EXIT_CODE}."
+                	fi
+
+                	echo -e "## Dagger trace\n"
+                	if [[ "$TRACE_URL" == *"rotate dagger.cloud token for full url"* ]]; then
+                		cat <<-EOF
+                			Cloud token must be rotated. Please follow these steps:
+
+                			1. Go to [Dagger Cloud](https://dagger.cloud)
+                			2. Click on your profile icon in the bottom left corner
+                			3. Click on "Organization Settings"
+                			4. Click on "Regenerate token"
+                			5. Update the [\`DAGGER_CLOUD_TOKEN\` secret in your GitHub repository settings](https://github.com/${GITHUB_REPOSITORY:?Error: GITHUB_REPOSITORY is not set}/settings/secrets/actions/DAGGER_CLOUD_TOKEN)
+                		EOF
+                	elif [ -n "$TRACE_URL" ]; then
+                		echo "[$TRACE_URL]($TRACE_URL)"
+                	else
+                		echo "No trace available. To setup: [https://dagger.cloud/traces/setup](https://dagger.cloud/traces/setup)"
+                	fi
+
+                	echo -e "## Dagger version\n"
+                	echo '```bash'
+                	dagger version || true
+                	echo '```'
+                } >"${GITHUB_STEP_SUMMARY}"
+
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
+                cat $tmp/stdout.txt
+                exit $EXIT_CODE
+              env:
+                COMMAND: dagger call test specific --race=true --parallel=16 --run='TestModule'
+                DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
+                NO_OUTPUT: "true"
+              shell: bash
+            - name: Upload call logs
+              uses: actions/upload-artifact@v4
+              with:
+                name: call-logs-${{ runner.name }}-${{ github.job }}exec
+                overwrite: "true"
+                path: ${{ steps.exec.outputs.stderr_file }}
+              if: always()
+        timeout-minutes: 30

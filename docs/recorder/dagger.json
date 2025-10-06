@@ -1,0 +1,26 @@
+{
+  "name": "recorder",
+  "engineVersion": "v0.15.2",
+  "sdk": "go",
+  "dependencies": [
+    {
+      "name": "dagger-cli",
+      "source": "../../cmd/dagger"
+    },
+    {
+      "name": "docker",
+      "source": "github.com/shykes/x/docker",
+      "pin": "36ad35ca2d917b7fe965fa3aeb2b5f74f6dda106"
+    },
+    {
+      "name": "termcast",
+      "source": "github.com/shykes/x/termcast",
+      "pin": "36ad35ca2d917b7fe965fa3aeb2b5f74f6dda106"
+    },
+    {
+      "name": "wolfi",
+      "source": "../../modules/wolfi"
+    }
+  ],
+  "source": "."
+}

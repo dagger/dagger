@@ -1,0 +1,6 @@
+kind: Added
+body: Added support for bun.lock - Bun's text based lock file added in v1.2
+time: 2025-03-02T20:56:18.918284-08:00
+custom:
+    Author: Josh Meads
+    PR: "9745"

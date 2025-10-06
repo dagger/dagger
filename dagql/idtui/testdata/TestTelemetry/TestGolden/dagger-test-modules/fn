@@ -1,0 +1,31 @@
+Expected stdout:
+
+hi from root hi from dep hi from dep2
+
+Expected stderr:
+
+▼ connect X.Xs
+├─● starting engine X.Xs
+├─● connecting to engine X.Xs
+╰─● starting session X.Xs
+ 
+▼ load module: github.com/dagger/dagger-test-modules X.Xs
+├─● finding module configuration X.Xs
+├─● initializing module X.Xs
+├─● inspecting module metadata X.Xs
+╰─● loading type definitions X.Xs
+ 
+● parsing command line arguments X.Xs
+
+● rootMod: RootMod! X.Xs
+▼ .fn: String! X.Xs
+┃ hi from root hi from dep hi from dep2
+├─● depAlias: DepAlias! X.Xs
+╰─▼ .fn: String! X.Xs
+  ┃ hi from dep hi from dep2
+  ├─● dep2: Dep2! X.Xs
+  ╰─▼ .fn: String! X.Xs
+    ┃ hi from dep2
+
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

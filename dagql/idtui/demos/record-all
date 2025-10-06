@@ -1,0 +1,13 @@
+#!/bin/sh
+
+set -e -u -x
+
+cd $(dirname $0)
+
+# asciinema rec -y -t 'dagger install' -c ./install # interactive
+# asciinema rec -y -t 'dagger listen' -c ./listen # interactive
+# asciinema rec -y -t 'dagger up' -c ./up # interactive
+asciinema rec -y -t 'dagger run' -c ./run
+asciinema rec -y -t 'dagger intro' -c ./init
+asciinema rec -y -t 'dagger publish' -c ./publish
+asciinema rec -y -t 'dagger query' -c ./query

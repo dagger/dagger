@@ -1,0 +1,28 @@
+#!/usr/bin/env sh
+
+# This file shouldn't be needed but it's been pretty useful. Rather than
+# pretend we don't need it, I figured I'd commit it and we can ceremoniously
+# remove it later once the dogfooding DX improves.
+#
+# When testing large cross-cutting refactors ./hack/make engine:test becomes
+# pretty unhelpful because the logs can be clipped when there's too much
+# output. (https://github.com/dagger/dagger/issues/5759)
+#
+# It also doesn't support passing flags along, and I pass flags all the time.
+#
+# In general it's also nice to just run tests locally sometimes.
+#
+# This script is needed because we've accumulated a bunch of tests that _rely_
+# on running in Dagger, and those tests currently fail when run locally.
+#
+# In the long run we should have those tests detect this state and skip
+# themselves, or refactor them to also work locally.
+#
+# For now, a big old -skip flag will have to do.
+
+cd $(dirname $0)/..
+
+./hack/with-dev gotestsum -f testname ./core/integration/ \
+  -skip 'TestDaggerRun|Shell|WaitsForEngine|RemoteCache|ContainerPublish|ExecFromScratch|MultiPlatformPublish|ExecAndPush|ContainerMediaTypes|ContainerForceCompression|PlatformCrossCompile|TestContainerWithRegistryAuth|TestContainerImageLoadCompatibility' \
+  "$@" \
+  2>&1 | tee /tmp/most.log.$(date +%s)

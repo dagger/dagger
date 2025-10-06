@@ -1,0 +1,7 @@
+{
+  "name": "objects",
+  "engineVersion": "v0.18.9",
+  "sdk": {
+    "source": "../../sdk/elixir"
+  }
+}

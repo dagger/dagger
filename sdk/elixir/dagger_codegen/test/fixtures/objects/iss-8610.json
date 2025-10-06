@@ -1,0 +1,92 @@
+{
+  "description": "The root of the DAG.",
+  "enumValues": [],
+  "fields": [
+    {
+      "args": [
+        {
+          "defaultValue": null,
+          "description": "Location of the written directory (e.g., \"/src/\").",
+          "name": "path",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "defaultValue": null,
+          "description": "Identifier of the directory to copy.",
+          "name": "directory",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "DirectoryID",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "defaultValue": "[]",
+          "description": "Exclude artifacts that match the given pattern (e.g., [\"node_modules/\", \".git*\"]).",
+          "name": "exclude",
+          "type": {
+            "kind": "LIST",
+            "name": null,
+            "ofType": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          }
+        },
+        {
+          "defaultValue": "[]",
+          "description": "Include only artifacts that match the given pattern (e.g., [\"app/\", \"package.*\"]).",
+          "name": "include",
+          "type": {
+            "kind": "LIST",
+            "name": null,
+            "ofType": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          }
+        }
+      ],
+      "deprecationReason": null,
+      "description": "Retrieves this directory plus a directory written at the given path.",
+      "isDeprecated": false,
+      "name": "withDirectory",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "OBJECT",
+          "name": "Directory",
+          "ofType": null
+        }
+      }
+    }
+  ],
+  "inputFields": [],
+  "interfaces": [],
+  "kind": "OBJECT",
+  "name": "Directory",
+  "possibleTypes": []
+}

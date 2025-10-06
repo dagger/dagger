@@ -1,0 +1,17 @@
+[
+  {
+    "role": "user",
+    "content": "greet me"
+  },
+  {
+    "role": "assistant",
+    "content": "Hello! 👋 How can I assist you today?",
+    "token_usage": {
+      "input_tokens": 310,
+      "output_tokens": 12,
+      "cached_token_reads": 0,
+      "cached_token_writes": 0,
+      "total_tokens": 322
+    }
+  }
+]

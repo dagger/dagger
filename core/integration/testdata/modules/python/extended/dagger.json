@@ -1,0 +1,13 @@
+{
+  "name": "ext-python-sdk",
+  "engineVersion": "v0.18.14",
+  "sdk": {
+    "source": "python"
+  },
+  "dependencies": [
+    {
+      "name": "python-sdk",
+      "source": "../../../../../../sdk/python/runtime"
+    }
+  ]
+}

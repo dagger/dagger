@@ -1,0 +1,14 @@
+name: dagger
+on:
+  push:
+    branches: [main]
+
+jobs:
+  hello:
+    name: hello
+    runs-on: depot-ubuntu-24.04,dagger={{ version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Call Dagger Function
+        run: dagger -m github.com/shykes/daggerverse/hello@v0.3.0 call hello --greeting="bonjour" --name="monde"

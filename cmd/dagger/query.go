@@ -8,9 +8,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/dagger/dagger/router"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
+
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/client"
 )
 
 var (
@@ -20,17 +23,21 @@ var (
 )
 
 var queryCmd = &cobra.Command{
-	Use:                   "query [flags] [operation]",
-	Aliases:               []string{"q"},
-	DisableFlagsInUseLine: true,
-	Long:                  "Send API queries to a dagger engine\n\nWhen no document file, read query from standard input.",
-	Short:                 "Send API queries to a dagger engine",
-	Example: `
-dagger query <<EOF
+	Use:     "query [options] [operation]",
+	Aliases: []string{"q"},
+	Short:   "Send API queries to a dagger engine",
+	Long: `Send API queries to a dagger engine.
+
+When no document file is provided, reads query from standard input.
+
+Can optionally provide the GraphQL operation name if there are multiple
+queries in the document.
+`,
+	Example: `dagger query <<EOF
 {
   container {
     from(address:"hello-world") {
-      exec(args:["/hello"]) {
+      withExec(args:["/hello"]) {
         stdout
       }
     }
@@ -38,22 +45,47 @@ dagger query <<EOF
 }
 EOF
 `,
-	Run:  Query,
-	Args: cobra.MaximumNArgs(1), // operation can be specified
+	GroupID: execGroup.ID,
+	Args:    cobra.MaximumNArgs(1), // operation can be specified
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if isPrintTraceLinkEnabled(cmd.Annotations) {
+			cmd.SetContext(idtui.WithPrintTraceLink(cmd.Context(), true))
+		}
+
+		return optionalModCmdWrapper(Query, "")(cmd, args)
+	},
+	Annotations: map[string]string{
+		printTraceLinkKey: "true",
+	},
 }
 
-func Query(cmd *cobra.Command, args []string) {
-	ctx := context.Background()
+func Query(ctx context.Context, engineClient *client.Client, _ *dagger.Module, cmd *cobra.Command, args []string) (rerr error) {
+	res, err := runQuery(ctx, engineClient, args)
+	if err != nil {
+		return err
+	}
+	result, err := json.MarshalIndent(res, "", "    ")
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s\n", result)
+	return nil
+}
+
+func runQuery(
+	ctx context.Context,
+	engineClient *client.Client,
+	args []string,
+) (map[string]any, error) {
 	var operation string
 	if len(args) > 0 {
 		operation = args[0]
 	}
 
-	vars := make(map[string]interface{})
+	vars := make(map[string]any)
 	if len(queryVarsJSONInput) > 0 {
 		if err := json.Unmarshal([]byte(queryVarsJSONInput), &vars); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+			return nil, err
 		}
 	} else {
 		vars = getKVInput(queryVarsInput)
@@ -61,51 +93,28 @@ func Query(cmd *cobra.Command, args []string) {
 
 	// Use the provided query file if specified
 	// Otherwise, if stdin is a pipe or other non-tty thing, read from it.
-	// Finally, default to the operations returned by the loadExtension query
 	var operations string
 	if queryFile != "" {
 		inBytes, err := os.ReadFile(queryFile)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+			return nil, err
 		}
 		operations = string(inBytes)
 	} else if !term.IsTerminal(int(os.Stdin.Fd())) {
 		inBytes, err := io.ReadAll(os.Stdin)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+			return nil, err
 		}
 		operations = string(inBytes)
 	}
 
-	result, err := doQuery(ctx, operations, operation, vars)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("%s\n", result)
+	res := make(map[string]any)
+	err := engineClient.Do(ctx, operations, operation, vars, &res)
+	return res, err
 }
 
-func doQuery(ctx context.Context, query, op string, vars map[string]interface{}) ([]byte, error) {
-	res := make(map[string]interface{})
-	err := withEngine(ctx, "", func(ctx context.Context, r *router.Router) error {
-		_, err := r.Do(ctx, query, op, vars, &res)
-		return err
-	})
-	if err != nil {
-		return nil, err
-	}
-	result, err := json.MarshalIndent(res, "", "    ")
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-func getKVInput(kvs []string) map[string]interface{} {
-	m := make(map[string]interface{})
+func getKVInput(kvs []string) map[string]any {
+	m := make(map[string]any)
 	for _, kv := range kvs {
 		split := strings.SplitN(kv, "=", 2)
 		m[split[0]] = split[1]
@@ -114,38 +123,8 @@ func getKVInput(kvs []string) map[string]interface{} {
 }
 
 func init() {
-	// changing usage template so examples are displayed below flags
-	queryCmd.SetUsageTemplate(`Usage:{{if .Runnable}}
-  {{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}
-  {{.CommandPath}} [command]{{end}}{{if gt (len .Aliases) 0}}
-
-Aliases:
-  {{.NameAndAliases}}{{end}}{{if .HasAvailableSubCommands}}{{$cmds := .Commands}}{{if eq (len .Groups) 0}}
-
-Available Commands:{{range $cmds}}{{if (or .IsAvailableCommand (eq .Name "help"))}}
-  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{else}}{{range $group := .Groups}}
-
-{{.Title}}{{range $cmds}}{{if (and (eq .GroupID $group.ID) (or .IsAvailableCommand (eq .Name "help")))}}
-  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{if not .AllChildCommandsHaveGroup}}
-
-Additional Commands:{{range $cmds}}{{if (and (eq .GroupID "") (or .IsAvailableCommand (eq .Name "help")))}}
-  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
-
-Flags:
-{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}{{if .HasExample}}
-
-Examples:
-{{.Example}}{{end}}
-Global Flags:
-{{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasHelpSubCommands}}
-
-Additional help topics:{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
-  {{rpad .CommandPath .CommandPathPadding}} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableSubCommands}}
-
-Use "{{.CommandPath}} [command] --help" for more information about a command.{{end}}
-`)
-
-	queryCmd.Flags().StringVar(&queryFile, "doc", "", "document query file")
-	queryCmd.Flags().StringSliceVar(&queryVarsInput, "var", nil, "query variable")
-	queryCmd.Flags().StringVar(&queryVarsJSONInput, "var-json", "", "json query variables (overrides --var)")
+	queryCmd.Flags().StringVar(&queryFile, "doc", "", "Read query from file (defaults to reading from stdin)")
+	queryCmd.Flags().StringSliceVar(&queryVarsInput, "var", nil, "List of query variables, in key=value format")
+	queryCmd.Flags().StringVar(&queryVarsJSONInput, "var-json", "", "Query variables in JSON format (overrides --var)")
+	queryCmd.MarkFlagFilename("doc", "graphql", "gql")
 }

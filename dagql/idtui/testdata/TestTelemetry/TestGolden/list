@@ -1,0 +1,69 @@
+Expected stdout:
+
+.git/
+chroma.go
+debug.go
+demos/
+frontend.go
+frontend_dots.go
+frontend_plain.go
+frontend_pretty.go
+golden_test.go
+huh.go
+multiprefixw/
+output.go
+patch.go
+symbols.go
+sys_unix.go
+sys_windows.go
+testdata/
+viztest/
+vterm.go
+vterm_lite.go
+vterm_lite_test.go
+
+Expected stderr:
+
+▼ connect X.Xs
+├╴✔ starting engine X.Xs
+├╴▼ connecting to engine X.Xs
+│ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
+╰╴✔ starting session X.Xs
+ 
+▼ load module: ./viztest X.Xs
+├╴✔ finding module configuration X.Xs
+├╴✔ initializing module X.Xs
+├╴✔ inspecting module metadata X.Xs
+╰╴✔ loading type definitions X.Xs
+ 
+✔ parsing command line arguments X.Xs
+
+✔ viztest: Viztest! X.Xs
+▼ .list(
+│ ┆ dir: Address.directory: Directory!
+│ ): String! X.Xs
+┃ .git/
+┃ chroma.go
+┃ debug.go
+┃ demos/
+┃ frontend.go
+┃ frontend_dots.go
+┃ frontend_plain.go
+┃ frontend_pretty.go
+┃ golden_test.go
+┃ huh.go
+┃ multiprefixw/
+┃ output.go
+┃ patch.go
+┃ symbols.go
+┃ sys_unix.go
+┃ sys_windows.go
+┃ testdata/
+┃ viztest/
+┃ vterm.go
+┃ vterm_lite.go
+┃ vterm_lite_test.go
+╰╴✔ Directory.entries: [String!]! X.Xs
+
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

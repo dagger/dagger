@@ -19,6 +19,7 @@ type DNSNameConf struct {
 	DomainName    string   `json:"domainName"`
 	Hosts         string   `json:"hosts"`
 	Pidfile       string   `json:"pidfile"`
+	Lockfile      string   `json:"lockfile"`
 	RuntimeConfig struct { // The capability arg
 		Aliases map[string][]string `json:"aliases"`
 	} `json:"runtimeConfig,omitempty"`

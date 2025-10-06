@@ -1,0 +1,12 @@
+# Adding ruff ignores here to avoid a noqa comment in the snippets
+# and very doc specific rules in the SDK's pyproject.toml.
+extend = "../../.ruff.toml"
+
+[lint]
+ignore = [
+    "DTZ",     # timezones not used
+    "PLR0913", # allow more than 5 arguments in a function
+    "RET504",  # variable name can be useful as documentation
+    "S311",    # pseudo-random generators not used for security
+    "T201",    # allow use of print
+]

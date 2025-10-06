@@ -1,0 +1,27 @@
+[package]
+name = "dagger-codegen"
+description = "dagger sdk codegen library"
+publish = true
+readme = "README.md"
+license-file = "LICENSE"
+
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+dagger-sdk = { workspace = true }
+
+eyre = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_graphql_input = { workspace = true }
+tracing.workspace = true
+
+genco.workspace = true
+convert_case.workspace = true
+itertools.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true

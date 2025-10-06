@@ -3,47 +3,43 @@ package auth
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 
+	bkauth "github.com/dagger/dagger/internal/buildkit/session/auth"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	"github.com/docker/cli/cli/config/configfile"
-	bkauth "github.com/moby/buildkit/session/auth"
-	"github.com/moby/buildkit/session/auth/authprovider"
-	"google.golang.org/grpc"
 )
+
+// TODO: this could be consolidated to buildkit pkg now, should only be needed there
 
 const defaultDockerDomain = "docker.io"
 
 // RegistryAuthProvider is a custom auth provider for image's registry
-// authentication from both Docker config AND dynamic user provided secret.
+// authentication from dynamic user provided secrets.
 // Adapted from: https://github.com/dagger/dagger/blob/v0.2.36/solver/registryauth.go
 // and merge with Buildkit DockerAuthProvider from
-// https://github.com/moby/buildkit/blob/master/session/auth/authprovider/authprovider.go#L42
+// https://github.com/dagger/dagger/internal/buildkit/blob/master/session/auth/authprovider/authprovider.go#L42
 //
 // RegistryAuthProvider implements session.Attachable to be used by Buildkit as
 // credential provider.
 // It also implements auth.AuthServer to merge dockerAuthProvider capabilities
 // with in memory storage.
 type RegistryAuthProvider struct {
-	// DockerAuthProvider
-	dockerAuthProvider bkauth.AuthServer
-
 	// Memory map credential storage.
 	credentials map[string]*bkauth.CredentialsResponse
 
 	// Mutex to handle concurrency.
 	m sync.RWMutex
+
+	bkauth.UnimplementedAuthServer
 }
 
 // NewRegistryAuthProvider initializes a new store.
-func NewRegistryAuthProvider(cfg *configfile.ConfigFile) *RegistryAuthProvider {
-	return &RegistryAuthProvider{
-		credentials:        map[string]*bkauth.CredentialsResponse{},
-		dockerAuthProvider: authprovider.NewDockerAuthProvider(cfg).(bkauth.AuthServer),
-	}
+func NewRegistryAuthProvider() *RegistryAuthProvider {
+	return &RegistryAuthProvider{credentials: map[string]*bkauth.CredentialsResponse{}}
 }
 
 // AddCredential inserts a new credential for the corresponding address.
@@ -106,10 +102,16 @@ func parseAuthAddress(address string) (string, error) {
 	addressPart := strings.SplitN(address, "/", 2)
 	domain := addressPart[0]
 
+	portStr := domain[strings.LastIndex(domain, ":")+1:]
+	// Parse port to check if it's a valid port.
+	port, _ := strconv.Atoi(portStr)
+
 	switch {
 	// Local registry
 	// E.g., localhost:5000
 	case strings.Contains(domain, "localhost"):
+		return domain, nil
+	case len(address) >= 1 && strings.Contains(domain, ":") && port > 0:
 		return domain, nil
 	// If the address is only an image name without any "."
 	// E.g., ubuntu, alpine, redis
@@ -178,33 +180,5 @@ func (r *RegistryAuthProvider) Credentials(ctx context.Context, req *bkauth.Cred
 	if memoryCredential != nil {
 		return memoryCredential, nil
 	}
-
-	return r.dockerAuthProvider.Credentials(ctx, req)
-}
-
-func (r *RegistryAuthProvider) FetchToken(ctx context.Context, req *bkauth.FetchTokenRequest) (*bkauth.FetchTokenResponse, error) {
-	memoryCredential := r.credential(req.GetHost())
-	if memoryCredential != nil {
-		return nil, status.Errorf(codes.Unavailable, "secret is store in memory")
-	}
-
-	return r.dockerAuthProvider.FetchToken(ctx, req)
-}
-
-func (r *RegistryAuthProvider) GetTokenAuthority(ctx context.Context, req *bkauth.GetTokenAuthorityRequest) (*bkauth.GetTokenAuthorityResponse, error) {
-	memoryCredential := r.credential(req.GetHost())
-	if memoryCredential != nil {
-		return nil, status.Errorf(codes.Unavailable, "secret is store in memory")
-	}
-
-	return r.dockerAuthProvider.GetTokenAuthority(ctx, req)
-}
-
-func (r *RegistryAuthProvider) VerifyTokenAuthority(ctx context.Context, req *bkauth.VerifyTokenAuthorityRequest) (*bkauth.VerifyTokenAuthorityResponse, error) {
-	memoryCredential := r.credential(req.GetHost())
-	if memoryCredential != nil {
-		return nil, status.Errorf(codes.Unavailable, "secret is store in memory")
-	}
-
-	return r.dockerAuthProvider.VerifyTokenAuthority(ctx, req)
+	return nil, status.Errorf(codes.NotFound, "no credential found for %s", req.GetHost())
 }

@@ -1,0 +1,22 @@
+[package]
+name = "dagger-bootstrap"
+description = "A bootstrapper for orchestrating codegen for the rust sdk"
+publish = true
+readme = "README.md"
+license-file = "LICENSE"
+
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+dagger-codegen = { workspace = true }
+dagger-sdk = { workspace = true }
+
+eyre = { workspace = true }
+color-eyre = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+clap.workspace = true

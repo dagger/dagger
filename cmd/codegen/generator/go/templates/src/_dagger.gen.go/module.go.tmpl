@@ -1,0 +1,87 @@
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"os"
+
+	"github.com/vektah/gqlparser/v2/gqlerror"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/sdk/resource"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
+
+	"{{.PackageImport}}/internal/dagger"
+	"{{.PackageImport}}/internal/telemetry"
+	"{{.PackageImport}}/internal/querybuilder"
+)
+
+var dag = dagger.Connect()
+
+func Tracer() trace.Tracer {
+	return otel.Tracer("dagger.io/sdk.go")
+}
+
+// used for local MarshalJSON implementations
+var marshalCtx = context.Background()
+
+// called by main()
+func setMarshalContext(ctx context.Context) {
+	marshalCtx = ctx
+	dagger.SetMarshalContext(ctx)
+}
+
+type DaggerObject = querybuilder.GraphQLMarshaller
+
+type ExecError = dagger.ExecError
+
+{{/* module aliases have been removed in v0.12.0 */}}
+{{ if not (CheckVersionCompatibility "v0.12.0") }}
+{{ range .Types }}
+{{ $name := .Name | FormatName }}
+
+{{ .Description | Comment }}
+type {{ $name }} = dagger.{{ $name }}
+
+{{ if eq .Kind "OBJECT" }}
+{{- if . | IsSelfChainable }}
+type With{{ $name }}Func = dagger.With{{ $name }}Func
+{{ end }}
+{{ range $field := .Fields }}
+{{- if $field.Args.HasOptionals }}
+// {{ $field | FieldOptionsStructName }} contains options for {{ $name }}.{{ $field.Name | FormatName }}
+type {{ $field | FieldOptionsStructName }} = dagger.{{ $field | FieldOptionsStructName }}
+{{ end }}
+{{ end }}
+{{- end }}
+
+{{ if eq .Kind "ENUM" }}
+{{- $enumName := .Name }}
+const (
+	{{- range $index, $field := .EnumValues | SortEnumFields }}
+	{{ $field.Description | Comment }}
+	{{ $field.Name | FormatEnum "" }} {{ $enumName }} = dagger.{{ $field.Name | FormatEnum "" }}
+	{{ end }}
+)
+{{- end }}
+{{ end }}
+{{ end }}
+
+{{ if and IsModuleCode (not IsPartial) }}
+// ptr returns a pointer to the given value.
+func ptr[T any](v T) *T {
+	return &v
+}
+
+// convertSlice converts a slice of one type to a slice of another type using a
+// converter function
+func convertSlice[I any, O any](in []I, f func(I) O) []O {
+  out := make([]O, len(in))
+  for i, v := range in {
+    out[i] = f(v)
+  }
+  return out
+}
+
+{{ ModuleMainSrc }}
+{{ end }}

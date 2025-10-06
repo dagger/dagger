@@ -1,0 +1,21 @@
+#!/bin/sh
+
+set -e -u -x
+
+rm -rf /tmp/new-mod
+mkdir /tmp/new-mod
+cd /tmp/new-mod
+
+git init
+
+dagger init
+
+dagger develop --sdk=go
+
+dagger config
+
+dagger functions
+
+dagger call container-echo --string-arg yo
+
+dagger call grep-dir --directory-arg . --pattern GrepDir

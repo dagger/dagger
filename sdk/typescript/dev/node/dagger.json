@@ -1,0 +1,7 @@
+{
+  "name": "node",
+  "engineVersion": "v0.18.5",
+  "sdk": {
+    "source": "typescript"
+  }
+}

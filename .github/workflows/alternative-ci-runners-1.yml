@@ -1,0 +1,37 @@
+name: Alternative CI Runners 1
+
+on:
+  # Run the workflow every day TWICE:
+  # 1. 9:06AM UTC (low activity)
+  # 2. 9:26AM UTC (cache test - high chance of no code changes)
+  schedule:
+    - cron: "6,26 9 * * *"
+  # Enable manual trigger for on-demand runs - helps when debugging
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docs-lint-on-depot-remote-engine:
+    uses: ./.github/workflows/_dagger_on_depot_remote_engine.yml
+    with:
+      function: check --targets=docs
+  docs-lint-on-depot-local-engine:
+    uses: ./.github/workflows/_dagger_on_depot_local_engine.yml
+    with:
+      function: check --targets=docs
+      dev: true
+
+  sdk-go-on-depot-remote-engine:
+    needs: docs-lint-on-depot-remote-engine
+    uses: ./.github/workflows/_dagger_on_depot_remote_engine.yml
+    with:
+      function: check --targets=sdk/go
+  sdk-go-dev-on-depot-local-engine:
+    needs: sdk-go-on-depot-remote-engine
+    uses: ./.github/workflows/_dagger_on_depot_local_engine.yml
+    with:
+      function: check --targets=sdk/go
+      dev: true
+      timeout: 15

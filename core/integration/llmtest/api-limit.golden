@@ -1,0 +1,97 @@
+[
+  {
+    "role": "user",
+    "content": "tell me the value of PATH"
+  },
+  {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "call_EWSB10di7AfVusXRvKR3A8xy",
+        "function": {
+          "name": "Container_withExec",
+          "arguments": {
+            "args": [
+              "printenv",
+              "PATH"
+            ],
+            "self": "Container#1"
+          }
+        },
+        "type": "function"
+      }
+    ],
+    "token_usage": {
+      "input_tokens": 5483,
+      "output_tokens": 25,
+      "cached_token_reads": 0,
+      "cached_token_writes": 0,
+      "total_tokens": 5508
+    }
+  },
+  {
+    "role": "user",
+    "content": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n\n{\n  \"result\": \"Container#2\"\n}",
+    "tool_call_id": "call_EWSB10di7AfVusXRvKR3A8xy"
+  },
+  {
+    "role": "assistant",
+    "content": "The value of PATH in the Alpine Linux container is:\n/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "token_usage": {
+      "input_tokens": 5570,
+      "output_tokens": 32,
+      "cached_token_reads": 0,
+      "cached_token_writes": 0,
+      "total_tokens": 5602
+    }
+  },
+  {
+    "role": "user",
+    "content": "now tell me the value of TERM"
+  },
+  {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "call_cnUG7qUmBc1fEaVprLFh77xp",
+        "function": {
+          "name": "Container_withExec",
+          "arguments": {
+            "args": [
+              "printenv",
+              "TERM"
+            ],
+            "self": "Container#2"
+          }
+        },
+        "type": "function"
+      }
+    ],
+    "token_usage": {
+      "input_tokens": 5616,
+      "output_tokens": 25,
+      "cached_token_reads": 0,
+      "cached_token_writes": 0,
+      "total_tokens": 5641
+    }
+  },
+  {
+    "role": "user",
+    "content": "select: process \"printenv TERM\" did not complete successfully: exit code: 1\n\n\u003c_type\u003e\nEXEC_ERROR\n\u003c/_type\u003e\n\n\u003ccmd\u003e\n[\"printenv\",\"TERM\"]\n\u003c/cmd\u003e\n\n\u003cexitCode\u003e\n1\n\u003c/exitCode\u003e\n\n\u003cstderr\u003e\n\n\u003c/stderr\u003e\n\n\u003cstdout\u003e\n\n\u003c/stdout\u003e",
+    "tool_call_id": "call_cnUG7qUmBc1fEaVprLFh77xp",
+    "tool_errored": true
+  },
+  {
+    "role": "assistant",
+    "content": "The TERM environment variable is not set in this Alpine Linux container. That is why there was no output when trying to print its value.",
+    "token_usage": {
+      "input_tokens": 5715,
+      "output_tokens": 28,
+      "cached_token_reads": 0,
+      "cached_token_writes": 0,
+      "total_tokens": 5743
+    }
+  }
+]

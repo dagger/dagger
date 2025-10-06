@@ -1,0 +1,69 @@
+---
+slug: /extending/cache-volumes
+description: "Learn how to use cache volumes in Dagger"
+---
+
+# Cache Volumes
+
+Volume caching involves caching specific parts of the filesystem and reusing them on subsequent function calls if they are unchanged. This is especially useful when dealing with package managers such as `npm`, `maven`, `pip` and similar. Since these dependencies are usually locked to specific versions in the application's manifest, re-downloading them on every session is inefficient and time-consuming. By using a cache volume for these dependencies, Dagger can reuse the cached contents across Dagger Function runs and reduce execution time.
+
+Here's an example:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+container |
+  from node:21 |
+  with-directory /src https://github.com/dagger/hello-dagger |
+  with-workdir /src |
+  with-mounted-cache /root/.npm node-21 |
+  with-exec npm install
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+container |
+  from node:21 |
+  with-directory /src https://github.com/dagger/hello-dagger |
+  with-workdir /src |
+  with-mounted-cache /root/.npm node-21 |
+  with-exec npm install
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger core container \
+  from --address=node:21 \
+  with-directory --path=/src --directory=https://github.com/dagger/hello-dagger \
+  with-workdir --path=/src \
+  with-mounted-cache --path=/root/.npm --cache=node-21 \
+  with-exec --args="npm","install"
+```
+</TabItem>
+<TabItem value="go" label="Go">
+
+```go file=./snippets/cache-volumes/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=./snippets/cache-volumes/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=./snippets/cache-volumes/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+This example will take some time to complete on the first run, as the cache volumes will not exist at that point. Subsequent runs will be significantly faster (assuming there is no other change), since Dagger will simply use the dependencies from the cache volumes instead of downloading them again.
+
+:::note
+Cache volumes are scoped by default to the modules they're defined in. To share a cache volume across modules, you must intentionally pass a reference to it via constructor or function arguments.
+:::

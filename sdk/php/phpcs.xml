@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<ruleset name="PSR">
+    <description>PHPCS configuration file.</description>
+    <file>src</file>
+
+    <exclude-pattern>*/vendor/*</exclude-pattern>
+
+    <rule ref="PSR1"/>
+    <rule ref="PSR12"/>
+</ruleset>

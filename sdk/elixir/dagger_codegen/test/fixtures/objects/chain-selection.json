@@ -1,0 +1,27 @@
+{
+  "description": "The root of the DAG.",
+  "enumValues": [],
+  "fields": [
+    {
+      "args": [],
+      "deprecationReason": null,
+      "description": "Create a new TypeDef.",
+      "isDeprecated": false,
+      "name": "typeDef",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "OBJECT",
+          "name": "TypeDef",
+          "ofType": null
+        }
+      }
+    }
+  ],
+  "inputFields": [],
+  "interfaces": [],
+  "kind": "OBJECT",
+  "name": "Query",
+  "possibleTypes": []
+}

@@ -1,0 +1,35 @@
+{
+  "description": "The root of the DAG.",
+  "enumValues": [],
+  "fields": [
+    {
+      "args": [],
+      "deprecationReason": null,
+      "description": "Retrieves the list of environment variables passed to commands.",
+      "isDeprecated": false,
+      "name": "envVariables",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "LIST",
+          "name": null,
+          "ofType": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "EnvVariable",
+              "ofType": null
+            }
+          }
+        }
+      }
+    }
+  ],
+  "inputFields": [],
+  "interfaces": [],
+  "kind": "OBJECT",
+  "name": "Container",
+  "possibleTypes": []
+}

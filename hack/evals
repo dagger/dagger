@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+set -e -u
+
+# Get number of runs from command line argument, default to 3 if not provided
+RUNS=${1:-3}
+
+# Generate default timestamp-based filename with minute precision
+TIMESTAMP=$(date +"%Y%m%d-%H%M")
+
+function get_version() {
+  local dagger=$1
+  $dagger version | awk '{print $2}'
+}
+
+# Define output files - allow overriding with environment variables
+NEW_CSV=${NEW_CSV:-"evals/$TIMESTAMP/new-$(get_version ./bin/dagger).csv"}
+
+# Ensure parent dir exists
+mkdir -p $(dirname $NEW_CSV)
+
+# Flag to determine if old dagger command should be run
+RUN_OLD=${RUN_OLD:-false}
+
+# Function to determine if header should be included
+function add_header() {
+  local file=$1
+  # Add header if file doesn't exist AND it's the first iteration
+  if [ ! -f "$file" ] && [ $2 -eq 1 ]; then
+    echo ""
+  else
+    echo " --no-header"
+  fi
+}
+
+echo "Running $RUNS iterations"
+echo "New results will be saved to: $NEW_CSV"
+if [ "$RUN_OLD" = true ]; then
+  OLD_CSV=${OLD_CSV:-"evals/$TIMESTAMP/old-$(get_version ./bin/dagger-old).csv"}
+  echo "Old results will be saved to: $OLD_CSV"
+fi
+
+for i in $(seq $RUNS); do
+  if [ "$RUN_OLD" = true ]; then
+    ./bin/dagger-old call -m \
+      modules/evaluator \
+      evals-across-models csv$(add_header "$OLD_CSV" $i) \
+      >> "$OLD_CSV"
+  fi
+
+  ./bin/dagger call \
+    -m modules/evaluator \
+    evals-across-models \
+    csv$(add_header "$NEW_CSV" $i) \
+    >> "$NEW_CSV"
+done
+
+echo "Evaluation complete"
+echo "Results saved to: $NEW_CSV"

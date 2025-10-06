@@ -1,0 +1,92 @@
+[
+  {
+    "role": "user",
+    "content": "You are an expert go programmer. You have access to a workspace.\nUse the read, write, build tools to complete the following assignment.\nDo not try to access the container directly.\nDon't stop until your code builds.\n\nAssignment: write a hello world program\n"
+  },
+  {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "call_jaKcJ6QhPkHpIBgkxk2GQSXw",
+        "function": {
+          "name": "ToyWorkspace_write",
+          "arguments": {
+            "content": "package main\n\nimport \"fmt\"\n\nfunc main() {\n    fmt.Println(\"Hello, world!\")\n}\n",
+            "self": "ToyWorkspace#1"
+          }
+        },
+        "type": "function"
+      }
+    ],
+    "token_usage": {
+      "input_tokens": 646,
+      "output_tokens": 50,
+      "cached_token_reads": 0,
+      "cached_token_writes": 0,
+      "total_tokens": 696
+    }
+  },
+  {
+    "role": "user",
+    "content": "{\n  \"data\": {\n    \"container\": \"Container#1\"\n  },\n  \"result\": \"ToyWorkspace#2\"\n}\n",
+    "tool_call_id": "call_jaKcJ6QhPkHpIBgkxk2GQSXw"
+  },
+  {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "call_RPkayJjUmHAqsvOStgXq77dA",
+        "function": {
+          "name": "ToyWorkspace_build",
+          "arguments": {
+            "self": "ToyWorkspace#2"
+          }
+        },
+        "type": "function"
+      }
+    ],
+    "token_usage": {
+      "input_tokens": 5856,
+      "output_tokens": 19,
+      "cached_token_reads": 0,
+      "cached_token_writes": 0,
+      "total_tokens": 5875
+    }
+  },
+  {
+    "role": "user",
+    "content": "",
+    "tool_call_id": "call_RPkayJjUmHAqsvOStgXq77dA"
+  },
+  {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "call_LXzUnFd9WdRdIxhfyM6IHZpl",
+        "function": {
+          "name": "Save",
+          "arguments": {
+            "name": "result",
+            "value": "ToyWorkspace#2"
+          }
+        },
+        "type": "function"
+      }
+    ],
+    "token_usage": {
+      "input_tokens": 5884,
+      "output_tokens": 20,
+      "cached_token_reads": 0,
+      "cached_token_writes": 0,
+      "total_tokens": 5904
+    }
+  },
+  {
+    "role": "user",
+    "content": "- [x] result (ToyWorkspace): The workspace after running the assignment",
+    "tool_call_id": "call_LXzUnFd9WdRdIxhfyM6IHZpl"
+  }
+]

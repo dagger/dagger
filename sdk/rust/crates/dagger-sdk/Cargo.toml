@@ -1,0 +1,45 @@
+[package]
+name = "dagger-sdk"
+description = "A dagger sdk for rust, written in rust"
+publish = true
+readme = "README.md"
+license-file = "LICENSE"
+
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+eyre = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_graphql_input = { workspace = true }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+thiserror.workspace = true
+
+futures.workspace = true
+derive_builder.workspace = true
+base64.workspace = true
+dirs.workspace = true
+flate2.workspace = true
+graphql_client.workspace = true
+hex.workspace = true
+hex-literal.workspace = true
+platform-info.workspace = true
+reqwest.workspace = true
+sha2.workspace = true
+tar.workspace = true
+tempfile.workspace = true
+async-trait.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+rand.workspace = true
+tracing-test.workspace = true
+
+[features]
+default = ["gen"]
+gen = []

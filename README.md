@@ -1,35 +1,42 @@
 ## What is Dagger?
 
-Dagger is a programmable CI/CD engine that runs your pipelines in containers.
+Dagger is an open-source runtime for composable workflows. It's perfect for systems with many moving parts and a strong need for **repeatability**, **modularity**, **observability** and **cross-platform support**. This makes it a great choice for AI agents and CI/CD workflows.
 
-### Programmable
+<p align="center"><img src="docs/static/img/readme/dagger-factory.jpg" width="75%"></p>
 
-Develop your CI/CD pipelines as code, in the same programming language as your application.
+## Key Features
 
-### Runs your pipelines in containers
+- **Containerized Workflow Execution:** Transform code into containerized, composable operations. Build reproducible workflows in any language with custom environments, parallel processing, and seamless chaining.
 
-Dagger executes your pipelines entirely as [standard OCI containers](https://opencontainers.org/). This has several benefits:
+- **Universal Type System:** Mix and match components from any language with type-safe connections. Use the best tools from each ecosystem without translation headaches.
 
-* **Instant local testing**
-* **Portability**: the same pipeline can run on your local machine, a CI runner, a dedicated server, or any container hosting service.
-* **Superior caching**: every operation is cached by default, and caching works the same everywhere
-* **Compatibility** with the Docker ecosystem: if it runs in a container, you can add it to your pipeline.
-* **Cross-language instrumentation**: teams can use each other's tools without learning each other's language.
+- **Automatic Artifact Caching:** Operations produce cacheable, immutable artifacts — even for LLMs and API calls. Your workflows run faster and cost less.
 
-## Who is it for?
+- **Built-in Observability:** Full visibility into operations with tracing, logs, and metrics. Debug complex workflows and know exactly what's happening.
 
-Dagger may be a good fit if you are...
+<p align="center"><img src="docs/static/img/readme/cloud-trace.gif" width="60%"></a>
 
-* A developer wishing your CI pipelines were code instead of YAML
-* Your team's "designated devops person", hoping to replace a pile of artisanal scripts with something more powerful
-* A platform engineer writing custom tooling, with the goal of unifying continuous delivery across organizational silos
-* A cloud-native developer advocate or solutions engineer, looking to demonstrate a complex integration on short notice
+- **Open Platform:** Works with any compute platform and tech stack — today and tomorrow. Ship faster, experiment freely, and don’t get locked into someone else's choices.
 
-## Learn more
+- **LLM Augmentation:** Native integration of any LLM that automatically discovers and uses available functions in your workflow. Ship mind-blowing agents in just a few dozen lines of code.
 
-* [How does it work?](https://docs.dagger.io/#how-does-it-work)
-* [Getting started](https://docs.dagger.io/#getting-started)
-* [Examples](https://github.com/dagger/examples)
-* [Join the Dagger community server](https://discord.gg/ufnyBtc8uY)
-* [Follow us on Twitter](https://twitter.com/dagger_io)
-* Join a [Dagger community call](https://dagger.io/events).
+- **Interactive Terminal:** Directly interact with your workflow or agents in real-time through your terminal. Prototype, test, debug, and ship even faster.
+
+<p align="center"><img src="docs/static/img/readme/da-robots-white-box.svg" width="60%"></a>
+
+## Getting started
+
+- [Dagger for AI Agents](https://docs.dagger.io/ai-agents)
+- [Dagger for CI](https://docs.dagger.io/quickstart)
+
+## Join the community
+
+- Join the [Dagger community server](https://discord.gg/NpzVhsGnZu)
+- Follow us on [Twitter](https://twitter.com/dagger_io)
+- Check out our [community activities](https://dagger.io/community)
+- Read more in our [documentation](https://docs.dagger.io)
+
+## Contributing
+
+Interested in contributing or building dagger from scratch? See
+[CONTRIBUTING.md](https://github.com/dagger/dagger/tree/main/CONTRIBUTING.md).

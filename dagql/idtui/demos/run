@@ -1,0 +1,9 @@
+#!/bin/sh
+
+set -e -u -x
+
+cd ~/src/dagger
+
+dagger run ./hack/make sdk:go:generate
+
+dagger run --progress=plain ./hack/make sdk:go:generate

@@ -1,0 +1,13 @@
+{
+  "name": "metrics",
+  "engineVersion": "v0.18.10",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "dagger-engine",
+      "source": "../../cmd/engine"
+    }
+  ]
+}

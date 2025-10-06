@@ -1,0 +1,79 @@
+{
+  "name": "dagger-dev",
+  "engineVersion": "v0.19.0",
+  "sdk": {
+    "source": "go"
+  },
+  "include": [
+    "engine/distconsts/**/*",
+    "sdk/typescript/runtime/**/*"
+  ],
+  "dependencies": [
+    {
+      "name": "alpine",
+      "source": "modules/alpine"
+    },
+    {
+      "name": "dagger-cli",
+      "source": "cmd/dagger"
+    },
+    {
+      "name": "dagger-engine",
+      "source": "cmd/engine"
+    },
+    {
+      "name": "dirdiff",
+      "source": "modules/dirdiff"
+    },
+    {
+      "name": "docs",
+      "source": "docs"
+    },
+    {
+      "name": "dotnet-sdk-dev",
+      "source": "sdk/dotnet/dev"
+    },
+    {
+      "name": "elixir-sdk-dev",
+      "source": "sdk/elixir/dev"
+    },
+    {
+      "name": "go",
+      "source": "modules/go"
+    },
+    {
+      "name": "helm",
+      "source": "helm"
+    },
+    {
+      "name": "notify",
+      "source": "github.com/gerhard/daggerverse/notify@main",
+      "pin": "e4ee5778b10345d09a65a9655022d8ec40fc489f"
+    },
+    {
+      "name": "php-sdk-dev",
+      "source": "sdk/php/dev"
+    },
+    {
+      "name": "ps-analyzer",
+      "source": "modules/ps-analyzer"
+    },
+    {
+      "name": "python-sdk-dev",
+      "source": "sdk/python/dev"
+    },
+    {
+      "name": "shellcheck",
+      "source": "modules/shellcheck"
+    },
+    {
+      "name": "version",
+      "source": "version"
+    },
+    {
+      "name": "wolfi",
+      "source": "modules/wolfi"
+    }
+  ],
+  "source": ".dagger"
+}

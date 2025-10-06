@@ -1,0 +1,13 @@
+workspace = { members = ["leptos-frontend"] }
+[package]
+name = "frontend"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+dagger-sdk = { path = "../../crates/dagger-sdk" }
+eyre = "0.6.12"
+tokio = { version = "1.37.0", features = ["macros", "rt-multi-thread"] }
+uuid = { version = "1.8.0", features = ["v4"] }

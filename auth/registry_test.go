@@ -1,12 +1,21 @@
 package auth
 
 import (
+	"context"
 	"testing"
 
+	"github.com/dagger/dagger/internal/buildkit/session/auth"
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	testRegistryUser    = "dagger"
+	testRegistrySecret  = "daggersecret"
+	testRegistryAddress = "dagger.io"
+)
+
 func TestParseAuthAddress(t *testing.T) {
+	t.Parallel()
 	type TestCase struct {
 		InputAddress string
 		Expected     string
@@ -22,18 +31,22 @@ func TestParseAuthAddress(t *testing.T) {
 		"Short address with image sha":     {"foo/bar@sha256:bc8813ea7b3603864987522f02a76101c17ad122e1c46d790efc0fca78ca7bfb", "docker.io"},
 
 		// Private registry
-		"Private registry address":                             {"registry.com", "registry.com"},
-		"Private registry address with tag":                    {"registry.com:1.1", "registry.com"},
-		"Private registry address with sha":                    {"registry.com@sha256:bc8813ea7b3603864987522f02a76101c17ad122e1c46d790efc0fca78ca7bfb", "registry.com"},
-		"Private registry address with image":                  {"registry.com/bar", "registry.com"},
-		"Private registry address with image and tag":          {"registry.com/bar:1.1", "registry.com"},
-		"Private registry address with image sha":              {"registry.com/bar@sha256:bc8813ea7b3603864987522f02a76101c17ad122e1c46d790efc0fca78ca7bfb", "registry.com"},
-		"Private registry address with port":                   {"registry.com:5000", "registry.com:5000"},
-		"Private registry address with port and tag":           {"registry.com:5000:1.1", "registry.com:5000"},
-		"Private registry address with port and sha":           {"registry.com:5000@sha256:bc8813ea7b3603864987522f02a76101c17ad122e1c46d790efc0fca78ca7bfb", "registry.com:5000"},
-		"Private registry address with port and image":         {"registry.com:5000/bar", "registry.com:5000"},
-		"Private registry address with port and image and tag": {"registry.com:5000/bar:1.1", "registry.com:5000"},
-		"Private registry address with port and image sha":     {"registry.com:5000/bar@sha256:bc8813ea7b3603864987522f02a76101c17ad122e1c46d790efc0fca78ca7bfb", "registry.com:5000"},
+		"Private registry address":                               {"registry.com", "registry.com"},
+		"Private registry address with tag":                      {"registry.com:1.1", "registry.com"},
+		"Private registry address with sha":                      {"registry.com@sha256:bc8813ea7b3603864987522f02a76101c17ad122e1c46d790efc0fca78ca7bfb", "registry.com"},
+		"Private registry address with image":                    {"registry.com/bar", "registry.com"},
+		"Private registry address with image and tag":            {"registry.com/bar:1.1", "registry.com"},
+		"Private registry address with image sha":                {"registry.com/bar@sha256:bc8813ea7b3603864987522f02a76101c17ad122e1c46d790efc0fca78ca7bfb", "registry.com"},
+		"Private registry address with port":                     {"registry.com:5000", "registry.com:5000"},
+		"Private registry address with port and tag":             {"registry.com:5000:1.1", "registry.com:5000"},
+		"Private registry address with port and sha":             {"registry.com:5000@sha256:bc8813ea7b3603864987522f02a76101c17ad122e1c46d790efc0fca78ca7bfb", "registry.com:5000"},
+		"Private registry address with port and image":           {"registry.com:5000/bar", "registry.com:5000"},
+		"Private registry address with port and image and tag":   {"registry.com:5000/bar:1.1", "registry.com:5000"},
+		"Private registry address with port and image sha":       {"registry.com:5000/bar@sha256:bc8813ea7b3603864987522f02a76101c17ad122e1c46d790efc0fca78ca7bfb", "registry.com:5000"},
+		"Local private registry address with port":               {"localregistry:5000/bar", "localregistry:5000"},
+		"Local private registry address with port and tag":       {"localregistry:5000/bar:300", "localregistry:5000"},
+		"Local private registry address with port and tag 2":     {"localregistry:5000/bar:latest", "localregistry:5000"},
+		"Local private registry address with port and image sha": {"localregistry:5000/bar@sha256:bc8813ea7b3603864987522f02a76101c17ad122e1c46d790efc0fca78ca7bfb", "localregistry:5000"},
 
 		// Docker.io related
 		"Short docker.io":                         {"docker.io", "docker.io"},
@@ -97,4 +110,23 @@ func TestParseAuthAddress(t *testing.T) {
 			require.Equalf(t, tt.Expected, result, "Invalid sanitization reference for [%q]. Expected [%s] but got [%s]", name, tt.Expected, tt.InputAddress)
 		})
 	}
+}
+
+func TestRegistryAuthProvider(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	registry := NewRegistryAuthProvider()
+
+	t.Run("add and retrieve credentials", func(t *testing.T) {
+		err := registry.AddCredential(testRegistryAddress, testRegistryUser, testRegistrySecret)
+		require.NoError(t, err)
+		credentialsRequest := &auth.CredentialsRequest{
+			Host: testRegistryAddress,
+		}
+		credentialsRes, err := registry.Credentials(ctx, credentialsRequest)
+		require.NoError(t, err)
+		require.NotNil(t, credentialsRes)
+		require.Equal(t, testRegistryUser, credentialsRes.Username)
+		require.Equal(t, testRegistrySecret, credentialsRes.Secret)
+	})
 }

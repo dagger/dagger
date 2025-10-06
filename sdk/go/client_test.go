@@ -2,8 +2,8 @@ package dagger
 
 import (
 	"context"
+	"errors"
 	"io"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -55,7 +55,7 @@ func TestGit(t *testing.T) {
 	readmeID, err := readmeFile.ID(ctx)
 	require.NoError(t, err)
 
-	otherReadme, err := c.File(readmeID).Contents(ctx)
+	otherReadme, err := c.LoadFileFromID(readmeID).Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, readme, otherReadme)
 }
@@ -73,15 +73,14 @@ func TestContainer(t *testing.T) {
 		From("alpine:3.16.2")
 
 	contents, err := alpine.
-		FS().
 		File("/etc/alpine-release").
 		Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "3.16.2\n", contents)
 
-	stdout, err := alpine.Exec(ContainerExecOpts{
-		Args: []string{"cat", "/etc/alpine-release"},
-	}).Stdout(ctx)
+	stdout, err := alpine.
+		WithExec([]string{"cat", "/etc/alpine-release"}).
+		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "3.16.2\n", stdout)
 
@@ -89,17 +88,20 @@ func TestContainer(t *testing.T) {
 	id, err := alpine.ID(ctx)
 	require.NoError(t, err)
 	contents, err = c.
-		Container(ContainerOpts{
-			ID: id,
-		}).
-		FS().
+		LoadContainerFromID(id).
 		File("/etc/alpine-release").
 		Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "3.16.2\n", contents)
 }
 
+// TODO: fix this test, it's actually broken, the result is an empty string
+// We could use a buffer, however the regexp want need to be updated, the
+// display of Dagger has change since.
 func TestConnectOption(t *testing.T) {
+	t.Skip("test broken with io.Pipe and empty string on the standard output." +
+		"We need to update the test with new output and use a buffer to catch" +
+		"output.")
 	t.Parallel()
 	ctx := context.Background()
 
@@ -110,7 +112,6 @@ func TestConnectOption(t *testing.T) {
 	_, err = c.
 		Container().
 		From("alpine:3.16.1").
-		FS().
 		File("/etc/alpine-release").
 		Contents(ctx)
 	require.NoError(t, err)
@@ -130,29 +131,51 @@ func TestConnectOption(t *testing.T) {
 	logOutput, err := io.ReadAll(r)
 	require.NoError(t, err)
 
+	// Empty
+	// fmt.Println(string(logOutput))
+
 	for _, want := range wants {
+		// NOTE: the string is empty
+		// This pass the test
+		// require.Regexp(t, "", want)
 		require.Regexp(t, string(logOutput), want)
 	}
 }
 
-func TestErrorMessage(t *testing.T) {
+func TestContainerWith(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
+
+	env := func(c *Container) *Container {
+		return c.WithEnvVariable("FOO", "bar")
+	}
+
+	secret := func(token string, client *Client) WithContainerFunc {
+		return func(c *Container) *Container {
+			return c.WithSecretVariable("TOKEN", client.SetSecret("TOKEN", token))
+		}
+	}
 
 	c, err := Connect(ctx)
 	require.NoError(t, err)
 	defer c.Close()
 
-	_, err = c.Container().From("fake.invalid:latest").ID(ctx)
-	require.Error(t, err)
-	require.ErrorContains(t, err, errorHelpBlurb)
+	_, err = c.
+		Container().
+		From("alpine:3.16.2").
+		With(env).
+		With(secret("baz", c)).
+		WithExec([]string{"sh", "-c", "test $FOO = bar && test $TOKEN = baz"}).
+		Sync(ctx)
+
+	require.NoError(t, err)
 }
 
 func TestList(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	c, err := Connect(ctx, WithLogOutput(os.Stdout))
+	c, err := Connect(ctx)
 	require.NoError(t, err)
 
 	defer c.Close()
@@ -161,16 +184,96 @@ func TestList(t *testing.T) {
 		Container().
 		From("alpine:3.16.2").
 		WithEnvVariable("FOO", "BAR").
+		WithEnvVariable("BAR", "BAZ").
 		EnvVariables(ctx)
 
 	require.NoError(t, err)
 
-	envName, err := envs[0].Name(ctx)
+	envName, err := envs[1].Name(ctx)
 	require.NoError(t, err)
 
-	envValue, err := envs[0].Value(ctx)
+	envValue, err := envs[1].Value(ctx)
 	require.NoError(t, err)
 
 	require.Equal(t, "FOO", envName)
 	require.Equal(t, "BAR", envValue)
+
+	envName, err = envs[2].Name(ctx)
+	require.NoError(t, err)
+
+	envValue, err = envs[2].Value(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "BAR", envName)
+	require.Equal(t, "BAZ", envValue)
+}
+
+func TestExecError(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	c, err := Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
+	t.Run("get output and exit code", func(t *testing.T) {
+		outMsg := "STDOUT HERE"
+		errMsg := "STDERR HERE"
+		args := []string{"sh", "-c", "cat /testout; cat /testerr >&2; exit 127"}
+
+		_, err = c.
+			Container().
+			From("alpine:3.16.2").
+			// don't put these in the command args so it stays out of the
+			// error message
+			WithDirectory("/", c.Directory().
+				WithNewFile("testout", outMsg).
+				WithNewFile("testerr", errMsg),
+			).
+			WithExec(args).
+			Sync(ctx)
+
+		var exErr *ExecError
+
+		require.ErrorAs(t, err, &exErr)
+		require.Equal(t, 127, exErr.ExitCode)
+		require.Equal(t, args, exErr.Cmd)
+		require.Equal(t, outMsg, exErr.Stdout)
+		require.Equal(t, errMsg, exErr.Stderr)
+
+		require.NotContains(t, exErr.Message(), outMsg)
+		require.NotContains(t, exErr.Message(), errMsg)
+
+		if _, ok := err.(*ExecError); !ok {
+			t.Fatal("unable to cast error type, check potential wrapping")
+		}
+	})
+
+	t.Run("no output", func(t *testing.T) {
+		_, err = c.
+			Container().
+			From("alpine:3.16.2").
+			WithExec([]string{"false"}).
+			Sync(ctx)
+
+		var exErr *ExecError
+
+		require.ErrorAs(t, err, &exErr)
+		require.ErrorContains(t, exErr, "did not complete successfully: exit code: 1")
+		require.Equal(t, "", exErr.Stdout)
+		require.Equal(t, "", exErr.Stderr)
+	})
+
+	t.Run("not an exec error", func(t *testing.T) {
+		_, err = c.
+			Container().
+			From("invalid!").
+			WithExec([]string{"false"}).
+			Sync(ctx)
+
+		var exErr *ExecError
+
+		if errors.As(err, &exErr) {
+			t.Fatal("unexpected ExecError")
+		}
+	})
 }

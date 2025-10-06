@@ -1,0 +1,4 @@
+src/dagger/client/gen.py linguist-generated
+src/dagger/_engine/_version.py linguist-generated
+ruff_defaults.toml linguist-generated
+/**/requirements*.lock linguist-generated

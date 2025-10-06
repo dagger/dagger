@@ -1,0 +1,95 @@
+[
+  {
+    "Path": "bitbucket.org/dagger-modules/dagger-test-modules-public/ts"
+  },
+  {
+    "Path": "dev.azure.com/daggere2e/public/_git/dagger-test-modules/ts"
+  },
+  {
+    "Path": "github.com/adrienbrault/hf-gguf-to-ollama"
+  },
+  {
+    "Path": "github.com/aiseei/hf-gguf-to-ollama"
+  },
+  {
+    "Path": "github.com/anthonybrice/daggerverse/timoni"
+  },
+  {
+    "Path": "github.com/anthonybrice/timpkg"
+  },
+  {
+    "Path": "github.com/d3rp3tt3/daggerverse/typescript-ci"
+  },
+  {
+    "Path": "github.com/dagger/dagger/sdk/typescript/dev/node"
+  },
+  {
+    "Path": "github.com/dagger/dagger-test-modules.git/ts"
+  },
+  {
+    "Path": "github.com/dagger/dagger-test-modules/ts"
+  },
+  {
+    "Path": "github.com/Digio-Campus/potato"
+  },
+  {
+    "Path": "github.com/digiogithub/dagger-deploy-tools/meteor"
+  },
+  {
+    "Path": "github.com/EmmS21/daggerverse/createSvelteTests"
+  },
+  {
+    "Path": "github.com/grouville/dagger-test-modules/ts"
+  },
+  {
+    "Path": "github.com/jpadams/legend-daggerize-minimal-maven"
+  },
+  {
+    "Path": "github.com/JuanValeraDev/potato"
+  },
+  {
+    "Path": "github.com/levlaz/daggerverse/docusaurus"
+  },
+  {
+    "Path": "github.com/levlaz/daggerverse/linkedin"
+  },
+  {
+    "Path": "github.com/levlaz/daggerverse/tutor"
+  },
+  {
+    "Path": "github.com/lukemarsden/dagger-snyk"
+  },
+  {
+    "Path": "github.com/quartz-technology/daggerverse/cypress"
+  },
+  {
+    "Path": "github.com/quartz-technology/daggerverse/eslint"
+  },
+  {
+    "Path": "github.com/quartz-technology/daggerverse/nginx"
+  },
+  {
+    "Path": "github.com/quartz-technology/daggerverse/node"
+  },
+  {
+    "Path": "github.com/quartz-technology/daggerverse/node/typescript"
+  },
+  {
+    "Path": "github.com/RawkodeAcademy/Daggerverse/nodejs"
+  },
+  {
+    "Path": "github.com/RawkodeAcademy/Daggerverse/sqld"
+  },
+  {
+    "Path": "github.com/rropen/dagger-snyk"
+  },
+  {
+    "Path": "github.com/salaboy/example-voting-app/dotnet/worker"
+  },
+  {
+    "Path": "github.com/sipsma/dagger-test-modules/ts"
+  },
+  {
+    "Path": "github.com/slumbering/daggerverse/vercel"
+  }
+]

@@ -1,0 +1,17 @@
+<Project Sdk="MSTest.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <TestingExtensionsProfile>Default</TestingExtensionsProfile>
+        <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+        <TestingPlatformShowTestsFailure>true</TestingPlatformShowTestsFailure>
+        <LangVersion>default</LangVersion>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Dagger.SDK\Dagger.SDK.csproj"/>
+    </ItemGroup>
+
+</Project>

@@ -1,0 +1,6 @@
+{
+  "name": "git-dep",
+  "sdk": "../extended",
+  "source": ".",
+  "engineVersion": "v0.13.6"
+}

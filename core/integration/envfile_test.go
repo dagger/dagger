@@ -1,0 +1,189 @@
+package core
+
+import (
+	"context"
+	"testing"
+
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/dotenv"
+	"github.com/dagger/testctx"
+	"github.com/stretchr/testify/require"
+)
+
+type EnvFileSuite struct{}
+
+func TestEnvFile(t *testing.T) {
+	testctx.New(t, Middleware()...).RunTests(EnvFileSuite{})
+}
+
+// Test that the Dagger type matches the behavior of the underlying dotenv library,
+// when evaluating values.
+// This covers variable expansion, quotes and escape handling, etc.
+//
+// Since the underlying library is well-tested, this avoids duplicating those tests here.
+// Instead we can focus on tests specific to this layer.
+func (EnvFileSuite) TestEvalMatch(ctx context.Context, t *testctx.T) {
+	tests := []struct {
+		name string
+		vars map[string]string
+	}{
+		{
+			name: "simple",
+			vars: map[string]string{
+				"FOO":     "bar",
+				"hello":   "world",
+				"StoRy":   "once upon a time...",
+				"various": "lots of (weird) characters &^",
+			},
+		},
+		{
+			name: "expansion",
+			vars: map[string]string{
+				"animal":    "dog",
+				"superhero": "${animal}man",
+				"message":   "hello, nice $animal !",
+				"message2":  "hello, nice ${animal}",
+				"message3":  "hello, nice '${animal}'",
+			},
+		},
+		{
+			name: "quoted_values",
+			vars: map[string]string{
+				"animal":            `"dog"`,
+				"message":           `"hello, nice ${animal}"`,
+				"message2":          `"hello, nice $animal"`,
+				"story":             `"once upon a time, there was a man who said $message"`,
+				"QUOTES":            `"this sentence is double-quoted (with \"), 'and this is single-quoted'"`,
+				"single_quoted_var": `"hello, nice '$animal'"`,
+			},
+		},
+		{
+			name: "raw",
+			vars: map[string]string{
+				"simple":        "hello world",
+				"quotes":        `"hello world"`,
+				"single_quotes": `'hello world'`,
+				"dollar_sign":   "$FOO",
+				"expansion":     "${FOO}",
+				"command_sub":   "$(echo hello)",
+				"backticks":     "`echo hello`",
+				"backslash":     `hello\nworld`,
+				"mixed":         `"$FOO ${BAR} $(cmd)" and 'more'`,
+				"special_chars": "()&^%$#@!",
+			},
+		},
+		{
+			name: "remove_referenced_variable",
+			vars: map[string]string{
+				"GREETING": "bonjour",
+				"NAME":     "monde",
+				"message":  "$GREETING, $NAME!",
+			},
+		},
+		{
+			name: "get_unset",
+			vars: map[string]string{
+				"FOO":   "bar",
+				"HELLO": "world",
+				"DOG":   "${FOO}-${HELLO}",
+			},
+		},
+		{
+			name: "override",
+			vars: map[string]string{
+				"FOO": "newbar",
+			},
+		},
+		{
+			name: "file",
+			vars: map[string]string{
+				"animal":            "dog",
+				"message":           "hello, nice ${animal}",
+				"message2":          `"hello, nice $animal"`,
+				"story":             "once upon a time, there was a man who said $message",
+				"QUOTED":            `"this sentence is double-quoted (with \"), 'and this is single-quoted'"`,
+				"single_quoted_var": `"hello, nice '$animal'"`,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			env := c.EnvFile()
+			var environ []string
+			for name, inputValue := range tt.vars {
+				environ = append(environ, name+"="+inputValue)
+				env = env.WithVariable(name, inputValue)
+			}
+
+			for name := range tt.vars {
+				expectedValue, expectedFound, expectedErr := dotenv.Lookup(environ, name)
+				if !expectedFound {
+					expectedValue = ""
+				}
+				actualValue, actualErr := env.Get(ctx, name)
+				if expectedErr != nil {
+					require.Error(t, actualErr, tt.name)
+				} else {
+					require.NoError(t, actualErr, tt.name)
+				}
+				if expectedErr == nil {
+					require.Equal(t, expectedValue, actualValue, tt.name)
+				}
+			}
+		})
+	}
+}
+
+func (EnvFileSuite) TestFile(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	inputFile := c.File(".env", `animal=dog
+message=hello, nice ${animal}
+message2="hello, nice $animal"
+story=once upon a time, there was a man who said $message
+QUOTED="this sentence is double-quoted (with \"), 'and this is single-quoted'"
+single_quoted_var="hello, nice '$animal'"
+`)
+	env := inputFile.AsEnvFile()
+	outputFile := env.AsFile()
+	inputContents, err := inputFile.Contents(ctx)
+	require.NoError(t, err)
+	outputContents, err := outputFile.Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, inputContents, outputContents)
+}
+
+func (EnvFileSuite) TestRemoveReferencedVariable(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	env := c.EnvFile().
+		WithVariable("GREETING", "bonjour").
+		WithVariable("NAME", "monde").
+		WithVariable("message", `$GREETING, $NAME!`)
+
+	before, err := env.Get(ctx, "message")
+	require.NoError(t, err)
+	require.Equal(t, `bonjour, monde!`, before)
+
+	env = env.WithoutVariable("NAME")
+
+	_, err = env.Get(ctx, "message")
+	require.Error(t, err)
+
+	afterRaw, err := env.Get(ctx, "message", dagger.EnvFileGetOpts{Raw: true})
+	require.NoError(t, err)
+	require.Equal(t, `$GREETING, $NAME!`, afterRaw)
+}
+
+// Test overriding an existing variable with a new value
+func (EnvFileSuite) TestOverride(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	envFile := c.EnvFile().
+		WithVariable("FOO", "bar").
+		WithVariable("FOO", "newbar")
+
+	variable, err := envFile.Get(ctx, "FOO")
+	require.NoError(t, err)
+	require.Equal(t, "newbar", variable)
+}

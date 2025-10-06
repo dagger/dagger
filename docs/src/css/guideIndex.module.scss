@@ -1,0 +1,201 @@
+@use "./custom.scss";
+
+.guideIndex {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  @include custom.desktop {
+    align-items: start;
+  }
+
+  ul {
+    display: flex;
+    flex-wrap: wrap;
+    width: 100%;
+    gap: .75rem;
+    padding-left: 0px;
+  }
+
+  li {
+    list-style: none;
+    text-decoration: none;
+    margin-top: 0px !important;
+    flex: 1 1 49%;
+  }
+}
+
+.selectedTags {
+  height: 50px;
+  display: flex;
+  gap: 5px;
+  flex-grow: inherit;
+  align-items: flex-start;
+}
+
+.filterWrapper {
+  position: relative;
+  margin-bottom: 1.5rem;
+  border: 1px solid var(--ifm-menu-color);
+  border-radius: 0.25rem;
+  min-width: 300px;
+  max-width: 600px;
+  width: 80%;
+
+
+  html[data-theme="dark"] & {
+    border-color: rgba(75,75,90, 0.5);
+    background-color: rgba(43, 47, 70, 0.3);
+  }
+}
+
+.filter {
+  display: flex;
+  flex-wrap: wrap;
+  padding-left: .5rem;
+  min-height: 32px;
+ }
+
+.filterTags {
+  margin: 5px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.filterInput {
+  border: none;
+  width: 100%;
+  background: transparent;
+
+  &::placeholder {
+    color: var(--ifm-menu-color);
+  }
+
+  &:focus,
+  &:focus-visible {
+    outline: none;
+  }
+
+  html[data-theme="dark"] & {
+    color: var(--ifm-color-primary-light);
+    background: transparent;
+  }
+}
+
+.filterInputHasTags {
+    position:absolute;
+    height: 100%;
+    z-index: 2;
+    opacity: 0;
+  }
+
+.filterDropdown {
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  border: 1px solid var(--ifm-menu-color);
+  background-color: white;
+  max-height: 200px;
+  overflow-y: scroll;
+  z-index: 99;
+
+  html[data-theme="dark"] & {
+    background: white;
+    border: 1px solid var(--ifm-menu-color);
+  }
+
+  ul {
+    padding: 0px;
+    margin: 0px;
+    gap: 0;
+  }
+
+  li {
+    font-size: 0.8rem;
+    margin: 0px;
+    padding: 0.5rem 0.5rem;
+    min-width: initial;
+    cursor: pointer;
+  }
+
+  li:last-of-type {
+    border-bottom: none;
+  }
+
+  li:hover {
+    background-color: var(--ifm-menu-color-background-hover);
+  }
+
+  html[data-theme="dark"] & {
+    background-color: #1a1b30;
+    border-color: rgba(75,75,90, 0.5);
+    li:hover {
+      background-color: rgba(211, 211, 211, 0.118);
+    }
+  }
+}
+
+.guideCard {
+  height: 100%;
+  box-shadow: 0px 4px 8px 0px rgba(173, 170, 198, 0.50);
+  border: 1px solid rgba(75,75,90, 0.3);
+  border-radius: 0.5rem;
+  display: flex;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  background-color: transparent;
+  color: var(--ifm-color-primary-dark) !important;
+  text-decoration: none !important;
+  padding: 1.5rem;
+
+  p {
+    font-size: 1rem;
+    margin: 0;
+  }
+
+  html[data-theme="dark"] & {
+    box-shadow: 0px 4px 8px 0px rgba(13, 12, 27, 0.50);
+    background-color: rgba(43, 47, 70, 0.3);
+    border-color: rgba(75,75,90, 0.5);
+  }
+}
+
+.info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: fit-content;
+  width: 100%;
+  a h3:hover {
+    width: initial;
+    text-decoration: underline;
+  }
+
+  time {
+    font-size: 0.8rem;
+  }
+
+  h3,
+  h4 {
+    margin: 0;
+  }
+}
+
+.author {
+  font-size: 0.8rem;
+  color: var(--ifm-menu-color)
+}
+
+.date {
+  font-size: 0.8rem;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  flex-grow: inherit;
+  align-items: flex-start;
+  gap: 5px;
+}

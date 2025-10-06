@@ -3,38 +3,82 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
+	"time"
 
-	"github.com/dagger/dagger/router"
+	"github.com/rs/cors"
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
+
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/engine/client"
 )
 
 var (
 	listenAddress string
 	disableHostRW bool
+	allowCORS     bool
 )
 
 var listenCmd = &cobra.Command{
-	Use:     "listen",
+	Use:     "listen [options]",
 	Aliases: []string{"l"},
-	Run:     Listen,
+	RunE:    optionalModCmdWrapper(Listen, os.Getenv("DAGGER_SESSION_TOKEN")),
 	Hidden:  true,
 	Short:   "Starts the engine server",
-}
-
-func Listen(cmd *cobra.Command, args []string) {
-	ctx := context.Background()
-	if err := withEngine(ctx, "", func(ctx context.Context, r *router.Router) error {
-		fmt.Fprintf(os.Stderr, "==> server listening on http://%s/query\n", listenAddress)
-		return http.ListenAndServe(listenAddress, r) //nolint:gosec
-	}); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
 }
 
 func init() {
 	listenCmd.Flags().StringVarP(&listenAddress, "listen", "", "127.0.0.1:8080", "Listen on network address ADDR")
 	listenCmd.Flags().BoolVar(&disableHostRW, "disable-host-read-write", false, "disable host read/write access")
+	listenCmd.Flags().BoolVar(&allowCORS, "allow-cors", false, "allow Cross-Origin Resource Sharing (CORS) requests")
+}
+
+func Listen(ctx context.Context, engineClient *client.Client, _ *dagger.Module, cmd *cobra.Command, _ []string) error {
+	stderr := cmd.OutOrStderr()
+
+	sessionL, err := net.Listen("tcp", listenAddress)
+	if err != nil {
+		return fmt.Errorf("session listen: %w", err)
+	}
+	defer sessionL.Close()
+
+	var handler http.Handler = engineClient
+
+	if allowCORS {
+		handler = cors.AllowAll().Handler(handler)
+	}
+
+	handler = otelhttp.NewHandler(handler, "listen", otelhttp.WithSpanNameFormatter(func(o string, r *http.Request) string {
+		return fmt.Sprintf("%s: HTTP %s %s", o, r.Method, r.URL.Path)
+	}))
+
+	http2Srv := &http2.Server{}
+	handler = h2c.NewHandler(handler, http2Srv)
+
+	srv := &http.Server{
+		Handler: handler,
+		// Gosec G112: prevent slowloris attacks
+		ReadHeaderTimeout: 10 * time.Second,
+		BaseContext: func(_ net.Listener) context.Context {
+			return ctx
+		},
+	}
+	if err := http2.ConfigureServer(srv, http2Srv); err != nil {
+		return fmt.Errorf("http2 server configuration: %w", err)
+	}
+
+	go func() {
+		<-ctx.Done()
+		fmt.Fprintln(stderr, "==> server shutting down")
+		srv.Shutdown(context.Background())
+	}()
+
+	fmt.Fprintf(stderr, "==> server listening on http://%s/query\n", listenAddress)
+
+	return srv.Serve(sessionL)
 }

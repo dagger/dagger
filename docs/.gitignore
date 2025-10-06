@@ -1,0 +1,25 @@
+# Dependencies
+/node_modules
+
+# Production
+/build
+
+# Generated files
+.docusaurus
+.cache-loader
+versioned_docs/version-zenith/developer/typescript/reference/*
+versioned_docs/version-zenith/reference/typescript/*
+current_docs/sdk/nodejs/reference/*
+current_docs/reference/typescript/*
+static/guides.json
+
+# Misc
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

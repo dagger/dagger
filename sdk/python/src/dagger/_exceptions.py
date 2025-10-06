@@ -1,0 +1,180 @@
+import dataclasses
+from typing import Any
+
+import cattrs
+import gql
+import graphql
+from gql.transport.exceptions import TransportQueryError
+
+
+class VersionMismatch(Warning):
+    """Dagger CLI version doesn't match required version."""
+
+
+class DaggerError(Exception):
+    """Base exception for all Dagger exceptions."""
+
+
+class ClientError(DaggerError):
+    """Base class for client errors."""
+
+
+class ClientConnectionError(ClientError):
+    """Error while establishing a client connection to the server."""
+
+    def __str__(self) -> str:
+        msg = "Failed to establish client connection to the Dagger session"
+        if sup := super().__str__():
+            return f"{msg}: {sup}"
+        return msg
+
+
+class TransportError(ClientError):
+    """Error processing request/response during query execution."""
+
+
+class InvalidQueryError(ClientError):
+    """Misuse of the query builder."""
+
+
+@dataclasses.dataclass(slots=True)
+class QueryErrorLocation:
+    """Error location returned by the API."""
+
+    line: int
+    column: int
+
+
+@dataclasses.dataclass(slots=True)
+class QueryErrorValue:
+    """An error value returned by the API."""
+
+    message: str
+    locations: list[QueryErrorLocation] | None = None
+    path: list[str] | None = None
+    extensions: dict[str, Any] = dataclasses.field(default_factory=dict)
+
+    def __str__(self) -> str:
+        return self.message
+
+
+class QueryError(ClientError):
+    """The server returned an error for a specific query."""
+
+    _type = None
+
+    def __new__(cls, errors: list[QueryErrorValue], *_):
+        error_types = {
+            subclass._type: subclass  # noqa: SLF001
+            for subclass in cls.__subclasses__()
+            if subclass._type  # noqa: SLF001
+        }
+        try:
+            new_type = error_types[errors[0].extensions["_type"]]
+        except (KeyError, IndexError):
+            return super().__new__(cls)
+        return super().__new__(new_type)
+
+    def __init__(self, errors: list[QueryErrorValue], request: gql.GraphQLRequest):
+        if not errors:
+            msg = "Errors list is empty"
+            raise ValueError(msg)
+        super().__init__(*errors)
+        self.errors: list[QueryErrorValue] = errors
+        self.request = request
+        self.query = request.document
+
+    @property
+    def error(self) -> QueryErrorValue:
+        return self.errors[0]
+
+    def __str__(self) -> str:
+        return str(self.error)
+
+    def debug_query(self):
+        """Return GraphQL query for debugging purposes.
+
+        Example::
+
+            try:
+                await ctr
+            except dagger.QueryError as e:
+                print(e.debug_query())
+        """
+        lines = graphql.print_ast(self.query).splitlines()
+        # count number of digits from line count
+        pad = len(str(len(lines)))
+        locations = (
+            {loc.line: loc.column for loc in self.errors[0].locations}
+            if self.errors[0].locations
+            else {}
+        )
+        res = []
+        for nr, line in enumerate(lines, start=1):
+            # prepend line number
+            res.append(f"{{:{pad}d}}: {{}}".format(nr, line))
+            if nr in locations:
+                # add caret below line, pointing to start of error
+                res.append(" " * (pad + 1 + locations[nr]) + "^")
+        return "\n".join(res)
+
+
+def _query_error_from_transport(exc: TransportQueryError, request: gql.GraphQLRequest):
+    """Create instance from a gql exception."""
+    try:
+        errors = cattrs.structure(exc.errors, list[QueryErrorValue])
+    except (TypeError, KeyError, ValueError):
+        return None
+    return QueryError(errors, request) if errors else None
+
+
+class ExecError(QueryError):
+    """API error from an exec operation.
+
+    Attributes
+    ----------
+    command:
+        The command that was executed.
+    message:
+        The error message.
+    exit_code:
+        The exit code of the command.
+    stdout:
+        The stdout of the command.
+    stderr:
+        The stderr of the command.
+    """
+
+    _type = "EXEC_ERROR"
+
+    command: list[str]
+    message: str
+    exit_code: int
+    stdout: str
+    stderr: str
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        ext = self.error.extensions
+        self.command = ext["cmd"]
+        self.message = self.error.message
+        self.exit_code = ext["exitCode"]
+        self.stdout = ext["stdout"]
+        self.stderr = ext["stderr"]
+
+    def __str__(self):
+        """Prints the original error message."""
+        return self.message
+
+
+__all__ = [
+    "ClientConnectionError",
+    "ClientError",
+    "DaggerError",
+    "ExecError",
+    "InvalidQueryError",
+    "QueryError",
+    "TransportError",
+    "VersionMismatch",
+]

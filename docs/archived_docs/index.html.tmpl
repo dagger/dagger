@@ -1,0 +1,626 @@
+
+<!doctype html>
+<html lang="en" dir="ltr">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Dagger Documentation Archive</title>
+  <link rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700&family=Source+Code+Pro:wght@400&display=swap">
+  <style>
+    body {
+      color: var(--ifm-font-color-base);
+      font: var(--ifm-font-size-base)/var(--ifm-line-height-base) var(--ifm-font-family-base);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      word-wrap: break-word;
+    }
+
+    body {
+      margin: 0;
+    }
+
+    body {
+      height: 100%;
+    }
+
+    html {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html {
+      -webkit-font-smoothing: antialiased;
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+      background-color: var(--ifm-background-color);
+      color: var(--ifm-font-color-base);
+      color-scheme: var(--ifm-color-scheme);
+      font: var(--ifm-font-size-base)/var(--ifm-line-height-base) var(--ifm-font-family-base);
+      text-rendering: optimizelegibility;
+    }
+
+    html {
+      height: 100%;
+    }
+
+    :root {
+      --ifm-button-color: var(--ifm-font-color-base-inverse);
+    }
+
+    :root {
+      --ifm-navbar-link-hover-color: var(--ifm-color-primary);
+    }
+
+    :root {
+      --ifm-color-emphasis-500: var(--ifm-color-gray-500);
+    }
+
+    :root {
+      --ifm-color-scheme: light;
+      --ifm-color-primary: #3578e5;
+      --ifm-color-white: #fff;
+      --ifm-color-black: #000;
+      --ifm-color-gray-0: var(--ifm-color-white);
+      --ifm-color-gray-100: #f5f6f7;
+      --ifm-color-gray-200: #ebedf0;
+      --ifm-color-gray-300: #dadde1;
+      --ifm-color-gray-400: #ccd0d5;
+      --ifm-color-gray-500: #bec3c9;
+      --ifm-color-gray-600: #8d949e;
+      --ifm-color-gray-700: #606770;
+      --ifm-color-gray-800: #444950;
+      --ifm-color-gray-900: #1c1e21;
+      --ifm-color-gray-1000: var(--ifm-color-black);
+      --ifm-color-emphasis-0: var(--ifm-color-gray-0);
+      --ifm-color-emphasis-100: var(--ifm-color-gray-100);
+      --ifm-color-emphasis-200: var(--ifm-color-gray-200);
+      --ifm-color-emphasis-300: var(--ifm-color-gray-300);
+      --ifm-color-emphasis-400: var(--ifm-color-gray-400);
+      --ifm-color-emphasis-600: var(--ifm-color-gray-600);
+      --ifm-color-emphasis-700: var(--ifm-color-gray-700);
+      --ifm-color-emphasis-800: var(--ifm-color-gray-800);
+      --ifm-color-emphasis-900: var(--ifm-color-gray-900);
+      --ifm-color-emphasis-1000: var(--ifm-color-gray-1000);
+      --ifm-color-content: var(--ifm-color-emphasis-900);
+      --ifm-color-content-inverse: var(--ifm-color-emphasis-0);
+      --ifm-color-content-secondary: #525860;
+      --ifm-background-color: #0000;
+      --ifm-background-surface-color: var(--ifm-color-content-inverse);
+      --ifm-global-border-width: 1px;
+      --ifm-global-radius: 0.4rem;
+      --ifm-hover-overlay: #0000000d;
+      --ifm-font-color-base: var(--ifm-color-content);
+      --ifm-font-color-base-inverse: var(--ifm-color-content-inverse);
+      --ifm-font-color-secondary: var(--ifm-color-content-secondary);
+      --ifm-font-family-base: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+      --ifm-font-size-base: 100%;
+      --ifm-font-weight-normal: 400;
+      --ifm-font-weight-semibold: 500;
+      --ifm-font-weight-bold: 700;
+      --ifm-font-weight-base: var(--ifm-font-weight-normal);
+      --ifm-line-height-base: 1.65;
+      --ifm-global-spacing: 1rem;
+      --ifm-spacing-vertical: var(--ifm-global-spacing);
+      --ifm-spacing-horizontal: var(--ifm-global-spacing);
+      --ifm-transition-fast: 200ms;
+      --ifm-transition-timing-default: cubic-bezier(0.08, 0.52, 0.52, 1);
+      --ifm-global-shadow-lw: 0 1px 2px 0 #0000001a;
+      --ifm-container-width: 1140px;
+      --ifm-code-background: #f6f7f8;
+      --ifm-code-border-radius: var(--ifm-global-radius);
+      --ifm-pre-background: var(--ifm-code-background);
+      --ifm-pre-border-radius: var(--ifm-code-border-radius);
+      --ifm-heading-margin-bottom: var(--ifm-spacing-vertical);
+      --ifm-heading-font-family: var(--ifm-font-family-base);
+      --ifm-heading-font-weight: var(--ifm-font-weight-bold);
+      --ifm-leading-desktop: 1.25;
+      --ifm-leading: calc(var(--ifm-leading-desktop)*1rem);
+      --ifm-table-border-color: var(--ifm-color-emphasis-300);
+      --ifm-table-head-font-weight: var(--ifm-font-weight-bold);
+      --ifm-link-color: var(--ifm-color-primary);
+      --ifm-link-decoration: none;
+      --ifm-link-hover-color: var(--ifm-link-color);
+      --ifm-link-hover-decoration: underline;
+      --ifm-paragraph-margin-bottom: var(--ifm-leading);
+      --ifm-blockquote-font-size: var(--ifm-font-size-base);
+      --ifm-blockquote-padding-horizontal: var(--ifm-spacing-horizontal);
+      --ifm-blockquote-color: var(--ifm-color-emphasis-800);
+      --ifm-blockquote-border-color: var(--ifm-color-emphasis-300);
+      --ifm-hr-background-color: var(--ifm-color-emphasis-500);
+      --ifm-alert-border-radius: var(--ifm-global-radius);
+      --ifm-alert-color: var(--ifm-font-color-base);
+      --ifm-alert-padding-horizontal: var(--ifm-spacing-horizontal);
+      --ifm-alert-padding-vertical: var(--ifm-spacing-vertical);
+      --ifm-alert-shadow: var(--ifm-global-shadow-lw);
+      --ifm-badge-border-radius: var(--ifm-global-radius);
+      --ifm-badge-border-width: var(--ifm-global-border-width);
+      --ifm-badge-color: var(--ifm-color-white);
+      --ifm-badge-padding-horizontal: calc(var(--ifm-spacing-horizontal)*0.5);
+      --ifm-badge-padding-vertical: calc(var(--ifm-spacing-vertical)*0.25);
+      --ifm-breadcrumb-color-active: var(--ifm-color-primary);
+      --ifm-breadcrumb-item-background-active: var(--ifm-hover-overlay);
+      --ifm-button-background-color: inherit;
+      --ifm-button-border-color: var(--ifm-button-background-color);
+      --ifm-button-border-width: var(--ifm-global-border-width);
+      --ifm-button-font-weight: var(--ifm-font-weight-bold);
+      --ifm-button-size-multiplier: 1;
+      --ifm-button-transition-duration: var(--ifm-transition-fast);
+      --ifm-button-border-radius: calc(var(--ifm-global-radius)*var(--ifm-button-size-multiplier));
+      --ifm-card-background-color: var(--ifm-background-surface-color);
+      --ifm-card-border-radius: calc(var(--ifm-global-radius)*2);
+      --ifm-card-horizontal-spacing: var(--ifm-global-spacing);
+      --ifm-card-vertical-spacing: var(--ifm-global-spacing);
+      --ifm-toc-border-color: var(--ifm-color-emphasis-300);
+      --ifm-toc-link-color: var(--ifm-color-content-secondary);
+      --ifm-dropdown-background-color: var(--ifm-background-surface-color);
+      --ifm-dropdown-font-weight: var(--ifm-font-weight-semibold);
+      --ifm-dropdown-link-color: var(--ifm-font-color-base);
+      --ifm-dropdown-hover-background-color: var(--ifm-hover-overlay);
+      --ifm-footer-background-color: var(--ifm-color-emphasis-100);
+      --ifm-footer-link-color: var(--ifm-color-emphasis-700);
+      --ifm-footer-link-hover-color: var(--ifm-color-primary);
+      --ifm-footer-padding-horizontal: calc(var(--ifm-spacing-horizontal)*2);
+      --ifm-footer-padding-vertical: calc(var(--ifm-spacing-vertical)*2);
+      --ifm-hero-background-color: var(--ifm-background-surface-color);
+      --ifm-hero-text-color: var(--ifm-color-emphasis-800);
+      --ifm-menu-color: var(--ifm-color-emphasis-700);
+      --ifm-menu-color-active: var(--ifm-color-primary);
+      --ifm-menu-color-background-active: var(--ifm-hover-overlay);
+      --ifm-menu-color-background-hover: var(--ifm-hover-overlay);
+      --ifm-navbar-background-color: var(--ifm-background-surface-color);
+      --ifm-navbar-link-color: var(--ifm-font-color-base);
+      --ifm-navbar-link-active-color: var(--ifm-link-color);
+      --ifm-navbar-padding-horizontal: var(--ifm-spacing-horizontal);
+      --ifm-navbar-padding-vertical: calc(var(--ifm-spacing-vertical)*0.5);
+      --ifm-navbar-shadow: var(--ifm-global-shadow-lw);
+      --ifm-pagination-border-radius: var(--ifm-global-radius);
+      --ifm-pagination-color-active: var(--ifm-color-primary);
+      --ifm-pagination-item-active-background: var(--ifm-hover-overlay);
+      --ifm-pagination-padding-horizontal: calc(var(--ifm-spacing-horizontal)*1);
+      --ifm-pagination-padding-vertical: calc(var(--ifm-spacing-vertical)*0.25);
+      --ifm-pagination-nav-border-radius: var(--ifm-global-radius);
+      --ifm-pagination-nav-color-hover: var(--ifm-color-primary);
+      --ifm-pills-color-active: var(--ifm-color-primary);
+      --ifm-pills-color-background-active: var(--ifm-hover-overlay);
+      --ifm-tabs-color: var(--ifm-font-color-secondary);
+      --ifm-tabs-color-active: var(--ifm-color-primary);
+      --ifm-tabs-color-active-border: var(--ifm-tabs-color-active);
+      --ifm-table-cell-padding: 0.75rem;
+      --ifm-table-background: #0000;
+      --ifm-table-stripe-background: #00000008;
+      --ifm-table-border-width: 1px;
+      --ifm-table-border-color: var(--ifm-color-emphasis-300);
+      --ifm-table-head-background: inherit;
+      --ifm-table-head-color: inherit;
+      --ifm-table-head-font-weight: var(--ifm-font-weight-bold);
+      --ifm-table-cell-color: inherit;
+    }
+
+    :root {
+      --docusaurus-progress-bar-color: var(--ifm-color-primary);
+      --docusaurus-tag-list-border: var(--ifm-color-emphasis-300);
+      --ifm-color-primary: #21798d;
+      --ifm-hover-overlay: #e1f5fb;
+      --ifm-navbar-background-color: #0d0c1b;
+      --ifm-navbar-height: 4.5rem;
+      --ifm-navbar-padding-vertical: .75rem;
+    }
+
+    .navbar {
+      background-color: var(--ifm-navbar-background-color);
+      box-shadow: var(--ifm-navbar-shadow);
+      height: var(--ifm-navbar-height);
+      padding: var(--ifm-navbar-padding-vertical) var(--ifm-navbar-padding-horizontal);
+    }
+
+
+    .navbar {
+      display: flex;
+    }
+
+    .navbar--fixed-top {
+      position: sticky;
+      top: 0;
+      z-index: var(--ifm-z-index-fixed);
+    }
+
+    .navbar__inner {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      width: 100%;
+    }
+
+    .navbar-sidebar__backdrop {
+      bottom: 0;
+      opacity: 0;
+      position: fixed;
+      transition-duration: var(--ifm-transition-fast);
+      transition-timing-function: ease-in-out;
+      left: 0;
+      top: 0;
+      visibility: hidden;
+    }
+
+    .navbar-sidebar__backdrop {
+      background-color: #0009;
+      right: 0;
+      transition-property: opacity, visibility;
+    }
+
+    .navbar__items {
+      align-items: center;
+      display: flex;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .navbar__items--right {
+      flex: 0 0 auto;
+      justify-content: flex-end;
+    }
+
+    .navbar__items--right {
+      gap: 1rem;
+    }
+
+    .clean-btn {
+      background: none;
+      border: none;
+      color: inherit;
+      cursor: pointer;
+      font-family: inherit;
+      padding: 0;
+    }
+
+    .navbar__toggle {
+      display: none;
+    }
+
+    .navbar__toggle {
+      color: #fff;
+      margin-right: 1rem;
+    }
+
+    a {
+      transition: color var(--ifm-transition-fast) var(--ifm-transition-timing-default);
+    }
+
+    a {
+      color: var(--ifm-link-color);
+      text-decoration: var(--ifm-link-decoration);
+    }
+
+    .navbar__brand {
+      color: var(--ifm-navbar-link-color);
+    }
+
+    .navbar__brand {
+      align-items: center;
+      display: flex;
+      margin-right: 1rem;
+      min-width: 0;
+    }
+
+    a:hover {
+      color: var(--ifm-link-hover-color);
+      text-decoration: var(--ifm-link-hover-decoration);
+    }
+
+    .navbar__brand:hover {
+      color: var(--ifm-navbar-link-hover-color);
+      text-decoration: none;
+    }
+
+    .navbar__link {
+      font-weight: var(--ifm-font-weight-semibold);
+    }
+
+    .navbar__link {
+      color: var(--ifm-navbar-link-color);
+    }
+
+    .navbar__item {
+      display: inline-block;
+      padding: var(--ifm-navbar-item-padding-vertical) var(--ifm-navbar-item-padding-horizontal);
+    }
+
+    .navbar-blog-link {
+      color: #fff;
+    }
+
+    .navbar__link:hover {
+      color: var(--ifm-navbar-link-hover-color);
+      text-decoration: none;
+    }
+
+    .header-github-link {
+      height: 35px;
+      -webkit-mask-image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzUiIGhlaWdodD0iMzUiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBjbGlwLXBhdGg9InVybCgjYSkiPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgY2xpcC1ydWxlPSJldmVub2RkIiBkPSJNMjQgOWExNi4wNjMgMTYuMDYzIDAgMCAwLTEwLjM3OSAzLjc4NCAxNS44NyAxNS44NyAwIDAgMC01LjQzIDkuNTY2IDE1LjgwOSAxNS44MDkgMCAwIDAgMi4xMDggMTAuNzgxIDE1Ljk4MiAxNS45ODIgMCAwIDAgOC42NDMgNi44NWMuNzk1LjE0NiAxLjA5LS4zNTIgMS4wOS0uNzcxdi0yLjcwM2MtNC40NS45NzYtNS4zOTItMi4xMjctNS4zOTItMi4xMjdhNC4yNTggNC4yNTggMCAwIDAtMS43NzgtMi4zMzNjLTEuNDQ0LS45NzUuMTE4LS45NzUuMTE4LS45NzVhMy4zOCAzLjM4IDAgMCAxIDIuNDQ1IDEuNjM5IDMuNCAzLjQgMCAwIDAgMi4wNSAxLjYyNCAzLjQ0MSAzLjQ0MSAwIDAgMCAyLjYwNi0uMjk3Yy4wNjItLjgwMy40MS0xLjU1Ny45ODItMi4xMjctMy41NTUtLjQtNy4yODgtMS43NjYtNy4yODgtNy44NTVhNi4xMjUgNi4xMjUgMCAwIDEgMS42NC00LjI2NCA1Ljc1MSA1Ljc1MSAwIDAgMSAuMTU4LTQuMjA2czEuMzQ1LS40MjkgNC40IDEuNjNhMTUuMjMxIDE1LjIzMSAwIDAgMSA4LjAxNSAwYzMuMDU0LTIuMDU5IDQuMzktMS42MyA0LjM5LTEuNjNhNS43MjIgNS43MjIgMCAwIDEgLjE2NyA0LjIwNiA2LjEyNSA2LjEyNSAwIDAgMSAxLjY0IDQuMjY0YzAgNi4xMDgtMy43NDIgNy40NDUtNy4zMDcgNy44MDZhMy43NTUgMy43NTUgMCAwIDEgMS4wOSAyLjkyN3Y0LjM2MmMwIC41MTcuMjg1LjkxNyAxLjEuNzdhMTUuOTkgMTUuOTkgMCAwIDAgOC42MDgtNi44NjEgMTUuODE4IDE1LjgxOCAwIDAgMCAyLjA5Mi0xMC43NjUgMTUuODggMTUuODggMCAwIDAtNS40MTYtOS41NTNBMTYuMDczIDE2LjA3MyAwIDAgMCAyNCA4Ljk0MlY5WiIgZmlsbD0iIzAwMCIvPjwvZz48ZGVmcz48Y2xpcFBhdGggaWQ9ImEiPjxwYXRoIGZpbGw9IiNmZmYiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDggOSkiIGQ9Ik0wIDBoMzJ2MzFIMHoiLz48L2NsaXBQYXRoPjwvZGVmcz48L3N2Zz4=);
+      mask-image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzUiIGhlaWdodD0iMzUiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBjbGlwLXBhdGg9InVybCgjYSkiPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgY2xpcC1ydWxlPSJldmVub2RkIiBkPSJNMjQgOWExNi4wNjMgMTYuMDYzIDAgMCAwLTEwLjM3OSAzLjc4NCAxNS44NyAxNS44NyAwIDAgMC01LjQzIDkuNTY2IDE1LjgwOSAxNS44MDkgMCAwIDAgMi4xMDggMTAuNzgxIDE1Ljk4MiAxNS45ODIgMCAwIDAgOC42NDMgNi44NWMuNzk1LjE0NiAxLjA5LS4zNTIgMS4wOS0uNzcxdi0yLjcwM2MtNC40NS45NzYtNS4zOTItMi4xMjctNS4zOTItMi4xMjdhNC4yNTggNC4yNTggMCAwIDAtMS43NzgtMi4zMzNjLTEuNDQ0LS45NzUuMTE4LS45NzUuMTE4LS45NzVhMy4zOCAzLjM4IDAgMCAxIDIuNDQ1IDEuNjM5IDMuNCAzLjQgMCAwIDAgMi4wNSAxLjYyNCAzLjQ0MSAzLjQ0MSAwIDAgMCAyLjYwNi0uMjk3Yy4wNjItLjgwMy40MS0xLjU1Ny45ODItMi4xMjctMy41NTUtLjQtNy4yODgtMS43NjYtNy4yODgtNy44NTVhNi4xMjUgNi4xMjUgMCAwIDEgMS42NC00LjI2NCA1Ljc1MSA1Ljc1MSAwIDAgMSAuMTU4LTQuMjA2czEuMzQ1LS40MjkgNC40IDEuNjNhMTUuMjMxIDE1LjIzMSAwIDAgMSA4LjAxNSAwYzMuMDU0LTIuMDU5IDQuMzktMS42MyA0LjM5LTEuNjNhNS43MjIgNS43MjIgMCAwIDEgLjE2NyA0LjIwNiA2LjEyNSA2LjEyNSAwIDAgMSAxLjY0IDQuMjY0YzAgNi4xMDgtMy43NDIgNy40NDUtNy4zMDcgNy44MDZhMy43NTUgMy43NTUgMCAwIDEgMS4wOSAyLjkyN3Y0LjM2MmMwIC41MTcuMjg1LjkxNyAxLjEuNzdhMTUuOTkgMTUuOTkgMCAwIDAgOC42MDgtNi44NjEgMTUuODE4IDE1LjgxOCAwIDAgMCAyLjA5Mi0xMC43NjUgMTUuODggMTUuODggMCAwIDAtNS40MTYtOS41NTNBMTYuMDczIDE2LjA3MyAwIDAgMCAyNCA4Ljk0MlY5WiIgZmlsbD0iIzAwMCIvPjwvZz48ZGVmcz48Y2xpcFBhdGggaWQ9ImEiPjxwYXRoIGZpbGw9IiNmZmYiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDggOSkiIGQ9Ik0wIDBoMzJ2MzFIMHoiLz48L2NsaXBQYXRoPjwvZGVmcz48L3N2Zz4=);
+      -webkit-mask-size: 100%;
+      mask-size: 100%;
+    }
+
+    .header-github-link {
+      background-color: #fff;
+      margin: 0;
+      padding: 0;
+      width: 30px;
+    }
+
+    @media (min-width: 997px) {
+      .header-github-link {
+        width: 35px;
+      }
+
+      .header-github-link {
+        overflow: hidden;
+        text-indent: 40px;
+        white-space: nowrap;
+      }
+    }
+
+    .header-discord-link {
+      background-color: #fff;
+      margin: 0;
+      padding: 0;
+      width: 30px;
+    }
+
+    .header-discord-link {
+      height: 30px;
+      -webkit-mask-image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAiIGhlaWdodD0iMzAiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBjbGlwLXBhdGg9InVybCgjYSkiPjxwYXRoIGQ9Ik0zNS4wOSAxMy4yMjZhMjYuMjMgMjYuMjMgMCAwIDAtNi41MTQtMi4wMzcuMDk4LjA5OCAwIDAgMC0uMTA1LjA1IDE4LjU5NCAxOC41OTQgMCAwIDAtLjgxIDEuNjggMjQuMTU2IDI0LjE1NiAwIDAgMC03LjMxNyAwIDE3LjA1NSAxNy4wNTUgMCAwIDAtLjgyMy0xLjY4LjEwMi4xMDIgMCAwIDAtLjEwNS0uMDUgMjYuMTUyIDI2LjE1MiAwIDAgMC02LjUxMyAyLjAzNy4wOTQuMDk0IDAgMCAwLS4wNDMuMDM3Yy00LjE0OSA2LjI1MS01LjI4NSAxMi4zNDgtNC43MjggMTguMzcuMDAzLjAyOS4wMi4wNTcuMDQyLjA3NWEyNi40NDggMjYuNDQ4IDAgMCAwIDcuOTkgNC4wNzQuMTAzLjEwMyAwIDAgMCAuMTEzLS4wMzcgMTkuMTUgMTkuMTUgMCAwIDAgMS42MzQtMi42ODIuMTAyLjEwMiAwIDAgMC0uMDU1LS4xNDIgMTcuNDA3IDE3LjQwNyAwIDAgMS0yLjQ5Ni0xLjIuMTA0LjEwNCAwIDAgMS0uMDEtLjE3MmMuMTY3LS4xMjcuMzM1LS4yNTguNDk1LS4zOTJhLjA5OC4wOTggMCAwIDEgLjEwNC0uMDE0YzUuMjM3IDIuNDEyIDEwLjkwNiAyLjQxMiAxNi4wODIgMGEuMDk4LjA5OCAwIDAgMSAuMTA0LjAxM2MuMTYuMTMzLjMyOC4yNjcuNDk3LjM5M2EuMTA0LjEwNCAwIDAgMS0uMDA4LjE3MmMtLjc5OC40Ny0xLjYyNi44NjctMi40OTggMS4xOTlhLjEwMy4xMDMgMCAwIDAtLjA1NC4xNDNjLjQ4LjkzOSAxLjAyOSAxLjgzMiAxLjYzMyAyLjY4LjAyNS4wMzYuMDcuMDUxLjExMy4wMzlhMjYuMzYgMjYuMzYgMCAwIDAgOC4wMDMtNC4wNzQuMTA0LjEwNCAwIDAgMCAuMDQxLS4wNzRjLjY2Ny02Ljk2Mi0xLjExNy0xMy4wMDktNC43MzEtMTguMzdhLjA4Mi4wODIgMCAwIDAtLjA0Mi0uMDM4Wm0tMTYuMzk3IDE0Ljc0Yy0xLjU3NiAwLTIuODc2LTEuNDYtMi44NzYtMy4yNTMgMC0xLjc5MiAxLjI3NC0zLjI1MiAyLjg3Ni0zLjI1MiAxLjYxNSAwIDIuOTAxIDEuNDcyIDIuODc2IDMuMjUyIDAgMS43OTMtMS4yNzQgMy4yNTMtMi44NzYgMy4yNTNabTEwLjYzMyAwYy0xLjU3NiAwLTIuODc1LTEuNDYtMi44NzUtMy4yNTMgMC0xLjc5MiAxLjI3My0zLjI1MiAyLjg3NS0zLjI1MiAxLjYxNSAwIDIuOTAxIDEuNDcyIDIuODc2IDMuMjUyIDAgMS43OTMtMS4yNjEgMy4yNTMtMi44NzYgMy4yNTNaIiBmaWxsPSIjMDAwIi8+PC9nPjxkZWZzPjxjbGlwUGF0aCBpZD0iYSI+PHBhdGggZmlsbD0iIzAwMCIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoOCAxMSkiIGQ9Ik0wIDBoMzJ2MjVIMHoiLz48L2NsaXBQYXRoPjwvZGVmcz48L3N2Zz4=);
+      mask-image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAiIGhlaWdodD0iMzAiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBjbGlwLXBhdGg9InVybCgjYSkiPjxwYXRoIGQ9Ik0zNS4wOSAxMy4yMjZhMjYuMjMgMjYuMjMgMCAwIDAtNi41MTQtMi4wMzcuMDk4LjA5OCAwIDAgMC0uMTA1LjA1IDE4LjU5NCAxOC41OTQgMCAwIDAtLjgxIDEuNjggMjQuMTU2IDI0LjE1NiAwIDAgMC03LjMxNyAwIDE3LjA1NSAxNy4wNTUgMCAwIDAtLjgyMy0xLjY4LjEwMi4xMDIgMCAwIDAtLjEwNS0uMDUgMjYuMTUyIDI2LjE1MiAwIDAgMC02LjUxMyAyLjAzNy4wOTQuMDk0IDAgMCAwLS4wNDMuMDM3Yy00LjE0OSA2LjI1MS01LjI4NSAxMi4zNDgtNC43MjggMTguMzcuMDAzLjAyOS4wMi4wNTcuMDQyLjA3NWEyNi40NDggMjYuNDQ4IDAgMCAwIDcuOTkgNC4wNzQuMTAzLjEwMyAwIDAgMCAuMTEzLS4wMzcgMTkuMTUgMTkuMTUgMCAwIDAgMS42MzQtMi42ODIuMTAyLjEwMiAwIDAgMC0uMDU1LS4xNDIgMTcuNDA3IDE3LjQwNyAwIDAgMS0yLjQ5Ni0xLjIuMTA0LjEwNCAwIDAgMS0uMDEtLjE3MmMuMTY3LS4xMjcuMzM1LS4yNTguNDk1LS4zOTJhLjA5OC4wOTggMCAwIDEgLjEwNC0uMDE0YzUuMjM3IDIuNDEyIDEwLjkwNiAyLjQxMiAxNi4wODIgMGEuMDk4LjA5OCAwIDAgMSAuMTA0LjAxM2MuMTYuMTMzLjMyOC4yNjcuNDk3LjM5M2EuMTA0LjEwNCAwIDAgMS0uMDA4LjE3MmMtLjc5OC40Ny0xLjYyNi44NjctMi40OTggMS4xOTlhLjEwMy4xMDMgMCAwIDAtLjA1NC4xNDNjLjQ4LjkzOSAxLjAyOSAxLjgzMiAxLjYzMyAyLjY4LjAyNS4wMzYuMDcuMDUxLjExMy4wMzlhMjYuMzYgMjYuMzYgMCAwIDAgOC4wMDMtNC4wNzQuMTA0LjEwNCAwIDAgMCAuMDQxLS4wNzRjLjY2Ny02Ljk2Mi0xLjExNy0xMy4wMDktNC43MzEtMTguMzdhLjA4Mi4wODIgMCAwIDAtLjA0Mi0uMDM4Wm0tMTYuMzk3IDE0Ljc0Yy0xLjU3NiAwLTIuODc2LTEuNDYtMi44NzYtMy4yNTMgMC0xLjc5MiAxLjI3NC0zLjI1MiAyLjg3Ni0zLjI1MiAxLjYxNSAwIDIuOTAxIDEuNDcyIDIuODc2IDMuMjUyIDAgMS43OTMtMS4yNzQgMy4yNTMtMi44NzYgMy4yNTNabTEwLjYzMyAwYy0xLjU3NiAwLTIuODc1LTEuNDYtMi44NzUtMy4yNTMgMC0xLjc5MiAxLjI3My0zLjI1MiAyLjg3NS0zLjI1MiAxLjYxNSAwIDIuOTAxIDEuNDcyIDIuODc2IDMuMjUyIDAgMS43OTMtMS4yNjEgMy4yNTMtMi44NzYgMy4yNTNaIiBmaWxsPSIjMDAwIi8+PC9nPjxkZWZzPjxjbGlwUGF0aCBpZD0iYSI+PHBhdGggZmlsbD0iIzAwMCIgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoOCAxMSkiIGQ9Ik0wIDBoMzJ2MjVIMHoiLz48L2NsaXBQYXRoPjwvZGVmcz48L3N2Zz4=);
+      -webkit-mask-size: 35px;
+      mask-size: 35px;
+    }
+
+    @media (min-width: 997px) {
+      .header-discord-link {
+        overflow: hidden;
+        text-indent: 40px;
+        white-space: nowrap;
+      }
+
+      .header-discord-link {
+        width: 30px;
+      }
+    }
+
+    .toggle_vylO {
+      height: 2rem;
+      width: 2rem;
+    }
+
+    .navbar__items--right> :last-child {
+      padding-right: 0;
+    }
+
+    .navbar__logo {
+      flex: 0 0 auto;
+      height: 2rem;
+      margin-right: .5rem;
+    }
+
+    .toggleButton_gllP {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .toggleButton_gllP {
+      align-items: center;
+      border-radius: 50%;
+      display: flex;
+      height: 100%;
+      justify-content: center;
+      transition: background var(--ifm-transition-fast);
+      width: 100%;
+    }
+
+    .toggleButton_gllP:hover {
+      background: var(--ifm-color-emphasis-200);
+    }
+
+    img {
+      max-width: 100%;
+    }
+
+    .navbar__logo img {
+      height: 100%;
+    }
+
+    [data-theme="light"] .themedImage--light_HNdA {
+      display: initial;
+    }
+
+    [data-theme="light"] .darkToggleIcon_wfgR {
+      display: none;
+    }
+
+    kbd {
+      background-color: var(--ifm-color-emphasis-0);
+      border: 1px solid var(--ifm-color-emphasis-400);
+      border-radius: .2rem;
+      box-shadow: inset 0 -1px 0 var(--ifm-color-emphasis-400);
+      color: var(--ifm-color-emphasis-800);
+      font: 80% var(--ifm-font-family-monospace);
+      padding: .15rem .3rem;
+    }
+
+    h1 {
+      font-size: 3rem;
+    }
+
+    section {
+      padding: 1rem 3rem;
+    }
+
+    :root {
+      --ifm-button-color: var(--ifm-font-color-base-inverse);
+    }
+
+    :root {
+      --ifm-navbar-link-hover-color: var(--ifm-color-primary);
+    }
+
+    :root {
+      --ifm-color-emphasis-500: var(--ifm-color-gray-500);
+    }
+
+
+    p {
+      margin: 0 0 var(--ifm-paragraph-margin-bottom);
+    }
+
+    .markdown>p {
+      margin-bottom: var(--ifm-leading);
+    }
+
+    a {
+      transition: color var(--ifm-transition-fast) var(--ifm-transition-timing-default);
+    }
+
+    a {
+      color: var(--ifm-link-color);
+      text-decoration: var(--ifm-link-decoration);
+    }
+
+    a:hover {
+      color: var(--ifm-link-hover-color);
+      text-decoration: var(--ifm-link-hover-decoration);
+    }
+
+    .docItemCol_VOVn {
+      max-width: 75%;
+    }
+
+    table {
+      overflow: auto;
+    }
+
+    table {
+      border-collapse: collapse;
+      display: block;
+      margin-bottom: var(--ifm-spacing-vertical);
+    }
+
+    thead {
+      background-color: var(--ifm-table-stripe-background);
+    }
+
+    tr {
+      background-color: var(--ifm-table-background);
+      border-top: var(--ifm-table-border-width) solid var(--ifm-table-border-color);
+    }
+
+    thead tr {
+      border-bottom: 2px solid var(--ifm-table-border-color);
+    }
+
+    tr:nth-child(2n) {
+      background-color: var(--ifm-table-stripe-background);
+    }
+
+    th {
+      border: var(--ifm-table-border-width) solid var(--ifm-table-border-color);
+      padding: var(--ifm-table-cell-padding);
+    }
+
+    th {
+      background-color: var(--ifm-table-head-background);
+      color: var(--ifm-table-head-color);
+      font-weight: var(--ifm-table-head-font-weight);
+    }
+
+    td {
+      border: var(--ifm-table-border-width) solid var(--ifm-table-border-color);
+      padding: var(--ifm-table-cell-padding);
+    }
+
+    td {
+      color: var(--ifm-table-cell-color);
+    }
+
+    code {
+      vertical-align: middle;
+    }
+
+    code {
+      background-color: var(--ifm-code-background);
+      border: .1rem solid #0000001a;
+      border-radius: var(--ifm-code-border-radius);
+      font-family: var(--ifm-font-family-monospace);
+      font-size: var(--ifm-code-font-size);
+      padding: var(--ifm-code-padding-vertical) var(--ifm-code-padding-horizontal);
+    }
+
+
+    /* These were inline style tags. Uses id+class to override almost everything */
+    #style-rvAYo.style-rvAYo {
+      display: table-cell;
+    }
+  </style>
+</head>
+
+<body>
+
+  <nav aria-label="Main" class="navbar navbar--fixed-top">
+    <div class="navbar__inner">
+      <div class="navbar__items"><button aria-label="Toggle navigation bar" aria-expanded="false"
+          class="navbar__toggle clean-btn" type="button"><svg width="30" height="30" viewBox="0 0 30 30"
+            aria-hidden="true">
+            <path stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="2"
+              d="M4 7h22M4 15h22M4 23h22"></path>
+          </svg></button><a class="navbar__brand" href="/">
+          <div class="navbar__logo"><img src="https://docs.dagger.io/img/dagger-logo-white.svg" alt="Dagger Logo"
+              class="themedImage_ToTc themedImage--light_HNdA" height="50px"></div>
+        </a></div>
+      <div class="navbar__items navbar__items--right"><a href="https://dagger.io/blog" target="_blank"
+          rel="noopener noreferrer" class="navbar__item navbar__link navbar-blog-link">Blog</a><a
+          href="https://github.com/dagger/dagger" target="_blank" rel="noopener noreferrer"
+          class="navbar__item navbar__link header-github-link hide-target-icon" aria-label="GitHub repository"></a><a
+          href="https://discord.gg/ufnyBtc8uY" target="_blank" rel="noopener noreferrer"
+          class="navbar__item navbar__link header-discord-link"></a>
+      </div>
+    </div>
+    <div role="presentation" class="navbar-sidebar__backdrop"></div>
+  </nav>
+  <section>
+    <div class="col docItemCol_VOVn">
+      <h1>Documentation Archive</h1>
+
+      <p>This page lists the available documentation for older releases of Dagger. This documentation is no longer
+        maintained and is intended for reference only.</p>
+      <p> For current documentation, refer to
+        <a href="https://docs.dagger.io">https://docs.dagger.io</a>.
+      </p>
+
+      <table class="snipcss-O27q5">
+        <thead>
+          <tr>
+            <th class="style-rvAYo" id="style-rvAYo">Dagger version(s)</th>
+            <th>Documentation</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>0.1.x</td>
+            <td><a href="/0.1/">View</a></td>
+          </tr>
+          <tr>
+            <td>0.2.x</td>
+            <td><a href="/0.2/">View</a></td>
+          </tr>
+        </tbody>
+
+      </table>
+    </div>
+  </section>
+</body>
+
+</html>
