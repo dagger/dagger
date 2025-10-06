@@ -2580,15 +2580,6 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 			mod.Deps = mod.Deps.Append(mod)
 		}
 
-		// pre-load the module Runtime
-		if runtimeImpl, ok := src.Self().SDKImpl.AsRuntime(); ok && !mod.Runtime.Valid {
-			runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
-			if err != nil {
-				return inst, err
-			}
-			mod.Runtime = dagql.NonNull(runtime)
-		}
-
 		mod.ResultID = dagql.CurrentID(ctx)
 	} else {
 		// For no SDK, provide an empty stub module definition
