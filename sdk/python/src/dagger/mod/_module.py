@@ -221,7 +221,7 @@ class Module:
                     value=str(member.value),
                     description=description,
                 )
-            mod = mod.with_enum(enum_def)
+        mod = mod.with_enum(enum_def)
 
         return await mod.id()
 

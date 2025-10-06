@@ -1861,6 +1861,47 @@ func (PythonSuite) TestErrors(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (PythonSuite) TestEnumMembersIntrospection(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := pythonModInit(t, c, `
+  import enum
+  import dagger
+
+  @dagger.enum_type
+  class Language(enum.Enum):
+      GO = "GO"
+      PYTHON = "PYTHON"
+      TYPESCRIPT = "TYPESCRIPT"
+      PHP = "PHP"
+      ELIXIR = "ELIXIR"
+
+  @dagger.object_type
+  class Test:
+      @dagger.function
+      def faves(self, langs: list[Language] = [Language.GO, Language.PYTHON]) -> str:
+          return " ".join(lang.value for lang in langs)
+
+      @dagger.function
+      def official(self) -> list[Language]:
+          return [
+              Language.GO,
+              Language.PYTHON,
+              Language.TYPESCRIPT,
+              Language.PHP,
+              Language.ELIXIR,
+          ]
+  `)
+
+	schema := inspectModule(ctx, t, modGen)
+	langEnum := schema.Get(`enums.#.asEnum|#(name=TestLanguage)`)
+	require.Len(t, langEnum.Get("members").Array(), 5)
+	require.ElementsMatch(t,
+		[]string{"GO", "PYTHON", "TYPESCRIPT", "PHP", "ELIXIR"},
+		langEnum.Get("members.#.name").Value(),
+	)
+}
+
 func pythonSource(contents string) dagger.WithContainerFunc {
 	return pythonSourceAt("", contents)
 }
