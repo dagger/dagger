@@ -73,6 +73,30 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("prompt").Doc("The system prompt to send"),
 			),
+		dagql.Func("withResponse", s.withResponse).
+			Doc("Append an assistant response to the message history").
+			Args(
+				dagql.Arg("content").Doc("The response content"),
+				dagql.Arg("inputTokens").Doc("Uncached input tokens sent"),
+				dagql.Arg("outputTokens").Doc("Tokens received from the model, including text and tool calls"),
+				dagql.Arg("cachedTokenReads").Doc("Cached input tokens read"),
+				dagql.Arg("cachedTokenWrites").Doc("Cached input tokens written"),
+				dagql.Arg("totalTokens").Doc("Total tokens consumed by this response"),
+			),
+		dagql.Func("withToolCall", s.withToolCall).
+			Doc("Append a tool call to the last assistant message").
+			Args(
+				dagql.Arg("call").Doc("The unique ID for this tool call"),
+				dagql.Arg("tool").Doc("The name of the tool to call"),
+				dagql.Arg("arguments").Doc("The arguments to pass to the tool"),
+			),
+		dagql.Func("withToolResponse", s.withToolResponse).
+			Doc("Append a tool response to the message history").
+			Args(
+				dagql.Arg("call").Doc("The ID of the tool call this is responding to"),
+				dagql.Arg("content").Doc("The response content from the tool"),
+				dagql.Arg("errored").Doc("Whether the tool call resulted in an error"),
+			),
 		dagql.Func("withoutDefaultSystemPrompt", s.withoutDefaultSystemPrompt).
 			Doc("Disable the default system prompt"),
 		dagql.Func("withBlockedFunction", s.withBlockedFunction).
@@ -88,7 +112,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("service").Doc("The MCP service to run and communicate with over stdio"),
 			),
 		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[*core.LLM], _ struct{}) (res dagql.Result[dagql.ID[*core.LLM]], _ error) {
-			var inst dagql.Result[*core.LLM]
+			var inst dagql.ObjectResult[*core.LLM]
 			if err := srv.Select(ctx, self, &inst, dagql.Selector{
 				Field: "loop",
 			}); err != nil {
@@ -98,14 +122,12 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			return dagql.NewResultForCurrentID(ctx, id)
 		}).
 			Doc("synchronize LLM state"),
-		dagql.Func("loop", s.loop).
+		dagql.NodeFunc("loop", s.loop).
 			Doc("Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn"),
 		dagql.Func("hasPrompt", s.hasPrompt).
 			Doc("Indicates whether there are any queued prompts or tool results to send to the model"),
 		dagql.NodeFunc("step", s.step).
 			Doc("Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results"),
-		dagql.Func("__step", s.stepInner).
-			Doc("Inner function called by step that configures an LLM to do one iteration"),
 		dagql.Func("attempt", s.attempt).
 			Doc("create a branch in the LLM's history"),
 		dagql.Func("tools", s.tools).
@@ -136,9 +158,6 @@ func (s *llmSchema) withStaticTools(ctx context.Context, llm *core.LLM, args str
 }
 
 func (s *llmSchema) env(ctx context.Context, llm *core.LLM, args struct{}) (res dagql.ObjectResult[*core.Env], _ error) {
-	if err := llm.Sync(ctx); err != nil {
-		return res, err
-	}
 	return llm.Env(), nil
 }
 
@@ -184,6 +203,39 @@ func (s *llmSchema) withSystemPrompt(ctx context.Context, llm *core.LLM, args st
 	return llm.WithSystemPrompt(args.Prompt), nil
 }
 
+func (s *llmSchema) withResponse(ctx context.Context, llm *core.LLM, args struct {
+	Content           string
+	InputTokens       int64 `default:"0"`
+	OutputTokens      int64 `default:"0"`
+	CachedTokenReads  int64 `default:"0"`
+	CachedTokenWrites int64 `default:"0"`
+	TotalTokens       int64 `default:"0"`
+}) (*core.LLM, error) {
+	return llm.WithResponse(args.Content, core.LLMTokenUsage{
+		InputTokens:       args.InputTokens,
+		OutputTokens:      args.OutputTokens,
+		CachedTokenReads:  args.CachedTokenReads,
+		CachedTokenWrites: args.CachedTokenWrites,
+		TotalTokens:       args.TotalTokens,
+	}), nil
+}
+
+func (s *llmSchema) withToolCall(ctx context.Context, llm *core.LLM, args struct {
+	Call      string
+	Tool      string
+	Arguments core.JSON
+}) (*core.LLM, error) {
+	return llm.WithToolCall(args.Call, args.Tool, args.Arguments), nil
+}
+
+func (s *llmSchema) withToolResponse(ctx context.Context, llm *core.LLM, args struct {
+	Call    string
+	Content string
+	Errored bool
+}) (*core.LLM, error) {
+	return llm.WithToolResponse(args.Call, args.Content, args.Errored), nil
+}
+
 func (s *llmSchema) withoutDefaultSystemPrompt(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
 	return llm.WithoutDefaultSystemPrompt(), nil
 }
@@ -221,21 +273,16 @@ func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args stru
 	return llm.WithPromptFile(ctx, file.Self())
 }
 
-func (s *llmSchema) loop(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
-	return llm, llm.Sync(ctx)
+func (s *llmSchema) loop(ctx context.Context, parent dagql.ObjectResult[*core.LLM], args struct{}) (dagql.ObjectResult[*core.LLM], error) {
+	return parent.Self().Loop(ctx, parent)
 }
 
-func (s *llmSchema) step(ctx context.Context, llm dagql.ObjectResult[*core.LLM], args struct{}) (id dagql.ID[*core.LLM], err error) {
-	err = s.srv.Select(ctx, llm, &id, dagql.Selector{
-		Field: "__step",
-	}, dagql.Selector{
-		Field: "sync",
-	})
-	return id, err
-}
-
-func (s *llmSchema) stepInner(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
-	return llm.Step(), nil
+func (s *llmSchema) step(ctx context.Context, parent dagql.ObjectResult[*core.LLM], args struct{}) (id dagql.ID[*core.LLM], err error) {
+	inst, err := parent.Self().Step(ctx, parent)
+	if err != nil {
+		return id, err
+	}
+	return dagql.NewID[*core.LLM](inst.ID()), err
 }
 
 func (s *llmSchema) hasPrompt(ctx context.Context, llm *core.LLM, args struct{}) (bool, error) {
