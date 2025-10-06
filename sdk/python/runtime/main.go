@@ -5,10 +5,13 @@ package main
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"path"
 	"python-sdk/internal/dagger"
 	"strings"
+
+	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
 const (
@@ -137,6 +140,10 @@ type PythonSdk struct {
 	// Discovery holds the logic for getting more information from the target module.
 	// +private
 	Discovery *Discovery
+
+	// introspectionJSON holds the schema for dependency detection
+	// +private
+	introspectionJSON *dagger.File
 }
 
 // Generated code for the Python module
@@ -202,6 +209,10 @@ func (m *PythonSdk) Common(
 	if err != nil {
 		return nil, err
 	}
+
+	// Store introspection JSON for template generation
+	m.introspectionJSON = introspectionJSON
+
 	return m.
 		WithSDK(introspectionJSON).
 		WithTemplate().
@@ -323,13 +334,20 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 			m.AddNewFile(ProjectCfg, VendorConfig(projCfg, m.VendorPath))
 		}
 		if !d.HasFile("*.py") {
+			// Check if we have dependencies to generate passthrough functions
+			mainSource, err := m.generateMainSource()
+			if err != nil {
+				// Fall back to default template if we can't parse dependencies
+				mainSource = strings.ReplaceAll(tplMain, MainObjectName, m.MainObjectName)
+			}
+
 			m.AddNewFile(
 				path.Join("src", m.PackageName, "__init__.py"),
 				strings.ReplaceAll(tplInit, MainObjectName, m.MainObjectName),
 			)
 			m.AddNewFile(
 				path.Join("src", m.PackageName, "main.py"),
-				strings.ReplaceAll(tplMain, MainObjectName, m.MainObjectName),
+				mainSource,
 			)
 		}
 	}
@@ -494,4 +512,207 @@ func (m *PythonSdk) WithInstall() *PythonSdk {
 		WithExec(check)
 
 	return m
+}
+
+// generateMainSource generates the main.py source code for a module.
+// If dependencies are detected in the introspection JSON, it generates passthrough functions.
+// Otherwise, it generates the default template.
+func (m *PythonSdk) generateMainSource() (string, error) {
+	// If no introspection JSON is available, use default template
+	if m.introspectionJSON == nil {
+		return strings.ReplaceAll(tplMain, MainObjectName, m.MainObjectName), nil
+	}
+
+	ctx := context.Background()
+
+	// Read the introspection JSON
+	introspectionContent, err := m.introspectionJSON.Contents(ctx)
+	if err != nil {
+		return "", fmt.Errorf("read introspection JSON: %w", err)
+	}
+
+	// Parse the introspection response (which wraps the schema in __schema field)
+	var response introspection.Response
+	if err := json.Unmarshal([]byte(introspectionContent), &response); err != nil {
+		return "", fmt.Errorf("parse introspection response: %w", err)
+	}
+
+	// Get the schema from the response
+	schema := response.Schema
+	if schema == nil {
+		return "", fmt.Errorf("schema is nil in introspection response")
+	}
+
+	// Extract dependencies
+	dependencies := schema.ExtractDependencies()
+	if len(dependencies) == 0 {
+		// No dependencies, use default template
+		return strings.ReplaceAll(tplMain, MainObjectName, m.MainObjectName), nil
+	}
+
+	// Generate passthrough module
+	return generatePythonPassthrough(m.MainObjectName, dependencies), nil
+}
+
+// generatePythonPassthrough generates Python code with passthrough functions for dependencies
+func generatePythonPassthrough(moduleName string, dependencies []*introspection.DependencyModule) string {
+	var sb strings.Builder
+
+	// Module docstring
+	sb.WriteString(fmt.Sprintf(`"""A generated module for %s functions
+
+This module has been generated from a blueprint and provides passthrough
+functions to the original module.
+"""
+
+import dagger
+from dagger import dag, function, object_type
+
+
+@object_type
+class %s:
+`, moduleName, moduleName))
+
+	// Generate passthrough functions for each dependency
+	for _, dep := range dependencies {
+		depAccessor := toSnakeCase(dep.Name)
+
+		for _, field := range dep.Functions {
+			// Skip deprecated functions
+			if field.IsDeprecated {
+				continue
+			}
+
+			// Skip internal Id function
+			if strings.ToLower(field.Name) == "id" {
+				continue
+			}
+
+			funcSnake := toSnakeCase(field.Name)
+
+			// Build parameter list (only required args)
+			var params []string
+			var argsList []string
+			params = append(params, "self")
+
+			for _, arg := range field.Args {
+				// Skip optional arguments
+				if arg.TypeRef.IsOptional() {
+					continue
+				}
+
+				argSnake := toSnakeCase(arg.Name)
+				argType := formatPythonType(arg.TypeRef)
+				params = append(params, fmt.Sprintf("%s: %s", argSnake, argType))
+				argsList = append(argsList, argSnake)
+			}
+
+			// Determine return type and if async is needed
+			returnType := formatPythonType(field.TypeRef)
+			isAsync := !isObjectType(field.TypeRef)
+
+			// Generate function
+			sb.WriteString("\n    @function\n")
+
+			if isAsync {
+				sb.WriteString(fmt.Sprintf("    async def %s(%s) -> %s:\n", funcSnake, strings.Join(params, ", "), returnType))
+			} else {
+				sb.WriteString(fmt.Sprintf("    def %s(%s) -> %s:\n", funcSnake, strings.Join(params, ", "), returnType))
+			}
+
+			// Add docstring
+			if field.Description != "" {
+				lines := strings.Split(strings.TrimSpace(field.Description), "\n")
+				sb.WriteString(fmt.Sprintf("        \"\"\"%s\n", lines[0]))
+				for _, line := range lines[1:] {
+					sb.WriteString(fmt.Sprintf("        %s\n", line))
+				}
+				sb.WriteString("        \"\"\"\n")
+			} else {
+				sb.WriteString(fmt.Sprintf("        \"\"\"Calls the %s function from the %s dependency\"\"\"\n", field.Name, dep.Name))
+			}
+
+			// Build the function call
+			callChain := fmt.Sprintf("dag.%s().%s(%s)", depAccessor, funcSnake, strings.Join(argsList, ", "))
+
+			if isAsync {
+				sb.WriteString(fmt.Sprintf("        return await %s\n", callChain))
+			} else {
+				sb.WriteString(fmt.Sprintf("        return %s\n", callChain))
+			}
+		}
+	}
+
+	return sb.String()
+}
+
+// toSnakeCase converts a string to snake_case
+func toSnakeCase(s string) string {
+	var result strings.Builder
+	for i, r := range s {
+		if i > 0 && r >= 'A' && r <= 'Z' {
+			result.WriteRune('_')
+		}
+		result.WriteRune(r)
+	}
+	return strings.ToLower(result.String())
+}
+
+// formatPythonType converts an introspection TypeRef to a Python type annotation
+func formatPythonType(typeRef *introspection.TypeRef) string {
+	if typeRef == nil {
+		return "Any"
+	}
+
+	switch typeRef.Kind {
+	case introspection.TypeKindNonNull:
+		// For non-null, just recurse
+		return formatPythonType(typeRef.OfType)
+	case introspection.TypeKindList:
+		return "list[" + formatPythonType(typeRef.OfType) + "]"
+	case introspection.TypeKindScalar:
+		return mapPythonScalarType(typeRef.Name)
+	case introspection.TypeKindEnum:
+		return typeRef.Name
+	case introspection.TypeKindObject:
+		return "dagger." + typeRef.Name
+	default:
+		return "Any"
+	}
+}
+
+// mapPythonScalarType maps GraphQL scalar types to Python types
+func mapPythonScalarType(typeName string) string {
+	switch typeName {
+	case "ID":
+		return "str"
+	case "String":
+		return "str"
+	case "Int":
+		return "int"
+	case "Float":
+		return "float"
+	case "Boolean":
+		return "bool"
+	default:
+		return typeName
+	}
+}
+
+// isObjectType checks if a TypeRef represents an object type
+func isObjectType(typeRef *introspection.TypeRef) bool {
+	if typeRef == nil {
+		return false
+	}
+
+	// Unwrap non-null and list
+	actualType := typeRef
+	for actualType.Kind == introspection.TypeKindNonNull || actualType.Kind == introspection.TypeKindList {
+		if actualType.OfType == nil {
+			break
+		}
+		actualType = actualType.OfType
+	}
+
+	return actualType.Kind == introspection.TypeKindObject
 }
