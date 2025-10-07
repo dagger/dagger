@@ -23,7 +23,7 @@ func (j *Job) installDaggerSteps() []api.JobStep {
 	steps := []api.JobStep{
 		{
 			Name: "Install Dagger",
-			Uses: "dagger/dagger-for-github@v8.2.0",
+			Uses: "dagger/dagger-for-github@" + DaggerForGithubVersion,
 			With: map[string]string{
 				"version": j.DaggerVersion,
 			},
@@ -46,41 +46,53 @@ func (j *Job) installDaggerSteps() []api.JobStep {
 	return steps
 }
 
-func (j *Job) uploadEngineLogsStep() []api.JobStep {
-	if j.DaggerDev == "" {
-		return nil
+func (j *Job) callDaggerStep() api.JobStep {
+	// for dagger dev engines continue to use the exec step so that we don't
+	// override the dagger CLI
+	if j.DaggerDev != "" {
+		return j.callDaggerWithExecStep()
 	}
 
-	engineCtr := "dagger-engine.dev-${{ github.run_id }}-${{ github.job }}"
-	return []api.JobStep{
-		{
-			Name:  "Capture dev engine logs",
-			If:    "always()",
-			Shell: "bash",
-			Run:   `docker logs "` + engineCtr + `" &> /tmp/actions-call-engine.log`,
-		},
-		{
-			Name: "Upload dev engine logs",
-			If:   "always()",
-			Uses: "actions/upload-artifact@v4",
-			With: map[string]string{
-				"name":      "engine-logs-${{ runner.name }}-${{ github.job }}",
-				"path":      "/tmp/actions-call-engine.log",
-				"overwrite": "true",
-			},
-		},
-		/* BREAK GLASS: print kernel logs too
-		{
-			Name:  "Kernel logs",
-			If:    "always()",
-			Shell: "bash",
-			Run:   `sudo dmesg || true`,
-		},
-		*/
+	env := map[string]string{}
+	// Inject user-defined secrets
+	for _, secretName := range j.Secrets {
+		env[secretName] = fmt.Sprintf("${{ secrets.%s }}", secretName)
+	}
+
+	with := map[string]string{
+		"call": j.Command,
+		// TODO: once we release it we can add it
+		// "enable-github-summary": "true",
+	}
+
+	if j.CloudEngine {
+		with["dagger-flags"] = "--cloud=true"
+	}
+
+	// Inject module name
+	if j.Module != "" {
+		with["module"] = j.Module
+	}
+
+	// Inject Public Dagger Cloud token
+	if j.PublicToken != "" {
+		with["cloud-token"] = j.PublicToken
+	}
+
+	if j.DaggerVersion != "" {
+		with["version"] = j.DaggerVersion
+	}
+
+	return api.JobStep{
+		ID:   "exec",
+		Name: "exec",
+		Uses: "dagger/dagger-for-github@" + DaggerForGithubVersion,
+		With: with,
+		Env:  env,
 	}
 }
 
-func (j *Job) callDaggerStep() api.JobStep {
+func (j *Job) callDaggerWithExecStep() api.JobStep {
 	env := map[string]string{}
 	// Debug mode
 	if j.Debug {
@@ -106,10 +118,6 @@ func (j *Job) callDaggerStep() api.JobStep {
 	// Inject Public Dagger Cloud token
 	if j.PublicToken != "" {
 		env["DAGGER_CLOUD_TOKEN"] = j.PublicToken
-	}
-
-	if j.UploadLogs {
-		env["NO_OUTPUT"] = "true"
 	}
 
 	return j.bashStep("exec", env)
@@ -139,21 +147,5 @@ func (j *Job) bashStep(id string, env map[string]string) api.JobStep {
 		Shell: "bash",
 		Run:   script,
 		Env:   env,
-	}
-}
-
-func (j *Job) uploadJobOutputStep(target api.JobStep, output string) api.JobStep {
-	if target.ID == "" {
-		panic("target for uploading logs must have id")
-	}
-	return api.JobStep{
-		Name: "Upload call logs",
-		If:   "always()",
-		Uses: "actions/upload-artifact@v4",
-		With: map[string]string{
-			"name":      "call-logs-${{ runner.name }}-${{ github.job }}" + target.ID,
-			"path":      "${{ steps." + target.ID + ".outputs." + output + " }}",
-			"overwrite": "true",
-		},
 	}
 }

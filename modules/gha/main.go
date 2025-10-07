@@ -16,6 +16,8 @@ type Gha struct {
 	WorkflowDefaults *Workflow // +private
 }
 
+const DaggerForGithubVersion = "v8.2.0"
+
 func New(
 	jobDefaults *Job, // +optional
 	workflowDefaults *Workflow, // +optional
