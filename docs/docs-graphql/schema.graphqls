@@ -2938,10 +2938,10 @@ type Function {
     timeToLive: String
   ): Function!
 
-  """Returns the function with the given deprecated string."""
+  """Returns the function with the provided deprecation reason."""
   withDeprecated(
-    """If deprecated, the reason or migration path."""
-    deprecated: String
+    """Reason or migration path describing the deprecation."""
+    reason: String
   ): Function!
 
   """Returns the function with the given doc string."""

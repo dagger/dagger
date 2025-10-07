@@ -6529,17 +6529,17 @@ func (r *Function) WithCachePolicy(policy FunctionCachePolicy, opts ...FunctionW
 
 // FunctionWithDeprecatedOpts contains options for Function.WithDeprecated
 type FunctionWithDeprecatedOpts struct {
-	// If deprecated, the reason or migration path.
-	Deprecated string
+	// Reason or migration path describing the deprecation.
+	Reason string
 }
 
-// Returns the function with the given deprecated string.
+// Returns the function with the provided deprecation reason.
 func (r *Function) WithDeprecated(opts ...FunctionWithDeprecatedOpts) *Function {
 	q := r.query.Select("withDeprecated")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `deprecated` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Deprecated) {
-			q = q.Arg("deprecated", opts[i].Deprecated)
+		// `reason` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Reason) {
+			q = q.Arg("reason", opts[i].Reason)
 		}
 	}
 

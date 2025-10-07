@@ -8072,9 +8072,9 @@ pub struct FunctionWithCachePolicyOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct FunctionWithDeprecatedOpts<'a> {
-    /// If deprecated, the reason or migration path.
+    /// Reason or migration path describing the deprecation.
     #[builder(setter(into, strip_option), default)]
-    pub deprecated: Option<&'a str>,
+    pub reason: Option<&'a str>,
 }
 impl Function {
     /// Arguments accepted by the function, if any.
@@ -8230,7 +8230,7 @@ impl Function {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Returns the function with the given deprecated string.
+    /// Returns the function with the provided deprecation reason.
     ///
     /// # Arguments
     ///
@@ -8243,15 +8243,15 @@ impl Function {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Returns the function with the given deprecated string.
+    /// Returns the function with the provided deprecation reason.
     ///
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_deprecated_opts<'a>(&self, opts: FunctionWithDeprecatedOpts<'a>) -> Function {
         let mut query = self.selection.select("withDeprecated");
-        if let Some(deprecated) = opts.deprecated {
-            query = query.arg("deprecated", deprecated);
+        if let Some(reason) = opts.reason {
+            query = query.arg("reason", reason);
         }
         Function {
             proc: self.proc.clone(),

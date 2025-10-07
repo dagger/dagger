@@ -129,13 +129,13 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Returns the function with the given deprecated string.
+     * Returns the function with the provided deprecation reason.
      */
-    public function withDeprecated(?string $deprecated = null): Function_
+    public function withDeprecated(?string $reason = null): Function_
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDeprecated');
-        if (null !== $deprecated) {
-        $innerQueryBuilder->setArgument('deprecated', $deprecated);
+        if (null !== $reason) {
+        $innerQueryBuilder->setArgument('reason', $reason);
         }
         return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

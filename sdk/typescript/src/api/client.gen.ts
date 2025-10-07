@@ -1263,9 +1263,9 @@ export type FunctionWithCachePolicyOpts = {
 
 export type FunctionWithDeprecatedOpts = {
   /**
-   * If deprecated, the reason or migration path.
+   * Reason or migration path describing the deprecation.
    */
-  deprecated?: string
+  reason?: string
 }
 
 /**
@@ -7092,8 +7092,8 @@ export class Function_ extends BaseClient {
   }
 
   /**
-   * Returns the function with the given deprecated string.
-   * @param opts.deprecated If deprecated, the reason or migration path.
+   * Returns the function with the provided deprecation reason.
+   * @param opts.reason Reason or migration path describing the deprecation.
    */
   withDeprecated = (opts?: FunctionWithDeprecatedOpts): Function_ => {
     const ctx = this._ctx.select("withDeprecated", { ...opts })

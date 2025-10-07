@@ -145,9 +145,9 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			),
 
 		dagql.Func("withDeprecated", s.functionWithDeprecated).
-			Doc(`Returns the function with the given deprecated string.`).
+			Doc(`Returns the function with the provided deprecation reason.`).
 			Args(
-				dagql.Arg("deprecated").Doc(`If deprecated, the reason or migration path.`),
+				dagql.Arg("reason").Doc(`Reason or migration path describing the deprecation.`),
 			),
 
 		dagql.Func("withSourceMap", s.functionWithSourceMap).
@@ -501,9 +501,9 @@ func (s *moduleSchema) functionWithDescription(ctx context.Context, fn *core.Fun
 }
 
 func (s *moduleSchema) functionWithDeprecated(ctx context.Context, fn *core.Function, args struct {
-	Deprecated *string
+	Reason *string
 }) (*core.Function, error) {
-	return fn.WithDeprecated(args.Deprecated), nil
+	return fn.WithDeprecated(args.Reason), nil
 }
 
 func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, args struct {

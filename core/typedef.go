@@ -177,9 +177,9 @@ func (fn *Function) WithDescription(desc string) *Function {
 	return fn
 }
 
-func (fn *Function) WithDeprecated(deprecated *string) *Function {
+func (fn *Function) WithDeprecated(reason *string) *Function {
 	fn = fn.Clone()
-	fn.Deprecated = deprecated
+	fn.Deprecated = reason
 	return fn
 }
 
