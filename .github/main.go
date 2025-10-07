@@ -13,7 +13,7 @@ const (
 	upstreamRepository = "dagger/dagger"
 	ubuntuVersion      = "24.04"
 	defaultRunner      = "ubuntu-" + ubuntuVersion
-	publicToken        = "oidc"
+	publicToken        = "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 	timeoutMinutes     = 20
 )
 
@@ -135,7 +135,7 @@ func New() *CI {
 			"Engine & CLI",
 		).
 		withSDKWorkflows(
-			ci.CloudRunner,
+			ci.AltRunnerWithCache,
 			"SDKs",
 			"python",
 			"typescript",

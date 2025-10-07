@@ -31,7 +31,7 @@ jobs:
               uses: dagger/dagger-for-github@v8.2.0
               with:
                 call: test-publish
-                cloud-token: oidc
+                cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}/cmd/dagger@${{ github.sha }}
                 version: v0.19.0
         timeout-minutes: 20
@@ -48,7 +48,7 @@ jobs:
               uses: dagger/dagger-for-github@v8.2.0
               with:
                 call: publish --image=dagger-engine.dev --tag=main --dry-run
-                cloud-token: oidc
+                cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}/cmd/engine@${{ github.sha }}
                 version: v0.19.0
         timeout-minutes: 20
@@ -65,7 +65,7 @@ jobs:
               uses: dagger/dagger-for-github@v8.2.0
               with:
                 call: lint
-                cloud-token: oidc
+                cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
                 version: v0.19.0
         timeout-minutes: 20
@@ -82,7 +82,7 @@ jobs:
               uses: dagger/dagger-for-github@v8.2.0
               with:
                 call: scan
-                cloud-token: oidc
+                cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
                 version: v0.19.0
         timeout-minutes: 20
@@ -99,7 +99,7 @@ jobs:
               uses: dagger/dagger-for-github@v8.2.0
               with:
                 call: check --targets=scripts
-                cloud-token: oidc
+                cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
                 version: v0.19.0
         timeout-minutes: 20
@@ -115,7 +115,7 @@ jobs:
               uses: dagger/dagger-for-github@v8.2.0
               with:
                 call: test specific --race=true --parallel=16 --run='TestCall|TestShell|TestDaggerCMD'
-                cloud-token: oidc
+                cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
                 version: v0.19.0
         timeout-minutes: 30
@@ -131,7 +131,7 @@ jobs:
               uses: dagger/dagger-for-github@v8.2.0
               with:
                 call: test specific --race=true --parallel=16 --run='TestProvision|TestTelemetry'
-                cloud-token: oidc
+                cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
                 version: v0.19.0
         timeout-minutes: 30
@@ -147,7 +147,7 @@ jobs:
               uses: dagger/dagger-for-github@v8.2.0
               with:
                 call: test specific --race=true --parallel=16 --run='TestCLI|TestEngine'
-                cloud-token: oidc
+                cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
                 version: v0.19.0
         timeout-minutes: 30
@@ -163,7 +163,7 @@ jobs:
               uses: dagger/dagger-for-github@v8.2.0
               with:
                 call: test specific --race=true --parallel=16 --run='TestClientGenerator'
-                cloud-token: oidc
+                cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
                 version: v0.19.0
         timeout-minutes: 30
@@ -179,7 +179,7 @@ jobs:
               uses: dagger/dagger-for-github@v8.2.0
               with:
                 call: test specific --race=true --parallel=16 --run='TestContainer|TestDockerfile'
-                cloud-token: oidc
+                cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
                 version: v0.19.0
         timeout-minutes: 30
@@ -195,7 +195,7 @@ jobs:
               uses: dagger/dagger-for-github@v8.2.0
               with:
                 call: test specific --race=true --parallel=16 --skip='TestProvision|TestTelemetry|TestModule|TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestJava|TestContainer|TestDockerfile|TestLLM|TestCLI|TestEngine|TestClientGenerator|TestInterface|TestCall|TestShell|TestDaggerCMD'
-                cloud-token: oidc
+                cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
                 version: v0.19.0
         timeout-minutes: 30
@@ -211,7 +211,7 @@ jobs:
               uses: dagger/dagger-for-github@v8.2.0
               with:
                 call: test specific --race=true --parallel=16 --run='TestInterface'
-                cloud-token: oidc
+                cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
                 version: v0.19.0
         timeout-minutes: 30
@@ -227,7 +227,7 @@ jobs:
               uses: dagger/dagger-for-github@v8.2.0
               with:
                 call: test specific --race=true --parallel=16 --run='TestLLM'
-                cloud-token: oidc
+                cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
                 version: v0.19.0
         timeout-minutes: 30
@@ -243,7 +243,7 @@ jobs:
               uses: dagger/dagger-for-github@v8.2.0
               with:
                 call: test specific --race=true --parallel=16 --run='TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestJava'
-                cloud-token: oidc
+                cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
                 version: v0.19.0
         timeout-minutes: 30
@@ -259,7 +259,7 @@ jobs:
               uses: dagger/dagger-for-github@v8.2.0
               with:
                 call: test specific --race=true --parallel=16 --run='TestModule'
-                cloud-token: oidc
+                cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
                 version: v0.19.0
         timeout-minutes: 30
