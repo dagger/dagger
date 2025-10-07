@@ -417,9 +417,9 @@ func (r *renderer) renderSpan(
 
 	switch contentType {
 	case "text/x-shellscript":
-		quick.Highlight(out, name, "bash", "terminal16", "ansi16")
+		quick.Highlight(out, name, "bash", "terminal16", highlightStyle())
 	case "text/markdown":
-		quick.Highlight(out, name, "markdown", "terminal16", "ansi16")
+		quick.Highlight(out, name, "markdown", "terminal16", highlightStyle())
 	default:
 		label := out.String(name)
 		var isEffect bool
