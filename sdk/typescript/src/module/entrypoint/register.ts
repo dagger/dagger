@@ -141,7 +141,7 @@ export class Register {
       .with(this.addArg(fct.arguments))
 
     if (fct.deprecated !== undefined) {
-      fn = fn.withDeprecated({ deprecated: fct.deprecated })
+      fn = fn.withDeprecated({ reason: fct.deprecated })
     }
 
     return fn
