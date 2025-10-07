@@ -35,10 +35,13 @@ class EnvFile extends Client\AbstractObject implements Client\IdAble
     /**
      * Lookup a variable (last occurrence wins) and return its value, or an empty string
      */
-    public function get(string $name): string
+    public function get(string $name, ?bool $raw = null): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('get');
         $leafQueryBuilder->setArgument('name', $name);
+        if (null !== $raw) {
+        $leafQueryBuilder->setArgument('raw', $raw);
+        }
         return (string)$this->queryLeaf($leafQueryBuilder, 'get');
     }
 
@@ -54,9 +57,12 @@ class EnvFile extends Client\AbstractObject implements Client\IdAble
     /**
      * Return all variables
      */
-    public function variables(): array
+    public function variables(?bool $raw = null): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('variables');
+        if (null !== $raw) {
+        $leafQueryBuilder->setArgument('raw', $raw);
+        }
         return (array)$this->queryLeaf($leafQueryBuilder, 'variables');
     }
 

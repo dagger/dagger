@@ -634,15 +634,6 @@ func (r *Binding) AsJSONValue() *JSONValue {
 	}
 }
 
-// Retrieve the binding value, as type LLM
-func (r *Binding) AsLLM() *LLM {
-	q := r.query.Select("asLLM")
-
-	return &LLM{
-		query: q,
-	}
-}
-
 // Retrieve the binding value, as type Module
 func (r *Binding) AsModule() *Module {
 	q := r.query.Select("asModule")
@@ -715,7 +706,7 @@ func (r *Binding) AsSocket() *Socket {
 	}
 }
 
-// The binding's string value
+// Returns the binding's string value
 func (r *Binding) AsString(ctx context.Context) (string, error) {
 	if r.asString != nil {
 		return *r.asString, nil
@@ -728,7 +719,7 @@ func (r *Binding) AsString(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The digest of the binding value
+// Returns the digest of the binding value
 func (r *Binding) Digest(ctx context.Context) (string, error) {
 	if r.digest != nil {
 		return *r.digest, nil
@@ -794,7 +785,7 @@ func (r *Binding) IsNull(ctx context.Context) (bool, error) {
 	return response, q.Execute(ctx)
 }
 
-// The binding name
+// Returns the binding name
 func (r *Binding) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -807,7 +798,7 @@ func (r *Binding) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The binding type
+// Returns the binding type
 func (r *Binding) TypeName(ctx context.Context) (string, error) {
 	if r.typeName != nil {
 		return *r.typeName, nil
@@ -1219,63 +1210,6 @@ func (r *Container) AsTarball(opts ...ContainerAsTarballOpts) *File {
 	}
 
 	return &File{
-		query: q,
-	}
-}
-
-// ContainerBuildOpts contains options for Container.Build
-type ContainerBuildOpts struct {
-	// Path to the Dockerfile to use.
-	//
-	// Default: "Dockerfile"
-	Dockerfile string
-	// Target build stage to build.
-	Target string
-	// Additional build arguments.
-	BuildArgs []BuildArg
-	// Secrets to pass to the build.
-	//
-	// They will be mounted at /run/secrets/[secret-name] in the build container
-	//
-	// They can be accessed in the Dockerfile using the "secret" mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl [http://example.com?token=$(cat /run/secrets/my-secret)](http://example.com?token=$(cat /run/secrets/my-secret))
-	Secrets []*Secret
-	// If set, skip the automatic init process injected into containers created by RUN statements.
-	//
-	// This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
-	NoInit bool
-}
-
-// Initializes this container from a Dockerfile build.
-//
-// Deprecated: Use `Directory.build` instead
-func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Container {
-	assertNotNil("context", context)
-	q := r.query.Select("build")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `dockerfile` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Dockerfile) {
-			q = q.Arg("dockerfile", opts[i].Dockerfile)
-		}
-		// `target` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Target) {
-			q = q.Arg("target", opts[i].Target)
-		}
-		// `buildArgs` optional argument
-		if !querybuilder.IsZeroValue(opts[i].BuildArgs) {
-			q = q.Arg("buildArgs", opts[i].BuildArgs)
-		}
-		// `secrets` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Secrets) {
-			q = q.Arg("secrets", opts[i].Secrets)
-		}
-		// `noInit` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoInit) {
-			q = q.Arg("noInit", opts[i].NoInit)
-		}
-	}
-	q = q.Arg("context", context)
-
-	return &Container{
 		query: q,
 	}
 }
@@ -2058,8 +1992,8 @@ type ContainerWithDirectoryOpts struct {
 }
 
 // Return a new container snapshot, with a directory added to its filesystem
-func (r *Container) WithDirectory(path string, directory *Directory, opts ...ContainerWithDirectoryOpts) *Container {
-	assertNotNil("directory", directory)
+func (r *Container) WithDirectory(path string, source *Directory, opts ...ContainerWithDirectoryOpts) *Container {
+	assertNotNil("source", source)
 	q := r.query.Select("withDirectory")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `exclude` optional argument
@@ -2080,7 +2014,7 @@ func (r *Container) WithDirectory(path string, directory *Directory, opts ...Con
 		}
 	}
 	q = q.Arg("path", path)
-	q = q.Arg("directory", directory)
+	q = q.Arg("source", source)
 
 	return &Container{
 		query: q,
@@ -3660,8 +3594,8 @@ type DirectoryWithDirectoryOpts struct {
 }
 
 // Return a snapshot with a directory added
-func (r *Directory) WithDirectory(path string, directory *Directory, opts ...DirectoryWithDirectoryOpts) *Directory {
-	assertNotNil("directory", directory)
+func (r *Directory) WithDirectory(path string, source *Directory, opts ...DirectoryWithDirectoryOpts) *Directory {
+	assertNotNil("source", source)
 	q := r.query.Select("withDirectory")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `exclude` optional argument
@@ -3678,7 +3612,7 @@ func (r *Directory) WithDirectory(path string, directory *Directory, opts ...Dir
 		}
 	}
 	q = q.Arg("path", path)
-	q = q.Arg("directory", directory)
+	q = q.Arg("source", source)
 
 	return &Directory{
 		query: q,
@@ -3934,7 +3868,6 @@ type EngineCache struct {
 	query *querybuilder.Selection
 
 	id            *EngineCacheID
-	keepBytes     *int
 	maxUsedSpace  *int
 	minFreeSpace  *int
 	prune         *Void
@@ -4006,21 +3939,6 @@ func (r *EngineCache) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
-}
-
-// The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
-//
-// Deprecated: Use minFreeSpace instead.
-func (r *EngineCache) KeepBytes(ctx context.Context) (int, error) {
-	if r.keepBytes != nil {
-		return *r.keepBytes, nil
-	}
-	q := r.query.Select("keepBytes")
-
-	var response int
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
 // The maximum bytes to keep in the cache without pruning.
@@ -4668,7 +4586,7 @@ func (r *Env) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// retrieve an input value by name
+// Retrieves an input binding by name
 func (r *Env) Input(name string) *Binding {
 	q := r.query.Select("input")
 	q = q.Arg("name", name)
@@ -4678,7 +4596,7 @@ func (r *Env) Input(name string) *Binding {
 	}
 }
 
-// return all input values for the environment
+// Returns all input bindings provided to the environment
 func (r *Env) Inputs(ctx context.Context) ([]Binding, error) {
 	q := r.query.Select("inputs")
 
@@ -4711,7 +4629,7 @@ func (r *Env) Inputs(ctx context.Context) ([]Binding, error) {
 	return convert(response), nil
 }
 
-// retrieve an output value by name
+// Retrieves an output binding by name
 func (r *Env) Output(name string) *Binding {
 	q := r.query.Select("output")
 	q = q.Arg("name", name)
@@ -4721,7 +4639,7 @@ func (r *Env) Output(name string) *Binding {
 	}
 }
 
-// return all output values for the environment
+// Returns all declared output bindings for the environment
 func (r *Env) Outputs(ctx context.Context) ([]Binding, error) {
 	q := r.query.Select("outputs")
 
@@ -4868,6 +4786,17 @@ func (r *Env) WithContainerOutput(name string, description string) *Env {
 	q := r.query.Select("withContainerOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Installs the current module into the environment, exposing its functions to the model
+//
+// Contextual path arguments will be populated using the environment's workspace.
+func (r *Env) WithCurrentModule() *Env {
+	q := r.query.Select("withCurrentModule")
 
 	return &Env{
 		query: q,
@@ -5042,24 +4971,13 @@ func (r *Env) WithJSONValueOutput(name string, description string) *Env {
 	}
 }
 
-// Create or update a binding of type LLM in the environment
-func (r *Env) WithLLMInput(name string, value *LLM, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withLLMInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired LLM output to be assigned in the environment
-func (r *Env) WithLLMOutput(name string, description string) *Env {
-	q := r.query.Select("withLLMOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
+// Installs a module into the environment, exposing its functions to the model
+//
+// Contextual path arguments will be populated using the environment's workspace.
+func (r *Env) WithModule(module *Module) *Env {
+	assertNotNil("module", module)
+	q := r.query.Select("withModule")
+	q = q.Arg("module", module)
 
 	return &Env{
 		query: q,
@@ -5258,7 +5176,7 @@ func (r *Env) WithSocketOutput(name string, description string) *Env {
 	}
 }
 
-// Create or update an input value of type string
+// Provides a string input binding to the environment
 func (r *Env) WithStringInput(name string, value string, description string) *Env {
 	q := r.query.Select("withStringInput")
 	q = q.Arg("name", name)
@@ -5270,13 +5188,41 @@ func (r *Env) WithStringInput(name string, value string, description string) *En
 	}
 }
 
-// Create or update an input value of type string
+// Declares a desired string output binding
 func (r *Env) WithStringOutput(name string, description string) *Env {
 	q := r.query.Select("withStringOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
 	return &Env{
+		query: q,
+	}
+}
+
+// Returns a new environment with the provided workspace
+func (r *Env) WithWorkspace(workspace *Directory) *Env {
+	assertNotNil("workspace", workspace)
+	q := r.query.Select("withWorkspace")
+	q = q.Arg("workspace", workspace)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Returns a new environment without any outputs
+func (r *Env) WithoutOutputs() *Env {
+	q := r.query.Select("withoutOutputs")
+
+	return &Env{
+		query: q,
+	}
+}
+
+func (r *Env) Workspace() *Directory {
+	q := r.query.Select("workspace")
+
+	return &Directory{
 		query: q,
 	}
 }
@@ -5327,12 +5273,24 @@ func (r *EnvFile) Exists(ctx context.Context, name string) (bool, error) {
 	return response, q.Execute(ctx)
 }
 
+// EnvFileGetOpts contains options for EnvFile.Get
+type EnvFileGetOpts struct {
+	// Return the value exactly as written to the file. No quote removal or variable expansion
+	Raw bool
+}
+
 // Lookup a variable (last occurrence wins) and return its value, or an empty string
-func (r *EnvFile) Get(ctx context.Context, name string) (string, error) {
+func (r *EnvFile) Get(ctx context.Context, name string, opts ...EnvFileGetOpts) (string, error) {
 	if r.get != nil {
 		return *r.get, nil
 	}
 	q := r.query.Select("get")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `raw` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Raw) {
+			q = q.Arg("raw", opts[i].Raw)
+		}
+	}
 	q = q.Arg("name", name)
 
 	var response string
@@ -5381,9 +5339,21 @@ func (r *EnvFile) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// EnvFileVariablesOpts contains options for EnvFile.Variables
+type EnvFileVariablesOpts struct {
+	// Return values exactly as written to the file. No quote removal or variable expansion
+	Raw bool
+}
+
 // Return all variables
-func (r *EnvFile) Variables(ctx context.Context) ([]EnvVariable, error) {
+func (r *EnvFile) Variables(ctx context.Context, opts ...EnvFileVariablesOpts) ([]EnvVariable, error) {
 	q := r.query.Select("variables")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `raw` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Raw) {
+			q = q.Arg("raw", opts[i].Raw)
+		}
+	}
 
 	q = q.Select("id")
 
@@ -7023,14 +6993,6 @@ type GitRepository struct {
 	id  *GitRepositoryID
 	url *string
 }
-type WithGitRepositoryFunc func(r *GitRepository) *GitRepository
-
-// With calls the provided function with current GitRepository.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *GitRepository) With(f WithGitRepositoryFunc) *GitRepository {
-	return f(r)
-}
 
 func (r *GitRepository) WithGraphQLQuery(q *querybuilder.Selection) *GitRepository {
 	return &GitRepository{
@@ -7191,32 +7153,6 @@ func (r *GitRepository) URL(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
-}
-
-// Header to authenticate the remote with.
-//
-// Deprecated: Use "httpAuthHeader" in the constructor instead.
-func (r *GitRepository) WithAuthHeader(header *Secret) *GitRepository {
-	assertNotNil("header", header)
-	q := r.query.Select("withAuthHeader")
-	q = q.Arg("header", header)
-
-	return &GitRepository{
-		query: q,
-	}
-}
-
-// Token to authenticate the remote with.
-//
-// Deprecated: Use "httpAuthToken" in the constructor instead.
-func (r *GitRepository) WithAuthToken(token *Secret) *GitRepository {
-	assertNotNil("token", token)
-	q := r.query.Select("withAuthToken")
-	q = q.Arg("token", token)
-
-	return &GitRepository{
-		query: q,
-	}
 }
 
 // Information about the host environment.
@@ -7390,21 +7326,6 @@ func (r *Host) Service(ports []PortForward, opts ...HostServiceOpts) *Service {
 	q = q.Arg("ports", ports)
 
 	return &Service{
-		query: q,
-	}
-}
-
-// Sets a secret given a user-defined name and the file path on the host, and returns the secret.
-//
-// The file is limited to a size of 512000 bytes.
-//
-// Deprecated: setSecretFile is superceded by use of the secret API with file:// URIs
-func (r *Host) SetSecretFile(name string, path string) *Secret {
-	q := r.query.Select("setSecretFile")
-	q = q.Arg("name", name)
-	q = q.Arg("path", path)
-
-	return &Secret{
 		query: q,
 	}
 }
@@ -7940,11 +7861,13 @@ func (r *JSONValue) WithField(path []string, value *JSONValue) *JSONValue {
 type LLM struct {
 	query *querybuilder.Selection
 
+	hasPrompt   *bool
 	historyJSON *JSON
 	id          *LLMID
 	lastReply   *string
 	model       *string
 	provider    *string
+	step        *LLMID
 	sync        *LLMID
 	tools       *string
 }
@@ -7990,6 +7913,19 @@ func (r *LLM) Env() *Env {
 	return &Env{
 		query: q,
 	}
+}
+
+// Indicates whether there are any queued prompts or tool results to send to the model
+func (r *LLM) HasPrompt(ctx context.Context) (bool, error) {
+	if r.hasPrompt != nil {
+		return *r.hasPrompt, nil
+	}
+	q := r.query.Select("hasPrompt")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // return the llm message history
@@ -8068,7 +8004,7 @@ func (r *LLM) LastReply(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// synchronize LLM state
+// Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
 func (r *LLM) Loop() *LLM {
 	q := r.query.Select("loop")
 
@@ -8101,6 +8037,19 @@ func (r *LLM) Provider(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
+func (r *LLM) Step(ctx context.Context) (*LLM, error) {
+	q := r.query.Select("step")
+
+	var id LLMID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &LLM{
+		query: q.Root().Select("loadLLMFromID").Arg("id", id),
+	}, nil
 }
 
 // synchronize LLM state
@@ -8138,11 +8087,34 @@ func (r *LLM) Tools(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Return a new LLM with the specified function no longer exposed as a tool
+func (r *LLM) WithBlockedFunction(typeName string, function string) *LLM {
+	q := r.query.Select("withBlockedFunction")
+	q = q.Arg("typeName", typeName)
+	q = q.Arg("function", function)
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // allow the LLM to interact with an environment via MCP
 func (r *LLM) WithEnv(env *Env) *LLM {
 	assertNotNil("env", env)
 	q := r.query.Select("withEnv")
 	q = q.Arg("env", env)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Add an external MCP server to the LLM
+func (r *LLM) WithMCPServer(name string, service *Service) *LLM {
+	assertNotNil("service", service)
+	q := r.query.Select("withMCPServer")
+	q = q.Arg("name", name)
+	q = q.Arg("service", service)
 
 	return &LLM{
 		query: q,
@@ -8174,6 +8146,15 @@ func (r *LLM) WithPromptFile(file *File) *LLM {
 	assertNotNil("file", file)
 	q := r.query.Select("withPromptFile")
 	q = q.Arg("file", file)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
+func (r *LLM) WithStaticTools() *LLM {
+	q := r.query.Select("withStaticTools")
 
 	return &LLM{
 		query: q,
@@ -8755,6 +8736,15 @@ func (r *Module) Sync(ctx context.Context) (*Module, error) {
 	}, nil
 }
 
+// User-defined default values, loaded from local .env files.
+func (r *Module) UserDefaults() *EnvFile {
+	q := r.query.Select("userDefaults")
+
+	return &EnvFile{
+		query: q,
+	}
+}
+
 // Retrieves the module with the given description
 func (r *Module) WithDescription(description string) *Module {
 	q := r.query.Select("withDescription")
@@ -9314,6 +9304,15 @@ func (r *ModuleSource) Sync(ctx context.Context) (*ModuleSource, error) {
 	}, nil
 }
 
+// User-defined defaults read from local .env files
+func (r *ModuleSource) UserDefaults() *EnvFile {
+	q := r.query.Select("userDefaults")
+
+	return &EnvFile{
+		query: q,
+	}
+}
+
 // The specified version of the git repo this source points to.
 func (r *ModuleSource) Version(ctx context.Context) (string, error) {
 	if r.version != nil {
@@ -9814,6 +9813,21 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 	}
 }
 
+// Returns the current environment
+//
+// When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
+//
+// When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
+//
+// Experimental: Programmatic env access is speculative and might be replaced.
+func (r *Client) CurrentEnv() *Env {
+	q := r.query.Select("currentEnv")
+
+	return &Env{
+		query: q,
+	}
+}
+
 // The FunctionCall context that the SDK caller is currently executing in.
 //
 // If the caller is not currently executing in a function, this will return an error.
@@ -9903,7 +9917,7 @@ type EnvOpts struct {
 	Writable bool
 }
 
-// Initialize a new environment
+// Initializes a new environment
 //
 // Experimental: Environments are not yet stabilized
 func (r *Client) Env(opts ...EnvOpts) *Env {

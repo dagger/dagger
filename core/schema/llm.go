@@ -5,6 +5,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/iancoleman/strcase"
 )
 
 type llmSchema struct {
@@ -42,6 +43,8 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc("allow the LLM to interact with an environment via MCP"),
 		dagql.Func("env", s.env).
 			Doc("return the LLM's current environment"),
+		dagql.Func("withStaticTools", s.withStaticTools).
+			Doc("Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration"),
 		dagql.Func("withModel", s.withModel).
 			Doc("swap out the llm model").
 			Args(
@@ -68,6 +71,18 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			),
 		dagql.Func("withoutDefaultSystemPrompt", s.withoutDefaultSystemPrompt).
 			Doc("Disable the default system prompt"),
+		dagql.Func("withBlockedFunction", s.withBlockedFunction).
+			Doc("Return a new LLM with the specified function no longer exposed as a tool").
+			Args(
+				dagql.Arg("typeName").Doc("The type name whose function will be blocked"),
+				dagql.Arg("function").Doc("The function to block", "Will be converted to lowerCamelCase if necessary."),
+			),
+		dagql.Func("withMCPServer", s.withMCPServer).
+			Doc("Add an external MCP server to the LLM").
+			Args(
+				dagql.Arg("name").Doc("The name of the MCP server"),
+				dagql.Arg("service").Doc("The MCP service to run and communicate with over stdio"),
+			),
 		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[*core.LLM], _ struct{}) (res dagql.Result[dagql.ID[*core.LLM]], _ error) {
 			var inst dagql.Result[*core.LLM]
 			if err := srv.Select(ctx, self, &inst, dagql.Selector{
@@ -80,8 +95,13 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		}).
 			Doc("synchronize LLM state"),
 		dagql.Func("loop", s.loop).
-			// Deprecated("use sync").
-			Doc("synchronize LLM state"),
+			Doc("Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn"),
+		dagql.Func("hasPrompt", s.hasPrompt).
+			Doc("Indicates whether there are any queued prompts or tool results to send to the model"),
+		dagql.NodeFunc("step", s.step).
+			Doc("Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results"),
+		dagql.Func("__step", s.stepInner).
+			Doc("Inner function called by step that configures an LLM to do one iteration"),
 		dagql.Func("attempt", s.attempt).
 			Doc("create a branch in the LLM's history"),
 		dagql.Func("tools", s.tools).
@@ -93,6 +113,7 @@ func (s llmSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 	dagql.Fields[*core.LLMTokenUsage]{}.Install(srv)
 }
+
 func (s *llmSchema) withEnv(ctx context.Context, llm *core.LLM, args struct {
 	Env core.EnvID
 }) (*core.LLM, error) {
@@ -100,12 +121,16 @@ func (s *llmSchema) withEnv(ctx context.Context, llm *core.LLM, args struct {
 	if err != nil {
 		return nil, err
 	}
-	return llm.WithEnv(env.Self()), nil
+	return llm.WithEnv(env), nil
 }
 
-func (s *llmSchema) env(ctx context.Context, llm *core.LLM, args struct{}) (*core.Env, error) {
+func (s *llmSchema) withStaticTools(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
+	return llm.WithStaticTools(), nil
+}
+
+func (s *llmSchema) env(ctx context.Context, llm *core.LLM, args struct{}) (res dagql.ObjectResult[*core.Env], _ error) {
 	if err := llm.Sync(ctx); err != nil {
-		return nil, err
+		return res, err
 	}
 	return llm.Env(), nil
 }
@@ -156,6 +181,29 @@ func (s *llmSchema) withoutDefaultSystemPrompt(ctx context.Context, llm *core.LL
 	return llm.WithoutDefaultSystemPrompt(), nil
 }
 
+func (s *llmSchema) withBlockedFunction(ctx context.Context, llm *core.LLM, args struct {
+	TypeName string
+	Function string
+}) (*core.LLM, error) {
+	return llm.WithBlockedFunction(ctx,
+		args.TypeName,
+		// We're stringly typed, which sucks, but we can at least allow people to
+		// refer to names in their locale (e.g. snake_case in Python.)
+		strcase.ToLowerCamel(args.Function),
+	)
+}
+
+func (s *llmSchema) withMCPServer(ctx context.Context, llm *core.LLM, args struct {
+	Name    string
+	Service core.ServiceID
+}) (*core.LLM, error) {
+	svc, err := args.Service.Load(ctx, s.srv)
+	if err != nil {
+		return nil, err
+	}
+	return llm.WithMCPServer(args.Name, svc), nil
+}
+
 func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args struct {
 	File core.FileID
 }) (*core.LLM, error) {
@@ -168,6 +216,23 @@ func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args stru
 
 func (s *llmSchema) loop(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
 	return llm, llm.Sync(ctx)
+}
+
+func (s *llmSchema) step(ctx context.Context, llm dagql.ObjectResult[*core.LLM], args struct{}) (id dagql.ID[*core.LLM], err error) {
+	err = s.srv.Select(ctx, llm, &id, dagql.Selector{
+		Field: "__step",
+	}, dagql.Selector{
+		Field: "sync",
+	})
+	return id, err
+}
+
+func (s *llmSchema) stepInner(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
+	return llm.Step(), nil
+}
+
+func (s *llmSchema) hasPrompt(ctx context.Context, llm *core.LLM, args struct{}) (bool, error) {
+	return llm.HasPrompt(), nil
 }
 
 func (s *llmSchema) attempt(_ context.Context, llm *core.LLM, _ struct {
@@ -190,7 +255,7 @@ func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
 	if args.MaxAPICalls.Valid {
 		maxAPICalls = args.MaxAPICalls.Value.Int()
 	}
-	return core.NewLLM(ctx, model, maxAPICalls, s.srv)
+	return parent.NewLLM(ctx, model, maxAPICalls)
 }
 
 func (s *llmSchema) history(ctx context.Context, llm *core.LLM, _ struct{}) ([]string, error) {
@@ -210,7 +275,7 @@ func (s *llmSchema) historyJSONString(ctx context.Context, llm *core.LLM, _ stru
 }
 
 func (s *llmSchema) tools(ctx context.Context, llm *core.LLM, _ struct{}) (string, error) {
-	return llm.ToolsDoc()
+	return llm.ToolsDoc(ctx)
 }
 
 func (s *llmSchema) bindResult(ctx context.Context, llm *core.LLM, args struct {

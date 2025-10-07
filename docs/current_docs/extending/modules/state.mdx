@@ -45,6 +45,18 @@ Here's an example where one field is exposed as a Dagger Function, while the oth
 ```
 
 </TabItem>
+<TabItem value="php" label="PHP">
+The PHP SDK doesn't yep support state getters. You can follow [issue #10882](https://github.com/dagger/dagger/issues/10882)
+for updates.
+
+<!--
+```php file=./snippets/state-functions/php/src/MyModule.php
+```
+-->
+
+---
+
+</TabItem>
 <TabItem value="java" label="Java">
 Dagger will automatically expose all public fields of a class as Dagger Functions. It's also possible to expose a package, `protected` or `private` field by annotating it with the `@Function` annotation.
 

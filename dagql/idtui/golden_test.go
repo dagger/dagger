@@ -583,8 +583,8 @@ var scrubs = []scrubber{
 	// It's not something we particularly care about, so we just scrub it.
 	{
 		regexp.MustCompile(`\$ container: Container! X\.Xs CACHED`),
-		"$ container: Container! X.Xs CACHED",
-		"● container: Container! X.Xs",
+		idtui.IconCached + " container: Container! X.Xs CACHED",
+		idtui.IconSuccess + " container: Container! X.Xs",
 	},
 	{
 		regexp.MustCompile(`, line \d+, in`),

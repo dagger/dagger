@@ -53,6 +53,7 @@ var anthropicRetryable = []string{
 	// there's gotta be a better way to do this...
 	string(constant.RateLimitError("").Default()),
 	string(constant.OverloadedError("").Default()),
+	"Internal server error",
 }
 
 func (c *AnthropicClient) IsRetryable(err error) bool {
@@ -67,12 +68,6 @@ func (c *AnthropicClient) IsRetryable(err error) bool {
 
 //nolint:gocyclo
 func (c *AnthropicClient) SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (res *LLMResponse, rerr error) {
-	ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
-		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-		attribute.String(telemetry.UIMessageAttr, "received"),
-	))
-	defer telemetry.End(span, func() error { return rerr })
-
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	defer stdio.Close()
 
@@ -80,9 +75,10 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*ModelMessage
 		log.String(telemetry.ContentTypeAttr, "text/markdown"))
 
 	m := telemetry.Meter(ctx, InstrumentationLibrary)
+	spanCtx := trace.SpanContextFromContext(ctx)
 	attrs := []attribute.KeyValue{
-		attribute.String(telemetry.MetricsTraceIDAttr, span.SpanContext().TraceID().String()),
-		attribute.String(telemetry.MetricsSpanIDAttr, span.SpanContext().SpanID().String()),
+		attribute.String(telemetry.MetricsTraceIDAttr, spanCtx.TraceID().String()),
+		attribute.String(telemetry.MetricsSpanIDAttr, spanCtx.SpanID().String()),
 		attribute.String("model", c.endpoint.Model),
 		attribute.String("provider", string(c.endpoint.Provider)),
 	}

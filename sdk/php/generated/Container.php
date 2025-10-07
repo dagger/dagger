@@ -70,37 +70,6 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Initializes this container from a Dockerfile build.
-     */
-    public function build(
-        DirectoryId|Directory $context,
-        ?string $dockerfile = 'Dockerfile',
-        ?string $target = '',
-        ?array $buildArgs = null,
-        ?array $secrets = null,
-        ?bool $noInit = false,
-    ): Container {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('build');
-        $innerQueryBuilder->setArgument('context', $context);
-        if (null !== $dockerfile) {
-        $innerQueryBuilder->setArgument('dockerfile', $dockerfile);
-        }
-        if (null !== $target) {
-        $innerQueryBuilder->setArgument('target', $target);
-        }
-        if (null !== $buildArgs) {
-        $innerQueryBuilder->setArgument('buildArgs', $buildArgs);
-        }
-        if (null !== $secrets) {
-        $innerQueryBuilder->setArgument('secrets', $secrets);
-        }
-        if (null !== $noInit) {
-        $innerQueryBuilder->setArgument('noInit', $noInit);
-        }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * The combined buffered standard output and standard error stream of the last executed command
      *
      * Returns an error if no command was executed
@@ -558,7 +527,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
      */
     public function withDirectory(
         string $path,
-        DirectoryId|Directory $directory,
+        DirectoryId|Directory $source,
         ?array $exclude = null,
         ?array $include = null,
         ?string $owner = '',
@@ -566,7 +535,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDirectory');
         $innerQueryBuilder->setArgument('path', $path);
-        $innerQueryBuilder->setArgument('directory', $directory);
+        $innerQueryBuilder->setArgument('source', $source);
         if (null !== $exclude) {
         $innerQueryBuilder->setArgument('exclude', $exclude);
         }

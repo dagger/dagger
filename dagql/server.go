@@ -274,6 +274,32 @@ var coreDirectives = []DirectiveSpec{
 			DirectiveLocationEnumValue,
 		},
 	},
+	{
+		Name:        "defaultPath",
+		Description: FormatDescription(`Indicates that the argument defaults to a contextual path.`),
+		Args: NewInputSpecs(
+			InputSpec{
+				Name: "path",
+				Type: String(""),
+			},
+		),
+		Locations: []DirectiveLocation{
+			DirectiveLocationArgumentDefinition,
+		},
+	},
+	{
+		Name:        "ignorePatterns",
+		Description: FormatDescription(`Filter directory contents using .gitignore-style glob patterns.`),
+		Args: NewInputSpecs(
+			InputSpec{
+				Name: "patterns",
+				Type: ArrayInput[String](nil),
+			},
+		),
+		Locations: []DirectiveLocation{
+			DirectiveLocationArgumentDefinition,
+		},
+	},
 }
 
 // Root returns the root object of the server. It is suitable for passing to
@@ -662,9 +688,13 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 // Select evaluates a series of chained field selections starting from the
 // given object and assigns the final result value into dest.
 func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sels ...Selector) error {
-	// Annotate ctx with the internal flag so we can distinguish self-calls from
-	// user-calls in the UI.
-	ctx = withInternal(ctx)
+	if !isNonInternal(ctx) {
+		// Annotate ctx with the internal flag so we can distinguish self-calls from
+		// user-calls in the UI.
+		//
+		// Only do this if we haven't been explicitly told not to (internal=false).
+		ctx = withInternal(ctx)
+	}
 
 	var res AnyResult = self
 	for i, sel := range sels {

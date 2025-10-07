@@ -42,20 +42,6 @@ defmodule Dagger.EngineCache do
     Client.execute(engine_cache.client, query_builder)
   end
 
-  @deprecated """
-  Use minFreeSpace instead.
-  """
-  @doc """
-  The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
-  """
-  @spec keep_bytes(t()) :: {:ok, integer()} | {:error, term()}
-  def keep_bytes(%__MODULE__{} = engine_cache) do
-    query_builder =
-      engine_cache.query_builder |> QB.select("keepBytes")
-
-    Client.execute(engine_cache.client, query_builder)
-  end
-
   @doc """
   The maximum bytes to keep in the cache without pruning.
   """

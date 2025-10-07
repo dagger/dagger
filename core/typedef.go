@@ -73,6 +73,19 @@ func (fn Function) Clone() *Function {
 	return &cp
 }
 
+// FieldSpec converts a Function into a GraphQL field specification for inclusion in a GraphQL schema.
+// This method is called during schema generation when building the GraphQL API representation of module functions.
+// It transforms the Function's metadata (name, description, arguments, return type) into the dagql.FieldSpec format
+// that the GraphQL engine can understand and expose as queryable fields.
+//
+// The conversion process includes:
+// - Converting function arguments to GraphQL input specifications with proper typing
+// - Handling default values for arguments by JSON decoding and type validation
+// - Adding source map directives for debugging/IDE support
+// - Resolving module types through the provided Module context
+//
+// This is typically called during module loading/registration when the Dagger engine builds
+// the complete GraphQL schema that clients will query against.
 func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec, error) {
 	spec := dagql.FieldSpec{
 		Name:        fn.Name,
@@ -117,6 +130,7 @@ func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec
 		if arg.SourceMap.Valid {
 			argSpec.Directives = append(argSpec.Directives, arg.SourceMap.Value.TypeDirective())
 		}
+		argSpec.Directives = append(argSpec.Directives, arg.Directives()...)
 
 		spec.Args.Add(argSpec)
 	}
@@ -200,9 +214,9 @@ func (fn *Function) IsSubtypeOf(otherFn *Function) bool {
 	return true
 }
 
-func (fn *Function) LookupArg(name string) (*FunctionArg, bool) {
+func (fn *Function) LookupArg(nameAnyCase string) (*FunctionArg, bool) {
 	for _, arg := range fn.Args {
-		if arg.Name == name {
+		if strings.EqualFold(arg.Name, nameAnyCase) {
 			return arg, true
 		}
 	}
@@ -256,6 +270,48 @@ func (*FunctionArg) TypeDescription() string {
 
 func (arg *FunctionArg) isContextual() bool {
 	return arg.DefaultPath != ""
+}
+
+func (arg FunctionArg) Directives() []*ast.Directive {
+	var directives []*ast.Directive
+	if arg.DefaultPath != "" {
+		directives = append(directives, &ast.Directive{
+			Name: "defaultPath",
+			Arguments: ast.ArgumentList{
+				{
+					Name: "path",
+					Value: &ast.Value{
+						Kind: ast.StringValue,
+						Raw:  arg.DefaultPath,
+					},
+				},
+			},
+		})
+	}
+	if len(arg.Ignore) > 0 {
+		var children ast.ChildValueList
+		for _, ignore := range arg.Ignore {
+			children = append(children, &ast.ChildValue{
+				Value: &ast.Value{
+					Kind: ast.StringValue,
+					Raw:  ignore,
+				},
+			})
+		}
+		directives = append(directives, &ast.Directive{
+			Name: "ignorePatterns",
+			Arguments: ast.ArgumentList{
+				&ast.Argument{
+					Name: "patterns",
+					Value: &ast.Value{
+						Kind:     ast.ListValue,
+						Children: children,
+					},
+				},
+			},
+		})
+	}
+	return directives
 }
 
 type DynamicID struct {
@@ -1222,6 +1278,9 @@ type FunctionCall struct {
 	ParentName string                  `field:"true" doc:"The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module."`
 	Parent     JSON                    `field:"true" doc:"The value of the parent object of the function being called. If the function is top-level to the module, this is always an empty object."`
 	InputArgs  []*FunctionCallArgValue `field:"true" doc:"The argument values the function is being invoked with."`
+
+	ParentID *call.ID
+	EnvID    *call.ID
 }
 
 func (*FunctionCall) Type() *ast.Type {

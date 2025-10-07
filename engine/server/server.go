@@ -58,6 +58,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/network/cniprovider"
 	"github.com/dagger/dagger/internal/buildkit/util/network/netproviders"
 	"github.com/dagger/dagger/internal/buildkit/util/resolver"
+	resolverconfig "github.com/dagger/dagger/internal/buildkit/util/resolver/config"
 	"github.com/dagger/dagger/internal/buildkit/util/throttle"
 	"github.com/dagger/dagger/internal/buildkit/util/winlayers"
 	"github.com/dagger/dagger/internal/buildkit/version"
@@ -214,6 +215,10 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		locker:         locker.New(),
 	}
 
+	// start the global namespace worker pool, which is used for running Go funcs
+	// in container namespaces dynamically
+	buildkit.GetGlobalNamespaceWorkerPool().Start()
+
 	//
 	// setup directories and paths
 	//
@@ -287,7 +292,19 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		srv.enabledPlatforms = []ocispecs.Platform{srv.defaultPlatform}
 	}
 
-	srv.registryHosts = resolver.NewRegistryConfig(bkcfg.Registries)
+	registries := bkcfg.Registries
+	if len(registries) == 0 {
+		registries = map[string]resolverconfig.RegistryConfig{}
+	}
+	for k, v := range cfg.Registries {
+		registries[k] = resolverconfig.RegistryConfig{
+			Mirrors:   v.Mirrors,
+			PlainHTTP: v.PlainHTTP,
+			Insecure:  v.Insecure,
+			RootCAs:   v.RootCAs,
+		}
+	}
+	srv.registryHosts = resolver.NewRegistryConfig(registries)
 
 	if slog.Default().Enabled(ctx, slog.LevelExtraDebug) {
 		srv.buildkitLogSink = os.Stderr
@@ -553,6 +570,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 func (srv *Server) Close() error {
 	err := srv.baseWorker.Close()
+
+	// Shutdown the global namespace worker pool
+	buildkit.ShutdownGlobalNamespaceWorkerPool()
 
 	// note this *could* cause a panic in Session if it was still running, so
 	// the server should be shutdown first

@@ -17,8 +17,6 @@ import (
 	"github.com/containerd/containerd/mount"
 	"github.com/containerd/containerd/snapshots"
 	cerrdefs "github.com/containerd/errdefs"
-	"github.com/docker/docker/pkg/idtools"
-	"github.com/hashicorp/go-multierror"
 	"github.com/dagger/dagger/internal/buildkit/cache/config"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/session"
@@ -32,6 +30,8 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/progress"
 	rootlessmountopts "github.com/dagger/dagger/internal/buildkit/util/rootless/mountopts"
 	"github.com/dagger/dagger/internal/buildkit/util/winlayers"
+	"github.com/docker/docker/pkg/idtools"
+	"github.com/hashicorp/go-multierror"
 	"github.com/moby/sys/mountinfo"
 	"github.com/moby/sys/userns"
 	digest "github.com/opencontainers/go-digest"
@@ -98,7 +98,7 @@ type cacheRecord struct {
 	equalMutable   *mutableRef
 	equalImmutable *immutableRef
 
-	layerDigestChainCache []digest.Digest
+	layerDigestChainCache *digestChain
 }
 
 // hold ref lock before calling
@@ -215,6 +215,20 @@ const (
 	Merge
 	Diff
 )
+
+func (k refKind) String() string {
+	switch k {
+	case BaseLayer:
+		return "base"
+	case Layer:
+		return "layer"
+	case Merge:
+		return "merge"
+	case Diff:
+		return "diff"
+	}
+	return "unknown"
+}
 
 func (cr *cacheRecord) kind() refKind {
 	if len(cr.mergeParents) > 0 {
@@ -561,28 +575,45 @@ func (sr *immutableRef) layerWalk(f func(*immutableRef)) {
 	}
 }
 
+type digestChain struct {
+	digests []digest.Digest
+	seen    map[digest.Digest]struct{}
+}
+
+func (chain *digestChain) add(dig digest.Digest) {
+	if _, exists := chain.seen[dig]; !exists {
+		chain.digests = append(chain.digests, dig)
+		chain.seen[dig] = struct{}{}
+	}
+}
+
 // hold cacheRecord.mu lock before calling
-func (cr *cacheRecord) layerDigestChain() []digest.Digest {
+func (cr *cacheRecord) layerDigestChain() *digestChain {
 	if cr.layerDigestChainCache != nil {
 		return cr.layerDigestChainCache
 	}
+	cr.layerDigestChainCache = &digestChain{seen: map[digest.Digest]struct{}{}}
 	switch cr.kind() {
 	case Diff:
 		if cr.getBlob() == "" && cr.diffParents.upper != nil {
 			// this diff just reuses the upper blob
 			cr.layerDigestChainCache = cr.diffParents.upper.layerDigestChain()
 		} else {
-			cr.layerDigestChainCache = append(cr.layerDigestChainCache, cr.getBlob())
+			cr.layerDigestChainCache.add(cr.getBlob())
 		}
 	case Merge:
 		for _, parent := range cr.mergeParents {
-			cr.layerDigestChainCache = append(cr.layerDigestChainCache, parent.layerDigestChain()...)
+			for _, dig := range parent.layerDigestChain().digests {
+				cr.layerDigestChainCache.add(dig)
+			}
 		}
 	case Layer:
-		cr.layerDigestChainCache = append(cr.layerDigestChainCache, cr.layerParent.layerDigestChain()...)
+		for _, dig := range cr.layerParent.layerDigestChain().digests {
+			cr.layerDigestChainCache.add(dig)
+		}
 		fallthrough
 	case BaseLayer:
-		cr.layerDigestChainCache = append(cr.layerDigestChainCache, cr.getBlob())
+		cr.layerDigestChainCache.add(cr.getBlob())
 	}
 	return cr.layerDigestChainCache
 }

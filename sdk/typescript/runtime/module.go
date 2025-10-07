@@ -229,20 +229,20 @@ func (m *moduleRuntimeContainer) withInstalledDependencies() *moduleRuntimeConta
 	case Yarn:
 		if semver.Compare(fmt.Sprintf("v%s", m.cfg.packageManagerVersion), "v3.0.0") <= 0 {
 			m.ctr = m.ctr.
-				WithExec([]string{"yarn", "install", "--frozen-lockfile"})
+				WithExec([]string{"yarn", "install", "--frozen-lockfile", "--prod"})
 			break
 		}
 
 		m.ctr = m.ctr.WithExec([]string{"yarn", "install", "--immutable"})
 	case Pnpm:
 		m.ctr = m.ctr.
-			WithExec([]string{"pnpm", "install", "--frozen-lockfile", "--shamefully-hoist=true"})
+			WithExec([]string{"pnpm", "install", "--frozen-lockfile", "--shamefully-hoist=true", "--prod"})
 	case Npm:
 		m.ctr = m.ctr.
-			WithExec([]string{"npm", "ci"})
+			WithExec([]string{"npm", "ci", "--omit=dev"})
 	case BunManager:
 		m.ctr = m.ctr.
-			WithExec([]string{"bun", "install", "--no-verify", "--no-progress"})
+			WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--omit=dev", "--omit=peer", "--omit=optional"})
 	case DenoManager:
 		m.ctr = m.ctr.
 			WithExec([]string{"deno", "install"})

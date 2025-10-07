@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -58,20 +59,20 @@ func NewModFunction(
 ) (*ModuleFunction, error) {
 	returnType, ok, err := mod.ModTypeFor(ctx, metadata.ReturnType, true)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get mod type for function %q return type: %w", metadata.Name, err)
+		return nil, fmt.Errorf("get mod type for function %q return type: %w", metadata.Name, err)
 	}
 	if !ok {
-		return nil, fmt.Errorf("failed to find mod type for function %q return type: %q", metadata.Name, metadata.ReturnType.ToType())
+		return nil, fmt.Errorf("find mod type for function %q return type: %q", metadata.Name, metadata.ReturnType.ToType())
 	}
 
 	argTypes := make(map[string]*UserModFunctionArg, len(metadata.Args))
 	for _, argMetadata := range metadata.Args {
 		argModType, ok, err := mod.ModTypeFor(ctx, argMetadata.TypeDef, true)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get mod type for function %q arg %q type: %w", metadata.Name, argMetadata.Name, err)
+			return nil, fmt.Errorf("get mod type for function %q arg %q type: %w", metadata.Name, argMetadata.Name, err)
 		}
 		if !ok {
-			return nil, fmt.Errorf("failed to find mod type for function %q arg %q type: %q", metadata.Name, argMetadata.Name, argMetadata.TypeDef.ToType())
+			return nil, fmt.Errorf("find mod type for function %q arg %q type: %q", metadata.Name, argMetadata.Name, argMetadata.TypeDef.ToType())
 		}
 		argTypes[argMetadata.Name] = &UserModFunctionArg{
 			metadata: argMetadata,
@@ -124,7 +125,7 @@ func (fn *ModuleFunction) recordCall(ctx context.Context) {
 	moduleAnalyticsProps(mod, "target_", props)
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		slog.Error("failed to get current query for module call analytics", "err", err)
+		slog.Error("get current query for module call analytics", "err", err)
 		return
 	}
 	if caller, err := query.CurrentModule(ctx); err == nil {
@@ -140,7 +141,7 @@ func (fn *ModuleFunction) recordCall(ctx context.Context) {
 
 // setCallInputs sets the call inputs for the function call.
 //
-// It first load the argument set by the user.
+// It first loads the argument set by the user.
 // Then the default values.
 // Finally the contextual arguments.
 func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]*FunctionCallArgValue, error) {
@@ -151,26 +152,26 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 		normalizedName := gqlArgName(input.Name)
 		arg, ok := fn.args[normalizedName]
 		if !ok {
-			return nil, fmt.Errorf("failed to find arg %q", input.Name)
+			return nil, fmt.Errorf("find arg %q", input.Name)
 		}
 
 		name := arg.metadata.OriginalName
 
 		converted, err := arg.modType.ConvertToSDKInput(ctx, input.Value)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert arg %q: %w", input.Name, err)
+			return nil, fmt.Errorf("convert arg %q: %w", input.Name, err)
 		}
 
 		if len(arg.metadata.Ignore) > 0 && !arg.metadata.isContextual() { // contextual args already have ignore applied
 			converted, err = fn.applyIgnoreOnDir(ctx, opts.Server, arg.metadata, converted)
 			if err != nil {
-				return nil, fmt.Errorf("failed to apply ignore pattern on arg %q: %w", input.Name, err)
+				return nil, fmt.Errorf("apply ignore pattern on arg %q: %w", input.Name, err)
 			}
 		}
 
 		encoded, err := json.Marshal(converted)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal arg %q: %w", input.Name, err)
+			return nil, fmt.Errorf("marshal arg %q: %w", input.Name, err)
 		}
 
 		callInputs[i] = &FunctionCallArgValue{
@@ -184,18 +185,276 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 	// Load default value
 	for _, arg := range fn.metadata.Args {
 		name := arg.OriginalName
-		if hasArg[name] || arg.DefaultValue == nil {
+		if hasArg[name] {
 			continue
 		}
-		callInputs = append(callInputs, &FunctionCallArgValue{
-			Name:  name,
-			Value: arg.DefaultValue,
-		})
+		userDefault, hasUserDefault, err := fn.UserDefault(ctx, arg.Name)
+		if err != nil {
+			return nil, fmt.Errorf("load user defaults for function %q: %w", fn.metadata.Name, err)
+		}
+		hasModuleDefault := (arg.DefaultValue != nil)
 
+		var defaultInput *FunctionCallArgValue
+		if hasUserDefault {
+			// 1. User-defined user default
+			userDefaultInput, err := userDefault.CallInput()
+			if err != nil {
+				return nil, err
+			}
+			defaultInput = userDefaultInput
+		} else if hasModuleDefault {
+			// 2. Module-defined default
+			defaultInput = &FunctionCallArgValue{
+				Name:  name,
+				Value: arg.DefaultValue,
+			}
+		} else {
+			// 3. No default. moving on
+			continue
+		}
+		callInputs = append(callInputs, defaultInput)
 		hasArg[name] = true
 	}
-
 	return callInputs, nil
+}
+
+// Load the user defaults for this function, and apply them to the function's
+// typedefs. This makes the user defaults visible in typedef introspection.
+// It does not affect applying user defaults *at function call*
+func (fn *ModuleFunction) mergeUserDefaultsTypeDefs(ctx context.Context) error {
+	for argName, arg := range fn.args {
+		argDefault, ok, err := fn.UserDefault(ctx, argName)
+		if err != nil {
+			return fmt.Errorf("load user default for %s.%s: %w", fn.mod.NameField, fn.metadata.Name, err)
+		}
+		if !ok {
+			continue
+		}
+		uiFnName := fn.mod.Name()
+		if fn.metadata.Name != "" {
+			uiFnName += "." + fn.metadata.Name
+		}
+		console(ctx, "user default: %s(%s=%q)", uiFnName, argName, argDefault.UserInput)
+		if argDefault.IsObject() {
+			// FIXME (cosmetic): expose the user default value to the client, without
+			// breaking other things
+			arg.metadata.TypeDef.Optional = true
+		} else {
+			defaultJSON, err := argDefault.UserDefaultPrimitive.JSONValue()
+			if err != nil {
+				return err
+			}
+			arg.metadata.DefaultValue = defaultJSON
+		}
+	}
+	return nil
+}
+
+// Print text directly on the user's console
+func console(ctx context.Context, msg string, args ...any) {
+	if !strings.HasSuffix(msg, "\n") {
+		msg += "\n"
+	}
+	fmt.Fprintf(telemetry.GlobalWriter(ctx, ""), msg, args...)
+}
+
+// A user-defined default value that is a primitive type (not an object)
+// Unlike default objects, it can be safely manipulated without making
+// nested dagql query
+type UserDefaultPrimitive struct {
+	Function  *ModuleFunction
+	Arg       *FunctionArg
+	UserInput string
+}
+
+func (udp *UserDefaultPrimitive) JSONValue() (JSON, error) {
+	value, err := udp.Value()
+	if err != nil {
+		return nil, err
+	}
+	if jsonValue, ok := value.(JSON); ok {
+		return jsonValue, nil
+	}
+	jsonValue, err := json.Marshal(value)
+	if err != nil {
+		return nil, udp.errorf(err, "marshal to json")
+	}
+	return JSON(jsonValue), nil
+}
+
+func (udp *UserDefaultPrimitive) CallInput() (*FunctionCallArgValue, error) {
+	jsonValue, err := udp.JSONValue()
+	if err != nil {
+		return nil, udp.errorf(err, "get json value")
+	}
+	return &FunctionCallArgValue{
+		Name:  udp.Arg.Name,
+		Value: jsonValue,
+	}, nil
+}
+
+func (udp *UserDefaultPrimitive) Value() (any, error) {
+	switch udp.Arg.TypeDef.Kind {
+	case TypeDefKindString:
+		return udp.UserInput, nil
+	case TypeDefKindInteger:
+		v, err := strconv.Atoi(udp.UserInput)
+		if err != nil {
+			return nil, udp.errorf(err, "parse as integer")
+		}
+		return v, nil
+	case TypeDefKindObject:
+		return nil, fmt.Errorf("can't get primitive value from object default value")
+	}
+	// Default: interpret user input as raw JSON
+	if v := []byte(udp.UserInput); json.Valid(v) {
+		return JSON(v), nil
+	}
+	return nil, udp.errorf(nil, "not valid JSON: '%s'", udp.UserInput)
+}
+
+func (udp *UserDefaultPrimitive) errorf(err error, msg string, args ...any) error {
+	fullMessage := fmt.Sprintf("user defaults %s.%s(%s=...): %s",
+		udp.Function.mod.Name(),
+		udp.Function.metadata.Name,
+		udp.Arg.Name,
+		fmt.Sprintf(msg, args...),
+	)
+	if err == nil {
+		return errors.New(fullMessage)
+	}
+	return fmt.Errorf("%s: %w", fullMessage, err)
+}
+
+func (udp *UserDefaultPrimitive) DagqlInput() (dagql.Input, error) {
+	value, err := udp.Value()
+	if err != nil {
+		return nil, err
+	}
+	arg := udp.Arg.Clone()
+	arg.TypeDef.Optional = true
+	return arg.TypeDef.ToInput().Decoder().DecodeInput(value)
+}
+
+func (fn *ModuleFunction) newUserDefault(arg *FunctionArg, userInput string) *UserDefault {
+	return &UserDefault{
+		UserDefaultPrimitive{
+			Function:  fn,
+			Arg:       arg,
+			UserInput: userInput,
+		},
+	}
+}
+
+type UserDefault struct {
+	UserDefaultPrimitive
+}
+
+func (ud *UserDefault) IsObject() bool {
+	return ud.Arg.TypeDef.Kind == TypeDefKindObject
+}
+
+func (ud *UserDefault) Value(ctx context.Context) (any, error) {
+	if !ud.IsObject() {
+		return ud.UserDefaultPrimitive.Value()
+	}
+	// Resolve object from user-supplied "address"
+	srv := dagql.CurrentDagqlServer(ctx)
+	// "Secret" -> "secret", "GitRef" -> "gitRef", etc
+	typename := ud.Arg.TypeDef.ToType().Name()
+	typename = strings.ToLower(typename[0:1]) + typename[1:]
+	var result dagql.AnyResult
+	if err := srv.Select(ctx, srv.Root(), &result,
+		dagql.Selector{
+			Field: "address",
+			Args: []dagql.NamedInput{{
+				Name:  "value",
+				Value: dagql.NewString(ud.UserInput),
+			}},
+		},
+		dagql.Selector{
+			Field: strings.ToLower(typename),
+		},
+		dagql.Selector{
+			Field: "id",
+		},
+	); err != nil {
+		return nil, ud.errorf(err, "resolve object (%q)", typename)
+	}
+	return result.Unwrap(), nil
+}
+
+func (ud *UserDefault) DagqlID(ctx context.Context) (dagql.IDType, error) {
+	if !ud.IsObject() {
+		return nil, ud.errorf(nil, "DagqlID(): primitive type has not ID")
+	}
+	value, err := ud.Value(ctx)
+	if err != nil {
+		return nil, ud.errorf(err, "DagqlInput(): decode value")
+	}
+	id, isID := value.(dagql.IDType)
+	if isID {
+		return id, nil
+	}
+	return nil, ud.errorf(nil, "DagqlID(): not an id: %q", value)
+}
+
+func (ud *UserDefault) String() string {
+	fn := ud.Function
+	s := fn.mod.Name()
+	if fnName := fn.metadata.Name; fnName != "" {
+		s += ("." + fnName)
+	}
+	s += fmt.Sprintf("(%s=%q)", ud.Arg.Name, ud.UserInput)
+	return s
+}
+
+// Lookup a user default for this function
+func (fn *ModuleFunction) UserDefault(ctx context.Context, argName string) (*UserDefault, bool, error) {
+	// Lookup the argument typedef
+	arg, ok := fn.metadata.LookupArg(argName)
+	if !ok {
+		return nil, false, fmt.Errorf("lookup default: function %q has no argument %q", fn.metadata.Name, argName)
+	}
+	// Lookup user default for the requested arg
+	// We need access to the main client's context for resolving system env variables
+	// (otherwise we may resolve them in the module container's context)
+	// so we upgrade the context to the main client.
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("get current query: %w", err)
+	}
+	mainClient, err := query.NonModuleParentClientMetadata(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("access main client: %w", err)
+	}
+	mainCtx := engine.ContextWithClientMetadata(ctx, mainClient)
+	// Get all defaults for this function
+	// FIXME: we shouldn't need the main client context here (we don't need to evaluate env values yet)
+	defaults, err := fn.UserDefaults(mainCtx)
+	if err != nil {
+		return nil, false, fmt.Errorf("lookup defaults for function %q: %w", fn.metadata.Name, err)
+	}
+	userInput, ok, err := defaults.LookupCaseInsensitive(mainCtx, arg.Name)
+	if err != nil {
+		return nil, false, err
+	}
+	if !ok {
+		return nil, false, nil
+	}
+	return fn.newUserDefault(arg, userInput), true, nil
+}
+
+func (fn *ModuleFunction) UserDefaults(ctx context.Context) (*EnvFile, error) {
+	objDefaults, err := fn.mod.ObjectUserDefaults(ctx, fn.objDef.OriginalName)
+	if err != nil {
+		return nil, err
+	}
+	isConstructor := (fn.metadata.Name == "")
+	if isConstructor {
+		return objDefaults, nil
+	}
+	return objDefaults.Namespace(ctx, fn.metadata.OriginalName)
 }
 
 func (fn *ModuleFunction) CacheConfigForCall(
@@ -213,32 +472,56 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	dgstInputs := []string{cacheCfg.Digest.String()}
 
 	var ctxArgs []*FunctionArg
+	var userDefaults []*UserDefault
+
 	for _, argMetadata := range fn.metadata.Args {
-		if !argMetadata.isContextual() {
-			// not a contextual argument
-			continue
-		}
 		if args[argMetadata.Name] != nil {
-			// was explicitly set by the user, no need to load default contextual value
+			// was explicitly set by the user, skip
 			continue
 		}
-		ctxArgs = append(ctxArgs, argMetadata)
+		if argMetadata.TypeDef.Kind != TypeDefKindObject {
+			// Only default objects need processing at this time.
+			// Primitive default values were already processes earlier
+			//  in the flow.
+			// This applies to both types of object defaults:
+			//  1) "contextual args" from `defaultPath` annotations
+			//  2) "user defaults" from user-defined .env
+			continue
+		}
+		userDefault, hasUserDefault, err := fn.UserDefault(ctx, argMetadata.Name)
+		if err != nil {
+			return nil, fmt.Errorf("%s.%s(%s=): load user default: %w",
+				fn.mod.Name(),
+				fn.metadata.Name,
+				argMetadata.Name,
+				err,
+			)
+		}
+		if hasUserDefault {
+			userDefaults = append(userDefaults, userDefault)
+		} else if argMetadata.isContextual() {
+			ctxArgs = append(ctxArgs, argMetadata)
+		}
 	}
-	if len(ctxArgs) > 0 {
+
+	if len(ctxArgs) > 0 || len(userDefaults) > 0 {
 		cacheCfg.UpdatedArgs = make(map[string]dagql.Input)
 		var mu sync.Mutex
 		type argInput struct {
 			name string
 			val  dagql.IDType
 		}
-		ctxArgVals := make([]*argInput, len(ctxArgs))
-		eg, ctx := errgroup.WithContext(ctx)
+
 		srv := dagql.CurrentDagqlServer(ctx)
+		eg, ctx := errgroup.WithContext(ctx)
+
+		// Process "contextual arguments", aka objects with a `defaulPath`
+		ctxArgVals := make([]*argInput, len(ctxArgs))
 		for i, arg := range ctxArgs {
 			eg.Go(func() error {
 				ctxVal, err := fn.loadContextualArg(ctx, srv, arg)
 				if err != nil {
-					return fmt.Errorf("failed to load contextual arg %q: %w", arg.Name, err)
+					return fmt.Errorf("load contextual arg %q: %w", arg.Name, err)
 				}
 
 				ctxArgVals[i] = &argInput{
@@ -252,12 +535,39 @@ func (fn *ModuleFunction) CacheConfigForCall(
 				return nil
 			})
 		}
+
+		// Process user-defined user defaults for objects
+		userDefaultVals := make([]*argInput, len(userDefaults))
+		for i, userDefault := range userDefaults {
+			i, userDefault := i, userDefault
+			eg.Go(func() error {
+				id, err := userDefault.DagqlID(ctx)
+				if err != nil {
+					return err
+				}
+				arg := userDefault.Arg
+				userDefaultVals[i] = &argInput{
+					name: arg.OriginalName,
+					val:  id,
+				}
+				mu.Lock()
+				cacheCfg.UpdatedArgs[arg.Name] = dagql.Opt(id)
+				mu.Unlock()
+				return nil
+			})
+		}
+
 		if err := eg.Wait(); err != nil {
 			return nil, err
 		}
 
 		for _, arg := range ctxArgVals {
 			dgstInputs = append(dgstInputs, arg.name, arg.val.ID().Digest().String())
+		}
+		for _, arg := range userDefaultVals {
+			if arg != nil {
+				dgstInputs = append(dgstInputs, arg.name, arg.val.ID().Digest().String())
+			}
 		}
 	}
 
@@ -283,9 +593,10 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, err
 	}
 
+	callID := dagql.CurrentID(ctx)
 	execMD := buildkit.ExecutionMetadata{
 		ClientID:          identity.NewID(),
-		CallID:            dagql.CurrentID(ctx),
+		CallID:            callID,
 		ExecID:            identity.NewID(),
 		Internal:          true,
 		ParentIDs:         map[digest.Digest]*resource.ID{},
@@ -309,7 +620,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 
 	callInputs, err := fn.setCallInputs(ctx, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to set call inputs: %w", err)
+		return nil, fmt.Errorf("set call inputs: %w", err)
 	}
 
 	bklog.G(ctx).Debug("function call")
@@ -322,7 +633,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 
 	parentJSON, err := json.Marshal(opts.ParentFields)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal parent value: %w", err)
+		return nil, fmt.Errorf("marshal parent value: %w", err)
 	}
 
 	if opts.ParentTyped != nil {
@@ -333,34 +644,38 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 			AsObject: dagql.NonNull(fn.objDef),
 		}, true)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get mod type for parent: %w", err)
+			return nil, fmt.Errorf("get mod type for parent: %w", err)
 		}
 		if !ok {
-			return nil, fmt.Errorf("failed to find mod type for parent %q", fn.objDef.Name)
+			return nil, fmt.Errorf("find mod type for parent %q", fn.objDef.Name)
 		}
 		if err := parentModType.CollectCoreIDs(ctx, opts.ParentTyped, execMD.ParentIDs); err != nil {
-			return nil, fmt.Errorf("failed to collect IDs from parent fields: %w", err)
+			return nil, fmt.Errorf("collect IDs from parent fields: %w", err)
 		}
 	}
 
 	if mod.ResultID != nil {
 		execMD.EncodedModuleID, err = mod.ResultID.Encode()
 		if err != nil {
-			return nil, fmt.Errorf("failed to encode module ID: %w", err)
+			return nil, fmt.Errorf("encode module ID: %w", err)
 		}
 	}
 
 	fnCall := &FunctionCall{
 		Name:      fn.metadata.OriginalName,
 		Parent:    parentJSON,
+		ParentID:  callID.Receiver(),
 		InputArgs: callInputs,
+	}
+	if env, ok := EnvFromContext(ctx); ok {
+		fnCall.EnvID = env.ID()
 	}
 	if fn.objDef != nil {
 		fnCall.ParentName = fn.objDef.OriginalName
 	}
 	execMD.EncodedFunctionCall, err = json.Marshal(fnCall)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal function call: %w", err)
+		return nil, fmt.Errorf("marshal function call: %w", err)
 	}
 
 	srv := dagql.CurrentDagqlServer(ctx)
@@ -372,7 +687,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create mod metadata directory: %w", err)
+		return nil, fmt.Errorf("create mod metadata directory: %w", err)
 	}
 
 	var ctr dagql.ObjectResult[*Container]
@@ -386,7 +701,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to exec function: %w", err)
+		return nil, fmt.Errorf("exec function: %w", err)
 	}
 
 	execCtx := ctx
@@ -403,7 +718,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to exec function: %w", err)
+		return nil, fmt.Errorf("exec function: %w", err)
 	}
 
 	query, err := CurrentQuery(ctx)
@@ -412,7 +727,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+		return nil, fmt.Errorf("get buildkit client: %w", err)
 	}
 
 	_, err = ctr.Self().Evaluate(ctx)
@@ -426,7 +741,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		if ok {
 			errInst, err := id.Load(ctx, opts.Server)
 			if err != nil {
-				return nil, fmt.Errorf("failed to load error instance: %w", err)
+				return nil, fmt.Errorf("load error instance: %w", err)
 			}
 			dagErr := errInst.Self().Clone()
 			originCtx := trace.SpanContextFromContext(
@@ -444,7 +759,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 					val := tm.Get(key)
 					valJSON, err := json.Marshal(val)
 					if err != nil {
-						return nil, fmt.Errorf("failed to marshal value: %w", err)
+						return nil, fmt.Errorf("marshal value: %w", err)
 					}
 					dagErr.Values = append(dagErr.Values, &ErrorValue{
 						Name:  key,
@@ -463,12 +778,12 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 
 	ctrOutputDir, err := ctr.Self().Directory(ctx, modMetaDirPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get function output directory: %w", err)
+		return nil, fmt.Errorf("get function output directory: %w", err)
 	}
 
 	result, err := ctrOutputDir.Evaluate(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to evaluate function: %w", err)
+		return nil, fmt.Errorf("evaluate function: %w", err)
 	}
 	if result == nil {
 		return nil, fmt.Errorf("function returned nil result")
@@ -479,19 +794,19 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		Filename: modMetaOutputPath,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to read function output file: %w", err)
+		return nil, fmt.Errorf("read function output file: %w", err)
 	}
 
 	var returnValueAny any
 	dec := json.NewDecoder(strings.NewReader(string(outputBytes)))
 	dec.UseNumber()
 	if err := dec.Decode(&returnValueAny); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal result: %w", err)
+		return nil, fmt.Errorf("unmarshal result: %w", err)
 	}
 
 	returnValue, err := fn.returnType.ConvertFromSDKResult(ctx, returnValueAny)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert return value: %w", err)
+		return nil, fmt.Errorf("convert return value: %w", err)
 	}
 
 	if returnValue != nil {
@@ -507,7 +822,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		// have access to it now since it was returned to them (i.e. secrets/sockets/etc).
 		returnedIDs := map[digest.Digest]*resource.ID{}
 		if err := fn.returnType.CollectCoreIDs(ctx, returnValue, returnedIDs); err != nil {
-			return nil, fmt.Errorf("failed to collect IDs: %w", err)
+			return nil, fmt.Errorf("collect IDs: %w", err)
 		}
 
 		// NOTE: once generalized function caching is enabled we need to ensure that any non-reproducible
@@ -523,7 +838,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		}
 		secretTransferPostCall, err := ResourceTransferPostCall(ctx, query, clientID, returnedIDsList...)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create secret transfer post call: %w", err)
+			return nil, fmt.Errorf("create secret transfer post call: %w", err)
 		}
 
 		returnValue = returnValue.WithPostCall(secretTransferPostCall)
@@ -559,7 +874,7 @@ func extractError(ctx context.Context, client *buildkit.Client, baseErr error) (
 		}
 	}
 	if metaMountResult == nil {
-		slog.Warn("failed to find meta mount", "mounts", foundMounts, "want", modMetaDirPath)
+		slog.Warn("find meta mount", "mounts", foundMounts, "want", modMetaDirPath)
 		return id, false, nil
 	}
 
@@ -591,7 +906,7 @@ func (fn *ModuleFunction) ReturnType() (ModType, error) {
 func (fn *ModuleFunction) ArgType(argName string) (ModType, error) {
 	arg, ok := fn.args[gqlArgName(argName)]
 	if !ok {
-		return nil, fmt.Errorf("failed to find arg %q", argName)
+		return nil, fmt.Errorf("find arg %q", argName)
 	}
 	return arg.modType, nil
 }
@@ -643,7 +958,7 @@ func (fn *ModuleFunction) loadContextualArg(
 	case "Directory":
 		dir, err := fn.mod.ContextSource.Value.Self().LoadContextDir(ctx, dag, arg.DefaultPath, nil, arg.Ignore)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load contextual directory %q: %w", arg.DefaultPath, err)
+			return nil, fmt.Errorf("load contextual directory %q: %w", arg.DefaultPath, err)
 		}
 		return dagql.NewID[*Directory](dir.ID()), nil
 
@@ -655,7 +970,7 @@ func (fn *ModuleFunction) loadContextualArg(
 		// Load the directory containing the file.
 		dir, err := fn.mod.ContextSource.Value.Self().LoadContextDir(ctx, dag, dirPath, []string{filePath}, nil)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load contextual directory %q: %w", dirPath, err)
+			return nil, fmt.Errorf("load contextual directory %q: %w", dirPath, err)
 		}
 
 		var fileID FileID
@@ -671,7 +986,7 @@ func (fn *ModuleFunction) loadContextualArg(
 			},
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load contextual file %q: %w", filePath, err)
+			return nil, fmt.Errorf("load contextual file %q: %w", filePath, err)
 		}
 
 		return fileID, nil
@@ -700,10 +1015,10 @@ func (fn *ModuleFunction) loadContextualArg(
 				dagql.Selector{Field: "git", Args: args},
 			)
 			if err != nil {
-				return nil, fmt.Errorf("failed to load contextual git repository: %w", err)
+				return nil, fmt.Errorf("load contextual git repository: %w", err)
 			}
 		} else {
-			return nil, fmt.Errorf("failed to parse git URL %q: %w", arg.DefaultPath, err)
+			return nil, fmt.Errorf("parse git URL %q: %w", arg.DefaultPath, err)
 		}
 
 		switch arg.TypeDef.AsObject.Value.Name {
@@ -718,7 +1033,7 @@ func (fn *ModuleFunction) loadContextualArg(
 				},
 			)
 			if err != nil {
-				return nil, fmt.Errorf("failed to load contextual git ref: %w", err)
+				return nil, fmt.Errorf("load contextual git ref: %w", err)
 			}
 
 			return dagql.NewID[*GitRef](gitRef.ID()), nil
@@ -748,18 +1063,18 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 				Field: "withDirectory",
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String("/")},
-					{Name: "directory", Value: dagql.NewID[*Directory](dir.ID())},
+					{Name: "source", Value: dagql.NewID[*Directory](dir.ID())},
 					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Ignore...))},
 				},
 			},
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to apply ignore pattern on directory %q: %w", arg.OriginalName, err)
+			return nil, fmt.Errorf("apply ignore pattern on directory %q: %w", arg.OriginalName, err)
 		}
 
 		dirID, err := ignoredDir.ID().Encode()
 		if err != nil {
-			return nil, fmt.Errorf("failed to apply ignore pattern on directory %q: %w", arg.Name, err)
+			return nil, fmt.Errorf("apply ignore pattern on directory %q: %w", arg.Name, err)
 		}
 
 		return JSON(dirID), nil

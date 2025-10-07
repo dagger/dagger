@@ -24,6 +24,13 @@
         "security": {
           "$ref": "#/$defs/Security",
           "description": "Security allows configuring various security settings for the engine."
+        },
+        "registries": {
+          "additionalProperties": {
+            "$ref": "#/$defs/RegistryConfig"
+          },
+          "type": "object",
+          "description": "Registries configures custom registry mirrors, root CAs, and insecure/HTTP access."
         }
       },
       "additionalProperties": false,
@@ -130,6 +137,36 @@
       },
       "additionalProperties": false,
       "type": "object"
+    },
+    "RegistryConfig": {
+      "properties": {
+        "mirrors": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "http": {
+          "type": "boolean"
+        },
+        "insecure": {
+          "type": "boolean"
+        },
+        "ca": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "mirrors",
+        "http",
+        "insecure",
+        "ca"
+      ]
     },
     "Security": {
       "properties": {

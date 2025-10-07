@@ -114,28 +114,6 @@ defmodule Dagger.Host do
     }
   end
 
-  @deprecated """
-  setSecretFile is superceded by use of the secret API with file:// URIs
-  """
-  @doc """
-  Sets a secret given a user-defined name and the file path on the host, and returns the secret.
-
-  The file is limited to a size of 512000 bytes.
-  """
-  @spec set_secret_file(t(), String.t(), String.t()) :: Dagger.Secret.t()
-  def set_secret_file(%__MODULE__{} = host, name, path) do
-    query_builder =
-      host.query_builder
-      |> QB.select("setSecretFile")
-      |> QB.put_arg("name", name)
-      |> QB.put_arg("path", path)
-
-    %Dagger.Secret{
-      query_builder: query_builder,
-      client: host.client
-    }
-  end
-
   @doc """
   Creates a tunnel that forwards traffic from the host to a service.
   """

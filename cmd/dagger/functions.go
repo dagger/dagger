@@ -45,6 +45,7 @@ const (
 	Service       string = "Service"
 	PortForward   string = "PortForward"
 	CacheVolume   string = "CacheVolume"
+	LLM           string = "LLM"
 	ModuleSource  string = "ModuleSource"
 	Module        string = "Module"
 	Platform      string = "Platform"
@@ -171,7 +172,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 					c.SetContext(idtui.WithPrintTraceLink(c.Context(), true))
 				}
 
-				return withEngine(c.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (rerr error) {
+				return withEngine(c.Context(), initModuleParams(a), func(ctx context.Context, engineClient *client.Client) (rerr error) {
 					fc.c = engineClient
 					fc.q = querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
 
@@ -652,14 +653,17 @@ func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modType
 		return nil
 	}
 
-	// Handle the `export` convenience, i.e, -o,--output flag.
 	switch returnType.Name() {
+	case LLM:
+		return startInteractivePromptMode(ctx, dag, response)
 	case Changeset:
+		// Handle the `export` convenience, i.e, -o,--output flag.
 		if outputPath == "" {
 			return handleChangesetResponse(ctx, dag, response)
 		}
 		fallthrough
 	case Container, Directory, File:
+		// Handle the `export` convenience, i.e, -o,--output flag.
 		if outputPath != "" {
 			respPath, ok := response.(string)
 			if !ok {
@@ -718,18 +722,16 @@ func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response a
 		ctx, span := Tracer().Start(ctx, "analyzing changes")
 		defer telemetry.End(span, func() error { return rerr })
 
-		patch, err := changeset.AsPatch().Contents(ctx)
+		preview, err := idtui.PreviewPatch(ctx, changeset)
 		if err != nil {
-			return fmt.Errorf("get patch contents: %w", err)
+			return err
 		}
-
-		noChanges = patch == ""
+		noChanges = preview == nil
 		if noChanges {
 			slog.Info("no changes to apply")
 			return nil
 		}
-
-		return idtui.SummarizePatch(idtui.NewOutput(&summary), patch, -1)
+		return preview.Summarize(idtui.NewOutput(&summary), 80)
 	})(); err != nil {
 		return err
 	}
@@ -762,6 +764,47 @@ func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response a
 		return err
 	}
 	return nil
+}
+
+// startInteractivePromptMode starts the interactive shell with the returned LLM assigned as $agent
+func startInteractivePromptMode(ctx context.Context, dag *dagger.Client, response any) error {
+	// Extract the LLM ID from the response
+	var llmID string
+	switch v := response.(type) {
+	case string:
+		llmID = v
+	case map[string]any:
+		if id, ok := v["id"].(string); ok {
+			llmID = id
+		} else {
+			return fmt.Errorf("startInteractivePromptMode: no ID found in LLM object: %+v", v)
+		}
+	default:
+		return fmt.Errorf("startInteractivePromptMode: unexpected response type for LLM: %T", v)
+	}
+
+	// Start the shell handler with prompt mode
+	handler := &shellCallHandler{
+		dag:  dag,
+		mode: modePrompt, // Set mode to prompt
+	}
+
+	// Initialize the handler
+	if err := handler.Initialize(ctx); err != nil {
+		return err
+	}
+
+	// Load the LLM from the ID and assign it as $agent
+	llm := dag.LoadLLMFromID(dagger.LLMID(llmID))
+	if _, err := handler.llm(ctx); err != nil { // init llmSession
+		return err
+	}
+	if err := handler.llmSession.updateLLMAndAgentVar(llm); err != nil {
+		return err
+	}
+
+	// Start interactive mode
+	return handler.runInteractive(ctx)
 }
 
 func printID(w io.Writer, response any, typeDef *modTypeDef) error {

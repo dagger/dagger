@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"os"
 	"runtime"
 	"slices"
 	"strconv"
@@ -15,7 +16,9 @@ import (
 	"syscall"
 	"time"
 
+	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
+	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	bkcontainer "github.com/dagger/dagger/internal/buildkit/frontend/gateway/container"
@@ -25,9 +28,11 @@ import (
 	bkmounts "github.com/dagger/dagger/internal/buildkit/solver/llbsolver/mounts"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/worker"
+	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sys/unix"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
@@ -66,6 +71,9 @@ type Service struct {
 
 	// The sockets on the host to reverse tunnel
 	HostSockets []*Socket
+
+	// Refs to release when shutting down the service.
+	Releasers []bkcache.Ref
 }
 
 func (*Service) Type() *ast.Type {
@@ -341,6 +349,16 @@ func (svc *Service) startContainer(
 		}
 	}
 
+	// Services support having refs re-mounted at runtime, so when the service
+	// stops, we need to release them all.
+	cleanup.Add("release late-bound refs", func() error {
+		var errs error
+		for _, ref := range svc.Releasers {
+			errs = errors.Join(errs, ref.Release(context.WithoutCancel(ctx)))
+		}
+		return errs
+	})
+
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -474,9 +492,6 @@ func (svc *Service) startContainer(
 		fmt.Sprintf("exec %s", strings.Join(svc.Args, " ")),
 		// This span continues the original withExec, by linking to it.
 		telemetry.Resume(trace.ContextWithSpanContext(ctx, svc.Creator)),
-		// telemetry.WithServiceID(svcID),
-		// Hide this span so the user can just focus on the withExec.
-		telemetry.Internal(),
 	)
 	defer func() {
 		if rerr != nil {
@@ -529,7 +544,7 @@ func (svc *Service) startContainer(
 	exited := make(chan struct{})
 	runErr := make(chan error)
 	go func() {
-		_, err = exec.Run(ctx, svcID, p.Root, p.Mounts, executor.ProcessInfo{
+		_, err := exec.Run(ctx, svcID, p.Root, p.Mounts, executor.ProcessInfo{
 			Meta:   *meta,
 			Stdin:  stdinReader,
 			Stdout: stdoutWriters,
@@ -584,6 +599,8 @@ func (svc *Service) startContainer(
 		case <-exited:
 			slog.Info("service exited in signal")
 		case signal <- sig:
+			// close stdio, else we hang waiting on i/o piping goroutines
+			sio.Close()
 		}
 		return nil
 	}
@@ -653,12 +670,13 @@ func (svc *Service) startContainer(
 		}
 
 		return &RunningService{
-			Service: svc,
-			Host:    fullHost,
-			Ports:   ctr.Ports,
-			Stop:    stopSvc,
-			Wait:    waitSvc,
-			Exec:    execSvc,
+			Service:     svc,
+			Host:        fullHost,
+			Ports:       ctr.Ports,
+			Stop:        stopSvc,
+			Wait:        waitSvc,
+			Exec:        execSvc,
+			ContainerID: svcID,
 		}, nil
 	case <-exited:
 		if exitErr != nil {
@@ -960,6 +978,172 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 		}
 		return nil, fmt.Errorf("proxy exited before healthcheck")
 	}
+}
+
+// runAndSnapshotChanges mounts the given source directory into the given
+// container at the given target path, runs the given function, and then
+// snapshots any changes made to the directory during the function's execution.
+// It returns an immutable ref to the snapshot of the changes.
+//
+// After the function completes, a mutable copy of the snapshot is remounted
+// into the service to ensure further changes cannot be made to the
+// ImmutableRef. However there is still inherently a window of time where the
+// service may write asynchronously after the immutable ref is created and
+// before the new mutable copy is remounted.
+func (svc *Service) runAndSnapshotChanges(
+	ctx context.Context,
+	containerID string,
+	target string,
+	source *Directory,
+	f func() error,
+) (res dagql.ObjectResult[*Directory], hasChanges bool, rerr error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return res, false, err
+	}
+
+	ref, err := getRefOrEvaluate(ctx, source)
+	if err != nil {
+		return res, false, fmt.Errorf("failed to get ref for source directory: %w", err)
+	}
+
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return res, false, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
+	mutableRef, err := query.BuildkitCache().New(ctx, ref, nil,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("mcp remount"))
+	if err != nil {
+		return res, false, fmt.Errorf("failed to create new ref for source directory: %w", err)
+	}
+	defer mutableRef.Release(ctx)
+
+	err = MountRef(ctx, mutableRef, nil, func(root string) (rerr error) {
+		resolvedDir, err := containerdfs.RootPath(root, source.Dir)
+		if err != nil {
+			return err
+		}
+		if err := mountIntoContainer(ctx, containerID, resolvedDir, target); err != nil {
+			return fmt.Errorf("remount container: %w", err)
+		}
+		return f()
+	})
+	if err != nil {
+		return res, false, err
+	}
+
+	usage, err := bk.Worker.Snapshotter.Usage(ctx, mutableRef.ID())
+	if err != nil {
+		return res, false, fmt.Errorf("failed to check for changes: %w", err)
+	}
+	hasChanges = usage.Inodes > 1 || usage.Size > 0
+	if !hasChanges {
+		slog.Debug("mcp: no changes made to directory")
+		return res, false, nil
+	}
+
+	immutableRef, err := mutableRef.Commit(ctx)
+	if err != nil {
+		return res, false, fmt.Errorf("failed to commit remounted ref for %s: %w", target, err)
+	}
+
+	// release unconditionally here, since we Clone it using the __immutableRef
+	// API call below
+	defer immutableRef.Release(ctx)
+
+	// Create a new mutable ref to leave the service with, to prevent further
+	// changes from mutating the now-immutable ref
+	//
+	// NOTE: there's technically a race here, for sure, but we can least prevent
+	// mutation outside of the bounds of this func
+	abandonedRef, err := query.BuildkitCache().New(ctx, immutableRef, nil,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("mcp remount"))
+	if err != nil {
+		return res, false, fmt.Errorf("failed to create new ref for source directory: %w", err)
+	}
+
+	defer func() {
+		if rerr != nil {
+			// Only release this on error, otherwise leave it to be released when the
+			// service cleans up.
+			abandonedRef.Release(ctx)
+		}
+	}()
+
+	// Mount the mutable ref of their changes over the target path.
+	err = MountRef(ctx, abandonedRef, nil, func(root string) (rerr error) {
+		resolvedDir, err := containerdfs.RootPath(root, source.Dir)
+		if err != nil {
+			return err
+		}
+		return mountIntoContainer(ctx, containerID, resolvedDir, target)
+	})
+	if err != nil {
+		return res, false, fmt.Errorf("failed to remount mutable copy: %w", err)
+	}
+
+	// Keep track of the mutable ref so we can release it when the service stops.
+	svc.Releasers = append(svc.Releasers, abandonedRef)
+
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, false, fmt.Errorf("get dagql server: %w", err)
+	}
+
+	var snapshot dagql.ObjectResult[*Directory]
+	if err := srv.Select(ctx, srv.Root(), &snapshot, dagql.Selector{
+		Field: "__immutableRef",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "ref",
+				Value: dagql.String(immutableRef.ID()),
+			},
+		},
+	}); err != nil {
+		return res, false, err
+	}
+
+	// ensure we actually run the __immutableRef DagOp that does a Clone()
+	if _, err := snapshot.Self().Evaluate(ctx); err != nil {
+		return res, false, fmt.Errorf("failed to evaluate snapshot: %w", err)
+	}
+
+	return snapshot, true, nil
+}
+
+func mountIntoContainer(ctx context.Context, containerID, sourcePath, targetPath string) error {
+	fdMnt, err := unix.OpenTree(unix.AT_FDCWD, sourcePath, unix.OPEN_TREE_CLONE|unix.OPEN_TREE_CLOEXEC)
+	if err != nil {
+		return fmt.Errorf("open tree %s: %w", sourcePath, err)
+	}
+	defer unix.Close(fdMnt)
+	return buildkit.GetGlobalNamespaceWorkerPool().RunInNamespaces(ctx, containerID, []specs.LinuxNamespace{
+		{Type: specs.MountNamespace},
+	}, func() error {
+		// Create target directory if it doesn't exist
+		if _, err := os.Stat(targetPath); os.IsNotExist(err) {
+			if err := os.MkdirAll(targetPath, 0755); err != nil && !os.IsExist(err) {
+				return fmt.Errorf("mkdir %s: %w", targetPath, err)
+			}
+		}
+
+		// Unmount any existing mount at the target path
+		err = unix.Unmount(targetPath, unix.MNT_DETACH)
+		if err != nil && err != unix.EINVAL && err != unix.ENOENT {
+			slog.Warn("unmount failed during container remount", "path", targetPath, "error", err)
+			// Continue anyway, might not be mounted
+		}
+
+		err = unix.MoveMount(fdMnt, "", unix.AT_FDCWD, targetPath, unix.MOVE_MOUNT_F_EMPTY_PATH)
+		if err != nil {
+			return fmt.Errorf("move mount to %s: %w", targetPath, err)
+		}
+
+		return nil
+	})
 }
 
 type ServiceBindings []ServiceBinding

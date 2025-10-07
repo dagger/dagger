@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"path"
 	"strings"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
@@ -109,7 +110,7 @@ func (r *checkRouter) Add(checks ...Check) {
 func (r *checkRouter) Get(targets ...string) []Check {
 	var checks []Check
 	for _, target := range targets {
-		checks = append(checks, r.get(target).all()...)
+		checks = append(checks, r.get(target)...)
 	}
 	return checks
 }
@@ -130,22 +131,25 @@ func (r *checkRouter) add(target string, check Check) {
 	r.children[target].add(rest, check)
 }
 
-func (r *checkRouter) get(target string) *checkRouter {
+func (r *checkRouter) get(target string) []Check {
 	if r == nil {
 		return nil
 	}
 	if target == "" {
-		return r
+		return r.all()
 	}
 
 	target, rest, _ := strings.Cut(target, "/")
 	if r.children == nil {
 		return nil
 	}
-	if _, ok := r.children[target]; !ok {
-		return nil
+	var results []Check
+	for k, v := range r.children {
+		if ok, _ := path.Match(target, k); ok {
+			results = append(results, v.get(rest)...)
+		}
 	}
-	return r.children[target].get(rest)
+	return results
 }
 
 func (r *checkRouter) all() []Check {

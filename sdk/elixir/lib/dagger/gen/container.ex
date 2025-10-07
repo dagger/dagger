@@ -76,42 +76,6 @@ defmodule Dagger.Container do
     }
   end
 
-  @deprecated """
-  Use `Directory.build` instead
-  """
-  @doc """
-  Initializes this container from a Dockerfile build.
-  """
-  @spec build(t(), Dagger.Directory.t(), [
-          {:dockerfile, String.t() | nil},
-          {:target, String.t() | nil},
-          {:build_args, [Dagger.BuildArg.t()]},
-          {:secrets, [Dagger.SecretID.t()]},
-          {:no_init, boolean() | nil}
-        ]) :: Dagger.Container.t()
-  def build(%__MODULE__{} = container, context, optional_args \\ []) do
-    query_builder =
-      container.query_builder
-      |> QB.select("build")
-      |> QB.put_arg("context", Dagger.ID.id!(context))
-      |> QB.maybe_put_arg("dockerfile", optional_args[:dockerfile])
-      |> QB.maybe_put_arg("target", optional_args[:target])
-      |> QB.maybe_put_arg("buildArgs", optional_args[:build_args])
-      |> QB.maybe_put_arg(
-        "secrets",
-        if(optional_args[:secrets],
-          do: Enum.map(optional_args[:secrets], &Dagger.ID.id!/1),
-          else: nil
-        )
-      )
-      |> QB.maybe_put_arg("noInit", optional_args[:no_init])
-
-    %Dagger.Container{
-      query_builder: query_builder,
-      client: container.client
-    }
-  end
-
   @doc """
   The combined buffered standard output and standard error stream of the last executed command
 
@@ -705,12 +669,12 @@ defmodule Dagger.Container do
           {:owner, String.t() | nil},
           {:expand, boolean() | nil}
         ]) :: Dagger.Container.t()
-  def with_directory(%__MODULE__{} = container, path, directory, optional_args \\ []) do
+  def with_directory(%__MODULE__{} = container, path, source, optional_args \\ []) do
     query_builder =
       container.query_builder
       |> QB.select("withDirectory")
       |> QB.put_arg("path", path)
-      |> QB.put_arg("directory", Dagger.ID.id!(directory))
+      |> QB.put_arg("source", Dagger.ID.id!(source))
       |> QB.maybe_put_arg("exclude", optional_args[:exclude])
       |> QB.maybe_put_arg("include", optional_args[:include])
       |> QB.maybe_put_arg("owner", optional_args[:owner])

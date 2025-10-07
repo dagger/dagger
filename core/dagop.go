@@ -341,13 +341,11 @@ func NewContainerDagOp(
 	id *call.ID,
 	argDigest digest.Digest,
 	ctr *Container,
-	extraInputs []llb.State,
 ) (*Container, error) {
 	mounts, inputs, dgsts, _, outputCount, err := getAllContainerMounts(ctx, ctr)
 	if err != nil {
 		return nil, err
 	}
-	inputs = append(inputs, extraInputs...)
 
 	dagop := &ContainerDagOp{
 		ID: id,
@@ -864,21 +862,14 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 				ref, err = getResult(mnt.DirectorySource.Self().LLB, mnt.DirectorySource.Self().Result)
 			case mnt.FileSource != nil:
 				ref, err = getResult(mnt.FileSource.Self().LLB, mnt.FileSource.Self().Result)
+			default:
+				err = fmt.Errorf("mount %d has no source", mountIdx)
 			}
 		}
 		if err != nil {
 			return nil, err
 		}
 		outputs[mount.Output] = ref
-	}
-	for i, output := range outputs {
-		if output == nil {
-			// this *shouldn't* happen, and means we've got somehow got gaps in
-			// the output araray. the mounts are therefore badly constructed,
-			// so we should error out. otherwise we'll get weird panics deep in
-			// buildkit that are near impossible to debug.
-			return nil, fmt.Errorf("internal: output %d was empty", i)
-		}
 	}
 
 	return outputs, nil

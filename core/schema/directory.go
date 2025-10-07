@@ -2,6 +2,7 @@ package schema
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/moby/patternmatcher/ignorefile"
+	"github.com/opencontainers/go-digest"
 )
 
 type directorySchema struct{}
@@ -23,6 +25,9 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("directory", s.directory).
 			Doc(`Creates an empty directory.`),
+		dagql.NodeFunc("__immutableRef", DagOpDirectoryWrapper(srv, s.immutableRef)).
+			Doc(`Returns a directory backed by a pre-existing immutable ref.`).
+			Args(dagql.Arg("ref").Doc("The immutable ref ID.")),
 	}.Install(srv)
 
 	core.ExistsTypes.Install(srv)
@@ -126,10 +131,12 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("path").Doc(`Location of the directory to retrieve. Example: "/src"`),
 			),
 		dagql.Func("withDirectory", s.withDirectory).
+			View(AllVersion).
 			Doc(`Return a snapshot with a directory added`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the written directory (e.g., "/src/").`),
-				dagql.Arg("directory").Doc(`Identifier of the directory to copy.`),
+				dagql.Arg("directory").Doc(`Identifier of the directory to copy.`).View(BeforeVersion("v0.19.0")),
+				dagql.Arg("source").Doc(`Identifier of the directory to copy.`).View(AfterVersion("v0.19.0")),
 				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 				dagql.Arg("owner").Doc(`A user:group to set for the copied directory and its contents.`,
@@ -285,6 +292,27 @@ type directoryPipelineArgs struct {
 	Labels      []dagql.InputObject[PipelineLabel] `default:"[]"`
 }
 
+func (s *directorySchema) immutableRef(ctx context.Context, parent dagql.ObjectResult[*core.Query], args struct {
+	Ref string
+	DagOpInternalArgs
+}) (res dagql.ObjectResult[*core.Directory], _ error) {
+	query := parent.Self()
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	immutable, err := query.BuildkitCache().Get(ctx, args.Ref, nil)
+	if err != nil {
+		return res, fmt.Errorf("failed to get immutable ref %q: %w", args.Ref, err)
+	}
+	dir, err := core.NewScratchDirectory(ctx, query.Platform())
+	if err != nil {
+		return res, fmt.Errorf("failed to create scratch directory: %w", err)
+	}
+	dir.Result = immutable.Clone() // FIXME(vito): is this Clone redundant/harmful?
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+}
+
 func (s *directorySchema) pipeline(ctx context.Context, parent *core.Directory, args directoryPipelineArgs) (*core.Directory, error) {
 	// deprecated and a no-op
 	return parent, nil
@@ -340,9 +368,11 @@ func (s *directorySchema) withNewDirectory(ctx context.Context, parent dagql.Obj
 }
 
 type WithDirectoryArgs struct {
-	Path      string
-	Directory core.DirectoryID
-	Owner     string `default:""`
+	Path  string
+	Owner string `default:""`
+
+	Source    core.DirectoryID
+	Directory core.DirectoryID // legacy, use Source instead
 
 	core.CopyFilter
 }
@@ -353,7 +383,7 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent *core.Direct
 		return nil, err
 	}
 
-	dir, err := args.Directory.Load(ctx, srv)
+	dir, err := cmp.Or(args.Source, args.Directory).Load(ctx, srv)
 	if err != nil {
 		return nil, err
 	}
@@ -990,12 +1020,37 @@ func (s *directorySchema) asGit(
 	ctx context.Context,
 	dir dagql.ObjectResult[*core.Directory],
 	_ struct{},
-) (*core.GitRepository, error) {
-	return &core.GitRepository{
-		Backend: &core.LocalGitRepository{
-			Directory: dir,
-		},
-	}, nil
+) (inst dagql.Result[*core.GitRepository], _ error) {
+	backend := &core.LocalGitRepository{
+		Directory: dir,
+	}
+	repo, err := core.NewGitRepository(ctx, backend)
+	if err != nil {
+		return inst, err
+	}
+
+	dgstInputs := []string{
+		string(repo.Remote.Digest()),
+	}
+
+	shallowFile, err := backend.File(ctx, "shallow")
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return inst, err
+	}
+	if shallowFile != nil {
+		dt, err := shallowFile.Contents(ctx, nil, nil)
+		if err != nil {
+			return inst, err
+		}
+		dgstInputs = append(dgstInputs, string(dt))
+	}
+
+	inst, err = dagql.NewResultForCurrentID(ctx, repo)
+	if err != nil {
+		return inst, err
+	}
+	inst = inst.WithDigest(dagql.HashFrom(dgstInputs...))
+	return inst, nil
 }
 
 type directoryWithSymlinkArgs struct {
@@ -1052,7 +1107,12 @@ func maintainContentHashing[A any](
 		if err != nil {
 			return res, err
 		}
-		if parent.ID().HasCustomDigest() { // in practice right now, a custom digest is always a content hash
+
+		// in practice right now, a custom digest is always a content hash
+		// *unless* it's been manually rewritten using dagql.HashFrom (e.g. in
+		// the case of GitRef.tree - that case is manually rewritten to avoid
+		// accidental collisions later)
+		if parent.ID().HasCustomDigest() && parent.ID().Digest().Algorithm() == digest.SHA256 {
 			query, err := core.CurrentQuery(ctx)
 			if err != nil {
 				return res, err

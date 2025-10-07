@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	daggerVersion      = "v0.18.19"
+	daggerVersion      = "v0.19.0"
 	upstreamRepository = "dagger/dagger"
 	ubuntuVersion      = "24.04"
 	defaultRunner      = "ubuntu-" + ubuntuVersion
@@ -36,13 +36,14 @@ type CI struct {
 	DaggerRunner       *dagger.Gha // +private
 	AltRunner          *dagger.Gha // +private
 	AltRunnerWithCache *dagger.Gha // +private
+	CloudRunner        *dagger.Gha // +private
 }
 
 func New() *CI {
 	workflow := dag.Gha().Workflow("", dagger.GhaWorkflowOpts{
 		PullRequestConcurrency:      "preempt",
 		Permissions:                 []dagger.GhaPermission{dagger.GhaPermissionReadContents},
-		OnPushBranches:              []string{"main"},
+		OnPushBranches:              []string{"main", "releases/**"},
 		OnPullRequestOpened:         true,
 		OnPullRequestReopened:       true,
 		OnPullRequestSynchronize:    true,
@@ -86,6 +87,22 @@ func New() *CI {
 			}),
 			WorkflowDefaults: workflow,
 		}),
+		CloudRunner: dag.Gha(dagger.GhaOpts{
+			JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
+				Runner:         []string{"ubuntu-24.04"},
+				TimeoutMinutes: timeoutMinutes,
+				CloudEngine:    true,
+			}),
+			WorkflowDefaults: dag.Gha().Workflow("", dagger.GhaWorkflowOpts{
+				PullRequestConcurrency:      "preempt",
+				Permissions:                 []dagger.GhaPermission{dagger.GhaPermissionReadContents, dagger.GhaPermissionWriteIdToken},
+				OnPushBranches:              []string{"main"},
+				OnPullRequestOpened:         true,
+				OnPullRequestReopened:       true,
+				OnPullRequestSynchronize:    true,
+				OnPullRequestReadyForReview: true,
+			}),
+		}),
 	}
 
 	return ci.
@@ -106,6 +123,12 @@ func New() *CI {
 			false,
 			"Helm",
 			"check --targets=helm",
+		).
+		withWorkflow(
+			ci.AltRunner,
+			true,
+			"Dev Engine",
+			"check --targets=sdk",
 		).
 		withTestWorkflows(
 			ci.AltRunner,
@@ -132,10 +155,10 @@ func (ci *CI) Generate(
 	// +defaultPath="/"
 	// +ignore=["*", "!.github"]
 	repository *dagger.Directory,
-) *dagger.Directory {
+) *dagger.Changeset {
 	return ci.Workflows.Generate(dagger.GhaGenerateOpts{
 		Directory: repository,
-	})
+	}).Changes(repository)
 }
 
 func (ci *CI) Check(ctx context.Context,
@@ -143,7 +166,7 @@ func (ci *CI) Check(ctx context.Context,
 	// +ignore=["*", "!.github"]
 	repository *dagger.Directory,
 ) error {
-	return dag.Dirdiff().AssertEqual(ctx, repository, ci.Generate(repository), []string{".github/workflows"})
+	return dag.Dirdiff().AssertNoChanges(ctx, ci.Generate(repository))
 }
 
 // Add a workflow with our project-specific defaults
@@ -177,9 +200,7 @@ func (ci *CI) withSDKWorkflows(runner *dagger.Gha, name string, sdks ...string) 
 	for _, sdk := range sdks {
 		command := daggerCommand("check --targets=sdk/" + sdk)
 		w = w.
-			WithJob(runner.Job(sdk+"-dev", command, dagger.GhaJobOpts{
-				DaggerDev: "${{ github.sha }}",
-			}))
+			WithJob(runner.Job(sdk, command))
 	}
 
 	ci.Workflows = ci.Workflows.WithWorkflow(w)
@@ -206,7 +227,7 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 		WithJob(runner.Job("scan-engine", "scan", dagger.GhaJobOpts{
 			Runner: AltBronzeRunnerWithCache(),
 		})).
-		With(splitTests(runner, "testdev-", true, []testSplit{
+		With(splitTests(runner, "test-", false, []testSplit{
 			{"cgroupsv2", []string{"TestProvision", "TestTelemetry"}, &dagger.GhaJobOpts{}},
 			{"modules", []string{"TestModule"}, &dagger.GhaJobOpts{
 				Runner: AltPlatinumRunner(),
@@ -251,7 +272,6 @@ func splitTests(runner *dagger.Gha, name string, dev bool, splits []testSplit) d
 
 			opts := *split.opts
 			opts.TimeoutMinutes = 30
-			opts.UploadLogs = true
 			if dev {
 				opts.DaggerDev = "${{ github.sha }}"
 			}
@@ -312,13 +332,14 @@ func (ci *CI) withEvalsWorkflow() *CI {
 			"core/schema/llm.go",
 			"core/schema/env.go",
 			"modules/evaluator/**",
+			"modules/evals/**",
 		},
 	}).WithJob(gha.Job(
 		"testdev",
-		"evals",
+		"--allow-llm all check",
 		dagger.GhaJobOpts{
-			DaggerDev: "${{ github.sha }}", // testdev, so run against local dagger
-			Runner:    AltGoldRunner(),
+			Module: module("modules/evals"),
+			Runner: AltGoldRunner(),
 			// NOTE: avoid running for forks
 			Condition: fmt.Sprintf(`${{ (github.repository == '%s') && (github.actor != 'dependabot[bot]') }}`, upstreamRepository),
 			Secrets:   []string{"OP_SERVICE_ACCOUNT_TOKEN"},

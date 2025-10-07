@@ -6,26 +6,26 @@ PONG
 Expected stderr:
 
 ▼ connect X.Xs
-├─● starting engine X.Xs
-├─▼ connecting to engine X.Xs
+├╴✔ starting engine X.Xs
+├╴▼ connecting to engine X.Xs
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
-╰─● starting session X.Xs
+╰╴✔ starting session X.Xs
  
 ▼ load module: ./viztest X.Xs
-├─● finding module configuration X.Xs
-├─● initializing module X.Xs
-├─● inspecting module metadata X.Xs
-╰─● loading type definitions X.Xs
+├╴✔ finding module configuration X.Xs
+├╴✔ initializing module X.Xs
+├╴✔ inspecting module metadata X.Xs
+╰╴✔ loading type definitions X.Xs
  
-● parsing command line arguments X.Xs
+✔ parsing command line arguments X.Xs
 
-● viztest: Viztest! X.Xs
+✔ viztest: Viztest! X.Xs
 ▼ .useNoExecService: String! X.Xs
 ┃ PONG
-├─● container: Container! X.Xs
-├─$ .from(address: "redis:7.4.3"): Container! X.Xs CACHED
-├─● .withExposedPort(port: 6379): Container! X.Xs
-├─▼ .asService: Service! X.Xs
+├╴✔ container: Container! X.Xs
+├╴$ .from(address: "redis:7.4.3"): Container! X.Xs CACHED
+├╴✔ .withExposedPort(port: 6379): Container! X.Xs
+├╴▼ .asService: Service! X.Xs ✔ 1
 │ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
 │ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Redis version=X.X.X, bits=64, commit=00000000, modified=0, pid=X, just started
 │ ┃ X:M XX XXX 20XX XX:XX:XX.XXX # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
@@ -34,14 +34,14 @@ Expected stderr:
 │ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Server initialized
 │ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Ready to accept connections tcp
 │
-├─● Container.withServiceBinding(
+├╴✔ Container.withServiceBinding(
 │   ┆ alias: "redis"
 │   ┆ service: Container.asService: Service!
 │   ): Container! X.Xs
-├─● .withEnvVariable(name: "NOW", value: "20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"): Container! X.Xs
-├─▼ .withExec(args: ["redis-cli", "-h", "redis", "ping"]): Container! X.Xs
+├╴✔ .withEnvVariable(name: "NOW", value: "20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"): Container! X.Xs
+├╴▼ .withExec(args: ["redis-cli", "-h", "redis", "ping"]): Container! X.Xs
 │ ┃ PONG
-╰─▼ .stdout: String! X.Xs
+╰╴▼ .stdout: String! X.Xs
   ┃ PONG
 
 

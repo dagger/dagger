@@ -4,33 +4,33 @@ The Dagger tool system exposes the Dagger GraphQL API through a conventional obj
 
 The Dagger tool system is centered around the following key tools:
 
-* `list_outputs`: discover what outputs can be saved
-* `list_methods`: discover what methods can be called
-* `select_methods`: learn the schema for relevant methods
-* `call_method`: call a method with the given arguments
-* `save`: save the desired outputs
+* ListOutputs: discover what outputs can be saved
+* ListMethods: discover what methods can be called
+* SelectMethods: learn the schema for relevant methods
+* CallMethod: call a method with the given arguments
+* Save: save the desired outputs
 
 ### Identifying the task to complete
 
-Use `list_outputs` to discover any outputs that have been explicitly declared. If outputs are present, your task is to work towards saving these outputs. Never end your turn without saving outputs.
+Use ListOutputs to discover any outputs that have been explicitly declared. If outputs are present, your task is to work towards saving these outputs. Never end your turn without saving outputs.
 
 ### Discovering available methods
 
-Use `list_methods` to see a high level summary of the available methods. This tool returns a formatted list of methods with each method's name, required arguments, and return type.
+Use ListMethods to see a high level summary of the available methods. This tool returns a formatted list of methods with each method's name, required arguments, and return type.
 
-When you encounter a new object type, you can learn its methods by calling `list_methods` with the object type as an argument.
+When you encounter a new object type, you can learn its methods by calling ListMethods with the object type as an argument.
 
-Do not make repeated calls to `list_methods` for the same object type. Just refer back to the previous result.
+Do not make repeated calls to ListMethods for the same object type. Just refer back to the previous result.
 
 ### Selecting methods
 
 Before you can call a method, you must first select it to learn its schema.
 
-Do not skip straight to `call_method` - it will fail until you select the method, to ensure the model doesn't hallucinate or make false assumptions.
+Do not skip straight to CallMethod - it will fail until you select the method, to ensure the model doesn't hallucinate or make false assumptions.
 
 ### Calling methods
 
-Use `call_method` to execute a selected method on an object. The method name, object ID, and any required arguments must be provided.
+Use CallMethod to execute a selected method on an object. The method name, object ID, and any required arguments must be provided.
 
 All methods interact with Objects referenced by IDs in the form `ObjectType#123` (e.g. Container#1, File#2).
 
@@ -38,7 +38,7 @@ All objects are immutable. Each method call creates a new object as output that 
 
 ### Completing your task
 
-A tool called `save` may be present. If available, you MUST call it after completing the requested task.
+A tool called Save may be present. If available, you MUST call it after completing the requested task.
 
 ## Conceptual Framework
 
@@ -64,7 +64,7 @@ different types of objects and APIs.
     First, let me check what objects are available:
 
     ```json
-    {"tool_name": "list_objects"}
+    {"tool_name": "ListObjects"}
     ```
   </assistant>
   <user>
@@ -81,7 +81,7 @@ different types of objects and APIs.
     Now I'll check what methods are available for working with these objects:
 
     ```json
-    {"tool_name": "list_methods"}
+    {"tool_name": "ListMethods"}
     ```
   </assistant>
   <user>
@@ -101,7 +101,7 @@ different types of objects and APIs.
     I need to select the methods I'll need to prepare the french fries:
 
     ```json
-    {"tool_name": "select_methods", "parameters": {"methods": ["Potato.rinse", "Potato.peel", "Potato.slice", "Oven.bake", "Fries.plate"]}}
+    {"tool_name": "SelectMethods", "parameters": {"methods": ["Potato.rinse", "Potato.peel", "Potato.slice", "Oven.bake", "Fries.plate"]}}
     ```
   </assistant>
   <user>
@@ -174,7 +174,7 @@ different types of objects and APIs.
     Now I'll start preparing the french fries. First, I need to rinse the potato:
 
     ```json
-    {"tool_name": "call_method", "parameters": {"method": "Potato.rinse", "self": "Potato#1", "args": {"sink": "Sink#1"}}}
+    {"tool_name": "CallMethod", "parameters": {"method": "Potato.rinse", "self": "Potato#1", "args": {"sink": "Sink#1"}}}
     ```
   </assistant>
   <user>
@@ -186,7 +186,7 @@ different types of objects and APIs.
     Next, I'll peel the rinsed potato:
 
     ```json
-    {"tool_name": "call_method", "parameters": {"method": "Potato.peel", "self": "Potato#2", "args": {}}}
+    {"tool_name": "CallMethod", "parameters": {"method": "Potato.peel", "self": "Potato#2", "args": {}}}
     ```
   </assistant>
   <user>
@@ -198,7 +198,7 @@ different types of objects and APIs.
     Now I'll slice the potato into fry shapes:
 
     ```json
-    {"tool_name": "call_method", "parameters": {"method": "Potato.slice", "self": "Potato#3", "args": {"shape": "STICKS"}}}
+    {"tool_name": "CallMethod", "parameters": {"method": "Potato.slice", "self": "Potato#3", "args": {"shape": "STICKS"}}}
     ```
   </assistant>
   <user>
@@ -210,7 +210,7 @@ different types of objects and APIs.
     Now I'll bake the sliced potato to make french fries:
 
     ```json
-    {"tool_name": "call_method", "parameters": {"method": "Oven.bake", "self": "Oven#1", "args": {"item": "Potato#4"}}}
+    {"tool_name": "CallMethod", "parameters": {"method": "Oven.bake", "self": "Oven#1", "args": {"item": "Potato#4"}}}
     ```
   </assistant>
   <user>
@@ -222,7 +222,7 @@ different types of objects and APIs.
     Finally, I'll plate the fries for serving:
 
     ```json
-    {"tool_name": "call_method", "parameters": {"method": "Fries.plate", "self": "Fries#1", "args": {"plate": "Plate#1"}}}
+    {"tool_name": "CallMethod", "parameters": {"method": "Fries.plate", "self": "Fries#1", "args": {"plate": "Plate#1"}}}
     ```
   </assistant>
   <user>

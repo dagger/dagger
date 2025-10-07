@@ -35,7 +35,7 @@
     "node-color-log": "^13.0.3",
     "node-fetch": "^3.3.2",
     "reflect-metadata": "^0.2.2",
-    "tar": "^7.4.2",
+    "tar": "^7.5.1",
     "typescript": "^5.9.2"
   },
   "scripts": {
@@ -55,19 +55,19 @@
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
     "@types/adm-zip": "^0.5.7",
     "@types/mocha": "^10.0.10",
-    "@types/node": "~24.5.1",
+    "@types/node": "~24.5.2",
     "@types/tar": "^6.1.13",
-    "@typescript-eslint/eslint-plugin": "^8.44.0",
-    "@typescript-eslint/parser": "^8.44.0",
-    "eslint": "^9.35.0",
+    "@typescript-eslint/eslint-plugin": "^8.44.1",
+    "@typescript-eslint/parser": "^8.44.1",
+    "eslint": "^9.36.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
     "mocha": "^11.7.2",
     "prettier": "^3.6.2",
-    "rollup": "^4.50.2",
+    "rollup": "^4.52.3",
     "rollup-plugin-dts": "^6.2.3",
     "ts-node": "^10.9.2",
-    "tsx": "^4.20.5",
-    "typescript-eslint": "^8.44.0"
+    "tsx": "^4.20.6",
+    "typescript-eslint": "^8.44.1"
   }
 }
