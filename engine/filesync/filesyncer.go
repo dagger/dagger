@@ -1,4 +1,4 @@
-package local
+package filesync
 
 import (
 	"context"
@@ -19,7 +19,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/moby/locker"
 	fstypes "github.com/tonistiigi/fsutil/types"
-	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine"
@@ -27,27 +26,26 @@ import (
 	"github.com/dagger/dagger/engine/client/pathutil"
 )
 
-type LocalSource struct {
+type FileSyncer struct {
 	cacheManager bkcache.Accessor
 	refs         map[string]*filesyncCacheRef
 	mu           sync.RWMutex
 	perClientMu  *locker.Locker
 }
 
-type LocalSourceOpt struct {
+type FileSyncerOpt struct {
 	CacheAccessor bkcache.Accessor
 }
 
-// TODO: Write a dummy local source to verify that we never use llb.Local anymore
-func NewLocalSource(opt LocalSourceOpt) *LocalSource {
-	return &LocalSource{
+func NewFileSyncer(opt FileSyncerOpt) *FileSyncer {
+	return &FileSyncer{
 		cacheManager: opt.CacheAccessor,
 		refs:         make(map[string]*filesyncCacheRef),
 		perClientMu:  locker.New(),
 	}
 }
 
-type SnapshotSyncOpts struct {
+type SnapshotOpts struct {
 	IncludePatterns []string
 	ExcludePatterns []string
 	GitIgnore       bool
@@ -59,10 +57,10 @@ type SnapshotSyncOpts struct {
 	RelativePath string
 }
 
-func (ls *LocalSource) Snapshot(ctx context.Context, session session.Group, sm *session.Manager, clientPath string, opts SnapshotSyncOpts) (bkcache.ImmutableRef, error) {
+func (ls *FileSyncer) Snapshot(ctx context.Context, session session.Group, sm *session.Manager, clientPath string, opts SnapshotOpts) (bkcache.ImmutableRef, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get requester session ID: %w", err)
+		return nil, err
 	}
 
 	if clientMetadata.ClientID == "" {
@@ -79,7 +77,7 @@ func (ls *LocalSource) Snapshot(ctx context.Context, session session.Group, sm *
 	}
 
 	// If relPath is ".", we want to use the root path so we can unset it
-	// because `"."` leads to unnecessary complications inside snapshot.
+	// See explanations: https://github.com/dagger/dagger/pull/10995#discussion_r2394255732
 	if opts.RelativePath == "." {
 		opts.RelativePath = ""
 	}
@@ -92,8 +90,8 @@ func (ls *LocalSource) Snapshot(ctx context.Context, session session.Group, sm *
 	return ref, nil
 }
 
-func (ls *LocalSource) snapshot(ctx context.Context, session session.Group, caller session.Caller, clientPath string, opts SnapshotSyncOpts) (_ bkcache.ImmutableRef, rerr error) {
-	ctx, span := newSpan(ctx, "filesync")
+func (ls *FileSyncer) snapshot(ctx context.Context, session session.Group, caller session.Caller, clientPath string, opts SnapshotOpts) (_ bkcache.ImmutableRef, rerr error) {
+	ctx, span := tracer(ctx).Start(ctx, "filesync")
 	defer telemetry.End(span, func() error { return rerr })
 
 	// We need the full abs path since the cache ref we sync into holds every dir from this client's root.
@@ -141,14 +139,14 @@ func (ls *LocalSource) snapshot(ctx context.Context, session session.Group, call
 	return finalRef, nil
 }
 
-func (ls *LocalSource) sync(
+func (ls *FileSyncer) sync(
 	ctx context.Context,
 	ref *filesyncCacheRef,
 	session session.Group,
 	caller session.Caller,
 	drive string,
 	clientPath string,
-	opts SnapshotSyncOpts,
+	opts SnapshotOpts,
 ) (_ bkcache.ImmutableRef, rerr error) {
 	// first ensure that all the parent dirs under the client's rootfs (above the given clientPath) are synced in correctly
 	if err := ls.syncParentDirs(ctx, ref, caller, clientPath, drive, opts); err != nil {
@@ -170,13 +168,13 @@ func (ls *LocalSource) sync(
 	return local.Sync(ctx, remote, ls.cacheManager, session, false)
 }
 
-func (ls *LocalSource) syncParentDirs(
+func (ls *FileSyncer) syncParentDirs(
 	ctx context.Context,
 	ref *filesyncCacheRef,
 	caller session.Caller,
 	clientPath string,
 	drive string,
-	opts SnapshotSyncOpts,
+	opts SnapshotOpts,
 ) (rerr error) {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer func() {
@@ -227,7 +225,7 @@ type filesyncCacheRef struct {
 	usageCount int
 }
 
-func (ls *LocalSource) getRef(
+func (ls *FileSyncer) getRef(
 	ctx context.Context,
 	session session.Group,
 	drive string, // only set for windows clients, otherwise ""
@@ -337,15 +335,6 @@ func (ls *LocalSource) getRef(
 		}
 		return rerr
 	}, nil
-}
-
-func curTracer(ctx context.Context) trace.Tracer {
-	return trace.SpanFromContext(ctx).TracerProvider().Tracer("dagger.io/filesync")
-}
-
-func newSpan(ctx context.Context, name string) (context.Context, trace.Span) {
-	tr := curTracer(ctx)
-	return tr.Start(ctx, name)
 }
 
 const (

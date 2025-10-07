@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
-	fscopy "github.com/dagger/dagger/engine/sources/local/copy"
+	fscopy "github.com/dagger/dagger/engine/filesync/copy"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"

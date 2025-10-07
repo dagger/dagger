@@ -26,6 +26,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/config"
+	"github.com/dagger/dagger/engine/filesync"
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
 	apitypes "github.com/dagger/dagger/internal/buildkit/api/types"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
@@ -79,7 +80,6 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/sources/blob"
-	"github.com/dagger/dagger/engine/sources/local"
 )
 
 type Server struct {
@@ -133,10 +133,10 @@ type Server struct {
 	cacheImporters map[string]remotecache.ResolveCacheImporterFunc
 
 	//
-	// worker custom source
+	// worker file syncer
 	//
 
-	workerLocalSource *local.LocalSource
+	workerFileSyncer *filesync.FileSyncer
 
 	//
 	// worker/executor-specific config+state
@@ -449,7 +449,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	logrus.Infof("found worker %q, labels=%v, platforms=%v", workerID, baseLabels, FormatPlatforms(srv.enabledPlatforms))
 	archutil.WarnIfUnsupported(srv.enabledPlatforms)
 
-	srv.workerLocalSource = local.NewLocalSource(local.LocalSourceOpt{
+	srv.workerFileSyncer = filesync.NewFileSyncer(filesync.FileSyncerOpt{
 		CacheAccessor: srv.workerCache,
 	})
 
@@ -599,8 +599,8 @@ func (srv *Server) BuildkitSession() *bksession.Manager {
 	return srv.bkSessionManager
 }
 
-func (srv *Server) LocalSource() *local.LocalSource {
-	return srv.workerLocalSource
+func (srv *Server) FileSyncer() *filesync.FileSyncer {
+	return srv.workerFileSyncer
 }
 
 func (srv *Server) Info(context.Context, *controlapi.InfoRequest) (*controlapi.InfoResponse, error) {

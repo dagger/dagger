@@ -1,4 +1,4 @@
-package local
+package filesync
 
 import (
 	"context"
@@ -10,10 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/containerd/continuity/sysx"
-	fscopy "github.com/dagger/dagger/engine/sources/local/copy"
+	fscopy "github.com/dagger/dagger/engine/filesync/copy"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkcontenthash "github.com/dagger/dagger/internal/buildkit/cache/contenthash"
 	"github.com/dagger/dagger/internal/buildkit/session"
@@ -347,7 +346,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 		return nil, nil
 	}
 
-	ctx, copySpan := newSpan(ctx, "copy")
+	ctx, copySpan := tracer(ctx).Start(ctx, "copy")
 	defer telemetry.End(copySpan, func() error { return rerr })
 
 	// If we didn't find any files/dir in the given relative path, we can early return an error.
@@ -759,51 +758,6 @@ func (local *localFS) WriteFile(ctx context.Context, expectedChangeKind ChangeKi
 
 func (local *localFS) Walk(ctx context.Context, path string, walkFn fs.WalkDirFunc) error {
 	return local.filterFS.Walk(ctx, path, walkFn)
-}
-
-type StatInfo struct {
-	*types.Stat
-}
-
-func (s *StatInfo) Name() string {
-	return filepath.Base(s.Stat.Path)
-}
-
-func (s *StatInfo) Size() int64 {
-	return s.Stat.Size_
-}
-
-func (s *StatInfo) Mode() os.FileMode {
-	return os.FileMode(s.Stat.Mode)
-}
-
-func (s *StatInfo) ModTime() time.Time {
-	return time.Unix(s.Stat.ModTime/1e9, s.Stat.ModTime%1e9)
-}
-
-func (s *StatInfo) IsDir() bool {
-	return s.Mode().IsDir()
-}
-
-func (s *StatInfo) Sys() any {
-	return s.Stat
-}
-
-func (s *StatInfo) Type() fs.FileMode {
-	return fs.FileMode(s.Stat.Mode)
-}
-
-func (s *StatInfo) Info() (fs.FileInfo, error) {
-	return s, nil
-}
-
-type HashedStatInfo struct {
-	StatInfo
-	dgst digest.Digest
-}
-
-func (s *HashedStatInfo) Digest() digest.Digest {
-	return s.dgst
 }
 
 func rewriteMetadata(p string, upperStat *types.Stat) error {

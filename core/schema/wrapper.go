@@ -131,12 +131,33 @@ func DagOpDirectoryWrapper[T dagql.Typed, A DagOpInternalArgsIface](
 			return inst, err
 		}
 
-		return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+		dirResult, err := dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+		if err != nil {
+			return inst, err
+		}
+
+		o := getOpts(opts...)
+		if !o.hashContentDir {
+			return dirResult, nil
+		}
+
+		query, err := core.CurrentQuery(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get current query: %w", err)
+		}
+
+		bk, err := query.Buildkit(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get buildkit client: %w", err)
+		}
+
+		return core.MakeDirectoryContentHashed(ctx, bk, dirResult)
 	}
 }
 
 type DagOpOpts[T dagql.Typed, A any] struct {
-	pfn PathFunc[T, A]
+	pfn            PathFunc[T, A]
+	hashContentDir bool
 
 	FSDagOpInternalArgs
 }
@@ -154,6 +175,12 @@ func WithStaticPath[T dagql.Typed, A any](pathVal string) DagOpOptsFn[T, A] {
 		o.pfn = func(_ context.Context, _ T, _ A) (string, error) {
 			return pathVal, nil
 		}
+	}
+}
+
+func WithHashContentDir[T dagql.Typed, A any]() DagOpOptsFn[T, A] {
+	return func(o *DagOpOpts[T, A]) {
+		o.hashContentDir = true
 	}
 }
 
