@@ -28,7 +28,7 @@ jobs:
               uses: dagger/dagger-for-github@v8.2.0
               with:
                 call: --github-token=env:RELEASE_DAGGER_CI_TOKEN deploy-preview-with-dagger-main --target ${{ github.event.number }} --github-assignee $GITHUB_ACTOR
-                cloud-token: oidc
+                cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: modules/daggerverse
                 version: v0.19.0
               env:
