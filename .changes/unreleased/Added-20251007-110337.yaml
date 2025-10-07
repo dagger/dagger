@@ -1,0 +1,39 @@
+kind: Added
+time: 2025-10-07T11:03:37.930481-07:00
+body: |
+  User defaults: persist any dagger function argument to .env
+
+  This feature allows user to save arguments to their dagger functions to a local file, instead of re-typing them at every call. This way, the sandboxing of functions is preserved without sacrificing end-user convenience.
+
+  To use this feature, simply add variables to a local `.env` file reachable from your working directory. The format of the variables should be as follows:
+
+  ## Variable names
+
+  - If module `mymod` has a constructor argument `foo`: use variable name `MYMOD_FOO`
+  - If module `mymod` has a type `foo`, with a function `bar`, with an argument `baz`: use `MYMOD_FOO_BAR_BAZ`
+
+  As a convenience, if your `.env` is *inside the module*, you may omit the module name:
+
+  - If the current module has a constructor argument `foo`: use variable name `FOO`
+  - If the current module has a type `foo`, with a function `bar`, with an argument `baz`: use `FOO_BAR_BAZ`
+
+  In all cases, variable names are case-insensitive.
+
+  ## Variable values
+
+  Any value which can be passed as a CLI flag, can also be used as a variable. The value will be interpreted the usual way, based on the argument's type. This includes:
+
+  - Literal scalar values. Example: `INSTANCES=42` or `username=admin`
+  - JSON-encoded arrays. Example: `regions=["us", "eu", "jp"]`
+  - Local directories. Example: `MYAPP_SOURCE=~/dev/myapp/src`
+  - Remote git directories. Example: `DOCS=https://github.com/dagger/dagger#v0.19.0:docs`
+  - Unix sockets. Example: `dockerSocket=unix:///var/run/docker.sock`
+  - References to secrets in env variables or files. Example: `githubToken=env://PROD_TOKEN` or `sshKey=file://~/.ssh/id_dsa`
+  - References to secrets in password managers or vaults. Example: `password=op://my/vault/password/credential`
+  - References to container images. Example: `base=index.docker.io/alpine:latest`
+  - References to TCP services running on the host. Example: `TEST_DB=tcp://localhost:5432`
+
+  Note: one common issue with env files, is that they often contain secret values, and can be accidentally leaked via source control. Dagger helps avoid this issue, by requiring secrets to be stored as *references*. Even if your env file is accidentally leaked, it will only contain references, not actual secret values.
+custom:
+  Author: shykes
+  PR: "11034"
