@@ -92,6 +92,9 @@ type Server interface {
 	// The services for the current client's session
 	Services(context.Context) (*Services, error)
 
+	// MCP clients connected for the current client's session
+	MCPClients(context.Context) (*MCPClients, error)
+
 	// The default platform for the engine as a whole
 	Platform() Platform
 

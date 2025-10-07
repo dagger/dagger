@@ -72,6 +72,13 @@ func (id *ID) Receiver() *ID {
 	return id.receiver
 }
 
+func (id *ID) String() string {
+	if id == nil {
+		return "<nil>"
+	}
+	return id.Call().String()
+}
+
 // The root Call of the ID, with its Digest set. Exposed so that Calls can be
 // streamed over the wire one-by-one, rather than emitting full DAGs, which
 // would involve a ton of duplication.

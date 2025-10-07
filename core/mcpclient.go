@@ -6,33 +6,78 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-type ServiceMCPTransport struct {
+type MCPClients struct {
+	services *Services
+	clients  map[string]*mcp.ClientSession
+	clientsL *sync.Mutex
+}
+
+func NewMCPClients() *MCPClients {
+	return &MCPClients{
+		services: NewServices(),
+		clients:  make(map[string]*mcp.ClientSession),
+		clientsL: &sync.Mutex{},
+	}
+}
+
+func (mcps *MCPClients) Dial(ctx context.Context, cfg *MCPServerConfig) (_ *mcp.ClientSession, rerr error) {
+	mcps.clientsL.Lock()
+	defer mcps.clientsL.Unlock()
+	var containerID string
+	running, err := mcps.services.Get(ctx, cfg.Service.ID(), true)
+	if err != nil {
+		// not started yet; start + connect
+		ctx, span := Tracer(ctx).Start(ctx, "start mcp server: "+cfg.Name, telemetry.Reveal())
+		defer telemetry.End(span, func() error { return rerr })
+		sess, err := mcp.NewClient(&mcp.Implementation{
+			Title:   "Dagger",
+			Version: engine.Version,
+		}, nil).Connect(ctx, &ServiceMCPTransport{
+			Service:  cfg.Service,
+			Services: mcps.services,
+		}, nil)
+		if err != nil {
+			return nil, err
+		}
+		containerID = sess.ID()
+		mcps.clients[containerID] = sess
+	} else {
+		containerID = running.ContainerID
+	}
+	return mcps.clients[containerID], nil
+}
+
+// MCPServerConfig represents configuration for an external MCP server
+type MCPServerConfig struct {
+	// Name of the MCP server
+	Name string
+
+	// Command to run the MCP server
 	Service dagql.ObjectResult[*Service]
+}
+
+type ServiceMCPTransport struct {
+	Services *Services
+	Service  dagql.ObjectResult[*Service]
 }
 
 var _ mcp.Transport = (*ServiceMCPTransport)(nil)
 
 func (t *ServiceMCPTransport) Connect(ctx context.Context) (mcp.Connection, error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current query: %w", err)
-	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
-
 	stdinR, stdinW := io.Pipe()
 	stdoutR, stdoutW := io.Pipe()
-	svc, err := svcs.StartWithIO(
+	svc, err := t.Services.StartWithIO(
 		ctx,
 		t.Service.ID(),
 		t.Service.Self(),

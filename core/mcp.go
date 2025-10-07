@@ -88,37 +88,15 @@ type MCP struct {
 	// History of spans that have logs that we can read
 	loggedSpans []trace.SpanID
 	// Saved objects by ID (Foo#123)
-	objsByID map[string]contextualBinding
+	objsByID map[string]*call.ID
 	// Auto incrementing number per-type
 	typeCounts map[string]int
 	// The LLM-friendly ID ("Container#123") for each object
 	idByHash map[digest.Digest]string
 	// Configured MCP servers.
 	mcpServers map[string]*MCPServerConfig
-	// Persistent MCP sessions.
-	mcpSessions map[string]*mcp.ClientSession
 	// Synchronize any concurrent tool call results.
 	mu *sync.Mutex
-}
-
-// MCPServerConfig represents configuration for an external MCP server
-type MCPServerConfig struct {
-	// Name of the MCP server
-	Name string
-
-	// Command to run the MCP server
-	Service dagql.ObjectResult[*Service]
-}
-
-func (srv *MCPServerConfig) Dial(ctx context.Context) (_ *mcp.ClientSession, rerr error) {
-	ctx, span := Tracer(ctx).Start(ctx, "start mcp server: "+srv.Name, telemetry.Reveal())
-	defer telemetry.End(span, func() error { return rerr })
-	return mcp.NewClient(&mcp.Implementation{
-		Title:   "Dagger",
-		Version: engine.Version,
-	}, nil).Connect(ctx, &ServiceMCPTransport{
-		Service: srv.Service,
-	}, nil)
 }
 
 type contextualBinding func(context.Context, dagql.ObjectResult[*Env]) (*Binding, error)
@@ -132,11 +110,10 @@ func newMCP(env dagql.ObjectResult[*Env]) *MCP {
 		env:             env,
 		selectedMethods: map[string]bool{},
 		blockedMethods:  blocked,
-		objsByID:        map[string]contextualBinding{},
+		objsByID:        map[string]*call.ID{},
 		typeCounts:      map[string]int{},
 		idByHash:        map[digest.Digest]string{},
 		mcpServers:      make(map[string]*MCPServerConfig),
-		mcpSessions:     map[string]*mcp.ClientSession{},
 		mu:              &sync.Mutex{},
 	}
 }
@@ -194,7 +171,6 @@ func (m *MCP) Clone() *MCP {
 	cp.typeCounts = maps.Clone(cp.typeCounts)
 	cp.idByHash = maps.Clone(cp.idByHash)
 	cp.mcpServers = maps.Clone(cp.mcpServers)
-	cp.mcpSessions = maps.Clone(cp.mcpSessions)
 	cp.returned = false
 	cp.mu = &sync.Mutex{}
 	return &cp
@@ -204,12 +180,21 @@ func (m *MCP) Clone() *MCP {
 func (m *MCP) Input(ctx context.Context, key string) (*Binding, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if val, exists := m.objsByID[key]; exists {
-		bnd, err := val(ctx, m.env)
+	if id, exists := m.objsByID[key]; exists {
+		srv, err := CurrentDagqlServer(ctx)
 		if err != nil {
 			return nil, false, err
 		}
-		return bnd, true, nil
+		res, err := srv.Load(EnvIDToContext(ctx, m.env.ID()), id)
+		if err != nil {
+			return nil, false, err
+		}
+		return &Binding{
+			Key:          key,
+			Value:        res,
+			Description:  m.describeLocked(id),
+			ExpectedType: res.Type().Name(),
+		}, true, nil
 	}
 	bnd, found := m.env.Self().Input(key)
 	return bnd, found, nil
@@ -285,33 +270,20 @@ func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
 	return allTools.Order, nil
 }
 
-func (m *MCP) syncMCPSessions(ctx context.Context) error {
-	stop := maps.Clone(m.mcpSessions)
-	for _, mcpSrv := range m.mcpServers {
-		delete(stop, mcpSrv.Name)
-		if _, ok := m.mcpSessions[mcpSrv.Name]; ok {
-			continue
-		}
-		sess, err := mcpSrv.Dial(ctx)
-		if err != nil {
-			return fmt.Errorf("dial mcp %q: %w", mcpSrv.Name, err)
-		}
-		m.mcpSessions[mcpSrv.Name] = sess
-	}
-	for name, srv := range stop {
-		if err := srv.Close(); err != nil {
-			return err
-		}
-		delete(m.mcpSessions, name)
-	}
-	return nil
-}
-
 func (m *MCP) loadMCPTools(ctx context.Context, allTools *LLMToolSet) error {
-	if err := m.syncMCPSessions(ctx); err != nil {
-		return err
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return fmt.Errorf("get current query: %w", err)
 	}
-	for serverName, sess := range m.mcpSessions {
+	mcps, err := query.MCPClients(ctx)
+	if err != nil {
+		return fmt.Errorf("get mcp clients: %w", err)
+	}
+	for serverName, cfg := range m.mcpServers {
+		sess, err := mcps.Dial(ctx, cfg)
+		if err != nil {
+			return fmt.Errorf("dial mcp server %q: %w", serverName, err)
+		}
 		for tool, err := range sess.Tools(ctx, nil) {
 			if err != nil {
 				return err
@@ -733,23 +705,73 @@ func (m *MCP) call(ctx context.Context,
 
 	if autoConstruct != nil {
 		if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](val); ok {
-			argsPayload, err := json.Marshal(args)
+			unpinned, err := dagql.VisitID(obj.ID(), func(id *call.ID) (*call.ID, error) {
+				var recvType string
+				if id.Receiver() == nil {
+					recvType = "Query"
+				} else {
+					recvType = id.Receiver().Type().NamedType()
+				}
+				objType, ok := srv.ObjectType(recvType)
+				if !ok {
+					return nil, fmt.Errorf("unknown receiver type %q", recvType)
+				}
+				fieldSpec, ok := objType.FieldSpec(id.Field(), id.View())
+				if !ok {
+					return nil, fmt.Errorf("unknown field %q on type %q", id.Field(), recvType)
+				}
+				inputSpecs := fieldSpec.Args.Inputs(srv.View)
+				var updatedArgs []*call.Argument
+				var updated bool
+				for _, arg := range id.Args() {
+					var isContextual bool
+					for _, spec := range inputSpecs {
+						if spec.Name == arg.Name() {
+							for _, dir := range spec.Directives {
+								if dir.Name == dagql.DefaultPathDirective.Name {
+									isContextual = true
+								}
+							}
+							break
+						}
+					}
+					if isContextual {
+						// simply drop the arg and let it be filled in via Env in LoadContextDir
+						updated = true
+					} else {
+						updatedArgs = append(updatedArgs, arg)
+					}
+				}
+				if !updated {
+					return nil, nil
+				}
+				return id.Receiver().Append(
+					id.Type().ToAST(),
+					id.Field(),
+					id.View(),
+					id.Module(),
+					int(id.Nth()),
+					"",
+					updatedArgs...,
+				), nil
+			})
 			if err != nil {
 				return "", err
 			}
+			slog.Warn("!!! UNPINNED", "pinned", obj.ID(), "unpinned", unpinned, "digest", unpinned.Digest())
 
-			hash := dagql.HashFrom(
-				target.ObjectType().TypeName(),
-				fieldDef.Name,
-				string(argsPayload),
-			)
+			// argsPayload, err := json.Marshal(args)
+			// if err != nil {
+			// 	return "", err
+			// }
 
-			return m.toolObjectResponse(ctx, srv, obj, m.IngestContextual(
-				hash,
-				fmt.Sprintf("%s.%s %s", target.ObjectType().TypeName(), fieldDef.Name, string(argsPayload)),
-				obj.ObjectType().TypeName(),
-				doSelect,
-			))
+			// hash := dagql.HashFrom(
+			// 	target.ObjectType().TypeName(),
+			// 	fieldDef.Name,
+			// 	string(argsPayload),
+			// )
+
+			return m.toolObjectResponse(ctx, srv, obj, m.IngestBy(unpinned, "", unpinned.Digest()))
 		}
 	}
 
@@ -1127,27 +1149,34 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 
 // callBatchMCPServer executes a batch of calls for a single MCP server with proper workspace syncing
 func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, serverName string) []*LLMMessage {
-	mcpSrv, ok := m.mcpServers[serverName]
+	mcpCfg, ok := m.mcpServers[serverName]
 	if !ok {
 		// Fall back to individual calls if server not found
 		return m.callBatchRegular(ctx, tools, toolCalls)
 	}
 
-	sess, ok := m.mcpSessions[serverName]
-	if !ok {
-		// Fall back to individual calls if session not found
-		return m.callBatchRegular(ctx, tools, toolCalls)
-	}
-
-	ctr := mcpSrv.Service.Self().Container
+	ctr := mcpCfg.Service.Self().Container
 	if ctr.Config.WorkingDir == "" || ctr.Config.WorkingDir == "/" {
 		// No workspace syncing needed - execute normally
 		return m.callBatchRegular(ctx, tools, toolCalls)
 	}
 
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return m.callBatchRegular(ctx, tools, toolCalls)
+	}
+	mcps, err := query.MCPClients(ctx)
+	if err != nil {
+		return m.callBatchRegular(ctx, tools, toolCalls)
+	}
+	sess, err := mcps.Dial(ctx, mcpCfg)
+	if err != nil {
+		return m.callBatchRegular(ctx, tools, toolCalls)
+	}
+
 	// Use runAndSnapshotChanges to sync workspace and execute all tool calls atomically
 	var results []*LLMMessage
-	snapshot, hasChanges, err := mcpSrv.Service.Self().runAndSnapshotChanges(
+	snapshot, hasChanges, err := mcpCfg.Service.Self().runAndSnapshotChanges(
 		ctx,
 		sess.ID(),
 		ctr.Config.WorkingDir,
@@ -2226,18 +2255,14 @@ func (m *MCP) Ingest(obj dagql.AnyObjectResult, desc string) string {
 		return ""
 	}
 	hash := id.Digest()
-	return m.IngestBy(obj, desc, hash)
+	return m.IngestBy(id, desc, hash)
 }
 
 // IngestBy adds an object to the MCP's object registry. This mutates the MCP's
 // internal maps (objsByID, idByHash, typeCounts), but since the MCP is cloned
 // at the start of each Step(), these mutations are isolated and propagated when
 // the stepped LLM is returned.
-func (m *MCP) IngestBy(obj dagql.AnyObjectResult, desc string, hash digest.Digest) string {
-	id := obj.ID()
-	if id == nil {
-		return ""
-	}
+func (m *MCP) IngestBy(id *call.ID, desc string, hash digest.Digest) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	typeName := id.Type().NamedType()
@@ -2249,43 +2274,7 @@ func (m *MCP) IngestBy(obj dagql.AnyObjectResult, desc string, hash digest.Diges
 			desc = m.describeLocked(id)
 		}
 		m.idByHash[hash] = llmID
-		m.objsByID[llmID] = func(context.Context, dagql.ObjectResult[*Env]) (*Binding, error) {
-			return &Binding{
-				Key:          llmID,
-				Value:        obj,
-				Description:  desc,
-				ExpectedType: obj.ObjectType().TypeName(),
-			}, nil
-		}
-	}
-	return llmID
-}
-
-func (m *MCP) IngestContextual(
-	hash digest.Digest,
-	desc string,
-	typeName string,
-	create func(ctx context.Context, env dagql.ObjectResult[*Env]) (dagql.AnyResult, error),
-) string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	llmID, ok := m.idByHash[hash]
-	if !ok {
-		m.typeCounts[typeName]++
-		llmID = fmt.Sprintf("%s#%d", typeName, m.typeCounts[typeName])
-		m.idByHash[hash] = llmID
-		m.objsByID[llmID] = func(ctx context.Context, env dagql.ObjectResult[*Env]) (*Binding, error) {
-			obj, err := create(ctx, env)
-			if err != nil {
-				return nil, err
-			}
-			return &Binding{
-				Key:          llmID,
-				Value:        obj,
-				Description:  desc,
-				ExpectedType: typeName,
-			}, nil
-		}
+		m.objsByID[llmID] = id
 	}
 	return llmID
 }
