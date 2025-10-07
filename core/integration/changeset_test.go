@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"dagger.io/dagger"
@@ -474,7 +473,8 @@ func New() *Test {
 	return &Test{
 		Dir: dag.Directory().
 			WithNewFile("foo.txt", "foo\nbar\nbaz").
-			WithNewFile("bar.txt", "hey"),
+			WithNewFile("bar.txt", "hey").
+			WithNewDirectory("emptydir"),
 	}
 }
 
@@ -484,9 +484,10 @@ type Test struct {
 
 func (t *Test) Update() *dagger.Changeset {
 	return t.Dir.
-	  WithNewFile("baz.txt", "im new here").
-		WithoutFile("bar.txt").
 		WithNewFile("foo.txt", "foo\nbaz").
+		WithoutFile("bar.txt").
+		WithNewFile("baz.txt", "im new here").
+		WithoutDirectory("emptydir").
 		Changes(t.Dir)
 }
 
@@ -502,14 +503,14 @@ func (t *Test) NoChanges() *dagger.Changeset {
 
 		entries, err := modGen.Directory("./outdir").Entries(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "bar.txt\nfoo.txt", strings.Join(entries, "\n"))
+		require.Equal(t, []string{"bar.txt", "emptydir/", "foo.txt"}, entries)
 
 		modGen, err = modGen.With(daggerCall("update", "export", "--path", "./outdir")).Sync(ctx)
 		require.NoError(t, err)
 
 		entries, err = modGen.Directory("./outdir").Entries(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "baz.txt\nfoo.txt", strings.Join(entries, "\n"))
+		require.Equal(t, []string{"baz.txt", "foo.txt"}, entries)
 
 		contents, err := modGen.File("./outdir/foo.txt").Contents(ctx)
 		require.NoError(t, err)
@@ -525,14 +526,14 @@ func (t *Test) NoChanges() *dagger.Changeset {
 
 		entries, err := modGen.Directory("./outdir").Entries(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "bar.txt\nfoo.txt", strings.Join(entries, "\n"))
+		require.Equal(t, []string{"bar.txt", "emptydir/", "foo.txt"}, entries)
 
 		modGen, err = modGen.With(daggerCall("update", "-o", "./outdir")).Sync(ctx)
 		require.NoError(t, err)
 
 		entries, err = modGen.Directory("./outdir").Entries(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "baz.txt\nfoo.txt", strings.Join(entries, "\n"))
+		require.Equal(t, []string{"baz.txt", "foo.txt"}, entries)
 
 		contents, err := modGen.File("./outdir/foo.txt").Contents(ctx)
 		require.NoError(t, err)
@@ -731,14 +732,9 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 		resultDir := apply(baseDir, changes)
 
 		// Verify the result
-		entries, err := resultDir.Entries(ctx)
+		entries, err := resultDir.Glob(ctx, "**")
 		require.NoError(t, err)
-
-		require.Contains(t, entries, "keep.txt")
-		require.NotContains(t, entries, "remove1.txt")
-		if !leaveDirs {
-			require.NotContains(t, entries, "dir/")
-		}
+		require.ElementsMatch(t, []string{"keep.txt"}, entries)
 
 		// Verify content of kept file
 		keepContent, err := resultDir.File("keep.txt").Contents(ctx)

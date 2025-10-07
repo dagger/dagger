@@ -722,18 +722,16 @@ func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response a
 		ctx, span := Tracer().Start(ctx, "analyzing changes")
 		defer telemetry.End(span, func() error { return rerr })
 
-		patch, err := changeset.AsPatch().Contents(ctx)
+		preview, err := idtui.PreviewPatch(ctx, changeset)
 		if err != nil {
-			return fmt.Errorf("get patch contents: %w", err)
+			return err
 		}
-
-		noChanges = patch == ""
+		noChanges = preview == nil
 		if noChanges {
 			slog.Info("no changes to apply")
 			return nil
 		}
-
-		return idtui.SummarizePatch(idtui.NewOutput(&summary), patch, 50)
+		return preview.Summarize(idtui.NewOutput(&summary), 80)
 	})(); err != nil {
 		return err
 	}
