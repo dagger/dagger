@@ -276,19 +276,7 @@ var coreDirectives = []DirectiveSpec{
 			DirectiveLocationEnumValue,
 		},
 	},
-	{
-		Name:        "defaultPath",
-		Description: FormatDescription(`Indicates that the argument defaults to a contextual path.`),
-		Args: NewInputSpecs(
-			InputSpec{
-				Name: "path",
-				Type: String(""),
-			},
-		),
-		Locations: []DirectiveLocation{
-			DirectiveLocationArgumentDefinition,
-		},
-	},
+	DefaultPathDirective,
 	{
 		Name:        "defaultAddress",
 		Description: FormatDescription(`Indicates that the argument defaults to a container address.`),
@@ -330,6 +318,20 @@ var coreDirectives = []DirectiveSpec{
 		Locations: []DirectiveLocation{
 			DirectiveLocationFieldDefinition,
 		},
+	},
+}
+
+var DefaultPathDirective = DirectiveSpec{
+	Name:        "defaultPath",
+	Description: FormatDescription(`Indicates that the argument defaults to a contextual path.`),
+	Args: NewInputSpecs(
+		InputSpec{
+			Name: "path",
+			Type: String(""),
+		},
+	),
+	Locations: []DirectiveLocation{
+		DirectiveLocationArgumentDefinition,
 	},
 }
 

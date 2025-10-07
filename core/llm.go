@@ -863,14 +863,45 @@ func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 
 	var sels []dagql.Selector
 	if res.Content != "" {
+		args := []dagql.NamedInput{
+			{
+				Name:  "content",
+				Value: dagql.NewString(res.Content),
+			},
+		}
+		if res.TokenUsage.InputTokens != 0 {
+			args = append(args, dagql.NamedInput{
+				Name:  "inputTokens",
+				Value: dagql.NewInt(res.TokenUsage.InputTokens),
+			})
+		}
+		if res.TokenUsage.OutputTokens != 0 {
+			args = append(args, dagql.NamedInput{
+				Name:  "outputTokens",
+				Value: dagql.NewInt(res.TokenUsage.OutputTokens),
+			})
+		}
+		if res.TokenUsage.CachedTokenReads != 0 {
+			args = append(args, dagql.NamedInput{
+				Name:  "cachedTokenReads",
+				Value: dagql.NewInt(res.TokenUsage.CachedTokenReads),
+			})
+		}
+		if res.TokenUsage.CachedTokenWrites != 0 {
+			args = append(args, dagql.NamedInput{
+				Name:  "cachedTokenWrites",
+				Value: dagql.NewInt(res.TokenUsage.CachedTokenWrites),
+			})
+		}
+		if res.TokenUsage.TotalTokens != 0 {
+			args = append(args, dagql.NamedInput{
+				Name:  "totalTokens",
+				Value: dagql.NewInt(res.TokenUsage.TotalTokens),
+			})
+		}
 		sels = append(sels, dagql.Selector{
 			Field: "withResponse",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "content",
-					Value: dagql.NewString(res.Content),
-				},
-			},
+			Args:  args,
 		})
 	}
 	for _, call := range res.ToolCalls {

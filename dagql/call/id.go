@@ -72,6 +72,13 @@ func (id *ID) Receiver() *ID {
 	return id.receiver
 }
 
+func (id *ID) String() string {
+	if id == nil {
+		return "<nil>"
+	}
+	return id.Call().String()
+}
+
 // The root Call of the ID, with its Digest set. Exposed so that Calls can be
 // streamed over the wire one-by-one, rather than emitting full DAGs, which
 // would involve a ton of duplication.
@@ -478,15 +485,7 @@ func (id *ID) WithReceiver(recv *ID) *ID {
 	if id == nil {
 		return nil
 	}
-	return recv.Append(
-		id.pb.Type.ToAST(),
-		id.pb.Field,
-		View(id.pb.View),
-		id.module,
-		int(id.pb.Nth),
-		"", // reset to default digest
-		id.args...,
-	)
+	return id.With(WithReceiver(recv))
 }
 
 func (id *ID) Encode() (string, error) {
