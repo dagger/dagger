@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -702,6 +704,13 @@ func (llm *LLM) WithToolResponse(callID, content string, errored bool) *LLM {
 	return llm
 }
 
+// Append a tool response (user) message to the history
+func (llm *LLM) WithObject(objectID string, id ID) *LLM {
+	llm = llm.Clone()
+	llm.mcp = llm.mcp.WithObject(objectID, id)
+	return llm
+}
+
 // Disable the default system prompt
 func (llm *LLM) WithoutDefaultSystemPrompt() *LLM {
 	llm = llm.Clone()
@@ -923,6 +932,7 @@ func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 			},
 		})
 	}
+	beforeObjs := maps.Clone(llm.mcp.objsByID)
 	for _, msg := range llm.mcp.CallBatch(ctx, tools, res.ToolCalls) {
 		sels = append(sels, dagql.Selector{
 			Field: "withToolResponse",
@@ -938,6 +948,30 @@ func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 				{
 					Name:  "errored",
 					Value: dagql.NewBoolean(msg.ToolErrored),
+				},
+			},
+		})
+	}
+	var newObjs []string
+	for obj := range llm.mcp.objsByID {
+		if _, exists := beforeObjs[obj]; exists {
+			continue
+		}
+		newObjs = append(newObjs, obj)
+	}
+	sort.Strings(newObjs)
+	for _, objID := range newObjs {
+		id := llm.mcp.objsByID[objID]
+		sels = append(sels, dagql.Selector{
+			Field: "__withObject",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "tag",
+					Value: dagql.NewString(objID),
+				},
+				{
+					Name:  "object",
+					Value: ID{Inner: id},
 				},
 			},
 		})

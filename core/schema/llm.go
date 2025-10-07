@@ -97,6 +97,12 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("content").Doc("The response content from the tool"),
 				dagql.Arg("errored").Doc("Whether the tool call resulted in an error"),
 			),
+		dagql.Func("__withObject", s.withObject).
+			Doc("Track an object by an arbitrary string tag, like Container#123, for the LLM to reference it by in arguments etc.").
+			Args(
+				dagql.Arg("tag").Doc("Arbitrary string, typically in TypeName#Number format"),
+				dagql.Arg("object").Doc("Arbitrary object ID"),
+			),
 		dagql.Func("withoutDefaultSystemPrompt", s.withoutDefaultSystemPrompt).
 			Doc("Disable the default system prompt"),
 		dagql.Func("withBlockedFunction", s.withBlockedFunction).
@@ -234,6 +240,13 @@ func (s *llmSchema) withToolResponse(ctx context.Context, llm *core.LLM, args st
 	Errored bool
 }) (*core.LLM, error) {
 	return llm.WithToolResponse(args.Call, args.Content, args.Errored), nil
+}
+
+func (s *llmSchema) withObject(ctx context.Context, llm *core.LLM, args struct {
+	Tag    string
+	Object core.ID
+}) (*core.LLM, error) {
+	return llm.WithObject(args.Tag, args.Object), nil
 }
 
 func (s *llmSchema) withoutDefaultSystemPrompt(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
