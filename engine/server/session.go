@@ -81,6 +81,8 @@ type daggerSession struct {
 
 	services *core.Services
 
+	mcpClients *core.MCPClients
+
 	analytics analytics.Tracker
 
 	authProvider *auth.RegistryAuthProvider
@@ -250,6 +252,7 @@ func (srv *Server) initializeDaggerSession(
 	sess.endpoints = map[string]http.Handler{}
 	sess.shutdownCh = make(chan struct{})
 	sess.services = core.NewServices()
+	sess.mcpClients = core.NewMCPClients()
 	sess.authProvider = auth.NewRegistryAuthProvider()
 	sess.refs = map[buildkit.Reference]struct{}{}
 	sess.containers = map[bkgw.Container]struct{}{}
@@ -1465,6 +1468,15 @@ func (srv *Server) Services(ctx context.Context) (*core.Services, error) {
 		return nil, err
 	}
 	return client.daggerSession.services, nil
+}
+
+// The MCP clients for the current client's session
+func (srv *Server) MCPClients(ctx context.Context) (*core.MCPClients, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.daggerSession.mcpClients, nil
 }
 
 // The default platform for the engine as a whole

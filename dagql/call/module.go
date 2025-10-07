@@ -23,6 +23,10 @@ func NewModule(id *ID, name, ref, pin string) *Module {
 	}
 }
 
+func (m *Module) String() string {
+	return m.pb.String()
+}
+
 func (m *Module) ID() *ID {
 	return m.id
 }
