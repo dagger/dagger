@@ -3785,7 +3785,7 @@
 			"t": "M",
 			"n": "Dagger\\Function_::withDeprecated",
 			"p": "Dagger/Function_.html#method_withDeprecated",
-			"d": "<p>Returns the function with the given deprecated string.</p>"
+			"d": "<p>Returns the function with the provided deprecation reason.</p>"
 		},
 		{
 			"t": "M",

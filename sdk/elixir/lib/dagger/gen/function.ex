@@ -160,14 +160,14 @@ defmodule Dagger.Function do
   end
 
   @doc """
-  Returns the function with the given deprecated string.
+  Returns the function with the provided deprecation reason.
   """
-  @spec with_deprecated(t(), [{:deprecated, String.t() | nil}]) :: Dagger.Function.t()
+  @spec with_deprecated(t(), [{:reason, String.t() | nil}]) :: Dagger.Function.t()
   def with_deprecated(%__MODULE__{} = function, optional_args \\ []) do
     query_builder =
       function.query_builder
       |> QB.select("withDeprecated")
-      |> QB.maybe_put_arg("deprecated", optional_args[:deprecated])
+      |> QB.maybe_put_arg("reason", optional_args[:reason])
 
     %Dagger.Function{
       query_builder: query_builder,

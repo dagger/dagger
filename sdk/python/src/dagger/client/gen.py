@@ -6857,16 +6857,16 @@ class Function(Type):
         _ctx = self._select("withCachePolicy", _args)
         return Function(_ctx)
 
-    def with_deprecated(self, *, deprecated: str | None = None) -> Self:
-        """Returns the function with the given deprecated string.
+    def with_deprecated(self, *, reason: str | None = None) -> Self:
+        """Returns the function with the provided deprecation reason.
 
         Parameters
         ----------
-        deprecated:
-            If deprecated, the reason or migration path.
+        reason:
+            Reason or migration path describing the deprecation.
         """
         _args = [
-            Arg("deprecated", deprecated, None),
+            Arg("reason", reason, None),
         ]
         _ctx = self._select("withDeprecated", _args)
         return Function(_ctx)

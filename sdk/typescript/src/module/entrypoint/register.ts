@@ -141,7 +141,8 @@ export class Register {
       .withDescription(fct.description)
       .withSourceMap(addSourceMap(fct))
       .with(this.addArg(fct.arguments))
-    switch (fct.cache) {
+
+      switch (fct.cache) {
       case "never": {
         fnDef = fnDef.withCachePolicy(FunctionCachePolicy.Never)
         break
@@ -160,11 +161,11 @@ export class Register {
     }
 
     if (fct.deprecated !== undefined) {
-      fnDef = fnDef.withDeprecated({ deprecated: fct.deprecated })
+      fnDef = fnDef.withDeprecated({ reason: fct.deprecated })
     }
 
     return fnDef
-  }
+}
 
   /**
    * Register all arguments in the function.
