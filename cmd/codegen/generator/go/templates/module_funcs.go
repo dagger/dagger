@@ -131,7 +131,7 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 	}
 	if spec.deprecated != nil {
 		withDeprecatedOpts := Id("dagger").Dot("FunctionWithDeprecatedOpts").Values(
-			Id("Deprecated").Op(":").Lit(strings.TrimSpace(*spec.deprecated)),
+			Id("Reason").Op(":").Lit(strings.TrimSpace(*spec.deprecated)),
 		)
 		fnTypeDefCode = dotLine(fnTypeDefCode, "WithDeprecated").Call(withDeprecatedOpts)
 	}
