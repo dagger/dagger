@@ -37,6 +37,7 @@ func (s *querySchema) Install(srv *dagql.Server) {
 
 	srv.InstallScalar(core.JSON{})
 	srv.InstallScalar(core.Void{})
+	srv.InstallScalar(core.ID{})
 
 	core.NetworkProtocols.Install(srv)
 	core.ImageLayerCompressions.Install(srv)
