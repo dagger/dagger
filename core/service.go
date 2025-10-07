@@ -453,9 +453,15 @@ func (svc *Service) startContainer(
 
 	name := fmt.Sprintf("container %s", svcID)
 	mm := bkmounts.NewMountManager(name, cache, session)
-	p, err := bkcontainer.PrepareMounts(ctx, mm, cache, bksession.NewGroup(bk.ID()), "", pbmounts, workerRefs, func(m *pb.Mount, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
-		return cache.New(ctx, ref, nil)
+
+	bkSessionGroup := bksession.NewGroup(bk.ID())
+	p, err := bkcontainer.PrepareMounts(ctx, mm, cache, bkSessionGroup, "", pbmounts, workerRefs, func(m *pb.Mount, ref bkcache.ImmutableRef) (bkcache.MutableRef, error) {
+		return cache.New(ctx, ref, bkSessionGroup)
 	}, runtime.GOOS)
+	if err != nil {
+		return nil, fmt.Errorf("prepare mounts: %w", err)
+	}
+
 	for _, active := range slices.Backward(p.Actives) { // call in LIFO order
 		cleanup.Add("release active ref", func() error {
 			return active.Ref.Release(context.WithoutCancel(ctx))
