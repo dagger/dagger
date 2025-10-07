@@ -99,8 +99,6 @@ type MCP struct {
 	mu *sync.Mutex
 }
 
-type contextualBinding func(context.Context, dagql.ObjectResult[*Env]) (*Binding, error)
-
 func newMCP(env dagql.ObjectResult[*Env]) *MCP {
 	blocked := maps.Clone(defaultBlockedMethods)
 	for typeName, methods := range blocked {
@@ -116,6 +114,15 @@ func newMCP(env dagql.ObjectResult[*Env]) *MCP {
 		mcpServers:      make(map[string]*MCPServerConfig),
 		mu:              &sync.Mutex{},
 	}
+}
+
+func (m *MCP) WithObject(tag string, id ID) *MCP {
+	cp := m.Clone()
+	// FIXME: we want to respect the given tag, but still be honest about the
+	// object and its hash. really, one of these should be the source of truth.
+	cp.IngestBy(id.Inner, "", id.Inner.Digest())
+	cp.objsByID[tag] = id.Inner
+	return cp
 }
 
 func (m *MCP) DefaultSystemPrompt() string {
@@ -181,7 +188,7 @@ func (m *MCP) Input(ctx context.Context, key string) (*Binding, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if id, exists := m.objsByID[key]; exists {
-		srv, err := CurrentDagqlServer(ctx)
+		srv, err := m.Server(ctx)
 		if err != nil {
 			return nil, false, err
 		}
@@ -758,7 +765,7 @@ func (m *MCP) call(ctx context.Context,
 			if err != nil {
 				return "", err
 			}
-			slog.Warn("!!! UNPINNED", "pinned", obj.ID(), "unpinned", unpinned, "digest", unpinned.Digest())
+			slog.Warn("!!! UNPINNED", "pinned", obj.ID().Display(), "unpinned", unpinned.Display(), "digest", unpinned.Digest())
 
 			// argsPayload, err := json.Marshal(args)
 			// if err != nil {
