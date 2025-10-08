@@ -115,32 +115,6 @@ func (dev *DaggerDev) SourceDeveloped(targets ...string) *dagger.Directory {
 	return src
 }
 
-// Start a coding agent for the Dagger project.
-func (dev *DaggerDev) Coder(ctx context.Context) (*dagger.LLM, error) {
-	src := dev.Source
-
-	gopls := dag.Go(src).Base().
-		WithExec([]string{"go", "install", "golang.org/x/tools/gopls@latest"}).
-		WithDirectory("/workspace", src).
-		WithWorkdir("/workspace").
-		WithDefaultArgs([]string{"gopls", "mcp"})
-
-	goplsInstructions, err := gopls.WithExec([]string{"gopls", "mcp", "-instructions"}).Stdout(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return dag.Doug().Agent(
-		dag.LLM().
-			WithEnv(
-				dag.Env().
-					WithCurrentModule().
-					WithWorkspace(src)).
-			WithSystemPrompt(goplsInstructions).
-			WithMCPServer("gopls", gopls.AsService()),
-	), nil
-}
-
 // Develop the Dagger CLI
 func (dev *DaggerDev) CLI() *CLI {
 	return &CLI{Dagger: dev}
