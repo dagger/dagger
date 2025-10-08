@@ -32,6 +32,7 @@
               <li><a href="#query-cacheVolume">cacheVolume</a></li>
               <li><a href="#query-cloud">cloud</a></li>
               <li><a href="#query-container">container</a></li>
+              <li><a href="#query-currentEnv">currentEnv</a></li>
               <li><a href="#query-currentFunctionCall">currentFunctionCall</a></li>
               <li><a href="#query-currentModule">currentModule</a></li>
               <li><a href="#query-currentTypeDefs">currentTypeDefs</a></li>
@@ -454,6 +455,41 @@
               </div>
             </div>
           </section>
+          <section id="query-currentEnv" class="operation operation-query" data-traverse-target="query-currentEnv">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>currentEnv</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Returns the current environment</p>
+                  <p>When called from a function invoked via an LLM tool call, this will be the LLM&#39;s current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment&#39;s workspace.</p>
+                  <p>When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module&#39;s source directory as its workspace.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Env"><code>Env!</code></a>
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-currentFunctionCall" class="operation operation-query" data-traverse-target="query-currentFunctionCall">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -684,7 +720,7 @@
               <div class="doc-copy">
                 <div class="operation-description doc-copy-section">
                   <h5>Description</h5>
-                  <p>Initialize a new environment</p>
+                  <p>Initializes a new environment</p>
                 </div>
               </div>
             </div>
@@ -4605,10 +4641,6 @@
                         <td> Retrieve the binding value, as type JSONValue </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asLLM" href="#Binding-asLLM"><code>asLLM</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type LLM </td>
-                      </tr>
-                      <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asModule" href="#Binding-asModule"><code>asModule</code></a> - <span class="property-type"><a href="#definition-Module"><code>Module!</code></a></span> </td>
                         <td> Retrieve the binding value, as type Module </td>
                       </tr>
@@ -4642,11 +4674,11 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asString" href="#Binding-asString"><code>asString</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
-                        <td> The binding's string value </td>
+                        <td> Returns the binding's string value </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-digest" href="#Binding-digest"><code>digest</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The digest of the binding value </td>
+                        <td> Returns the digest of the binding value </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-id" href="#Binding-id"><code>id</code></a> - <span class="property-type"><a href="#definition-BindingID"><code>BindingID!</code></a></span> </td>
@@ -4658,11 +4690,11 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-name" href="#Binding-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The binding name </td>
+                        <td> Returns the binding name </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-typeName" href="#Binding-typeName"><code>typeName</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The binding type </td>
+                        <td> Returns the binding type </td>
                       </tr>
                     </tbody>
                   </table>
@@ -5073,47 +5105,6 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>mediaTypes</code></span> - <span class="property-type"><a href="#definition-ImageMediaTypes"><code>ImageMediaTypes</code></a></span></h6>
                                 <p>Use the specified media types for the image&#39;s layers.</p>
                                 <p>Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="Container-build" href="#Container-build"><code>build</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Initializes this container from a Dockerfile build. <span class="deprecation-reason">Use <code>Directory.build</code> instead</span>
-                        </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>context</code></span> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span></h6>
-                                <p>Directory context used by the Dockerfile.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>dockerfile</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>Path to the Dockerfile to use.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>target</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>Target build stage to build.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>buildArgs</code></span> - <span class="property-type"><a href="#definition-BuildArg"><code>[BuildArg!]</code></a></span></h6>
-                                <p>Additional build arguments.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>secrets</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>[SecretID!]</code></a></span></h6>
-                                <p>Secrets to pass to the build.</p>
-                                <p>They will be mounted at /run/secrets/[secret-name] in the build container</p>
-                                <p>They can be accessed in the Dockerfile using the &quot;secret&quot; mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl [<a href="http://example.com?token=$">http://example.com?token=$</a>(cat /run/secrets/my-secret)](<a href="http://example.com?token=$">http://example.com?token=$</a>(cat /run/secrets/my-secret))</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>noInit</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>If set, skip the automatic init process injected into containers created by RUN statements.</p>
-                                <p>This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.</p>
                               </div>
                             </div>
                           </div>
@@ -5636,7 +5627,7 @@
                                 <p>Location of the written directory (e.g., &quot;/tmp/directory&quot;).</p>
                               </div>
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>directory</code></span> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span></h6>
+                                <h6 class="field-argument-name"><span class="property-name"><code>source</code></span> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span></h6>
                                 <p>Identifier of the directory to write</p>
                               </div>
                               <div class="field-argument">
@@ -7098,7 +7089,7 @@
                                 <p>Location of the written directory (e.g., &quot;/src/&quot;).</p>
                               </div>
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>directory</code></span> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span></h6>
+                                <h6 class="field-argument-name"><span class="property-name"><code>source</code></span> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span></h6>
                                 <p>Identifier of the directory to copy.</p>
                               </div>
                               <div class="field-argument">
@@ -7440,11 +7431,6 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="EngineCache-id" href="#EngineCache-id"><code>id</code></a> - <span class="property-type"><a href="#definition-EngineCacheID"><code>EngineCacheID!</code></a></span> </td>
                         <td> A unique identifier for this EngineCache. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="EngineCache-keepBytes" href="#EngineCache-keepBytes"><code>keepBytes</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
-                        <td> The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in. <span class="deprecation-reason">Use minFreeSpace instead.</span>
-                        </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="EngineCache-maxUsedSpace" href="#EngineCache-maxUsedSpace"><code>maxUsedSpace</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
@@ -7790,7 +7776,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-input" href="#Env-input"><code>input</code></a> - <span class="property-type"><a href="#definition-Binding"><code>Binding!</code></a></span> </td>
-                        <td> retrieve an input value by name </td>
+                        <td> Retrieves an input binding by name </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -7806,11 +7792,11 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Env-inputs" href="#Env-inputs"><code>inputs</code></a> - <span class="property-type"><a href="#definition-Binding"><code>[Binding!]!</code></a></span> </td>
-                        <td> return all input values for the environment </td>
+                        <td> Returns all input bindings provided to the environment </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-output" href="#Env-output"><code>output</code></a> - <span class="property-type"><a href="#definition-Binding"><code>Binding!</code></a></span> </td>
-                        <td> retrieve an output value by name </td>
+                        <td> Retrieves an output binding by name </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -7826,7 +7812,7 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Env-outputs" href="#Env-outputs"><code>outputs</code></a> - <span class="property-type"><a href="#definition-Binding"><code>[Binding!]!</code></a></span> </td>
-                        <td> return all output values for the environment </td>
+                        <td> Returns all declared output bindings for the environment </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withAddressInput" href="#Env-withAddressInput"><code>withAddressInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
@@ -8056,6 +8042,13 @@
                               </div>
                             </div>
                           </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Env-withCurrentModule" href="#Env-withCurrentModule"><code>withCurrentModule</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td>
+                          <p>Installs the current module into the environment, exposing its functions to the model</p>
+                          <p>Contextual path arguments will be populated using the environment&#39;s workspace.</p>
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
@@ -8381,46 +8374,19 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Env-withLLMInput" href="#Env-withLLMInput"><code>withLLMInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
-                        <td> Create or update a binding of type LLM in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-LLMID"><code>LLMID!</code></a></span></h6>
-                                <p>The LLM value to assign to the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The purpose of the input</p>
-                              </div>
-                            </div>
-                          </div>
+                        <td data-property-name=""><a class="property-name" id="Env-withModule" href="#Env-withModule"><code>withModule</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td>
+                          <p>Installs a module into the environment, exposing its functions to the model</p>
+                          <p>Contextual path arguments will be populated using the environment&#39;s workspace.</p>
                         </td>
                       </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Env-withLLMOutput" href="#Env-withLLMOutput"><code>withLLMOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
-                        <td> Declare a desired LLM output to be assigned in the environment </td>
-                      </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
                           <div class="field-arguments">
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>A description of the desired value of the binding</p>
+                                <h6 class="field-argument-name"><span class="property-name"><code>module</code></span> - <span class="property-type"><a href="#definition-ModuleID"><code>ModuleID!</code></a></span></h6>
                               </div>
                             </div>
                           </div>
@@ -8796,7 +8762,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withStringInput" href="#Env-withStringInput"><code>withStringInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
-                        <td> Create or update an input value of type string </td>
+                        <td> Provides a string input binding to the environment </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -8821,7 +8787,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withStringOutput" href="#Env-withStringOutput"><code>withStringOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
-                        <td> Create or update an input value of type string </td>
+                        <td> Declares a desired string output binding </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -8838,6 +8804,32 @@
                               </div>
                             </div>
                           </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withWorkspace" href="#Env-withWorkspace"><code>withWorkspace</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Returns a new environment with the provided workspace </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>workspace</code></span> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span></h6>
+                                <p>The directory to set as the host filesystem</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Env-withoutOutputs" href="#Env-withoutOutputs"><code>withoutOutputs</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Returns a new environment without any outputs </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Env-workspace" href="#Env-workspace"><code>workspace</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
+                        <td>
                         </td>
                       </tr>
                     </tbody>
@@ -8901,6 +8893,10 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>Variable name</p>
                               </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>raw</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Return the value exactly as written to the file. No quote removal or variable expansion</p>
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -8909,9 +8905,22 @@
                         <td data-property-name=""><a class="property-name" id="EnvFile-id" href="#EnvFile-id"><code>id</code></a> - <span class="property-type"><a href="#definition-EnvFileID"><code>EnvFileID!</code></a></span> </td>
                         <td> A unique identifier for this EnvFile. </td>
                       </tr>
-                      <tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="EnvFile-variables" href="#EnvFile-variables"><code>variables</code></a> - <span class="property-type"><a href="#definition-EnvVariable"><code>[EnvVariable!]!</code></a></span> </td>
                         <td> Return all variables </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>raw</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Return values exactly as written to the file. No quote removal or variable expansion</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="EnvFile-withVariable" href="#EnvFile-withVariable"><code>withVariable</code></a> - <span class="property-type"><a href="#definition-EnvFile"><code>EnvFile!</code></a></span> </td>
@@ -10233,42 +10242,6 @@
                         <td data-property-name=""><a class="property-name" id="GitRepository-url" href="#GitRepository-url"><code>url</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
                         <td> The URL of the git repository. </td>
                       </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="GitRepository-withAuthHeader" href="#GitRepository-withAuthHeader"><code>withAuthHeader</code></a> - <span class="property-type"><a href="#definition-GitRepository"><code>GitRepository!</code></a></span> </td>
-                        <td> Header to authenticate the remote with. <span class="deprecation-reason">Use "httpAuthHeader" in the constructor instead.</span>
-                        </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>header</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID!</code></a></span></h6>
-                                <p>Secret used to populate the Authorization HTTP header</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="GitRepository-withAuthToken" href="#GitRepository-withAuthToken"><code>withAuthToken</code></a> - <span class="property-type"><a href="#definition-GitRepository"><code>GitRepository!</code></a></span> </td>
-                        <td> Token to authenticate the remote with. <span class="deprecation-reason">Use "httpAuthToken" in the constructor instead.</span>
-                        </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>token</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID!</code></a></span></h6>
-                                <p>Secret used to populate the password during basic HTTP Authorization</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -10423,31 +10396,6 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>host</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>Upstream host to forward traffic to.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="Host-setSecretFile" href="#Host-setSecretFile"><code>setSecretFile</code></a> - <span class="property-type"><a href="#definition-Secret"><code>Secret!</code></a></span> </td>
-                        <td>
-                          <p>Sets a secret given a user-defined name and the file path on the host, and returns the secret.</p>
-                          <p>The file is limited to a size of 512000 bytes.</p>
-                          <span class="deprecation-reason">setSecretFile is superceded by use of the secret API with file:// URIs</span>
-                        </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The user defined name for this secret.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Location of the file to set as a secret.</p>
                               </div>
                             </div>
                           </div>
@@ -11059,6 +11007,10 @@
                         <td> return the LLM's current environment </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-hasPrompt" href="#LLM-hasPrompt"><code>hasPrompt</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> Indicates whether there are any queued prompts or tool results to send to the model </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="LLM-history" href="#LLM-history"><code>history</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
                         <td> return the llm message history </td>
                       </tr>
@@ -11076,7 +11028,7 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="LLM-loop" href="#LLM-loop"><code>loop</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
-                        <td> synchronize LLM state </td>
+                        <td> Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="LLM-model" href="#LLM-model"><code>model</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -11085,6 +11037,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="LLM-provider" href="#LLM-provider"><code>provider</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> return the provider used by the llm </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-step" href="#LLM-step"><code>step</code></a> - <span class="property-type"><a href="#definition-LLMID"><code>LLMID!</code></a></span> </td>
+                        <td> Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="LLM-sync" href="#LLM-sync"><code>sync</code></a> - <span class="property-type"><a href="#definition-LLMID"><code>LLMID!</code></a></span> </td>
@@ -11099,6 +11055,28 @@
                         <td> print documentation for available tools </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withBlockedFunction" href="#LLM-withBlockedFunction"><code>withBlockedFunction</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Return a new LLM with the specified function no longer exposed as a tool </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>typeName</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The type name whose function will be blocked</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>function</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The function to block</p>
+                                <p>Will be converted to lowerCamelCase if necessary.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="LLM-withEnv" href="#LLM-withEnv"><code>withEnv</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
                         <td> allow the LLM to interact with an environment via MCP </td>
                       </tr>
@@ -11109,6 +11087,27 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>env</code></span> - <span class="property-type"><a href="#definition-EnvID"><code>EnvID!</code></a></span></h6>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withMCPServer" href="#LLM-withMCPServer"><code>withMCPServer</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Add an external MCP server to the LLM </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the MCP server</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>service</code></span> - <span class="property-type"><a href="#definition-ServiceID"><code>ServiceID!</code></a></span></h6>
+                                <p>The MCP service to run and communicate with over stdio</p>
                               </div>
                             </div>
                           </div>
@@ -11164,6 +11163,10 @@
                             </div>
                           </div>
                         </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-withStaticTools" href="#LLM-withStaticTools"><code>withStaticTools</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="LLM-withSystemPrompt" href="#LLM-withSystemPrompt"><code>withSystemPrompt</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
@@ -11463,6 +11466,10 @@
                         <td data-property-name=""><a class="property-name" id="Module-sync" href="#Module-sync"><code>sync</code></a> - <span class="property-type"><a href="#definition-ModuleID"><code>ModuleID!</code></a></span> </td>
                         <td> Forces evaluation of the module, including any loading into the engine and associated validation. </td>
                       </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Module-userDefaults" href="#Module-userDefaults"><code>userDefaults</code></a> - <span class="property-type"><a href="#definition-EnvFile"><code>EnvFile!</code></a></span> </td>
+                        <td> User-defined default values, loaded from local .env files. </td>
+                      </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Module-withDescription" href="#Module-withDescription"><code>withDescription</code></a> - <span class="property-type"><a href="#definition-Module"><code>Module!</code></a></span> </td>
                         <td> Retrieves the module with the given description </td>
@@ -11742,6 +11749,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-sync" href="#ModuleSource-sync"><code>sync</code></a> - <span class="property-type"><a href="#definition-ModuleSourceID"><code>ModuleSourceID!</code></a></span> </td>
                         <td> Forces evaluation of the module source, including any loading into the engine and associated validation. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-userDefaults" href="#ModuleSource-userDefaults"><code>userDefaults</code></a> - <span class="property-type"><a href="#definition-EnvFile"><code>EnvFile!</code></a></span> </td>
+                        <td> User-defined defaults read from local .env files </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-version" href="#ModuleSource-version"><code>version</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>

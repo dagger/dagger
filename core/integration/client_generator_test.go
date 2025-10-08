@@ -1579,7 +1579,7 @@ func (ClientGeneratorTest) TestMissmatchDependencyVersion(ctx context.Context, t
 		WithExec([]string{"apk", "add", "jq"}).
 		// Update the dagger.json manually to not rettrigger the generation so we can verify that it triggers an error
 		// on execute
-		WithExec([]string{"sh", "-c", `sh -c 'cat dagger.json | jq '\''(.dependencies[] | select(.name == "hello") | .source) = "github.com/shykes/hello@main" | (.dependencies[] | select(.name == "hello") | .pin) = "main"'\'' > dagger.tmp && mv dagger.tmp dagger.json'`})
+		WithExec([]string{"sh", "-c", `sh -c 'cat dagger.json | jq '\''(.dependencies[] | select(.name == "hello") | .source) = "github.com/shykes/hello@main" | (.dependencies[] | select(.name == "hello") | .pin) = "2d789671a44c4d559be506a9bc4b71b0ba6e23c9"'\'' > dagger.tmp && mv dagger.tmp dagger.json'`})
 
 	out, err := moduleSrc.With(daggerNonNestedRun("go", "run", "main.go")).Stdout(ctx)
 

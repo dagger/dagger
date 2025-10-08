@@ -59,8 +59,8 @@ type FrontendOpts struct {
 	// TelemetryError indicates if an error has occurred while sending telemetry
 	TelemetryError error
 
-	// CloudEngine indicates whether the connected engine is a Cloud Engine
-	CloudEngine bool
+	// UsingCloudEngine indicates whether the connected engine is a Cloud Engine
+	UsingCloudEngine bool
 }
 
 const (
@@ -81,9 +81,6 @@ func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
 	}
 	if opts.Debug {
 		// debug reveals all
-		return true
-	}
-	if span.Reveal {
 		return true
 	}
 	if opts.FocusedSpan == span.ID {

@@ -74,6 +74,28 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Returns the current environment
+
+  When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
+
+  When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
+
+  > #### Experimental {: .warning}
+  >
+  > "Programmatic env access is speculative and might be replaced."
+  """
+  @spec current_env(t()) :: Dagger.Env.t()
+  def current_env(%__MODULE__{} = client) do
+    query_builder =
+      client.query_builder |> QB.select("currentEnv")
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   The FunctionCall context that the SDK caller is currently executing in.
 
   If the caller is not currently executing in a function, this will return an error.
@@ -165,7 +187,7 @@ defmodule Dagger.Client do
   end
 
   @doc """
-  Initialize a new environment
+  Initializes a new environment
 
   > #### Experimental {: .warning}
   >

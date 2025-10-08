@@ -60,7 +60,7 @@ var (
 	verbose                  int
 	quiet, _                 = strconv.Atoi(os.Getenv("DAGGER_QUIET"))
 	reveal                   = os.Getenv("DAGGER_REVEAL") != ""
-	debug                    bool
+	debugFlag                bool
 	progress                 string
 	interactive              bool
 	interactiveCommand       string
@@ -171,11 +171,6 @@ func init() {
 	// we'll add it in the last line of the usage template
 	rootCmd.PersistentFlags().BoolP("help", "h", false, "Print usage")
 	rootCmd.PersistentFlags().Lookup("help").Hidden = true
-
-	// this flag changes the behaviour of a few commands, e.g. call, functions, core, shell, etc.
-	// all those functions will run in a remote cloud engine which gets created at execution time
-	rootCmd.PersistentFlags().BoolVar(&useCloudEngine, "cloud", useCloudEngine, "Run in a Dagger Cloud Engine")
-	rootCmd.PersistentFlags().Lookup("cloud").Hidden = true
 
 	disableFlagsInUseLine(rootCmd)
 }
@@ -331,7 +326,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
 	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
 	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
-	flags.BoolVarP(&debug, "debug", "d", debug, "Show debug logs and full verbosity")
+	flags.BoolVarP(&debugFlag, "debug", "d", debugFlag, "Show debug logs and full verbosity")
 	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty, dots)")
 	flags.BoolVarP(&interactive, "interactive", "i", false, "Spawn a terminal on container exec failure")
 	flags.StringVar(&interactiveCommand, "interactive-command", "/bin/sh", "Change the default command for interactive mode")
@@ -341,6 +336,11 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&dotOutputFilePath, "dot-output", "", "If set, write the calls made during execution to a dot file at the given path before exiting")
 	flags.StringVar(&dotFocusField, "dot-focus-field", "", "In dot output, filter out vertices that aren't this field or descendents of this field")
 	flags.BoolVar(&dotShowInternal, "dot-show-internal", false, "In dot output, if true then include calls and spans marked as internal")
+
+	// this flag changes the behaviour of a few commands, e.g. call, functions, core, shell, etc.
+	// all those functions will run in a remote cloud engine which gets created at execution time
+	flags.BoolVar(&useCloudEngine, "cloud", useCloudEngine, "Run in a Dagger Cloud Engine")
+	flags.Lookup("cloud").Hidden = true
 
 	for _, fl := range []string{
 		"workdir",
@@ -436,14 +436,14 @@ func main() {
 	opts.Verbosity += verbose                      // raise verbosity with -v
 	opts.Verbosity -= quiet                        // lower verbosity with -q
 	opts.Silent = silent                           // show no progress
-	opts.Debug = debug                             // show everything
+	opts.Debug = debugFlag                         // show everything
 	opts.RevealNoisySpans = reveal                 // disable 'reveal: true' mechanic (for tests)
 	opts.OpenWeb = web
 	opts.NoExit = noExit
 	opts.DotOutputFilePath = dotOutputFilePath
 	opts.DotFocusField = dotFocusField
 	opts.DotShowInternal = dotShowInternal
-	opts.CloudEngine = useCloudEngine || strings.HasPrefix(RunnerHost, "dagger-cloud://")
+	opts.UsingCloudEngine = useCloudEngine || strings.HasPrefix(RunnerHost, "dagger-cloud://")
 	if progress == "auto" {
 		if env := os.Getenv("DAGGER_PROGRESS"); env != "" {
 			progress = env
@@ -489,7 +489,7 @@ func main() {
 
 	ctx := context.Background()
 	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
-	ctx = slog.ContextWithDebugMode(ctx, debug)
+	ctx = slog.ContextWithDebugMode(ctx, debugFlag)
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {

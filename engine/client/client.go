@@ -103,6 +103,10 @@ type Params struct {
 	Stdout io.Writer
 
 	ImageLoaderBackend imageload.Backend
+
+	Module   string
+	Function string
+	ExecCmd  []string
 }
 
 type Client struct {
@@ -227,7 +231,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 
 	c.stableClientID = GetHostStableID(slog)
 
-	if err := c.startEngine(connectCtx); err != nil {
+	if err := c.startEngine(connectCtx, params); err != nil {
 		return nil, nil, fmt.Errorf("start engine: %w", err)
 	}
 	if !engine.CheckVersionCompatibility(engine.NormalizeVersion(c.bkVersion), engine.MinimumEngineVersion) {
@@ -261,7 +265,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	return c, ctx, nil
 }
 
-func (c *Client) startEngine(ctx context.Context) (rerr error) {
+func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 	remote, err := url.Parse(c.RunnerHost)
 	if err != nil {
 		return fmt.Errorf("parse runner host: %w", err)
@@ -292,6 +296,9 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	c.connector, err = driver.Provision(provisionCtx, remote, &drivers.DriverOpts{
 		DaggerCloudToken: cloudToken,
 		GPUSupport:       os.Getenv(drivers.EnvGPUSupport),
+		Module:           params.Module,
+		Function:         params.Function,
+		ExecCmd:          params.ExecCmd,
 	})
 	provisionCancel()
 	telemetry.End(provisionSpan, func() error { return err })

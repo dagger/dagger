@@ -1,22 +1,22 @@
 Expected stderr:
 
 ▼ connect X.Xs
-├─● starting engine X.Xs
-├─▼ connecting to engine X.Xs
+├╴✔ starting engine X.Xs
+├╴▼ connecting to engine X.Xs
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
-╰─● starting session X.Xs
+╰╴✔ starting session X.Xs
  
 ▼ load module: ./viztest/typescript X.Xs
-├─● finding module configuration X.Xs
-├─● initializing module X.Xs
-├─● inspecting module metadata X.Xs
-╰─● loading type definitions X.Xs
+├╴✔ finding module configuration X.Xs
+├╴✔ initializing module X.Xs
+├╴✔ inspecting module metadata X.Xs
+╰╴✔ loading type definitions X.Xs
  
-● parsing command line arguments X.Xs
+✔ parsing command line arguments X.Xs
 
-● typescript: Typescript! X.Xs
+✔ typescript: Typescript! X.Xs
 ▼ .failLog: Void X.Xs ERROR
-╰─▼ Container.withExec(args: ["sh", "-c", "echo im doing a lot of work; echo and then failing; exit 1"]): Container! X.Xs ERROR
+  ▼ Container.withExec(args: ["sh", "-c", "echo im doing a lot of work; echo and then failing; exit 1"]): Container! X.Xs ERROR
   ┃ im doing a lot of work
   ┃ and then failing
   ! process "sh -c echo im doing a lot of work; echo and then failing; exit 1" did not complete successfully: exit code: 1

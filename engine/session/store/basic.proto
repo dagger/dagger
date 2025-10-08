@@ -7,16 +7,11 @@ import "google/protobuf/empty.proto";
 option go_package = "store";
 
 service BasicStore {
-  // TODO: rename when breaking client<->server compat
-  // rpc WriteTarball(stream Data) returns (google.protobuf.Empty);
-  rpc LoadTarball(stream Data) returns (LoadResponse);
-
+  rpc WriteTarball(stream Data) returns (google.protobuf.Empty);
   rpc ReadTarball(google.protobuf.Empty) returns (stream Data);
 }
 
 message Data {
   bytes data = 1;
 }
-
-message LoadResponse {}
 

@@ -1,6 +1,0 @@
-kind: Changed
-body: Change composer image to reduce download size of PHP modules
-time: 2025-09-23T10:03:14.844209001Z
-custom:
-    Author: Neirda24
-    PR: "11114"

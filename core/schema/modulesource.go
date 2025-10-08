@@ -2,6 +2,7 @@ package schema
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -449,7 +450,7 @@ func (s *moduleSourceSchema) localModuleSource(
 				Field: "withDirectory",
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String(localSrc.SourceRootSubpath)},
-					{Name: "directory", Value: dagql.NewID[*core.Directory](srcRootDir.ID())},
+					{Name: "source", Value: dagql.NewID[*core.Directory](srcRootDir.ID())},
 				},
 			},
 		)
@@ -506,7 +507,10 @@ func (s *moduleSourceSchema) localModuleSource(
 		}
 	}
 
-	localSrc.Digest = localSrc.CalcDigest().String()
+	if err := localSrc.LoadUserDefaults(ctx); err != nil {
+		return inst, fmt.Errorf("load user defaults: %w", err)
+	}
+	localSrc.Digest = localSrc.CalcDigest(ctx).String()
 
 	return dagql.NewResultForCurrentID(ctx, localSrc)
 }
@@ -524,13 +528,9 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	gitRef, modVersion, err := parsed.GetGitRefAndModVersion(ctx, dag, refPin)
+	gitRef, err := parsed.GitRef(ctx, dag, refPin)
 	if err != nil {
 		return inst, fmt.Errorf("failed to resolve git src: %w", err)
-	}
-	gitCommit, gitRefFull, err := gitRef.Self().Resolve(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to resolve git src to commit: %w", err)
 	}
 
 	gitSrc := &core.ModuleSource{
@@ -539,9 +539,9 @@ func (s *moduleSourceSchema) gitModuleSource(
 		Git: &core.GitModuleSource{
 			HTMLRepoURL:  parsed.RepoRoot.Repo,
 			RepoRootPath: parsed.RepoRoot.Root,
-			Version:      modVersion,
-			Commit:       gitCommit,
-			Ref:          gitRefFull,
+			Version:      cmp.Or(gitRef.Self().Ref.ShortName(), gitRef.Self().Ref.SHA),
+			Commit:       gitRef.Self().Ref.SHA,
+			Ref:          gitRef.Self().Ref.Name,
 			CloneRef:     parsed.SourceCloneRef,
 		},
 	}
@@ -663,7 +663,10 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return inst, err
 	}
 
-	gitSrc.Digest = gitSrc.CalcDigest().String()
+	if err := gitSrc.LoadUserDefaults(ctx); err != nil {
+		return inst, fmt.Errorf("load user defaults: %w", err)
+	}
+	gitSrc.Digest = gitSrc.CalcDigest(ctx).String()
 
 	inst, err = dagql.NewResultForCurrentID(ctx, gitSrc)
 	if err != nil {
@@ -825,7 +828,10 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
 
-	dirSrc.Digest = dirSrc.CalcDigest().String()
+	if err := dirSrc.LoadUserDefaults(ctx); err != nil {
+		return inst, fmt.Errorf("load user defaults: %w", err)
+	}
+	dirSrc.Digest = dirSrc.CalcDigest(ctx).String()
 	return inst, nil
 }
 
@@ -970,7 +976,7 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 				Field: "withDirectory",
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String("/")},
-					{Name: "directory", Value: dagql.NewID[*core.Directory](src.Git.UnfilteredContextDir.ID())},
+					{Name: "source", Value: dagql.NewID[*core.Directory](src.Git.UnfilteredContextDir.ID())},
 					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(fullIncludePaths...))},
 				},
 			},
@@ -1038,7 +1044,10 @@ func (s *moduleSourceSchema) moduleSourceWithSourceSubpath(
 		return nil, fmt.Errorf("failed to reload module source context: %w", err)
 	}
 
-	src.Digest = src.CalcDigest().String()
+	if err := src.LoadUserDefaults(ctx); err != nil {
+		return nil, fmt.Errorf("load user defaults: %w", err)
+	}
+	src.Digest = src.CalcDigest(ctx).String()
 	return src, nil
 }
 
@@ -1071,7 +1080,11 @@ func (s *moduleSourceSchema) moduleSourceWithName(
 		src.ModuleOriginalName = args.Name
 	}
 
-	src.Digest = src.CalcDigest().String()
+	// Reload user defaults with new name
+	if err := src.LoadUserDefaults(ctx); err != nil {
+		return nil, fmt.Errorf("load user defaults: %w", err)
+	}
+	src.Digest = src.CalcDigest(ctx).String()
 	return src, nil
 }
 
@@ -1107,7 +1120,7 @@ func (s *moduleSourceSchema) moduleSourceWithIncludes(
 		return nil, fmt.Errorf("failed to reload module source context: %w", err)
 	}
 
-	src.Digest = src.CalcDigest().String()
+	src.Digest = src.CalcDigest(ctx).String()
 	return src, nil
 }
 
@@ -1123,7 +1136,7 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 		src.SDK = nil
 		src.SDKImpl = nil
 
-		src.Digest = src.CalcDigest().String()
+		src.Digest = src.CalcDigest(ctx).String()
 		return src, nil
 	}
 
@@ -1142,7 +1155,11 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 		return nil, fmt.Errorf("failed to load sdk for module source: %w", err)
 	}
 
-	src.Digest = src.CalcDigest().String()
+	// New SDK means new exposed functions and types. Different .env entries might match.
+	if err := src.LoadUserDefaults(ctx); err != nil {
+		return nil, fmt.Errorf("load user defaults: %w", err)
+	}
+	src.Digest = src.CalcDigest(ctx).String()
 	return src, nil
 }
 
@@ -1278,7 +1295,7 @@ func (s *moduleSourceSchema) moduleSourceWithEngineVersion(
 	engineVersion = engine.NormalizeVersion(engineVersion)
 	src.EngineVersion = engineVersion
 
-	src.Digest = src.CalcDigest().String()
+	src.Digest = src.CalcDigest(ctx).String()
 	return src, nil
 }
 
@@ -1420,7 +1437,7 @@ func (s *moduleSourceSchema) moduleSourceWithDependencies(
 	})
 	parentSrc.Dependencies = finalDeps
 
-	parentSrc.Digest = parentSrc.CalcDigest().String()
+	parentSrc.Digest = parentSrc.CalcDigest(ctx).String()
 	return parentSrc, nil
 }
 
@@ -1724,7 +1741,7 @@ func (s *moduleSourceSchema) moduleSourceWithoutDependencies(
 			// see if we can match Pin() with that commit. But that would mean resolving the commit here.
 			if existingVersion == "" {
 				return nil, fmt.Errorf(
-					"version %q was requested to be uninstalled but the dependency %q was originally installed without a specific version. Try re-running the uninstall command without specifying the version number",
+					"version %q was requested to be uninstalled but the dependency %q was installed without a specific version. Try re-running the uninstall command without specifying the version number",
 					depVersion,
 					existingSymbolic,
 				)
@@ -1744,7 +1761,12 @@ func (s *moduleSourceSchema) moduleSourceWithoutDependencies(
 					depReqModVersion, _ = strings.CutPrefix(depReqModVersion, parsedDepGitRef.RepoRootSubdir+"/")
 					existingVersion, _ = strings.CutPrefix(existingVersion, existingDep.Self().SourceRootSubpath+"/")
 				}
-				return nil, fmt.Errorf("version %q was requested to be uninstalled but the installed version is %q", depReqModVersion, existingVersion)
+				return nil, fmt.Errorf(
+					"version %q was requested to be uninstalled but the dependency %q was installed with %q. Try re-running the uninstall command without specifying the version number",
+					depReqModVersion,
+					existingSymbolic,
+					existingVersion,
+				)
 			}
 
 			break
@@ -1755,7 +1777,7 @@ func (s *moduleSourceSchema) moduleSourceWithoutDependencies(
 	}
 
 	parentSrc.Dependencies = filteredDeps
-	parentSrc.Digest = parentSrc.CalcDigest().String()
+	parentSrc.Digest = parentSrc.CalcDigest(ctx).String()
 	return parentSrc, nil
 }
 
@@ -2132,7 +2154,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 					Value: dagql.String("/"),
 				},
 				{
-					Name:  "directory",
+					Name:  "source",
 					Value: dagql.NewID[*core.Directory](generatedClientDir.ID()),
 				},
 			},
@@ -2374,7 +2396,8 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 	// Create module with blueprint source for SDK operations
 	mod := &core.Module{
-		Source:        dagql.NonNull(src),
+		Source: dagql.NonNull(src),
+
 		ContextSource: dagql.NonNull(originalSrc),
 
 		NameField:    src.Self().ModuleName,
@@ -2437,16 +2460,16 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		}
 	}
 
-	if blueprintSrc.Self() != nil {
+	if bp := blueprintSrc.Self(); bp != nil {
 		// Show the downstream module name to clients, not the blueprint name
 		// NOTE: we don't change OriginalName, that's used internally at runtime
 		mod.NameField = originalSrc.Self().ModuleName
 	}
+
 	inst, err = dagql.NewResultForCurrentID(ctx, mod)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", modName, err)
 	}
-
 	return inst, nil
 }
 
@@ -2554,7 +2577,7 @@ func (s *moduleSourceSchema) moduleSourceWithClient(
 
 	src.ConfigClients = append(src.ConfigClients, moduleConfigClient)
 
-	src.Digest = src.CalcDigest().String()
+	src.Digest = src.CalcDigest(ctx).String()
 
 	return src, nil
 }
@@ -2674,7 +2697,7 @@ func (s *moduleSourceSchema) moduleSourceWithUpdatedClients(
 }
 
 func (s *moduleSourceSchema) moduleSourceWithoutClient(
-	_ context.Context,
+	ctx context.Context,
 	src *core.ModuleSource,
 	args struct {
 		Path string
@@ -2695,7 +2718,7 @@ func (s *moduleSourceSchema) moduleSourceWithoutClient(
 
 	src.ConfigClients = configClients
 
-	src.Digest = src.CalcDigest().String()
+	src.Digest = src.CalcDigest(ctx).String()
 
 	return src, nil
 }

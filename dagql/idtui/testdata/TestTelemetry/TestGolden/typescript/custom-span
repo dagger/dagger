@@ -6,27 +6,27 @@ hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ
 Expected stderr:
 
 ▼ connect X.Xs
-├─● starting engine X.Xs
-├─▼ connecting to engine X.Xs
+├╴✔ starting engine X.Xs
+├╴▼ connecting to engine X.Xs
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
-╰─● starting session X.Xs
+╰╴✔ starting session X.Xs
  
 ▼ load module: ./viztest/typescript X.Xs
-├─● finding module configuration X.Xs
-├─● initializing module X.Xs
-├─● inspecting module metadata X.Xs
-╰─● loading type definitions X.Xs
+├╴✔ finding module configuration X.Xs
+├╴✔ initializing module X.Xs
+├╴✔ inspecting module metadata X.Xs
+╰╴✔ loading type definitions X.Xs
  
-● parsing command line arguments X.Xs
+✔ parsing command line arguments X.Xs
 
-● typescript: Typescript! X.Xs
+✔ typescript: Typescript! X.Xs
 ▼ .customSpan: String! X.Xs
 ┃ hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ
-╰─▼ custom span X.Xs
-  ├─$ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
-  ├─▼ .withExec(args: ["echo", "hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ"]): Container! X.Xs
+╰╴▼ custom span X.Xs
+  ├╴$ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
+  ├╴▼ .withExec(args: ["echo", "hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ"]): Container! X.Xs
   │ ┃ hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ
-  ╰─▼ .stdout: String! X.Xs
+  ╰╴▼ .stdout: String! X.Xs
     ┃ hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ
 
 

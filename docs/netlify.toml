@@ -1325,6 +1325,16 @@
 
 ## end: wildcard redirects ##
 
+[[redirects]]
+  from = "/reference/container-runtimes/kubernetes"
+  to = "/reference/deployment/kubernetes"
+  status = 301
+
+[[redirects]]
+  from = "/reference/container-runtimes/openshift"
+  to = "/reference/deployment/openshift"
+  status = 301
+
 [[headers]]
   for = "/*"
   [headers.values]

@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -74,6 +75,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				),
 			),
 		dagql.NodeFunc("build", s.build).
+			View(BeforeVersion("v0.19.0")).
 			Deprecated("Use `Directory.build` instead").
 			Doc(`Initializes this container from a Dockerfile build.`).
 			Args(
@@ -405,10 +407,12 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.Func("withDirectory", s.withDirectory).
+			View(AllVersion).
 			Doc(`Return a new container snapshot, with a directory added to its filesystem`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the written directory (e.g., "/tmp/directory").`),
-				dagql.Arg("directory").Doc(`Identifier of the directory to write`),
+				dagql.Arg("directory").Doc(`Identifier of the directory to write`).View(BeforeVersion("v0.19.0")),
+				dagql.Arg("source").Doc(`Identifier of the directory to write`).View(AfterVersion("v0.19.0")),
 				dagql.Arg("exclude").Doc(`Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).`),
 				dagql.Arg("include").Doc(`Patterns to include in the written directory (e.g. ["*.go", "go.mod", "go.sum"]).`),
 				dagql.Arg("owner").Doc(`A user:group to set for the directory and its contents.`,
@@ -1771,7 +1775,7 @@ func (s *containerSchema) withDirectory(ctx context.Context, parent *core.Contai
 		return nil, fmt.Errorf("failed to get server: %w", err)
 	}
 
-	dir, err := args.Directory.Load(ctx, srv)
+	dir, err := cmp.Or(args.Source, args.Directory).Load(ctx, srv)
 	if err != nil {
 		return nil, err
 	}

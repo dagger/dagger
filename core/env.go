@@ -3,30 +3,30 @@ package core
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"maps"
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type Env struct {
-	// The server providing the environment's types + schema
-	srv *dagql.Server
+	// The environment's host filesystem
+	Workspace dagql.ObjectResult[*Directory] `field:"true"`
+
+	// The full module dependency chain for the environment, including the core
+	// module and any dependencies from the environment's creator
+	deps *ModDeps
+	// The modules explicitly installed into the environment, to be exposed as
+	// tools that implicitly call the constructor with the environment's workspace
+	installedModules []*Module
+
 	// Input values
 	inputsByName map[string]*Binding
 	// Output values
 	outputsByName map[string]*Binding
-	// Saved objects by ID (Foo#123)
-	objsByID map[string]*Binding
-	// Auto incrementing number per-type
-	typeCounts map[string]int
-	// The LLM-friendly ID ("Container#123") for each object
-	idByHash map[digest.Digest]string
 	// Whether the environment exposes toplevel bindings
 	privileged bool
 	// The env supports declaring new outputs.
@@ -40,34 +40,51 @@ func (*Env) Type() *ast.Type {
 	}
 }
 
-func NewEnv(srv *dagql.Server) *Env {
-	return &Env{
-		srv:           srv,
-		inputsByName:  map[string]*Binding{},
-		outputsByName: map[string]*Binding{},
-		objsByID:      map[string]*Binding{},
-		typeCounts:    map[string]int{},
-		idByHash:      map[digest.Digest]string{},
-	}
+type envKey struct{}
+
+func EnvToContext(ctx context.Context, env dagql.ObjectResult[*Env]) context.Context {
+	return context.WithValue(ctx, envKey{}, env)
 }
 
-// Expose this environment for LLM consumption via MCP.
-func (env *Env) MCP() *MCP {
-	return newMCP(env)
+func EnvFromContext(ctx context.Context) (res dagql.ObjectResult[*Env], ok bool) {
+	env, ok := ctx.Value(envKey{}).(dagql.ObjectResult[*Env])
+	if !ok {
+		return res, false
+	}
+	return env, true
+}
+
+func NewEnv(workspace dagql.ObjectResult[*Directory], deps *ModDeps) *Env {
+	return &Env{
+		Workspace:     workspace,
+		deps:          deps,
+		inputsByName:  map[string]*Binding{},
+		outputsByName: map[string]*Binding{},
+	}
 }
 
 func (env *Env) Clone() *Env {
 	cp := *env
 	cp.inputsByName = maps.Clone(cp.inputsByName)
 	cp.outputsByName = maps.Clone(cp.outputsByName)
-	cp.objsByID = maps.Clone(cp.objsByID)
-	cp.typeCounts = maps.Clone(cp.typeCounts)
-	cp.idByHash = maps.Clone(cp.idByHash)
 	for name, bnd := range cp.outputsByName {
 		// clone output bindings, since they mutate
 		cp.outputsByName[name] = bnd.Clone()
 	}
 	return &cp
+}
+
+func (env *Env) WithWorkspace(dir dagql.ObjectResult[*Directory]) *Env {
+	cp := *env
+	cp.Workspace = dir
+	return &cp
+}
+
+func (env *Env) WithModule(mod *Module) *Env {
+	cp := env.Clone()
+	cp.deps = cp.deps.Append(mod)
+	cp.installedModules = append(cp.installedModules, mod)
+	return cp
 }
 
 func (env *Env) Privileged() *Env {
@@ -87,25 +104,10 @@ func (env *Env) Writable() *Env {
 	return env
 }
 
-// Declare an output binding in the environment, which must be writable.
-func (env *Env) DeclareOutput(name string, typ dagql.Type, description string) error {
-	if env.writable {
-		env.outputsByName[name] = &Binding{
-			Key:          name,
-			Value:        nil,
-			ExpectedType: typ.TypeName(),
-			Description:  description,
-			env:          env,
-		}
-		return nil
-	}
-	return errors.New("environment is not writable")
-}
-
 // Add an input (read-only) binding to the environment
 func (env *Env) WithInput(key string, val dagql.Typed, description string) *Env {
 	env = env.Clone()
-	input := &Binding{Key: key, Value: val, Description: description, env: env}
+	input := &Binding{Key: key, Value: val, Description: description}
 	_ = input.ID() // If val is an object, force its ingestion
 	env.inputsByName[key] = input
 	return env
@@ -119,9 +121,16 @@ func (env *Env) WithOutput(key string, expectedType dagql.Type, description stri
 		Value:        nil,
 		ExpectedType: expectedType.TypeName(),
 		Description:  description,
-		env:          env,
 	}
 	return env
+}
+
+// Lookup registered outputs in the environment
+func (env *Env) Input(key string) (*Binding, bool) {
+	if input, exists := env.inputsByName[key]; exists {
+		return input, true
+	}
+	return nil, false
 }
 
 // Lookup registered outputs in the environment
@@ -141,6 +150,15 @@ func (env *Env) Outputs() []*Binding {
 	return res
 }
 
+// Remove all outputs from the environment and prevent new ones from being
+// declared
+func (env *Env) WithoutOutputs() *Env {
+	env = env.Clone()
+	clear(env.outputsByName)
+	env.writable = false
+	return env
+}
+
 // List all inputs in the environment
 func (env *Env) Inputs() []*Binding {
 	res := make([]*Binding, 0, len(env.inputsByName))
@@ -150,19 +168,6 @@ func (env *Env) Inputs() []*Binding {
 	return res
 }
 
-// Lookup an input binding
-func (env *Env) Input(key string) (*Binding, bool) {
-	// next check for values by ID
-	if val, exists := env.objsByID[key]; exists {
-		return val, true
-	}
-	// next check for values by name
-	if val, exists := env.inputsByName[key]; exists {
-		return val, true
-	}
-	return nil, false
-}
-
 // Remove an input
 func (env *Env) WithoutInput(key string) *Env {
 	env = env.Clone()
@@ -170,109 +175,10 @@ func (env *Env) WithoutInput(key string) *Env {
 	return env
 }
 
-func (env *Env) Ingest(obj dagql.AnyResult, desc string) string {
-	id := obj.ID()
-	if id == nil {
-		return ""
-	}
-	hash := id.Digest()
-	typeName := id.Type().NamedType()
-	llmID, ok := env.idByHash[hash]
-	if !ok {
-		env.typeCounts[typeName]++
-		llmID = fmt.Sprintf("%s#%d", typeName, env.typeCounts[typeName])
-		if desc == "" {
-			desc = env.describe(obj.ID())
-		}
-		env.idByHash[hash] = llmID
-		env.objsByID[llmID] = &Binding{
-			Key:          llmID,
-			Value:        obj,
-			Description:  desc,
-			ExpectedType: obj.Type().Name(),
-			env:          env,
-		}
-	}
-	return llmID
-}
-
-func (env *Env) describe(id *call.ID) string {
-	str := new(strings.Builder)
-	if recv := id.Receiver(); recv != nil {
-		if llmID, ok := env.idByHash[recv.Digest()]; ok {
-			str.WriteString(llmID)
-		} else {
-			str.WriteString(recv.Digest().String())
-		}
-		str.WriteString(".")
-	}
-	str.WriteString(id.Field())
-
-	// Include arguments in the description
-	if args := id.Args(); len(args) > 0 {
-		str.WriteString("(")
-		for i, arg := range args {
-			if i > 0 {
-				str.WriteString(", ")
-			}
-			str.WriteString(arg.Name())
-			str.WriteString(": ")
-			str.WriteString(env.displayLit(arg.Value()))
-		}
-		str.WriteString(")")
-	}
-	return str.String()
-}
-
-func (env *Env) displayLit(lit call.Literal) string {
-	switch x := lit.(type) {
-	case *call.LiteralID:
-		// For ID arguments, try to use LLM IDs
-		if llmID, ok := env.idByHash[x.Value().Digest()]; ok {
-			return llmID
-		} else {
-			return x.Value().Type().NamedType()
-		}
-	case *call.LiteralList:
-		list := "["
-		_ = x.Range(func(i int, value call.Literal) error {
-			if i > 0 {
-				list += ","
-			}
-			list += env.displayLit(value)
-			return nil
-		})
-		list += "]"
-		return list
-	case *call.LiteralObject:
-		obj := "{"
-		_ = x.Range(func(i int, name string, value call.Literal) error {
-			if i > 0 {
-				obj += ","
-			}
-			obj += name + ": " + env.displayLit(value)
-			return nil
-		})
-		obj += "}"
-		return obj
-	default:
-		return lit.Display()
-	}
-}
-
-func (env *Env) Types() []string {
-	types := make([]string, 0, len(env.typeCounts))
-	for typ := range env.typeCounts {
-		types = append(types, typ)
-	}
-	return types
-}
-
 type Binding struct {
 	Key         string
 	Value       dagql.Typed
 	Description string
-	env         *Env // TODO: wire this up
 	// The expected type
 	// Used when defining an output
 	ExpectedType string
@@ -323,11 +229,7 @@ func (b *Binding) TypeName() string {
 
 // Return the stable object ID for this binding, or an empty string if it's not an object
 func (b *Binding) ID() string {
-	obj, isObject := b.AsObject()
-	if !isObject {
-		return ""
-	}
-	return b.env.Ingest(obj, b.Description)
+	return b.Key
 }
 
 // Return a stable digest of the binding's value
@@ -372,7 +274,10 @@ var TypesHiddenFromEnvExtensions = []dagql.Typed{
 	&CurrentModule{},
 	&EnumTypeDef{},
 	&EnumMemberTypeDef{},
-	&Env{},
+	// &Env{},
+	// returning an LLM lets agents go completely off the wall and spawn infinite
+	// sub-agents
+	&LLM{},
 	&Error{},
 	&ErrorValue{},
 	&FieldTypeDef{},

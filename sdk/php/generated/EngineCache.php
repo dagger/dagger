@@ -35,15 +35,6 @@ class EngineCache extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
-     */
-    public function keepBytes(): int
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('keepBytes');
-        return (int)$this->queryLeaf($leafQueryBuilder, 'keepBytes');
-    }
-
-    /**
      * The maximum bytes to keep in the cache without pruning.
      */
     public function maxUsedSpace(): int

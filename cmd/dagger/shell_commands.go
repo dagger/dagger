@@ -247,7 +247,7 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if h.llmSession == nil {
 					return fmt.Errorf("LLM not initialized")
 				}
-				h.llmSession = h.llmSession.Clear(ctx)
+				h.llmSession = h.llmSession.Clear()
 				return nil
 			},
 		},
@@ -294,7 +294,7 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if err != nil {
 					return err
 				}
-				newLLM, err := llm.Model(ctx, args[0])
+				newLLM, err := llm.Model(args[0])
 				if err != nil {
 					return err
 				}

@@ -5,49 +5,37 @@ slug: /reference/container-runtimes/apple-container
 description: "Learn how to use Dagger with Apple Container."
 ---
 
+# Apple Container
+
 Dagger can be used with any OCI-compatible container runtime, including [`container` from Apple](https://github.com/apple/container).
 
 :::warning
 The support for Apple's `container` is still early and experimental.
 :::
 
-## How it works
-
-By default, Dagger tries to invoke the `docker` executable at some points during the invocation of `dagger`. Since `container` is partially CLI-compatible with Docker, some functionality works out of the box, and there is a way to get running by combining a symbolic link named `docker` pointing to the `container` executable, together with the approach of [Custom Runner support](https://docs.dagger.io/configuration/custom-runner).
-
 ## Prerequisites
 
-- Apple's `container` installed and API server running on the host system, through `container system start`.
+Ensure that `container` is installed on your Mac:
+
+```console
+$ container system start
+...
+```
+
+You can install `container` using the official instruction at [github.com/apple/container](https://github.com/apple/container).
 
 ## Example
 
-To use `container` with Dagger:
-
-Create a symbolic link in a superior `PATH` position as below:
-
-```shell
-sudo ln -s $(which container) /usr/local/bin/docker
+```console
+$ container ls
+ID  IMAGE  OS  ARCH  STATE  ADDR  CPUS  MEMORY
+$ dagger core version
+v0.18.19
+$ container ls
+container ls
+ID                      IMAGE                               OS     ARCH   STATE    ADDR          CPUS  MEMORY
+dagger-engine-v0.18.19  registry.dagger.io/engine:v0.18.19  linux  arm64  running  192.168.64.4  4     8192 MB
 ```
-
-Start the Dagger Engine using appropriate values for memory and cpus:
-
-```shell
-container run --rm -d \
-    --memory 16G \
-    --cpus 4 \
-    --name dagger-engine-custom \
-    registry.dagger.io/engine:v0.18.12
-```
-
-Set this environment variable wherever you want to reach your Dagger Engine:
-
-```shell
-export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine-custom
-```
-
-:::info
-There is no `container ps`, so use `container ls` to check if the Dagger Engine is running.
-:::
 
 ## Resources
 

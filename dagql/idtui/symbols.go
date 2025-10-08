@@ -19,6 +19,7 @@ const (
 	DotHalf             = "◐"
 	DotFilled           = "●"
 	DotCenter           = "◉"
+	DotTiny             = "·"
 	HorizBar            = "─"
 	HorizBottomBar      = "┬"
 	HorizHalfLeftBar    = "╴"
@@ -44,6 +45,8 @@ const (
 	IconCached          = "$" // cache money
 	Diamond             = "◆"
 	LLMPrompt           = "❯"
+	BorderLeft          = "▕"
+	CloudIcon           = "⬢"
 
 	// We need a prompt that conveys the unique nature of the Dagger shell. Per gpt4:
 	// The ⋈ symbol, known as the bowtie, has deep roots in relational databases and set theory,

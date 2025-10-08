@@ -81,7 +81,12 @@ func New(
 		if strings.HasPrefix(module, "dagql/idtui/viztest/broken") {
 			continue
 		}
-		if strings.HasPrefix(module, "modules/evaluator/") {
+		if strings.HasPrefix(module, "modules/claude/") {
+			// re-enable after we ship its dependent APIs
+			continue
+		}
+		if strings.HasPrefix(module, "modules/evals/") {
+			// re-enable after we ship its dependent APIs
 			continue
 		}
 		dev.ModCodegenTargets = append(dev.ModCodegenTargets, module)
@@ -105,6 +110,32 @@ func (dev *DaggerDev) SourceDeveloped(targets ...string) *dagger.Directory {
 		src = src.WithDirectory(module, layer)
 	}
 	return src
+}
+
+// Start a coding agent for the Dagger project.
+func (dev *DaggerDev) Coder(ctx context.Context) (*dagger.LLM, error) {
+	src := dev.Source
+
+	gopls := dag.Go(src).Base().
+		WithExec([]string{"go", "install", "golang.org/x/tools/gopls@latest"}).
+		WithDirectory("/workspace", src).
+		WithWorkdir("/workspace").
+		WithDefaultArgs([]string{"gopls", "mcp"})
+
+	goplsInstructions, err := gopls.WithExec([]string{"gopls", "mcp", "-instructions"}).Stdout(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return dag.Doug().Agent(
+		dag.LLM().
+			WithEnv(
+				dag.Env().
+					WithCurrentModule().
+					WithWorkspace(src)).
+			WithSystemPrompt(goplsInstructions).
+			WithMCPServer("gopls", gopls.AsService()),
+	), nil
 }
 
 // Develop the Dagger CLI
@@ -135,7 +166,12 @@ func (dev *DaggerDev) Lint(
 				if strings.HasPrefix(pkg, "dagql/idtui/viztest/broken") {
 					continue
 				}
-				if strings.HasPrefix(pkg, "modules/evaluator/") {
+				if strings.HasPrefix(pkg, "modules/claude/") {
+					// re-enable after we ship its dependent APIs
+					continue
+				}
+				if strings.HasPrefix(pkg, "modules/evals/") {
+					// re-enable after we ship its dependent APIs
 					continue
 				}
 				pkgs = append(pkgs, pkg)
@@ -200,45 +236,6 @@ func (dev *DaggerDev) Scripts() *Scripts {
 // Find test suites to run
 func (dev *DaggerDev) Test() *Test {
 	return &Test{Dagger: dev}
-}
-
-// Run the Dagger evals across the major model providers.
-func (dev *DaggerDev) Evals(
-	ctx context.Context,
-	// Run particular evals, or all evals if unspecified.
-	// +optional
-	evals []string,
-	// Run particular models, or all models if unspecified.
-	// +optional
-	models []string,
-) error {
-	return dev.evaluator().
-		EvalsAcrossModels(dagger.EvaluatorEvalsAcrossModelsOpts{
-			Evals:  evals,
-			Models: models,
-		}).
-		Check(ctx)
-}
-
-func (dev *DaggerDev) evaluator() *dagger.Evaluator {
-	return dag.Evaluator().
-		WithDocsFile(dev.Source.File("core/llm_docs.md")).
-		WithoutDefaultSystemPrompt().
-		WithSystemPromptFile(dev.Source.File("core/llm_dagger_prompt.md")).
-		WithEvals([]*dagger.EvaluatorEval{
-			// FIXME: ideally this list would live closer to where the evals are
-			// defined, but it's not possible for a module to return an interface type
-			// https://github.com/dagger/dagger/issues/7582
-			dag.Evals().Basic().AsEvaluatorEval(),
-			dag.Evals().BuildMulti().AsEvaluatorEval(),
-			dag.Evals().BuildMultiNoVar().AsEvaluatorEval(),
-			dag.Evals().WorkspacePattern().AsEvaluatorEval(),
-			dag.Evals().ReadImplicitVars().AsEvaluatorEval(),
-			dag.Evals().UndoChanges().AsEvaluatorEval(),
-			dag.Evals().CoreAPI().AsEvaluatorEval(),
-			dag.Evals().ModuleDependencies().AsEvaluatorEval(),
-			dag.Evals().Responses().AsEvaluatorEval(),
-		})
 }
 
 // Find benchmark suites to run

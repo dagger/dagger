@@ -60,6 +60,12 @@ dagger core container \
 ```
 
 </TabItem>
+<TabItem value="php" label="PHP">
+
+```php file=./snippets/cache-volumes/php/src/MyModule.php
+```
+
+</TabItem>
 </Tabs>
 
 This example will take some time to complete on the first run, as the cache volumes will not exist at that point. Subsequent runs will be significantly faster (assuming there is no other change), since Dagger will simply use the dependencies from the cache volumes instead of downloading them again.

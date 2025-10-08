@@ -56,9 +56,8 @@ defmodule Dagger.ClientTest do
       |> GitRef.tree()
 
     assert {:ok, out} =
-             dag
-             |> Client.container()
-             |> Container.build(repo)
+             repo
+             |> Directory.docker_build()
              |> Container.with_exec(["dagger", "version"])
              |> Container.stdout()
 
@@ -75,13 +74,9 @@ defmodule Dagger.ClientTest do
 
     assert {:ok, out} =
              dag
-             |> Client.container()
-             |> Container.build(
-               dag
-               |> Client.directory()
-               |> Directory.with_new_file("Dockerfile", dockerfile),
-               build_args: [%BuildArg{name: "SPAM", value: "egg"}]
-             )
+             |> Client.directory()
+             |> Directory.with_new_file("Dockerfile", dockerfile)
+             |> Directory.docker_build(build_args: [%BuildArg{name: "SPAM", value: "egg"}])
              |> Container.with_exec([])
              |> Container.stdout()
 
@@ -124,7 +119,7 @@ defmodule Dagger.ClientTest do
   end
 
   test "container with mounted cache", %{dag: dag} do
-    cache_key = "example-cache"
+    cache_key = "example-cache-" <> Integer.to_string(Enum.random(1..1_000_000_000))
     filename = DateTime.utc_now() |> Calendar.strftime("%Y-%m-%d-%H-%M-%S")
 
     container =

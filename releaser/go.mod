@@ -3,7 +3,7 @@ module dagger/releaser
 go 1.24.0
 
 require (
-	github.com/99designs/gqlgen v0.17.79
+	github.com/99designs/gqlgen v0.17.80
 	github.com/Khan/genqlient v0.8.1
 	github.com/go-task/slim-sprig/v3 v3.0.0
 	github.com/vektah/gqlparser/v2 v2.5.30

@@ -30,7 +30,9 @@ import (
 	"text/template"
 	"time"
 
+	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/identity"
+	resolverconfig "github.com/dagger/dagger/internal/buildkit/util/resolver/config"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -713,8 +715,8 @@ func (m *Caller) Run(ctx context.Context) (string, error) {
 		).
 		With(daggerCall("run")).
 		Stdout(ctx)
-	require.Equal(t, "1 /cache/svc.txt", strings.TrimSpace(out))
 	require.NoError(t, err)
+	require.Equal(t, "1 /cache/svc.txt", strings.TrimSpace(out))
 }
 
 func (ServiceSuite) TestPorts(ctx context.Context, t *testctx.T) {
@@ -2229,6 +2231,68 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 		}
 	}
 	require.True(t, found)
+}
+
+func (ServiceSuite) TestServiceFromUncachedPrivateImage(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	const htpasswd = "john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC"
+	privateRegistrySvc := c.Container().
+		From("registry:2").
+		WithNewFile("/auth/htpasswd", htpasswd).
+		WithEnvVariable("REGISTRY_AUTH", "htpasswd").
+		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
+		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+
+	engineSvc := devEngineContainerAsService(devEngineContainer(c,
+		func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithServiceBinding("registry", privateRegistrySvc)
+		},
+		engineWithBkConfig(ctx, t, func(ctx context.Context, t *testctx.T, cfg bkconfig.Config) bkconfig.Config {
+			cfg.Registries = map[string]resolverconfig.RegistryConfig{
+				"registry:5000": {
+					PlainHTTP: ptr(true),
+				},
+			}
+			return cfg
+		}),
+	))
+
+	const authFile = `{
+        "auths": {
+                "registry:5000": {
+                        "auth": "am9objp4RmxlamFQZGpydDI1RHZy"
+                }
+        }
+}`
+
+	privateImageRef := "registry:5000/test:latest"
+	ctr := engineClientContainer(ctx, t, c, engineSvc).
+		WithNewFile("/docker/config.json", authFile).
+		WithEnvVariable("DOCKER_CONFIG", "/docker").
+		With(daggerNonNestedExec("core",
+			"container",
+			"from", "--address", busyboxImage,
+			"with-workdir", "--path", "/srv",
+			"with-new-file", "--path", "index.html", "--contents", "yoyoyo",
+			"with-default-args", "--args", "httpd,-v,-f",
+			"with-exposed-port", "--port", "80",
+			"publish", "--address", privateImageRef,
+		)).
+		// prune the engine to ensure it's not cached no mo
+		With(daggerNonNestedExec("core",
+			"engine", "local-cache", "prune",
+		)).
+		With(daggerNonNestedExec("-c",
+			"container | from "+alpineImage+" | with-service-binding idc $(container | from "+privateImageRef+" | with-exposed-port 80 | as-service) | with-exec apk add curl | with-exec curl http://idc | stdout",
+		))
+
+	out, err := ctr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "yoyoyo", strings.TrimSpace(out))
 }
 
 func httpService(ctx context.Context, t testing.TB, c *dagger.Client, content string) (*dagger.Service, string) {

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -22,6 +23,30 @@ func (*Host) Type() *ast.Type {
 
 func (*Host) TypeDescription() string {
 	return "Information about the host environment."
+}
+
+// Lookup an environment variable in the host system from the current context
+func (Host) GetEnv(ctx context.Context, name string) string {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return ""
+	}
+	secretStore, err := query.Secrets(ctx)
+	if err != nil {
+		return ""
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return ""
+	}
+	plaintext, err := secretStore.GetSecretPlaintextDirect(ctx, &Secret{
+		URI:               "env://" + name,
+		BuildkitSessionID: clientMetadata.ClientID,
+	})
+	if err != nil {
+		return ""
+	}
+	return string(plaintext)
 }
 
 // find-up a given soughtName in curDirPath and its parent directories, return the dir

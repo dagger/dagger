@@ -1357,3 +1357,90 @@ export class Test {
 		})
 	}
 }
+
+func (LegacySuite) TestLegacyGitLaxRefs(ctx context.Context, t *testctx.T) {
+	// Changed in dagger/dagger#11038
+	// Ensure that the old schemas can still call `GitRepository.tag` with a
+	// branch, and similar.
+
+	c := connect(ctx, t)
+
+	modGen := daggerCliBase(t, c).
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+		WithWorkdir("/work").
+		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.18.7"}`).
+		WithNewFile("main.go", `package main
+
+import "context"
+
+type Test struct {}
+
+func (m *Test) Commit(ctx context.Context, name string) (string, error) {
+	return dag.Git("github.com/dagger/dagger").Commit(name).Tree().File("LICENSE").Contents(ctx)
+}
+
+func (m *Test) Tag(ctx context.Context, name string) (string, error) {
+	return dag.Git("github.com/dagger/dagger").Tag(name).Tree().File("LICENSE").Contents(ctx)
+}
+
+func (m *Test) Branch(ctx context.Context, name string) (string, error) {
+	return dag.Git("github.com/dagger/dagger").Branch(name).Tree().File("LICENSE").Contents(ctx)
+}
+`)
+
+	// main is a branch, not a commit
+	out, err := modGen.With(daggerCall("commit", "--name=main")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "Apache License")
+
+	// main is a branch, not a tag
+	out, err = modGen.With(daggerCall("tag", "--name=main")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "Apache License")
+
+	// v0.18.7 is a tag, not a branch
+	out, err = modGen.With(daggerCall("branch", "--name=v0.18.7")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "Apache License")
+}
+
+func (LegacySuite) TestLegacyContainerBuild(ctx context.Context, t *testctx.T) {
+	// Deprecated in dagger/dagger#10811
+	// XXX: update ^^^
+	//
+	// Ensure that the old schemas still have Container.Build
+
+	c := connect(ctx, t)
+
+	modGen := daggerCliBase(t, c).
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+		WithWorkdir("/work").
+		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.18.19"}`).
+		WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"fmt"
+)
+
+type Test struct {}
+
+func (m *Test) Hello(ctx context.Context) error {
+	dockerfile := "FROM alpine\nRUN echo hello > /hello"
+	out, err := dag.Container().
+		Build(dag.Directory().WithNewFile("Dockerfile", dockerfile)).
+		WithExec([]string{"cat", "/hello"}).
+		Stdout(ctx)
+	if err != nil {
+		return err
+	}
+	if string(out) != "hello\n" {
+		return fmt.Errorf("expected hello, got %q", string(out))
+	}
+	return nil
+}
+		`)
+
+	_, err := modGen.With(daggerCall("hello")).Stdout(ctx)
+	require.NoError(t, err)
+}

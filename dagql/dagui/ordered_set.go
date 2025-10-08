@@ -6,7 +6,7 @@ import (
 	"slices"
 )
 
-type OrderedSet[K, V comparable] struct {
+type OrderedSet[K comparable, V any] struct {
 	Order    []V
 	KeyFunc  func(V) K
 	LessFunc func(V, V) bool
@@ -21,7 +21,7 @@ func NewSet[T comparable]() *OrderedSet[T, T] {
 	}
 }
 
-func NewOrderedSet[K comparable, V comparable](keyFunc func(V) K, vs ...V) *OrderedSet[K, V] {
+func NewOrderedSet[K comparable, V any](keyFunc func(V) K, vs ...V) *OrderedSet[K, V] {
 	set := &OrderedSet[K, V]{
 		KeyFunc: keyFunc,
 	}
@@ -85,7 +85,7 @@ func (set *OrderedSet[K, V]) Remove(value V) bool {
 	delete(set.Map, key)
 	var removeIdx int
 	for i, v := range set.Order {
-		if v == value {
+		if set.KeyFunc(v) == key {
 			removeIdx = i
 			break
 		}

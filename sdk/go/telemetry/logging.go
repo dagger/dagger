@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"time"
 
+	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type loggerProviderKey struct{}
@@ -116,4 +119,46 @@ type spanStream struct {
 func (w *spanStream) Close() error {
 	w.Writer.Emit(log.StringValue(""), log.Bool(StdioEOFAttr, true))
 	return nil
+}
+
+const globalLogsSpanBaggage = "global-logs-span"
+
+// ContextWithGlobalLogsSpan makes the current span the target for global logs,
+// by storing it in OpenTelemetry baggage.
+func ContextWithGlobalLogsSpan(ctx context.Context) context.Context {
+	bag := baggage.FromContext(ctx)
+	m, err := baggage.NewMember(globalLogsSpanBaggage,
+		trace.SpanContextFromContext(ctx).SpanID().String())
+	if err != nil {
+		// value would have to be invalid, but it ain't
+		panic(err)
+	}
+	bag, err = bag.SetMember(m)
+	if err != nil {
+		// member would have to be invalid, but it ain't
+		panic(err)
+	}
+	return baggage.ContextWithBaggage(ctx, bag)
+}
+
+// GlobalLogsSpanContext returns a Context pointing to the global logs span, or
+// the current span if none is configured.
+func GlobalLogsSpanContext(ctx context.Context) context.Context {
+	bag := baggage.FromContext(ctx)
+	spanCtx := trace.SpanContextFromContext(ctx)
+	if spanIDHex := bag.Member(globalLogsSpanBaggage).Value(); spanIDHex != "" {
+		spanID, err := trace.SpanIDFromHex(spanIDHex)
+		if err != nil {
+			slog.Warn("invalid span ID hex for global logs", "spanIDHex", spanIDHex, "error", err)
+		} else {
+			spanCtx = spanCtx.WithSpanID(spanID)
+			ctx = trace.ContextWithSpanContext(ctx, spanCtx)
+		}
+	}
+	return ctx
+}
+
+// GlobalWriter returns a Writer that writes to the global logging span.
+func GlobalWriter(ctx context.Context, name string, attrs ...log.KeyValue) io.Writer {
+	return NewWriter(GlobalLogsSpanContext(ctx), name, attrs...)
 }

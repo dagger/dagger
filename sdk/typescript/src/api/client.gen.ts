@@ -178,39 +178,6 @@ export type ContainerAsTarballOpts = {
   mediaTypes?: ImageMediaTypes
 }
 
-export type ContainerBuildOpts = {
-  /**
-   * Path to the Dockerfile to use.
-   */
-  dockerfile?: string
-
-  /**
-   * Target build stage to build.
-   */
-  target?: string
-
-  /**
-   * Additional build arguments.
-   */
-  buildArgs?: BuildArg[]
-
-  /**
-   * Secrets to pass to the build.
-   *
-   * They will be mounted at /run/secrets/[secret-name] in the build container
-   *
-   * They can be accessed in the Dockerfile using the "secret" mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl [http://example.com?token=$(cat /run/secrets/my-secret)](http://example.com?token=$(cat /run/secrets/my-secret))
-   */
-  secrets?: Secret[]
-
-  /**
-   * If set, skip the automatic init process injected into containers created by RUN statements.
-   *
-   * This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
-   */
-  noInit?: boolean
-}
-
 export type ContainerDirectoryOpts = {
   /**
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
@@ -1041,6 +1008,20 @@ export type EnumTypeDefID = string & { __EnumTypeDefID: never }
  * The `EnumValueTypeDefID` scalar type represents an identifier for an object of type EnumValueTypeDef.
  */
 export type EnumValueTypeDefID = string & { __EnumValueTypeDefID: never }
+
+export type EnvFileGetOpts = {
+  /**
+   * Return the value exactly as written to the file. No quote removal or variable expansion
+   */
+  raw?: boolean
+}
+
+export type EnvFileVariablesOpts = {
+  /**
+   * Return values exactly as written to the file. No quote removal or variable expansion
+   */
+  raw?: boolean
+}
 
 /**
  * The `EnvFileID` scalar type represents an identifier for an object of type EnvFile.
@@ -2490,14 +2471,6 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * Retrieve the binding value, as type LLM
-   */
-  asLLM = (): LLM => {
-    const ctx = this._ctx.select("asLLM")
-    return new LLM(ctx)
-  }
-
-  /**
    * Retrieve the binding value, as type Module
    */
   asModule = (): Module_ => {
@@ -2562,7 +2535,7 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * The binding's string value
+   * Returns the binding's string value
    */
   asString = async (): Promise<string> => {
     if (this._asString) {
@@ -2577,7 +2550,7 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * The digest of the binding value
+   * Returns the digest of the binding value
    */
   digest = async (): Promise<string> => {
     if (this._digest) {
@@ -2607,7 +2580,7 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * The binding name
+   * Returns the binding name
    */
   name = async (): Promise<string> => {
     if (this._name) {
@@ -2622,7 +2595,7 @@ export class Binding extends BaseClient {
   }
 
   /**
-   * The binding type
+   * Returns the binding type
    */
   typeName = async (): Promise<string> => {
     if (this._typeName) {
@@ -2972,27 +2945,6 @@ export class Container extends BaseClient {
 
     const ctx = this._ctx.select("asTarball", { ...opts, __metadata: metadata })
     return new File(ctx)
-  }
-
-  /**
-   * Initializes this container from a Dockerfile build.
-   * @param context Directory context used by the Dockerfile.
-   * @param opts.dockerfile Path to the Dockerfile to use.
-   * @param opts.target Target build stage to build.
-   * @param opts.buildArgs Additional build arguments.
-   * @param opts.secrets Secrets to pass to the build.
-   *
-   * They will be mounted at /run/secrets/[secret-name] in the build container
-   *
-   * They can be accessed in the Dockerfile using the "secret" mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl [http://example.com?token=$(cat /run/secrets/my-secret)](http://example.com?token=$(cat /run/secrets/my-secret))
-   * @param opts.noInit If set, skip the automatic init process injected into containers created by RUN statements.
-   *
-   * This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
-   * @deprecated Use `Directory.build` instead
-   */
-  build = (context: Directory, opts?: ContainerBuildOpts): Container => {
-    const ctx = this._ctx.select("build", { context, ...opts })
-    return new Container(ctx)
   }
 
   /**
@@ -3543,7 +3495,7 @@ export class Container extends BaseClient {
   /**
    * Return a new container snapshot, with a directory added to its filesystem
    * @param path Location of the written directory (e.g., "/tmp/directory").
-   * @param directory Identifier of the directory to write
+   * @param source Identifier of the directory to write
    * @param opts.exclude Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).
    * @param opts.include Patterns to include in the written directory (e.g. ["*.go", "go.mod", "go.sum"]).
    * @param opts.owner A user:group to set for the directory and its contents.
@@ -3555,10 +3507,10 @@ export class Container extends BaseClient {
    */
   withDirectory = (
     path: string,
-    directory: Directory,
+    source: Directory,
     opts?: ContainerWithDirectoryOpts,
   ): Container => {
-    const ctx = this._ctx.select("withDirectory", { path, directory, ...opts })
+    const ctx = this._ctx.select("withDirectory", { path, source, ...opts })
     return new Container(ctx)
   }
 
@@ -4563,7 +4515,7 @@ export class Directory extends BaseClient {
   /**
    * Return a snapshot with a directory added
    * @param path Location of the written directory (e.g., "/src/").
-   * @param directory Identifier of the directory to copy.
+   * @param source Identifier of the directory to copy.
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    * @param opts.owner A user:group to set for the copied directory and its contents.
@@ -4574,10 +4526,10 @@ export class Directory extends BaseClient {
    */
   withDirectory = (
     path: string,
-    directory: Directory,
+    source: Directory,
     opts?: DirectoryWithDirectoryOpts,
   ): Directory => {
-    const ctx = this._ctx.select("withDirectory", { path, directory, ...opts })
+    const ctx = this._ctx.select("withDirectory", { path, source, ...opts })
     return new Directory(ctx)
   }
 
@@ -4766,7 +4718,6 @@ export class Engine extends BaseClient {
  */
 export class EngineCache extends BaseClient {
   private readonly _id?: EngineCacheID = undefined
-  private readonly _keepBytes?: number = undefined
   private readonly _maxUsedSpace?: number = undefined
   private readonly _minFreeSpace?: number = undefined
   private readonly _prune?: Void = undefined
@@ -4779,7 +4730,6 @@ export class EngineCache extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: EngineCacheID,
-    _keepBytes?: number,
     _maxUsedSpace?: number,
     _minFreeSpace?: number,
     _prune?: Void,
@@ -4789,7 +4739,6 @@ export class EngineCache extends BaseClient {
     super(ctx)
 
     this._id = _id
-    this._keepBytes = _keepBytes
     this._maxUsedSpace = _maxUsedSpace
     this._minFreeSpace = _minFreeSpace
     this._prune = _prune
@@ -4818,22 +4767,6 @@ export class EngineCache extends BaseClient {
   entrySet = (opts?: EngineCacheEntrySetOpts): EngineCacheEntrySet => {
     const ctx = this._ctx.select("entrySet", { ...opts })
     return new EngineCacheEntrySet(ctx)
-  }
-
-  /**
-   * The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
-   * @deprecated Use minFreeSpace instead.
-   */
-  keepBytes = async (): Promise<number> => {
-    if (this._keepBytes) {
-      return this._keepBytes
-    }
-
-    const ctx = this._ctx.select("keepBytes")
-
-    const response: Awaited<number> = await ctx.execute()
-
-    return response
   }
 
   /**
@@ -5376,7 +5309,7 @@ export class Env extends BaseClient {
   }
 
   /**
-   * retrieve an input value by name
+   * Retrieves an input binding by name
    */
   input = (name: string): Binding => {
     const ctx = this._ctx.select("input", { name })
@@ -5384,7 +5317,7 @@ export class Env extends BaseClient {
   }
 
   /**
-   * return all input values for the environment
+   * Returns all input bindings provided to the environment
    */
   inputs = async (): Promise<Binding[]> => {
     type inputs = {
@@ -5399,7 +5332,7 @@ export class Env extends BaseClient {
   }
 
   /**
-   * retrieve an output value by name
+   * Retrieves an output binding by name
    */
   output = (name: string): Binding => {
     const ctx = this._ctx.select("output", { name })
@@ -5407,7 +5340,7 @@ export class Env extends BaseClient {
   }
 
   /**
-   * return all output values for the environment
+   * Returns all declared output bindings for the environment
    */
   outputs = async (): Promise<Binding[]> => {
     type outputs = {
@@ -5555,6 +5488,16 @@ export class Env extends BaseClient {
    */
   withContainerOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withContainerOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Installs the current module into the environment, exposing its functions to the model
+   *
+   * Contextual path arguments will be populated using the environment's workspace.
+   */
+  withCurrentModule = (): Env => {
+    const ctx = this._ctx.select("withCurrentModule")
     return new Env(ctx)
   }
 
@@ -5745,23 +5688,14 @@ export class Env extends BaseClient {
   }
 
   /**
-   * Create or update a binding of type LLM in the environment
-   * @param name The name of the binding
-   * @param value The LLM value to assign to the binding
-   * @param description The purpose of the input
+   * Installs a module into the environment, exposing its functions to the model
+   *
+   * Contextual path arguments will be populated using the environment's workspace.
    */
-  withLLMInput = (name: string, value: LLM, description: string): Env => {
-    const ctx = this._ctx.select("withLLMInput", { name, value, description })
-    return new Env(ctx)
-  }
-
-  /**
-   * Declare a desired LLM output to be assigned in the environment
-   * @param name The name of the binding
-   * @param description A description of the desired value of the binding
-   */
-  withLLMOutput = (name: string, description: string): Env => {
-    const ctx = this._ctx.select("withLLMOutput", { name, description })
+  withModule = (module_: Module_): Env => {
+    const ctx = this._ctx.select("withModule", {
+      module: module_,
+    })
     return new Env(ctx)
   }
 
@@ -6002,7 +5936,7 @@ export class Env extends BaseClient {
   }
 
   /**
-   * Create or update an input value of type string
+   * Provides a string input binding to the environment
    * @param name The name of the binding
    * @param value The string value to assign to the binding
    * @param description The description of the input
@@ -6017,13 +5951,34 @@ export class Env extends BaseClient {
   }
 
   /**
-   * Create or update an input value of type string
+   * Declares a desired string output binding
    * @param name The name of the binding
    * @param description The description of the output
    */
   withStringOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withStringOutput", { name, description })
     return new Env(ctx)
+  }
+
+  /**
+   * Returns a new environment with the provided workspace
+   * @param workspace The directory to set as the host filesystem
+   */
+  withWorkspace = (workspace: Directory): Env => {
+    const ctx = this._ctx.select("withWorkspace", { workspace })
+    return new Env(ctx)
+  }
+
+  /**
+   * Returns a new environment without any outputs
+   */
+  withoutOutputs = (): Env => {
+    const ctx = this._ctx.select("withoutOutputs")
+    return new Env(ctx)
+  }
+  workspace = (): Directory => {
+    const ctx = this._ctx.select("workspace")
+    return new Directory(ctx)
   }
 
   /**
@@ -6102,13 +6057,14 @@ export class EnvFile extends BaseClient {
   /**
    * Lookup a variable (last occurrence wins) and return its value, or an empty string
    * @param name Variable name
+   * @param opts.raw Return the value exactly as written to the file. No quote removal or variable expansion
    */
-  get = async (name: string): Promise<string> => {
+  get = async (name: string, opts?: EnvFileGetOpts): Promise<string> => {
     if (this._get) {
       return this._get
     }
 
-    const ctx = this._ctx.select("get", { name })
+    const ctx = this._ctx.select("get", { name, ...opts })
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -6117,13 +6073,14 @@ export class EnvFile extends BaseClient {
 
   /**
    * Return all variables
+   * @param opts.raw Return values exactly as written to the file. No quote removal or variable expansion
    */
-  variables = async (): Promise<EnvVariable[]> => {
+  variables = async (opts?: EnvFileVariablesOpts): Promise<EnvVariable[]> => {
     type variables = {
       id: EnvVariableID
     }
 
-    const ctx = this._ctx.select("variables").select("id")
+    const ctx = this._ctx.select("variables", { ...opts }).select("id")
 
     const response: Awaited<variables[]> = await ctx.execute()
 
@@ -7516,35 +7473,6 @@ export class GitRepository extends BaseClient {
 
     return response
   }
-
-  /**
-   * Header to authenticate the remote with.
-   * @param header Secret used to populate the Authorization HTTP header
-   * @deprecated Use "httpAuthHeader" in the constructor instead.
-   */
-  withAuthHeader = (header: Secret): GitRepository => {
-    const ctx = this._ctx.select("withAuthHeader", { header })
-    return new GitRepository(ctx)
-  }
-
-  /**
-   * Token to authenticate the remote with.
-   * @param token Secret used to populate the password during basic HTTP Authorization
-   * @deprecated Use "httpAuthToken" in the constructor instead.
-   */
-  withAuthToken = (token: Secret): GitRepository => {
-    const ctx = this._ctx.select("withAuthToken", { token })
-    return new GitRepository(ctx)
-  }
-
-  /**
-   * Call the provided function with current GitRepository.
-   *
-   * This is useful for reusability and readability by not breaking the calling chain.
-   */
-  with = (arg: (param: GitRepository) => GitRepository) => {
-    return arg(this)
-  }
 }
 
 /**
@@ -7639,19 +7567,6 @@ export class Host extends BaseClient {
   service = (ports: PortForward[], opts?: HostServiceOpts): Service => {
     const ctx = this._ctx.select("service", { ports, ...opts })
     return new Service(ctx)
-  }
-
-  /**
-   * Sets a secret given a user-defined name and the file path on the host, and returns the secret.
-   *
-   * The file is limited to a size of 512000 bytes.
-   * @param name The user defined name for this secret.
-   * @param path Location of the file to set as a secret.
-   * @deprecated setSecretFile is superceded by use of the secret API with file:// URIs
-   */
-  setSecretFile = (name: string, path: string): Secret => {
-    const ctx = this._ctx.select("setSecretFile", { name, path })
-    return new Secret(ctx)
   }
 
   /**
@@ -8059,10 +7974,12 @@ export class JSONValue extends BaseClient {
 
 export class LLM extends BaseClient {
   private readonly _id?: LLMID = undefined
+  private readonly _hasPrompt?: boolean = undefined
   private readonly _historyJSON?: JSON = undefined
   private readonly _lastReply?: string = undefined
   private readonly _model?: string = undefined
   private readonly _provider?: string = undefined
+  private readonly _step?: LLMID = undefined
   private readonly _sync?: LLMID = undefined
   private readonly _tools?: string = undefined
 
@@ -8072,20 +7989,24 @@ export class LLM extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: LLMID,
+    _hasPrompt?: boolean,
     _historyJSON?: JSON,
     _lastReply?: string,
     _model?: string,
     _provider?: string,
+    _step?: LLMID,
     _sync?: LLMID,
     _tools?: string,
   ) {
     super(ctx)
 
     this._id = _id
+    this._hasPrompt = _hasPrompt
     this._historyJSON = _historyJSON
     this._lastReply = _lastReply
     this._model = _model
     this._provider = _provider
+    this._step = _step
     this._sync = _sync
     this._tools = _tools
   }
@@ -8132,6 +8053,21 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Indicates whether there are any queued prompts or tool results to send to the model
+   */
+  hasPrompt = async (): Promise<boolean> => {
+    if (this._hasPrompt) {
+      return this._hasPrompt
+    }
+
+    const ctx = this._ctx.select("hasPrompt")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * return the llm message history
    */
   history = async (): Promise<string[]> => {
@@ -8173,7 +8109,7 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * synchronize LLM state
+   * Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn
    */
   loop = (): LLM => {
     const ctx = this._ctx.select("loop")
@@ -8211,6 +8147,17 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
+   */
+  step = async (): Promise<LLM> => {
+    const ctx = this._ctx.select("step")
+
+    const response: Awaited<LLMID> = await ctx.execute()
+
+    return new Client(ctx.copy()).loadLLMFromID(response)
+  }
+
+  /**
    * synchronize LLM state
    */
   sync = async (): Promise<LLM> => {
@@ -8245,10 +8192,35 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Return a new LLM with the specified function no longer exposed as a tool
+   * @param typeName The type name whose function will be blocked
+   * @param function The function to block
+   *
+   * Will be converted to lowerCamelCase if necessary.
+   */
+  withBlockedFunction = (typeName: string, function_: string): LLM => {
+    const ctx = this._ctx.select("withBlockedFunction", {
+      typeName,
+      function: function_,
+    })
+    return new LLM(ctx)
+  }
+
+  /**
    * allow the LLM to interact with an environment via MCP
    */
   withEnv = (env: Env): LLM => {
     const ctx = this._ctx.select("withEnv", { env })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Add an external MCP server to the LLM
+   * @param name The name of the MCP server
+   * @param service The MCP service to run and communicate with over stdio
+   */
+  withMCPServer = (name: string, service: Service): LLM => {
+    const ctx = this._ctx.select("withMCPServer", { name, service })
     return new LLM(ctx)
   }
 
@@ -8276,6 +8248,14 @@ export class LLM extends BaseClient {
    */
   withPromptFile = (file: File): LLM => {
     const ctx = this._ctx.select("withPromptFile", { file })
+    return new LLM(ctx)
+  }
+
+  /**
+   * Use a static set of tools for method calls, e.g. for MCP clients that do not support dynamic tool registration
+   */
+  withStaticTools = (): LLM => {
+    const ctx = this._ctx.select("withStaticTools")
     return new LLM(ctx)
   }
 
@@ -8703,6 +8683,14 @@ export class Module_ extends BaseClient {
     const response: Awaited<ModuleID> = await ctx.execute()
 
     return new Client(ctx.copy()).loadModuleFromID(response)
+  }
+
+  /**
+   * User-defined default values, loaded from local .env files.
+   */
+  userDefaults = (): EnvFile => {
+    const ctx = this._ctx.select("userDefaults")
+    return new EnvFile(ctx)
   }
 
   /**
@@ -9260,6 +9248,14 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * User-defined defaults read from local .env files
+   */
+  userDefaults = (): EnvFile => {
+    const ctx = this._ctx.select("userDefaults")
+    return new EnvFile(ctx)
+  }
+
+  /**
    * The specified version of the git repo this source points to.
    */
   version = async (): Promise<string> => {
@@ -9712,6 +9708,19 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Returns the current environment
+   *
+   * When called from a function invoked via an LLM tool call, this will be the LLM's current environment, including any modifications made through calling tools. Env values returned by functions become the new environment for subsequent calls, and Changeset values returned by functions are applied to the environment's workspace.
+   *
+   * When called from a module function outside of an LLM, this returns an Env with the current module installed, and with the current module's source directory as its workspace.
+   * @experimental
+   */
+  currentEnv = (): Env => {
+    const ctx = this._ctx.select("currentEnv")
+    return new Env(ctx)
+  }
+
+  /**
    * The FunctionCall context that the SDK caller is currently executing in.
    *
    * If the caller is not currently executing in a function, this will return an error.
@@ -9772,7 +9781,7 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Initialize a new environment
+   * Initializes a new environment
    * @param opts.privileged Give the environment the same privileges as the caller: core API including host access, current module, and dependencies
    * @param opts.writable Allow new outputs to be declared and saved in the environment
    * @experimental

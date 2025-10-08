@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
@@ -157,7 +158,27 @@ func (op *CustomOpWrapper) Exec(ctx context.Context, g bksession.Group, inputs [
 	}
 	ctx = ctxWithOpOpts(ctx, opt)
 
-	return op.Backend.Exec(ctx, g, inputs, opt)
+	outputs, err = op.Backend.Exec(ctx, g, inputs, opt)
+	if err != nil {
+		return nil, err
+	}
+	for i, output := range outputs {
+		if output == nil {
+			// this *shouldn't* happen, and means we've got somehow got gaps in
+			// the output array. the mounts are therefore badly constructed,
+			// so we should error out. otherwise we'll get weird panics deep in
+			// buildkit that are near impossible to debug.
+			dgst, _ := op.Digest()
+			slog.Error("custom op returned nil output",
+				"op", op.Name,
+				"type", fmt.Sprintf("%T", op.Backend),
+				"digest", dgst,
+				"index", i,
+			)
+			return nil, fmt.Errorf("internal: output %d was empty", i)
+		}
+	}
+	return outputs, nil
 }
 
 func (op *CustomOpWrapper) Acquire(ctx context.Context) (release solver.ReleaseFunc, err error) {

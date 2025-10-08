@@ -16,6 +16,7 @@ import (
 const (
 	debugBaggageKey   = "debug"
 	noColorBaggageKey = "no-color"
+	globalLogsSpan    = "global-logs-span"
 )
 
 // ContextWithDebugMode enables or disables debug mode in the given context's
@@ -55,6 +56,12 @@ func SpanLogger(ctx context.Context, name string, attrs ...log.KeyValue) *Logger
 		profile,
 		level,
 	)
+}
+
+// GlobalLogger returns a Logger that sends logs to the global span, or the
+// current span if none is configured.
+func GlobalLogger(ctx context.Context, name string, attrs ...log.KeyValue) *Logger {
+	return SpanLogger(telemetry.GlobalLogsSpanContext(ctx), name, attrs...)
 }
 
 func PrettyLogger(dest io.Writer, profile termenv.Profile, level slog.Level) *Logger {

@@ -1810,7 +1810,7 @@ func (ContainerSuite) TestMountsWithoutMount(ctx context.Context, t *testctx.T) 
 		`query Test($id: DirectoryID!, $scratch: DirectoryID!) {
 			container {
 				from(address: "`+alpineImage+`") {
-					withDirectory(path: "/mnt/dir", directory: $scratch) {
+					withDirectory(path: "/mnt/dir", source: $scratch) {
 						withMountedTemp(path: "/mnt/tmp") {
 							mounts
 							withMountedDirectory(path: "/mnt/dir", source: $id) {
@@ -4436,8 +4436,7 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 		dir := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "some-file"), data, 0o600))
 
-		//nolint:staticcheck // SA1019 deprecated
-		secret := c.Host().SetSecretFile("mysecret", filepath.Join(dir, "some-file"))
+		secret := c.Secret("file://" + filepath.Join(dir, "some-file"))
 		output, err := c.Container().
 			From("alpine:latest").
 			WithEnvVariable("foo", "bar").

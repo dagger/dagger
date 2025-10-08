@@ -85,7 +85,7 @@ func withEngine(
 			return nil
 		})
 
-		if debug {
+		if debugFlag {
 			params.LogLevel = slog.LevelDebug
 		}
 
@@ -164,6 +164,9 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
 
 	// Set up global slog to log to the primary span output.
 	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
+
+	// Set the root span as the target for "global logs"
+	ctx = telemetry.ContextWithGlobalLogsSpan(ctx)
 
 	// Set the span as the primary span for the frontend.
 	Frontend.SetPrimary(dagui.SpanID{SpanID: span.SpanContext().SpanID()})

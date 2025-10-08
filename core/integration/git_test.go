@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
@@ -185,6 +186,31 @@ func requireSampleGitHiddenCommit(ctx context.Context, t *testctx.T, c *dagger.C
 	requireGitRefIsCommit(ctx, t, "318970484f692d7a76cfa533c5d47458631c9654", ref, c)
 }
 
+func requireStrictCommit(ctx context.Context, t *testctx.T, repo *dagger.GitRepository, refStr string) {
+	ref := repo.Commit(refStr)
+	_, err := ref.Commit(ctx)
+	require.Error(t, err)
+	requireErrOut(t, err, "invalid commit SHA")
+}
+
+func requireStrictTag(ctx context.Context, t *testctx.T, repo *dagger.GitRepository, refStr string) {
+	ref := repo.Tag(refStr)
+	_, err := ref.Commit(ctx)
+	require.Error(t, err)
+	requireErrOut(t, err, "repository does not contain")
+	requireErrOut(t, err, "refs/tags/")
+	requireErrOut(t, err, refStr)
+}
+
+func requireStrictBranch(ctx context.Context, t *testctx.T, repo *dagger.GitRepository, refStr string) {
+	ref := repo.Branch(refStr)
+	_, err := ref.Commit(ctx)
+	require.Error(t, err)
+	requireErrOut(t, err, "repository does not contain")
+	requireErrOut(t, err, "refs/heads/")
+	requireErrOut(t, err, refStr)
+}
+
 // verify repository has expected branches, tags, and commits
 func requireSampleGitRepo(ctx context.Context, t *testctx.T, c *dagger.Client, repo *dagger.GitRepository) {
 	// 1. TEST BRANCH REFS
@@ -200,7 +226,7 @@ func requireSampleGitRepo(ctx context.Context, t *testctx.T, c *dagger.Client, r
 	// sample hidden commit
 	// $ git ls-remote https://github.com/dagger/dagger.git | grep pull/8735
 	// 318970484f692d7a76cfa533c5d47458631c9654	refs/pull/8735/head
-	requireSampleGitHiddenCommit(ctx, t, c, repo.Tag("318970484f692d7a76cfa533c5d47458631c9654"))
+	requireSampleGitHiddenCommit(ctx, t, c, repo.Commit("318970484f692d7a76cfa533c5d47458631c9654"))
 
 	// 3. TEST TAG REFS
 	// listing tags
@@ -224,6 +250,13 @@ func requireSampleGitRepo(ctx context.Context, t *testctx.T, c *dagger.Client, r
 	requireSampleGitTag(ctx, t, c, repo.Tag("v0.9.5"))
 	// sample annotated tag
 	requireGitRefIsSampleAnnotatedTag(ctx, t, c, repo.Tag("v0.6.1"))
+
+	// attempting to use lax refs should fail (see TestLegacyGitLaxRefs)
+	requireStrictCommit(ctx, t, repo, "main")
+	requireStrictTag(ctx, t, repo, "main")
+	requireStrictTag(ctx, t, repo, "refs/heads/main")
+	requireStrictBranch(ctx, t, repo, "v0.9.5")
+	requireStrictBranch(ctx, t, repo, "refs/tags/v0.9.5")
 }
 
 func (GitSuite) TestGitRefs(ctx context.Context, t *testctx.T) {
@@ -404,7 +437,7 @@ func (GitSuite) TestSSHAuthSock(ctx context.Context, t *testctx.T) {
 
 	gitSSH := c.Container().
 		From(alpineImage).
-		WithExec([]string{"apk", "add", "git", "openssh"})
+		WithExec([]string{"apk", "add", "git", "openssh", "openssl"})
 
 	hostKeyGen := gitSSH.
 		WithExec([]string{
@@ -595,7 +628,7 @@ func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {
 func (GitSuite) TestGitCheckedTags(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	requireGitTagsExist := func(t *testctx.T, git *dagger.GitRef) {
+	requireGitTagsExist := func(ctx context.Context, t *testctx.T, git *dagger.GitRef) {
 		ctr := c.Container().
 			From("alpine").
 			WithExec([]string{"apk", "add", "git"}).
@@ -616,45 +649,37 @@ func (GitSuite) TestGitCheckedTags(ctx context.Context, t *testctx.T) {
 		require.NotContains(t, out, "dagger.tmp")
 	}
 
-	runCheckedTags := func(t *testctx.T, git *dagger.GitRepository, desc string) {
-		t.Run(desc+"/branch", func(ctx context.Context, t *testctx.T) {
-			requireGitTagsExist(t, git.Branch("main"))
+	runCheckedTags := func(t *testctx.T, git *dagger.GitRepository) {
+		t.Run("branch", func(ctx context.Context, t *testctx.T) {
+			requireGitTagsExist(ctx, t, git.Branch("main"))
 		})
 
-		t.Run(desc+"/tag", func(ctx context.Context, t *testctx.T) {
-			requireGitTagsExist(t, git.Tag("v0.12.0"))
+		t.Run("tag", func(ctx context.Context, t *testctx.T) {
+			requireGitTagsExist(ctx, t, git.Tag("v0.12.0"))
 		})
 
-		t.Run(desc+"/commit", func(ctx context.Context, t *testctx.T) {
+		t.Run("commit", func(ctx context.Context, t *testctx.T) {
 			// v0.12.0 => 133917c6f9ce36d8cfdc595d9b7bd2c14cbc2c20
-			requireGitTagsExist(t, git.Commit("133917c6f9ce36d8cfdc595d9b7bd2c14cbc2c20"))
+			requireGitTagsExist(ctx, t, git.Commit("133917c6f9ce36d8cfdc595d9b7bd2c14cbc2c20"))
 		})
 
-		t.Run(desc+"/head", func(ctx context.Context, t *testctx.T) {
-			requireGitTagsExist(t, git.Head())
+		t.Run("head", func(ctx context.Context, t *testctx.T) {
+			requireGitTagsExist(ctx, t, git.Head())
 		})
 	}
 
-	remotes := []*dagger.GitRepository{
-		c.Git("https://github.com/dagger/dagger.git"),
-	}
-
-	localClone := c.Container().
-		From(alpineImage).
-		WithExec([]string{"apk", "add", "git"}).
-		WithWorkdir("/src").
-		WithExec([]string{"git", "clone", "https://github.com/dagger/dagger", "."}).
-		Directory(".")
-
-	remotes = append(remotes, localClone.AsGit())
-
-	for i, git := range remotes {
-		desc := "remote"
-		if i == 1 {
-			desc = "local AsGit"
-		}
-		runCheckedTags(t, git, desc)
-	}
+	t.Run("remote", func(ctx context.Context, t *testctx.T) {
+		runCheckedTags(t, c.Git("https://github.com/dagger/dagger"))
+	})
+	t.Run("local", func(ctx context.Context, t *testctx.T) {
+		localClone := c.Container().
+			From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			WithWorkdir("/src").
+			WithExec([]string{"git", "clone", "https://github.com/dagger/dagger", "."}).
+			Directory(".")
+		runCheckedTags(t, localClone.AsGit())
+	})
 }
 
 func (GitSuite) TestGitTagsSSH(ctx context.Context, t *testctx.T) {
@@ -955,39 +980,6 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (GitSuite) TestWithAuth(ctx context.Context, t *testctx.T) {
-	// these were deprecated in dagger/dagger#10248
-
-	c := connect(ctx, t)
-	gitDaemon, repoURL := gitServiceHTTPWithBranch(ctx, t, c, "", c.Directory().WithNewFile("README.md", "Hello, world!"), "main", "", c.SetSecret("target", "foobar"))
-
-	t.Run("token auth", func(ctx context.Context, t *testctx.T) {
-		git := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon})
-		//nolint:staticcheck // SA1019 deprecated
-		git = git.WithAuthToken(c.SetSecret("token", "foobar"))
-		dt, err := git.
-			Branch("main").
-			Tree().
-			File("README.md").
-			Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "Hello, world!", dt)
-	})
-
-	t.Run("header auth", func(ctx context.Context, t *testctx.T) {
-		git := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon})
-		//nolint:staticcheck // SA1019 deprecated
-		git = git.WithAuthHeader(c.SetSecret("header", "basic "+base64.StdEncoding.EncodeToString([]byte("x-access-token:foobar"))))
-		dt, err := git.
-			Branch("main").
-			Tree().
-			File("README.md").
-			Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "Hello, world!", dt)
-	})
-}
-
 func (GitSuite) TestSubmoduleAuth(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	t.Cleanup(func() { _ = c.Close() })
@@ -1101,7 +1093,7 @@ func (GitSuite) TestRemoteUpdates(ctx context.Context, t *testctx.T) {
 
 	c := connect(ctx, t)
 
-	svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello, world!"))
+	svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
 
 	svc, err := svc.Start(ctx)
 	require.NoError(t, err)
@@ -1138,6 +1130,55 @@ func (GitSuite) TestRemoteUpdates(ctx context.Context, t *testctx.T) {
 	entries, err = ref.Tree().Entries(ctx)
 	require.NoError(t, err)
 	require.Contains(t, entries, "abc")
+}
+
+func (GitSuite) TestRemoteUpdatesFrozenTag(ctx context.Context, t *testctx.T) {
+	// similar to above, upstream changes between fetches, but we check that
+	// the tag gets *resolved* and doesn't get updated
+
+	c := connect(ctx, t)
+
+	svc, url := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello "+identity.NewID()))
+
+	svc, err := svc.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, err := svc.Stop(ctx)
+		require.NoError(t, err)
+	})
+
+	ctr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"git", "config", "--global", "user.name", "tester"}).
+		WithExec([]string{"git", "config", "--global", "user.email", "test@dagger.io"}).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "clone", url, "."}).
+		WithExec([]string{"sh", "-c", `touch xyz && git add xyz && git commit -m "xyz" && git tag v1.0 && git push origin main && git push origin v1.0`})
+	commit, err := ctr.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	commit = strings.TrimSpace(commit)
+
+	// resolve the commit now (by syncing it), but don't clone it
+	ref := c.Git(url).Tag("v1.0")
+	result, err := ref.Commit(ctx)
+	require.NoError(t, err)
+	require.Equal(t, commit, result)
+
+	// modify the upstream
+	ctr = ctr.WithExec([]string{"sh", "-c", `touch abc && git add abc && git commit -m "abc" && git tag -d v1.0 && git tag v1.0 && git push origin main && git push -f origin v1.0`})
+	_, err = ctr.Sync(ctx)
+	require.NoError(t, err)
+
+	// now check that the checkout is for the original commit
+	entries, err := ref.Tree().Entries(ctx)
+	require.NoError(t, err)
+	require.Contains(t, entries, "xyz")
+	require.NotContains(t, entries, "abc")
+
+	head, err := ref.Tree().File(".git/HEAD").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, commit, strings.TrimSpace(head))
 }
 
 func (GitSuite) TestServiceStableDigest(ctx context.Context, t *testctx.T) {
@@ -1284,15 +1325,14 @@ func (GitSuite) TestGitSchemeless(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("private no auth fails", func(ctx context.Context, t *testctx.T) {
-		// should fallback to https and fail
 		repo := c.Git("github.com/grouville/daggerverse-private.git")
 		err := checkAccess(ctx, repo)
 		require.Error(t, err)
-		requireErrOut(t, err, "authentication failed")
+		requireErrOut(t, err, "failed to determine Git URL protocol")
 
-		url, err := repo.URL(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "https://github.com/grouville/daggerverse-private.git", url)
+		_, err = repo.URL(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "failed to determine Git URL protocol")
 	})
 }
 
@@ -1303,4 +1343,32 @@ func decodeAndTrimPAT(encoded string) (string, error) {
 		return "", fmt.Errorf("failed to decode PAT: %w", err)
 	}
 	return strings.TrimSpace(string(decodedPAT)), nil
+}
+
+// Ensure IsRemotePublic correctly detects repo visibility (see dagger/dagger#11112)
+func (GitSuite) TestIsRemotePublic(ctx context.Context, t *testctx.T) {
+	vc := append([]vcsTestCase{
+		{
+			name:                "Azure DevOps private",
+			expectedBaseHTMLURL: "dev.azure.com/daggere2e/private/_git/dagger-test-modules.git",
+			isPrivateRepo:       true,
+		},
+	}, vcsTestCases...)
+
+	for _, v := range vc {
+		t.Run(v.name, func(ctx context.Context, t *testctx.T) {
+			remoteURL := v.expectedBaseHTMLURL
+			if !strings.Contains(remoteURL, "://") {
+				remoteURL = "https://" + remoteURL
+			}
+
+			remote, err := gitutil.ParseURL(remoteURL)
+			require.NoError(t, err)
+
+			isRemotePublic, err := schema.IsRemotePublic(ctx, remote)
+			require.NoError(t, err)
+
+			require.Equalf(t, !v.isPrivateRepo, isRemotePublic, "Expected public=%v for repo %q", !v.isPrivateRepo, v.name)
+		})
+	}
 }

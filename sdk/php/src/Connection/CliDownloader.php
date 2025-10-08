@@ -28,7 +28,7 @@ class CliDownloader implements LoggerAwareInterface
         $this->logger = $logger;
     }
 
-    public function download(string $version = null): string
+    public function download(?string $version = null): string
     {
         if (null === $version) {
             $version = Provisioning::getCliVersion();

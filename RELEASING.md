@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-September%204,%202025-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-October%207,%202025-success?style=flat-square)
 
 This document describes the process for releasing Dagger.
 
@@ -144,7 +144,7 @@ to dagger.
 - [ ] Push to `dagger/dagger` - we need access to secrets that PRs coming from forks will not have. Open the PR as a draft and capture the PR number:
 
   ```console
-  git push $DAGGER_REPO_REMOTE
+  git push $DAGGER_REPO_REMOTE prep-$ENGINE_VERSION
   gh pr create --draft --title "chore: prep for $ENGINE_VERSION" --body "" | tee /tmp/prep-pr.txt
   export RELEASE_PREP_PR=$(cat /tmp/prep-pr.txt | sed -r 's/^[^0-9]*([0-9]+).*/\1/')
   ```
@@ -165,7 +165,7 @@ to dagger.
   ```
 
 - [ ] Make any necessary edits to the newly generated file, e.g. `.changes/v0.12.4.md`
-- [ ] Update `CHANGELOG.md` by running `changie merge`.
+- [ ] Update `CHANGELOG.md` by running `changie merge`:
 
   ```console
   find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php sdk/rust helm/dagger -maxdepth 1 -name .changie.yaml -execdir changie merge \;
@@ -174,32 +174,33 @@ to dagger.
   git commit -s -m "chore: add release notes for $ENGINE_VERSION"
   ```
 
-- [ ] Update `.changes/.next` with the next release number if known -
+- [ ] Update `.changes/.next` with the next release number if known and commit it -
       otherwise, make the file empty (but don't remove it).
 
 - [ ] Push changes, and bring the prep PR out of draft:
 
   ```console
-  git push
+  git push $DAGGER_REPO_REMOTE prep-$ENGINE_VERSION
   gh pr ready
   ```
-
-- [ ] Review and merge the prep PR. The merged commit is what gets tagged in the next step.
 
 - [ ] Ensure that all GitHub Actions checks pass for the dagger.io PR which
       gets automatically created part of this PR. The PR is configured to deploy a
       Daggerverse preview environment with a `main` Dagger Engine (the one that is
       just about to be released). If all checks pass, close that PR & delete the
       branch (this will clean up the infra that gets provisioned). If checks fail, cc
-      @jpadams @marcosnils @matipan @gerhard in the release thread and wait for a
+      @marcosnils @matipan in the release thread and wait for a
       response before continuing with the release (this might be a blocker).
+
+- [ ] If everything above is green, review and merge the prep PR. The merged commit is what gets tagged in the next step.
+
 
 - [ ] Confirm that all checks on `$RELEASE_BRANCH` are green, for main you're basically [checking](https://github.com/dagger/dagger/commits/main/) that the merged prep commit is has a green check.
       Do not push tags until this is finished.
 
 ## 🚀 Release
 
-- [ ] When you have confirmed that all checks on `$RELEASE_BRANCH` are green, run the following:
+- [ ] When you have confirmed that all checks on `$RELEASE_BRANCH` are green, pull the latest changes, and push the tag to trigger the release workflow by running:
 
   ```console
   git checkout "$RELEASE_BRANCH"
@@ -213,8 +214,6 @@ to dagger.
   This will kick off [`.github/workflows/publish.yml`](https://github.com/dagger/dagger/actions/workflows/publish.yml) which publishes:
   
   - A new image to [ghcr.io/dagger/engine](https://github.com/dagger/dagger/pkgs/container/engine) (mirrored to registry.dagger.io/engine using https://github.com/dagger/registry-redirect).
-  - New cli binaries to [dl.dagger.io](https://dl.dagger.io) (served from an S3 bucket, uploaded to by goreleaser)
-  - New docs to [docs.dagger.io](https://docs.dagger.io) (served from netlify)
   - Go packages to [🐙 dagger.io/dagger](https://pkg.go.dev/dagger.io/dagger) via [github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
   - Python packages to [🐍 dagger-io](https://pypi.org/project/dagger-io).
   - Typescript packages to [⬢ npmjs.com/package/@dagger.io/dagger](https://www.npmjs.com/package/@dagger.io/dagger).
@@ -222,6 +221,8 @@ to dagger.
   - Rust crates to [⚙️ crates.io/crate/dagger-sdk](https://crates.io/crates/dagger-sdk).
   - PHP packages to [🐘 packagist.org/packages/dagger/dagger](https://packagist.org/packages/dagger/dagger) via [github.com/dagger/dagger-php-sdk](https://github.com/dagger/dagger-php-sdk/tags).
   - Helm charts to [☸️ registry.dagger.io/dagger-helm](https://github.com/dagger/dagger/pkgs/container/dagger-helm).
+
+This will also kick off [`.github/workflows/evals.yml`], which is currently broken at the moment.
 
 - [ ] Double-check the engine+cli release:
 
@@ -237,22 +238,16 @@ to dagger.
   ```
 
 - [ ] Double-check that all the above packages have been correctly published
-      and updated to their latest versions.
+      and updated to their latest versions.  
+      *Note*: the [Go package](https://pkg.go.dev/dagger.io/dagger) may not be instantly updated due to caching.
 
 - [ ] Double-check that git tags + github releases have been made for each component.
 
-## 🌌 Daggerverse
+## 🌌 Daggerverse && Dagger Cloud
 
-- [ ] Merge the newly opened PR in the dagger.io repository (this is created by
-      the publish workflow). If anything fails, cc the following in the release thread
-      on Discord: cc @jpadams @kpenfound @matipan @gerhard
+- [ ] Ask @marcosnils @matipan @sipsma on the release thread to review and merge the newly opened dagger.io PR (this is created by the publish workflow). This PR updates both the Daggerverse and Dagger Cloud. If anything fails, cc @kpenfound @matipan.
 
-## 🌥️ Dagger Cloud
-
-- [ ] Mention in the release thread on Discord that Dagger Cloud can be updated
-      to the just-released version. cc @marcosnils @matipan @sipsma
-
-## Improve releasing 改善
+## Improve releasing 改善 (Post release steps)
 
 - [ ] Start an release improvements branch:
 
@@ -268,7 +263,7 @@ to dagger.
 `.github/` configs:
 
   ```console
-  dagger call -m .github generate directory --path=.github/workflows export --path=.github/workflows --wipe
+  dagger call -m .github generate -o .
   ```
 
 - [ ] Update non-autogenerated `.github` configs to `$ENGINE_VERSION`
@@ -293,7 +288,7 @@ to dagger.
   dagger develop --recursive -m .
   dagger develop --recursive -m ./releaser
   
-  # add, commit and push the changes to the PR
+  # add, commit and push the changes to the branch
   git add .
   git commit -s -m "chore: bump internal tooling to $ENGINE_VERSION"
   git push
@@ -304,7 +299,7 @@ to dagger.
   ```console
   git add .  # or any other files changed during the last few steps
   git commit -s -m "Improve releasing during $ENGINE_VERSION"
-  git push
+  git push "$DAGGER_REPO_REMOTE" "improve-releasing-during-$ENGINE_VERSION"
   gh pr create --draft --title "Improve releasing during $ENGINE_VERSION" --body ""
   ```
 

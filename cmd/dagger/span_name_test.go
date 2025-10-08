@@ -27,6 +27,7 @@ func TestSpanName(t *testing.T) {
 		{args: []string{"dagger", "call", "--source", ".:default", "foo"}, want: "foo"},
 		{args: []string{"dagger", "call", "--source=.:default", "foo"}, want: "foo"},
 		{args: []string{"dagger", "call", "--source", ".:default", "foo", "--fizz"}, want: "foo --fizz"},
+		{args: []string{"dagger", "--cloud=true", "call", "--source", ".:default", "foo", "--fizz"}, want: "foo --fizz"},
 		{
 			name: "bool arg consumed call chain",
 			args: []string{"dagger", "call", "--bool", "foo", "--fizz"},
