@@ -2287,7 +2287,7 @@ func (ServiceSuite) TestServiceFromUncachedPrivateImage(ctx context.Context, t *
 			"engine", "local-cache", "prune",
 		)).
 		With(daggerNonNestedExec("-c",
-			"container | from "+alpineImage+" | with-service-binding idc $(container | from "+privateImageRef+" | as-service) | with-exec apk add curl | with-exec curl http://idc | stdout",
+			"container | from "+alpineImage+" | with-service-binding idc $(container | from "+privateImageRef+" | with-exposed-port 80 | as-service) | with-exec apk add curl | with-exec curl http://idc | stdout",
 		))
 
 	out, err := ctr.Stdout(ctx)
