@@ -46,7 +46,7 @@ footerFormat: |-
   {{- range $change := .Changes }}
     {{- $authorList := splitList " " $change.Custom.Author }}
     {{- range $author := $authorList }}
-      {{- if not (has $author $maintainers) }}
+      {{- if not (has (lower $author) $maintainers) }}
         {{- $contributorSet = set $contributorSet $author true }}
       {{- end }}
     {{- end }}

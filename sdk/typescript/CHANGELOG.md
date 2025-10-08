@@ -16,10 +16,6 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.2`. [See what changed in tha
 ### Dependencies
 - Bump Engine to v0.19.2 by @TomChv in https://github.com/dagger/dagger/pull/11202
 
-### Contributors
-Special thanks to our external contributors this release!
-- @TomChv
-
 ### What to do next
 - Read the [documentation](https://docs.dagger.io/sdk/nodejs)
 - Join our [Discord server](https://discord.gg/dagger-io)
@@ -37,10 +33,6 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.19.1`. [See what changed in tha
 
 ### Dependencies
 - Bump Engine to v0.19.1 by @grouville in https://github.com/dagger/dagger/pull/11196
-
-### Contributors
-Special thanks to our external contributors this release!
-- @TomChv
 
 ### What to do next
 - Read the [documentation](https://docs.dagger.io/sdk/nodejs)
