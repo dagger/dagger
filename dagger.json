@@ -34,6 +34,11 @@
       "source": "sdk/dotnet/dev"
     },
     {
+      "name": "doug",
+      "source": "github.com/vito/daggerverse/doug@main",
+      "pin": "776610fc77055f983a3dca99f5f55946616c624e"
+    },
+    {
       "name": "elixir-sdk-dev",
       "source": "sdk/elixir/dev"
     },
