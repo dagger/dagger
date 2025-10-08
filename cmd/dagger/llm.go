@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -856,4 +857,135 @@ func (s *LLMSession) SyncToLocal(ctx context.Context) error {
 	})
 
 	return nil
+}
+
+// sessionMetadata stores metadata about a saved LLM session
+type sessionMetadata struct {
+	Name      string `json:"name"`
+	Model     string `json:"model"`
+	Timestamp string `json:"timestamp"`
+}
+
+// getSessionDir returns the directory where LLM sessions are stored, creating it if necessary
+func getSessionDir() (string, error) {
+	// Use XDG_STATE_HOME if set, otherwise fall back to ~/.local/state
+	stateHome := os.Getenv("XDG_STATE_HOME")
+	if stateHome == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get home directory: %w", err)
+		}
+		stateHome = filepath.Join(homeDir, ".local", "state")
+	}
+
+	sessionDir := filepath.Join(stateHome, "dagger", "llm-sessions")
+	if err := os.MkdirAll(sessionDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create session directory: %w", err)
+	}
+
+	return sessionDir, nil
+}
+
+// SaveSession saves the current LLM session to disk
+func (s *LLMSession) SaveSession(ctx context.Context, name string) error {
+	if s.llm == nil {
+		return fmt.Errorf("no LLM session to save")
+	}
+
+	sessionDir, err := getSessionDir()
+	if err != nil {
+		return err
+	}
+
+	// Get the LLM ID
+	llmID, err := s.llm.ID(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get LLM ID: %w", err)
+	}
+
+	// Create session metadata
+	metadata := sessionMetadata{
+		Name:      name,
+		Model:     s.model,
+		Timestamp: fmt.Sprintf("%d", time.Now().Unix()),
+	}
+
+	// Save the session ID
+	sessionFile := filepath.Join(sessionDir, name+".json")
+	data := map[string]interface{}{
+		"id":       string(llmID),
+		"metadata": metadata,
+	}
+
+	jsonData, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal session data: %w", err)
+	}
+
+	if err := os.WriteFile(sessionFile, jsonData, 0644); err != nil {
+		return fmt.Errorf("failed to write session file: %w", err)
+	}
+
+	slog.Debug("saved LLM session", "name", name, "file", sessionFile)
+	return nil
+}
+
+// LoadSession loads an LLM session from disk
+func (s *LLMSession) LoadSession(ctx context.Context, name string) error {
+	sessionDir, err := getSessionDir()
+	if err != nil {
+		return err
+	}
+
+	sessionFile := filepath.Join(sessionDir, name+".json")
+	data, err := os.ReadFile(sessionFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("session %q not found", name)
+		}
+		return fmt.Errorf("failed to read session file: %w", err)
+	}
+
+	var sessionData map[string]any
+	if err := json.Unmarshal(data, &sessionData); err != nil {
+		return fmt.Errorf("failed to unmarshal session data: %w", err)
+	}
+
+	llmID, ok := sessionData["id"].(string)
+	if !ok || llmID == "" {
+		return fmt.Errorf("invalid session data: missing or invalid id")
+	}
+
+	// Load the LLM from its ID
+	loadedLLM := s.dag.LoadLLMFromID(dagger.LLMID(llmID))
+	s.updateLLMAndAgentVar(loadedLLM)
+
+	slog.Debug("loaded LLM session", "name", name, "file", sessionFile)
+	return nil
+}
+
+// ListSessions returns a list of saved session names
+func ListSessions() ([]string, error) {
+	sessionDir, err := getSessionDir()
+	if err != nil {
+		return nil, err
+	}
+
+	entries, err := os.ReadDir(sessionDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []string{}, nil
+		}
+		return nil, fmt.Errorf("failed to read session directory: %w", err)
+	}
+
+	var sessions []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".json") {
+			name := strings.TrimSuffix(entry.Name(), ".json")
+			sessions = append(sessions, name)
+		}
+	}
+
+	return sessions, nil
 }

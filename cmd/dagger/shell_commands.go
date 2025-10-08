@@ -302,6 +302,49 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				return nil
 			},
 		},
+		{
+			Use:         ".save [name]",
+			Description: "Save the current LLM session",
+			GroupID:     "llm",
+			Args:        ExactArgs(1),
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, args []string, _ *ShellState) error {
+				if h.llmSession == nil {
+					return fmt.Errorf("LLM not initialized")
+				}
+				return h.llmSession.SaveSession(ctx, args[0])
+			},
+		},
+		{
+			Use:         ".load [name]",
+			Description: "Load a saved LLM session",
+			GroupID:     "llm",
+			Args:        ExactArgs(1),
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, args []string, _ *ShellState) error {
+				if h.llmSession == nil {
+					return fmt.Errorf("LLM not initialized")
+				}
+				return h.llmSession.LoadSession(ctx, args[0])
+			},
+		},
+		{
+			Use:         ".sessions",
+			Description: "List all saved LLM sessions",
+			GroupID:     "llm",
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
+				sessions, err := ListSessions()
+				if err != nil {
+					return err
+				}
+				if len(sessions) == 0 {
+					return h.Print(ctx, "No saved sessions")
+				}
+				return h.Print(ctx, strings.Join(sessions, "\n"))
+			},
+		},
 	}
 }
 
