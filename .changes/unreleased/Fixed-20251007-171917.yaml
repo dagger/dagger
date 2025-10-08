@@ -1,0 +1,7 @@
+kind: Fixed
+body: Fixed engine crash when container sourced from private image was used with terminal
+  or as a service (and was not already cached in the engine).
+time: 2025-10-07T17:19:17.840364128-07:00
+custom:
+  Author: sipsma
+  PR: "11198"
