@@ -21,7 +21,6 @@ func (s llmSchema) Install(srv *dagql.Server) {
 			Doc(`Initialize a Large Language Model (LLM)`).
 			Args(
 				dagql.Arg("model").Doc("Model to use"),
-				dagql.Arg("maxAPICalls").Doc("Cap the number of API calls for this LLM"),
 			),
 	}.Install(srv)
 	dagql.Fields[*core.LLM]{
@@ -117,19 +116,15 @@ func (s llmSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc("The name of the MCP server"),
 				dagql.Arg("service").Doc("The MCP service to run and communicate with over stdio"),
 			),
-		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[*core.LLM], _ struct{}) (res dagql.Result[dagql.ID[*core.LLM]], _ error) {
-			var inst dagql.ObjectResult[*core.LLM]
-			if err := srv.Select(ctx, self, &inst, dagql.Selector{
-				Field: "loop",
-			}); err != nil {
-				return res, err
-			}
-			id := dagql.NewID[*core.LLM](inst.ID())
-			return dagql.NewResultForCurrentID(ctx, id)
+		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.ObjectResult[*core.LLM], _ struct{}) (res dagql.ID[*core.LLM], _ error) {
+			return dagql.NewID[*core.LLM](self.ID()), nil
 		}).
 			Doc("synchronize LLM state"),
 		dagql.NodeFunc("loop", s.loop).
-			Doc("Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn"),
+			Doc("Submit the queued prompt, evaluate any tool calls, queue their results, and keep going until the model ends its turn").
+			Args(
+				dagql.Arg("maxAPICalls").Doc("Cap the number of API calls"),
+			),
 		dagql.Func("hasPrompt", s.hasPrompt).
 			Doc("Indicates whether there are any queued prompts or tool results to send to the model"),
 		dagql.NodeFunc("step", s.step).
@@ -286,8 +281,10 @@ func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args stru
 	return llm.WithPromptFile(ctx, file.Self())
 }
 
-func (s *llmSchema) loop(ctx context.Context, parent dagql.ObjectResult[*core.LLM], args struct{}) (dagql.ObjectResult[*core.LLM], error) {
-	return parent.Self().Loop(ctx, parent)
+func (s *llmSchema) loop(ctx context.Context, parent dagql.ObjectResult[*core.LLM], args struct {
+	MaxAPICalls dagql.Optional[dagql.Int] `name:"maxAPICalls"`
+}) (dagql.ObjectResult[*core.LLM], error) {
+	return parent.Self().Loop(ctx, parent, int(args.MaxAPICalls.Value))
 }
 
 func (s *llmSchema) step(ctx context.Context, parent dagql.ObjectResult[*core.LLM], args struct{}) (id dagql.ID[*core.LLM], err error) {
@@ -311,18 +308,13 @@ func (s *llmSchema) attempt(_ context.Context, llm *core.LLM, _ struct {
 }
 
 func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
-	Model       dagql.Optional[dagql.String]
-	MaxAPICalls dagql.Optional[dagql.Int] `name:"maxAPICalls"`
+	Model dagql.Optional[dagql.String]
 }) (*core.LLM, error) {
 	var model string
 	if args.Model.Valid {
 		model = args.Model.Value.String()
 	}
-	var maxAPICalls int
-	if args.MaxAPICalls.Valid {
-		maxAPICalls = args.MaxAPICalls.Value.Int()
-	}
-	return parent.NewLLM(ctx, model, maxAPICalls)
+	return parent.NewLLM(ctx, model)
 }
 
 func (s *llmSchema) history(ctx context.Context, llm *core.LLM, _ struct{}) ([]string, error) {

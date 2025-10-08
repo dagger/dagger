@@ -72,9 +72,6 @@ type LLM struct {
 	// The environment accessible to the LLM, exposed over MCP
 	mcp *MCP
 
-	maxAPICalls int
-	apiCalls    int
-
 	model string
 
 	endpoint    *LLMEndpoint
@@ -494,7 +491,7 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 	return router, err
 }
 
-func (q *Query) NewLLM(ctx context.Context, model string, maxAPICalls int) (*LLM, error) {
+func (q *Query) NewLLM(ctx context.Context, model string) (*LLM, error) {
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
@@ -507,7 +504,6 @@ func (q *Query) NewLLM(ctx context.Context, model string, maxAPICalls int) (*LLM
 	}
 	return &LLM{
 		model:       model,
-		maxAPICalls: maxAPICalls,
 		mcp:         newMCP(env),
 		endpointMtx: &sync.Mutex{},
 	}, nil
@@ -777,6 +773,13 @@ func (err *ModelFinishedError) Error() string {
 
 // Send configures the LLM to only evaluate one step when syncing.
 func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
+	if err := llm.allowed(ctx); err != nil {
+		return inst, err
+	}
+	return llm.step(ctx, inst)
+}
+
+func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
 	origEnv := llm.Env()
 
 	llm = llm.Clone()
@@ -1004,21 +1007,70 @@ func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 // 1. Send context to LLM endpoint
 // 2. Process replies and tool calls
 // 3. Continue in a loop until no tool calls, or caps are reached
-func (llm *LLM) Loop(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
+func (llm *LLM) Loop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxAPICalls int) (dagql.ObjectResult[*LLM], error) {
 	if err := llm.allowed(ctx); err != nil {
 		return inst, err
 	}
-	return llm.loop(ctx, inst)
+	return llmLoop(ctx, inst, maxAPICalls)
 }
 
-func (llm *LLM) Interject(ctx context.Context) error {
+func llmLoop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxAPICalls int) (dagql.ObjectResult[*LLM], error) {
+	var apiCalls int
+	for {
+		llm := inst.Self()
+
+		if !llm.HasPrompt() {
+			// dirty but no messages, possibly just a state change, nothing to do
+			// until a prompt is given
+			return inst, errors.New("LLM has no prompt or tool result")
+		}
+
+		if maxAPICalls > 0 && apiCalls >= maxAPICalls {
+			return inst, fmt.Errorf("reached API call limit: %d", apiCalls)
+		}
+
+		apiCalls++
+
+		var err error
+		inst, err = inst.Self().Step(ctx, inst)
+		if err != nil {
+			var finished *ModelFinishedError
+			if errors.As(err, &finished) {
+				if newLLM, interjected, interjectErr := llm.autoInterject(ctx, inst); interjectErr != nil {
+					// interjecting failed or was interrupted
+					return inst, errors.Join(err, interjectErr)
+				} else if interjected {
+					inst = newLLM
+					// interjected - continue
+					continue
+				} else {
+					// no interjection and none needed - we're just done
+					break
+				}
+			}
+			// Handle persistent error after all retries failed.
+			return inst, err
+		}
+		if llm.mcp.Returned() {
+			// we returned; exit the loop, since some models just keep going
+			break
+		}
+	}
+	return inst, nil
+}
+
+func (llm *LLM) Interject(ctx context.Context, self dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], bool, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return err
+		return self, false, err
 	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
-		return err
+		return self, false, err
+	}
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return self, false, err
 	}
 	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", telemetry.Reveal(), trace.WithAttributes(
 		attribute.String(telemetry.UIActorEmojiAttr, "🧑"),
@@ -1037,21 +1089,30 @@ func (llm *LLM) Interject(ctx context.Context) error {
 		}
 	}
 	if lastAssistantMessage == "" {
-		return fmt.Errorf("no message from assistant")
+		return self, false, fmt.Errorf("no message from assistant")
 	}
 	msg, err := bk.PromptHumanHelp(ctx, "LLM needs help!", fmt.Sprintf("The LLM was unable to complete its task and needs a prompt to continue. Here is its last message:\n%s", mdQuote(lastAssistantMessage)))
 	if err != nil {
-		return err
+		return self, false, err
 	}
 	if msg == "" {
-		return errors.New("no interjection provided; giving up")
+		return self, false, nil
 	}
 	fmt.Fprint(stdio.Stdout, msg)
-	llm.Messages = append(llm.Messages, &LLMMessage{
-		Role:    "user",
-		Content: msg,
-	})
-	return nil
+
+	var inst dagql.ObjectResult[*LLM]
+	if err := srv.Select(ctx, self, &inst, dagql.Selector{
+		Field: "withPrompt",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "prompt",
+				Value: dagql.NewString(msg),
+			},
+		},
+	}); err != nil {
+		return self, false, err
+	}
+	return inst, true, nil
 }
 
 func mdQuote(msg string) string {
@@ -1064,66 +1125,23 @@ func mdQuote(msg string) string {
 
 // autoInterject keeps the loop going if necessary, by prompting for a new
 // input, adding it to the message history, and returning true
-func (llm *LLM) autoInterject(ctx context.Context) (bool, error) {
+func (llm *LLM) autoInterject(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], bool, error) {
 	if llm.mcp.IsDone() {
 		// we either didn't expect a return value, or got one - done!
-		return false, nil
+		return inst, false, nil
 	}
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return false, err
+		return inst, false, err
 	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
-		return false, err
+		return inst, false, err
 	}
 	if !bk.Opts.Interactive {
-		return false, nil
+		return inst, false, nil
 	}
-	if err := llm.Interject(ctx); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-func (llm *LLM) loop(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
-	if !llm.HasPrompt() {
-		// dirty but no messages, possibly just a state change, nothing to do
-		// until a prompt is given
-		return inst, nil
-	}
-
-	for {
-		if llm.maxAPICalls > 0 && llm.apiCalls >= llm.maxAPICalls {
-			return inst, fmt.Errorf("reached API call limit: %d", llm.apiCalls)
-		}
-		llm.apiCalls++
-
-		var err error
-		inst, err = llm.Step(ctx, inst)
-		if err != nil {
-			var finished *ModelFinishedError
-			if errors.As(err, &finished) {
-				if interjected, interjectErr := llm.autoInterject(ctx); interjectErr != nil {
-					// interjecting failed or was interrupted
-					return inst, errors.Join(err, interjectErr)
-				} else if interjected {
-					// interjected - continue
-					continue
-				} else {
-					// no interjection and none needed - we're just done
-					break
-				}
-			}
-			// Handle persistent error after all retries failed.
-			return inst, err
-		}
-		if llm.mcp.Returned() {
-			// we returned; exit the loop, since some models just keep going
-			break
-		}
-	}
-	return inst, nil
+	return llm.Interject(ctx, inst)
 }
 
 func (llm *LLM) HasPrompt() bool {
