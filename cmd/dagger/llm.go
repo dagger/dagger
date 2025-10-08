@@ -359,6 +359,11 @@ func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
 		Content: strings.Join(lines, "\n"),
 	})
 
+	if s.beforeFS == nil {
+		s.beforeFS = s.llm.Env().Workspace()
+		s.beforeFSTime = time.Now()
+	}
+
 	s.afterFS = llm.Env().Workspace()
 
 	dirDiff := s.afterFS.Changes(s.beforeFS)
@@ -438,11 +443,6 @@ func (s *LLMSession) syncVarsToLLM() error {
 			// from the agent var
 			s.llm = s.dag.LLM().WithGraphQLQuery(st.QueryBuilder(s.dag))
 		}
-	}
-
-	if s.beforeFS == nil {
-		s.beforeFS = s.llm.Env().Workspace()
-		s.beforeFSTime = time.Now()
 	}
 
 	syncedEnvQ := s.dag.QueryBuilder().
@@ -959,6 +959,7 @@ func (s *LLMSession) LoadSession(ctx context.Context, name string) error {
 	// Load the LLM from its ID
 	loadedLLM := s.dag.LoadLLMFromID(dagger.LLMID(llmID))
 	s.updateLLMAndAgentVar(loadedLLM)
+	s.updateSidebar(loadedLLM)
 
 	slog.Debug("loaded LLM session", "name", name, "file", sessionFile)
 	return nil
