@@ -930,6 +930,138 @@ func (s *LLMSession) SaveSession(ctx context.Context, name string) error {
 	return nil
 }
 
+// AutoSaveSession automatically saves the session with an LLM-generated name
+func (s *LLMSession) AutoSaveSession(ctx context.Context) error {
+	if s.llm == nil {
+		return fmt.Errorf("no LLM session to save")
+	}
+
+	// Generate a session name using a lightweight LLM
+	name, err := s.generateSessionName(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to generate session name: %w", err)
+	}
+
+	return s.SaveSession(ctx, name)
+}
+
+// generateSessionName uses a lightweight LLM to generate a session name based on conversation history
+func (s *LLMSession) generateSessionName(ctx context.Context) (string, error) {
+	// Get conversation history
+	history, err := s.llm.History(s.plumbingCtx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get conversation history: %w", err)
+	}
+
+	if len(history) == 0 {
+		return "empty-session", nil
+	}
+
+	// Get the current provider to select an appropriate lightweight model
+	provider, err := s.llm.Provider(s.plumbingCtx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get LLM provider: %w", err)
+	}
+
+	// Select a lightweight model based on the provider
+	var lightweightModel string
+	switch provider {
+	case "anthropic":
+		lightweightModel = "claude-3-5-haiku-20241022"
+	case "openai":
+		lightweightModel = "gpt-4o-mini"
+	case "google":
+		lightweightModel = "gemini-2.0-flash-thinking-exp-1219"
+	case "meta":
+		lightweightModel = "llama-3.2-3b-instruct"
+	case "mistral":
+		lightweightModel = "mistral-small-latest"
+	case "deepseek":
+		lightweightModel = "deepseek-chat"
+	default:
+		return "", fmt.Errorf("unsupported provider: %s", provider)
+	}
+
+	slog.Debug("using lightweight model for session naming", "provider", provider, "model", lightweightModel)
+
+	// Use a small, fast model for name generation
+	namingLLM := s.dag.LLM(dagger.LLMOpts{
+		Model: lightweightModel,
+	})
+
+	// Build a compact summary of the conversation for the naming prompt
+	// Take the first few and last few messages to keep context small
+	var historySnippet strings.Builder
+	maxMessages := 6 // First 3 and last 3 messages
+	if len(history) <= maxMessages {
+		for _, msg := range history {
+			historySnippet.WriteString(msg)
+			historySnippet.WriteString("\n\n")
+		}
+	} else {
+		// First 3 messages
+		for i := 0; i < 3; i++ {
+			historySnippet.WriteString(history[i])
+			historySnippet.WriteString("\n\n")
+		}
+		historySnippet.WriteString("...\n\n")
+		// Last 3 messages
+		for i := len(history) - 3; i < len(history); i++ {
+			historySnippet.WriteString(history[i])
+			historySnippet.WriteString("\n\n")
+		}
+	}
+
+	prompt := fmt.Sprintf(`Based on this conversation history, generate a short, descriptive session name (2-5 words, lowercase with hyphens, no special characters except hyphens).
+The name should capture the main topic or task being discussed.
+
+Example good names:
+- "fix-docker-build-error"
+- "add-user-authentication"
+- "debug-memory-leak"
+- "implement-caching-layer"
+
+Conversation history:
+%s
+
+Respond with ONLY the session name, nothing else.`, historySnippet.String())
+
+	// Generate the name
+	nameReply, err := namingLLM.WithPrompt(prompt).LastReply(s.plumbingCtx)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate name: %w", err)
+	}
+
+	// Clean up the name
+	name := strings.TrimSpace(nameReply)
+	name = strings.ToLower(name)
+	// Remove any quotes or extra characters
+	name = strings.Trim(name, "\"'`\n\r ")
+	// Replace spaces with hyphens
+	name = strings.ReplaceAll(name, " ", "-")
+	// Remove any non-alphanumeric characters except hyphens
+	var cleaned strings.Builder
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			cleaned.WriteRune(r)
+		}
+	}
+	name = cleaned.String()
+
+	// Ensure the name isn't too long
+	if len(name) > 50 {
+		name = name[:50]
+	}
+
+	// Ensure the name isn't empty
+	if name == "" {
+		name = fmt.Sprintf("session-%d", time.Now().Unix())
+	}
+
+	slog.Debug("generated session name", "name", name)
+	return name, nil
+}
+
 // LoadSession loads an LLM session from disk
 func (s *LLMSession) LoadSession(ctx context.Context, name string) error {
 	sessionDir, err := getSessionDir()
