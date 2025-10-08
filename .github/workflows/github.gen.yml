@@ -21,7 +21,7 @@ jobs:
     github:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.1' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.2' || 'ubuntu-24.04' }}
         name: Github
         steps:
             - name: Checkout
@@ -33,5 +33,5 @@ jobs:
                 call: check
                 cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}/.github@${{ github.sha }}
-                version: v0.19.1
+                version: v0.19.2
         timeout-minutes: 20

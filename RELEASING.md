@@ -174,13 +174,13 @@ to dagger.
   git commit -s -m "chore: add release notes for $ENGINE_VERSION"
   ```
 
-- [ ] Update `.changes/.next` with the next release number if known -
+- [ ] Update `.changes/.next` with the next release number if known and commit it -
       otherwise, make the file empty (but don't remove it).
 
 - [ ] Push changes, and bring the prep PR out of draft:
 
   ```console
-  git push
+  git push $DAGGER_REPO_REMOTE prep-$ENGINE_VERSION
   gh pr ready
   ```
 
@@ -189,7 +189,7 @@ to dagger.
       Daggerverse preview environment with a `main` Dagger Engine (the one that is
       just about to be released). If all checks pass, close that PR & delete the
       branch (this will clean up the infra that gets provisioned). If checks fail, cc
-      @marcosnils @matipan @gerhard in the release thread and wait for a
+      @marcosnils @matipan in the release thread and wait for a
       response before continuing with the release (this might be a blocker).
 
 - [ ] If everything above is green, review and merge the prep PR. The merged commit is what gets tagged in the next step.
@@ -200,7 +200,7 @@ to dagger.
 
 ## 🚀 Release
 
-- [ ] When you have confirmed that all checks on `$RELEASE_BRANCH` are green, run the following:
+- [ ] When you have confirmed that all checks on `$RELEASE_BRANCH` are green, pull the latest changes, and push the tag to trigger the release workflow by running:
 
   ```console
   git checkout "$RELEASE_BRANCH"
@@ -238,7 +238,8 @@ This will also kick off [`.github/workflows/evals.yml`], which is currently brok
   ```
 
 - [ ] Double-check that all the above packages have been correctly published
-      and updated to their latest versions.
+      and updated to their latest versions.  
+      *Note*: the [Go package](https://pkg.go.dev/dagger.io/dagger) may not be instantly updated due to caching.
 
 - [ ] Double-check that git tags + github releases have been made for each component.
 
@@ -246,7 +247,7 @@ This will also kick off [`.github/workflows/evals.yml`], which is currently brok
 
 - [ ] Ask @marcosnils @matipan @sipsma on the release thread to review and merge the newly opened dagger.io PR (this is created by the publish workflow). This PR updates both the Daggerverse and Dagger Cloud. If anything fails, cc @kpenfound @matipan.
 
-## Improve releasing 改善
+## Improve releasing 改善 (Post release steps)
 
 - [ ] Start an release improvements branch:
 
