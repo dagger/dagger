@@ -200,7 +200,7 @@ to dagger.
 
 ## 🚀 Release
 
-- [ ] When you have confirmed that all checks on `$RELEASE_BRANCH` are green, go back to the main branch, pull the latest changes, and push the tag to trigger the release workflow:
+- [ ] When you have confirmed that all checks on `$RELEASE_BRANCH` are green, pull the latest changes, and push the tag to trigger the release workflow by running:
 
   ```console
   git checkout "$RELEASE_BRANCH"
