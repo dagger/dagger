@@ -302,22 +302,22 @@ def _parse_enum_docstring(text: str) -> EnumMemberDoc:
     deprecated_lines: list[str] = []
     lines = text.splitlines()
     it = iter(enumerate(lines))
-    for i, raw_line in it:
+    for _, raw_line in it:
         stripped = raw_line.strip()
         if stripped.startswith(".. deprecated::"):
             # capture first line after the directive
             remainder = stripped[len(".. deprecated::") :].strip()
             if remainder:
                 deprecated_lines.append(remainder)
-           # grab any indented continuation lines
+            # grab any indented continuation lines
             for _, cont in it:
                 cont_stripped = cont.strip()
                 if not cont_stripped:
                     continue
-                if cont.startswith("   ") or cont.startswith("\t"):
+                if cont.startswith(("   ", "\t")):
                     deprecated_lines.append(cont_stripped)
                     continue
-               # hit a non-indented line: feed it back into the outer loop
+                # hit a non-indented line: feed it back into the outer loop
                 description_lines.append(cont_stripped)
                 break
         else:

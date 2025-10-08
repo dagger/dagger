@@ -1194,9 +1194,7 @@ class Container(Type):
         _args = [
             Arg("args", [] if args is None else args, []),
             Arg("useEntrypoint", use_entrypoint, False),
-            Arg(
-                "experimentalPrivilegedNesting", experimental_privileged_nesting, False
-            ),
+            Arg("experimentalPrivilegedNesting", experimental_privileged_nesting, False),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
             Arg("expand", expand, False),
             Arg("noInit", no_init, False),
@@ -1234,11 +1232,7 @@ class Container(Type):
             without OCI support.
         """
         _args = [
-            Arg(
-                "platformVariants",
-                [] if platform_variants is None else platform_variants,
-                [],
-            ),
+            Arg("platformVariants", [] if platform_variants is None else platform_variants, []),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
         ]
@@ -1520,11 +1514,7 @@ class Container(Type):
         """
         _args = [
             Arg("path", path),
-            Arg(
-                "platformVariants",
-                [] if platform_variants is None else platform_variants,
-                [],
-            ),
+            Arg("platformVariants", [] if platform_variants is None else platform_variants, []),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
             Arg("expand", expand, False),
@@ -1578,11 +1568,7 @@ class Container(Type):
         """
         _args = [
             Arg("name", name),
-            Arg(
-                "platformVariants",
-                [] if platform_variants is None else platform_variants,
-                [],
-            ),
+            Arg("platformVariants", [] if platform_variants is None else platform_variants, []),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
         ]
@@ -1840,11 +1826,7 @@ class Container(Type):
         """
         _args = [
             Arg("address", address),
-            Arg(
-                "platformVariants",
-                [] if platform_variants is None else platform_variants,
-                [],
-            ),
+            Arg("platformVariants", [] if platform_variants is None else platform_variants, []),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
         ]
@@ -1951,9 +1933,7 @@ class Container(Type):
         """
         _args = [
             Arg("cmd", [] if cmd is None else cmd, []),
-            Arg(
-                "experimentalPrivilegedNesting", experimental_privileged_nesting, False
-            ),
+            Arg("experimentalPrivilegedNesting", experimental_privileged_nesting, False),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
         ]
         _ctx = self._select("terminal", _args)
@@ -2026,9 +2006,7 @@ class Container(Type):
             Arg("ports", [] if ports is None else ports, []),
             Arg("args", [] if args is None else args, []),
             Arg("useEntrypoint", use_entrypoint, False),
-            Arg(
-                "experimentalPrivilegedNesting", experimental_privileged_nesting, False
-            ),
+            Arg("experimentalPrivilegedNesting", experimental_privileged_nesting, False),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
             Arg("expand", expand, False),
             Arg("noInit", no_init, False),
@@ -2114,9 +2092,7 @@ class Container(Type):
         """
         _args = [
             Arg("args", args),
-            Arg(
-                "experimentalPrivilegedNesting", experimental_privileged_nesting, False
-            ),
+            Arg("experimentalPrivilegedNesting", experimental_privileged_nesting, False),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
         ]
         _ctx = self._select("withDefaultTerminalCmd", _args)
@@ -2310,9 +2286,7 @@ class Container(Type):
             Arg("redirectStdout", redirect_stdout, ""),
             Arg("redirectStderr", redirect_stderr, ""),
             Arg("expect", expect, ReturnType.SUCCESS),
-            Arg(
-                "experimentalPrivilegedNesting", experimental_privileged_nesting, False
-            ),
+            Arg("experimentalPrivilegedNesting", experimental_privileged_nesting, False),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
             Arg("expand", expand, False),
             Arg("noInit", no_init, False),
@@ -3828,9 +3802,7 @@ class Directory(Type):
         _args = [
             Arg("container", container, None),
             Arg("cmd", [] if cmd is None else cmd, []),
-            Arg(
-                "experimentalPrivilegedNesting", experimental_privileged_nesting, False
-            ),
+            Arg("experimentalPrivilegedNesting", experimental_privileged_nesting, False),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
         ]
         _ctx = self._select("terminal", _args)
@@ -7392,9 +7364,7 @@ class GeneratedCode(Type):
         _ctx = self._select("withVCSIgnoredPaths", _args)
         return GeneratedCode(_ctx)
 
-    def with_(
-        self, cb: Callable[["GeneratedCode"], "GeneratedCode"]
-    ) -> "GeneratedCode":
+    def with_(self, cb: Callable[["GeneratedCode"], "GeneratedCode"]) -> "GeneratedCode":
         """Call the provided callable with current GeneratedCode.
 
         This is useful for reusability and readability by not breaking the calling chain.
@@ -10690,9 +10660,7 @@ class Client(Root):
         _ctx = self._select("loadDirectoryFromID", _args)
         return Directory(_ctx)
 
-    def load_engine_cache_entry_from_id(
-        self, id: EngineCacheEntryID
-    ) -> EngineCacheEntry:
+    def load_engine_cache_entry_from_id(self, id: EngineCacheEntryID) -> EngineCacheEntry:
         """Load a EngineCacheEntry from its ID."""
         _args = [
             Arg("id", id),
@@ -10700,9 +10668,7 @@ class Client(Root):
         _ctx = self._select("loadEngineCacheEntryFromID", _args)
         return EngineCacheEntry(_ctx)
 
-    def load_engine_cache_entry_set_from_id(
-        self, id: EngineCacheEntrySetID
-    ) -> EngineCacheEntrySet:
+    def load_engine_cache_entry_set_from_id(self, id: EngineCacheEntrySetID) -> EngineCacheEntrySet:
         """Load a EngineCacheEntrySet from its ID."""
         _args = [
             Arg("id", id),
@@ -10734,9 +10700,7 @@ class Client(Root):
         _ctx = self._select("loadEnumTypeDefFromID", _args)
         return EnumTypeDef(_ctx)
 
-    def load_enum_value_type_def_from_id(
-        self, id: EnumValueTypeDefID
-    ) -> EnumValueTypeDef:
+    def load_enum_value_type_def_from_id(self, id: EnumValueTypeDefID) -> EnumValueTypeDef:
         """Load a EnumValueTypeDef from its ID."""
         _args = [
             Arg("id", id),
@@ -10874,9 +10838,7 @@ class Client(Root):
         _ctx = self._select("loadInputTypeDefFromID", _args)
         return InputTypeDef(_ctx)
 
-    def load_interface_type_def_from_id(
-        self, id: InterfaceTypeDefID
-    ) -> InterfaceTypeDef:
+    def load_interface_type_def_from_id(self, id: InterfaceTypeDefID) -> InterfaceTypeDef:
         """Load a InterfaceTypeDef from its ID."""
         _args = [
             Arg("id", id),
@@ -10924,9 +10886,7 @@ class Client(Root):
         _ctx = self._select("loadListTypeDefFromID", _args)
         return ListTypeDef(_ctx)
 
-    def load_module_config_client_from_id(
-        self, id: ModuleConfigClientID
-    ) -> ModuleConfigClient:
+    def load_module_config_client_from_id(self, id: ModuleConfigClientID) -> ModuleConfigClient:
         """Load a ModuleConfigClient from its ID."""
         _args = [
             Arg("id", id),
