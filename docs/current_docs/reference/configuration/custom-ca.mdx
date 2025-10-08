@@ -14,7 +14,10 @@ repositories, etc.
 There is additional best-effort support for automatic installation of these
 custom CAs in user containers.
 
-Configuring the engine with custom CAs can be done in one of two ways: i) [provisioning a custom engine](./custom-runner.mdx) or ii) writing the certificates to `~/.config/dagger/ca-certificates` (or to `$XDG_CONFIG_HOME/dagger/ca-certificates` if set).
+Configuring the engine with custom CAs can be done in one of two ways: i) [provisioning a custom engine](./custom-runner.mdx) or ii) writing the certificates to:
+* `~/.config/dagger/ca-certificates` on Linux
+* `~/Library/Application Support/dagger/ca-certificates` on macOS
+* or to `$XDG_CONFIG_HOME/dagger/ca-certificates` if set
 
 When provisioning a custom engine, the custom CAs should be placed in the
 `/usr/local/share/ca-certificates/` directory of the Dagger container. No
