@@ -39,7 +39,7 @@ func Watch[T dagql.Typed](ctx context.Context, srv *dagql.Server, watcher fswatc
 	for {
 		msg, err := client.Recv()
 		if err != nil {
-			return err
+			return fmt.Errorf("recv watch event: %w", err)
 		}
 		switch msg.Event.(type) {
 		case *fswatch.WatchResponse_FileEvents:
@@ -52,6 +52,35 @@ func Watch[T dagql.Typed](ctx context.Context, srv *dagql.Server, watcher fswatc
 			if obj != nil {
 				base = *obj
 				future <- base
+			}
+		}
+	}
+}
+
+func WatchOnce[T dagql.Typed](ctx context.Context, srv *dagql.Server, client fswatch.FSWatch_WatchClient, original dagql.ObjectResult[T]) (inst dagql.ObjectResult[T], _ error) {
+	for {
+		obj, err := WatchStep(ctx, srv, client, original)
+		if err != nil {
+			return inst, err
+		}
+		if obj != nil {
+			return *obj, nil
+		}
+
+		msg, err := client.Recv()
+		if err != nil {
+			return inst, fmt.Errorf("recv watch event: %w", err)
+		}
+		switch msg.Event.(type) {
+		case *fswatch.WatchResponse_FileEvents:
+			slog.Info("got event", "event", msg.String())
+
+			obj, err := WatchStep(ctx, srv, client, original)
+			if err != nil {
+				return inst, err
+			}
+			if obj != nil {
+				return *obj, nil
 			}
 		}
 	}
@@ -155,6 +184,9 @@ func updateWatch(ctx context.Context, srv *dagql.Server, base *call.ID) (*call.I
 	if err != nil {
 		return nil, nil, err
 	}
+
+	// XXX: these should all be evaluated with the original client ID
+	// same with the watcher
 
 	oldDirs, err := dagql.LoadIDResults(ctx, srv, dirOldIDs)
 	if err != nil {

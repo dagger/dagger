@@ -13,6 +13,7 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/content/local"
 	"github.com/containerd/containerd/leases"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -225,6 +226,9 @@ type hostDirectoryArgs struct {
 
 	GitIgnoreRoot string `internal:"true" default:""`
 	Gitignore     bool   `default:"false"`
+
+	Session string `internal:"true" default:""`
+	Client  string `internal:"true" default:""`
 }
 
 func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
@@ -233,12 +237,37 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
 
-	args.Path = path.Clean(args.Path)
+	if args.Session == "" {
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get requester session ID: %w", err)
+		}
+		id := dagql.CurrentID(ctx)
+		id = id.
+			WithArgument(call.NewArgument("client", call.NewLiteralString(clientMetadata.ClientID), false)).
+			WithArgument(call.NewArgument("session", call.NewLiteralString(clientMetadata.SessionID), false))
+		res, err := srv.Load(ctx, id)
+		if err != nil {
+			return inst, err
+		}
+		inst, ok := res.(dagql.ObjectResult[*core.Directory])
+		if !ok {
+			return inst, fmt.Errorf("expected ObjectResult, got %T", res)
+		}
+		return inst, nil
+	}
 
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get current query: %w", err)
 	}
+
+	clientMetadata, err := query.ClientMetadata(args.Session, args.Client)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get client metadata: %w", err)
+	}
+
+	args.Path = path.Clean(args.Path)
 
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
@@ -278,10 +307,6 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		}
 	}
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get requester session ID: %w", err)
-	}
 	stableID := clientMetadata.ClientStableID
 	if stableID == "" {
 		slog.WarnContext(ctx, "client stable ID not set, using random value")

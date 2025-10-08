@@ -758,6 +758,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 
 		// XXX: make generic like Syncable?
 		dagql.NodeFunc("watch", s.watch),
+		dagql.NodeFunc("wait", s.wait),
 	}.Install(srv)
 
 	dagql.Fields[*core.TerminalLegacy]{
@@ -2609,14 +2610,14 @@ func (s *containerSchema) watch(ctx context.Context, ctr dagql.ObjectResult[*cor
 		return inst, err
 	}
 
-	watcher, err := bk.Watcher(ctx)
-	if err != nil {
-		return inst, err
-	}
-
 	_, err = ctr.Self().Evaluate(ctx)
 	if err != nil {
 		slog.Error("failed to evaluate watched container", "id", ctr.ID(), "error", err)
+	}
+
+	watcher, err := bk.Watcher(ctx)
+	if err != nil {
+		return inst, err
 	}
 
 	ch := make(chan dagql.ObjectResult[*core.Container])
@@ -2646,6 +2647,46 @@ func (s *containerSchema) watch(ctx context.Context, ctr dagql.ObjectResult[*cor
 		return inst, err
 	}
 	return inst, nil
+}
+
+func (s *containerSchema) wait(ctx context.Context, ctr dagql.ObjectResult[*core.Container], args struct{}) (inst dagql.Result[core.ContainerID], _ error) {
+	// XXX: something here is panicking
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	_, err = ctr.Self().Evaluate(ctx)
+	if err != nil {
+		slog.Error("failed to evaluate watched container", "id", ctr.ID(), "error", err)
+	}
+
+	watcher, err := bk.Watcher(ctx)
+	if err != nil {
+		return inst, err
+	}
+	client, err := watcher.Watch(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	ctr, err = core.WatchOnce(ctx, srv, client, ctr)
+	if err != nil {
+		return inst, err
+	}
+
+	id := core.ContainerID(dagql.NewID[*core.Container](ctr.ID()))
+	return dagql.NewResultForCurrentID(ctx, id)
 }
 
 func (s *containerSchema) terminalLegacy(

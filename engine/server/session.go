@@ -693,6 +693,14 @@ func (srv *Server) clientFromContext(ctx context.Context) (*daggerClient, error)
 	return client, nil
 }
 
+func (srv *Server) ClientMetadata(sessionID string, clientID string) (*engine.ClientMetadata, error) {
+	client, err := srv.clientFromIDs(sessionID, clientID)
+	if err != nil {
+		return nil, err
+	}
+	return client.clientMetadata, nil
+}
+
 func (srv *Server) clientFromIDs(sessID, clientID string) (*daggerClient, error) {
 	if sessID == "" {
 		return nil, fmt.Errorf("missing session ID")
