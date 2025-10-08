@@ -232,10 +232,11 @@ class Module:
                 )
 
             # Add object/interface to module
-            if obj_type.interface:
-                mod = mod.with_interface(type_def)
-            else:
-                mod = mod.with_object(type_def)
+            mod = (
+                mod.with_interface(type_def)
+                if obj_type.interface
+                else mod.with_object(type_def)
+            )
 
         # Enum types
         for name, cls in self._enums.items():
