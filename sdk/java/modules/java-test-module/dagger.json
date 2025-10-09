@@ -1,7 +1,0 @@
-{
-  "name": "java-test-module",
-  "engineVersion": "v0.18.8",
-  "sdk": {
-    "source": "../../"
-  }
-}

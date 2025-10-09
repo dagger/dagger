@@ -513,7 +513,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                                   FunctionCall.class,
                                   Dagger.class)
                               .addStatement(
-                                  "telemetry.trace(fnCall.name(), null, () -> new Entrypoint().dispatch(fnCall))")
+                                  "telemetry.trace(fnCall, () -> new Entrypoint().dispatch(fnCall))")
                               .nextControlFlow("finally")
                               .addStatement("$T.dag().close()", Dagger.class)
                               .endControlFlow()

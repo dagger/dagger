@@ -1,44 +1,58 @@
 package io.dagger.client.telemetry;
 
+import io.dagger.client.FunctionCall;
+import io.dagger.client.FunctionCallArgValue;
+import io.dagger.client.JsonConverter;
 import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.common.AttributesBuilder;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanContext;
 import io.opentelemetry.api.trace.TraceFlags;
 import io.opentelemetry.api.trace.TraceState;
 import io.opentelemetry.context.Context;
-import io.opentelemetry.context.Scope;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class Telemetry implements AutoCloseable {
 
+  private static final Logger LOG = LoggerFactory.getLogger(Telemetry.class);
   private static final String TRACER_NAME = "dagger.io/sdk.java";
+
+  private final TelemetryTracer tracer;
+
+  public Telemetry() {
+    tracer = new TelemetryTracer(TelemetryInitializer.init(), TRACER_NAME);
+    getContext().makeCurrent();
+  }
 
   @Override
   public void close() throws Exception {
     TelemetryInitializer.close();
   }
 
-  public <T> void trace(String name, Attributes attributes, TelemetrySupplier<T> supplier)
-      throws Exception {
-    TelemetryTracer tracer = new TelemetryTracer(TelemetryInitializer.init(), TRACER_NAME);
+  public <T> void trace(FunctionCall fnCall, TelemetrySupplier<T> supplier) throws Exception {
     Context ctx = getContext();
-    try (Scope ignored = ctx.makeCurrent()) {
-      tracer.startActiveSpan(name, ctx, attributes, supplier);
-    }
+    ctx.wrap(() -> tracer.startActiveSpan(fnCall.name(), ctx, getAttributes(fnCall), supplier)).call();
   }
 
   private Context getContext() {
+    LOG.info("Retrieving context");
     Context ctx = Context.current();
 
     if (Span.current() != null && Span.current().getSpanContext().isValid()) {
+      LOG.info("Current context is valid");
       return ctx;
     }
 
     String traceparent = System.getenv("TRACEPARENT");
     if (traceparent == null || traceparent.isBlank()) {
+      LOG.info("Current context is valid, traceparent don't exists");
       return ctx;
     }
 
     try {
+      LOG.info("Retrieving remote context");
+
       String[] parts = traceparent.split("-");
       if (parts.length != 4) {
         return ctx;
@@ -54,8 +68,16 @@ public class Telemetry implements AutoCloseable {
 
       return ctx.with(Span.wrap(remoteContext));
     } catch (Exception e) {
-      System.err.println("Failed to parse TRACEPARENT: " + e.getMessage());
+      LOG.error("Failed to parse TRACEPARENT: " + e.getMessage());
       return ctx;
     }
+  }
+
+  private Attributes getAttributes(FunctionCall fnCall) throws Exception {
+    AttributesBuilder builder = Attributes.builder();
+    for (FunctionCallArgValue arg : fnCall.inputArgs()) {
+      builder.put(arg.name(), JsonConverter.fromJSON(arg.value(), String.class));
+    }
+    return builder.build();
   }
 }

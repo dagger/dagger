@@ -1,5 +1,6 @@
 package io.dagger.client.telemetry;
 
+import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
 import io.opentelemetry.context.propagation.ContextPropagators;
@@ -13,9 +14,12 @@ import io.opentelemetry.sdk.trace.export.SpanExporter;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import org.apache.commons.lang3.Strings;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class TelemetryInitializer {
 
+  private static final Logger LOG = LoggerFactory.getLogger(TelemetryInitializer.class);
   private static final String SERVICE_NAME = "dagger-java-sdk";
   private static final String OTLP_DISABLED = System.getenv("OTEL_SDK_DISABLED");
   private static final String OTLP_ENDPOINT = System.getenv("OTEL_EXPORTER_OTLP_ENDPOINT");
@@ -30,7 +34,10 @@ public class TelemetryInitializer {
       return INSTANCE;
     }
 
+    LOG.info("Initializing Telemetry");
+
     if (Strings.CI.equals(OTLP_DISABLED, "TRUE")) {
+      LOG.info("Opentelemetry is disabled");
       return OpenTelemetry.noop();
     }
 
@@ -38,6 +45,7 @@ public class TelemetryInitializer {
         && !Strings.CS.startsWith(OTLP_ENDPOINT, "https://")
         && !Strings.CS.startsWith(OTLP_TRACES_ENDPOINT, "http://")
         && !Strings.CS.startsWith(OTLP_TRACES_ENDPOINT, "https://")) {
+      LOG.info("Opentelemetry configuration is not valid, please check!");
       return OpenTelemetry.noop();
     }
 
@@ -74,7 +82,13 @@ public class TelemetryInitializer {
             .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
             .build();
 
+    // Configure sdk as global instance for opentelemetry
+    GlobalOpenTelemetry.set(sdk);
+    LOG.info("GlobalTelemetry initialized successfully {}", sdk);
+
     INSTANCE = sdk;
+
+    LOG.info("Telemetry initialized successfully {}", sdk);
 
     return sdk;
   }
