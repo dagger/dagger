@@ -42,6 +42,22 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Return available checks
+  """
+  @spec checks(t(), [{:include, [String.t()]}]) :: Dagger.CheckGroup.t()
+  def checks(%__MODULE__{} = client, optional_args \\ []) do
+    query_builder =
+      client.query_builder
+      |> QB.select("checks")
+      |> QB.maybe_put_arg("include", optional_args[:include])
+
+    %Dagger.CheckGroup{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Dagger Cloud configuration and state
   """
   @spec cloud(t()) :: Dagger.Cloud.t()
@@ -445,6 +461,34 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("loadChangesetFromID") |> QB.put_arg("id", id)
 
     %Dagger.Changeset{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a Check from its ID.
+  """
+  @spec load_check_from_id(t(), Dagger.CheckID.t()) :: Dagger.Check.t()
+  def load_check_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadCheckFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Check{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a CheckGroup from its ID.
+  """
+  @spec load_check_group_from_id(t(), Dagger.CheckGroupID.t()) :: Dagger.CheckGroup.t()
+  def load_check_group_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadCheckGroupFromID") |> QB.put_arg("id", id)
+
+    %Dagger.CheckGroup{
       query_builder: query_builder,
       client: client.client
     }
