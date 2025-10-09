@@ -15,12 +15,12 @@ func (dev *DaggerDev) CheckGenerated(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	summary, err := changesetSummary(ctx, gen)
+	diffSize, err := gen.AsPatch().Size(ctx)
 	if err != nil {
 		return err
 	}
-	if len(summary) > 0 {
-		return fmt.Errorf("generated files are not up-to-date")
+	if diffSize > 0 {
+		return fmt.Errorf("generated files are not up-to-date. Call 'generate'")
 	}
 	return nil
 }

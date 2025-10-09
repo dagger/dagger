@@ -75,7 +75,11 @@ func (t PHPSDK) generateClient() *dagger.Changeset {
 		// FIXME: why not inject the right dagger binary, instead of leaking this env var?
 		WithExec([]string{"sh", "-c", "$_EXPERIMENTAL_DAGGER_CLI_BIN run ./scripts/codegen.php"}).
 		Directory(".").
-		WithoutDirectory("vendor")
+		Filter(dagger.DirectoryFilterOpts{
+			Exclude: []string{
+				"vendor",
+			},
+		})
 	// Make the change relative to the repo root
 	absLayer := dag.Directory().WithDirectory("sdk/php", relLayer)
 	return absLayer.Changes(dag.Directory())
