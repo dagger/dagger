@@ -456,29 +456,3 @@ func (p Go) Lint(
 	}
 	return jobs.Run(ctx)
 }
-
-func changesetSummary(ctx context.Context, cs *dagger.Changeset) ([]string, error) {
-	var summary []string
-	modified, err := cs.ModifiedPaths(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, modifiedPath := range modified {
-		summary = append(summary, "modified:\t"+modifiedPath)
-	}
-	added, err := cs.AddedPaths(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, addedPath := range added {
-		summary = append(summary, "added:\t"+addedPath)
-	}
-	removed, err := cs.RemovedPaths(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, removedPath := range removed {
-		summary = append(summary, "removed:\t"+removedPath)
-	}
-	return summary, nil
-}
