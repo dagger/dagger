@@ -135,7 +135,7 @@ func New() *CI {
 			"Engine & CLI",
 		).
 		withSDKWorkflows(
-			ci.AltRunnerWithCache,
+			ci.CloudRunner,
 			"SDKs",
 			"python",
 			"typescript",
