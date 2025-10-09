@@ -47,7 +47,7 @@ func (dev *DaggerDev) CheckReleaseDryRun(ctx context.Context) error {
 func (dev *DaggerDev) CheckLint(ctx context.Context) error {
 	return parallel.New().
 		WithJob("lint go packages", func(ctx context.Context) error {
-			return dev.CheckGoLint(ctx, nil)
+			return dev.CheckLintGo(ctx, nil)
 		}).
 		WithJob("lint docs", dag.Docs().CheckLint).
 		WithJob("lint helm chart", dag.Helm().CheckLint).
@@ -67,7 +67,7 @@ func (dev *DaggerDev) CheckLint(ctx context.Context) error {
 }
 
 // Lint the Go codebase
-func (dev *DaggerDev) CheckGoLint(
+func (dev *DaggerDev) CheckLintGo(
 	ctx context.Context,
 	pkgs []string, // +optional
 ) error {
