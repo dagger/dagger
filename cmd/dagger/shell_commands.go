@@ -699,6 +699,7 @@ Without arguments, the current working directory is replaced by the initial cont
 			"llm",
 			"cache-volume",
 			"container",
+			"checks",
 			"directory",
 			"engine",
 			"file",

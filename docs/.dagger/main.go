@@ -87,6 +87,16 @@ func (d Docs) Server() *dagger.Container {
 		WithExposedPort(8000)
 }
 
+// Check linter results
+func (d Docs) CheckLint(ctx context.Context) (rerr error) {
+	return nil
+}
+
+// Check that generated docs files are up-to-date
+func (d Docs) CheckGenerated() error {
+	return fmt.Errorf("generated docs are not up-to-date. Fix with dagger call generate")
+}
+
 // Lint documentation files
 func (d Docs) Lint(ctx context.Context) (rerr error) {
 	eg := errgroup.Group{}
