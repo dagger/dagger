@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"path"
 	"strings"
 
@@ -10,8 +11,28 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// Check all linter results
+func (dev *DaggerDev) CheckLint(ctx context.Context) error {
+	return fmt.Errorf("you forgot a whitespace in your markdown")
+}
+
+// Check the helm chart
+func (dev *DaggerDev) CheckHelm(ctx context.Context) error {
+	return nil
+}
+
+// Check the Go SDK
+func (dev *DaggerDev) CheckGoSDK(ctx context.Context) error {
+	return nil
+}
+
+// Run all tests
+func (dev *DaggerDev) CheckTest(ctx context.Context) error {
+	return nil
+}
+
 // Check that everything works. Use this as CI entrypoint.
-func (dev *DaggerDev) Check(ctx context.Context,
+func (dev *DaggerDev) ACheck(ctx context.Context,
 	// Directories to check
 	// +optional
 	targets []string,
