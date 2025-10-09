@@ -247,25 +247,6 @@ func (dev *DaggerDev) Bench() *Bench {
 	return &Bench{Test: dev.Test()}
 }
 
-func allSDKs[T any](dev *DaggerDev) []T {
-	var result []T
-	for _, sdk := range []any{
-		&GoSDK{Dagger: dev},
-		&PythonSDK{Dagger: dev},
-		&TypescriptSDK{Dagger: dev},
-		&ElixirSDK{Dagger: dev},
-		&RustSDK{Dagger: dev},
-		&PHPSDK{Dagger: dev},
-		&JavaSDK{Dagger: dev},
-		&DotnetSDK{Dagger: dev},
-	} {
-		if casted, ok := sdk.(T); ok {
-			result = append(result, casted)
-		}
-	}
-	return result
-}
-
 // Run all code generation - SDKs, docs, grpc stubs, changelog
 func (dev *DaggerDev) Generate(ctx context.Context) (*dagger.Changeset, error) {
 	var (

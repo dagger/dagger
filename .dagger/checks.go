@@ -72,34 +72,44 @@ func (dev *DaggerDev) CheckLintGo(
 	pkgs []string, // +optional
 ) error {
 	if len(pkgs) == 0 {
-		allPkgs, err := dev.containing(ctx, "go.mod")
-		if err != nil {
+		if err := parallel.Run(ctx, "scan for go modules to lint", func(ctx context.Context) error {
+			allPkgs, err := dev.containing(ctx, "go.mod")
+			if err != nil {
+				return err
+			}
+			for _, pkg := range allPkgs {
+				if strings.HasPrefix(pkg, "docs/") {
+					continue
+				}
+				if strings.HasPrefix(pkg, "core/integration/") {
+					continue
+				}
+				if strings.HasPrefix(pkg, "dagql/idtui/viztest/broken") {
+					continue
+				}
+				if strings.HasPrefix(pkg, "modules/claude/") {
+					// re-enable after we ship its dependent APIs
+					continue
+				}
+				if strings.HasPrefix(pkg, "modules/evals/") {
+					// re-enable after we ship its dependent APIs
+					continue
+				}
+				pkgs = append(pkgs, pkg)
+			}
+			return nil
+		}); err != nil {
 			return err
 		}
-		for _, pkg := range allPkgs {
-			if strings.HasPrefix(pkg, "docs/") {
-				continue
-			}
-			if strings.HasPrefix(pkg, "core/integration/") {
-				continue
-			}
-			if strings.HasPrefix(pkg, "dagql/idtui/viztest/broken") {
-				continue
-			}
-			if strings.HasPrefix(pkg, "modules/claude/") {
-				// re-enable after we ship its dependent APIs
-				continue
-			}
-			if strings.HasPrefix(pkg, "modules/evals/") {
-				// re-enable after we ship its dependent APIs
-				continue
-			}
-			pkgs = append(pkgs, pkg)
-		}
 	}
-	return dag.
-		Go(dev.SourceDeveloped()).
-		Lint(ctx, dagger.GoLintOpts{Packages: pkgs})
+	// Call 'dagger develop'
+	var src *dagger.Directory
+	parallel.Run(ctx, "generate all dagger modules before linting", func(ctx context.Context) error {
+		var err error
+		src, err = dev.SourceDeveloped().Sync(ctx)
+		return err
+	})
+	return dag.Go(src).Lint(ctx, dagger.GoLintOpts{Packages: pkgs})
 }
 
 // Verify that scripts work correctly

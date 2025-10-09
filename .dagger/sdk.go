@@ -55,6 +55,26 @@ func (dev *DaggerDev) devEngineSidecar() func(*dagger.Container) *dagger.Contain
 	}
 }
 
+// Return a list of all SDKs implementing the given interface
+func allSDKs[T any](dev *DaggerDev) []T {
+	var result []T
+	for _, sdk := range []any{
+		&GoSDK{Dagger: dev},
+		&PythonSDK{Dagger: dev},
+		&TypescriptSDK{Dagger: dev},
+		&ElixirSDK{Dagger: dev},
+		&RustSDK{Dagger: dev},
+		&PHPSDK{Dagger: dev},
+		&JavaSDK{Dagger: dev},
+		&DotnetSDK{Dagger: dev},
+	} {
+		if casted, ok := sdk.(T); ok {
+			result = append(result, casted)
+		}
+	}
+	return result
+}
+
 func (dev *DaggerDev) codegenBinary() *dagger.File {
 	return dev.Go().Binary("./cmd/codegen", dagger.GoBinaryOpts{
 		NoSymbols: true,
