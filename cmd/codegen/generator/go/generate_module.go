@@ -84,7 +84,9 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 
 	if len(initialGoFiles) == 0 {
 		// write an initial main.go if no main pkg exists yet
-		if err := mfs.WriteFile(StarterTemplateFile, []byte(baseModuleSource(pkgInfo, moduleConfig.ModuleName)), 0600); err != nil {
+		dependencies := schema.ExtractDependencies()
+		moduleSource := generateModuleSource(pkgInfo, moduleConfig.ModuleName, dependencies)
+		if err := mfs.WriteFile(StarterTemplateFile, []byte(moduleSource), 0600); err != nil {
 			return nil, err
 		}
 
@@ -251,6 +253,251 @@ func (g *GoGenerator) syncModReplaceAndTidy(mod *modfile.File, genSt *generator.
 	}
 
 	return nil
+}
+
+// dependencyModule represents a dependency module with its name and functions
+// This is an internal struct used during code generation.
+type dependencyModule struct {
+	moduleName string
+	functions  []*introspection.Field
+}
+
+// generateModuleSource generates the initial main.go source for a new module.
+// If the module has dependencies, it generates passthrough functions for them.
+// Otherwise, it generates the default starter functions (containerEcho and grepDir).
+func generateModuleSource(pkgInfo *PackageInfo, moduleName string, dependencies []*introspection.DependencyModule) string {
+	if len(dependencies) > 0 {
+		// Convert DependencyModule to internal dependencyModule format
+		var depModules []dependencyModule
+		for _, dep := range dependencies {
+			depModules = append(depModules, dependencyModule{
+				moduleName: dep.Name,
+				functions:  dep.Functions,
+			})
+		}
+		if len(depModules) > 0 {
+			return generatePassthroughModuleSource(pkgInfo, moduleName, depModules)
+		}
+	}
+
+	// No dependencies, generate default starter module
+	return baseModuleSource(pkgInfo, moduleName)
+}
+
+// generatePassthroughModuleSource generates a module with passthrough functions
+// for each function in the dependency modules.
+func generatePassthroughModuleSource(pkgInfo *PackageInfo, moduleName string, dependencies []dependencyModule) string {
+	moduleStructName := strcase.ToCamel(moduleName)
+
+	var functionsCode strings.Builder
+
+	// Generate passthrough functions for each dependency module
+	for _, dep := range dependencies {
+		depName := strcase.ToCamel(dep.moduleName)
+
+		for _, field := range dep.functions {
+			// Only generate for non-deprecated functions
+			if field.IsDeprecated {
+				continue
+			}
+
+			// Get function signature
+			funcName := strcase.ToCamel(field.Name)
+
+			// Dont generate the internal Id function
+			if funcName == "Id" {
+				continue
+			}
+
+			// Build parameter list (only required args)
+			var params []string
+			var callArgs []string
+			needsContext := false
+
+			for _, arg := range field.Args {
+				// Skip optional arguments
+				if arg.TypeRef.IsOptional() {
+					continue
+				}
+
+				argType := formatGoType(arg.TypeRef)
+				argName := strcase.ToLowerCamel(arg.Name)
+				params = append(params, fmt.Sprintf("%s %s", argName, argType))
+				callArgs = append(callArgs, argName)
+
+				// Check if we need context
+				if needsContextForType(arg.TypeRef) {
+					needsContext = true
+				}
+			}
+
+			// Check if return type needs context
+			if needsContextForType(field.TypeRef) {
+				needsContext = true
+			}
+
+			// Add context parameter if needed
+			if needsContext {
+				params = append([]string{"ctx context.Context"}, params...)
+				callArgs = append([]string{"ctx"}, callArgs...)
+			}
+
+			// Format return type
+			returnType := formatGoType(field.TypeRef)
+			hasError := returnsError(field.TypeRef)
+
+			// Adjust return type for error handling
+			if hasError && !strings.Contains(returnType, "error") {
+				returnType = fmt.Sprintf("(%s, error)", returnType)
+			}
+
+			// Build function
+			if field.Description != "" {
+				functionsCode.WriteString(fmt.Sprintf("\n// %s\n", strings.TrimSpace(field.Description)))
+			} else {
+				functionsCode.WriteString(fmt.Sprintf("\n// %s calls the %s function from the %s dependency\n", funcName, field.Name, dep.moduleName))
+			}
+			functionsCode.WriteString(fmt.Sprintf("func (m *%s) %s(%s) %s {\n", moduleStructName, funcName, strings.Join(params, ", "), returnType))
+
+			// Build the function call to the dependency
+			functionCall := fmt.Sprintf("dag.%s().%s(%s)", depName, funcName, strings.Join(callArgs, ", "))
+
+			// Handle return
+			if returnsObject(field.TypeRef) {
+				// Object return type - just return directly
+				functionsCode.WriteString(fmt.Sprintf("\treturn %s\n", functionCall))
+			} else if hasError {
+				// Scalar return type that needs execution - add context and error handling
+				functionsCode.WriteString(fmt.Sprintf("\treturn %s\n", functionCall))
+			} else {
+				// Simple return
+				functionsCode.WriteString(fmt.Sprintf("\treturn %s\n", functionCall))
+			}
+
+			functionsCode.WriteString("}\n")
+		}
+	}
+
+	return fmt.Sprintf(`// A generated module for %[1]s functions
+//
+// This module has been generated from a blueprint and provides passthrough
+// functions to the original module.
+
+package main
+
+import (
+	"context"
+	"%[2]s/internal/dagger"
+)
+
+type %[1]s struct{}
+%[3]s
+`, moduleStructName, pkgInfo.PackageImport, functionsCode.String())
+}
+
+// returnsError checks if a GraphQL field requires error handling in Go
+func returnsError(typeRef *introspection.TypeRef) bool {
+	if typeRef == nil {
+		return false
+	}
+
+	// Unwrap non-null and list
+	actualType := typeRef
+	for actualType.Kind == introspection.TypeKindNonNull || actualType.Kind == introspection.TypeKindList {
+		if actualType.OfType == nil {
+			break
+		}
+		actualType = actualType.OfType
+	}
+
+	// Scalar types generally need error handling for execution
+	return actualType.Kind == introspection.TypeKindScalar
+}
+
+// returnsObject checks if a type returns an object (which doesn't need immediate execution)
+func returnsObject(typeRef *introspection.TypeRef) bool {
+	if typeRef == nil {
+		return false
+	}
+
+	// Unwrap non-null and list
+	actualType := typeRef
+	for actualType.Kind == introspection.TypeKindNonNull || actualType.Kind == introspection.TypeKindList {
+		if actualType.OfType == nil {
+			break
+		}
+		actualType = actualType.OfType
+	}
+
+	return actualType.Kind == introspection.TypeKindObject
+}
+
+// formatGoType converts an introspection TypeRef to a Go type string
+func formatGoType(typeRef *introspection.TypeRef) string {
+	if typeRef == nil {
+		return "interface{}"
+	}
+
+	switch typeRef.Kind {
+	case introspection.TypeKindNonNull:
+		// For non-null, just recurse
+		return formatGoType(typeRef.OfType)
+	case introspection.TypeKindList:
+		return "[]" + formatGoType(typeRef.OfType)
+	case introspection.TypeKindScalar:
+		return mapScalarType(typeRef.Name)
+	case introspection.TypeKindEnum:
+		return mapEnumType(typeRef.Name)
+	case introspection.TypeKindObject:
+		return "*dagger." + typeRef.Name
+	default:
+		return "interface{}"
+	}
+}
+
+// mapScalarType maps GraphQL scalar types to Go types
+func mapScalarType(name string) string {
+	switch name {
+	case "String":
+		return "string"
+	case "Int":
+		return "int"
+	case "Float":
+		return "float64"
+	case "Boolean":
+		return "bool"
+	case "ID":
+		return "string"
+	default:
+		return name
+	}
+}
+
+// mapEnumType maps GraphQL enum types to Go types
+func mapEnumType(name string) string {
+	// Enums are typically generated as strings in the dagger package
+	return name
+}
+
+// needsContextForType checks if a type requires a context parameter
+func needsContextForType(typeRef *introspection.TypeRef) bool {
+	// For now, we'll assume any function that returns a scalar or requires
+	// async operations needs context. This is a simplification.
+	if typeRef == nil {
+		return false
+	}
+
+	// Unwrap non-null and list
+	actualType := typeRef
+	for actualType.Kind == introspection.TypeKindNonNull || actualType.Kind == introspection.TypeKindList {
+		if actualType.OfType == nil {
+			break
+		}
+		actualType = actualType.OfType
+	}
+
+	// Check if it's a scalar type (which might need context for execution)
+	return actualType.Kind == introspection.TypeKindScalar
 }
 
 func baseModuleSource(pkgInfo *PackageInfo, moduleName string) string {
