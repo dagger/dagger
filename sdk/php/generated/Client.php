@@ -34,6 +34,18 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Return available checks
+     */
+    public function checks(?array $include = null): CheckGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('checks');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\CheckGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Dagger Cloud configuration and state
      */
     public function cloud(): Cloud
@@ -334,6 +346,26 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadChangesetFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Check from its ID.
+     */
+    public function loadCheckFromID(CheckId|Check $id): Check
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadCheckFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Check($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a CheckGroup from its ID.
+     */
+    public function loadCheckGroupFromID(CheckGroupId|CheckGroup $id): CheckGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadCheckGroupFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\CheckGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

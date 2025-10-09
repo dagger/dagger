@@ -205,6 +205,77 @@ defmodule Dagger.Env do
   end
 
   @doc """
+  Create or update a binding of type CheckGroup in the environment
+  """
+  @spec with_check_group_input(t(), String.t(), Dagger.CheckGroup.t(), String.t()) ::
+          Dagger.Env.t()
+  def with_check_group_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withCheckGroupInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired CheckGroup output to be assigned in the environment
+  """
+  @spec with_check_group_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_check_group_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withCheckGroupOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Create or update a binding of type Check in the environment
+  """
+  @spec with_check_input(t(), String.t(), Dagger.Check.t(), String.t()) :: Dagger.Env.t()
+  def with_check_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withCheckInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired Check output to be assigned in the environment
+  """
+  @spec with_check_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_check_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withCheckOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
   Create or update a binding of type Cloud in the environment
   """
   @spec with_cloud_input(t(), String.t(), Dagger.Cloud.t(), String.t()) :: Dagger.Env.t()

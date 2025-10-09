@@ -58,6 +58,12 @@ func CacheVolume(key string) *dagger.CacheVolume {
 	return client.CacheVolume(key)
 }
 
+// Return available checks
+func Checks(opts ...dagger.ChecksOpts) *dagger.CheckGroup {
+	client := initClient()
+	return client.Checks(opts...)
+}
+
 // Dagger Cloud configuration and state
 func Cloud() *dagger.Cloud {
 	client := initClient()
@@ -214,6 +220,18 @@ func LoadCacheVolumeFromID(id dagger.CacheVolumeID) *dagger.CacheVolume {
 func LoadChangesetFromID(id dagger.ChangesetID) *dagger.Changeset {
 	client := initClient()
 	return client.LoadChangesetFromID(id)
+}
+
+// Load a Check from its ID.
+func LoadCheckFromID(id dagger.CheckID) *dagger.Check {
+	client := initClient()
+	return client.LoadCheckFromID(id)
+}
+
+// Load a CheckGroup from its ID.
+func LoadCheckGroupFromID(id dagger.CheckGroupID) *dagger.CheckGroup {
+	client := initClient()
+	return client.LoadCheckGroupFromID(id)
 }
 
 // Load a Cloud from its ID.
