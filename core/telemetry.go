@@ -175,8 +175,13 @@ func parseCallerCalleeRefs(ctx context.Context, q *Query, callID *call.ID) (*mod
 
 	calleeRef.functionName = call.Field
 	calleeRef.version = call.Module.Pin
-	calleeRef.ref, _, _ = strings.Cut(call.Module.Ref, "@")
-	calleeRef.ref = strings.TrimSuffix(calleeRef.ref, "/.")
+	if strings.HasPrefix(call.Module.Ref, "git@") {
+		calleeRef.ref = call.Module.Ref[:strings.LastIndex(call.Module.Ref, "@")]
+		calleeRef.ref = strings.ReplaceAll(strings.TrimPrefix(calleeRef.ref, "git@"), ":", "/")
+	} else {
+		calleeRef.ref, _, _ = strings.Cut(call.Module.Ref, "@")
+		calleeRef.ref = strings.TrimSuffix(calleeRef.ref, "/.")
+	}
 
 	var voidType Void
 	if callID.Receiver() != nil {
