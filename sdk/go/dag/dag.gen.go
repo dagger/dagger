@@ -216,6 +216,18 @@ func LoadChangesetFromID(id dagger.ChangesetID) *dagger.Changeset {
 	return client.LoadChangesetFromID(id)
 }
 
+// Load a Check from its ID.
+func LoadCheckFromID(id dagger.CheckID) *dagger.Check {
+	client := initClient()
+	return client.LoadCheckFromID(id)
+}
+
+// Load a CheckGroup from its ID.
+func LoadCheckGroupFromID(id dagger.CheckGroupID) *dagger.CheckGroup {
+	client := initClient()
+	return client.LoadCheckGroupFromID(id)
+}
+
 // Load a Cloud from its ID.
 func LoadCloudFromID(id dagger.CloudID) *dagger.Cloud {
 	client := initClient()

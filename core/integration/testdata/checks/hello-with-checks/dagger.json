@@ -1,0 +1,7 @@
+{
+  "name": "hello-with-checks",
+  "engineVersion": "v0.19.5-251031013032-b07f5c478cdd",
+  "sdk": {
+    "source": "go"
+  }
+}
