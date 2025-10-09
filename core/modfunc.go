@@ -667,8 +667,8 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		ParentID:  callID.Receiver(),
 		InputArgs: callInputs,
 	}
-	if env, ok := EnvFromContext(ctx); ok {
-		fnCall.EnvID = env.ID()
+	if envID, ok := EnvIDFromContext(ctx); ok {
+		fnCall.EnvID = envID
 	}
 	if fn.objDef != nil {
 		fnCall.ParentName = fn.objDef.OriginalName

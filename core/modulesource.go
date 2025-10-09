@@ -526,20 +526,54 @@ func (src *ModuleSource) LoadContextDir(
 			return inst, fmt.Errorf("path %q is outside of context directory %q, path should be relative to the context directory", path, ctxPath)
 		}
 
-		err = dag.Select(localSourceCtx, dag.Root(), &inst,
-			dagql.Selector{
-				Field: "host",
-			},
-			dagql.Selector{
-				Field: "directory",
-				Args: append([]dagql.NamedInput{
-					{Name: "path", Value: dagql.String(path)},
-					{Name: "noCache", Value: dagql.Boolean(true)},
-				}, filterInputs...),
-			},
-		)
-		if err != nil {
-			return inst, fmt.Errorf("failed to select directory: %w", err)
+		// Check if there's an Env in context - if so, use its workspace instead of Host.
+		// This allows module functions called from LLM environments to automatically
+		// inherit the LLM's workspace for defaultPath arguments.
+		if envID, ok := EnvIDFromContext(ctx); ok {
+			envRes, err := dag.Load(localSourceCtx, envID)
+			if err != nil {
+				return inst, fmt.Errorf("failed to load current env: %w", err)
+			}
+			sels := []dagql.Selector{
+				dagql.Selector{
+					Field: "workspace",
+				},
+			}
+			if relativePathToCtx != "." {
+				sels = append(sels, dagql.Selector{
+					Field: "directory",
+					Args: []dagql.NamedInput{
+						{Name: "path", Value: dagql.String(relativePathToCtx)},
+					},
+				})
+			}
+			if len(filterInputs) > 0 {
+				sels = append(sels, dagql.Selector{
+					Field: "filter",
+					Args:  filterInputs,
+				})
+			}
+			err = dag.Select(localSourceCtx, envRes, &inst, sels...)
+			if err != nil {
+				return inst, fmt.Errorf("failed to select env directory: %w", err)
+			}
+		} else {
+			// Fall back to Host (existing behavior when no Env in context)
+			err = dag.Select(localSourceCtx, dag.Root(), &inst,
+				dagql.Selector{
+					Field: "host",
+				},
+				dagql.Selector{
+					Field: "directory",
+					Args: append([]dagql.NamedInput{
+						{Name: "path", Value: dagql.String(path)},
+						{Name: "noCache", Value: dagql.Boolean(true)},
+					}, filterInputs...),
+				},
+			)
+			if err != nil {
+				return inst, fmt.Errorf("failed to select host directory: %w", err)
+			}
 		}
 
 	case ModuleSourceKindGit:
