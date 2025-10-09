@@ -253,7 +253,6 @@ func (dev *DaggerDev) Generate(ctx context.Context) (*dagger.Changeset, error) {
 		genDocs, genEngine, genChangelog, genGHA *dagger.Changeset
 		genSDKs                                  []*dagger.Changeset
 	)
-
 	err := parallel.New().
 		WithJob("generate docs", func(ctx context.Context) error {
 			var err error
@@ -296,9 +295,15 @@ func (dev *DaggerDev) Generate(ctx context.Context) (*dagger.Changeset, error) {
 	if err != nil {
 		return nil, err
 	}
-	changes := genSDKs
-	changes = append(changes, genDocs, genEngine, genChangelog, genGHA)
-	return changesetMerge(dev.Source, changes...), nil
+	var result *dagger.Changeset
+	err = parallel.Run(ctx, "merge all changesets", func(ctx context.Context) error {
+		var err error
+		changes := genSDKs
+		changes = append(changes, genDocs, genEngine, genChangelog, genGHA)
+		result, err = changesetMerge(dev.Source, changes...).Sync(ctx)
+		return err
+	})
+	return result, err
 }
 
 // Develop Dagger SDKs
