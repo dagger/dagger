@@ -12,6 +12,7 @@ name: SDKs
 permissions:
     contents: read
     id-token: write
+
 concurrency:
     group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
     cancel-in-progress: true
@@ -21,15 +22,5 @@ jobs:
             - ubuntu-24.04
         name: dotnet
         steps:
-            - name: Checkout
-              uses: actions/checkout@v4
-            - name: exec
-              id: exec
-              uses: dagger/dagger-for-github@v8.2.0
-              with:
-                call: --docker-cfg=file:$HOME/.docker/config.json check --targets=sdk/dotnet
-                cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                dagger-flags: --cloud=true
-                module: github.com/${{ github.repository }}@${{ github.sha }}
-                version: v0.19.2
-        timeout-minutes: 20
+            - name: tmate
+              uses: mxschmitt/action-tmate@v3
