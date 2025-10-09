@@ -4,6 +4,7 @@ export interface DaggerEnumBaseValue extends Locatable {
   name: string
   value: string
   description: string
+  deprecated?: string
 }
 
 export type DaggerEnumBaseValues = { [name: string]: DaggerEnumBaseValue }

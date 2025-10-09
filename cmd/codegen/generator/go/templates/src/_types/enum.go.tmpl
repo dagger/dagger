@@ -72,16 +72,23 @@ const (
 		{{- else }}
 			{{- $fieldValue = $mainFieldName }}
 		{{- end }}
+		{{- if $field.IsDeprecated }}
+		{{ $field.DeprecationReason | FormatDeprecation }}
+       	{{- end }}
 		{{- with $field.Description }}
 		{{ . | Comment }}
 		{{- end }}
 		{{ $fullFieldName }} {{ $enumName }} = {{ $fieldValue }}
 		{{- with $field.Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 		{{- if $needsUnscopedEnums }}
-		{{ $field.Description | Comment }}
-		{{ print "use " $fullFieldName " instead" | FormatDeprecation }}
-		{{ $fieldName }} {{ $enumName }} = {{ $fullFieldName }}
-		{{- with $field.Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+			{{ $field.Description | Comment }}
+			{{- if $field.IsDeprecated }}
+			{{ $field.DeprecationReason | FormatDeprecation }}
+			{{- else }}
+			{{ print "use " $fullFieldName " instead" | FormatDeprecation }}
+			{{- end }}
+			{{ $fieldName }} {{ $enumName }} = {{ $fullFieldName }}
+			{{- with $field.Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 		{{- end }}
 	{{- end }}
 

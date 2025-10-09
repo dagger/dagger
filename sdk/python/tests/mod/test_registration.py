@@ -59,6 +59,65 @@ def test_func_doc():
     assert mod.get_object("Foo").functions["fn_with_doc"].doc == "Foo."
 
 
+def test_function_deprecated_metadata():
+    mod = Module()
+
+    @mod.object_type
+    class Foo:
+        @mod.function(deprecated="Use new method instead")
+        def legacy(self):
+            """Legacy function."""
+
+    fn = mod.get_object("Foo").functions["legacy"]
+
+    assert fn.deprecated == "Use new method instead"
+
+
+def test_function_argument_deprecated_metadata():
+    mod = Module()
+
+    @mod.object_type
+    class Foo:
+        @mod.function
+        def legacy(
+            self,
+            value: Annotated[str, dagger.Deprecated("Use new argument instead")],
+            empty: Annotated[str, dagger.Deprecated()],
+            current: str,
+        ) -> str:
+            return value
+
+    fn = mod.get_object("Foo").functions["legacy"]
+
+    assert fn.parameters["value"].deprecated == "Use new argument instead"
+    assert fn.parameters["empty"].deprecated == ""
+    assert fn.parameters["current"].deprecated is None
+
+
+def test_field_deprecated_metadata():
+    mod = Module()
+
+    @mod.object_type
+    class Foo:
+        legacy: str = mod.field(deprecated="Use new field instead")
+
+    field = mod.get_object("Foo").fields["legacy"]
+
+    assert field.meta.deprecated == "Use new field instead"
+
+
+def test_object_type_deprecated_metadata():
+    mod = Module()
+
+    @mod.object_type(deprecated="Use NewFoo instead")
+    class Foo:
+        pass
+
+    obj = mod.get_object("Foo")
+
+    assert obj.deprecated == "Use NewFoo instead"
+
+
 def test_external_constructor_doc():
     mod = Module()
 

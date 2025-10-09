@@ -22,6 +22,7 @@ export class DaggerObjectTypeProperty
 {
   public name: string
   public description: string
+  public deprecated?: string
   public alias = undefined
   public isExposed: boolean = true
 
@@ -36,7 +37,9 @@ export class DaggerObjectTypeProperty
     super(node)
 
     this.name = symbol.name
-    this.description = this.ast.getDocFromSymbol(this.symbol)
+    const { description, deprecated } = this.ast.getSymbolDoc(this.symbol)
+    this.description = description
+    this.deprecated = deprecated
 
     const type = this.ast.checker.getTypeOfSymbolAtLocation(
       this.symbol,
@@ -82,6 +85,7 @@ export class DaggerObjectTypeProperty
     return {
       name: this.name,
       description: this.description,
+      deprecated: this.deprecated,
       alias: this.alias,
       type: this.type,
       isExposed: this.isExposed,

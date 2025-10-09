@@ -1,6 +1,7 @@
 from typing_extensions import Doc
 
 from dagger.mod._arguments import DefaultPath
+from dagger.mod._arguments import Deprecated
 from dagger.mod._arguments import Ignore
 from dagger.mod._arguments import Name
 from dagger.mod._module import Module
@@ -23,6 +24,7 @@ def default_module() -> Module:
 
 __all__ = [
     "DefaultPath",
+    "Deprecated",
     "Doc",  # Only re-exported because it's in `typing_extensions`.
     "Enum",
     "Ignore",
