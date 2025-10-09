@@ -267,7 +267,32 @@ func (dev *DaggerDev) Generate(ctx context.Context,
 			return cs, err
 		}
 		if diffSize > 0 {
-			return cs, fmt.Errorf("generated files are not up-to-date")
+			added, err := cs.AddedPaths(ctx)
+			if err != nil {
+				return cs, err
+			}
+			removed, err := cs.RemovedPaths(ctx)
+			if err != nil {
+				return cs, err
+			}
+			modified, err := cs.ModifiedPaths(ctx)
+			if err != nil {
+				return cs, err
+			}
+			return cs, fmt.Errorf(`generated files are not up-to-date
+
+%d MODIFIED:
+%s
+
+%d REMOVED:
+%s
+
+%d ADDED:
+%s`,
+				len(modified), strings.Join(modified, "\n"),
+				len(removed), strings.Join(removed, "\n"),
+				len(added), strings.Join(added, "\n"),
+			)
 		}
 		return cs, nil
 	}
