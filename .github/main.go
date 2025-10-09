@@ -155,7 +155,7 @@ func New() *CI {
 			ci.AltRunner,
 			true,
 			"Dev Engine",
-			"check-sdks",
+			"check-test-sdks",
 		).
 		withPrepareReleaseWorkflow().
 		withEvalsWorkflow()
