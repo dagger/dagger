@@ -32,7 +32,8 @@ public class Telemetry implements AutoCloseable {
 
   public <T> void trace(FunctionCall fnCall, TelemetrySupplier<T> supplier) throws Exception {
     Context ctx = getContext();
-    ctx.wrap(() -> tracer.startActiveSpan(fnCall.name(), ctx, getAttributes(fnCall), supplier)).call();
+    ctx.wrap(() -> tracer.startActiveSpan(fnCall.name(), ctx, getAttributes(fnCall), supplier))
+        .call();
   }
 
   private Context getContext() {
