@@ -14,8 +14,8 @@ type Check struct {
 	Description  string `field:"true" doc:"The description of the check"`
 	Success      bool   `json:"success" doc:"Whether the check succeeded`
 	Message      string `json:"message" doc:"A message emitted when running the check"`
-	ModuleName   string `json:"moduleName"`
-	FunctionName string `json:"functionName"`
+	ModuleName   string `field:"true"`
+	FunctionName string `field:"true"`
 }
 
 func (*Check) Type() *ast.Type {
@@ -27,17 +27,26 @@ func (*Check) Type() *ast.Type {
 
 // Run executes the check and returns the result
 func (c *Check) Run(ctx context.Context) (bool, string, error) {
-	//srv, err := CurrentDagqlServer(ctx)
+	q, err := CurrentQuery(ctx)
 	if err != nil {
-		return false, err.Error(), nil
+		return false, "", err
+	}
+	deps, err := q.CurrentServedDeps(ctx)
+	if err != nil {
+		return false, "", err
+	}
+	srv, err := deps.Schema(ctx)
+	if err != nil {
+		return false, "", err
 	}
 	var result any
 	err = srv.Select(ctx, srv.Root(), &result,
-		dagql.Selector{Field: c.ModuleName},
-		dagql.Selector{Field: c.FunctionName},
+		dagql.Selector{Field: gqlFieldName(c.ModuleName)},
+		dagql.Selector{Field: gqlFieldName(c.FunctionName)},
 	)
 	if err != nil {
-		return false, "", err
+		// FIXME: can't differentiate real errors from failed checks
+		return false, err.Error(), nil
 	}
 	return true, "", nil
 }
