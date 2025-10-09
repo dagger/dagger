@@ -315,8 +315,8 @@ func (dev *DaggerDev) Generate(ctx context.Context) (*dagger.Changeset, error) {
 	if err != nil {
 		return nil, err
 	}
-	//nolint:appendAssign
-	changes := append(genSDKs, genDocs, genEngine, genChangelog, genGHA)
+	changes := genSDKs
+	changes = append(changes, genDocs, genEngine, genChangelog, genGHA)
 	return changesetMerge(dev.Source, changes...), nil
 }
 
