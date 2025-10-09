@@ -73,6 +73,12 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		Syncer[*core.Module]().
 			Doc(`Forces evaluation of the module, including any loading into the engine and associated validation.`),
 
+		dagql.Func("checks", s.moduleChecks).
+			Doc(`Return all checks defined by the module`).
+			Args(
+				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
+			),
+
 		dagql.Func("dependencies", s.moduleDependencies).
 			Doc(`The dependencies of the module.`),
 
@@ -715,6 +721,22 @@ func (s *moduleSchema) moduleIntrospectionSchemaJSON(
 	args struct{},
 ) (dagql.Result[*core.File], error) {
 	return mod.Deps.SchemaIntrospectionJSONFileForModule(ctx)
+}
+
+func (s *moduleSchema) moduleChecks(
+	ctx context.Context,
+	mod *core.Module,
+	args struct {
+		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+	},
+) (*core.CheckGroup, error) {
+	var include []string
+	if args.Include.Valid {
+		for _, pattern := range args.Include.Value {
+			include = append(include, pattern.String())
+		}
+	}
+	return mod.Checks(ctx, include)
 }
 
 func (s *moduleSchema) moduleDependencies(

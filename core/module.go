@@ -90,6 +90,146 @@ func (mod *Module) Name() string {
 	return mod.NameField
 }
 
+type cacheMap[T any] struct {
+	cache  map[string]T
+	lookup func(string) (T, bool)
+}
+
+func newCacheMap[T any](lookup func(string) (T, bool)) *cacheMap[T] {
+	return &cacheMap[T]{
+		cache:  map[string]T{},
+		lookup: lookup,
+	}
+}
+func (cp *cacheMap[T]) Get(key string) (T, bool) {
+	if val, ok := cp.cache[key]; ok {
+		return val, true
+	}
+	val, ok := cp.lookup(key)
+	if ok {
+		cp.cache[key] = val
+	}
+	return val, ok
+}
+
+func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, error) {
+	mainObj, ok := mod.MainObject()
+	if !ok {
+		return nil, fmt.Errorf("scan for checks: %q: can't load main object", mod.Name())
+	}
+	objChecksCache := map[string][]*Check{}
+	group := &CheckGroup{Module: mod}
+	for _, check := range mod.walkObjectChecks(ctx, mainObj, objChecksCache) {
+		match, err := check.Match(include)
+		if err != nil {
+			return nil, err
+		}
+		if match {
+			group.Checks = append(group.Checks, check)
+		}
+	}
+	return group, nil
+}
+
+func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
+	return mod.ObjectByName(mod.Name())
+}
+
+func (mod *Module) ObjectByName(name string) (*ObjectTypeDef, bool) {
+	for _, objDef := range mod.ObjectDefs {
+		if objDef.AsObject.Valid {
+			obj := objDef.AsObject.Value
+			if gqlObjectName(obj.Name) == gqlObjectName(name) {
+				return obj, true
+			}
+		}
+	}
+	return nil, false
+}
+
+func (mod *Module) walkObjectChecks(ctx context.Context, obj *ObjectTypeDef, objChecksCache map[string][]*Check) []*Check {
+	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("walk object for checks: mod=%q obj=%q nFunctions=%d", mod.Name(), obj.Name, len(obj.Functions)))
+	defer span.End()
+	if cached, ok := objChecksCache[obj.Name]; ok {
+		return cached
+	}
+	var checks []*Check
+	// To be a valid check, a function must return a type ending with this suffix
+	checkReturnTypeSuffix := CheckStatus("").Type().Name()
+	subObjects := map[string]*ObjectTypeDef{}
+	for _, fn := range obj.Functions {
+		func() {
+			_, span := Tracer(ctx).Start(ctx, fmt.Sprintf("%s() returnType=%s returnsObject=%v", fn.Name, fn.ReturnType.ToType().Name(), fn.ReturnType.AsObject.Valid))
+			defer span.End()
+
+			if functionRequiresArgs(fn) {
+				return
+			}
+			// 1. Scan object for checks
+			returnType := fn.ReturnType.ToType().Name()
+			if strings.HasSuffix(returnType, checkReturnTypeSuffix) {
+				checks = append(checks, &Check{
+					Path:        []string{gqlFieldName(fn.Name)},
+					Description: fn.Description,
+				})
+				return
+			}
+			// 2. Recursively scan reachable children objects
+			if returnsObject := fn.ReturnType.AsObject.Valid; returnsObject {
+				subObj, ok := mod.ObjectByName(fn.ReturnType.ToType().Name())
+				if ok {
+					subObjects[fn.Name] = subObj
+				}
+
+			}
+			return
+		}()
+	}
+	// Also walk fields for sub-checks
+	for _, field := range obj.Fields {
+		func() {
+			_, span := Tracer(ctx).Start(ctx, fmt.Sprintf("%s() returnsObject=%v", field.TypeDef.AsObject.Valid))
+			defer span.End()
+			if returnsObject := field.TypeDef.AsObject.Valid; returnsObject {
+				subObj, ok := mod.ObjectByName(field.TypeDef.ToType().Name())
+				if ok {
+					subObjects[field.Name] = subObj
+
+				}
+			}
+		}()
+	}
+	for key, subObj := range subObjects {
+		subChecks := mod.walkObjectChecks(ctx, subObj, objChecksCache)
+		for _, subCheck := range subChecks {
+			subCheck.Path = append([]string{gqlFieldName(key)}, subCheck.Path...)
+		}
+		checks = append(checks, subChecks...)
+	}
+	objChecksCache[obj.Name] = checks
+	return checks
+}
+
+func functionRequiresArgs(fn *Function) bool {
+	for _, arg := range fn.Args {
+		// NOTE: we count on user defaults already merged in the schema at this point
+		// "regular optional" -> ok
+		if arg.TypeDef.Optional {
+			continue
+		}
+		// "contextual optional" -> ok
+		if arg.DefaultPath != "" {
+			continue
+		}
+		// default value -> ok
+		if arg.DefaultValue != nil {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 func (mod *Module) GetSource() *ModuleSource {
 	if !mod.Source.Valid {
 		return nil

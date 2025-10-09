@@ -117,6 +117,53 @@ export type CacheVolumeID = string & { __CacheVolumeID: never }
 export type ChangesetID = string & { __ChangesetID: never }
 
 /**
+ * The `CheckGroupID` scalar type represents an identifier for an object of type CheckGroup.
+ */
+export type CheckGroupID = string & { __CheckGroupID: never }
+
+/**
+ * The `CheckID` scalar type represents an identifier for an object of type Check.
+ */
+export type CheckID = string & { __CheckID: never }
+
+/**
+ * The result of a check.
+ */
+export enum CheckStatus {
+  Completed = "COMPLETED",
+  Skipped = "SKIPPED",
+}
+
+/**
+ * Utility function to convert a CheckStatus value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function CheckStatusValueToName(value: CheckStatus): string {
+  switch (value) {
+    case CheckStatus.Completed:
+      return "COMPLETED"
+    case CheckStatus.Skipped:
+      return "SKIPPED"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a CheckStatus name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function CheckStatusNameToValue(name: string): CheckStatus {
+  switch (name) {
+    case "COMPLETED":
+      return CheckStatus.Completed
+    case "SKIPPED":
+      return CheckStatus.Skipped
+    default:
+      return name as CheckStatus
+  }
+}
+/**
  * The `CloudID` scalar type represents an identifier for an object of type Cloud.
  */
 export type CloudID = string & { __CloudID: never }
@@ -1567,6 +1614,13 @@ export type LabelID = string & { __LabelID: never }
  */
 export type ListTypeDefID = string & { __ListTypeDefID: never }
 
+export type ModuleChecksOpts = {
+  /**
+   * Only include checks matching the specified patterns
+   */
+  include?: string[]
+}
+
 export type ModuleServeOpts = {
   /**
    * Expose the dependencies of this module to the client
@@ -2509,6 +2563,22 @@ export class Binding extends BaseClient {
   }
 
   /**
+   * Retrieve the binding value, as type Check
+   */
+  asCheck = (): Check => {
+    const ctx = this._ctx.select("asCheck")
+    return new Check(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type CheckGroup
+   */
+  asCheckGroup = (): CheckGroup => {
+    const ctx = this._ctx.select("asCheckGroup")
+    return new CheckGroup(ctx)
+  }
+
+  /**
    * Retrieve the binding value, as type Cloud
    */
   asCloud = (): Cloud => {
@@ -2898,6 +2968,224 @@ export class Changeset extends BaseClient {
     const response: Awaited<ChangesetID> = await ctx.execute()
 
     return new Client(ctx.copy()).loadChangesetFromID(response)
+  }
+}
+
+export class Check extends BaseClient {
+  private readonly _id?: CheckID = undefined
+  private readonly _completed?: boolean = undefined
+  private readonly _description?: string = undefined
+  private readonly _message?: string = undefined
+  private readonly _name?: string = undefined
+  private readonly _passed?: boolean = undefined
+  private readonly _resultEmoji?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: CheckID,
+    _completed?: boolean,
+    _description?: string,
+    _message?: string,
+    _name?: string,
+    _passed?: boolean,
+    _resultEmoji?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._completed = _completed
+    this._description = _description
+    this._message = _message
+    this._name = _name
+    this._passed = _passed
+    this._resultEmoji = _resultEmoji
+  }
+
+  /**
+   * A unique identifier for this Check.
+   */
+  id = async (): Promise<CheckID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<CheckID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether the check completed
+   */
+  completed = async (): Promise<boolean> => {
+    if (this._completed) {
+      return this._completed
+    }
+
+    const ctx = this._ctx.select("completed")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The description of the check
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const ctx = this._ctx.select("description")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * A message emitted when running the check
+   */
+  message = async (): Promise<string> => {
+    if (this._message) {
+      return this._message
+    }
+
+    const ctx = this._ctx.select("message")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return the fully qualified name of the check
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether the check passed
+   */
+  passed = async (): Promise<boolean> => {
+    if (this._passed) {
+      return this._passed
+    }
+
+    const ctx = this._ctx.select("passed")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The path of the check within its module
+   */
+  path = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("path")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * An emoji representing the result of the check
+   */
+  resultEmoji = async (): Promise<string> => {
+    if (this._resultEmoji) {
+      return this._resultEmoji
+    }
+
+    const ctx = this._ctx.select("resultEmoji")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+export class CheckGroup extends BaseClient {
+  private readonly _id?: CheckGroupID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: CheckGroupID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this CheckGroup.
+   */
+  id = async (): Promise<CheckGroupID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<CheckGroupID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return a list of individual checks and their details
+   */
+  list = async (): Promise<Check[]> => {
+    type list = {
+      id: CheckID
+    }
+
+    const ctx = this._ctx.select("list").select("id")
+
+    const response: Awaited<list[]> = await ctx.execute()
+
+    return response.map((r) => new Client(ctx.copy()).loadCheckFromID(r.id))
+  }
+
+  /**
+   * Generate a markdown report
+   */
+  report = (): File => {
+    const ctx = this._ctx.select("report")
+    return new File(ctx)
+  }
+
+  /**
+   * Execute all selected checks
+   */
+  run = (): CheckGroup => {
+    const ctx = this._ctx.select("run")
+    return new CheckGroup(ctx)
+  }
+
+  /**
+   * Call the provided function with current CheckGroup.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: CheckGroup) => CheckGroup) => {
+    return arg(this)
   }
 }
 
@@ -5616,6 +5904,56 @@ export class Env extends BaseClient {
    */
   withChangesetOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withChangesetOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type CheckGroup in the environment
+   * @param name The name of the binding
+   * @param value The CheckGroup value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withCheckGroupInput = (
+    name: string,
+    value: CheckGroup,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withCheckGroupInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired CheckGroup output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withCheckGroupOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withCheckGroupOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Check in the environment
+   * @param name The name of the binding
+   * @param value The Check value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withCheckInput = (name: string, value: Check, description: string): Env => {
+    const ctx = this._ctx.select("withCheckInput", { name, value, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Check output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withCheckOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withCheckOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -8753,6 +9091,15 @@ export class Module_ extends BaseClient {
   }
 
   /**
+   * Return all checks defined by the module
+   * @param opts.include Only include checks matching the specified patterns
+   */
+  checks = (opts?: ModuleChecksOpts): CheckGroup => {
+    const ctx = this._ctx.select("checks", { ...opts })
+    return new CheckGroup(ctx)
+  }
+
+  /**
    * The dependencies of the module.
    */
   dependencies = async (): Promise<Module_[]> => {
@@ -10234,6 +10581,22 @@ export class Client extends BaseClient {
   loadChangesetFromID = (id: ChangesetID): Changeset => {
     const ctx = this._ctx.select("loadChangesetFromID", { id })
     return new Changeset(ctx)
+  }
+
+  /**
+   * Load a Check from its ID.
+   */
+  loadCheckFromID = (id: CheckID): Check => {
+    const ctx = this._ctx.select("loadCheckFromID", { id })
+    return new Check(ctx)
+  }
+
+  /**
+   * Load a CheckGroup from its ID.
+   */
+  loadCheckGroupFromID = (id: CheckGroupID): CheckGroup => {
+    const ctx = this._ctx.select("loadCheckGroupFromID", { id })
+    return new CheckGroup(ctx)
   }
 
   /**
