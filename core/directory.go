@@ -17,7 +17,7 @@ import (
 	"time"
 
 	containerdfs "github.com/containerd/continuity/fs"
-	fscopy "github.com/dagger/dagger/engine/sources/local/copy"
+	fscopy "github.com/dagger/dagger/engine/filesync/copy"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"

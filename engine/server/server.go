@@ -26,6 +26,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/config"
+	"github.com/dagger/dagger/engine/filesync"
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
 	apitypes "github.com/dagger/dagger/internal/buildkit/api/types"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
@@ -131,6 +132,12 @@ type Server struct {
 
 	cacheExporters map[string]remotecache.ResolveCacheExporterFunc
 	cacheImporters map[string]remotecache.ResolveCacheImporterFunc
+
+	//
+	// worker file syncer
+	//
+
+	workerFileSyncer *filesync.FileSyncer
 
 	//
 	// worker/executor-specific config+state
@@ -443,13 +450,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	logrus.Infof("found worker %q, labels=%v, platforms=%v", workerID, baseLabels, FormatPlatforms(srv.enabledPlatforms))
 	archutil.WarnIfUnsupported(srv.enabledPlatforms)
 
-	ls, err := local.NewSource(local.Opt{
+	srv.workerFileSyncer = filesync.NewFileSyncer(filesync.FileSyncerOpt{
 		CacheAccessor: srv.workerCache,
 	})
-	if err != nil {
-		return nil, err
-	}
-	srv.workerSourceManager.Register(ls)
 
 	bs, err := blob.NewSource(blob.Opt{
 		CacheAccessor: srv.workerCache,
@@ -458,6 +461,10 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, err
 	}
 	srv.workerSourceManager.Register(bs)
+
+	// Protection mechanism for llb.Local operations to not panic
+	// if the operation is called.
+	srv.workerSourceManager.Register(local.NewSource())
 
 	srv.worker = buildkit.NewWorker(&buildkit.NewWorkerOpts{
 		WorkerRoot:       srv.workerRootDir,
@@ -595,6 +602,10 @@ func (srv *Server) BuildkitCache() bkcache.Manager {
 
 func (srv *Server) BuildkitSession() *bksession.Manager {
 	return srv.bkSessionManager
+}
+
+func (srv *Server) FileSyncer() *filesync.FileSyncer {
+	return srv.workerFileSyncer
 }
 
 func (srv *Server) Info(context.Context, *controlapi.InfoRequest) (*controlapi.InfoResponse, error) {
