@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -248,18 +249,54 @@ func (dev *DaggerDev) Bench() *Bench {
 }
 
 // Run all code generation - SDKs, docs, grpc stubs, changelog
-func (dev *DaggerDev) Generate(ctx context.Context) (*dagger.Changeset, error) {
+func (dev *DaggerDev) Generate(ctx context.Context,
+	// +optional
+	check bool,
+) (*dagger.Changeset, error) {
 	var (
 		genDocs, genEngine, genChangelog, genGHA *dagger.Changeset
 		genSDKs                                  []*dagger.Changeset
 	)
+	maybeCheck := func(ctx context.Context, cs *dagger.Changeset) (*dagger.Changeset, error) {
+		if !check {
+			// Always use the context, for correct span attribution
+			return cs.Sync(ctx)
+		}
+		diffSize, err := cs.AsPatch().Size(ctx)
+		if err != nil {
+			return cs, err
+		}
+		if diffSize > 0 {
+			return cs, fmt.Errorf("generated files are not up-to-date")
+		}
+		return cs, nil
+	}
+	verb := "generate "
+	if check {
+		verb += "& check "
+	}
 	err := parallel.New().
-		WithJob("generate docs", func(ctx context.Context) error {
+		WithJob(verb+"docs", func(ctx context.Context) error {
 			var err error
-			genDocs, err = dag.Docs().Generate().Sync(ctx)
+			genDocs, err = maybeCheck(ctx, dag.Docs().Generate())
 			return err
 		}).
-		WithJob("generate SDKs", func(ctx context.Context) error {
+		WithJob(verb+"engine", func(ctx context.Context) error {
+			var err error
+			genEngine, err = maybeCheck(ctx, dag.DaggerEngine().Generate())
+			return err
+		}).
+		WithJob(verb+"changelog", func(ctx context.Context) error {
+			var err error
+			genChangelog, err = maybeCheck(ctx, dev.GenerateChangelog())
+			return err
+		}).
+		WithJob(verb+"Github Actions config", func(ctx context.Context) error {
+			var err error
+			genGHA, err = maybeCheck(ctx, dag.Ci().Generate())
+			return err
+		}).
+		WithJob(verb+"SDKs", func(ctx context.Context) error {
 			type generator interface {
 				Name() string
 				Generate(context.Context) (*dagger.Changeset, error)
@@ -269,27 +306,15 @@ func (dev *DaggerDev) Generate(ctx context.Context) (*dagger.Changeset, error) {
 			jobs := parallel.New()
 			for i, sdk := range generators {
 				jobs = jobs.WithJob(sdk.Name(), func(ctx context.Context) error {
-					var err error
-					genSDKs[i], err = sdk.Generate(ctx)
+					genSDK, err := sdk.Generate(ctx)
+					if err != nil {
+						return err
+					}
+					genSDKs[i], err = maybeCheck(ctx, genSDK)
 					return err
 				})
 			}
 			return jobs.Run(ctx)
-		}).
-		WithJob("generate engine grpc stubs", func(ctx context.Context) error {
-			var err error
-			genEngine, err = dag.DaggerEngine().Generate().Sync(ctx)
-			return err
-		}).
-		WithJob("generate changelog", func(ctx context.Context) error {
-			var err error
-			genChangelog, err = dev.GenerateChangelog().Sync(ctx)
-			return err
-		}).
-		WithJob("generate github actions config", func(ctx context.Context) error {
-			var err error
-			genGHA, err = dag.Ci().Generate().Sync(ctx)
-			return err
 		}).
 		Run(ctx)
 	if err != nil {

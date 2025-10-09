@@ -11,7 +11,7 @@ import (
 
 // Verify that generated code is up to date
 func (dev *DaggerDev) CheckGenerated(ctx context.Context) error {
-	gen, err := dev.Generate(ctx)
+	gen, err := dev.Generate(ctx, true)
 	if err != nil {
 		return err
 	}
