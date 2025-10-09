@@ -95,6 +95,134 @@ func (mod *Module) Name() string {
 	return mod.NameField
 }
 
+func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, error) {
+	mainObj, ok := mod.MainObject()
+	if !ok {
+		return nil, fmt.Errorf("scan for checks: %q: can't load main object", mod.Name())
+	}
+	objChecksCache := map[string][]*Check{}
+	group := &CheckGroup{Module: mod}
+	// 1. Walk main module for checks
+	for _, check := range mod.walkObjectChecks(ctx, mainObj, objChecksCache) {
+		match, err := check.Match(include)
+		if err != nil {
+			return nil, err
+		}
+		if match {
+			group.Checks = append(group.Checks, check)
+		}
+	}
+	// 2. Walk toolchain modules for checks
+	for _, dep := range mod.Deps.Mods {
+		if tcMod, ok := dep.(*Module); ok && tcMod.IsToolchain {
+			tcMainObj, ok := tcMod.MainObject()
+			if !ok {
+				continue // skip toolchains without a main object
+			}
+			// Walk the toolchain module's checks
+			for _, check := range tcMod.walkObjectChecks(ctx, tcMainObj, objChecksCache) {
+				// Prepend the toolchain name to the check path
+				check.Path = append([]string{gqlFieldName(tcMod.NameField)}, check.Path...)
+				match, err := check.Match(include)
+				if err != nil {
+					return nil, err
+				}
+				if match {
+					group.Checks = append(group.Checks, check)
+				}
+			}
+		}
+	}
+	return group, nil
+}
+
+func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
+	return mod.ObjectByName(mod.Name())
+}
+
+func (mod *Module) ObjectByName(name string) (*ObjectTypeDef, bool) {
+	for _, objDef := range mod.ObjectDefs {
+		if objDef.AsObject.Valid {
+			obj := objDef.AsObject.Value
+			if gqlObjectName(obj.Name) == gqlObjectName(name) {
+				return obj, true
+			}
+		}
+	}
+	return nil, false
+}
+
+func (mod *Module) walkObjectChecks(ctx context.Context, obj *ObjectTypeDef, objChecksCache map[string][]*Check) []*Check { //nolint:unparam
+	if cached, ok := objChecksCache[obj.Name]; ok {
+		return cached
+	}
+	var checks []*Check
+	// To be a valid check, a function must return a type ending with this suffix
+	checkReturnTypeSuffix := CheckStatus("").Type().Name()
+	subObjects := map[string]*ObjectTypeDef{}
+	for _, fn := range obj.Functions {
+		func() {
+			if functionRequiresArgs(fn) {
+				return
+			}
+			// 1. Scan object for checks
+			returnType := fn.ReturnType.ToType().Name()
+			if strings.HasSuffix(returnType, checkReturnTypeSuffix) {
+				checks = append(checks, &Check{
+					Path:        []string{gqlFieldName(fn.Name)},
+					Description: fn.Description,
+				})
+				return
+			}
+			// 2. Recursively scan reachable children objects
+			if returnsObject := fn.ReturnType.AsObject.Valid; returnsObject && returnType != obj.Name {
+				subObj, ok := mod.ObjectByName(fn.ReturnType.ToType().Name())
+				if ok {
+					subObjects[fn.Name] = subObj
+				}
+			}
+		}()
+	}
+	// Also walk fields for sub-checks
+	for _, field := range obj.Fields {
+		if returnsObject := field.TypeDef.AsObject.Valid; returnsObject {
+			subObj, ok := mod.ObjectByName(field.TypeDef.ToType().Name())
+			if ok {
+				subObjects[field.Name] = subObj
+			}
+		}
+	}
+	for key, subObj := range subObjects {
+		subChecks := mod.walkObjectChecks(ctx, subObj, objChecksCache)
+		for _, subCheck := range subChecks {
+			subCheck.Path = append([]string{gqlFieldName(key)}, subCheck.Path...)
+		}
+		checks = append(checks, subChecks...)
+	}
+	objChecksCache[obj.Name] = checks
+	return checks
+}
+
+func functionRequiresArgs(fn *Function) bool {
+	for _, arg := range fn.Args {
+		// NOTE: we count on user defaults already merged in the schema at this point
+		// "regular optional" -> ok
+		if arg.TypeDef.Optional {
+			continue
+		}
+		// "contextual optional" -> ok
+		if arg.DefaultPath != "" {
+			continue
+		}
+		// default value -> ok
+		if arg.DefaultValue != nil {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 func (mod *Module) GetSource() *ModuleSource {
 	if !mod.Source.Valid {
 		return nil

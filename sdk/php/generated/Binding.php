@@ -38,6 +38,24 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the binding value, as type Check
+     */
+    public function asCheck(): Check
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asCheck');
+        return new \Dagger\Check($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type CheckGroup
+     */
+    public function asCheckGroup(): CheckGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asCheckGroup');
+        return new \Dagger\CheckGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type Cloud
      */
     public function asCloud(): Cloud

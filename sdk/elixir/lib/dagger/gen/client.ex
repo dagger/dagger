@@ -451,6 +451,34 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Load a Check from its ID.
+  """
+  @spec load_check_from_id(t(), Dagger.CheckID.t()) :: Dagger.Check.t()
+  def load_check_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadCheckFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Check{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a CheckGroup from its ID.
+  """
+  @spec load_check_group_from_id(t(), Dagger.CheckGroupID.t()) :: Dagger.CheckGroup.t()
+  def load_check_group_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadCheckGroupFromID") |> QB.put_arg("id", id)
+
+    %Dagger.CheckGroup{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Load a Cloud from its ID.
   """
   @spec load_cloud_from_id(t(), Dagger.CloudID.t()) :: Dagger.Cloud.t()

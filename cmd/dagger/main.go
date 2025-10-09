@@ -138,6 +138,7 @@ func init() {
 		runCmd,
 		watchCmd,
 		configCmd,
+		checksCmd,
 		moduleInitCmd,
 		moduleInstallCmd,
 		moduleUnInstallCmd,
