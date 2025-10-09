@@ -27,19 +27,17 @@ func (*Check) Type() *ast.Type {
 
 // Run executes the check and returns the result
 func (c *Check) Run(ctx context.Context) (bool, string, error) {
-	srv, err := CurrentDagqlServer(ctx)
+	//srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return false, err.Error(), nil
 	}
 	var result any
 	err = srv.Select(ctx, srv.Root(), &result,
-		dagql.Selector{Field: "docs"},
-		dagql.Selector{Field: "checkLint"},
-		//dagql.Selector{Field: c.ModuleName},
-		//dagql.Selector{Field: c.FunctionName},
+		dagql.Selector{Field: c.ModuleName},
+		dagql.Selector{Field: c.FunctionName},
 	)
 	if err != nil {
-		return false, err.Error(), nil
+		return false, "", err
 	}
 	return true, "", nil
 }
