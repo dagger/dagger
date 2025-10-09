@@ -1,0 +1,66 @@
+Expected stderr:
+
+▼ connect X.Xs
+├╴✔ starting engine X.Xs
+├╴▼ connecting to engine X.Xs
+│ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
+╰╴✔ starting session X.Xs
+ 
+▼ load module: ./viztest/python X.Xs
+├╴✔ finding module configuration X.Xs
+├╴✔ initializing module X.Xs
+├╴✔ inspecting module metadata X.Xs
+╰╴✔ loading type definitions X.Xs
+ 
+✔ parsing command line arguments X.Xs
+
+✔ python: Python! X.Xs
+▼ .nestedStatuses(fail: true): String! X.Xs ERROR
+┃ ERROR [dagger.mod]: Unhandled exception while executing function
+┃ Traceback (most recent call last):
+┃   File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/sdk/src/dagger/mod/_module.py", line XXX, in call
+┃     result = await cast(typing.Awaitable[R], result)
+┃              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+┃   File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/src/main/__init__.py", line XXX, in nested_statuses
+┃     raise ValueError("oh no")
+┃ ValueError: oh no
+! FunctionError: oh no
+╰╴▼ custom status X.Xs ERROR
+  ! ValueError: oh no
+  ├╴$ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
+  ├╴▼ .withExec(args: ["echo", "outer: 20XX-XX-XX XX:XX:XX.XXXX"]): Container! X.Xs
+  │ ┃ outer: 20XX-XX-XX XX:XX:XX.XXXX
+  ├╴▼ .stdout: String! X.Xs
+  │ ┃ outer: 20XX-XX-XX XX:XX:XX.XXXX
+  │
+  ├╴▼ sub status X.Xs
+  │ ├╴▼ Container.withExec(args: ["echo", "sub 1: 20XX-XX-XX XX:XX:XX.XXXX"]): Container! X.Xs
+  │ │ ┃ sub 1: 20XX-XX-XX XX:XX:XX.XXXX
+  │ ╰╴▼ .stdout: String! X.Xs
+  │   ┃ sub 1: 20XX-XX-XX XX:XX:XX.XXXX
+  │  
+  ├╴▼ sub status X.Xs
+  │ ├╴▼ Container.withExec(args: ["echo", "sub 2: 20XX-XX-XX XX:XX:XX.XXXX"]): Container! X.Xs
+  │ │ ┃ sub 2: 20XX-XX-XX XX:XX:XX.XXXX
+  │ ╰╴▼ .stdout: String! X.Xs
+  │   ┃ sub 2: 20XX-XX-XX XX:XX:XX.XXXX
+  │  
+  ╰╴▼ another sub status X.Xs ERROR
+    ! ValueError: oh no
+    ╰╴✘ sub status X.Xs ERROR
+      ! ValueError: oh no
+
+Error logs:
+
+▼ .nestedStatuses(fail: true): String! X.Xs ERROR
+ERROR [dagger.mod]: Unhandled exception while executing function
+Traceback (most recent call last):
+  File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/sdk/src/dagger/mod/_module.py", line XXX, in call
+    result = await cast(typing.Awaitable[R], result)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/src/xxh3:XXXXXXXXXXXXXXXX/viztest/python/src/main/__init__.py", line XXX, in nested_statuses
+    raise ValueError("oh no")
+ValueError: oh no
+! FunctionError: oh no
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
