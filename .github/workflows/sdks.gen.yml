@@ -4,16 +4,14 @@ name: SDKs
     push:
         branches:
             - main
-    pull_request:
-        types:
-            - opened
-            - reopened
-            - synchronize
-            - ready_for_review
     workflow_dispatch: {}
+
+    pull_request_target:
+      types: [opened, synchronize, reopened, ready_for_review]
+
 permissions:
     contents: read
-    id-token: read
+    id-token: write
 concurrency:
     group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
     cancel-in-progress: true
