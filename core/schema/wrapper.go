@@ -134,7 +134,8 @@ func DagOpDirectoryWrapper[T dagql.Typed, A DagOpInternalArgsIface](
 }
 
 type DagOpOpts[T dagql.Typed, A any] struct {
-	pfn PathFunc[T, A]
+	pfn          PathFunc[T, A]
+	keepImageRef bool
 
 	FSDagOpInternalArgs
 }
@@ -155,6 +156,12 @@ func WithStaticPath[T dagql.Typed, A any](pathVal string) DagOpOptsFn[T, A] {
 	}
 }
 
+func KeepImageRef[T dagql.Typed, A any](keep bool) DagOpOptsFn[T, A] {
+	return func(o *DagOpOpts[T, A]) {
+		o.keepImageRef = keep
+	}
+}
+
 func getOpts[T dagql.Typed, A any](opts ...DagOpOptsFn[T, A]) *DagOpOpts[T, A] {
 	var o DagOpOpts[T, A]
 	for _, optFn := range opts {
@@ -163,7 +170,7 @@ func getOpts[T dagql.Typed, A any](opts ...DagOpOptsFn[T, A]) *DagOpOpts[T, A] {
 	return &o
 }
 
-func getSelfDigest(a any) (digest.Digest, []llb.State, error) {
+func getSelfDigest(ctx context.Context, a any) (digest.Digest, []llb.State, error) {
 	switch x := a.(type) {
 	case *core.Directory:
 		dgst, err := core.DigestOf(x.WithoutInputs())
@@ -204,15 +211,19 @@ func DagOpDirectory[T dagql.Typed, A any](
 ) (*core.Directory, error) {
 	o := getOpts(opts...)
 
-	selfDigest, deps, err := getSelfDigest(self)
+	selfDigest, deps, err := getSelfDigest(ctx, self)
 	if err != nil {
 		return nil, err
 	}
-
 	argDigest, err := core.DigestOf(args)
 	if err != nil {
 		return nil, err
 	}
+	argDeps, err := core.InputsOf(ctx, args)
+	if err != nil {
+		return nil, err
+	}
+	deps = append(deps, argDeps...)
 
 	filename := "/"
 	if o.pfn != nil {
@@ -237,7 +248,9 @@ func DagOpDirectory[T dagql.Typed, A any](
 func DagOpContainerWrapper[A DagOpInternalArgsIface](
 	srv *dagql.Server,
 	fn dagql.NodeFuncHandler[*core.Container, A, dagql.ObjectResult[*core.Container]],
+	opts ...DagOpOptsFn[*core.Container, A],
 ) dagql.NodeFuncHandler[*core.Container, A, dagql.ObjectResult[*core.Container]] {
+	o := getOpts(opts...)
 	return func(ctx context.Context, self dagql.ObjectResult[*core.Container], args A) (inst dagql.ObjectResult[*core.Container], err error) {
 		if args.InDagOp() {
 			return fn(ctx, self, args)
@@ -245,6 +258,9 @@ func DagOpContainerWrapper[A DagOpInternalArgsIface](
 		ctr, err := DagOpContainer(ctx, srv, self.Self(), args, fn)
 		if err != nil {
 			return inst, err
+		}
+		if !o.keepImageRef {
+			ctr.ImageRef = ""
 		}
 		return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
 	}

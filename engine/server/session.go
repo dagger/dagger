@@ -550,6 +550,12 @@ func (srv *Server) initializeDaggerClient(
 		go pw.UpdateFrom(logCtx, statusCh)
 	}
 
+	var parentBuildkitClient *buildkit.Client
+	numParents := len(client.parents)
+	if numParents > 0 {
+		parentBuildkitClient = client.parents[numParents-1].bkClient
+	}
+
 	client.bkClient, err = buildkit.NewClient(ctx, &buildkit.Opts{
 		Worker:               srv.worker,
 		SessionManager:       srv.bkSessionManager,
@@ -567,6 +573,8 @@ func (srv *Server) initializeDaggerClient(
 
 		Interactive:        client.daggerSession.interactive,
 		InteractiveCommand: client.daggerSession.interactiveCommand,
+
+		ParentClient: parentBuildkitClient,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create buildkit client: %w", err)
