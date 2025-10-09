@@ -91,7 +91,7 @@ func (ls *FileSyncer) Snapshot(ctx context.Context, session session.Group, sm *s
 }
 
 func (ls *FileSyncer) snapshot(ctx context.Context, session session.Group, caller session.Caller, clientPath string, opts SnapshotOpts) (_ bkcache.ImmutableRef, rerr error) {
-	ctx, span := tracer(ctx).Start(ctx, "filesync")
+	ctx, span := Tracer(ctx).Start(ctx, "filesync")
 	defer telemetry.End(span, func() error { return rerr })
 
 	// We need the full abs path since the cache ref we sync into holds every dir from this client's root.

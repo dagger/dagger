@@ -80,6 +80,7 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/sources/blob"
+	"github.com/dagger/dagger/engine/sources/local"
 )
 
 type Server struct {
@@ -460,6 +461,10 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, err
 	}
 	srv.workerSourceManager.Register(bs)
+
+	// Protection mechanism for llb.Local operations to not panic
+	// if the operation is called.
+	srv.workerSourceManager.Register(local.NewSource())
 
 	srv.worker = buildkit.NewWorker(&buildkit.NewWorkerOpts{
 		WorkerRoot:       srv.workerRootDir,

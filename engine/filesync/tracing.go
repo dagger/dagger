@@ -6,6 +6,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-func tracer(ctx context.Context) trace.Tracer {
+func Tracer(ctx context.Context) trace.Tracer {
 	return trace.SpanFromContext(ctx).TracerProvider().Tracer("dagger.io/filesync")
 }
