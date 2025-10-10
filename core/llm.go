@@ -630,7 +630,7 @@ func (llm *LLM) LastReply(ctx context.Context) (string, error) {
 	if err := llm.Sync(ctx); err != nil {
 		return "", err
 	}
-	var reply string = "(no reply)"
+	reply := "(no reply)"
 	for _, msg := range llm.messages {
 		if msg.Role != "assistant" {
 			continue

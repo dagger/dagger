@@ -91,6 +91,7 @@ func initializeModule(
 
 var ErrConfigNotFound = errors.New("dagger.json not found")
 
+//nolint:unparam
 func initializeClientGeneratorModule(
 	ctx context.Context,
 	dag *dagger.Client,

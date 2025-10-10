@@ -23,7 +23,7 @@ func New(
 }
 
 // Run the Dagger evals across the major model providers.
-func (dev *Examples) Evaluator_RunMyEvals( //nolint:stylecheck
+func (dev *Examples) Evaluator_RunMyEvals( //nolint:staticcheck
 	ctx context.Context,
 	// Run particular evals, or all evals if unspecified.
 	// +optional

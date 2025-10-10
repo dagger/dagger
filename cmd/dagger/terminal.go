@@ -15,10 +15,9 @@ func withTerminal(fn func(stdin io.Reader, stdout, stderr io.Writer) error) erro
 	terminalMu.Lock()
 	defer terminalMu.Unlock()
 
-	if silent || !(progress == "auto" && hasTTY || progress == "tty") {
-		return fmt.Errorf("running shell without the TUI is not supported")
+	if silent {
+		return fmt.Errorf("running shell in silent mode is not supported")
 	}
-
 	return Frontend.Background(&terminalSession{
 		fn: fn,
 	}, true)
