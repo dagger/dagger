@@ -408,7 +408,7 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.ObjectResult[*core.Ser
 
 	useNative := !args.Random && len(args.Ports) == 0
 
-	var hostSvc dagql.Result[*core.Service]
+	var hostSvc dagql.ObjectResult[*core.Service]
 	err = srv.Select(ctx, srv.Root(), &hostSvc,
 		dagql.Selector{
 			Field: "host",
@@ -434,7 +434,7 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.ObjectResult[*core.Ser
 	if err != nil {
 		return res, fmt.Errorf("failed to get host services: %w", err)
 	}
-	runningSvc, err := svcs.Start(ctx, hostSvc.ID(), hostSvc.Self(), true)
+	runningSvc, err := svcs.Start(ctx, hostSvc, true)
 	if err != nil {
 		return res, fmt.Errorf("failed to start host service: %w", err)
 	}

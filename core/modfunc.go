@@ -963,33 +963,11 @@ func (fn *ModuleFunction) loadContextualArg(
 		return dagql.NewID[*Directory](dir.ID()), nil
 
 	case "File":
-		// We first load the directory from the context path, then we load the file from the path relative to the directory.
-		dirPath := filepath.Dir(arg.DefaultPath)
-		filePath := filepath.Base(arg.DefaultPath)
-
-		// Load the directory containing the file.
-		dir, err := fn.mod.ContextSource.Value.Self().LoadContextDir(ctx, dag, dirPath, []string{filePath}, nil)
+		file, err := fn.mod.ContextSource.Value.Self().LoadContextFile(ctx, dag, arg.DefaultPath)
 		if err != nil {
-			return nil, fmt.Errorf("load contextual directory %q: %w", dirPath, err)
+			return nil, fmt.Errorf("load contextual file %q: %w", arg.DefaultPath, err)
 		}
-
-		var fileID FileID
-		err = dag.Select(ctx, dir, &fileID,
-			dagql.Selector{
-				Field: "file",
-				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String(filePath)},
-				},
-			},
-			dagql.Selector{
-				Field: "id",
-			},
-		)
-		if err != nil {
-			return nil, fmt.Errorf("load contextual file %q: %w", filePath, err)
-		}
-
-		return fileID, nil
+		return dagql.NewID[*File](file.ID()), nil
 
 	case "GitRepository", "GitRef":
 		var git dagql.ObjectResult[*GitRepository]
