@@ -1044,8 +1044,11 @@ func (fn *ModuleFunction) loadContextualArg(
 }
 
 func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Server, arg *FunctionArg, value any) (any, error) {
-	if arg.TypeDef.Kind != TypeDefKindObject || arg.TypeDef.AsObject.Value.Name != "Directory" {
-		return nil, fmt.Errorf("argument %q must be of type Directory to apply ignore pattern: [%s]", arg.OriginalName, strings.Join(arg.Ignore, ","))
+	if kind := arg.TypeDef.Kind; kind != TypeDefKindObject {
+		return nil, fmt.Errorf("[kind=%v] argument %q must be of type Directory to apply ignore pattern: [%s]", kind, arg.OriginalName, strings.Join(arg.Ignore, ","))
+	}
+	if objName := arg.TypeDef.AsObject.Value.Name; objName != "Directory" {
+		return nil, fmt.Errorf("[ObjName=%v] argument %q must be of type Directory to apply ignore pattern: [%s]", objName, arg.OriginalName, strings.Join(arg.Ignore, ","))
 	}
 
 	if dag == nil {
@@ -1085,6 +1088,12 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 		return applyIgnore(value)
 	case dagql.ID[*Directory]:
 		return applyIgnore(value)
+	case dagql.Optional[dagql.IDType]:
+		id := value.Value
+		if dirid, ok := id.(dagql.ID[*Directory]); ok {
+			return applyIgnore(dirid)
+		}
+		return nil, fmt.Errorf("not a directory id: %#v", id)
 	default:
 		return nil, fmt.Errorf("argument %q must be of type Directory to apply ignore pattern ([%s]) but type is %#v", arg.OriginalName, strings.Join(arg.Ignore, ", "), value)
 	}
