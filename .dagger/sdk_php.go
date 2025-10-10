@@ -56,7 +56,7 @@ func (t PHPSDK) Generate(ctx context.Context) (*dagger.Changeset, error) {
 	if err != nil {
 		return nil, err
 	}
-	src := t.Source()
+	src := t.Dagger.Source
 	return src.
 		WithChanges(genClient).
 		WithChanges(genDocs).
