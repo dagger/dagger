@@ -173,7 +173,7 @@ func ParseGitRefString(ctx context.Context, refString string) (_ ParsedGitRefStr
 	// Try to isolate the root of the git repo
 	// RepoRootForImportPath does not support SCP-like ref style. In parseGitEndpoint, we made sure that all refs
 	// would be compatible with this function to benefit from the repo URL and root splitting
-	repoRoot, err := vcs.RepoRootForImportPath(gitParsed.modPath, false)
+	repoRoot, err := vcs.RepoRootForImportPath(ctx, gitParsed.modPath, false)
 	if err != nil {
 		return ParsedGitRefString{}, gitEndpointError{fmt.Errorf("failed to get repo root for import path: %w", err)}
 	}
