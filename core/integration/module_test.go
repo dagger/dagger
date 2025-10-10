@@ -6243,7 +6243,19 @@ const (
 func (m *Test) UseMode(mode Mode) Mode {
 	return mode
 }
-`
+
+type Fooer interface {
+	DaggerObject
+
+	// +deprecated="Use Bar instead"
+	Foo(ctx context.Context, value int) (string, error)
+
+	Bar(ctx context.Context, value int) (string, error)
+}
+
+func (m *Test) CallFoo(ctx context.Context, foo Fooer, value int) (string, error) {
+	return foo.Foo(ctx, value)
+}`
 	const tsSrc = `import { field, func, object } from "@dagger.io/dagger"
 
   /** @deprecated This module is deprecated and will be removed in future versions. */
@@ -6272,6 +6284,11 @@ func (m *Test) UseMode(mode Mode) Mode {
     useMode(mode: Mode): Mode {
       return mode
     }
+
+	@func()
+	async callFoo(foo: Fooer, value: number): Promise<string> {
+		return foo.foo(value)
+	}
   }
 
   /** @deprecated This type is deprecated and kept only for retro-compatibility. */
@@ -6287,13 +6304,20 @@ func (m *Test) UseMode(mode Mode) Mode {
     /** @deprecated beta is deprecated; use zeta instead */
     Beta = "beta",
     Zeta = "zeta",
+  }
+
+  export interface Fooer {
+    /** @deprecated Use Bar instead */
+    foo(value: number): Promise<string>
+    
+    bar(value: number): Promise<string>
   }`
 
 	const pySrc = `import enum
+import typing
 from typing import Annotated
 
 import dagger
-
 
 @dagger.object_type(
     deprecated="This module is deprecated and will be removed in future versions."
@@ -6323,6 +6347,11 @@ class Test:
     def use_mode(self, mode: "Mode") -> "Mode":
         return mode
 
+    @dagger.function(name="callFoo")
+    async def call_foo(self, foo: "Fooer", value: int) -> str:
+        return await foo.foo(value)
+
+
 
 @dagger.object_type(
     deprecated="This type is deprecated and kept only for retro-compatibility."
@@ -6351,6 +6380,14 @@ class Mode(enum.Enum):
 
     ZETA = "zeta"
     """ infos """
+
+@dagger.interface
+class Fooer(typing.Protocol):
+    @dagger.function(deprecated="Use Bar instead")
+    async def foo(self, value: int) -> str: ...
+
+    @dagger.function()
+    async def bar(self, value: int) -> str: ...
 `
 
 	cases := []sdkCase{
@@ -6384,8 +6421,8 @@ class Mode(enum.Enum):
 
 	const introspect = `
 query ModuleIntrospection($path: String!) {
-	host {
-	  directory(path: $path) {
+  host {
+    directory(path: $path) {
       asModule {
         objects {
           asObject {
@@ -6395,8 +6432,12 @@ query ModuleIntrospection($path: String!) {
             fields { name deprecated }
           }
         }
-        enums {
-          asEnum { name members { value deprecated } }
+        enums { asEnum { name members { value deprecated } } }
+        interfaces {
+          asInterface {
+            name
+            functions { name deprecated args { name } }
+          }
         }
       }
     }
@@ -6430,12 +6471,17 @@ query ModuleIntrospection($path: String!) {
 		Name    string
 		Members []EnumMember
 	}
+	type Iface struct {
+		Name      string
+		Functions []Fn
+	}
 	type Resp struct {
 		Host struct {
 			Directory struct {
 				AsModule struct {
-					Objects []struct{ AsObject Obj }
-					Enums   []struct{ AsEnum Enum }
+					Objects    []struct{ AsObject Obj }
+					Enums      []struct{ AsEnum Enum }
+					Interfaces []struct{ AsInterface Iface }
 				}
 			}
 		}
@@ -6535,6 +6581,35 @@ query ModuleIntrospection($path: String!) {
 			require.Equal(t, "beta is deprecated; use zeta instead", beta.Deprecated, "Mode.beta must be marked deprecated")
 			require.NotNil(t, zeta, "Mode should have member 'zeta'")
 			require.Empty(t, zeta.Deprecated, "Mode.zeta should NOT be deprecated")
+
+			// Interface presence + deprecation on its method
+			var fooer *Iface
+			for i := range res.Host.Directory.AsModule.Interfaces {
+				iFace := &res.Host.Directory.AsModule.Interfaces[i].AsInterface
+				if iFace.Name == "TestFooer" {
+					fooer = iFace
+					break
+				}
+			}
+			require.NotNil(t, fooer, "test interface must be present")
+
+			fnByNameIface := map[string]Fn{}
+			for _, f := range fooer.Functions {
+				fnByNameIface[f.Name] = f
+			}
+
+			fooFn, ok := fnByNameIface["foo"]
+			require.True(t, ok, "TestFooer.foo must be present")
+			require.Equal(t, "Use Bar instead", fooFn.Deprecated, "TestFooer.foo must be marked deprecated")
+
+			var valueArg *Arg
+			for i := range fooFn.Args {
+				if fooFn.Args[i].Name == "value" {
+					valueArg = &fooFn.Args[i]
+					break
+				}
+			}
+			require.NotNil(t, valueArg, "TestFooer.foo must have arg 'value'")
 		})
 	}
 }

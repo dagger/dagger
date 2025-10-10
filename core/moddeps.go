@@ -175,7 +175,9 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
 	}
 
 	// add any extensions to objects for the interfaces they implement (if any)
+	// fmt.Fprintf(os.Stderr, "🧪 objects: %d, interfaces: %d\n", len(objects), len(ifaces))
 	for _, objType := range objects {
+		// fmt.Fprintf(os.Stderr, "🔍 object=%s\n", objType.typeDef.Name)
 		obj := objType.typeDef
 		class, found := dag.ObjectType(obj.Name)
 		if !found {
