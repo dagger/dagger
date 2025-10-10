@@ -31,7 +31,19 @@ func (t DotnetSDK) CheckReleaseDryRun(ctx context.Context) error {
 	return nil
 }
 
-func (t DotnetSDK) Generate(ctx context.Context) (*dagger.Changeset, error) {
+// Install the SDK locally so that it can be imported
+// NOTE: this was initially called Generate(), but it doesn't do what our CI
+// expects an SDK Generate() function to do.
+//
+// - Expected: generate client library to be committed and published
+// - Actual: generate introspection.json which allows *using* the SDK from a local checkout
+//
+// Since this SDK at the moment cannot be published or installed, the standard Generate()
+// function does not need to exist.
+// WARNING: if you rename this to Generate(), it wil break CI because it adds a file to the
+// repo (introspection.json) which is git-ignored and therefore not present in a clean checkout
+// This is why the same check may not fail locally - you have the gitignored copy.
+func (t DotnetSDK) Install(ctx context.Context) (*dagger.Changeset, error) {
 	src := t.Dagger.Source.Directory("sdk/dotnet")
 
 	relLayer := dag.
