@@ -281,19 +281,20 @@ func (dev *DaggerDev) Generate(ctx context.Context,
 			if err != nil {
 				return cs, err
 			}
-			fmt.Fprint(os.Stderr, `%d MODIFIED:
+			fmt.Fprintf(os.Stderr, `%d MODIFIED:
 %s
 
 %d REMOVED:
 %s
 
 %d ADDED:
-%s`,
+%s
+`,
 				len(modified), strings.Join(modified, "\n"),
 				len(removed), strings.Join(removed, "\n"),
 				len(added), strings.Join(added, "\n"),
 			)
-			return cs, errors.New("generarted files are not up-to-date")
+			return cs, errors.New("generated files are not up-to-date")
 		}
 		return cs, nil
 	}
