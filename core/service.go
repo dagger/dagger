@@ -244,7 +244,16 @@ func (svc *Service) StartAndTrack(ctx context.Context, id *call.ID) error {
 	if err != nil {
 		return err
 	}
-	_, err = svcs.Start(ctx, id, svc, svc.TunnelUpstream.Self() != nil)
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return err
+	}
+
+	result, err := dagql.NewObjectResultForID(svc, srv, id)
+	if err != nil {
+		return err
+	}
+	_, err = svcs.Start(ctx, result, svc.TunnelUpstream.Self() != nil)
 	return err
 }
 
@@ -676,7 +685,6 @@ func (svc *Service) startContainer(
 		}
 
 		return &RunningService{
-			Service:     svc,
 			Host:        fullHost,
 			Ports:       ctr.Ports,
 			Stop:        stopSvc,
@@ -801,7 +809,7 @@ func (svc *Service) startTunnel(ctx context.Context) (running *RunningService, r
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	upstream, err := svcs.Start(svcCtx, svc.TunnelUpstream.ID(), svc.TunnelUpstream.Self(), svc.TunnelUpstream.Self().TunnelUpstream.Self() != nil)
+	upstream, err := svcs.Start(svcCtx, svc.TunnelUpstream, svc.TunnelUpstream.Self().TunnelUpstream.Self() != nil)
 	if err != nil {
 		return nil, fmt.Errorf("start upstream: %w", err)
 	}
@@ -852,9 +860,8 @@ func (svc *Service) startTunnel(ctx context.Context) (running *RunningService, r
 	}
 
 	return &RunningService{
-		Service: svc,
-		Host:    dialHost,
-		Ports:   ports,
+		Host:  dialHost,
+		Ports: ports,
 		Stop: func(_ context.Context, _ bool) error {
 			stop(errors.New("service stop called"))
 			svcs.Detach(svcCtx, upstream)
@@ -959,9 +966,8 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 		}
 
 		return &RunningService{
-			Service: svc,
-			Host:    fullHost,
-			Ports:   checkPorts,
+			Host:  fullHost,
+			Ports: checkPorts,
 			Stop: func(context.Context, bool) (rerr error) {
 				defer telemetry.End(span, func() error { return rerr })
 				stop(errors.New("service stop called"))
