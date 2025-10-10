@@ -183,9 +183,15 @@ func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
 		if ok {
 			// NB: this is defense-in-depth to prevent SDKs or some other future
 			// component from allowing modules to extend external objects.
-			return fmt.Errorf("type %q is already defined by module %q",
-				objDef.Name,
-				modType.SourceMod().Name())
+			if src := mod.GetSource(); src != nil && src.SDK.ExperimentalFeatureEnabled(ModuleSourceExperimentalFeatureSelfCalls) {
+				// TODO: temporarily authorize modules to be loaded two times when self calls are enabled
+				// This breaks enum support but it allows a module to be loaded as its own dependency, enabling self calls
+				slog.ExtraDebug("type is already defined by dependency module", "type", objDef.Name, "module", modType.SourceMod().Name())
+			} else {
+				return fmt.Errorf("type %q is already defined by module %q",
+					objDef.Name,
+					modType.SourceMod().Name())
+			}
 		}
 
 		obj := &ModuleObject{
