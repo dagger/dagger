@@ -16,12 +16,16 @@ func New(
 	password *dagger.Secret,
 	// +optional
 	file *dagger.File,
+	// +optional
+	// +ignore=["*", "!**/*.txt", "!**/*.md"]
+	docs *dagger.Directory,
 ) *Defaults {
 	return &Defaults{
 		Greeting: greeting,
 		Dir:      dir,
 		Password: password,
 		File:     file,
+		Docs:     docs,
 	}
 }
 
@@ -30,6 +34,7 @@ type Defaults struct {
 	Dir      *dagger.Directory
 	File     *dagger.File
 	Password *dagger.Secret
+	Docs     *dagger.Directory
 }
 
 func (m *Defaults) Message(
