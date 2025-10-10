@@ -17,6 +17,10 @@
       "source": "modules/alpine"
     },
     {
+      "name": "changelog",
+      "source": ".changes"
+    },
+    {
       "name": "ci",
       "source": ".github"
     },
