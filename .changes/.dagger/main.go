@@ -9,8 +9,8 @@ func New(
 	// +ignore=[
 	//  "**",
 	//  "!**/.changes/",
-	//  "CHANGELOG.md",
-	//  "**/.changie.yaml"
+	//  "!CHANGELOG.md",
+	//  "!**/.changie.yaml"
 	// ]
 	source *dagger.Directory,
 ) *Changelog {
