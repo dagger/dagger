@@ -260,6 +260,9 @@ func (dev *DaggerDev) Generate(ctx context.Context,
 		genSDKs                                  []*dagger.Changeset
 	)
 	maybeCheck := func(ctx context.Context, cs *dagger.Changeset) (*dagger.Changeset, error) {
+		//		cs = dev.Source.WithChanges(cs). // apply to source
+		//							Changes(dev.Source) // check for *actual* changes
+
 		if !check {
 			// Always use the context, for correct span attribution
 			return cs.Sync(ctx)

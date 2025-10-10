@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
@@ -11,18 +10,8 @@ import (
 
 // Verify that generated code is up to date
 func (dev *DaggerDev) CheckGenerated(ctx context.Context) error {
-	gen, err := dev.Generate(ctx, true)
-	if err != nil {
-		return err
-	}
-	diffSize, err := gen.AsPatch().Size(ctx)
-	if err != nil {
-		return err
-	}
-	if diffSize > 0 {
-		return fmt.Errorf("generated files are not up-to-date. Call 'generate'")
-	}
-	return nil
+	_, err := dev.Generate(ctx, true)
+	return err
 }
 
 func (dev *DaggerDev) CheckReleaseDryRun(ctx context.Context) error {

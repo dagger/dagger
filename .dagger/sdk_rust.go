@@ -59,21 +59,34 @@ func (r RustSDK) Test(ctx context.Context) error {
 	return err
 }
 
+func (r RustSDK) Source() *dagger.Directory {
+	return r.Dagger.Source.Filter(dagger.DirectoryFilterOpts{
+		Include: []string{
+			"sdk/rust/",
+		},
+	})
+}
+
 // Regenerate the Rust SDK API
 func (r RustSDK) Generate(ctx context.Context) (*dagger.Changeset, error) {
 	genClientPath := "crates/dagger-sdk/src/gen.rs"
+	relGeneratorNoiseFilter := dagger.DirectoryFilterOpts{
+		// WARNING: DO NOT EXCLUDE ANYTHING THAT WAS IN THE INPUT!
+		// IT WILL INCORRECTLY ADD REMOVED FILES TO THE FINAL CHANGESET
+		Exclude: []string{
+			"target",
+		},
+	}
 	relLayer := r.DevContainer().
 		WithMountedFile("/introspection.json", r.Dagger.introspectionJSON()).
 		WithExec([]string{"cargo", "run", "-p", "dagger-bootstrap", "generate", "/introspection.json", "--output", genClientPath}).
 		WithExec([]string{"cargo", "fix", "--all", "--allow-no-vcs"}).
 		WithExec([]string{"cargo", "fmt"}).
 		Directory(".").
-		Filter(dagger.DirectoryFilterOpts{
-			Include: []string{genClientPath},
-		})
+		Filter(relGeneratorNoiseFilter) // exclude garbage from generation
 	absLayer := dag.Directory().
 		WithDirectory("sdk/rust", relLayer)
-	return absLayer.Changes(r.Dagger.Source).Sync(ctx)
+	return absLayer.Changes(r.Source()), nil
 }
 
 // Test the publishing process
@@ -215,27 +228,29 @@ func (r RustSDK) DevContainer() *dagger.Container {
 	// https://hub.docker.com/_/rust
 	rustImage := "rust:1.77-bookworm"
 	cargoChefVersion := "0.1.62"
+	mountPath := "/src"
 
-	const appDir = "sdk/rust"
-
-	src := dag.Directory().WithDirectory("/", r.Dagger.Source.Directory(appDir))
-
-	mountPath := fmt.Sprintf("/%s", appDir)
-
-	base := dag.Container().
+	// 1. Base image
+	ctr := dag.Container().
 		From(rustImage).
-		WithDirectory(mountPath, src, dagger.ContainerWithDirectoryOpts{
-			Include: []string{
-				"**/Cargo.toml",
-				"**/Cargo.lock",
-				"**/main.rs",
-				"**/lib.rs",
-			},
-		}).
 		WithWorkdir(mountPath).
 		WithEnvVariable("CARGO_HOME", "/root/.cargo").
-		WithMountedCache("/root/.cargo", dag.CacheVolume("rust-cargo-"+rustImage)).
+		WithMountedCache("/root/.cargo", dag.CacheVolume("rust-cargo-"+rustImage))
+
+	// 2. Install project dependencies
+	srcForInstall := r.Source().Filter(dagger.DirectoryFilterOpts{
+		Include: []string{
+			"**/Cargo.toml",
+			"**/Cargo.lock",
+			"**/main.rs",
+			"**/lib.rs",
+		},
+	})
+	ctr = ctr.
+		WithDirectory(".", srcForInstall).
+		WithWorkdir("sdk/rust").
 		// combine into one layer so there's no assumptions on state of cache volume across steps
+		// FIXME: how can Dagger API be improved to not require this?
 		WithExec([]string{"sh", "-c",
 			strings.Join([]string{
 				"rustup component add rustfmt",
@@ -243,8 +258,8 @@ func (r RustSDK) DevContainer() *dagger.Container {
 				"cargo chef prepare --recipe-path /tmp/recipe.json",
 				"cargo chef cook --release --workspace --recipe-path /tmp/recipe.json",
 			}, "&& "),
-		}).
-		WithMountedDirectory(mountPath, src)
+		})
 
-	return base
+	// 3. Mount full source
+	return ctr.WithMountedDirectory(mountPath, r.Source())
 }

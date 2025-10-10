@@ -86,10 +86,30 @@ func (t PythonSDK) Test(ctx context.Context) (rerr error) {
 
 // Regenerate the Python SDK API
 func (t PythonSDK) Generate(ctx context.Context) (*dagger.Changeset, error) {
-	// FIXME: underlying python-sdk-dev module doesn't support changeset
-	relLayer := dag.PythonSDKDev().Generate(t.Dagger.introspectionJSON())
-	absLayer := dag.Directory().WithDirectory("sdk/python", relLayer)
-	return absLayer.Changes(t.Dagger.Source).Sync(ctx)
+	genNoiseFilter := dagger.DirectoryFilterOpts{
+		// Explicit excludes, to avoid removing input files, which would
+		// taint the final Changeset with an incorrect removal
+		// TLDR: anything we remove here, is like the generator removed it
+		Exclude: []string{
+			"sdk/python/.uv_cache",
+			"sdk/python/.venv",
+			"sdk/python/uv.lock",
+			"sdk/python/__pycache__",
+		},
+	}
+	devContainer := dag.PythonSDKDev().Container()
+	// We don't control the input source, it's defined in wrapped native module
+	src := devContainer.Directory("../..")
+	return devContainer.
+		WithWorkdir("codegen").
+		WithMountedFile("/schema.json", t.Dagger.introspectionJSON()).
+		WithExec([]string{
+			"uv", "run", "python", "-m", "codegen",
+			"generate", "-i", "/schema.json", "-o", "gen.py",
+		}).
+		Directory("../..").
+		Filter(genNoiseFilter).
+		Changes(src), nil
 }
 
 // Test the publishing process
