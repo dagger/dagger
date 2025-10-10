@@ -33,7 +33,7 @@ func (t ElixirSDK) Test(ctx context.Context) error {
 func (t ElixirSDK) Generate(ctx context.Context) (*dagger.Changeset, error) {
 	layer := t.native().Generate(t.Dagger.introspectionJSON())
 	// Convert directory layer to Changeset
-	return layer.Changes(dag.Directory()).Sync(ctx)
+	return layer.Changes(t.Dagger.Source).Sync(ctx)
 }
 
 // Test the publishing process
