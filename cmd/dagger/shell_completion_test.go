@@ -138,7 +138,7 @@ func (DaggerCMDSuite) TestShellAutocomplete(ctx context.Context, t *testctx.T) {
 		t.Run(cmdline, func(ctx context.Context, t *testctx.T) {
 			start := strings.IndexRune(cmdline, '<')
 			end := strings.IndexRune(cmdline, '>')
-			if start == -1 || end == -1 || !(start < end) {
+			if start == -1 || end == -1 || start >= end {
 				require.FailNow(t, "invalid cmdline: could not find <expr>")
 			}
 			inprogress, rest, ok := strings.Cut(cmdline[start+1:end], "$")

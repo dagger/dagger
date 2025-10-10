@@ -2,6 +2,7 @@ package dotenv
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"mvdan.cc/sh/v3/expand"
@@ -59,7 +60,7 @@ func (g *GraphEvaluator) parseEntry(line string) (*parsedEntry, error) {
 		value := line[idx+1:]
 
 		// Check if this is a simple assignment without shell features
-		if isSimpleKey(key) && !containsShellFeatures(value) {
+		if simpleKeyRegexp.MatchString(key) && !containsShellFeatures(value) {
 			// Create a simple word for the value
 			return &parsedEntry{
 				name: key,
@@ -280,18 +281,8 @@ func Exists(environ []string, name string) bool {
 	return false
 }
 
-// isSimpleKey checks if a key is a valid environment variable name
-func isSimpleKey(key string) bool {
-	if key == "" {
-		return false
-	}
-	for i, ch := range key {
-		if !((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch == '_' || (i > 0 && ch >= '0' && ch <= '9')) {
-			return false
-		}
-	}
-	return true
-}
+// simpleKeyRegexp checks if a key is a valid environment variable name
+var simpleKeyRegexp = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // containsShellFeatures checks if a value contains shell features that require parsing
 func containsShellFeatures(value string) bool {

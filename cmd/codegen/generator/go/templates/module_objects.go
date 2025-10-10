@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	. "github.com/dave/jennifer/jen" //nolint:stylecheck
+	. "github.com/dave/jennifer/jen" //nolint:staticcheck
 )
 
 func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parsedObjectType, error) {

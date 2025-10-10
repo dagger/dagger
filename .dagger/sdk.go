@@ -60,6 +60,7 @@ func (sdk *SDK) allSDKs() []sdkBase {
 	}
 }
 
+//nolint:unparam
 func (dev *DaggerDev) installer(name string) func(*dagger.Container) *dagger.Container {
 	engineSvc := dag.DaggerEngine().Service(name)
 	cliBinary := dag.DaggerCli().Binary()

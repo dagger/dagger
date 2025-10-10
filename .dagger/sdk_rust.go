@@ -164,7 +164,7 @@ func (r RustSDK) Publish(
 			return err
 		}
 		if !strings.Contains(dt, "\nversion = \""+targetVersion+"\"\n") {
-			//nolint:stylecheck
+			//nolint:staticcheck
 			return fmt.Errorf("Cargo.toml did not contain %q", targetVersion)
 		}
 	} else {
@@ -216,6 +216,7 @@ func (r RustSDK) Bump(ctx context.Context, version string) (*dagger.Directory, e
 		WithFile(rustCargoLockFilePath, base.File("Cargo.lock")), nil
 }
 
+//nolint:unparam
 func (r RustSDK) rustBase(image string) *dagger.Container {
 	const appDir = "sdk/rust"
 

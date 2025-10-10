@@ -246,7 +246,7 @@ func (fe *frontendPlain) RevealAllSpans() {
 }
 
 func (fe *frontendPlain) Background(cmd tea.ExecCommand, raw bool) error {
-	return fmt.Errorf("not implemented")
+	return fmt.Errorf("running shell without the TUI is not supported")
 }
 
 func (fe *frontendPlain) Shutdown(ctx context.Context) error {

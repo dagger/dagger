@@ -856,7 +856,7 @@ func (container *Container) WithDirectory(
 		if err != nil {
 			return nil, err
 		}
-		return container.replaceMount(mnt.Target, newDir, false)
+		return container.replaceMount(mnt.Target, newDir)
 
 	case mnt.FileSource != nil: // file mount
 		// should be handled by the check for exact mount point above
@@ -940,7 +940,7 @@ func (container *Container) WithFile(
 		if err != nil {
 			return nil, err
 		}
-		return container.replaceMount(mnt.Target, newDir, false)
+		return container.replaceMount(mnt.Target, newDir)
 
 	case mnt.FileSource != nil: // file mount
 		// should be handled by the check for exact mount point above
@@ -1015,7 +1015,7 @@ func (container *Container) withoutPath(
 		if err != nil {
 			return nil, err
 		}
-		return container.replaceMount(mnt.Target, newDir, false)
+		return container.replaceMount(mnt.Target, newDir)
 
 	case mnt.FileSource != nil: // file mount
 		// This should be handled by the check above for whether the path being removed is an exact mount point
@@ -1136,7 +1136,7 @@ func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, 
 		if err != nil {
 			return nil, err
 		}
-		return container.replaceMount(mnt.Target, newDir, false)
+		return container.replaceMount(mnt.Target, newDir)
 
 	case mnt.FileSource != nil: // file mount
 		// should be handled by the check for exact mount point above
@@ -1537,7 +1537,6 @@ func locatePath(
 func (container *Container) replaceMount(
 	target string,
 	dir dagql.ObjectResult[*Directory],
-	readonly bool,
 ) (*Container, error) {
 	target = absPath(container.Config.WorkingDir, target)
 
@@ -1545,7 +1544,6 @@ func (container *Container) replaceMount(
 	container.Mounts, err = container.Mounts.Replace(ContainerMount{
 		DirectorySource: &dir,
 		Target:          target,
-		Readonly:        readonly,
 	})
 	if err != nil {
 		return nil, err

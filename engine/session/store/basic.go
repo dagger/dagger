@@ -27,7 +27,7 @@ func (loader basicStoreAttachable) Register(srv *grpc.Server) {
 	RegisterBasicStoreServer(srv, loader)
 }
 
-var BasicStore_serviceDesc = _BasicStore_serviceDesc //nolint:stylecheck
+var BasicStore_serviceDesc = _BasicStore_serviceDesc //nolint:staticcheck
 
 func (loader basicStoreAttachable) WriteTarball(srv BasicStore_WriteTarballServer) error {
 	md, ok := metadata.FromIncomingContext(srv.Context())
