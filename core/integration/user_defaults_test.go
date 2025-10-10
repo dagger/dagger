@@ -223,7 +223,7 @@ func (UserDefaultsSuite) TestDependencies(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "hello, world!!!!", output, "User defaults should apply to nested dependencies")
 }
 
-func (UserDefaultsSuite) TestDirectoryIgnore(ctx context.Context, t *testctx.T) {
+func (UserDefaultsSuite) TestOptionalDirectoryWithIgnore(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	docs := dag.Directory().
 		WithNewFile("README.md", "Thank you for reading me. The end.").
@@ -233,6 +233,21 @@ func (UserDefaultsSuite) TestDirectoryIgnore(ctx context.Context, t *testctx.T) 
 		WithWorkdir("defaults").
 		WithNewFile(".env", `docs=/foo/mydocs`).
 		WithExec([]string{"dagger", "call", "docs", "entries"}, nestedExec).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "README.md\n", output)
+}
+
+func (UserDefaultsSuite) TestRequiredDirectoryWithIgnore(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	docs := dag.Directory().
+		WithNewFile("README.md", "Thank you for reading me. The end.").
+		WithNewFile("Makefile", "lol")
+	output, err := nestedDaggerContainer(t, c, "go", "defaults").
+		WithDirectory("/foo/mydocs", docs).
+		WithWorkdir("defaults").
+		WithNewFile(".env", `lsText_dir=/foo/mydocs`).
+		WithExec([]string{"dagger", "call", "ls-text"}, nestedExec).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "README.md\n", output)

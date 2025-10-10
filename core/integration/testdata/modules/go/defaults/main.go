@@ -53,6 +53,13 @@ func (m *Defaults) Ls(ctx context.Context, dir *dagger.Directory) ([]string, err
 	return dir.Entries(ctx)
 }
 
+// List the contents of text files in a directory (with an ignore applied)
+func (m *Defaults) LsText(ctx context.Context,
+	// +ignore=["**", "!**/*.txt", "**/*.md"]
+	dir *dagger.Directory) ([]string, error) {
+	return dir.Entries(ctx)
+}
+
 // Capitalize a string
 func (m *Defaults) Capitalize(s string) string {
 	return strings.ToUpper(s)
