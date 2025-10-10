@@ -89,7 +89,7 @@ func (t PythonSDK) Generate(ctx context.Context) (*dagger.Changeset, error) {
 	// FIXME: underlying python-sdk-dev module doesn't support changeset
 	relLayer := dag.PythonSDKDev().Generate(t.Dagger.introspectionJSON())
 	absLayer := dag.Directory().WithDirectory("sdk/python", relLayer)
-	return absLayer.Changes(dag.Directory()).Sync(ctx)
+	return absLayer.Changes(t.Dagger.Source).Sync(ctx)
 }
 
 // Test the publishing process

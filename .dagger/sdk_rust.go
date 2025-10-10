@@ -73,7 +73,7 @@ func (r RustSDK) Generate(ctx context.Context) (*dagger.Changeset, error) {
 		})
 	absLayer := dag.Directory().
 		WithDirectory("sdk/rust", relLayer)
-	return absLayer.Changes(dag.Directory()).Sync(ctx)
+	return absLayer.Changes(r.Dagger.Source).Sync(ctx)
 }
 
 // Test the publishing process
