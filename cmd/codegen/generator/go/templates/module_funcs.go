@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	. "github.com/dave/jennifer/jen" //nolint:stylecheck
+	. "github.com/dave/jennifer/jen" //nolint:staticcheck
 	"github.com/mitchellh/mapstructure"
 )
 

@@ -488,11 +488,11 @@ type dynamicObject struct {
 	typeName string
 }
 
-func (do *dynamicObject) XXX_GraphQLType() string { //nolint:stylecheck
+func (do *dynamicObject) XXX_GraphQLType() string { //nolint:staticcheck
 	return do.typeName
 }
 
-func (do *dynamicObject) XXX_GraphQLID(ctx context.Context) (string, error) { //nolint:stylecheck
+func (do *dynamicObject) XXX_GraphQLID(ctx context.Context) (string, error) { //nolint:staticcheck
 	return do.id, nil
 }
 

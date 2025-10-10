@@ -16,7 +16,7 @@ import (
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
-	. "github.com/dave/jennifer/jen" //nolint:stylecheck
+	. "github.com/dave/jennifer/jen" //nolint:staticcheck
 	"github.com/iancoleman/strcase"
 	"golang.org/x/tools/go/packages"
 )

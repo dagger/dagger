@@ -20,7 +20,7 @@ var _ enum = enumType("")
 func TestMarshalGQL(t *testing.T) {
 	var (
 		str         = "hello world"
-		unicode     = "∆?–∂∂√˛viÙ˜Ÿ¿GÆÓ∂Ó˘◊ñ" //nolint:stylecheck
+		unicode     = "∆?–∂∂√˛viÙ˜Ÿ¿GÆÓ∂Ó˘◊ñ" //nolint:staticcheck
 		strNullPtr  *string
 		strPtrSlice          = []*string{&str}
 		enumVal     enumType = "test"
@@ -110,13 +110,13 @@ type customMarshaller struct {
 	count int
 }
 
-//nolint:stylecheck
+//nolint:staticcheck
 func (m *customMarshaller) XXX_GraphQLType() string { return "idTest" }
 
-//nolint:stylecheck
+//nolint:staticcheck
 func (m *customMarshaller) XXX_GraphQLIDType() string { return "idTypeTest" }
 
-//nolint:stylecheck
+//nolint:staticcheck
 func (m *customMarshaller) XXX_GraphQLID(context.Context) (string, error) {
 	m.count++
 	return m.v, nil
