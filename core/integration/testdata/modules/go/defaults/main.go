@@ -16,12 +16,16 @@ func New(
 	password *dagger.Secret,
 	// +optional
 	file *dagger.File,
+	// +optional
+	// +ignore=["*", "!**/*.txt", "!**/*.md"]
+	docs *dagger.Directory,
 ) *Defaults {
 	return &Defaults{
 		Greeting: greeting,
 		Dir:      dir,
 		Password: password,
 		File:     file,
+		Docs:     docs,
 	}
 }
 
@@ -30,6 +34,7 @@ type Defaults struct {
 	Dir      *dagger.Directory
 	File     *dagger.File
 	Password *dagger.Secret
+	Docs     *dagger.Directory
 }
 
 func (m *Defaults) Message(
@@ -45,6 +50,13 @@ func (m *Defaults) Message(
 
 // List the contents of a directory
 func (m *Defaults) Ls(ctx context.Context, dir *dagger.Directory) ([]string, error) {
+	return dir.Entries(ctx)
+}
+
+// List the contents of text files in a directory (with an ignore applied)
+func (m *Defaults) LsText(ctx context.Context,
+	// +ignore=["**", "!**/*.txt", "!**/*.md"]
+	dir *dagger.Directory) ([]string, error) {
 	return dir.Entries(ctx)
 }
 

@@ -105,6 +105,23 @@ func (EnvFileSuite) TestEvalMatch(ctx context.Context, t *testctx.T) {
 				"single_quoted_var": `"hello, nice '$animal'"`,
 			},
 		},
+
+		{
+			name: "JSON array must be protected with quotes",
+			vars: map[string]string{
+				`no_quotes`:     `["ga", "bu", "zo", "meu", 42]`,
+				`single_quotes`: `'["ga", "bu", "zo", "meu", 42]'`,
+				`double_quotes`: `"[\"ga\", \"bu\", \"zo\", \"meu\", 42]"`,
+			},
+		},
+		{
+			name: "JSON object must be protected with quotes",
+			vars: map[string]string{
+				`no_quotes`:     `{"name": "John Wick", "age": 58, "occupation": "assassin"}`,
+				`single_quotes`: `'{"name": "John Wick", "age": 58, "occupation": "assassin"}'`,
+				`double_quotes`: `"{\"name\": \"John Wick\", \"age\": 58, \"occupation\": \"assassin\"}"`,
+			},
+		},
 	}
 
 	for _, tt := range tests {
