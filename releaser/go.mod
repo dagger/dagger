@@ -1,14 +1,15 @@
 module dagger/releaser
 
-go 1.24.0
+go 1.24.4
 
 require (
 	github.com/99designs/gqlgen v0.17.80
 	github.com/Khan/genqlient v0.8.1
+	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
 	github.com/go-task/slim-sprig/v3 v3.0.0
 	github.com/vektah/gqlparser/v2 v2.5.30
 	go.opentelemetry.io/otel v1.38.0
-	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.14.0
+	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.14.2
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.14.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.38.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.38.0
@@ -50,3 +51,5 @@ replace go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp => go.opente
 replace go.opentelemetry.io/otel/log => go.opentelemetry.io/otel/log v0.14.0
 
 replace go.opentelemetry.io/otel/sdk/log => go.opentelemetry.io/otel/sdk/log v0.14.0
+
+replace github.com/dagger/dagger => ..

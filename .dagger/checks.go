@@ -2,166 +2,124 @@ package main
 
 import (
 	"context"
-	"path"
 	"strings"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
-	"go.opentelemetry.io/otel/codes"
-	"golang.org/x/sync/errgroup"
+	"github.com/dagger/dagger/util/parallel"
 )
 
-// Check that everything works. Use this as CI entrypoint.
-func (dev *DaggerDev) Check(ctx context.Context,
-	// Directories to check
-	// +optional
-	targets []string,
+// Verify that generated code is up to date
+func (dev *DaggerDev) CheckGenerated(ctx context.Context) error {
+	_, err := dev.Generate(ctx, true)
+	return err
+}
+
+func (dev *DaggerDev) CheckReleaseDryRun(ctx context.Context) error {
+	return parallel.New().
+		WithJob("Helm chart", dag.Helm().CheckReleaseDryRun).
+		WithJob("CLI", dag.DaggerCli().CheckReleaseDryRun).
+		WithJob("Engine", dag.DaggerCli().CheckReleaseDryRun).
+		WithJob("SDKs", func(context.Context) error {
+			type dryRunner interface {
+				Name() string
+				CheckReleaseDryRun(context.Context) error
+			}
+			jobs := parallel.New()
+			for _, sdk := range allSDKs[dryRunner](dev) {
+				jobs = jobs.WithJob(sdk.Name(), sdk.CheckReleaseDryRun)
+			}
+			return jobs.Run(ctx)
+		}).
+		Run(ctx)
+}
+
+func (dev *DaggerDev) CheckLint(ctx context.Context) error {
+	return parallel.New().
+		WithJob("lint go packages", func(ctx context.Context) error {
+			return dev.CheckLintGo(ctx, nil)
+		}).
+		WithJob("lint docs", dag.Docs().CheckLint).
+		WithJob("lint helm chart", dag.Helm().CheckLint).
+		WithJob("lint install scripts", dev.Scripts().CheckLint).
+		WithJob("lint SDKs", func(ctx context.Context) error {
+			type linter interface {
+				Name() string
+				CheckLint(context.Context) error
+			}
+			jobs := parallel.New()
+			for _, sdk := range allSDKs[linter](dev) {
+				jobs = jobs.WithJob(sdk.Name(), sdk.CheckLint)
+			}
+			return jobs.Run(ctx)
+		}).
+		Run(ctx)
+}
+
+// Lint the Go codebase
+func (dev *DaggerDev) CheckLintGo(
+	ctx context.Context,
+	pkgs []string, // +optional
 ) error {
-	var routes checkRouter
-	routes.Add(Check{"docs", dag.Docs().Lint})
-	routes.Add(Check{"scripts/lint", dev.Scripts().Lint})
-	routes.Add(Check{"scripts/test", dev.Scripts().Test})
-	routes.Add(Check{"helm/lint", dag.Helm().Lint})
-	routes.Add(Check{"helm/test", dag.Helm().Test})
-	routes.Add(Check{"helm/test-publish", func(ctx context.Context) error {
-		return dag.Helm().Publish(ctx, "main", dagger.HelmPublishOpts{DryRun: true})
-	}})
-	routes.Add(dev.checksForSDK("sdk/go", dev.SDK().Go)...)
-	routes.Add(dev.checksForSDK("sdk/python", dev.SDK().Python)...)
-	routes.Add(dev.checksForSDK("sdk/typescript", dev.SDK().Typescript)...)
-	routes.Add(dev.checksForSDK("sdk/php", dev.SDK().PHP)...)
-	routes.Add(dev.checksForSDK("sdk/java", dev.SDK().Java)...)
-	routes.Add(dev.checksForSDK("sdk/rust", dev.SDK().Rust)...)
-	routes.Add(dev.checksForSDK("sdk/elixir", dev.SDK().Elixir)...)
-	routes.Add(dev.checksForSDK("sdk/dotnet", dev.SDK().Dotnet)...)
-
-	if len(targets) == 0 {
-		for route := range routes.children {
-			targets = append(targets, route)
+	if len(pkgs) == 0 {
+		if err := parallel.Run(ctx, "scan for go modules to lint", func(ctx context.Context) error {
+			allPkgs, err := dev.containing(ctx, "go.mod")
+			if err != nil {
+				return err
+			}
+			for _, pkg := range allPkgs {
+				if strings.HasPrefix(pkg, "docs/") {
+					continue
+				}
+				if strings.HasPrefix(pkg, "core/integration/") {
+					continue
+				}
+				if strings.HasPrefix(pkg, "dagql/idtui/viztest/broken") {
+					continue
+				}
+				if strings.HasPrefix(pkg, "modules/claude/") {
+					// re-enable after we ship its dependent APIs
+					continue
+				}
+				if strings.HasPrefix(pkg, "modules/evals/") {
+					// re-enable after we ship its dependent APIs
+					continue
+				}
+				pkgs = append(pkgs, pkg)
+			}
+			return nil
+		}); err != nil {
+			return err
 		}
 	}
-	eg := errgroup.Group{}
-	for _, check := range routes.Get(targets...) {
-		ctx, span := Tracer().Start(ctx, check.Name)
-		eg.Go(func() (rerr error) {
-			defer func() {
-				if rerr != nil {
-					span.SetStatus(codes.Error, rerr.Error())
-				}
-				span.End()
-			}()
-			return check.Check(ctx)
-		})
-	}
-	return eg.Wait()
+	// Call 'dagger develop'
+	var src *dagger.Directory
+	parallel.Run(ctx, "generate all dagger modules before linting", func(ctx context.Context) error {
+		var err error
+		src, err = dev.SourceDeveloped().Sync(ctx)
+		return err
+	})
+	return dag.Go(src).Lint(ctx, dagger.GoLintOpts{Packages: pkgs})
 }
 
-type Check struct {
-	Name  string
-	Check func(context.Context) error
+// Verify that scripts work correctly
+func (dev *DaggerDev) CheckTestScripts(ctx context.Context) error {
+	return dev.Scripts().Test(ctx)
 }
 
-func (dev *DaggerDev) checksForSDK(name string, sdk sdkBase) []Check {
-	return []Check{
-		{
-			Name:  name + "/lint",
-			Check: sdk.Lint,
-		},
-		{
-			Name:  name + "/test",
-			Check: sdk.Test,
-		},
-		{
-			Name: name + "/test-publish",
-			Check: func(ctx context.Context) error {
-				branches, err := dev.Git.Branches(ctx, dagger.VersionGitBranchesOpts{
-					Commit: "HEAD",
-				})
-				if err != nil {
-					return err
-				}
-				var name string
-				if len(branches) == 0 {
-					name = "HEAD"
-				} else {
-					name, err = branches[0].Branch(ctx)
-					if err != nil {
-						return err
-					}
-				}
-				return sdk.TestPublish(ctx, name)
-			},
-		},
-	}
+// Verify that helm works correctly
+func (dev *DaggerDev) CheckTestHelm(ctx context.Context) error {
+	return dag.Helm().Test(ctx)
 }
 
-// checkRouter allows easily storing and fetching checks
-// It's similar in style to go-test, where specifying a prefix will match all children.
-type checkRouter struct {
-	check    Check
-	children map[string]*checkRouter
-}
-
-func (r *checkRouter) Add(checks ...Check) {
-	for _, check := range checks {
-		r.add(check.Name, check)
+// Run all checks for all SDKs
+func (dev *DaggerDev) CheckTestSDKs(ctx context.Context) error {
+	type tester interface {
+		Name() string
+		Test(context.Context) error
 	}
-}
-
-func (r *checkRouter) Get(targets ...string) []Check {
-	var checks []Check
-	for _, target := range targets {
-		checks = append(checks, r.get(target)...)
+	jobs := parallel.New()
+	for _, sdk := range allSDKs[tester](dev) {
+		jobs = jobs.WithJob(sdk.Name(), sdk.Test)
 	}
-	return checks
-}
-
-func (r *checkRouter) add(target string, check Check) {
-	if target == "" {
-		r.check = check
-		return
-	}
-
-	target, rest, _ := strings.Cut(target, "/")
-	if r.children == nil {
-		r.children = make(map[string]*checkRouter)
-	}
-	if _, ok := r.children[target]; !ok {
-		r.children[target] = &checkRouter{}
-	}
-	r.children[target].add(rest, check)
-}
-
-func (r *checkRouter) get(target string) []Check {
-	if r == nil {
-		return nil
-	}
-	if target == "" {
-		return r.all()
-	}
-
-	target, rest, _ := strings.Cut(target, "/")
-	if r.children == nil {
-		return nil
-	}
-	var results []Check
-	for k, v := range r.children {
-		if ok, _ := path.Match(target, k); ok {
-			results = append(results, v.get(rest)...)
-		}
-	}
-	return results
-}
-
-func (r *checkRouter) all() []Check {
-	if r == nil {
-		return nil
-	}
-	var checks []Check
-	if r.check.Check != nil {
-		checks = append(checks, r.check)
-	}
-	for _, child := range r.children {
-		checks = append(checks, child.all()...)
-	}
-	return checks
+	return jobs.Run(ctx)
 }

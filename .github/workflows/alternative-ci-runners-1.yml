@@ -16,22 +16,22 @@ jobs:
   docs-lint-on-depot-remote-engine:
     uses: ./.github/workflows/_dagger_on_depot_remote_engine.yml
     with:
-      function: check --targets=docs
+      function: check-docs
   docs-lint-on-depot-local-engine:
     uses: ./.github/workflows/_dagger_on_depot_local_engine.yml
     with:
-      function: check --targets=docs
+      function: check-docs
       dev: true
 
   sdk-go-on-depot-remote-engine:
     needs: docs-lint-on-depot-remote-engine
     uses: ./.github/workflows/_dagger_on_depot_remote_engine.yml
     with:
-      function: check --targets=sdk/go
+      function: check-go-sdk
   sdk-go-dev-on-depot-local-engine:
     needs: sdk-go-on-depot-remote-engine
     uses: ./.github/workflows/_dagger_on_depot_local_engine.yml
     with:
-      function: check --targets=sdk/go
+      function: check-go-sdk
       dev: true
       timeout: 15

@@ -7,11 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/modules/go/internal/dagger"
-	"github.com/dagger/dagger/modules/go/internal/telemetry"
+	"github.com/dagger/dagger/util/parallel"
 )
 
 const (
@@ -421,27 +419,40 @@ func (p Go) Lint(
 	ctx context.Context,
 	packages []string, // +optional
 ) error {
-	eg := errgroup.Group{}
+	jobs := parallel.New()
 	for _, pkg := range packages {
-		eg.Go(func() (rerr error) {
-			ctx, span := Tracer().Start(ctx, "lint "+path.Clean(pkg))
-			defer telemetry.End(span, func() error { return rerr })
-			return dag.
-				Golangci().
-				Lint(p.Source, dagger.GolangciLintOpts{
-					Path:         pkg,
-					GoModCache:   p.ModuleCache,
-					GoBuildCache: p.BuildCache,
+		pkgName := path.Clean(pkg)
+		jobs = jobs.WithJob(pkgName, func(ctx context.Context) error {
+			return parallel.New().
+				WithJob("golangci-lint", func(ctx context.Context) error {
+					return dag.
+						Golangci().
+						Lint(p.Source, dagger.GolangciLintOpts{
+							Path:         pkg,
+							GoModCache:   p.ModuleCache,
+							GoBuildCache: p.BuildCache,
+						}).
+						Assert(ctx)
 				}).
-				Assert(ctx)
-		})
-		eg.Go(func() (rerr error) {
-			ctx, span := Tracer().Start(ctx, "tidy "+path.Clean(pkg))
-			defer telemetry.End(span, func() error { return rerr })
-			beforeTidy := p.Source.Directory(pkg)
-			afterTidy := p.Env(defaultPlatform).WithWorkdir(pkg).WithExec([]string{"go", "mod", "tidy"}).Directory(".")
-			return dag.Dirdiff().AssertEqual(ctx, beforeTidy, afterTidy, []string{"go.mod", "go.sum"})
+				WithJob("check go mod tidy", func(ctx context.Context) error {
+					filterOpts := dagger.DirectoryFilterOpts{Include: []string{"go.mod", "go.sum"}}
+					before := p.Source.Directory(pkg).Filter(filterOpts)
+					after := p.Env(defaultPlatform).
+						WithWorkdir(pkg).
+						WithExec([]string{"go", "mod", "tidy"}).
+						Directory(".").
+						Filter(filterOpts)
+					diffSize, err := after.Changes(before).AsPatch().Size(ctx)
+					if err != nil {
+						return err
+					}
+					if diffSize > 0 {
+						return fmt.Errorf("%s: 'go mod tidy' must be run", pkg)
+					}
+					return nil
+				}).
+				Run(ctx)
 		})
 	}
-	return eg.Wait()
+	return jobs.Run(ctx)
 }
