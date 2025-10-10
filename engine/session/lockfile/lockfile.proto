@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package dagger.lockfile;
+
+option go_package = "lockfile";
+
+service Lockfile {
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc Set(SetRequest) returns (SetResponse);
+}
+
+// We use repeated strings for arguments to pass them as an ordered array
+// Each string is a JSON-encoded value
+message GetRequest {
+  string module = 1;
+  string function = 2;
+  repeated string args = 3; // Ordered list of JSON-encoded argument values
+}
+
+message GetResponse {
+  string result = 1; // JSON-encoded result, empty string = cache miss
+}
+
+message SetRequest {
+  string module = 1;
+  string function = 2;
+  repeated string args = 3; // Ordered list of JSON-encoded argument values
+  string result = 4; // JSON-encoded result
+}
+
+message SetResponse {}

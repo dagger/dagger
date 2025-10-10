@@ -500,6 +500,8 @@ func (container *Container) FromRefString(ctx context.Context, addr string) (*Co
 		return container.FromCanonicalRef(ctx, refName, nil)
 	}
 
+	// FIXME: lockfile lookup?
+
 	_, digest, cfgBytes, err := bk.ResolveImageConfig(ctx, refName.String(), sourceresolver.Opt{
 		Platform: ptr(platform.Spec()),
 		ImageOpt: &sourceresolver.ResolveImageOpt{
@@ -509,6 +511,7 @@ func (container *Container) FromRefString(ctx context.Context, addr string) (*Co
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve image %q (platform: %q): %w", refName.String(), platform.Format(), err)
 	}
+
 	canonRefName, err := reference.WithDigest(refName, digest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set digest on image %s: %w", refName.String(), err)

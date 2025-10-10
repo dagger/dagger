@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	"github.com/opencontainers/go-digest"
@@ -9,6 +10,48 @@ import (
 
 type cacheRefMetadata struct {
 	bkcache.RefMetadata
+}
+
+// searchHTTPByContentDigest searches for cache entries by their content digest
+func SearchHTTPByContentDigest(ctx context.Context, cache bkcache.Accessor, contentDigest digest.Digest) (bkcache.ImmutableRef, error) {
+	// We can't directly search by content digest since it's not indexed,
+	// but we can search for all HTTP entries and check their content digests
+	//
+	// First, try to get all HTTP cache entries by searching with empty key
+	// This will match all entries that have the HTTP index
+	mds, err := cache.Search(ctx, indexHTTP, false)
+	if err != nil {
+		// If that doesn't work, we need to be more creative
+		// Try searching for common URL patterns
+		searches := []string{
+			indexHTTP + "http://",
+			indexHTTP + "https://",
+		}
+
+		var allMds []bkcache.RefMetadata
+		for _, search := range searches {
+			if results, err := cache.Search(ctx, search, true); err == nil {
+				allMds = append(allMds, results...)
+			}
+		}
+		mds = allMds
+	}
+
+	// Check each metadata entry for matching content digest
+	for _, md := range mds {
+		cmdMd := cacheRefMetadata{md}
+		if cmdMd.getHTTPChecksum() == contentDigest {
+			// Found a match!
+			ref, err := cache.Get(ctx, md.ID(), nil)
+			if err != nil {
+				// Cache entry exists but can't load it, continue searching
+				continue
+			}
+			return ref, nil
+		}
+	}
+
+	return nil, fmt.Errorf("content digest not found in cache: %s", contentDigest)
 }
 
 func searchRefMetadata(ctx context.Context, store bkcache.MetadataStore, key string, idx string) ([]cacheRefMetadata, error) {
