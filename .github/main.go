@@ -127,7 +127,7 @@ func New() *CI {
 			ci.AltRunnerWithCache,
 			false,
 			"Security scan",
-			"scan",
+			"check-scan",
 		).
 		withWorkflow(
 			ci.AltRunnerWithCache,

@@ -7,7 +7,8 @@ import (
 	"github.com/dagger/dagger/util/parallel"
 )
 
-func (dev *DaggerDev) Scan(ctx context.Context) error {
+// Scan source code and artifacts for security vulnerabilities
+func (dev *DaggerDev) CheckScan(ctx context.Context) error {
 	ignoreFiles := dag.Directory().WithDirectory("/", dev.Source, dagger.DirectoryWithDirectoryOpts{
 		Include: []string{
 			".trivyignore",

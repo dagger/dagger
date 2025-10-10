@@ -4,7 +4,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -279,9 +281,7 @@ func (dev *DaggerDev) Generate(ctx context.Context,
 			if err != nil {
 				return cs, err
 			}
-			return cs, fmt.Errorf(`generated files are not up-to-date
-
-%d MODIFIED:
+			fmt.Fprint(os.Stderr, `%d MODIFIED:
 %s
 
 %d REMOVED:
@@ -293,6 +293,7 @@ func (dev *DaggerDev) Generate(ctx context.Context,
 				len(removed), strings.Join(removed, "\n"),
 				len(added), strings.Join(added, "\n"),
 			)
+			return cs, errors.New("generarted files are not up-to-date")
 		}
 		return cs, nil
 	}
@@ -313,7 +314,7 @@ func (dev *DaggerDev) Generate(ctx context.Context,
 		}).
 		WithJob(verb+"changelog", func(ctx context.Context) error {
 			var err error
-			genChangelog, err = maybeCheck(ctx, dev.GenerateChangelog())
+			genChangelog, err = maybeCheck(ctx, dag.Changelog().Generate())
 			return err
 		}).
 		WithJob(verb+"Github Actions config", func(ctx context.Context) error {
