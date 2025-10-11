@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -42,13 +43,19 @@ func (*Env) Type() *ast.Type {
 
 type envKey struct{}
 
-func EnvToContext(ctx context.Context, env dagql.ObjectResult[*Env]) context.Context {
+func EnvIDToContext(ctx context.Context, env *call.ID) context.Context {
 	return context.WithValue(ctx, envKey{}, env)
 }
 
-func EnvFromContext(ctx context.Context) (res dagql.ObjectResult[*Env], ok bool) {
-	env, ok := ctx.Value(envKey{}).(dagql.ObjectResult[*Env])
+func EnvIDFromContext(ctx context.Context) (res *call.ID, ok bool) {
+	// Env overidden via explicit context, i.e. from LLM to tool call
+	env, ok := ctx.Value(envKey{}).(*call.ID)
 	if !ok {
+		q, err := CurrentQuery(ctx)
+		if err == nil && q.CurrentEnv != nil {
+			// Env set on Query, i.e. propagated from LLM to module
+			return q.CurrentEnv, true
+		}
 		return res, false
 	}
 	return env, true

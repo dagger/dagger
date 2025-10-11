@@ -54,6 +54,7 @@ func (es *Evals) Check(
 		"responses",
 		"writable",
 		"modelContextProtocol",
+		"envPropagation",
 	} {
 		// TODO: replace with self-calls
 		evaluatorEvals = append(evaluatorEvals, (&dagger.EvaluatorEval{}).WithGraphQLQuery(
