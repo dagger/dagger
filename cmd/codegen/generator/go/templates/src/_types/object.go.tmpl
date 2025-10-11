@@ -12,7 +12,8 @@ type {{ .Name | FormatName }} struct {
 }
 {{- end }}
 
-{{- if . | IsSelfChainable }}
+{{- $isSelfChainable := . | IsSelfChainable -}}
+{{- if $isSelfChainable }}
 type With{{ .Name | FormatName }}Func func(r *{{ .Name | FormatName }}) *{{ .Name | FormatName }}
 
 // With calls the provided function with current {{ .Name | FormatName }}.
@@ -223,4 +224,14 @@ func (r *{{ $.Name | FormatName }}) UnmarshalJSON(bs []byte) error {
 {{- end }}
 
 {{ end }}
+
+{{- if and (eq $field.Name "withErrorMessage") $isSelfChainable }}
+// WithError raises an error, in a self chainable way.
+func (r *{{ $.Name | FormatName }}) WithError(err error) *{{ $.Name | FormatName }} {
+    if err == nil {
+        return r
+    }
+    return r.WithErrorMessage(err.Error())
+}
+{{- end }}
 {{ end -}}
