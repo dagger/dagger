@@ -1,0 +1,13 @@
+{
+  "name": "nested-context-middle",
+  "engineVersion": "v0.19.2",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "nested-context-leaf",
+      "source": "nested-context-leaf"
+    }
+  ]
+}
