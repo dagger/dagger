@@ -270,7 +270,11 @@ func (s *moduleSourceSchema) moduleSource(
 			return inst, err
 		}
 	case core.ModuleSourceKindGit:
-		inst, err = s.gitModuleSource(ctx, query, parsedRef.Git, args.RefPin, !args.DisableFindUp)
+		pinnedRef, err := parsedRef.Git.WithPin(args.RefPin)
+		if err != nil {
+			return inst, fmt.Errorf("failed to pin named dep git ref: %w", err)
+		}
+		inst, err = s.gitModuleSource(ctx, query, pinnedRef, !args.DisableFindUp)
 		if err != nil {
 			return inst, err
 		}
@@ -359,7 +363,11 @@ func (s *moduleSourceSchema) localModuleSource(
 					depModPath := filepath.Join(defaultFindUpSourceRootDir, namedDep.Source)
 					return s.localModuleSource(ctx, query, bk, depModPath, false, allowNotExists)
 				case core.ModuleSourceKindGit:
-					return s.gitModuleSource(ctx, query, parsedRef.Git, namedDep.Pin, false)
+					pinnedRef, err := parsedRef.Git.WithPin(namedDep.Pin)
+					if err != nil {
+						return inst, fmt.Errorf("failed to pin named dep git ref: %w", err)
+					}
+					return s.gitModuleSource(ctx, query, pinnedRef, false)
 				}
 			}
 		}
@@ -519,7 +527,6 @@ func (s *moduleSourceSchema) gitModuleSource(
 	ctx context.Context,
 	query dagql.ObjectResult[*core.Query],
 	parsed *core.ParsedGitRefString,
-	refPin string,
 	// whether to search up the directory tree for a dagger.json file
 	doFindUp bool,
 ) (inst dagql.Result[*core.ModuleSource], err error) {
@@ -528,7 +535,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	gitRef, err := parsed.GitRef(ctx, dag, refPin)
+	gitRef, err := parsed.GitRef(ctx, dag)
 	if err != nil {
 		return inst, fmt.Errorf("failed to resolve git src: %w", err)
 	}

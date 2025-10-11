@@ -337,28 +337,30 @@ func TestRepoRootForImportPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		got, err := RepoRootForImportPath(test.path, true)
-		if err != nil {
-			t.Errorf("RepoRootForImportPath(%q): %v", test.path, err)
-			continue
-		}
-		want := test.want
-		if want == nil {
-			if got != nil {
-				t.Errorf("RepoRootForImportPath(%q) = %v, want nil", test.path, got)
+		t.Run(test.path, func(t *testing.T) {
+			got, err := RepoRootForImportPath(t.Context(), test.path, true)
+			if err != nil {
+				t.Errorf("RepoRootForImportPath(%q): %v", test.path, err)
+				return
 			}
-			continue
-		}
-		if got.VCS == nil || want.VCS == nil {
-			t.Errorf("RepoRootForImportPath(%q): got.VCS or want.VCS is nil", test.path)
-			continue
-		}
-		if got.VCS.Name != want.VCS.Name || got.Repo != want.Repo {
-			t.Errorf("RepoRootForImportPath(%q) = VCS(%s) Repo(%s), want VCS(%s) Repo(%s)", test.path, got.VCS, got.Repo, want.VCS, want.Repo)
-		}
-		if got.Root != want.Root {
-			t.Errorf("RepoRootForImportPath(%q) = VCS(%s) Root(%s), want VCS(%s) Root(%s)", test.path, got.VCS, got.Root, want.VCS, want.Root)
-		}
+			want := test.want
+			if want == nil {
+				if got != nil {
+					t.Errorf("RepoRootForImportPath(%q) = %v, want nil", test.path, got)
+				}
+				return
+			}
+			if got.VCS == nil || want.VCS == nil {
+				t.Errorf("RepoRootForImportPath(%q): got.VCS or want.VCS is nil", test.path)
+				return
+			}
+			if got.VCS.Name != want.VCS.Name || got.Repo != want.Repo {
+				t.Errorf("RepoRootForImportPath(%q) = VCS(%s) Repo(%s), want VCS(%s) Repo(%s)", test.path, got.VCS, got.Repo, want.VCS, want.Repo)
+			}
+			if got.Root != want.Root {
+				t.Errorf("RepoRootForImportPath(%q) = VCS(%s) Root(%s), want VCS(%s) Root(%s)", test.path, got.VCS, got.Root, want.VCS, want.Root)
+			}
+		})
 	}
 }
 
