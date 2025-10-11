@@ -118,18 +118,35 @@ type ParsedLocalRefString struct {
 type ParsedGitRefString struct {
 	modPath string
 
-	ModVersion string
-	hasVersion bool
+	ModVersion    string
+	ModVersionPin string
 
 	RepoRoot       *vcs.RepoRoot
 	RepoRootSubdir string
 
-	scheme SchemeType
-
+	scheme         SchemeType
 	sourceUser     string
 	cloneUser      string
 	SourceCloneRef string // original user-provided username
 	cloneRef       string // resolved username
+}
+
+func (p *ParsedGitRefString) Clone() *ParsedGitRefString {
+	clone := *p
+	return &clone
+}
+
+func (p *ParsedGitRefString) WithPin(pin string) (*ParsedGitRefString, error) {
+	if pin == "" {
+		return p, nil
+	}
+	if p.ModVersionPin != "" && p.ModVersionPin != pin {
+		return nil, fmt.Errorf("conflicting pins: %s and %s", p.ModVersionPin, pin)
+	}
+
+	p = p.Clone()
+	p.ModVersionPin = pin
+	return p, nil
 }
 
 type gitEndpointError struct{ error }
@@ -139,6 +156,7 @@ func ParseGitRefString(ctx context.Context, refString string) (_ ParsedGitRefStr
 	defer telemetry.End(span, func() error { return rerr })
 
 	scheme, schemelessRef := parseScheme(refString)
+	schemelessRef, version, versionPin := splitRefVersion(schemelessRef)
 
 	if scheme == NoScheme && isSCPLike(schemelessRef) {
 		scheme = SchemeSCPLike
@@ -159,15 +177,10 @@ func ParseGitRefString(ctx context.Context, refString string) (_ ParsedGitRefStr
 	}
 
 	gitParsed := ParsedGitRefString{
-		modPath: endpoint.Host + endpoint.Path,
-		scheme:  scheme,
-	}
-
-	parts := strings.SplitN(endpoint.Path, "@", 2)
-	if len(parts) == 2 {
-		gitParsed.modPath = endpoint.Host + parts[0]
-		gitParsed.ModVersion = parts[1]
-		gitParsed.hasVersion = true
+		modPath:       endpoint.Host + endpoint.Path,
+		scheme:        scheme,
+		ModVersion:    version,
+		ModVersionPin: versionPin,
 	}
 
 	// Try to isolate the root of the git repo
@@ -220,6 +233,23 @@ func ParseGitRefString(ctx context.Context, refString string) (_ ParsedGitRefStr
 	return gitParsed, nil
 }
 
+func splitRefVersion(s string) (ref string, version string, versionPin string) {
+	if i := strings.LastIndex(s, "@"); i >= 0 {
+		ref, version := s[:i], s[i+1:]
+		if !strings.Contains(ref, "/") {
+			// ambiguous ref, something like abc.com@xyz.com could be:
+			// - user abc.com at remote xyz.com
+			// - remote abc.com at version xyz.com
+			// we don't know, so assume that it's the former (backwards compat)
+			return s, "", ""
+		}
+		version, versionPin, _ = strings.Cut(version, ":")
+		return ref, version, versionPin
+	}
+
+	return s, "", ""
+}
+
 func isSCPLike(ref string) bool {
 	return strings.Contains(ref, ":") && !strings.Contains(ref, "//")
 }
@@ -244,10 +274,9 @@ func parseScheme(refString string) (SchemeType, string) {
 func (p *ParsedGitRefString) GitRef(
 	ctx context.Context,
 	dag *dagql.Server,
-	pinCommitRef string, // "" if none
 ) (inst dagql.ObjectResult[*GitRef], rerr error) {
 	var modTag string
-	if p.hasVersion && semver.IsValid(p.ModVersion) {
+	if semver.IsValid(p.ModVersion) {
 		var tags dagql.Array[dagql.String]
 		err := dag.Select(ctx, dag.Root(), &tags,
 			dagql.Selector{
@@ -282,8 +311,8 @@ func (p *ParsedGitRefString) GitRef(
 			{Name: "url", Value: dagql.String(p.cloneRef)},
 		},
 	}
-	if pinCommitRef != "" {
-		repoSelector.Args = append(repoSelector.Args, dagql.NamedInput{Name: "commit", Value: dagql.String(pinCommitRef)})
+	if p.ModVersionPin != "" {
+		repoSelector.Args = append(repoSelector.Args, dagql.NamedInput{Name: "commit", Value: dagql.String(p.ModVersionPin)})
 	}
 
 	var refSelector dagql.Selector
@@ -295,18 +324,18 @@ func (p *ParsedGitRefString) GitRef(
 				{Name: "name", Value: dagql.String(modTag)},
 			},
 		}
-		if pinCommitRef != "" {
-			refSelector.Args = append(refSelector.Args, dagql.NamedInput{Name: "commit", Value: dagql.String(pinCommitRef)})
+		if p.ModVersionPin != "" {
+			refSelector.Args = append(refSelector.Args, dagql.NamedInput{Name: "commit", Value: dagql.String(p.ModVersionPin)})
 		}
-	case p.hasVersion:
+	case p.ModVersion != "":
 		refSelector = dagql.Selector{
 			Field: "ref",
 			Args: []dagql.NamedInput{
 				{Name: "name", Value: dagql.String(p.ModVersion)},
 			},
 		}
-		if pinCommitRef != "" {
-			refSelector.Args = append(refSelector.Args, dagql.NamedInput{Name: "commit", Value: dagql.String(pinCommitRef)})
+		if p.ModVersionPin != "" {
+			refSelector.Args = append(refSelector.Args, dagql.NamedInput{Name: "commit", Value: dagql.String(p.ModVersionPin)})
 		}
 	default:
 		refSelector = dagql.Selector{
