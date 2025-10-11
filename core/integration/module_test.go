@@ -2,7 +2,6 @@ package core
 
 import (
 	"bytes"
-	"cmp"
 	"context"
 	_ "embed"
 	"encoding/base64"
@@ -5167,32 +5166,74 @@ func (ModuleSuite) TestContextGitRemote(ctx context.Context, t *testctx.T) {
 	fullref, err := g.Ref(ctx)
 	require.NoError(t, err)
 
-	modPath := "github.com/dagger/dagger-test-modules/context-git@" + remoteRef
-
-	t.Run("repo local", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerCallAt(modPath, "test-repo-local")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, fullref+"@"+commit, out)
-	})
-
 	t.Run("repo remote", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerCallAt(modPath, "test-repo-remote")).Stdout(ctx)
+		out, err := modGen.With(daggerCallAt("github.com/dagger/dagger-test-modules/context-git@"+remoteRef, "test-repo-remote")).Stdout(ctx)
 		require.NoError(t, err)
 		// dagger/dagger v0.18.2 => 0b46ea3c49b5d67509f67747742e5d8b24be9ef7
 		require.Equal(t, "refs/tags/v0.18.2@0b46ea3c49b5d67509f67747742e5d8b24be9ef7", out)
 	})
 
-	t.Run("ref local", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerCallAt(modPath, "test-ref-local")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, fullref+"@"+commit, out)
-	})
-
 	t.Run("ref remote", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerCallAt(modPath, "test-ref-remote")).Stdout(ctx)
+		out, err := modGen.With(daggerCallAt("github.com/dagger/dagger-test-modules/context-git@"+remoteRef, "test-ref-remote")).Stdout(ctx)
 		require.NoError(t, err)
 		// dagger/dagger v0.18.3 => 6f7af26f18061c6f575eda774f44aa7d314af4ce
 		require.Equal(t, "refs/tags/v0.18.3@6f7af26f18061c6f575eda774f44aa7d314af4ce", out)
+	})
+
+	t.Run("repo local", func(ctx context.Context, t *testctx.T) {
+		t.Run("branch", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCallAt("github.com/dagger/dagger-test-modules/context-git@"+remoteRef, "test-repo-local")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, fullref+"@"+commit, out)
+		})
+		t.Run("branch pinned", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCallAt("github.com/dagger/dagger-test-modules/context-git@"+remoteRef+":6b79f76b1c61cd444ab193da32874f9a81c6ae1f", "test-repo-local")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, fullref+"@6b79f76b1c61cd444ab193da32874f9a81c6ae1f", out)
+		})
+		t.Run("tag", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCallAt("github.com/dagger/dagger-test-modules/context-git@v1.2.3", "test-repo-local")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "refs/tags/v1.2.3@39e8b65aa2502fa033185dcc0f7b1bb92340ccf7", out)
+		})
+		t.Run("tag pinned", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCallAt("github.com/dagger/dagger-test-modules/context-git@v1.2.3:0cabe03cc0a9079e738c92b2c589d81fd560011f", "test-repo-local")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "refs/tags/v1.2.3@0cabe03cc0a9079e738c92b2c589d81fd560011f", out)
+		})
+		t.Run("commit", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCallAt("github.com/dagger/dagger-test-modules/context-git@39e8b65aa2502fa033185dcc0f7b1bb92340ccf7", "test-repo-local")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "39e8b65aa2502fa033185dcc0f7b1bb92340ccf7@39e8b65aa2502fa033185dcc0f7b1bb92340ccf7", out)
+		})
+	})
+
+	t.Run("ref local", func(ctx context.Context, t *testctx.T) {
+		t.Run("branch", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCallAt("github.com/dagger/dagger-test-modules/context-git@"+remoteRef, "test-ref-local")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, fullref+"@"+commit, out)
+		})
+		t.Run("branch pinned", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCallAt("github.com/dagger/dagger-test-modules/context-git@"+remoteRef+":6b79f76b1c61cd444ab193da32874f9a81c6ae1f", "test-ref-local")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, fullref+"@6b79f76b1c61cd444ab193da32874f9a81c6ae1f", out)
+		})
+		t.Run("tag", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCallAt("github.com/dagger/dagger-test-modules/context-git@v1.2.3", "test-ref-local")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "refs/tags/v1.2.3@39e8b65aa2502fa033185dcc0f7b1bb92340ccf7", out)
+		})
+		t.Run("tag pinned", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCallAt("github.com/dagger/dagger-test-modules/context-git@v1.2.3:0cabe03cc0a9079e738c92b2c589d81fd560011f", "test-ref-local")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "refs/tags/v1.2.3@0cabe03cc0a9079e738c92b2c589d81fd560011f", out)
+		})
+		t.Run("commit", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCallAt("github.com/dagger/dagger-test-modules/context-git@39e8b65aa2502fa033185dcc0f7b1bb92340ccf7", "test-ref-local")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "39e8b65aa2502fa033185dcc0f7b1bb92340ccf7@39e8b65aa2502fa033185dcc0f7b1bb92340ccf7", out)
+		})
 	})
 }
 
@@ -5208,12 +5249,19 @@ func (ModuleSuite) TestContextGitRemoteDep(ctx context.Context, t *testctx.T) {
 	// so, this ends up repinning
 	commit := "ed6bf431366bac652f807864e22ae49be9433bd5"
 
-	for _, version := range []string{"", "main", "context-git", "v1.2.3"} {
+	for _, version := range []string{"", "main", "context-git", "v1.2.3", commit, "main:" + commit, "v1.2.3:" + commit} {
 		t.Run("version="+version, func(ctx context.Context, t *testctx.T) {
-			g := c.Git(remoteRepo).Ref(cmp.Or(version, "HEAD"))
-			fullref, err := g.Ref(ctx)
-			require.NoError(t, err)
-			require.Contains(t, fullref, version)
+			var fullref string
+			var err error
+			if version == "" {
+				fullref = commit
+			} else {
+				versionRef, _, _ := strings.Cut(version, ":")
+				g := c.Git(remoteRepo).Ref(versionRef)
+				fullref, err = g.Ref(ctx)
+				require.NoError(t, err)
+				require.Contains(t, fullref, versionRef)
+			}
 
 			if version != "" {
 				version = "@" + version
@@ -5261,18 +5309,6 @@ func (ModuleSuite) TestContextGitRemoteDep(ctx context.Context, t *testctx.T) {
 	`)).
 				WithExec([]string{"sh", "-c", `git init && git add . && git commit -m "initial commit"`})
 
-			t.Run("repo local", func(ctx context.Context, t *testctx.T) {
-				out, err := modGen.With(daggerCall("test-repo-local")).Stdout(ctx)
-				require.NoError(t, err)
-				require.Equal(t, fullref+"@"+commit, out)
-			})
-
-			t.Run("ref local", func(ctx context.Context, t *testctx.T) {
-				out, err := modGen.With(daggerCall("test-ref-local")).Stdout(ctx)
-				require.NoError(t, err)
-				require.Equal(t, fullref+"@"+commit, out)
-			})
-
 			t.Run("ref remote", func(ctx context.Context, t *testctx.T) {
 				out, err := modGen.With(daggerCall("test-ref-remote")).Stdout(ctx)
 				require.NoError(t, err)
@@ -5285,6 +5321,18 @@ func (ModuleSuite) TestContextGitRemoteDep(ctx context.Context, t *testctx.T) {
 				require.NoError(t, err)
 				// dagger/dagger v0.18.2 => 0b46ea3c49b5d67509f67747742e5d8b24be9ef7
 				require.Equal(t, "refs/tags/v0.18.2@0b46ea3c49b5d67509f67747742e5d8b24be9ef7", out)
+			})
+
+			t.Run("repo local", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-repo-local")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, fullref+"@"+commit, out)
+			})
+
+			t.Run("ref local", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-ref-local")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, fullref+"@"+commit, out)
 			})
 		})
 	}

@@ -312,7 +312,6 @@ func TestParseRefString(t *testing.T) {
 					RepoRoot:       &vcs.RepoRoot{Root: "github.com:shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
 					scheme:         SchemeSCPLike,
 					RepoRootSubdir: "ci",
-					hasVersion:     true,
 					ModVersion:     "version",
 				},
 			},
@@ -326,8 +325,21 @@ func TestParseRefString(t *testing.T) {
 					RepoRoot:       &vcs.RepoRoot{Root: "github.com:shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
 					scheme:         SchemeSCPLike,
 					RepoRootSubdir: "ci",
-					hasVersion:     true,
 					ModVersion:     "version",
+				},
+			},
+		},
+		{
+			urlStr: "github.com:shykes/daggerverse/ci@version:f82c283510bac0399451dff7ffbec0274bfc3bd4",
+			want: &ParsedRefString{
+				Kind: ModuleSourceKindGit,
+				Git: &ParsedGitRefString{
+					modPath:        "github.com/shykes/daggerverse/ci",
+					RepoRoot:       &vcs.RepoRoot{Root: "github.com:shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
+					scheme:         SchemeSCPLike,
+					RepoRootSubdir: "ci",
+					ModVersion:     "version",
+					ModVersionPin:  "f82c283510bac0399451dff7ffbec0274bfc3bd4",
 				},
 			},
 		},
@@ -376,6 +388,7 @@ func TestParseRefString(t *testing.T) {
 			}
 
 			require.NotNil(t, parsed)
+			require.NotNil(t, parsed.Git)
 			require.Equal(t, tc.want.Git.modPath, parsed.Git.modPath)
 			require.Equal(t, tc.want.Kind, parsed.Kind)
 			if tc.want.Git.RepoRoot != nil {
