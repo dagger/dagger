@@ -492,73 +492,79 @@ func (src *ModuleSource) LoadContextDir(
 		})
 	}
 
-	switch src.Kind {
-	case ModuleSourceKindLocal:
-		localSourceClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
-		if err != nil {
-			return inst, fmt.Errorf("failed to get client metadata: %w", err)
-		}
-		localSourceCtx := engine.ContextWithClientMetadata(ctx, localSourceClientMetadata)
-
-		// Retrieve the absolute path to the context directory (.git or dagger.json)
-		// and the module root directory (dagger.json)
-		ctxPath := src.Local.ContextDirectoryPath
-		modPath := filepath.Join(ctxPath, src.SourceRootSubpath)
-
+	// Check if there's an Env - if so, use its workspace as the context for
+	// defaultPath arguments.
+	//
+	// NOTE: this applies unilaterally, whether the module was loaded from Host,
+	// Git, or a Directory.
+	if envID, ok := EnvIDFromContext(ctx); ok {
 		// If path is not absolute, it's relative to the module root directory.
 		// If path is absolute, it's relative to the context directory.
 		if !filepath.IsAbs(path) {
-			path = filepath.Join(modPath, path)
-		} else {
-			path = filepath.Join(ctxPath, path)
+			path = filepath.Join(src.SourceRootSubpath, path)
 		}
-
-		// We just check if the path is relative to the context directory,
-		// if not, that means it's a path that target an outside directory
-		// which is not allowed.
-		relativePathToCtx, err := filepath.Rel(ctxPath, path)
+		envRes, err := dag.Load(ctx, envID)
 		if err != nil {
-			return inst, fmt.Errorf("failed to get relative path to context: %w", err)
+			return inst, fmt.Errorf("failed to load current env: %w", err)
 		}
-
-		// If the relative path is outisde of the context directory, throw an error.
-		if strings.HasPrefix(relativePathToCtx, "..") {
-			return inst, fmt.Errorf("path %q is outside of context directory %q, path should be relative to the context directory", path, ctxPath)
+		sels := []dagql.Selector{
+			{
+				Field: "workspace",
+			},
 		}
-
-		// Check if there's an Env in context - if so, use its workspace instead of Host.
-		// This allows module functions called from LLM environments to automatically
-		// inherit the LLM's workspace for defaultPath arguments.
-		if envID, ok := EnvIDFromContext(ctx); ok {
-			envRes, err := dag.Load(localSourceCtx, envID)
-			if err != nil {
-				return inst, fmt.Errorf("failed to load current env: %w", err)
-			}
-			sels := []dagql.Selector{
-				dagql.Selector{
-					Field: "workspace",
+		if path != "." {
+			sels = append(sels, dagql.Selector{
+				Field: "directory",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(path)},
 				},
-			}
-			if relativePathToCtx != "." {
-				sels = append(sels, dagql.Selector{
-					Field: "directory",
-					Args: []dagql.NamedInput{
-						{Name: "path", Value: dagql.String(relativePathToCtx)},
-					},
-				})
-			}
-			if len(filterInputs) > 0 {
-				sels = append(sels, dagql.Selector{
-					Field: "filter",
-					Args:  filterInputs,
-				})
-			}
-			err = dag.Select(localSourceCtx, envRes, &inst, sels...)
+			})
+		}
+		if len(filterInputs) > 0 {
+			sels = append(sels, dagql.Selector{
+				Field: "filter",
+				Args:  filterInputs,
+			})
+		}
+		err = dag.Select(ctx, envRes, &inst, sels...)
+		if err != nil {
+			return inst, fmt.Errorf("failed to select env directory: %w", err)
+		}
+	} else {
+		switch src.Kind {
+		case ModuleSourceKindLocal:
+			localSourceClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
 			if err != nil {
-				return inst, fmt.Errorf("failed to select env directory: %w", err)
+				return inst, fmt.Errorf("failed to get client metadata: %w", err)
 			}
-		} else {
-			// Fall back to Host (existing behavior when no Env in context)
+			localSourceCtx := engine.ContextWithClientMetadata(ctx, localSourceClientMetadata)
+
+			// Retrieve the absolute path to the context directory (.git or dagger.json)
+			// and the module root directory (dagger.json)
+			ctxPath := src.Local.ContextDirectoryPath
+			modPath := filepath.Join(ctxPath, src.SourceRootSubpath)
+
+			// If path is not absolute, it's relative to the module root directory.
+			// If path is absolute, it's relative to the context directory.
+			if !filepath.IsAbs(path) {
+				path = filepath.Join(modPath, path)
+			} else {
+				path = filepath.Join(ctxPath, path)
+			}
+
+			// We just check if the path is relative to the context directory,
+			// if not, that means it's a path that target an outside directory
+			// which is not allowed.
+			relativePathToCtx, err := filepath.Rel(ctxPath, path)
+			if err != nil {
+				return inst, fmt.Errorf("failed to get relative path to context: %w", err)
+			}
+
+			// If the relative path is outisde of the context directory, throw an error.
+			if strings.HasPrefix(relativePathToCtx, "..") {
+				return inst, fmt.Errorf("path %q is outside of context directory %q, path should be relative to the context directory", path, ctxPath)
+			}
+
 			err = dag.Select(localSourceCtx, dag.Root(), &inst,
 				dagql.Selector{
 					Field: "host",
@@ -574,95 +580,95 @@ func (src *ModuleSource) LoadContextDir(
 			if err != nil {
 				return inst, fmt.Errorf("failed to select host directory: %w", err)
 			}
-		}
 
-	case ModuleSourceKindGit:
-		slog.Debug("moduleSource.LoadContext: loading contextual directory from git", "path", path, "kind", src.Kind, "repo", src.Git.HTMLURL)
+		case ModuleSourceKindGit:
+			slog.Debug("moduleSource.LoadContext: loading contextual directory from git", "path", path, "kind", src.Kind, "repo", src.Git.HTMLURL)
 
-		if !filepath.IsAbs(path) {
-			path = filepath.Join("/", src.SourceRootSubpath, path)
-		}
+			if !filepath.IsAbs(path) {
+				path = filepath.Join("/", src.SourceRootSubpath, path)
+			}
 
-		// Use the Git context directory without dagger.json includes applied.
-		ctxDir := src.Git.UnfilteredContextDir
+			// Use the Git context directory without dagger.json includes applied.
+			ctxDir := src.Git.UnfilteredContextDir
 
-		if path != "/" {
-			if err := dag.Select(ctx, ctxDir, &ctxDir,
-				dagql.Selector{
-					Field: "directory",
-					Args: []dagql.NamedInput{
-						{Name: "path", Value: dagql.String(path)},
+			if path != "/" {
+				if err := dag.Select(ctx, ctxDir, &ctxDir,
+					dagql.Selector{
+						Field: "directory",
+						Args: []dagql.NamedInput{
+							{Name: "path", Value: dagql.String(path)},
+						},
 					},
-				},
-			); err != nil {
-				return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
+				); err != nil {
+					return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
+				}
 			}
-		}
 
-		if len(filterInputs) > 0 {
-			if err := dag.Select(ctx, dag.Root(), &ctxDir,
-				dagql.Selector{
-					Field: "directory",
-				},
-				dagql.Selector{
-					Field: "withDirectory",
-					Args: append([]dagql.NamedInput{
-						{Name: "path", Value: dagql.String("/")},
-						{Name: "source", Value: dagql.NewID[*Directory](ctxDir.ID())},
-					}, filterInputs...),
-				},
-			); err != nil {
-				return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
-			}
-		}
-
-		inst = ctxDir
-
-	case ModuleSourceKindDir:
-		if !filepath.IsAbs(path) {
-			path = filepath.Join("/", src.SourceRootSubpath, path)
-		}
-
-		// Use the Dir context directory.
-		ctxDir := src.ContextDirectory
-
-		if path != "/" {
-			if err := dag.Select(ctx, ctxDir, &ctxDir,
-				dagql.Selector{
-					Field: "directory",
-					Args: []dagql.NamedInput{
-						{Name: "path", Value: dagql.String(path)},
+			if len(filterInputs) > 0 {
+				if err := dag.Select(ctx, dag.Root(), &ctxDir,
+					dagql.Selector{
+						Field: "directory",
 					},
-				},
-			); err != nil {
-				return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
+					dagql.Selector{
+						Field: "withDirectory",
+						Args: append([]dagql.NamedInput{
+							{Name: "path", Value: dagql.String("/")},
+							{Name: "source", Value: dagql.NewID[*Directory](ctxDir.ID())},
+						}, filterInputs...),
+					},
+				); err != nil {
+					return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
+				}
 			}
-		}
 
-		if len(filterInputs) > 0 {
-			if err := dag.Select(ctx, dag.Root(), &ctxDir,
-				dagql.Selector{
-					Field: "directory",
-				},
-				dagql.Selector{
-					Field: "withDirectory",
-					Args: append([]dagql.NamedInput{
-						{Name: "path", Value: dagql.String("/")},
-						{Name: "source", Value: dagql.NewID[*Directory](ctxDir.ID())},
-					}, filterInputs...),
-				},
-			); err != nil {
-				return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
+			inst = ctxDir
+
+		case ModuleSourceKindDir:
+			if !filepath.IsAbs(path) {
+				path = filepath.Join("/", src.SourceRootSubpath, path)
 			}
-		}
 
-		inst, err = MakeDirectoryContentHashed(ctx, bk, ctxDir)
-		if err != nil {
-			return inst, err
-		}
+			// Use the Dir context directory.
+			ctxDir := src.ContextDirectory
 
-	default:
-		return inst, fmt.Errorf("unsupported module src kind: %q", src.Kind)
+			if path != "/" {
+				if err := dag.Select(ctx, ctxDir, &ctxDir,
+					dagql.Selector{
+						Field: "directory",
+						Args: []dagql.NamedInput{
+							{Name: "path", Value: dagql.String(path)},
+						},
+					},
+				); err != nil {
+					return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
+				}
+			}
+
+			if len(filterInputs) > 0 {
+				if err := dag.Select(ctx, dag.Root(), &ctxDir,
+					dagql.Selector{
+						Field: "directory",
+					},
+					dagql.Selector{
+						Field: "withDirectory",
+						Args: append([]dagql.NamedInput{
+							{Name: "path", Value: dagql.String("/")},
+							{Name: "source", Value: dagql.NewID[*Directory](ctxDir.ID())},
+						}, filterInputs...),
+					},
+				); err != nil {
+					return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
+				}
+			}
+
+			inst, err = MakeDirectoryContentHashed(ctx, bk, ctxDir)
+			if err != nil {
+				return inst, err
+			}
+
+		default:
+			return inst, fmt.Errorf("unsupported module src kind: %q", src.Kind)
+		}
 	}
 
 	mainClientMetadata, err := query.NonModuleParentClientMetadata(ctx)

@@ -10,9 +10,6 @@ import (
 )
 
 // Test that @defaultPath propagates through nested module calls.
-// This tests the fix for https://github.com/dagger/dagger/commit/c269b3384f4cf885b0cdd32743320bb4893057cd
-// which ensures that Env workspace propagates through the entire call stack,
-// not just the first level.
 func (m *Evals) EnvPropagation() *EnvPropagation {
 	return &EnvPropagation{}
 }
