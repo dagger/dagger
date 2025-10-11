@@ -2066,6 +2066,16 @@ func (r *Container) WithEnvVariable(name string, value string, opts ...Container
 	}
 }
 
+// Raise an error.
+func (r *Container) WithError(err string) *Container {
+	q := r.query.Select("withError")
+	q = q.Arg("err", err)
+
+	return &Container{
+		query: q,
+	}
+}
+
 // ContainerWithExecOpts contains options for Container.WithExec
 type ContainerWithExecOpts struct {
 	// Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.
@@ -3613,6 +3623,16 @@ func (r *Directory) WithDirectory(path string, source *Directory, opts ...Direct
 	}
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Raise an error.
+func (r *Directory) WithError(err string) *Directory {
+	q := r.query.Select("withError")
+	q = q.Arg("err", err)
 
 	return &Directory{
 		query: q,

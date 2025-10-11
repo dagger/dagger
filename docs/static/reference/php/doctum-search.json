@@ -2403,6 +2403,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Container::withError",
+			"p": "Dagger/Container.html#method_withError",
+			"d": "<p>Raise an error.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Container::withExec",
 			"p": "Dagger/Container.html#method_withExec",
 			"d": "<p>Execute a command in the container, and return a new snapshot of the container state after execution.</p>"
@@ -2790,6 +2796,12 @@
 			"n": "Dagger\\Directory::withDirectory",
 			"p": "Dagger/Directory.html#method_withDirectory",
 			"d": "<p>Return a snapshot with a directory added</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Directory::withError",
+			"p": "Dagger/Directory.html#method_withError",
+			"d": "<p>Raise an error.</p>"
 		},
 		{
 			"t": "M",

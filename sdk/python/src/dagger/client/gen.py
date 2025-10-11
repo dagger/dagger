@@ -2188,6 +2188,21 @@ class Container(Type):
         _ctx = self._select("withEnvVariable", _args)
         return Container(_ctx)
 
+    def with_error(self, err: str) -> Self:
+        """Raise an error.
+
+        Parameters
+        ----------
+        err:
+            Message of the error to raise. If empty, the error will be
+            ignored.
+        """
+        _args = [
+            Arg("err", err),
+        ]
+        _ctx = self._select("withError", _args)
+        return Container(_ctx)
+
     def with_exec(
         self,
         args: list[str],
@@ -3827,6 +3842,21 @@ class Directory(Type):
             Arg("owner", owner, ""),
         ]
         _ctx = self._select("withDirectory", _args)
+        return Directory(_ctx)
+
+    def with_error(self, err: str) -> Self:
+        """Raise an error.
+
+        Parameters
+        ----------
+        err:
+            Message of the error to raise. If empty, the error will be
+            ignored.
+        """
+        _args = [
+            Arg("err", err),
+        ]
+        _ctx = self._select("withError", _args)
         return Directory(_ctx)
 
     def with_file(
