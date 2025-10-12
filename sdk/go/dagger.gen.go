@@ -3027,6 +3027,7 @@ type Directory struct {
 	findUp *string
 	id     *DirectoryID
 	name   *string
+	origin *string
 	sync   *DirectoryID
 }
 type WithDirectoryFunc func(r *Directory) *Directory
@@ -3407,6 +3408,19 @@ func (r *Directory) Name(ctx context.Context) (string, error) {
 		return *r.name, nil
 	}
 	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Returns the absolute path on the host where this directory originated from, or null if it was not loaded from the host.
+func (r *Directory) Origin(ctx context.Context) (string, error) {
+	if r.origin != nil {
+		return *r.origin, nil
+	}
+	q := r.query.Select("origin")
 
 	var response string
 

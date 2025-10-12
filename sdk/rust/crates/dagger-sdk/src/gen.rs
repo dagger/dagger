@@ -5412,6 +5412,11 @@ impl Directory {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Returns the absolute path on the host where this directory originated from, or null if it was not loaded from the host.
+    pub async fn origin(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("origin");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Searches for content matching the given regular expression or literal string.
     /// Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
     ///

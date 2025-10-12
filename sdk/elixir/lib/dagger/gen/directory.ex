@@ -292,6 +292,17 @@ defmodule Dagger.Directory do
   end
 
   @doc """
+  Returns the absolute path on the host where this directory originated from, or null if it was not loaded from the host.
+  """
+  @spec origin(t()) :: {:ok, String.t() | nil} | {:error, term()}
+  def origin(%__MODULE__{} = directory) do
+    query_builder =
+      directory.query_builder |> QB.select("origin")
+
+    Client.execute(directory.client, query_builder)
+  end
+
+  @doc """
   Searches for content matching the given regular expression or literal string.
 
   Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.

@@ -3652,6 +3652,28 @@ class Directory(Type):
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
 
+    async def origin(self) -> str | None:
+        """Returns the absolute path on the host where this directory originated
+        from, or null if it was not loaded from the host.
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("origin", _args)
+        return await _ctx.execute(str | None)
+
     async def search(
         self,
         pattern: str,

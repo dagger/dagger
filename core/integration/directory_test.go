@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -2515,4 +2516,44 @@ func (DirectorySuite) TestDirCaching(ctx context.Context, t *testctx.T) {
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.NotEqual(t, out, "")
+}
+
+func (DirectorySuite) TestOrigin(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Create a temp directory on host
+	hostDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(hostDir, "test.txt"), []byte("test content"), 0644))
+
+	// Load directory from host
+	dir := c.Host().Directory(hostDir)
+
+	// Check that origin is set
+	origin, err := dir.Origin(ctx)
+	require.NoError(t, err)
+	require.Equal(t, hostDir, origin)
+
+	// Check subdirectory origin is updated
+	subdir := dir.Directory(".")
+	subOrigin, err := subdir.Origin(ctx)
+	require.NoError(t, err)
+	require.Equal(t, hostDir, subOrigin)
+
+	// Check that directory not from host has no origin
+	emptyDir := c.Directory()
+	emptyOrigin, err := emptyDir.Origin(ctx)
+	require.NoError(t, err)
+	require.Nil(t, emptyOrigin)
+
+	// Check that modified directory from host retains origin
+	modifiedDir := dir.WithNewFile("new.txt", "new content")
+	modOrigin, err := modifiedDir.Origin(ctx)
+	require.NoError(t, err)
+	require.Equal(t, hostDir, modOrigin)
+
+	// Check directory from container has no origin
+	containerDir := c.Container().From("alpine:latest").Directory("/tmp")
+	containerOrigin, err := containerDir.Origin(ctx)
+	require.NoError(t, err)
+	require.Empty(t, containerOrigin)
 }
