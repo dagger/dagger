@@ -55,6 +55,16 @@ class EnvFile extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix "MY_APP_" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello
+     */
+    public function namespace(string $prefix): EnvFile
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('namespace');
+        $innerQueryBuilder->setArgument('prefix', $prefix);
+        return new \Dagger\EnvFile($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return all variables
      */
     public function variables(?bool $raw = null): array

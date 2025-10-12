@@ -66,6 +66,20 @@ defmodule Dagger.EnvFile do
   end
 
   @doc """
+  Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix "MY_APP_" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello
+  """
+  @spec namespace(t(), String.t()) :: Dagger.EnvFile.t()
+  def namespace(%__MODULE__{} = env_file, prefix) do
+    query_builder =
+      env_file.query_builder |> QB.select("namespace") |> QB.put_arg("prefix", prefix)
+
+    %Dagger.EnvFile{
+      query_builder: query_builder,
+      client: env_file.client
+    }
+  end
+
+  @doc """
   Return all variables
   """
   @spec variables(t(), [{:raw, boolean() | nil}]) ::

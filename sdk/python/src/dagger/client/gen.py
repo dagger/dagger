@@ -5844,6 +5844,24 @@ class EnvFile(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(EnvFileID)
 
+    def namespace(self, prefix: str) -> Self:
+        """Filters variables by prefix and removes the pref from keys. Variables
+        without the prefix are excluded. For example, with the prefix
+        "MY_APP_" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello
+        FOO=bar the resulting environment will contain: TOKEN=topsecret
+        NAME=hello
+
+        Parameters
+        ----------
+        prefix:
+            The prefix to filter by
+        """
+        _args = [
+            Arg("prefix", prefix),
+        ]
+        _ctx = self._select("namespace", _args)
+        return EnvFile(_ctx)
+
     async def variables(self, *, raw: bool | None = None) -> list["EnvVariable"]:
         """Return all variables
 

@@ -3405,6 +3405,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\EnvFile::namespace",
+			"p": "Dagger/EnvFile.html#method_namespace",
+			"d": "<p>Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix &quot;MY<em>APP</em>&quot; and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\EnvFile::variables",
 			"p": "Dagger/EnvFile.html#method_variables",
 			"d": "<p>Return all variables</p>"

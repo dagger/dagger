@@ -52,6 +52,23 @@ func (s envfileSchema) Install(srv *dagql.Server) {
 			),
 		dagql.Func("asFile", s.asFile).
 			Doc("Return as a file"),
+		dagql.Func("namespace", s.namespace).
+			Doc(`Filters variables by prefix and removes the pref from keys.
+
+	Variables without the prefix are excluded. For example, with the prefix
+"MY_APP_" and variables:
+
+	MY_APP_TOKEN=topsecret
+	MY_APP_NAME=hello
+	FOO=bar
+
+ the resulting environment will contain:
+
+	TOKEN=topsecret
+	NAME=hello
+`).Args(
+			dagql.Arg("prefix").Doc(`The prefix to filter by`),
+		),
 	}.Install(srv)
 
 	dagql.Fields[*core.File]{
@@ -121,6 +138,12 @@ func (s envfileSchema) exists(ctx context.Context, parent *core.EnvFile, args st
 
 func (s envfileSchema) asFile(ctx context.Context, parent *core.EnvFile, args struct{}) (*core.File, error) {
 	return parent.AsFile(ctx)
+}
+
+func (s envfileSchema) namespace(ctx context.Context, parent *core.EnvFile, args struct {
+	Prefix string
+}) (*core.EnvFile, error) {
+	return parent.Namespace(ctx, args.Prefix)
 }
 
 func (s envfileSchema) asEnvFile(ctx context.Context, parent *core.File, args struct {

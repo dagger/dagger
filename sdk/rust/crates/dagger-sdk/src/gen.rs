@@ -7419,6 +7419,20 @@ impl EnvFile {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix "MY_APP_" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello
+    ///
+    /// # Arguments
+    ///
+    /// * `prefix` - The prefix to filter by
+    pub fn namespace(&self, prefix: impl Into<String>) -> EnvFile {
+        let mut query = self.selection.select("namespace");
+        query = query.arg("prefix", prefix.into());
+        EnvFile {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return all variables
     ///
     /// # Arguments
