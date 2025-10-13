@@ -304,7 +304,7 @@ func (sdk *goSDK) baseWithCodegen(
 		return ctr, fmt.Errorf("failed to get dag for go module sdk codegen: %w", err)
 	}
 
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
 	if err != nil {
 		return ctr, fmt.Errorf("failed to get schema introspection json during module sdk codegen: %w", err)
 	}

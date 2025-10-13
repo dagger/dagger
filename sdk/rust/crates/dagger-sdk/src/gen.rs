@@ -9481,6 +9481,15 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// The JSON schema for the current module.
+    pub fn schema_json(&self) -> File {
+        let query = self.selection.select("schemaJSON");
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The SDK config used by this module.
     pub fn sdk(&self) -> SdkConfig {
         let query = self.selection.select("sdk");

@@ -165,6 +165,20 @@ defmodule Dagger.Module do
   end
 
   @doc """
+  The JSON schema for the current module.
+  """
+  @spec schema_json(t()) :: Dagger.File.t()
+  def schema_json(%__MODULE__{} = module) do
+    query_builder =
+      module.query_builder |> QB.select("schemaJSON")
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: module.client
+    }
+  end
+
+  @doc """
   The SDK config used by this module.
   """
   @spec sdk(t()) :: Dagger.SDKConfig.t() | nil

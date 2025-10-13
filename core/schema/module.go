@@ -75,6 +75,9 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("dependencies", s.moduleDependencies).
 			Doc(`The dependencies of the module.`),
 
+		dagql.Func("schemaJSON", s.schemaJSON).
+			Doc(`The JSON schema for the current module.`),
+
 		dagql.NodeFunc("generatedContextDirectory", s.moduleGeneratedContextDirectory).
 			Doc(`The generated files and directories made on top of the module source's context directory.`),
 
@@ -633,6 +636,14 @@ func (s *moduleSchema) moduleGeneratedContextDirectory(
 
 func (s *moduleSchema) moduleUserDefaults(ctx context.Context, mod *core.Module, _ struct{}) (*core.EnvFile, error) {
 	return mod.UserDefaults(ctx)
+}
+
+func (s *moduleSchema) schemaJSON(
+	ctx context.Context,
+	mod *core.Module,
+	args struct{},
+) (dagql.Result[*core.File], error) {
+	return mod.Deps.SchemaIntrospectionJSONFileForModule(ctx)
 }
 
 func (s *moduleSchema) moduleDependencies(

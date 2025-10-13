@@ -4299,6 +4299,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Module::schemaJSON",
+			"p": "Dagger/Module.html#method_schemaJSON",
+			"d": "<p>The JSON schema for the current module.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Module::sdk",
 			"p": "Dagger/Module.html#method_sdk",
 			"d": "<p>The SDK config used by this module.</p>"

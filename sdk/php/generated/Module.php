@@ -95,6 +95,15 @@ class Module extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The JSON schema for the current module.
+     */
+    public function schemaJSON(): File
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('schemaJSON');
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The SDK config used by this module.
      */
     public function sdk(): SDKConfig

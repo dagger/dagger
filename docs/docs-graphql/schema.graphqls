@@ -3567,6 +3567,9 @@ type Module {
   """
   runtime: Container
 
+  """The JSON schema for the current module."""
+  schemaJSON: File!
+
   """The SDK config used by this module."""
   sdk: SDKConfig
 

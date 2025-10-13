@@ -8746,6 +8746,12 @@ class Module(Type):
         _ctx = self._select("runtime", _args)
         return Container(_ctx)
 
+    def schema_json(self) -> File:
+        """The JSON schema for the current module."""
+        _args: list[Arg] = []
+        _ctx = self._select("schemaJSON", _args)
+        return File(_ctx)
+
     def sdk(self) -> "SDKConfig":
         """The SDK config used by this module."""
         _args: list[Arg] = []

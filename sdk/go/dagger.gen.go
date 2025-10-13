@@ -8681,6 +8681,15 @@ func (r *Module) Runtime() *Container {
 	}
 }
 
+// The JSON schema for the current module.
+func (r *Module) SchemaJSON() *File {
+	q := r.query.Select("schemaJSON")
+
+	return &File{
+		query: q,
+	}
+}
+
 // The SDK config used by this module.
 func (r *Module) SDK() *SDKConfig {
 	q := r.query.Select("sdk")
