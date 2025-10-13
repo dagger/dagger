@@ -8643,6 +8643,14 @@ export class Module_ extends BaseClient {
   }
 
   /**
+   * The JSON schema for the current module.
+   */
+  schemaJSON = (): File => {
+    const ctx = this._ctx.select("schemaJSON")
+    return new File(ctx)
+  }
+
+  /**
    * The SDK config used by this module.
    */
   sdk = (): SDKConfig => {
