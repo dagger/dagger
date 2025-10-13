@@ -296,21 +296,9 @@ export const daggerVersion = "%s";
 // Deploys a current build of the docs.
 func (d Docs) Deploy(
 	ctx context.Context,
+	message string,
 	netlifyToken *dagger.Secret,
 ) (string, error) {
-	commit, err := dag.Version().Git().Head().Commit(ctx)
-	if err != nil {
-		return "", err
-	}
-	dirty, err := dag.Version().Git().Dirty(ctx)
-	if err != nil {
-		return "", err
-	}
-	message := "Manual build on " + commit
-	if dirty {
-		message += "-dirty"
-	}
-
 	out, err := dag.Container().
 		From("node:18").
 		WithExec([]string{"npm", "install", "netlify-cli", "-g"}). // pin!!!!
