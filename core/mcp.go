@@ -2350,24 +2350,22 @@ func (m *MCP) displayLitLocked(lit call.Literal) string {
 		}
 	case *call.LiteralList:
 		list := "["
-		_ = x.Range(func(i int, value call.Literal) error {
+		for i, value := range x.Values() {
 			if i > 0 {
 				list += ","
 			}
 			list += m.displayLitLocked(value)
-			return nil
-		})
+		}
 		list += "]"
 		return list
 	case *call.LiteralObject:
 		obj := "{"
-		_ = x.Range(func(i int, name string, value call.Literal) error {
+		for i, arg := range x.Args() {
 			if i > 0 {
 				obj += ","
 			}
-			obj += name + ": " + m.displayLitLocked(value)
-			return nil
-		})
+			obj += arg.Name() + ": " + m.displayLitLocked(arg.Value())
+		}
 		obj += "}"
 		return obj
 	default:

@@ -642,6 +642,120 @@ func (src *ModuleSource) LoadContextDir(
 	return inst, nil
 }
 
+func (src *ModuleSource) LoadContextFile(
+	ctx context.Context,
+	dag *dagql.Server,
+	path string,
+) (inst dagql.ObjectResult[*File], err error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	switch src.Kind {
+	case ModuleSourceKindLocal:
+		localSourceClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get client metadata: %w", err)
+		}
+		localSourceCtx := engine.ContextWithClientMetadata(ctx, localSourceClientMetadata)
+
+		// Retrieve the absolute path to the context directory (.git or dagger.json)
+		// and the module root directory (dagger.json)
+		ctxPath := src.Local.ContextDirectoryPath
+		modPath := filepath.Join(ctxPath, src.SourceRootSubpath)
+
+		// If path is not absolute, it's relative to the module root directory.
+		// If path is absolute, it's relative to the context directory.
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(modPath, path)
+		} else {
+			path = filepath.Join(ctxPath, path)
+		}
+
+		// We just check if the path is relative to the context directory,
+		// if not, that means it's a path that target an outside directory
+		// which is not allowed.
+		relativePathToCtx, err := filepath.Rel(ctxPath, path)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get relative path to context: %w", err)
+		}
+
+		// If the relative path is outisde of the context directory, throw an error.
+		if strings.HasPrefix(relativePathToCtx, "..") {
+			return inst, fmt.Errorf("path %q is outside of context directory %q, path should be relative to the context directory", path, ctxPath)
+		}
+
+		err = dag.Select(localSourceCtx, dag.Root(), &inst,
+			dagql.Selector{
+				Field: "host",
+			},
+			dagql.Selector{
+				Field: "file",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(path)},
+					{Name: "noCache", Value: dagql.Boolean(true)},
+				},
+			},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to select file: %w", err)
+		}
+
+	case ModuleSourceKindGit:
+		slog.Debug("moduleSource.LoadContext: loading contextual file from git", "path", path, "kind", src.Kind, "repo", src.Git.HTMLURL)
+
+		if !filepath.IsAbs(path) {
+			path = filepath.Join("/", src.SourceRootSubpath, path)
+		}
+
+		// Use the Git context directory without dagger.json includes applied.
+		ctxDir := src.Git.UnfilteredContextDir
+		if err := dag.Select(ctx, ctxDir, &inst,
+			dagql.Selector{
+				Field: "file",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(path)},
+				},
+			},
+		); err != nil {
+			return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
+		}
+
+	case ModuleSourceKindDir:
+		if !filepath.IsAbs(path) {
+			path = filepath.Join("/", src.SourceRootSubpath, path)
+		}
+
+		// Use the Dir context directory.
+		ctxDir := src.ContextDirectory
+
+		if err := dag.Select(ctx, ctxDir, &inst,
+			dagql.Selector{
+				Field: "file",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(path)},
+				},
+			},
+		); err != nil {
+			return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
+		}
+
+	default:
+		return inst, fmt.Errorf("unsupported module src kind: %q", src.Kind)
+	}
+
+	mainClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	if err := query.AddClientResourcesFromID(ctx, &resource.ID{ID: *inst.ID()}, mainClientMetadata.ClientID, false); err != nil {
+		return inst, fmt.Errorf("failed to add client resources from directory source: %w", err)
+	}
+
+	return inst, nil
+}
+
 func (src *ModuleSource) LoadContextGit(
 	ctx context.Context,
 	dag *dagql.Server,
