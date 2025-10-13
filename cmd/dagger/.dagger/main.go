@@ -16,6 +16,7 @@ func New(
 	// +defaultPath="/"
 	// +ignore=["*", ".*", "!cmd/dagger/*", "!**/go.sum", "!**/go.mod", "!**/*.go", "!vendor/**/*", "!**.graphql", "!.goreleaser*.yml", "!.changes", "!LICENSE", "!install.sh", "!install.ps1"]
 	source *dagger.Directory,
+
 	// Base image for go build environment
 	// +optional
 	base *dagger.Container,
@@ -43,7 +44,6 @@ func New(
 	return &DaggerCli{
 		Version: version,
 		Tag:     version,
-		Git:     v.Git(),
 		Go: dag.Go(source, dagger.GoOpts{
 			Base:   base,
 			Values: values,
@@ -54,7 +54,6 @@ func New(
 type DaggerCli struct {
 	Version string
 	Tag     string
-	Git     *dagger.VersionGit // +private
 
 	Go *dagger.Go // +private
 }

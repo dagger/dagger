@@ -63,6 +63,7 @@ var ignores = []string{
 }
 
 type Version struct {
+	// +private
 	Git *Git
 
 	// +private
