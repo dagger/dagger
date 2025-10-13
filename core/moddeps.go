@@ -18,6 +18,10 @@ const (
 	ModuleName = "daggercore"
 )
 
+var (
+	TypesToIgnoreForModuleIntrospection = []string{"Host"}
+)
+
 /*
 ModDeps represents a set of dependencies for a module or for a caller depending on a
 particular set of modules to be served.
@@ -83,6 +87,12 @@ func (d *ModDeps) SchemaIntrospectionJSONFile(ctx context.Context, hiddenTypes [
 		return inst, err
 	}
 	return schemaJSONFile, nil
+}
+
+// The introspection json for combined schema exposed by each mod in this set of dependencies, as a file.
+// Some APIs are automatically hidden as they should not be exposed to modules.
+func (d *ModDeps) SchemaIntrospectionJSONFileForModule(ctx context.Context) (inst dagql.Result[*File], _ error) {
+	return d.SchemaIntrospectionJSONFile(ctx, TypesToIgnoreForModuleIntrospection)
 }
 
 // All the TypeDefs exposed by this set of dependencies

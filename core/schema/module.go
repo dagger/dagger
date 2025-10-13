@@ -643,7 +643,7 @@ func (s *moduleSchema) schemaJSON(
 	mod *core.Module,
 	args struct{},
 ) (dagql.Result[*core.File], error) {
-	return mod.Deps.SchemaIntrospectionJSONFile(ctx, []string{"Host"})
+	return mod.Deps.SchemaIntrospectionJSONFileForModule(ctx)
 }
 
 func (s *moduleSchema) moduleDependencies(
