@@ -104,6 +104,15 @@ func (id *ID) Args() []*Argument {
 	return id.args
 }
 
+func (id *ID) Arg(name string) *Argument {
+	for _, arg := range id.args {
+		if arg.pb.Name == name {
+			return arg
+		}
+	}
+	return nil
+}
+
 // If the field returns a list, this is the index of the element to select.
 // Note that this defaults to zero, which means there is no selection of
 // an element in the list. Non-zero indexes are 1-based.
@@ -341,6 +350,21 @@ func (id *ID) WithArgument(arg *Argument) *ID {
 		int(id.pb.Nth),
 		"", // reset to default digest
 		newArgs...,
+	)
+}
+
+func (id *ID) WithReceiver(recv *ID) *ID {
+	if id == nil {
+		return nil
+	}
+	return recv.Append(
+		id.pb.Type.ToAST(),
+		id.pb.Field,
+		View(id.pb.View),
+		id.module,
+		int(id.pb.Nth),
+		"", // reset to default digest
+		id.args...,
 	)
 }
 
