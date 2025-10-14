@@ -20,6 +20,7 @@ func (s *cacheSchema) Name() string {
 func (s *cacheSchema) Install(srv *dagql.Server) {
 	dagql.Fields[*core.Query]{
 		dagql.NodeFuncWithCacheKey("cacheVolume", s.cacheVolume, s.cacheVolumeCacheKey).
+			Persistable().
 			Doc("Constructs a cache volume for a given cache key.").
 			Args(
 				dagql.Arg("key").Doc(`A string identifier to target this cache volume (e.g., "modules-cache").`),

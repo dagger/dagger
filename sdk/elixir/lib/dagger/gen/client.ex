@@ -42,6 +42,22 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Return available checks
+  """
+  @spec checks(t(), [{:include, [String.t()]}]) :: Dagger.CheckGroup.t()
+  def checks(%__MODULE__{} = client, optional_args \\ []) do
+    query_builder =
+      client.query_builder
+      |> QB.select("checks")
+      |> QB.maybe_put_arg("include", optional_args[:include])
+
+    %Dagger.CheckGroup{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Dagger Cloud configuration and state
   """
   @spec cloud(t()) :: Dagger.Cloud.t()

@@ -429,7 +429,10 @@ func (ps clientSpans) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 func (ps clientSpans) ForceFlush(ctx context.Context) error { return nil }
 func (ps clientSpans) Shutdown(context.Context) error       { return nil }
 
-func (ps *PubSub) Logs(client *daggerClient) sdklog.Exporter {
+func (ps *PubSub) Logs(client *daggerClient) interface {
+	sdklog.Exporter
+	sdklog.Processor
+} {
 	return clientLogs{
 		client: client,
 	}

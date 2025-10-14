@@ -34,6 +34,18 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Return available checks
+     */
+    public function checks(?array $include = null): CheckGroup
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('checks');
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\CheckGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Dagger Cloud configuration and state
      */
     public function cloud(): Cloud

@@ -43,7 +43,7 @@ func init() {
 type CloudCLI struct{}
 
 func (cli *CloudCLI) Client(ctx context.Context) (*cloud.Client, error) {
-	return cloud.NewClient(ctx)
+	return cloud.NewClient(ctx, nil, "")
 }
 
 func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {

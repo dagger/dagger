@@ -25,6 +25,8 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/session/auth/authprovider"
+	"github.com/dagger/dagger/internal/buildkit/session/filesync"
+	"github.com/dagger/dagger/internal/buildkit/session/secrets"
 	"github.com/dagger/dagger/internal/buildkit/util/grpcerrors"
 	"github.com/docker/cli/cli/config"
 	"github.com/google/uuid"
@@ -37,6 +39,7 @@ import (
 	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/net/http2"
+	"golang.org/x/oauth2"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -107,6 +110,12 @@ type Params struct {
 	Module   string
 	Function string
 	ExecCmd  []string
+
+	// TODO:??
+	CloudBasicToken     string
+	CloudToken          *oauth2.Token
+	CloudOrgID          string
+	ExistingSessionConn *grpc.ClientConn
 }
 
 type Client struct {
@@ -208,7 +217,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		}
 		c.nestedSessionPort = nestedSessionPort
 		c.SecretToken = os.Getenv("DAGGER_SESSION_TOKEN")
-		c.httpClient = c.newHTTPClient()
+		c.httpClient = c.newHTTPClient(ctx)
 		if err := c.init(connectCtx); err != nil {
 			return nil, nil, fmt.Errorf("initialize nested client: %w", err)
 		}
@@ -265,6 +274,74 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	return c, ctx, nil
 }
 
+func ConnectE2E(ctx context.Context, params Params) (_ *Client, _ context.Context, rerr error) {
+	c := &Client{Params: params}
+
+	if c.ID == "" {
+		c.ID = os.Getenv("DAGGER_SESSION_CLIENT_ID")
+	}
+	if c.ID == "" {
+		c.ID = identity.NewID()
+	}
+	if c.SessionID == "" {
+		c.SessionID = identity.NewID()
+	}
+	if c.SecretToken == "" {
+		c.SecretToken = uuid.New().String()
+	}
+
+	// NB: decouple from the originator's cancel ctx
+	c.internalCtx, c.internalCancel = context.WithCancelCause(context.WithoutCancel(ctx))
+	c.closeCtx, c.closeRequests = context.WithCancelCause(context.WithoutCancel(ctx))
+
+	c.eg, c.internalCtx = errgroup.WithContext(c.internalCtx)
+
+	defer func() {
+		if rerr != nil {
+			c.internalCancel(errors.New("Connect failed"))
+		}
+	}()
+
+	// TODO: labels?
+	// TODO: hostname?
+	// TODO: stableClientID?
+
+	// NB: don't propagate this ctx, we don't want everything tucked beneath connect
+	connectCtx, span := Tracer(ctx).Start(ctx, "connect engine-to-engine")
+	defer telemetry.End(span, func() error { return rerr })
+
+	if err := c.startEngine(connectCtx, params); err != nil {
+		return nil, nil, fmt.Errorf("start engine: %w", err)
+	}
+	// TODO: compat check? no, right?
+
+	defer func() {
+		if rerr != nil {
+			c.bkClient.Close()
+		}
+	}()
+
+	if err := c.startE2ESession(connectCtx); err != nil {
+		return nil, nil, fmt.Errorf("start session: %w", err)
+	}
+
+	defer func() {
+		if rerr != nil {
+			c.sessionSrv.Stop()
+		}
+	}()
+
+	if err := c.subscribeTelemetry(connectCtx); err != nil {
+		return nil, nil, fmt.Errorf("subscribe to telemetry: %w", err)
+	}
+
+	if err := c.daggerConnect(ctx); err != nil {
+		return nil, nil, fmt.Errorf("failed to connect to dagger: %w", err)
+	}
+
+	return c, ctx, nil
+}
+
 func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 	remote, err := url.Parse(c.RunnerHost)
 	if err != nil {
@@ -300,11 +377,14 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 		Function:         params.Function,
 		ExecCmd:          params.ExecCmd,
 		ClientID:         c.ID,
+		CloudToken:       params.CloudToken,
+		CloudBasicToken:  params.CloudBasicToken,
+		CloudOrgID:       params.CloudOrgID,
 	})
 	provisionCancel()
 	telemetry.End(provisionSpan, func() error { return err })
 	if err != nil {
-		return err
+		return fmt.Errorf("provision driver %q: %w", remote.Scheme, err)
 	}
 
 	ctx, span := Tracer(ctx).Start(ctx, "connecting to engine", telemetry.Encapsulate())
@@ -337,7 +417,7 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 		}
 		telemetry.End(span, func() error { return err })
 		if err != nil {
-			return err
+			return fmt.Errorf("image loader: %w", err)
 		}
 	}
 
@@ -354,7 +434,7 @@ func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
 	slog.Debug("subscribing to telemetry", "remote", c.RunnerHost)
 
 	c.telemetry = new(errgroup.Group)
-	httpClient := c.newTelemetryHTTPClient()
+	httpClient := c.newTelemetryHTTPClient(ctx)
 	if c.EngineTrace != nil {
 		if err := c.exportTraces(ctx, httpClient); err != nil {
 			return fmt.Errorf("export traces: %w", err)
@@ -377,7 +457,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 	ctx, sessionSpan := Tracer(ctx).Start(ctx, "starting session", telemetry.Encapsulate())
 	defer telemetry.End(sessionSpan, func() error { return rerr })
 
-	clientMetadata := c.clientMetadata()
+	clientMetadata := c.clientMetadata(ctx)
 	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &clientMetadata)
 
 	attachables := []bksession.Attachable{
@@ -432,7 +512,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 
 	c.sessionSrv, err = ConnectBuildkitSession(ctx,
 		sessionConn,
-		c.AppendHTTPRequestHeaders(http.Header{}),
+		c.AppendHTTPRequestHeaders(ctx, http.Header{}),
 		attachables...,
 	)
 	if err != nil {
@@ -452,7 +532,66 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		return nil
 	})
 
-	c.httpClient = c.newHTTPClient()
+	c.httpClient = c.newHTTPClient(ctx)
+	return nil
+}
+
+func (c *Client) startE2ESession(ctx context.Context) (rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "starting e2e session",
+		telemetry.Encapsulated())
+	defer telemetry.End(span, func() error { return rerr })
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+
+	clientMetadata := c.clientMetadata(ctx)
+	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &clientMetadata)
+
+	attachables := []bksession.Attachable{
+		FilesyncSourceProxy{
+			Client: filesync.NewFileSyncClient(c.ExistingSessionConn),
+		},
+		FilesyncTargetProxy{
+			Client: filesync.NewFileSendClient(c.ExistingSessionConn),
+		},
+		secretprovider.NewSecretProviderProxy(secrets.NewSecretsClient(c.ExistingSessionConn)),
+	}
+
+	slog.Warn("dialing session")
+	sessionConn, err := c.DialContext(ctx, "", "")
+	if err != nil {
+		return fmt.Errorf("dial for session attachables: %w", err)
+	}
+	defer func() {
+		if rerr != nil {
+			sessionConn.Close()
+		}
+	}()
+	slog.Warn("dialed session")
+
+	slog.Warn("connecting session")
+	c.sessionSrv, err = ConnectBuildkitSession(ctx,
+		sessionConn,
+		c.AppendHTTPRequestHeaders(ctx, http.Header{}),
+		attachables...,
+	)
+	if err != nil {
+		return fmt.Errorf("connect buildkit session: %w", err)
+	}
+	slog.Warn("connected session")
+
+	c.eg.Go(func() error {
+		ctx, cancel, err := c.withClientCloseCancel(ctx)
+		if err != nil {
+			return err
+		}
+		go func() {
+			<-ctx.Done()
+			cancel(errors.New("startSession context done"))
+		}()
+		c.sessionSrv.Run(ctx)
+		return nil
+	})
+
+	c.httpClient = c.newHTTPClient(ctx)
 	return nil
 }
 
@@ -462,6 +601,8 @@ func ConnectBuildkitSession(
 	headers http.Header,
 	attachables ...bksession.Attachable,
 ) (*BuildkitSessionServer, error) {
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+
 	sessionSrv := NewBuildkitSessionServer(ctx, conn, attachables...)
 	for _, methodURL := range sessionSrv.MethodURLs {
 		headers.Add(engine.SessionMethodNameMetaKey, methodURL)
@@ -481,11 +622,13 @@ func ConnectBuildkitSession(
 	if err := req.Write(conn); err != nil {
 		return nil, fmt.Errorf("write request: %w", err)
 	}
+	slog.Warn("wrote request")
 
 	resp, err := http.ReadResponse(bufio.NewReader(conn), req)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
+	slog.Warn("read response")
 	if resp.Body != nil {
 		defer resp.Body.Close()
 	}
@@ -496,6 +639,7 @@ func ConnectBuildkitSession(
 		}
 		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
 	}
+	slog.Warn("read response body")
 
 	// We tell the server that we have fully read the response and will now switch to serving gRPC
 	// by sending a single byte ack. This prevents the server from starting to send gRPC client
@@ -503,6 +647,7 @@ func ConnectBuildkitSession(
 	if _, err := conn.Write([]byte{0}); err != nil {
 		return nil, fmt.Errorf("write ack: %w", err)
 	}
+	slog.Warn("wrote ack")
 
 	return sessionSrv, nil
 }
@@ -986,7 +1131,7 @@ func (c *Client) serveHijackedHTTP(ctx context.Context, cancel context.CancelCau
 	}()
 
 	// send the initial client http upgrade request to the server
-	r.Header = c.AppendHTTPRequestHeaders(r.Header)
+	r.Header = c.AppendHTTPRequestHeaders(ctx, r.Header)
 	if err := r.Write(serverConn); err != nil {
 		panic(fmt.Errorf("write upgrade request: %w", err))
 	}
@@ -1153,7 +1298,7 @@ func allCacheConfigsFromEnv() (cacheImportConfigs []*controlapi.CacheOptionsEntr
 	return cacheImportConfigs, cacheExportConfigs, nil
 }
 
-func (c *Client) clientMetadata() engine.ClientMetadata {
+func (c *Client) clientMetadata(ctx context.Context) engine.ClientMetadata {
 	sshAuthSock := os.Getenv("SSH_AUTH_SOCK")
 	// expand ~ into absolute path for consistent behavior with CLI
 	// ⚠️ When updating clientMetadata's logic, please also update setupNestedClient
@@ -1171,9 +1316,22 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		clientVersion = engine.Version
 	}
 
-	var cloudOrg string
-	if o, _ := auth.CurrentOrgName(); o != "" {
-		cloudOrg = o
+	cloudOrg := c.CloudOrgID
+	if cloudOrg == "" {
+		if o, _ := auth.CurrentOrgName(); o != "" {
+			cloudOrg = o
+		}
+	}
+
+	// TODO:?
+	token := c.CloudToken
+	if token == nil {
+		token, _ = auth.Token(ctx)
+	}
+
+	basicToken := c.CloudBasicToken
+	if basicToken == "" {
+		basicToken = os.Getenv("DAGGER_CLOUD_TOKEN")
 	}
 
 	return engine.ClientMetadata{
@@ -1192,14 +1350,17 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		InteractiveCommand:        c.InteractiveCommand,
 		SSHAuthSocketPath:         sshAuthSock,
 		AllowedLLMModules:         c.AllowedLLMModules,
+
+		CloudToken:      token,
+		CloudBasicToken: basicToken,
 	}
 }
 
-func (c *Client) AppendHTTPRequestHeaders(headers http.Header) http.Header {
-	return c.clientMetadata().AppendToHTTPHeaders(headers)
+func (c *Client) AppendHTTPRequestHeaders(ctx context.Context, headers http.Header) http.Header {
+	return c.clientMetadata(ctx).AppendToHTTPHeaders(headers)
 }
 
-func (c *Client) newHTTPClient() *httpClient {
+func (c *Client) newHTTPClient(ctx context.Context) *httpClient {
 	return &httpClient{
 		inner: &http.Client{
 			Transport: &http2.Transport{
@@ -1209,12 +1370,12 @@ func (c *Client) newHTTPClient() *httpClient {
 				},
 			},
 		},
-		headers:     c.AppendHTTPRequestHeaders(http.Header{}),
+		headers:     c.AppendHTTPRequestHeaders(ctx, http.Header{}),
 		secretToken: c.SecretToken,
 	}
 }
 
-func (c *Client) newTelemetryHTTPClient() *httpClient {
+func (c *Client) newTelemetryHTTPClient(ctx context.Context) *httpClient {
 	return &httpClient{
 		inner: &http.Client{
 			Transport: &http2.Transport{
@@ -1224,7 +1385,7 @@ func (c *Client) newTelemetryHTTPClient() *httpClient {
 				},
 			},
 		},
-		headers:     c.AppendHTTPRequestHeaders(http.Header{}),
+		headers:     c.AppendHTTPRequestHeaders(ctx, http.Header{}),
 		secretToken: c.SecretToken,
 	}
 }

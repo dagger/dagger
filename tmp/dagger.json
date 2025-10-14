@@ -1,0 +1,7 @@
+{
+  "name": "test",
+  "engineVersion": "v0.19.3-010101000000-dev-1271e48ec320",
+  "sdk": {
+    "source": "go"
+  }
+}

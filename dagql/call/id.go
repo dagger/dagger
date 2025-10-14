@@ -227,6 +227,16 @@ func (id *ID) Name() string {
 // Return a new ID that's the selection of the nth element of the return value of the existing ID.
 // The new digest is derived from the existing ID's digest and the nth index.
 func (id *ID) SelectNth(nth int) *ID {
+	if id == nil {
+		return nil
+	}
+
+	elem := id.pb.Type
+	if id.pb.Type != nil && id.pb.Type.Elem != nil {
+		// XXX: not a list type, fake the type
+		elem = elem.Elem
+	}
+
 	buf := []byte(id.Digest())
 	buf = binary.LittleEndian.AppendUint64(buf, uint64(nth))
 	h := xxh3.New()
@@ -235,7 +245,7 @@ func (id *ID) SelectNth(nth int) *ID {
 	return id.With(
 		WithReceiver(id),
 		WithNth(nth),
-		WithType(id.pb.Type.Elem.ToAST()),
+		WithType(elem.ToAST()),
 		WithCustomDigest(dgst),
 	)
 }
@@ -327,11 +337,21 @@ func (id *ID) Append(ret *ast.Type, field string, opts ...IDOpt) *ID {
 	return newID.apply(opts...)
 }
 
+func (id *ID) WithPersistable() *ID {
+	if id == nil {
+		return nil
+	}
+	id.pb.IsRemoteable = true
+	return id
+}
+
 // WithDigest returns a new ID that's the same as before except with the
 // given customDigest set as the ID's digest. If empty string, the default
 // digest for the call will be used (based on digest of encoded call pb).
 func (id *ID) WithDigest(customDigest digest.Digest) *ID {
-	return id.With(WithCustomDigest(customDigest))
+	newID := id.With(WithCustomDigest(customDigest))
+	newID.pb.IsRemoteable = id.pb.IsRemoteable
+	return newID
 }
 
 func (id *ID) HasCustomDigest() bool {
@@ -365,7 +385,9 @@ func (id *ID) WithArgument(arg *Argument) *ID {
 		newArgs = append(newArgs, arg)
 	}
 
-	return id.With(WithArgs(newArgs...))
+	newID := id.With(WithArgs(newArgs...))
+	newID.pb.IsRemoteable = id.pb.IsRemoteable
+	return newID
 }
 
 func (id *ID) Encode() (string, error) {

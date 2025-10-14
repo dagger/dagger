@@ -96,6 +96,7 @@ type CallOpts struct {
 	Inputs         []CallInput
 	ParentTyped    dagql.AnyResult
 	ParentFields   map[string]any
+	ParentModType  *ModuleObjectType
 	SkipSelfSchema bool
 	Server         *dagql.Server
 
@@ -108,11 +109,14 @@ type CallOpts struct {
 	// TODO:(sipsma) remove this nonsense once all SDKs have migrated to the new
 	// way of obtaining module typedefs that doesn't involve a function call.
 	OverrideStorageKey string
+
+	// TODO: hack for scale out, need to force inclusion of secret args
+	ExtraSecretIDs map[digest.Digest]*resource.ID
 }
 
 type CallInput struct {
-	Name  string
-	Value dagql.Typed
+	Name  string      `json:"name"`
+	Value dagql.Typed `json:"value"`
 }
 
 func (fn *ModuleFunction) recordCall(ctx context.Context) {
@@ -625,12 +629,17 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 
 	callID := dagql.CurrentID(ctx)
 	execMD := buildkit.ExecutionMetadata{
-		ClientID:          identity.NewID(),
-		CallID:            callID,
-		ExecID:            identity.NewID(),
-		Internal:          true,
-		ParentIDs:         map[digest.Digest]*resource.ID{},
+		ClientID: identity.NewID(),
+		CallID:   callID,
+		ExecID:   identity.NewID(),
+		Internal: true,
+		// TODO:
+		// ParentIDs:         map[digest.Digest]*resource.ID{},
+		ParentIDs:         opts.ExtraSecretIDs,
 		AllowedLLMModules: clientMetadata.AllowedLLMModules,
+	}
+	if execMD.ParentIDs == nil {
+		execMD.ParentIDs = map[digest.Digest]*resource.ID{}
 	}
 
 	var cacheMixins []string

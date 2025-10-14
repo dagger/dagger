@@ -411,7 +411,7 @@ func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (
 	}
 	id, ok := value.(string)
 	if !ok {
-		return nil, fmt.Errorf("expected string, got %T", value)
+		return nil, fmt.Errorf("CoreModObject.ConvertFromSDKResult: expected string, got %T", value)
 	}
 	var idp call.ID
 	if err := idp.Decode(id); err != nil {

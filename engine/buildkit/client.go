@@ -35,7 +35,9 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/dagger/dagger/engine"
@@ -635,6 +637,9 @@ func (c *Client) GetGitConfig(ctx context.Context) ([]*git.GitConfigEntry, error
 	}
 
 	response, err := git.NewGitClient(caller.Conn()).GetConfig(ctx, &git.GitConfigRequest{})
+	if status.Code(err) == codes.Unimplemented {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to query git config: %w", err)
 	}

@@ -71,6 +71,11 @@ func AroundFunc(
 		attribute.String(telemetry.DagCallAttr, callAttr),
 	}
 
+	// HACK: probably some more elegant way to do make Module.call passthrough
+	if base == "Module" && id.Field() == "call" {
+		attrs = append(attrs, attribute.Bool(telemetry.UIPassthroughAttr, true))
+	}
+
 	// if inside a module call, add call trace metadata. this is useful
 	// since within a single span, we can correlate the caller's and callee's
 	// module and functions calls

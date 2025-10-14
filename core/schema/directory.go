@@ -237,6 +237,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 				dagql.Arg("patch").Doc(`File containing the patch to apply`),
 			),
 		dagql.NodeFunc("asGit", s.asGit).
+			Persistable().
 			Doc(`Converts this directory to a local git repository`),
 		dagql.NodeFunc("terminal", s.terminal).
 			View(AfterVersion("v0.12.0")).

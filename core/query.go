@@ -9,10 +9,14 @@ import (
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
+	"github.com/dagger/dagger/internal/buildkit/session"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/moby/locker"
 	"github.com/vektah/gqlparser/v2/ast"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/dagql"
@@ -139,6 +143,12 @@ type Server interface {
 
 	// The list of connected client IDs
 	Clients() []string
+
+	// TODO:
+	CurrentSpanExporter(ctx context.Context) (sdktrace.SpanExporter, error)
+	CurrentLogExporter(ctx context.Context) (sdklog.Exporter, error)
+	CurrentMetricsExporter(ctx context.Context) (sdkmetric.Exporter, error)
+	NonModuleParentClientSessionCaller(ctx context.Context) (session.Caller, error)
 }
 
 type queryKey struct{}

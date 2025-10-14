@@ -390,6 +390,13 @@ type DynamicID struct {
 	id       *call.ID
 }
 
+func NewDynamicID(typeName string, id *call.ID) DynamicID {
+	return DynamicID{
+		typeName: typeName,
+		id:       id,
+	}
+}
+
 var _ dagql.IDable = DynamicID{}
 
 // ID returns the ID of the value.
