@@ -2508,8 +2508,11 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		}
 	}
 
+	// TODO: meta: allow returning types from a dependency
 	// When there are multiple blueprints, add them as namespaced fields
 	if len(originalSrc.Self().Blueprints) > 1 {
+		// TODO: initialize object type
+		var shadowModule *core.TypeDef
 		for _, bpSrc := range originalSrc.Self().Blueprints {
 			var bpModResult dagql.Result[*core.Module]
 			err = dag.Select(ctx, bpSrc, &bpModResult,
@@ -2519,19 +2522,17 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 				return inst, fmt.Errorf("failed to load blueprint %q as module: %w", bpSrc.Self().ModuleName, err)
 			}
 
-			// TODO: allow returning types from a dependency
-			// TODO: create a field that maps to the objects constructor
 			// Add the blueprint module's functions as a namespaced field
 			for _, obj := range bpModResult.Self().ObjectDefs {
 				if obj.AsObject.Value.Name == bpModResult.Self().NameField {
-					// TODO: create object and add fields to it, then add object to module
-					mod, err = mod.WithObject(ctx, obj)
-					if err != nil {
-						return inst, fmt.Errorf("failed to add blueprint %q as object: %w", bpSrc.Self().ModuleName, err)
-					}
+					// TODO: create a field that maps to the objects constructor
 					break
 				}
 			}
+		}
+		mod, err = mod.WithObject(ctx, shadowModule)
+		if err != nil {
+			return inst, fmt.Errorf("failed to add blueprints to module: %w", err)
 		}
 	}
 
