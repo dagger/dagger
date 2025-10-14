@@ -25,6 +25,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/session/auth/authprovider"
+	"github.com/dagger/dagger/internal/buildkit/session/filesync"
 	"github.com/dagger/dagger/internal/buildkit/util/grpcerrors"
 	"github.com/docker/cli/cli/config"
 	"github.com/google/uuid"
@@ -110,9 +111,10 @@ type Params struct {
 	ExecCmd  []string
 
 	// TODO:??
-	CloudBasicToken string
-	CloudToken      *oauth2.Token
-	CloudOrgID      string
+	CloudBasicToken     string
+	CloudToken          *oauth2.Token
+	CloudOrgID          string
+	ExistingSessionConn *grpc.ClientConn
 }
 
 type Client struct {
@@ -542,7 +544,14 @@ func (c *Client) startE2ESession(ctx context.Context) (rerr error) {
 	clientMetadata := c.clientMetadata(ctx)
 	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &clientMetadata)
 
-	attachables := []bksession.Attachable{}
+	attachables := []bksession.Attachable{
+		FilesyncSourceProxy{
+			Client: filesync.NewFileSyncClient(c.ExistingSessionConn),
+		},
+		FilesyncTargetProxy{
+			Client: filesync.NewFileSendClient(c.ExistingSessionConn),
+		},
+	}
 
 	slog.Warn("dialing session")
 	sessionConn, err := c.DialContext(ctx, "", "")

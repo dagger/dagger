@@ -118,6 +118,14 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 	if err != nil {
 		return nil, false, fmt.Errorf("current metric exporter: %w", err)
 	}
+	bk, err := q.Buildkit(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("current buildkit: %w", err)
+	}
+	grpcCaller, err := bk.GetSessionCaller(ctx, false)
+	if err != nil {
+		return nil, false, fmt.Errorf("get session caller: %w", err)
+	}
 
 	c, _, err := client.ConnectE2E(ctx, client.Params{
 		RunnerHost: "dagger-cloud://default-engine-config.dagger.cloud",
@@ -134,6 +142,8 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 		EngineTrace:   spanExporter,
 		EngineLogs:    logExporter,
 		EngineMetrics: []sdkmetric.Exporter{metricExporter},
+
+		ExistingSessionConn: grpcCaller.Conn(),
 	})
 	if err != nil {
 		return nil, false, fmt.Errorf("e2e connect: %w", err)

@@ -290,7 +290,7 @@ func (f Filesyncer) fullRootPathAndBaseName(reqPath string, fullyResolvePath boo
 }
 
 type FilesyncSourceProxy struct {
-	client filesync.FileSyncClient
+	Client filesync.FileSyncClient
 }
 
 func (s FilesyncSourceProxy) Register(server *grpc.Server) {
@@ -310,7 +310,7 @@ func (s FilesyncSourceProxy) DiffCopy(stream filesync.FileSync_DiffCopyServer) e
 		opts = metadata.Pairs()
 	}
 	clientConnectCtx := metadata.NewOutgoingContext(ctx, opts)
-	clientStream, err := s.client.DiffCopy(clientConnectCtx)
+	clientStream, err := s.Client.DiffCopy(clientConnectCtx)
 	if err != nil {
 		return fmt.Errorf("create client filesync source diffcopy stream: %w", err)
 	}
@@ -319,7 +319,7 @@ func (s FilesyncSourceProxy) DiffCopy(stream filesync.FileSync_DiffCopyServer) e
 }
 
 type FilesyncTargetProxy struct {
-	client filesync.FileSendClient
+	Client filesync.FileSendClient
 }
 
 func (s FilesyncTargetProxy) Register(server *grpc.Server) {
@@ -335,7 +335,7 @@ func (s FilesyncTargetProxy) DiffCopy(stream filesync.FileSend_DiffCopyServer) e
 		opts = metadata.Pairs()
 	}
 	clientConnectCtx := metadata.NewOutgoingContext(ctx, opts)
-	clientStream, err := s.client.DiffCopy(clientConnectCtx)
+	clientStream, err := s.Client.DiffCopy(clientConnectCtx)
 	if err != nil {
 		return fmt.Errorf("create client filesync target diffcopy stream: %w", err)
 	}
