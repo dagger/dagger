@@ -55,6 +55,10 @@ type Module struct {
 	// The module's enumerations
 	EnumDefs []*TypeDef `field:"true" name:"enums" doc:"Enumerations served by this module."`
 
+	// IsBlueprint indicates this module was loaded as a blueprint dependency.
+	// Blueprint modules are allowed to share types with the modules that depend on them.
+	IsBlueprint bool
+
 	// ResultID is the ID of the initialized module.
 	ResultID *call.ID
 }
@@ -456,13 +460,16 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 		if ok {
 			sourceMod := fieldType.SourceMod()
 			// fields can reference core types and local types, but not types from
-			// other modules
+			// other modules (unless the source module is a blueprint)
 			if sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
-				return fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
-					obj.OriginalName,
-					field.OriginalName,
-					sourceMod.Name(),
-				)
+				// Allow types from blueprint modules
+				if bpMod, ok := sourceMod.(*Module); !ok || !bpMod.IsBlueprint {
+					return fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
+						obj.OriginalName,
+						field.OriginalName,
+						sourceMod.Name(),
+					)
+				}
 			}
 		}
 		if err := mod.validateTypeDef(ctx, field.TypeDef); err != nil {
@@ -474,19 +481,21 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 		if gqlFieldName(fn.Name) == "id" {
 			return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
 		}
-		// Check if this is a type from another (non-core) module, which is currently not allowed
+		// Check if this is a type from another (non-core) module
 		retType, ok, err := mod.Deps.ModTypeFor(ctx, fn.ReturnType)
 		if err != nil {
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
 		}
 		if ok {
 			if sourceMod := retType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
-				// already validated, skip
-				return fmt.Errorf("object %q function %q cannot return external type from dependency module %q",
-					obj.OriginalName,
-					fn.OriginalName,
-					sourceMod.Name(),
-				)
+				// Allow types from blueprint modules
+				if bpMod, ok := sourceMod.(*Module); !ok || !bpMod.IsBlueprint {
+					return fmt.Errorf("object %q function %q cannot return external type from dependency module %q",
+						obj.OriginalName,
+						fn.OriginalName,
+						sourceMod.Name(),
+					)
+				}
 			}
 		}
 		if err := mod.validateTypeDef(ctx, fn.ReturnType); err != nil {
@@ -500,13 +509,15 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 			}
 			if ok {
 				if sourceMod := argType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
-					// already validated, skip
-					return fmt.Errorf("object %q function %q arg %q cannot reference external type from dependency module %q",
-						obj.OriginalName,
-						fn.OriginalName,
-						arg.OriginalName,
-						sourceMod.Name(),
-					)
+					// Allow types from blueprint modules
+					if bpMod, ok := sourceMod.(*Module); !ok || !bpMod.IsBlueprint {
+						return fmt.Errorf("object %q function %q arg %q cannot reference external type from dependency module %q",
+							obj.OriginalName,
+							fn.OriginalName,
+							arg.OriginalName,
+							sourceMod.Name(),
+						)
+					}
 				}
 			}
 			if err := mod.validateTypeDef(ctx, arg.TypeDef); err != nil {

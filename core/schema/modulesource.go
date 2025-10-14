@@ -25,6 +25,7 @@ import (
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/server/resource"
+	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	fsutiltypes "github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
@@ -707,7 +708,7 @@ func (s *moduleSourceSchema) loadBlueprintModule(
 			src.Blueprints[i] = blueprint
 		}
 		// For backward compatibility, set the first blueprint as the single Blueprint
-		if len(src.Blueprints) > 0 {
+		if len(src.Blueprints) == 1 {
 			src.Blueprint = src.Blueprints[0]
 		}
 		return nil
@@ -2427,11 +2428,6 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	// Deprecated Blueprint field
 	blueprintSrc := src.Self().Blueprint
 
-	// New Blueprints field. Cannot coexist with Blueprint field
-	if len(src.Self().Blueprints) == 1 {
-		blueprintSrc = src.Self().Blueprints[0]
-	}
-
 	// for a single blueprint, use it as the module source
 	if blueprintSrc.Self() != nil {
 		src = blueprintSrc
@@ -2480,7 +2476,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 			return inst, err
 		}
 		mod.ResultID = dagql.CurrentID(ctx)
-	} else {
+	} else if len(src.Self().Blueprints) == 0 {
 		// For no SDK, provide an empty stub module definition
 		typeDef := &core.ObjectTypeDef{
 			Name: mod.NameField,
@@ -2508,7 +2504,6 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		}
 	}
 
-	// TODO: meta: allow returning types from a dependency
 	// When there are multiple blueprints, add them as namespaced fields
 	if len(originalSrc.Self().Blueprints) > 1 {
 		// Initialize a shadow module object type to hold the namespaced blueprint fields
@@ -2532,7 +2527,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 			// Add the blueprint module's functions as a namespaced field
 			for _, obj := range bpModResult.Self().ObjectDefs {
-				if obj.AsObject.Value.Name == bpModResult.Self().NameField {
+				if obj.AsObject.Value.Name == strcase.ToCamel(bpModResult.Self().NameField) {
 					// Create a field that maps to the bpModResult type using TypeDef.WithObjectField
 					fieldName := bpModResult.Self().NameField
 					shadowModule, err = shadowModule.WithObjectField(fieldName, obj, fmt.Sprintf("Blueprint module: %s", fieldName), nil)
@@ -2547,6 +2542,8 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		if err != nil {
 			return inst, fmt.Errorf("failed to add blueprints to module: %w", err)
 		}
+
+		mod.ResultID = dagql.CurrentID(ctx)
 	}
 
 	if bp := blueprintSrc.Self(); bp != nil {
@@ -2579,6 +2576,7 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src *cor
 	var eg errgroup.Group
 	depMods := make([]dagql.Result[*core.Module], len(src.Dependencies))
 	for i, depSrc := range src.Dependencies {
+		i := i // capture loop variable
 		eg.Go(func() error {
 			return dag.Select(ctx, depSrc, &depMods[i],
 				dagql.Selector{Field: "asModule"},
@@ -2590,14 +2588,21 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src *cor
 	}
 
 	// Load all blueprints as dependencies
+	// TODO: dont expose dependencies as top level commands in shell
 	if len(src.Blueprints) > 1 {
 		var bpeg errgroup.Group
 		bpMods := make([]dagql.Result[*core.Module], len(src.Blueprints))
 		for i, bpSrc := range src.Blueprints {
+			i := i // capture loop variable
 			bpeg.Go(func() error {
-				return dag.Select(ctx, bpSrc, &bpMods[i],
+				err := dag.Select(ctx, bpSrc, &bpMods[i],
 					dagql.Selector{Field: "asModule"},
 				)
+				if err == nil && bpMods[i].Self() != nil {
+					// Mark this module as a blueprint to allow type sharing
+					bpMods[i].Self().IsBlueprint = true
+				}
+				return err
 			})
 		}
 		if err := bpeg.Wait(); err != nil {
