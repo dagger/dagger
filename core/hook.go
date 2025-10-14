@@ -34,16 +34,13 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 	if err != nil {
 		return nil, false, fmt.Errorf("metadata: %w", err)
 	}
-	if md.CloudToken != nil {
-		return nil, false, nil
-	}
 
 	objName := opts.ParentModType.typeDef.Name
 	fieldName := fn.metadata.Name
 
-	if !strings.Contains(strings.ToLower(objName), "scale") {
+	if !strings.Contains(strings.ToLower(fieldName), "scale") {
 		slog.Debug(
-			"skipping call with cloud hook due to object name",
+			"skipping call with cloud hook due to field name",
 			"object", objName,
 			"function", fieldName,
 		)

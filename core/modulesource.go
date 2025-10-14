@@ -1160,7 +1160,7 @@ func NewCallerStatFS(bk *buildkit.Client) *CallerStatFS {
 func (fs CallerStatFS) Stat(ctx context.Context, path string) (*fsutiltypes.Stat, error) {
 	stat, err := fs.bk.StatCallerHostPath(ctx, path, true)
 	if err != nil {
-		if status.Code(err) == codes.NotFound {
+		if status.Code(err) == codes.NotFound || status.Code(err) == codes.Unimplemented {
 			return nil, os.ErrNotExist
 		}
 		return nil, err
