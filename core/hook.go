@@ -135,7 +135,7 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 	}
 
 	var out any
-	err = query.Bind(out).Unpack(result)
+	err = query.Bind(&out).Unpack(result)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to unpack result: %w", err)
 	}
