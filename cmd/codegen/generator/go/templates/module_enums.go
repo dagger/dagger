@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	. "github.com/dave/jennifer/jen" //nolint:stylecheck
+	. "github.com/dave/jennifer/jen" //nolint:staticcheck
 )
 
 type parsedEnumTypeReference struct {

@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	. "github.com/dave/jennifer/jen" //nolint:stylecheck
+	. "github.com/dave/jennifer/jen" //nolint:staticcheck
 	"github.com/iancoleman/strcase"
 )
 

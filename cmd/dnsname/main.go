@@ -158,7 +158,7 @@ func cmdCheck(args *skel.CmdArgs) error {
 
 type podname struct {
 	types.CommonArgs
-	K8S_POD_NAME types.UnmarshallableString `json:"podname,omitempty"` //nolint:stylecheck
+	K8S_POD_NAME types.UnmarshallableString `json:"podname,omitempty"` //nolint:staticcheck
 }
 
 // parseConfig parses the supplied configuration (and prevResult) from stdin.

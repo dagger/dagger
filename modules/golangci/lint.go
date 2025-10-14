@@ -12,8 +12,8 @@ import (
 
 const (
 	lintImageRepo   = "docker.io/golangci/golangci-lint"
-	lintImageTag    = "v1.64-alpine"
-	lintImageDigest = "sha256:05e1762ba74443e44b3a179e9549ad134a9ee2180d4fcc06b19a77ea0c6ac66a"
+	lintImageTag    = "v2.5.0-alpine"
+	lintImageDigest = "sha256:ac072ef3a8a6aa52c04630c68a7514e06be6f634d09d5975be60f2d53b484106"
 	lintImage       = lintImageRepo + ":" + lintImageTag + "@" + lintImageDigest
 )
 
@@ -123,14 +123,15 @@ func (run LintRun) WarningCount(ctx context.Context) (int, error) {
 // Return a JSON report file for this run
 func (run LintRun) Report() *dagger.File {
 	configPath := "${HOME}/.golangci.yml"
+	outPath := "/mnt/golangci-lint-report.json"
+
 	cmd := []string{
 		"golangci-lint", "run",
 		"-v",
-		"--timeout", "10m",
 		// Disable limits, we can filter the report instead
 		"--max-issues-per-linter", "0",
 		"--max-same-issues", "0",
-		"--out-format", "json",
+		"--output.json.path", outPath,
 		"--issues-exit-code", "0",
 		"--config", configPath,
 	}
@@ -160,11 +161,8 @@ func (run LintRun) Report() *dagger.File {
 		// Uncomment to debug:
 		// WithEnvVariable("DEBUG_CMD", strings.Join(cmd, " ")).
 		// Terminal().
-		WithExec(cmd, dagger.ContainerWithExecOpts{
-			Expand:         true,
-			RedirectStdout: "golangci-lint-report.json",
-		}).
-		File("golangci-lint-report.json")
+		WithExec(cmd, dagger.ContainerWithExecOpts{Expand: true}).
+		File(outPath)
 }
 
 type Replacement struct {
