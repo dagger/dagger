@@ -88,6 +88,33 @@ func (BlueprintSuite) TestBlueprintInit(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func (BlueprintSuite) TestMultipleBlueprints(ctx context.Context, t *testctx.T) {
+
+	c := connect(ctx, t)
+	t.Run("install multiple blueprints", func(ctx context.Context, t *testctx.T) {
+		modGen := blueprintTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init", "--blueprint=../myblueprint"))
+		// Verify blueprint was installed by calling function
+		out, err := modGen.
+			With(daggerExec("call", "hello")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello from blueprint")
+		// install another blueprint
+		modGen = modGen.
+			With(daggerExec("blueprint", "add", "https://github.com/kpenfound/blueprints/npm"))
+		out, err = modGen.Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "blueprint added")
+		out, err = modGen.
+			With(daggerExec("call", "blueprint", "hello")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello from blueprint")
+	})
+}
+
 func (BlueprintSuite) TestBlueprintNoSDK(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	t.Run("init with --sdk and --blueprint", func(ctx context.Context, t *testctx.T) {

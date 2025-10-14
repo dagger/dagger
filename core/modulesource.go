@@ -118,10 +118,17 @@ type ModuleSource struct {
 	ConfigDependencies []*modules.ModuleConfigDependency
 
 	// Dependencies are the loaded sources for the module's dependencies
-	Dependencies    dagql.ObjectResultArray[*ModuleSource] `field:"true" name:"dependencies" doc:"The dependencies of the module source."`
+	Dependencies dagql.ObjectResultArray[*ModuleSource] `field:"true" name:"dependencies" doc:"The dependencies of the module source."`
+
+	// Single blueprint (deprecated in favor of Blueprints)
 	ConfigBlueprint *modules.ModuleConfigDependency
-	Blueprint       dagql.ObjectResult[*ModuleSource] `field:"true" name:"blueprint" doc:"The blueprint referenced by the module source."`
-	UserDefaults    *EnvFile                          `field:"true" name:"userDefaults" doc:"User-defined defaults read from local .env files"`
+	Blueprint       dagql.ObjectResult[*ModuleSource] `field:"true" name:"blueprint" doc:"The blueprint referenced by the module source (deprecated, use blueprints)."`
+
+	// Multiple blueprints
+	ConfigBlueprints []*modules.ModuleConfigDependency
+	Blueprints       dagql.ObjectResultArray[*ModuleSource] `field:"true" name:"blueprints" doc:"The blueprints referenced by the module source."`
+
+	UserDefaults *EnvFile `field:"true" name:"userDefaults" doc:"User-defined defaults read from local .env files"`
 	// Clients are the clients generated for the module.
 	ConfigClients []*modules.ModuleConfigClient `field:"true" name:"configClients" doc:"The clients generated for the module."`
 
@@ -174,6 +181,13 @@ func (src ModuleSource) Clone() *ModuleSource {
 	origDependencies := src.Dependencies
 	src.Dependencies = make([]dagql.ObjectResult[*ModuleSource], len(origDependencies))
 	copy(src.Dependencies, origDependencies)
+
+	origConfigBlueprints := src.ConfigBlueprints
+	src.ConfigBlueprints = make([]*modules.ModuleConfigDependency, len(origConfigBlueprints))
+	copy(src.ConfigBlueprints, origConfigBlueprints)
+	origBlueprints := src.Blueprints
+	src.Blueprints = make([]dagql.ObjectResult[*ModuleSource], len(origBlueprints))
+	copy(src.Blueprints, origBlueprints)
 
 	if src.Local != nil {
 		src.Local = src.Local.Clone()

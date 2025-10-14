@@ -696,7 +696,24 @@ func (s *moduleSourceSchema) loadBlueprintModule(
 		return fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	// If we have a blueprint module, load it
+	// Load multiple blueprints if present
+	if len(src.ConfigBlueprints) > 0 {
+		src.Blueprints = make([]dagql.ObjectResult[*core.ModuleSource], len(src.ConfigBlueprints))
+		for i, pcfg := range src.ConfigBlueprints {
+			blueprint, err := core.ResolveDepToSource(ctx, bk, dag, src, pcfg.Source, pcfg.Pin, pcfg.Name)
+			if err != nil {
+				return fmt.Errorf("failed to resolve blueprint to source: %w", err)
+			}
+			src.Blueprints[i] = blueprint
+		}
+		// For backward compatibility, set the first blueprint as the single Blueprint
+		if len(src.Blueprints) > 0 {
+			src.Blueprint = src.Blueprints[0]
+		}
+		return nil
+	}
+
+	// Fallback to single blueprint for backward compatibility
 	pcfg := src.ConfigBlueprint
 	if pcfg == nil {
 		return nil
@@ -706,6 +723,7 @@ func (s *moduleSourceSchema) loadBlueprintModule(
 		return fmt.Errorf("failed to resolve dep to source: %w", err)
 	}
 	src.Blueprint = blueprint
+	src.Blueprints = []dagql.ObjectResult[*core.ModuleSource]{blueprint}
 	return nil
 }
 
@@ -848,7 +866,7 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	}
 
 	// blueprint is incompatible with some dagger.json fields
-	if modCfg.Blueprint != nil {
+	if modCfg.Blueprint != nil || len(modCfg.Blueprints) > 0 {
 		if modCfg.SDK != nil {
 			return fmt.Errorf("blueprint and sdk can't both be set")
 		}
@@ -867,6 +885,7 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	src.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
 	src.ConfigDependencies = modCfg.Dependencies
 	src.ConfigBlueprint = modCfg.Blueprint
+	src.ConfigBlueprints = modCfg.Blueprints
 	src.ConfigClients = modCfg.Clients
 
 	engineVersion := modCfg.EngineVersion
@@ -1471,8 +1490,26 @@ func (s *moduleSourceSchema) moduleSourceWithBlueprint(
 	// The blueprint is the last dependency added
 	// (dependencies are added LIFO)
 	parentSrc = parentSrc.Clone()
-	parentSrc.Blueprint = tmpSrc.Dependencies[0]
-	parentSrc.ConfigBlueprint = tmpConfig.Dependencies[0]
+
+	// Migrate existing Blueprint to Blueprints array if needed
+	if parentSrc.ConfigBlueprint != nil {
+		// Move the existing deprecated Blueprint to the Blueprints array
+		parentSrc.ConfigBlueprints = append([]*modules.ModuleConfigDependency{parentSrc.ConfigBlueprint}, parentSrc.ConfigBlueprints...)
+		parentSrc.Blueprints = append([]dagql.ObjectResult[*core.ModuleSource]{parentSrc.Blueprint}, parentSrc.Blueprints...)
+		// Clear the deprecated fields
+		parentSrc.ConfigBlueprint = nil
+		parentSrc.Blueprint = dagql.ObjectResult[*core.ModuleSource]{}
+	}
+
+	// Append the new blueprint to the Blueprints array
+	parentSrc.ConfigBlueprints = append(parentSrc.ConfigBlueprints, tmpConfig.Dependencies[0])
+	parentSrc.Blueprints = append(parentSrc.Blueprints, tmpSrc.Dependencies[0])
+
+	// For backward compatibility, also set the deprecated Blueprint field to the first blueprint
+	if len(parentSrc.Blueprints) > 0 {
+		parentSrc.Blueprint = parentSrc.Blueprints[0]
+		parentSrc.ConfigBlueprint = parentSrc.ConfigBlueprints[0]
+	}
 
 	return parentSrc, nil
 }
@@ -1803,8 +1840,11 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 		}
 	}
 
-	// Copy blueprint configuration if present
-	if src.ConfigBlueprint != nil {
+	// Copy blueprints configuration if present
+	if len(src.ConfigBlueprints) > 0 {
+		modCfg.Blueprints = src.ConfigBlueprints
+	} else if src.ConfigBlueprint != nil {
+		// Fallback to deprecated Blueprint field for backward compatibility
 		modCfg.Blueprint = src.ConfigBlueprint
 	}
 
@@ -2383,8 +2423,16 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 	// Handle blueprint context separation
 	originalSrc := src
+
+	// Deprecated Blueprint field
 	blueprintSrc := src.Self().Blueprint
 
+	// New Blueprints field. Cannot coexist with Blueprint field
+	if len(src.Self().Blueprints) == 1 {
+		blueprintSrc = src.Self().Blueprints[0]
+	}
+
+	// for a single blueprint, use it as the module source
 	if blueprintSrc.Self() != nil {
 		src = blueprintSrc
 	}
@@ -2460,6 +2508,33 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		}
 	}
 
+	// When there are multiple blueprints, add them as namespaced fields
+	if len(originalSrc.Self().Blueprints) > 1 {
+		for _, bpSrc := range originalSrc.Self().Blueprints {
+			var bpModResult dagql.Result[*core.Module]
+			err = dag.Select(ctx, bpSrc, &bpModResult,
+				dagql.Selector{Field: "asModule"},
+			)
+			if err != nil {
+				return inst, fmt.Errorf("failed to load blueprint %q as module: %w", bpSrc.Self().ModuleName, err)
+			}
+
+			// TODO: allow returning types from a dependency
+			// TODO: create a field that maps to the objects constructor
+			// Add the blueprint module's functions as a namespaced field
+			for _, obj := range bpModResult.Self().ObjectDefs {
+				if obj.AsObject.Value.Name == bpModResult.Self().NameField {
+					// TODO: create object and add fields to it, then add object to module
+					mod, err = mod.WithObject(ctx, obj)
+					if err != nil {
+						return inst, fmt.Errorf("failed to add blueprint %q as object: %w", bpSrc.Self().ModuleName, err)
+					}
+					break
+				}
+			}
+		}
+	}
+
 	if bp := blueprintSrc.Self(); bp != nil {
 		// Show the downstream module name to clients, not the blueprint name
 		// NOTE: we don't change OriginalName, that's used internally at runtime
@@ -2498,6 +2573,24 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src *cor
 	}
 	if err := eg.Wait(); err != nil {
 		return nil, fmt.Errorf("failed to load module dependencies: %w", err)
+	}
+
+	// Load all blueprints as dependencies
+	if len(src.Blueprints) > 1 {
+		var bpeg errgroup.Group
+		bpMods := make([]dagql.Result[*core.Module], len(src.Blueprints))
+		for i, bpSrc := range src.Blueprints {
+			bpeg.Go(func() error {
+				return dag.Select(ctx, bpSrc, &bpMods[i],
+					dagql.Selector{Field: "asModule"},
+				)
+			})
+		}
+		if err := bpeg.Wait(); err != nil {
+			return nil, fmt.Errorf("failed to load module dependencies: %w", err)
+		}
+
+		depMods = append(depMods, bpMods...)
 	}
 
 	defaultDeps, err := query.DefaultDeps(ctx)

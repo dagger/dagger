@@ -56,8 +56,11 @@ type ModuleConfig struct {
 	// The SDK this module uses
 	SDK *SDK `json:"sdk,omitempty"`
 
-	// An optional blueprint module
+	// An optional blueprint module (single blueprint - deprecated in favor of Blueprints)
 	Blueprint *ModuleConfigDependency `json:"blueprint,omitempty"`
+
+	// Multiple blueprint modules
+	Blueprints []*ModuleConfigDependency `json:"blueprints,omitempty"`
 
 	// Paths to explicitly include from the module, relative to the configuration file.
 	Include []string `json:"include,omitempty"`
@@ -138,6 +141,13 @@ func (modCfg *ModuleConfig) UnmarshalJSON(data []byte) error {
 	// For those cases, the Source was implicitly ".", so set it to that.
 	if tmp.SDK != nil && tmp.SDK.Source != "" && tmp.Source == "" {
 		tmp.Source = "."
+	}
+
+	// Migrate single blueprint to blueprints array if needed
+	// If both are set, Blueprints takes precedence
+	if tmp.Blueprint != nil && len(tmp.Blueprints) == 0 {
+		tmp.Blueprints = []*ModuleConfigDependency{tmp.Blueprint}
+		tmp.Blueprint = nil
 	}
 
 	// adapt exclude to include

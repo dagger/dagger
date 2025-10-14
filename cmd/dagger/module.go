@@ -45,7 +45,8 @@ var (
 
 	installName string
 
-	initBlueprint string
+	initBlueprint    string
+	blueprintAddName string
 
 	developSDK        string
 	developSourcePath string
@@ -155,6 +156,12 @@ func init() {
 	moduleDevelopCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
 	moduleDevelopCmd.Flags().Lookup("compat").NoOptDefVal = "skip"
 	moduleAddFlags(moduleDevelopCmd, moduleDevelopCmd.Flags(), false)
+
+	blueprintAddCmd.Flags().StringVarP(&blueprintAddName, "name", "n", "", "Name to use for the blueprint in the module. Defaults to the name of the blueprint being added.")
+	blueprintAddCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
+	moduleAddFlags(blueprintAddCmd, blueprintAddCmd.Flags(), false)
+
+	blueprintCmd.AddCommand(blueprintAddCmd)
 }
 
 var moduleInitCmd = &cobra.Command{
@@ -318,7 +325,7 @@ var moduleInstallCmd = &cobra.Command{
 	Use:     "install [options] <module>",
 	Aliases: []string{"use"},
 	Short:   "Install a dependency",
-	Long:    "Install another module as a dependency to the current module. The target module must be local.",
+	Long:    "Install another module as a dependency to the current module.",
 	Example: "dagger install github.com/shykes/daggerverse/hello@v0.3.0",
 	GroupID: moduleGroup.ID,
 	Args:    cobra.ExactArgs(1),
@@ -694,6 +701,77 @@ This command is idempotent: you can run it at any time, any number of times. It 
 				})
 			}
 			return eg.Wait()
+		})
+	},
+}
+
+var blueprintGroup = &cobra.Group{
+	ID:    "blueprint",
+	Title: "Blueprint Commands",
+}
+
+var blueprintCmd = &cobra.Command{
+	Use:   "blueprint",
+	Short: "Manage blueprints",
+}
+
+var blueprintAddCmd = &cobra.Command{
+	Use:     "add [options] <module>",
+	Short:   "Add a blueprint to the current module",
+	Long:    "Add another module as a blueprint to the current module.",
+	Example: "dagger blueprint add github.com/example/blueprint",
+	Args:    cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
+		ctx := cmd.Context()
+		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			dag := engineClient.Dagger()
+
+			modRef, err := getModuleSourceRefWithDefault()
+			if err != nil {
+				return err
+			}
+			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
+				// We can only add blueprints to a local module
+				RequireKind: dagger.ModuleSourceKindLocalSource,
+			})
+
+			alreadyExists, err := modSrc.ConfigExists(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to check if module already exists: %w", err)
+			}
+			if !alreadyExists {
+				return fmt.Errorf("module must be fully initialized")
+			}
+
+			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get local context directory path: %w", err)
+			}
+
+			blueprintRefStr := extraArgs[0]
+			blueprintSrc := dag.ModuleSource(blueprintRefStr, dagger.ModuleSourceOpts{
+				DisableFindUp: true,
+			})
+
+			if blueprintAddName != "" {
+				blueprintSrc = blueprintSrc.WithName(blueprintAddName)
+			}
+
+			modSrc = modSrc.WithBlueprint(blueprintSrc)
+
+			if engineVersion := getCompatVersion(); engineVersion != "" {
+				modSrc = modSrc.WithEngineVersion(engineVersion)
+			}
+
+			_, err = modSrc.
+				GeneratedContextDirectory().
+				Export(ctx, contextDirPath)
+			if err != nil {
+				return fmt.Errorf("failed to add blueprint: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "blueprint added\n")
+			return nil
 		})
 	},
 }
