@@ -335,6 +335,9 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 			Type:   obj,
 			Module: obj.Module.IDModule(),
 		}
+		if objDef.Deprecated != nil {
+			spec.DeprecatedReason = objDef.Deprecated
+		}
 
 		if objDef.SourceMap.Valid {
 			spec.Directives = append(spec.Directives, objDef.SourceMap.Value.TypeDirective())
@@ -430,6 +433,9 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 		Description: field.Description,
 		Type:        field.TypeDef.ToTyped(),
 		Module:      mod.IDModule(),
+	}
+	if field.Deprecated != nil {
+		spec.DeprecatedReason = field.Deprecated
 	}
 	spec.Directives = append(spec.Directives, &ast.Directive{
 		Name: trivialFieldDirectiveName,
