@@ -15,7 +15,6 @@ type Dev struct {
 var prompt string
 
 func New(
-	ctx context.Context,
 	// +optional
 	// +defaultPath="/"
 	// +ignore=[
