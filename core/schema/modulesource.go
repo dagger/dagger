@@ -176,6 +176,11 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		dagql.NodeFunc("asModule", s.moduleSourceAsModule).
 			Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`),
 
+		dagql.NodeFunc("introspectionSchemaJSON", s.moduleSourceIntrospectionSchemaJSON).
+			Doc(`The introspection schema JSON file for this module source.`,
+				`This file represents the schema visible to the module's source code, including all core types and those from the dependencies.`,
+				`Note: this is in the context of a module, so some core types may be hidden.`),
+
 		dagql.NodeFunc("directory", s.moduleSourceDirectory).
 			Doc(`The directory containing the module configuration and source code (source code may be in a subdir).`).
 			Args(
@@ -2357,6 +2362,22 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		return nil, fmt.Errorf("failed to patch module %q: %w", modName, err)
 	}
 	return mod, nil
+}
+
+func (s *moduleSourceSchema) moduleSourceIntrospectionSchemaJSON(
+	ctx context.Context,
+	src dagql.ObjectResult[*core.ModuleSource],
+	args struct{},
+) (inst dagql.Result[*core.File], rerr error) {
+	deps, err := s.loadDependencyModules(ctx, src.Self())
+	if err != nil {
+		return inst, err
+	}
+	file, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
+	if err != nil {
+		return inst, err
+	}
+	return file, nil
 }
 
 func (s *moduleSourceSchema) moduleSourceAsModule(
