@@ -2511,7 +2511,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	// TODO: meta: allow returning types from a dependency
 	// When there are multiple blueprints, add them as namespaced fields
 	if len(originalSrc.Self().Blueprints) > 1 {
-		// TODO: initialize object type
+		// TODO: initialize object type. How to properly initialize a TypeDef object to be used for mod.WithObject later?
 		var shadowModule *core.TypeDef
 		for _, bpSrc := range originalSrc.Self().Blueprints {
 			var bpModResult dagql.Result[*core.Module]
@@ -2525,7 +2525,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 			// Add the blueprint module's functions as a namespaced field
 			for _, obj := range bpModResult.Self().ObjectDefs {
 				if obj.AsObject.Value.Name == bpModResult.Self().NameField {
-					// TODO: create a field that maps to the objects constructor
+					// TODO: create a field that maps to the bpModResult type using TypeDef.WithObjectField
 					break
 				}
 			}
