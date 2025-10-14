@@ -7,6 +7,7 @@ import (
 	"net/url"
 
 	"github.com/dagger/dagger/engine/client/imageload"
+	"golang.org/x/oauth2"
 )
 
 type Driver interface {
@@ -37,6 +38,11 @@ type DriverOpts struct {
 	Module           string
 	Function         string
 	ExecCmd          []string
+
+	// TODO:
+	CloudToken      *oauth2.Token
+	CloudBasicToken string
+	CloudOrgID      string
 }
 
 const (

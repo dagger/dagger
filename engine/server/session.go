@@ -261,7 +261,7 @@ func (srv *Server) initializeDaggerSession(
 
 	sess.analytics = analytics.New(analytics.Config{
 		DoNotTrack: clientMetadata.DoNotTrack || analytics.DoNotTrack(),
-		Labels: enginetel.Labels(clientMetadata.Labels).
+		Labels: enginetel.NewLabels(clientMetadata.Labels).
 			WithEngineLabel(srv.engineName).
 			WithServerLabels(
 				engine.Version,

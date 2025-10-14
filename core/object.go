@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -502,6 +504,42 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 	return dagql.Field[*ModuleObject]{
 		Spec: &spec,
 		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
+			if spec.Name == "wowzas" {
+				md, err := engine.ClientMetadataFromContext(ctx)
+				if err != nil {
+					return nil, fmt.Errorf("metadata: %w", err)
+				}
+
+				c, _, err := client.ConnectE2E(ctx, client.Params{
+					RunnerHost: "dagger-cloud://default-engine-config.dagger.cloud",
+					// RunnerHost: "unix:///var/run/dagger/engine.sock",
+
+					// TODO:
+					Module:   "TODO2",
+					Function: "TODO2",
+					ExecCmd:  []string{"TODO2"},
+
+					CloudToken:      md.CloudToken,
+					CloudBasicToken: md.CloudBasicToken,
+					CloudOrgID:      md.CloudOrg,
+
+					// TODO:
+					// EngineTrace
+					// EngineLogs
+					// EngineMetrics
+				})
+				if err != nil {
+					return nil, fmt.Errorf("e2e connect: %w", err)
+				}
+
+				x, err := c.Dagger().Version(ctx)
+				if err != nil {
+					return nil, fmt.Errorf("e2e version: %w", err)
+				}
+
+				return dagql.NewResultForCurrentID(ctx, dagql.String(x))
+			}
+
 			opts := &CallOpts{
 				ParentTyped:  obj,
 				ParentFields: obj.Self().Fields,

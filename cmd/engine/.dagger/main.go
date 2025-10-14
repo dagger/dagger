@@ -237,6 +237,7 @@ var targets = []struct {
 		Image:     DistroAlpine,
 		Platforms: []dagger.Platform{"linux/amd64", "linux/arm64"},
 	},
+	/* TODO:
 	{
 		Name:       "ubuntu with nvidia variant",
 		Tag:        "%s-gpu",
@@ -257,6 +258,7 @@ var targets = []struct {
 		Platforms:  []dagger.Platform{"linux/amd64"},
 		GPUSupport: true,
 	},
+	*/
 }
 
 // Publish all engine images to a registry

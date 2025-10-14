@@ -3,6 +3,7 @@ package drivers
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine/client/imageload"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/cloud"
 )
 
@@ -18,17 +20,17 @@ var (
 )
 
 func init() {
-	register("dagger-cloud", &daggerCloudDriver{})
+	register("dagger-cloud", &DaggerCloudDriver{})
 }
 
-// daggerCloudDriver creates and manages a Cloud Engine, then connects to it
-type daggerCloudDriver struct{}
+// DaggerCloudDriver creates and manages a Cloud Engine, then connects to it
+type DaggerCloudDriver struct{}
 
-type daggerCloudConnector struct {
+type DaggerCloudConnector struct {
 	EngineSpec cloud.EngineSpec
 }
 
-func (dc *daggerCloudConnector) Connect(ctx context.Context) (net.Conn, error) {
+func (dc *DaggerCloudConnector) Connect(ctx context.Context) (net.Conn, error) {
 	serverAddr := dc.EngineSpec.URL
 
 	// Extract hostname for SNI
@@ -71,12 +73,12 @@ func (dc *daggerCloudConnector) Connect(ctx context.Context) (net.Conn, error) {
 	return tlsConn, nil
 }
 
-func (d *daggerCloudDriver) Available(ctx context.Context) (bool, error) {
+func (d *DaggerCloudDriver) Available(ctx context.Context) (bool, error) {
 	return true, nil // assume always available
 }
 
-func (d *daggerCloudDriver) Provision(ctx context.Context, _ *url.URL, opts *DriverOpts) (Connector, error) {
-	client, err := cloud.NewClient(ctx)
+func (d *DaggerCloudDriver) Provision(ctx context.Context, _ *url.URL, opts *DriverOpts) (Connector, error) {
+	client, err := cloud.NewClient(ctx, opts.CloudToken, opts.CloudBasicToken)
 	if err != nil {
 		return nil, errors.New("please run `dagger login <org>` first or configure a DAGGER_CLOUD_TOKEN")
 	}
@@ -91,17 +93,34 @@ func (d *daggerCloudDriver) Provision(ctx context.Context, _ *url.URL, opts *Dri
 		execCmd = opts.ExecCmd
 	}
 
-	engineSpec, err := client.Engine(ctx, cloud.EngineRequest{Module: module, Function: function, ExecCmd: execCmd})
+	engineSpec, err := client.Engine(ctx, cloud.EngineRequest{
+		Module:   module,
+		Function: function,
+		ExecCmd:  execCmd,
+		OrgID:    opts.CloudOrgID,
+	})
 	if err != nil {
 		if errors.Is(err, cloud.ErrNoOrg) {
 			return nil, errors.New("please associate this Engine with an org by running `dagger login <org>")
 		}
-		return nil, err
+		return nil, fmt.Errorf("failed to provision Cloud Engine: %w", err)
 	}
 
-	return &daggerCloudConnector{EngineSpec: *engineSpec}, nil
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+	bs, err := json.Marshal(engineSpec)
+	if err != nil {
+		slog.Error("failed to marshal engine spec for logging", "error", err)
+	} else {
+		slog.Warn("provisioned cloud engine", "engine_spec", string(bs))
+	}
+
+	return &DaggerCloudConnector{EngineSpec: *engineSpec}, nil
 }
 
-func (d *daggerCloudDriver) ImageLoader(ctx context.Context) imageload.Backend {
+func (d *DaggerCloudDriver) ImageLoader(ctx context.Context) imageload.Backend {
 	return nil
 }

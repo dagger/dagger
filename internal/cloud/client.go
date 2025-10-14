@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -17,7 +18,6 @@ import (
 	"github.com/shurcooL/graphql"
 	"golang.org/x/oauth2"
 
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/cloud/auth"
 )
 
@@ -30,7 +30,7 @@ type Client struct {
 	engineToken string
 }
 
-func NewClient(ctx context.Context) (*Client, error) {
+func NewClient(ctx context.Context, token *oauth2.Token, basicToken string) (*Client, error) {
 	api := "https://api.dagger.cloud"
 	if cloudURL := os.Getenv("DAGGER_CLOUD_URL"); cloudURL != "" {
 		api = cloudURL
@@ -45,22 +45,47 @@ func NewClient(ctx context.Context) (*Client, error) {
 
 	// Always prefer oauth if available. If not and a DAGGER_CLOUD_TOKEN
 	// is set then use Basic auth
-	tokenSource, err := auth.TokenSource(ctx)
-	if err != nil {
-		if cloudToken := os.Getenv("DAGGER_CLOUD_TOKEN"); cloudToken != "" {
-			httpClient.Transport, err = auth.DaggerCloudTransport(ctx, cloudToken)
+	// TODO: cleanup extreme mess
+	if basicToken != "" {
+		httpClient.Transport, err = auth.DaggerCloudTransport(ctx, basicToken)
+		if err != nil {
+			return nil, err
+		}
+
+		return &Client{
+			u:           u,
+			h:           httpClient,
+			engineToken: basicToken,
+		}, nil
+	}
+
+	var tokenSource oauth2.TokenSource
+	if token != nil {
+		if !token.Valid() {
+			token, err = auth.RefreshToken(ctx, token)
 			if err != nil {
 				return nil, err
 			}
-
-			return &Client{
-				u:           u,
-				h:           httpClient,
-				engineToken: cloudToken,
-			}, nil
 		}
+		tokenSource = auth.TokenToTokenSource(ctx, token)
+	} else {
+		tokenSource, err = auth.TokenSource(ctx)
+		if err != nil {
+			if cloudToken := os.Getenv("DAGGER_CLOUD_TOKEN"); cloudToken != "" {
+				httpClient.Transport, err = auth.DaggerCloudTransport(ctx, cloudToken)
+				if err != nil {
+					return nil, err
+				}
 
-		return nil, err
+				return &Client{
+					u:           u,
+					h:           httpClient,
+					engineToken: cloudToken,
+				}, nil
+			}
+
+			return nil, err
+		}
 	}
 	httpClient = oauth2.NewClient(ctx, tokenSource)
 
@@ -102,6 +127,9 @@ type EngineRequest struct {
 	Module   string   `json:"module,omitempty"`
 	Function string   ` json:"function,omitempty"`
 	ExecCmd  []string `json:"exec_cmd,omitempty"`
+
+	// TODO:
+	OrgID string `json:"-"`
 }
 
 type EngineSpec struct {
@@ -159,17 +187,27 @@ type ErrResponse struct {
 }
 
 func (c *Client) Engine(ctx context.Context, req EngineRequest) (*EngineSpec, error) {
-	// Remote Engine version defaults to the CLI version - this guarantees the best compatibility
-	tag := engine.Tag
-	// Default to `main` when the CLI is a development version
-	if tag == "" {
-		tag = "main"
-	}
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	/*
+		// Remote Engine version defaults to the CLI version - this guarantees the best compatibility
+		tag := engine.Tag
+		// Default to `main` when the CLI is a development version
+		if tag == "" {
+			tag = "main"
+		}
+		tag = "v0.19.2"
+	*/
 
 	// The only property that we can set is the Image tag.
 	// The rest will be handled by engine configs (follow-up).
 	engineSpec := &EngineSpec{
-		Image:    "registry.dagger.io/engine:" + tag,
+		// Image:    "registry.dagger.io/engine:" + tag,
+		Image:    "eriksipsma/dagger-test:latest",
 		Module:   req.Module,
 		Function: req.Function,
 		ExecCmd:  req.ExecCmd,
@@ -185,12 +223,27 @@ func (c *Client) Engine(ctx context.Context, req EngineRequest) (*EngineSpec, er
 	}
 
 	if c.engineToken == "" {
-		org, err := auth.CurrentOrg()
-		if err != nil {
-			return nil, ErrNoOrg
+		orgID := req.OrgID
+		if orgID == "" {
+			org, err := auth.CurrentOrg()
+			if err != nil {
+				return nil, ErrNoOrg
+			}
+			orgID = org.ID
 		}
-		r.Header.Set("X-Dagger-Org", org.ID)
+		r.Header.Set("X-Dagger-Org", orgID)
 	}
+
+	// TODO:
+	/*
+		fmt.Printf(">>> %s %s\n", r.Method, r.URL)
+		for k, v := range r.Header {
+			fmt.Printf("%s: %s\n", k, v)
+		}
+		fmt.Println()
+		fmt.Println(string(b))
+		fmt.Println(">>>")
+	*/
 
 	resp, err := c.h.Do(r)
 	if err != nil {
@@ -198,13 +251,19 @@ func (c *Client) Engine(ctx context.Context, req EngineRequest) (*EngineSpec, er
 	}
 	defer resp.Body.Close()
 
-	body := json.NewDecoder(resp.Body)
+	bs, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read remote Engine response body: %w", err)
+	}
+	body := json.NewDecoder(bytes.NewBuffer(bs))
 
 	if resp.StatusCode != http.StatusCreated {
 		errResponse := &ErrResponse{}
 		err = body.Decode(errResponse)
 		if err != nil {
-			return nil, fmt.Errorf("response body is not valid JSON: %w", err)
+			// TODO: ??
+			// return nil, fmt.Errorf("response body is not valid JSON: %w", err)
+			return nil, fmt.Errorf("response body is not valid JSON: %w: %d %q", err, resp.StatusCode, string(bs))
 		}
 		return nil, fmt.Errorf("failed to provision a remote Engine: %s", errResponse.Message)
 	}
