@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
-	"dagger.io/dagger/querybuilder"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/opencontainers/go-digest"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 )
 
 type CallHook interface {
@@ -27,19 +30,27 @@ func init() {
 type CloudCallHook struct{}
 
 func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *CallOpts) (t dagql.AnyResult, ok bool, rerr error) {
-	// clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	// if err != nil {
-	// 	return nil, false, err
-	// }
-	//
-	// if clientMetadata.CloudToken == "" {
-	// 	return nil, false, nil
-	// }
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("metadata: %w", err)
+	}
+	if md.CloudToken != nil {
+		return nil, false, nil
+	}
 
 	objName := opts.ParentModType.typeDef.Name
 	fieldName := fn.metadata.Name
 
-	ok, err := checkValidMod(ctx, fn.mod)
+	if !strings.Contains(strings.ToLower(objName), "scale") {
+		slog.Debug(
+			"skipping call with cloud hook due to object name",
+			"object", objName,
+			"function", fieldName,
+		)
+		return nil, false, nil
+	}
+
+	ok, err = checkValidMod(ctx, fn.mod)
 	if err != nil {
 		return nil, false, err
 	}
@@ -94,6 +105,43 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 		"function", fieldName,
 	)
 
+	q, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("current query: %w", err)
+	}
+	spanExporter, err := q.CurrentSpanExporter(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("current span exporter: %w", err)
+	}
+	logExporter, err := q.CurrentLogExporter(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("current log exporter: %w", err)
+	}
+	metricExporter, err := q.CurrentMetricsExporter(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("current metric exporter: %w", err)
+	}
+
+	c, _, err := client.ConnectE2E(ctx, client.Params{
+		RunnerHost: "dagger-cloud://default-engine-config.dagger.cloud",
+		// RunnerHost: "unix:///var/run/dagger/engine.sock",
+
+		Module:   fn.mod.Source.Value.Self().AsString(),
+		Function: fieldName,
+		// ExecCmd:  []string{"TODO2"},
+
+		CloudToken:      md.CloudToken,
+		CloudBasicToken: md.CloudBasicToken,
+		CloudOrgID:      md.CloudOrg,
+
+		EngineTrace:   spanExporter,
+		EngineLogs:    logExporter,
+		EngineMetrics: []sdkmetric.Exporter{metricExporter},
+	})
+	if err != nil {
+		return nil, false, fmt.Errorf("e2e connect: %w", err)
+	}
+
 	fields, err := json.Marshal(opts.ParentFields)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to marshal parent fields: %w", err)
@@ -104,7 +152,7 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 		return nil, false, fmt.Errorf("failed to marshal inputs: %w", err)
 	}
 
-	query := querybuilder.Query()
+	query := c.Dagger().QueryBuilder()
 	query = query.Select("moduleSource").
 		Arg("refString", fn.mod.Source.Value.Self().Git.Symbolic). // XXX: ain't right
 		Arg("refPin", fn.mod.Source.Value.Self().Git.Commit)
@@ -119,25 +167,10 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 
 	// CALL!
 
-	dag, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to get dag server: %w", err)
-	}
-
-	queryRaw, err := query.Build(ctx)
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to build query: %w", err)
-	}
-
-	result, err := dag.Query(ctx, queryRaw, nil)
-	if err != nil {
-		return nil, false, err
-	}
-
 	var out any
-	err = query.Bind(&out).Unpack(result)
+	err = query.Bind(&out).Execute(ctx)
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to unpack result: %w", err)
+		return nil, false, fmt.Errorf("failed to make query: %w", err)
 	}
 
 	input, err := fn.returnType.TypeDef().ToInput().Decoder().DecodeInput(out)
