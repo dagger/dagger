@@ -9,6 +9,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -510,31 +511,48 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 					return nil, fmt.Errorf("metadata: %w", err)
 				}
 
+				q, err := CurrentQuery(ctx)
+				if err != nil {
+					return nil, fmt.Errorf("current query: %w", err)
+				}
+				spanExporter, err := q.CurrentSpanExporter(ctx)
+				if err != nil {
+					return nil, fmt.Errorf("current span exporter: %w", err)
+				}
+				logExporter, err := q.CurrentLogExporter(ctx)
+				if err != nil {
+					return nil, fmt.Errorf("current log exporter: %w", err)
+				}
+				metricExporter, err := q.CurrentMetricsExporter(ctx)
+				if err != nil {
+					return nil, fmt.Errorf("current metric exporter: %w", err)
+				}
+
 				c, _, err := client.ConnectE2E(ctx, client.Params{
 					RunnerHost: "dagger-cloud://default-engine-config.dagger.cloud",
 					// RunnerHost: "unix:///var/run/dagger/engine.sock",
 
-					// TODO:
-					Module:   "TODO2",
-					Function: "TODO2",
-					ExecCmd:  []string{"TODO2"},
+					Module:   mod.Source.Value.Self().AsString(),
+					Function: spec.Name,
+					// ExecCmd:  []string{"TODO2"},
 
 					CloudToken:      md.CloudToken,
 					CloudBasicToken: md.CloudBasicToken,
 					CloudOrgID:      md.CloudOrg,
 
-					// TODO:
-					// EngineTrace
-					// EngineLogs
-					// EngineMetrics
+					EngineTrace:   spanExporter,
+					EngineLogs:    logExporter,
+					EngineMetrics: []sdkmetric.Exporter{metricExporter},
 				})
 				if err != nil {
 					return nil, fmt.Errorf("e2e connect: %w", err)
 				}
 
-				x, err := c.Dagger().Version(ctx)
+				x, err := c.Dagger().Container().From("alpine:latest").
+					WithExec([]string{"echo", "wowzas"}).
+					Stdout(ctx)
 				if err != nil {
-					return nil, fmt.Errorf("e2e version: %w", err)
+					return nil, err
 				}
 
 				return dagql.NewResultForCurrentID(ctx, dagql.String(x))
