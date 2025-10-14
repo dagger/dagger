@@ -32,12 +32,13 @@ type Connector interface {
 }
 
 type DriverOpts struct {
-	DaggerCloudToken string
-	GPUSupport       string
-	Module           string
-	Function         string
-	ExecCmd          []string
-	ClientID         string
+	DaggerCloudToken    string
+	GPUSupport          string
+	Module              string
+	Function            string
+	ExecCmd             []string
+	ClientID            string
+	CloudBasicAuthToken string
 }
 
 const (

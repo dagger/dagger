@@ -1675,6 +1675,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Check::run",
+			"p": "Dagger/Check.html#method_run",
+			"d": "<p>Execute the check</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\CheckGroup::id",
 			"p": "Dagger/CheckGroup.html#method_id",
 			"d": "<p>A unique identifier for this CheckGroup.</p>"
@@ -4504,6 +4510,12 @@
 			"n": "Dagger\\ListTypeDef::id",
 			"p": "Dagger/ListTypeDef.html#method_id",
 			"d": "<p>A unique identifier for this ListTypeDef.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Module::check",
+			"p": "Dagger/Module.html#method_check",
+			"d": "<p>Return the check defined by the module with the given name. Must match to exactly one check.</p>"
 		},
 		{
 			"t": "M",

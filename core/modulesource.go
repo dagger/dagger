@@ -185,9 +185,10 @@ type ModuleSource struct {
 
 	Digest string `field:"true" name:"digest" doc:"A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance."`
 
-	Kind  ModuleSourceKind `field:"true" name:"kind" doc:"The kind of module source (currently local, git or dir)."`
-	Local *LocalModuleSource
-	Git   *GitModuleSource
+	Kind   ModuleSourceKind `field:"true" name:"kind" doc:"The kind of module source (currently local, git or dir)."`
+	Local  *LocalModuleSource
+	Git    *GitModuleSource
+	DirSrc *DirModuleSource
 }
 
 func (src *ModuleSource) Type() *ast.Type {
@@ -1060,6 +1061,13 @@ func (s SchemeType) Prefix() string {
 
 func (s SchemeType) IsSSH() bool {
 	return s == SchemeSSH
+}
+
+type DirModuleSource struct {
+	// the original dir that AsModuleSource was called on
+	OriginalContextDir dagql.ObjectResult[*Directory]
+	// the original source root subpath provided to AsModuleSource
+	OriginalSourceRootSubpath string
 }
 
 // ResolveDepToSource given a parent module source, load a dependency of it

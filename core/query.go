@@ -19,6 +19,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/filesync"
 	"github.com/dagger/dagger/engine/server/resource"
@@ -139,6 +140,18 @@ type Server interface {
 
 	// The list of connected client IDs
 	Clients() []string
+
+	// Return a client connected to a cloud engine. If bool return is false, the local engine should be used.
+	CloudEngineClient(
+		ctx context.Context,
+		module string,
+		function string,
+		execCmd []string,
+	) (
+		cloudClient *engineclient.Client,
+		useCloudClient bool,
+		err error,
+	)
 }
 
 type queryKey struct{}

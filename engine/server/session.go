@@ -51,6 +51,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/cache/cachemanager"
+	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
@@ -160,8 +161,14 @@ type daggerClient struct {
 
 	// SQLite database storing telemetry + anything else
 	tracerProvider *sdktrace.TracerProvider
+	spanExporter   sdktrace.SpanExporter
+
 	loggerProvider *sdklog.LoggerProvider
+	logExporter    sdklog.Exporter
+
 	meterProvider  *sdkmetric.MeterProvider
+	metricExporter sdkmetric.Exporter
+
 	// NOTE: do not use this field directly as it may not be open
 	// after the client has shutdown; use TelemetryDB() instead
 	// This field exists to "keepalive" the db while the client
@@ -263,7 +270,7 @@ func (srv *Server) initializeDaggerSession(
 
 	sess.analytics = analytics.New(analytics.Config{
 		DoNotTrack: clientMetadata.DoNotTrack || analytics.DoNotTrack(),
-		Labels: enginetel.Labels(clientMetadata.Labels).
+		Labels: enginetel.NewLabels(clientMetadata.Labels).
 			WithEngineLabel(srv.engineName).
 			WithServerLabels(
 				engine.Version,
@@ -642,6 +649,7 @@ func (srv *Server) initializeDaggerClient(
 	}
 
 	// configure OTel providers that export to SQLite
+	client.spanExporter = srv.telemetryPubSub.Spans(client)
 	tracerOpts := []sdktrace.TracerProviderOption{
 		// install a span processor that modifies spans created by Buildkit to
 		// fit our ideal format
@@ -650,20 +658,24 @@ func (srv *Server) initializeDaggerClient(
 		)),
 		// save to our own client's DB
 		sdktrace.WithSpanProcessor(telemetry.NewLiveSpanProcessor(
-			srv.telemetryPubSub.Spans(client),
+			client.spanExporter,
 		)),
 	}
+
+	logs := srv.telemetryPubSub.Logs(client)
+	client.logExporter = logs
 	loggerOpts := []sdklog.LoggerProviderOption{
 		sdklog.WithResource(telemetry.Resource),
-		sdklog.WithProcessor(clientLogs{client: client}),
+		sdklog.WithProcessor(logs),
 	}
 
 	const metricReaderInterval = 5 * time.Second
 
+	client.metricExporter = srv.telemetryPubSub.Metrics(client)
 	meterOpts := []sdkmetric.Option{
 		sdkmetric.WithResource(telemetry.Resource),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(
-			srv.telemetryPubSub.Metrics(client),
+			client.metricExporter,
 			sdkmetric.WithInterval(metricReaderInterval),
 		)),
 	}
@@ -1517,6 +1529,54 @@ func (srv *Server) ClientTelemetry(ctx context.Context, sessID, clientID string)
 		return nil, fmt.Errorf("flush telemetry: %w", err)
 	}
 	return client.TelemetryDB(ctx)
+}
+
+func (srv *Server) CloudEngineClient(
+	ctx context.Context,
+	module string,
+	function string,
+	execCmd []string,
+) (*engineclient.Client, bool, error) {
+	parentClient, err := srv.nonModuleParentClient(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	parentCallerCtx := engine.ContextWithClientMetadata(ctx, parentClient.clientMetadata)
+	parentSession, err := parentClient.bkClient.GetSessionCaller(parentCallerCtx, false)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// TODO: cloud support for "run on yourself", return (nil, false, nil) in that case
+
+	engineClient, err := engineclient.ConnectEngineToEngine(ctx, engineclient.EngineToEngineParams{
+		Params: engineclient.Params{
+			RunnerHost: engine.DefaultCloudRunnerHost,
+
+			Module:   module,
+			Function: function,
+			ExecCmd:  execCmd,
+
+			CloudBasicAuthToken: parentClient.clientMetadata.CloudBasicAuthToken,
+
+			EngineTrace:   parentClient.spanExporter,
+			EngineLogs:    parentClient.logExporter,
+			EngineMetrics: []sdkmetric.Exporter{parentClient.metricExporter},
+
+			// FIXME: for now, disable recursive scale out to prevent any
+			// surprise "fork-bomb" scenarios. Eventually this should be
+			// permitted.
+			EnableCloudScaleOut: false,
+		},
+		CallerSessionConn: parentSession.Conn(),
+		Labels:            parentClient.clientMetadata.Labels,
+		StableClientID:    parentClient.clientMetadata.ClientStableID,
+	})
+	if err != nil {
+		return nil, false, err
+	}
+
+	return engineClient, true, nil
 }
 
 type httpError struct {

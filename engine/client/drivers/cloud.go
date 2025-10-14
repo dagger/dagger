@@ -24,11 +24,11 @@ func init() {
 // daggerCloudDriver creates and manages a Cloud Engine, then connects to it
 type daggerCloudDriver struct{}
 
-type daggerCloudConnector struct {
+type DaggerCloudConnector struct {
 	EngineSpec cloud.EngineSpec
 }
 
-func (dc *daggerCloudConnector) Connect(ctx context.Context) (net.Conn, error) {
+func (dc *DaggerCloudConnector) Connect(ctx context.Context) (net.Conn, error) {
 	serverAddr := dc.EngineSpec.URL
 
 	// Extract hostname for SNI
@@ -76,7 +76,7 @@ func (d *daggerCloudDriver) Available(ctx context.Context) (bool, error) {
 }
 
 func (d *daggerCloudDriver) Provision(ctx context.Context, _ *url.URL, opts *DriverOpts) (Connector, error) {
-	client, err := cloud.NewClient(ctx)
+	client, err := cloud.NewClient(ctx, opts.CloudBasicAuthToken)
 	if err != nil {
 		return nil, errors.New("please run `dagger login <org>` first or configure a DAGGER_CLOUD_TOKEN")
 	}
@@ -104,7 +104,7 @@ func (d *daggerCloudDriver) Provision(ctx context.Context, _ *url.URL, opts *Dri
 		return nil, err
 	}
 
-	return &daggerCloudConnector{EngineSpec: *engineSpec}, nil
+	return &DaggerCloudConnector{EngineSpec: *engineSpec}, nil
 }
 
 func (d *daggerCloudDriver) ImageLoader(ctx context.Context) imageload.Backend {

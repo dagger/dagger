@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/internal/buildkit/session/secrets"
+	"github.com/dagger/dagger/util/grpcutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -64,4 +65,22 @@ func (sp SecretProvider) GetSecret(ctx context.Context, req *secrets.GetSecretRe
 	return &secrets.GetSecretResponse{
 		Data: plaintext,
 	}, nil
+}
+
+type SecretProviderProxy struct {
+	client secrets.SecretsClient
+}
+
+func NewSecretProviderProxy(client secrets.SecretsClient) SecretProviderProxy {
+	return SecretProviderProxy{
+		client: client,
+	}
+}
+
+func (sp SecretProviderProxy) Register(server *grpc.Server) {
+	secrets.RegisterSecretsServer(server, sp)
+}
+
+func (sp SecretProviderProxy) GetSecret(ctx context.Context, req *secrets.GetSecretRequest) (*secrets.GetSecretResponse, error) {
+	return sp.client.GetSecret(grpcutil.IncomingToOutgoingContext(ctx), req)
 }

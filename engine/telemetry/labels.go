@@ -25,6 +25,13 @@ import (
 
 type Labels map[string]string
 
+func NewLabels(labels map[string]string) Labels {
+	if labels == nil {
+		return Labels{}
+	}
+	return Labels(labels)
+}
+
 var defaultLabels Labels
 var labelsOnce sync.Once
 

@@ -90,6 +90,16 @@ type ClientMetadata struct {
 
 	// Disable lazy loading on module runtime.
 	EagerRuntime bool `json:"eager_runtime"`
+
+	// If set, the basic auth token for cloud requests; currently only used for scale-out
+	CloudBasicAuthToken string `json:"cloud_basic_auth_token,omitempty"`
+
+	// If true, this client enables scaling checks out to cloud engines
+	EnableCloudScaleOut bool `json:"enable_cloud_scale_out,omitempty"`
+
+	// If true, this client is another engine scaling out to the current one.
+	// Currently used to coordinate de-duplication of telemetry
+	IsCloudScaleOutClient bool `json:"is_cloud_scale_out_client,omitempty"`
 }
 
 type clientMetadataCtxKey struct{}

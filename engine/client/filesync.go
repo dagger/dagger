@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -16,10 +17,12 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/util/fsxutil"
+	"github.com/dagger/dagger/util/grpcutil"
 )
 
 type Filesyncer struct {
@@ -281,4 +284,48 @@ func (f Filesyncer) fullRootPathAndBaseName(reqPath string, fullyResolvePath boo
 		}
 	}
 	return rootPath, nil
+}
+
+type FilesyncSourceProxy struct {
+	Client filesync.FileSyncClient
+}
+
+func (s FilesyncSourceProxy) Register(server *grpc.Server) {
+	filesync.RegisterFileSyncServer(server, s)
+}
+
+func (s FilesyncSourceProxy) TarStream(stream filesync.FileSync_TarStreamServer) error {
+	return fmt.Errorf("tarstream not supported")
+}
+
+func (s FilesyncSourceProxy) DiffCopy(stream filesync.FileSync_DiffCopyServer) error {
+	ctx, cancel := context.WithCancelCause(stream.Context())
+	defer cancel(errors.New("proxy filesync source done"))
+
+	clientStream, err := s.Client.DiffCopy(grpcutil.IncomingToOutgoingContext(ctx))
+	if err != nil {
+		return fmt.Errorf("create client filesync source diffcopy stream: %w", err)
+	}
+
+	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, stream)
+}
+
+type FilesyncTargetProxy struct {
+	Client filesync.FileSendClient
+}
+
+func (s FilesyncTargetProxy) Register(server *grpc.Server) {
+	filesync.RegisterFileSendServer(server, s)
+}
+
+func (s FilesyncTargetProxy) DiffCopy(stream filesync.FileSend_DiffCopyServer) error {
+	ctx, cancel := context.WithCancelCause(stream.Context())
+	defer cancel(errors.New("proxy filesync target done"))
+
+	clientStream, err := s.Client.DiffCopy(grpcutil.IncomingToOutgoingContext(ctx))
+	if err != nil {
+		return fmt.Errorf("create client filesync target diffcopy stream: %w", err)
+	}
+
+	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, stream)
 }

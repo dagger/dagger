@@ -24,13 +24,16 @@ import (
 var ErrNoOrg = errors.New("no org associated with this Engine")
 
 type Client struct {
-	u           *url.URL
-	g           *graphql.Client
-	h           *http.Client
-	engineToken string
+	u              *url.URL
+	g              *graphql.Client
+	h              *http.Client
+	basicAuthToken string
 }
 
-func NewClient(ctx context.Context) (*Client, error) {
+func NewClient(
+	ctx context.Context,
+	basicAuthToken string, // optional, if not set tries default sources
+) (*Client, error) {
 	api := "https://api.dagger.cloud"
 	if cloudURL := os.Getenv("DAGGER_CLOUD_URL"); cloudURL != "" {
 		api = cloudURL
@@ -43,25 +46,28 @@ func NewClient(ctx context.Context) (*Client, error) {
 
 	httpClient := &http.Client{}
 
-	if cloudToken := os.Getenv("DAGGER_CLOUD_TOKEN"); cloudToken != "" {
-		httpClient.Transport, err = auth.DaggerCloudTransport(ctx, cloudToken)
+	if basicAuthToken == "" {
+		basicAuthToken = os.Getenv("DAGGER_CLOUD_TOKEN")
+	}
+	if basicAuthToken != "" {
+		httpClient.Transport, err = auth.DaggerCloudTransport(ctx, basicAuthToken)
 		if err != nil {
 			return nil, err
 		}
 
 		return &Client{
-			u:           u,
-			h:           httpClient,
-			engineToken: cloudToken,
+			u:              u,
+			h:              httpClient,
+			basicAuthToken: basicAuthToken,
 		}, nil
 	}
 
+	// try oauth token
 	tokenSource, err := auth.TokenSource(ctx)
 	if err != nil {
 		return nil, err
 	}
 	httpClient = oauth2.NewClient(ctx, tokenSource)
-
 	return &Client{
 		u: u,
 		g: graphql.NewClient(u.JoinPath("/query").String(), httpClient),
@@ -180,7 +186,7 @@ func (c *Client) Engine(ctx context.Context, req EngineRequest) (*EngineSpec, er
 		return nil, fmt.Errorf("failed to generate a remote Engine request: %w", err)
 	}
 
-	if c.engineToken == "" {
+	if c.basicAuthToken == "" {
 		org, err := auth.CurrentOrg()
 		if err != nil {
 			return nil, ErrNoOrg
