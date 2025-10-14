@@ -18,6 +18,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
@@ -315,7 +316,7 @@ func (s FilesyncSourceProxy) DiffCopy(stream filesync.FileSync_DiffCopyServer) e
 		return fmt.Errorf("create client filesync source diffcopy stream: %w", err)
 	}
 
-	return grpcutil.ProxyStream[any](ctx, clientStream, stream)
+	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, stream)
 }
 
 type FilesyncTargetProxy struct {
@@ -340,5 +341,5 @@ func (s FilesyncTargetProxy) DiffCopy(stream filesync.FileSend_DiffCopyServer) e
 		return fmt.Errorf("create client filesync target diffcopy stream: %w", err)
 	}
 
-	return grpcutil.ProxyStream[any](ctx, clientStream, stream)
+	return grpcutil.ProxyStream[anypb.Any](ctx, clientStream, stream)
 }
