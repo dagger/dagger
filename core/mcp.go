@@ -521,13 +521,24 @@ func (m *MCP) typeTools(allTools *LLMToolSet, srv *dagql.Server, schema *ast.Sch
 		} else {
 			toolName = typeDef.Name + "_" + field.Name
 		}
+
 		allTools.Add(LLMTool{
 			Name:        toolName,
 			Field:       field,
 			Description: strings.TrimSpace(field.Description),
 			Schema:      toolSchema,
-			Strict:      false, // unused
-			HideSelf:    autoConstruct == nil,
+
+			// TODO: would be nice, but have to 'or-null' all args and list everything
+			// in required, which is annoying.
+			Strict: false,
+
+			// Only set Passthrough if this is a plain object method call, as opposed
+			// to a contextual module tool.
+			HideSelf: autoConstruct == nil,
+
+			// Tools that return Changeset or Env modify the environment.
+			ReadOnly: field.Type.NamedType != "Env" && field.Type.NamedType != "Changeset",
+
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
 				argsMap, ok := args.(map[string]any)
 				if !ok {
@@ -1028,6 +1039,7 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToo
 	readOnlyMCPCalls := make(map[string][]LLMToolCall)    // server -> read-only calls
 	destructiveMCPCalls := make(map[string][]LLMToolCall) // server -> destructive calls
 	regularCalls := make([]LLMToolCall, 0)
+	destructiveCalls := make([]LLMToolCall, 0)
 
 	for _, toolCall := range toolCalls {
 		tool, err := m.LookupTool(toolCall.Function.Name, tools)
@@ -1040,7 +1052,12 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToo
 
 		if tool.Server == "" {
 			// Regular tool call (not MCP)
-			regularCalls = append(regularCalls, toolCall)
+			// Check if it modifies state (returns Env or Changeset)
+			if tool.ReadOnly {
+				regularCalls = append(regularCalls, toolCall)
+			} else {
+				destructiveCalls = append(destructiveCalls, toolCall)
+			}
 			continue
 		}
 
@@ -1054,7 +1071,7 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToo
 
 	var allResults []*ModelMessage
 
-	// 1. Execute all regular (non-MCP) calls in parallel
+	// 1. Execute all regular read-only (non-MCP) calls in parallel
 	if len(regularCalls) > 0 {
 		allResults = append(allResults, m.callBatchRegular(ctx, tools, regularCalls)...)
 	}
@@ -1068,7 +1085,18 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToo
 		allResults = append(allResults, m.callBatchRegular(ctx, tools, readOnlyToolCalls)...)
 	}
 
-	// 3. Execute destructive MCP calls one server at a time to avoid workspace conflicts
+	// 3. Execute destructive non-MCP calls sequentially (they modify Env/Changeset state)
+	for _, call := range destructiveCalls {
+		result, isError := m.Call(ctx, tools, call)
+		allResults = append(allResults, &ModelMessage{
+			Role:        "user",
+			Content:     result,
+			ToolCallID:  call.ID,
+			ToolErrored: isError,
+		})
+	}
+
+	// 4. Execute destructive MCP calls one server at a time to avoid workspace conflicts
 	for serverName, calls := range destructiveMCPCalls {
 		serverResults := m.callBatchMCPServer(ctx, tools, calls, serverName)
 		allResults = append(allResults, serverResults...)
@@ -1321,6 +1349,7 @@ func (m *MCP) saveTool(srv *dagql.Server) LLMTool {
 	return LLMTool{
 		Name:        "Save",
 		Description: desc,
+		ReadOnly:    false, // Modifies output state
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -1409,6 +1438,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSe
 		allTools.Add(LLMTool{
 			Name:        "DeclareOutput",
 			Description: "Declare a new output that can have a value saved to it",
+			ReadOnly:    false, // Modifies Env state
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -1469,6 +1499,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSe
 		allTools.Add(LLMTool{
 			Name:        "ListObjects",
 			Description: "List available objects.",
+			ReadOnly:    true, // Read-only operation
 			Schema: map[string]any{
 				"type":                 "object",
 				"properties":           map[string]any{},
@@ -1512,6 +1543,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSe
 	allTools.Add(LLMTool{
 		Name:        "ReadLogs",
 		Description: "Read logs from the most recent execution. Can filter with grep pattern or read the last N lines.",
+		ReadOnly:    true, // Read-only operation
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -1545,6 +1577,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSe
 		allTools.Add(LLMTool{
 			Name:        "UserProvidedValues",
 			Description: "Read the inputs supplied by the user.",
+			ReadOnly:    true, // Read-only operation
 			Schema: map[string]any{
 				"type":                 "object",
 				"properties":           map[string]any{},
@@ -1617,6 +1650,7 @@ func (m *MCP) loadStaticMethodCallingTools(srv *dagql.Server, allTools *LLMToolS
 	allTools.Add(LLMTool{
 		Name:        "ListMethods",
 		Description: "List the methods that can be selected.",
+		ReadOnly:    true, // Read-only operation
 		Schema: map[string]any{
 			"type":                 "object",
 			"properties":           map[string]any{},
@@ -1653,6 +1687,7 @@ func (m *MCP) loadStaticMethodCallingTools(srv *dagql.Server, allTools *LLMToolS
 		Name:        "CallMethod",
 		Description: "Call a method on an object. Methods must be selected with SelectMethods before calling them. Self represents the object to call the method on, and args specify any additional parameters to pass.",
 		HideSelf:    true,
+		ReadOnly:    false, // Can call methods that return Env or Changeset
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -1683,6 +1718,7 @@ func (m *MCP) loadStaticMethodCallingTools(srv *dagql.Server, allTools *LLMToolS
 
 NOTE: you must select methods before chaining them`,
 		HideSelf: true,
+		ReadOnly: false, // Can call methods that return Env or Changeset
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
