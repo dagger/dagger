@@ -93,7 +93,7 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Function: "nested-calls"},
 		{Function: "path-args", Args: []string{"--file", "golden_test.go", "--dir", "."}},
 		{
-			Function: "custom-span",
+			Function: "custom-status",
 			Env: []string{
 				"OTEL_RESOURCE_ATTRIBUTES=foo=bar,fizz=buzz",
 			},
@@ -106,6 +106,8 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 				require.Contains(t, attrs, attribute.String("fizz", "buzz"))
 			},
 		},
+		{Function: "nested-statuses"},
+		{Function: "nested-statuses", Args: []string{"--fail"}, Fail: true},
 		{Function: "use-exec-service"},
 		{Function: "use-no-exec-service"},
 		{Function: "docker-build", Args: []string{
@@ -116,7 +118,7 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 			"with-exec", "--args", "echo,hey",
 			"stdout",
 		}, Fail: true},
-		{Function: "revealed-spans"},
+		{Function: "revealed-statuses"},
 
 		{Function: "git-readme", Args: []string{
 			"--remote", "https://github.com/dagger/dagger",
@@ -166,14 +168,19 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 
 		// Python SDK tests
 		{Module: "./viztest/python", Function: "pending", Fail: true, RevealNoisySpans: true},
-		{Module: "./viztest/python", Function: "custom-span"},
+		{Module: "./viztest/python", Function: "custom-status"},
+		{Module: "./viztest/python", Function: "nested-statuses"},
+		{Module: "./viztest/python", Function: "nested-statuses", Args: []string{"--fail"}, Fail: true},
 
 		// TypeScript SDK tests
 		{Module: "./viztest/typescript", Function: "pending", Fail: true, RevealNoisySpans: true},
-		{Module: "./viztest/typescript", Function: "custom-span"},
+		{Module: "./viztest/typescript", Function: "custom-status"},
 		{Module: "./viztest/typescript", Function: "fail-log", Fail: true},
 		{Module: "./viztest/typescript", Function: "fail-effect", Fail: true},
 		{Module: "./viztest/typescript", Function: "fail-log-native", Fail: true},
+		{Module: "./viztest/typescript", Function: "nested-statuses"},
+		{Module: "./viztest/typescript", Function: "nested-statuses", Args: []string{"--fail"}, Fail: true},
+
 		// local module calls local module fn
 		{
 			Function: "trace-function-calls",
@@ -207,13 +214,14 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 				require.NotEmpty(t, db.Spans.Order)
 				var depCalled, rootCalled bool
 				for _, s := range db.Spans.Order {
-					if s.Name == "Versioned.hello" {
+					switch s.Name {
+					case "Versioned.hello":
 						require.Equal(t, "Viztest.TraceRemoteFunctionCalls", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
 						require.Equal(t, "github.com/dagger/dagger/viztest", strings.Split(strAttr(t, s, telemetry.ModuleCallerRefAttr), "@")[0])
 						require.Equal(t, "Versioned.hello", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
 						require.Equal(t, "github.com/dagger/dagger-test-modules/versioned@73670b0338c02cdd190f56b34c6e25066c7c8875", strAttr(t, s, telemetry.ModuleRefAttr))
 						depCalled = true
-					} else if s.Name == "Viztest.traceRemoteFunctionCalls" {
+					case "Viztest.traceRemoteFunctionCalls":
 						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
 						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerRefAttr))
 						require.Equal(t, "Viztest.traceRemoteFunctionCalls", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
@@ -231,24 +239,24 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 			Function: "fn",
 			DBTest: func(t *testctx.T, db *dagui.DB) {
 				require.NotEmpty(t, db.Spans.Order)
-				var depCalled, rootCalled bool
+				calledNames := []string{}
 				for _, s := range db.Spans.Order {
-					if s.Name == "DepAlias.fn" {
+					calledNames = append(calledNames, s.Name)
+					switch s.Name {
+					case "DepAlias.fn":
 						require.Equal(t, "RootMod.Fn", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
 						require.Equal(t, "github.com/dagger/dagger-test-modules@73670b0338c02cdd190f56b34c6e25066c7c8875", strAttr(t, s, telemetry.ModuleCallerRefAttr))
 						require.Equal(t, "DepAlias.fn", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
 						require.Equal(t, "github.com/dagger/dagger-test-modules/dep@73670b0338c02cdd190f56b34c6e25066c7c8875", strAttr(t, s, telemetry.ModuleRefAttr))
-						depCalled = true
-					} else if s.Name == "RootMod.fn" {
+					case "RootMod.fn":
 						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
 						require.Equal(t, "", strAttr(t, s, telemetry.ModuleCallerRefAttr))
 						require.Equal(t, "RootMod.fn", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
 						require.Equal(t, "github.com/dagger/dagger-test-modules@73670b0338c02cdd190f56b34c6e25066c7c8875", strAttr(t, s, telemetry.ModuleRefAttr))
-						rootCalled = true
 					}
 				}
-				require.True(t, rootCalled)
-				require.True(t, depCalled)
+				require.Contains(t, calledNames, "DepAlias.fn")
+				require.Contains(t, calledNames, "RootMod.fn")
 			},
 		},
 	} {

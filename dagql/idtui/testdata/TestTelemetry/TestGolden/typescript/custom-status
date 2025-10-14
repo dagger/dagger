@@ -1,6 +1,6 @@
 Expected stdout:
 
-hello from Python! it is currently 20XX-XX-XX XX:XX:XX.XXXX
+hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ
 
 
 Expected stderr:
@@ -11,7 +11,7 @@ Expected stderr:
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
 ╰╴✔ starting session X.Xs
  
-▼ load module: ./viztest/python X.Xs
+▼ load module: ./viztest/typescript X.Xs
 ├╴✔ finding module configuration X.Xs
 ├╴✔ initializing module X.Xs
 ├╴✔ inspecting module metadata X.Xs
@@ -19,15 +19,15 @@ Expected stderr:
  
 ✔ parsing command line arguments X.Xs
 
-✔ python: Python! X.Xs
-▼ .customSpan: String! X.Xs
-┃ hello from Python! it is currently 20XX-XX-XX XX:XX:XX.XXXX
-╰╴▼ custom span X.Xs
+✔ typescript: Typescript! X.Xs
+▼ .customStatus: String! X.Xs
+┃ hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ
+╰╴▼ custom status X.Xs
   ├╴$ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
-  ├╴▼ .withExec(args: ["echo", "hello from Python! it is currently 20XX-XX-XX XX:XX:XX.XXXX"]): Container! X.Xs
-  │ ┃ hello from Python! it is currently 20XX-XX-XX XX:XX:XX.XXXX
+  ├╴▼ .withExec(args: ["echo", "hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ"]): Container! X.Xs
+  │ ┃ hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ
   ╰╴▼ .stdout: String! X.Xs
-    ┃ hello from Python! it is currently 20XX-XX-XX XX:XX:XX.XXXX
+    ┃ hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ
 
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

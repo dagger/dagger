@@ -25,7 +25,7 @@ Expected stderr:
 ├╴✔ .withExec(args: ["sleep", "1"]): Container! X.Xs
 ├╴▼ .withExec(args: ["echo", "im busted by that buster"]): Container! X.Xs
 │ ┃ im busted by that buster
-├╴✔ .withNewFile(path: "/srv/index.html", contents: "<h1>hello, world!</h1>"): Container! X.Xs
+├╴$ .withNewFile(path: "/srv/index.html", contents: "<h1>hello, world!</h1>"): Container! X.Xs CACHED
 ├╴✔ .withExposedPort(port: 80): Container! X.Xs
 ├╴▼ .asService(args: ["httpd", "-v", "-h", "/srv", "-f"]): Service! X.Xs ✔ 1
 │ ┃ [::ffff:10.XX.XX.XX]:XXXXX: response:200
