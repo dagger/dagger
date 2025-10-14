@@ -1,0 +1,196 @@
+package core
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/server/resource"
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/opencontainers/go-digest"
+)
+
+type CallHook interface {
+	Call(ctx context.Context, fn *ModuleFunction, opts *CallOpts) (t dagql.AnyResult, ok bool, rerr error)
+}
+
+var callHooks []CallHook
+
+func init() {
+	callHooks = []CallHook{
+		&CloudCallHook{},
+	}
+}
+
+type CloudCallHook struct{}
+
+func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *CallOpts) (t dagql.AnyResult, ok bool, rerr error) {
+	// clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	// if err != nil {
+	// 	return nil, false, err
+	// }
+	//
+	// if clientMetadata.CloudToken == "" {
+	// 	return nil, false, nil
+	// }
+
+	objName := opts.ParentModType.typeDef.Name
+	fieldName := fn.metadata.Name
+
+	ok, err := checkValidMod(ctx, fn.mod)
+	if err != nil {
+		return nil, false, err
+	}
+	if !ok {
+		slog.Debug(
+			"skipping call with cloud hook due to invalid module source",
+			"object", objName,
+			"function", fieldName,
+		)
+		return nil, false, nil
+	}
+
+	for _, input := range opts.Inputs {
+		if !checkValidInput(fn.args[input.Name].modType.TypeDef(), input) {
+			slog.Debug(
+				"skipping call with cloud hook due to invalid input",
+				"object", objName,
+				"function", fieldName,
+				"input", input.Name,
+			)
+			return nil, false, nil
+		}
+	}
+
+	if !checkValidReturn(fn.returnType.TypeDef()) {
+		slog.Debug(
+			"skipping call with cloud hook due to invalid return type",
+			"object", objName,
+			"function", fieldName,
+			"returnType", fn.returnType.TypeDef(),
+		)
+		return nil, false, nil
+	}
+
+	ok, err = checkValidParent(ctx, opts.ParentModType, opts.ParentTyped, opts.ParentFields)
+	if err != nil {
+		return nil, false, err
+	}
+	if !ok {
+		slog.Debug(
+			"skipping call with cloud hook due to invalid parent",
+			"object", objName,
+			"function", fieldName,
+		)
+		return nil, false, nil
+	}
+
+	// all valid, handle the call
+	slog.Info(
+		"handling call with cloud hook",
+		"object", objName,
+		"function", fieldName,
+	)
+
+	fields, err := json.Marshal(opts.ParentFields)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to marshal parent fields: %w", err)
+	}
+
+	inputs, err := json.Marshal(opts.Inputs)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to marshal inputs: %w", err)
+	}
+
+	query := querybuilder.Query()
+	query = query.Select("moduleSource").
+		Arg("refString", fn.mod.Source.Value.Self().Git.Symbolic). // XXX: ain't right
+		Arg("refPin", fn.mod.Source.Value.Self().Git.Commit)
+		// XXX: something is wrong with enum passing.
+		// Arg("requireKind", fn.mod.Source.Value.Self().Kind)
+	query = query.Select("asModule")
+	query = query.Select("call").
+		Arg("object", objName).
+		Arg("field", fieldName).
+		Arg("parent", string(fields)).
+		Arg("inputs", string(inputs))
+
+	// CALL!
+
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	queryRaw, err := query.Build(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to build query: %w", err)
+	}
+
+	result, err := dag.Query(ctx, queryRaw, nil)
+	if err != nil {
+		return nil, false, err
+	}
+
+	var out any
+	err = query.Bind(out).Unpack(result)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to unpack result: %w", err)
+	}
+
+	input, err := fn.returnType.TypeDef().ToInput().Decoder().DecodeInput(out)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to decode result: %w", err)
+	}
+
+	t, err = dagql.NewResultForCurrentID(ctx, input)
+	return t, true, err
+}
+
+func checkValidInput(typeDef *TypeDef, input CallInput) bool {
+	value := input.Value
+	if _, ok := value.(dagql.ScalarType); ok {
+		return true
+	}
+	return false
+}
+
+func checkValidReturn(typeDef *TypeDef) bool {
+	switch typeDef.Kind {
+	case TypeDefKindVoid:
+		return true
+	case TypeDefKindBoolean, TypeDefKindFloat, TypeDefKindInteger, TypeDefKindString, TypeDefKindScalar:
+		return true
+	case TypeDefKindList:
+		return checkValidReturn(typeDef.Underlying())
+	}
+	return false
+}
+
+func checkValidParent(ctx context.Context, parent *ModuleObjectType, value dagql.AnyResult, fields map[string]any) (bool, error) {
+	returnedIDs := map[digest.Digest]*resource.ID{}
+	if err := parent.CollectCoreIDs(ctx, value, returnedIDs); err != nil {
+		return false, fmt.Errorf("collect IDs: %w", err)
+	}
+
+	if len(returnedIDs) == 0 {
+		// no IDs! always transferrable :)
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func checkValidMod(ctx context.Context, module *Module) (bool, error) {
+	if !module.Source.Valid {
+		return false, nil
+	}
+	source := module.Source.Value.Self()
+	if source.Kind == ModuleSourceKindGit {
+		return true, nil
+	}
+
+	return false, nil
+}

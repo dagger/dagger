@@ -1,11 +1,14 @@
 package schema
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
+	"sort"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/sdk"
@@ -108,6 +111,8 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Args(
 				dagql.Arg("includeDependencies").Doc("Expose the dependencies of this module to the client"),
 			),
+
+		dagql.Func("call", s.moduleCall),
 	}.Install(dag)
 
 	dagql.Fields[*core.CurrentModule]{
@@ -588,6 +593,96 @@ func (s *moduleSchema) moduleServe(ctx context.Context, modMeta *core.Module, ar
 
 	includeDependencies := args.IncludeDependencies.Valid && args.IncludeDependencies.Value.Bool()
 	return void, query.ServeModule(ctx, modMeta, includeDependencies)
+}
+
+func (s *moduleSchema) moduleCall(ctx context.Context, modMeta *core.Module, args struct {
+	Object string    `json:"object"`
+	Field  string    `json:"field"`
+	Parent core.JSON `json:"parent"`
+	Inputs core.JSON `json:"input"`
+}) (core.JSON, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	typeDef := &core.TypeDef{
+		Kind:     core.TypeDefKindObject,
+		AsObject: dagql.NonNull(&core.ObjectTypeDef{Name: args.Object}),
+	}
+	modType, ok, err := modMeta.ModTypeFor(ctx, typeDef, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module type %q: %w", typeDef, err)
+	}
+	if !ok {
+		return nil, fmt.Errorf("module does not have type %q", typeDef)
+	}
+
+	modObj := modType.(*core.ModuleObjectType)
+	callable, err := modObj.GetCallable(ctx, args.Field)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get callable %q on type %q: %w", args.Field, typeDef, err)
+	}
+
+	var fields map[string]any
+	err = json.Unmarshal(args.Parent, &fields)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal parent JSON: %w", err)
+	}
+
+	opts := &core.CallOpts{
+		ParentTyped:    nil,
+		ParentFields:   fields,
+		ParentModType:  modObj,
+		SkipSelfSchema: false,
+		Server:         dag,
+	}
+
+	type callInput struct {
+		Name  string `json:"name"`
+		Value any    `json:"value"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(args.Inputs))
+	dec.UseNumber()
+
+	var callInputs []callInput
+	err = dec.Decode(&callInputs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal inputs JSON: %w", err)
+	}
+
+	for _, input := range callInputs {
+		argType, err := callable.ArgType(input.Name)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get type for argument %q: %w", input.Name, err)
+		}
+		decoder := argType.TypeDef().ToInput().Decoder()
+
+		value, err := decoder.DecodeInput(input.Value)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode input %q: %w", input.Name, err)
+		}
+		opts.Inputs = append(opts.Inputs, core.CallInput{
+			Name:  input.Name,
+			Value: value,
+		})
+	}
+
+	// NB: ensure deterministic order
+	sort.Slice(opts.Inputs, func(i, j int) bool {
+		return opts.Inputs[i].Name < opts.Inputs[j].Name
+	})
+
+	result, err := callable.Call(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	dt, err := json.Marshal(result.Unwrap())
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal result to JSON: %w", err)
+	}
+	return core.JSON(dt), nil
 }
 
 func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ struct{}) (dagql.Array[*core.TypeDef], error) {

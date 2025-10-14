@@ -464,6 +464,10 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 	}
 }
 
+func ObjFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Function, dag *dagql.Server) (dagql.Field[*ModuleObject], error) {
+	return objFun(ctx, mod, objDef, fun, dag)
+}
+
 // objFun creates a dagql.Field for a function defined on a module object type.
 // This is used during the GraphQL schema installation process to convert
 // user-defined functions in module object types into callable GraphQL fields.
@@ -561,6 +565,10 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 			opts := &CallOpts{
 				ParentTyped:  obj,
 				ParentFields: obj.Self().Fields,
+				ParentModType: &ModuleObjectType{
+					typeDef: objDef,
+					mod:     mod,
+				},
 				// TODO: there may be a more elegant way to do this, but the desired
 				// effect is to cache SDK module calls, which we used to do pre-DagQL.
 				// We should figure out how user modules can opt in to caching, too.
@@ -578,6 +586,17 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 			sort.Slice(opts.Inputs, func(i, j int) bool {
 				return opts.Inputs[i].Name < opts.Inputs[j].Name
 			})
+
+			for _, hook := range callHooks {
+				result, ok, err := hook.Call(ctx, modFun, opts)
+				if err != nil {
+					return nil, err
+				}
+				if ok {
+					return result, nil
+				}
+			}
+
 			return modFun.Call(ctx, opts)
 		},
 		CacheSpec: dagql.CacheSpec{

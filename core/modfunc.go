@@ -91,9 +91,12 @@ func NewModFunction(
 }
 
 type CallOpts struct {
-	Inputs         []CallInput
-	ParentTyped    dagql.AnyResult
-	ParentFields   map[string]any
+	Inputs []CallInput
+
+	ParentTyped   dagql.AnyResult
+	ParentFields  map[string]any
+	ParentModType *ModuleObjectType
+
 	Cache          bool
 	SkipSelfSchema bool
 	Server         *dagql.Server
@@ -110,8 +113,8 @@ type CallOpts struct {
 }
 
 type CallInput struct {
-	Name  string
-	Value dagql.Typed
+	Name  string      `json:"name"`
+	Value dagql.Typed `json:"value"`
 }
 
 func (fn *ModuleFunction) recordCall(ctx context.Context) {
