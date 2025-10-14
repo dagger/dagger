@@ -365,7 +365,7 @@ func (r *Releaser) Publish(
 
 				if semver.IsValid(version) {
 					notes := r.changeNotes(component.path, version)
-					if err := r.githubRelease(ctx, "https://github.com/dagger/dagger", tag, target, notes, githubToken, dryRun); err != nil {
+					if err := r.githubRelease(ctx, "https://github.com/dagger/dagger", commit, target, notes, githubToken, dryRun); err != nil {
 						artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 						return nil
 					}

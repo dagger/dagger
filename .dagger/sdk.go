@@ -112,7 +112,7 @@ type gitPublishOpts struct {
 	dryRun bool
 }
 
-func gitPublish(ctx context.Context, git *dagger.VersionGit, opts gitPublishOpts) error {
+func gitPublish(ctx context.Context, git *dagger.GitRepository, opts gitPublishOpts) error {
 	base := opts.sourceEnv
 	if base == nil {
 		base = dag.
@@ -141,8 +141,7 @@ func gitPublish(ctx context.Context, git *dagger.VersionGit, opts gitPublishOpts
 	result := base.
 		WithEnvVariable("CACHEBUSTER", rand.Text()).
 		WithWorkdir("/src/dagger").
-		WithDirectory(".", git.Directory()).
-		WithExec([]string{"git", "restore", "."}). // clean up the dirty state
+		WithDirectory(".", git.Ref(opts.sourceTag).Tree(dagger.GitRefTreeOpts{Depth: -1})).
 		WithEnvVariable("FILTER_BRANCH_SQUELCH_WARNING", "1").
 		WithExec([]string{
 			"git", "filter-branch", "-f", "--prune-empty",
