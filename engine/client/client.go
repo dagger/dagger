@@ -542,12 +542,7 @@ func (c *Client) startE2ESession(ctx context.Context) (rerr error) {
 	clientMetadata := c.clientMetadata(ctx)
 	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &clientMetadata)
 
-	attachables := []bksession.Attachable{
-		// TODO: no
-		// TODO: no
-		// TODO: no
-		authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr), nil),
-	}
+	attachables := []bksession.Attachable{}
 
 	slog.Warn("dialing session")
 	sessionConn, err := c.DialContext(ctx, "", "")
