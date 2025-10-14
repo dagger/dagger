@@ -19,6 +19,21 @@ func (j *Job) checkoutStep() api.JobStep {
 	}
 }
 
+func (j *Job) sshAgentStep() api.JobStep {
+	return api.JobStep{
+		Name: "Setup SSH Agent",
+		Uses: "webfactory/ssh-agent@v0.9.1",
+		With: map[string]string{"ssh-private-key": `-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACCTeKOQJcE2/6y4PxEzj6xCJ87EVZoipn1cBW3oi3nb5AAAAJgxDhr3MQ4a
+9wAAAAtzc2gtZWQyNTUxOQAAACCTeKOQJcE2/6y4PxEzj6xCJ87EVZoipn1cBW3oi3nb5A
+AAAEBupld98CTSOjzRBXjRyjwBBwP56bVn24rxOmPpIlQnIpN4o5AlwTb/rLg/ETOPrEIn
+zsRVmiKmfVwFbeiLedvkAAAADnRlc3RAZGFnZ2VyLmlvAQIDBAUGBw==
+-----END OPENSSH PRIVATE KEY-----
+`},
+	}
+}
+
 func (j *Job) installDaggerSteps() []api.JobStep {
 	steps := []api.JobStep{
 		{
@@ -53,7 +68,7 @@ func (j *Job) callDaggerStep() api.JobStep {
 		return j.callDaggerWithExecStep()
 	}
 
-	env := map[string]string{}
+	env := map[string]string{"SSH_AUTH_SOCK": "${{ env.SSH_AUTH_SOCK }}"}
 	// Inject user-defined secrets
 	for _, secretName := range j.Secrets {
 		env[secretName] = fmt.Sprintf("${{ secrets.%s }}", secretName)

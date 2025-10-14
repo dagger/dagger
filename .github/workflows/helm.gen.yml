@@ -26,6 +26,17 @@ jobs:
         steps:
             - name: Checkout
               uses: actions/checkout@v4
+            - name: Setup SSH Agent
+              uses: webfactory/ssh-agent@v0.9.1
+              with:
+                ssh-private-key: |
+                    -----BEGIN OPENSSH PRIVATE KEY-----
+                    b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+                    QyNTUxOQAAACCTeKOQJcE2/6y4PxEzj6xCJ87EVZoipn1cBW3oi3nb5AAAAJgxDhr3MQ4a
+                    9wAAAAtzc2gtZWQyNTUxOQAAACCTeKOQJcE2/6y4PxEzj6xCJ87EVZoipn1cBW3oi3nb5A
+                    AAAEBupld98CTSOjzRBXjRyjwBBwP56bVn24rxOmPpIlQnIpN4o5AlwTb/rLg/ETOPrEIn
+                    zsRVmiKmfVwFbeiLedvkAAAADnRlc3RAZGFnZ2VyLmlvAQIDBAUGBw==
+                    -----END OPENSSH PRIVATE KEY-----
             - name: exec
               id: exec
               uses: dagger/dagger-for-github@v8.2.0
@@ -34,4 +45,6 @@ jobs:
                 cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
                 version: v0.19.2
+              env:
+                SSH_AUTH_SOCK: ${{ env.SSH_AUTH_SOCK }}
         timeout-minutes: 20

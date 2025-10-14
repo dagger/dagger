@@ -410,6 +410,8 @@ func (w *Workflow) asWorkflow() api.Workflow {
 		// directly from git, *but* this is currently required so that we can
 		// get the right labels :(
 		steps = append(steps, job.checkoutStep())
+
+		steps = append(steps, job.sshAgentStep())
 		callStep := job.callDaggerStep()
 		steps = append(steps, callStep)
 		if job.StopEngine {

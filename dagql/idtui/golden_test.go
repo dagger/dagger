@@ -207,6 +207,20 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 				require.NotEmpty(t, db.Spans.Order)
 				var depCalled, rootCalled bool
 				for _, s := range db.Spans.Order {
+					if s.Name == "VersionedGitColon.hello" {
+						require.Equal(t, "Viztest.TraceRemoteFunctionCalls", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger/viztest", strings.Split(strAttr(t, s, telemetry.ModuleCallerRefAttr), "@")[0])
+						require.Equal(t, "VersionedGitColon.hello", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger-test-modules/versioned@0cabe03cc0a9079e738c92b2c589d81fd560011f", strAttr(t, s, telemetry.ModuleRefAttr))
+						depCalled = true
+					}
+					if s.Name == "VersionedGit.hello" {
+						require.Equal(t, "Viztest.TraceRemoteFunctionCalls", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger/viztest", strings.Split(strAttr(t, s, telemetry.ModuleCallerRefAttr), "@")[0])
+						require.Equal(t, "VersionedGit.hello", strAttr(t, s, telemetry.ModuleFunctionCallNameAttr))
+						require.Equal(t, "github.com/dagger/dagger-test-modules/versioned@0cabe03cc0a9079e738c92b2c589d81fd560011f", strAttr(t, s, telemetry.ModuleRefAttr))
+						depCalled = true
+					}
 					if s.Name == "Versioned.hello" {
 						require.Equal(t, "Viztest.TraceRemoteFunctionCalls", strAttr(t, s, telemetry.ModuleCallerFunctionCallNameAttr))
 						require.Equal(t, "github.com/dagger/dagger/viztest", strings.Split(strAttr(t, s, telemetry.ModuleCallerRefAttr), "@")[0])
