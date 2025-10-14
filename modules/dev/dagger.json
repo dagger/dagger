@@ -1,0 +1,25 @@
+{
+  "name": "dev",
+  "engineVersion": "v0.19.2",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "dagger-dev",
+      "source": "../.."
+    },
+    {
+      "name": "doug",
+      "source": "../doug"
+    },
+    {
+      "name": "go",
+      "source": "../go"
+    },
+    {
+      "name": "wolfi",
+      "source": "../wolfi"
+    }
+  ]
+}
