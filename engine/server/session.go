@@ -165,6 +165,10 @@ type daggerClient struct {
 	tracerProvider *sdktrace.TracerProvider
 	loggerProvider *sdklog.LoggerProvider
 	meterProvider  *sdkmetric.MeterProvider
+	// TODO:?
+	spanExporter   sdktrace.SpanExporter
+	logExporter    sdklog.Exporter
+	metricExporter sdkmetric.Exporter
 }
 
 type daggerClientState string
@@ -263,7 +267,7 @@ func (srv *Server) initializeDaggerSession(
 
 	sess.analytics = analytics.New(analytics.Config{
 		DoNotTrack: clientMetadata.DoNotTrack || analytics.DoNotTrack(),
-		Labels: enginetel.Labels(clientMetadata.Labels).
+		Labels: enginetel.NewLabels(clientMetadata.Labels).
 			WithEngineLabel(srv.engineName).
 			WithServerLabels(
 				engine.Version,
@@ -643,6 +647,7 @@ func (srv *Server) initializeDaggerClient(
 	}
 
 	// configure OTel providers that export to SQLite
+	client.spanExporter = srv.telemetryPubSub.Spans(client)
 	tracerOpts := []sdktrace.TracerProviderOption{
 		// install a span processor that modifies spans created by Buildkit to
 		// fit our ideal format
@@ -651,20 +656,24 @@ func (srv *Server) initializeDaggerClient(
 		)),
 		// save to our own client's DB
 		sdktrace.WithSpanProcessor(telemetry.NewLiveSpanProcessor(
-			srv.telemetryPubSub.Spans(client),
+			client.spanExporter,
 		)),
 	}
+
+	logs := srv.telemetryPubSub.Logs(client)
+	client.logExporter = logs
 	loggerOpts := []sdklog.LoggerProviderOption{
 		sdklog.WithResource(telemetry.Resource),
-		sdklog.WithProcessor(clientLogs{client: client}),
+		sdklog.WithProcessor(logs),
 	}
 
 	const metricReaderInterval = 5 * time.Second
 
+	client.metricExporter = srv.telemetryPubSub.Metrics(client)
 	meterOpts := []sdkmetric.Option{
 		sdkmetric.WithResource(telemetry.Resource),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(
-			srv.telemetryPubSub.Metrics(client),
+			client.metricExporter,
 			sdkmetric.WithInterval(metricReaderInterval),
 		)),
 	}
@@ -1478,6 +1487,15 @@ func (srv *Server) Buildkit(ctx context.Context) (*buildkit.Client, error) {
 	return client.bkClient, nil
 }
 
+func (srv *Server) NonModuleParentClientSessionCaller(ctx context.Context) (bksession.Caller, error) {
+	client, err := srv.nonModuleParentClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ctx = engine.ContextWithClientMetadata(ctx, client.clientMetadata)
+	return client.bkClient.GetSessionCaller(ctx, false)
+}
+
 // The services for the current client's session
 func (srv *Server) Services(ctx context.Context) (*core.Services, error) {
 	client, err := srv.clientFromContext(ctx)
@@ -1526,6 +1544,30 @@ func (srv *Server) ClientTelemetry(ctx context.Context, sessID, clientID string)
 		return nil, nil, err
 	}
 	return clientdb.New(db), db.Close, nil
+}
+
+func (srv *Server) CurrentSpanExporter(ctx context.Context) (sdktrace.SpanExporter, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.spanExporter, nil
+}
+
+func (srv *Server) CurrentLogExporter(ctx context.Context) (sdklog.Exporter, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.logExporter, nil
+}
+
+func (srv *Server) CurrentMetricsExporter(ctx context.Context) (sdkmetric.Exporter, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.metricExporter, nil
 }
 
 type httpError struct {

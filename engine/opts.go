@@ -13,6 +13,7 @@ import (
 	"unicode"
 
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
+	"golang.org/x/oauth2"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -87,6 +88,10 @@ type ClientMetadata struct {
 
 	// Modules permitted to access LLM APIs or "all" to bypass restrictions for any loaded module.
 	AllowedLLMModules []string `json:"allowed_llm_modules"`
+
+	// TODO:?
+	CloudToken      *oauth2.Token `json:"cloud_token,omitempty"`
+	CloudBasicToken string        `json:"cloud_basic_token,omitempty"`
 }
 
 type clientMetadataCtxKey struct{}

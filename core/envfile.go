@@ -139,6 +139,9 @@ func (ef *EnvFile) variables(_ context.Context) (vars []EnvVariable, _ error) {
 //	TOKEN=topsecret
 //	NAME=hello
 func (ef *EnvFile) Namespace(ctx context.Context, prefix string) (*EnvFile, error) {
+	if ef == nil {
+		return nil, nil
+	}
 	vars, err := ef.Variables(ctx, false)
 	if err != nil {
 		return nil, fmt.Errorf("Evaluate env file: %w", err)

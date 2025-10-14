@@ -1,16 +1,22 @@
 package schema
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
+	"sort"
 	"time"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/server/resource"
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/opencontainers/go-digest"
 )
 
 type moduleSchema struct{}
@@ -80,6 +86,13 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
 			),
 
+		dagql.Func("check", s.moduleCheck).
+			Experimental("This API is highly experimental and may be removed or replaced entirely.").
+			Doc(`Return the check defined by the module with the given name. Must match to exactly one check.`).
+			Args(
+				dagql.Arg("name").Doc("The name of the check to retrieve"),
+			),
+
 		dagql.Func("dependencies", s.moduleDependencies).
 			Doc(`The dependencies of the module.`),
 
@@ -119,6 +132,8 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Args(
 				dagql.Arg("includeDependencies").Doc("Expose the dependencies of this module to the client"),
 			),
+
+		dagql.Func("call", s.moduleCall),
 	}.Install(dag)
 
 	dagql.Fields[*core.CurrentModule]{
@@ -700,6 +715,137 @@ func (s *moduleSchema) moduleServe(ctx context.Context, modMeta *core.Module, ar
 	return void, query.ServeModule(ctx, modMeta, includeDependencies)
 }
 
+func (s *moduleSchema) moduleCall(ctx context.Context, modMeta *core.Module, args struct {
+	Object string    `json:"object"`
+	Field  string    `json:"field"`
+	Parent core.JSON `json:"parent"`
+	Inputs core.JSON `json:"input"`
+}) (core.JSON, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	typeDef := &core.TypeDef{
+		Kind:     core.TypeDefKindObject,
+		AsObject: dagql.NonNull(&core.ObjectTypeDef{Name: args.Object}),
+	}
+	modType, ok, err := modMeta.ModTypeFor(ctx, typeDef, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module type %v: %w", typeDef, err)
+	}
+	if !ok {
+		return nil, fmt.Errorf("module does not have type %v", typeDef)
+	}
+
+	modObj := modType.(*core.ModuleObjectType)
+	callable, err := modObj.GetCallable(ctx, args.Field)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get callable %q on type %v: %w", args.Field, typeDef, err)
+	}
+
+	var fields map[string]any
+	err = json.Unmarshal(args.Parent, &fields)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal parent JSON: %w", err)
+	}
+
+	opts := &core.CallOpts{
+		ParentTyped:    nil,
+		ParentFields:   fields,
+		ParentModType:  modObj,
+		SkipSelfSchema: false,
+		Server:         dag,
+		ExtraSecretIDs: map[digest.Digest]*resource.ID{},
+	}
+
+	type callInput struct {
+		Name  string `json:"name"`
+		Value any    `json:"value"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(args.Inputs))
+	dec.UseNumber()
+
+	var callInputs []callInput
+	err = dec.Decode(&callInputs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal inputs JSON: %w", err)
+	}
+
+	for _, input := range callInputs {
+		argType, err := callable.ArgType(input.Name)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get type for argument %q: %w", input.Name, err)
+		}
+		decoder := argType.TypeDef().ToInput().Decoder()
+
+		value, err := decoder.DecodeInput(input.Value)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode input %q: %w", input.Name, err)
+		}
+
+		// HACK: need this so host.directory IDs get loaded now and put in the cache,
+		// otherwise ones that are coming from a remote engine won't be cached here
+		// and thus will result in the module function trying to load the dir from
+		// its own host in the container.
+		//
+		// Another fun corner case involves secrets: the hashes for secrets include
+		// a digest that is salted with a per-engine random value. So when loading
+		// here secrets end up with a different digest than the caller engine.
+		// This needs more thought, but right now we just override the value of
+		// the secret as it was loaded here.
+		if id, ok := dagql.UnwrapAs[dagql.IDable](value); ok {
+			loaded, err := dag.Load(ctx, id.ID())
+			if err != nil {
+				return nil, fmt.Errorf("failed to load ID for input %q: %w", input.Name, err)
+			}
+
+			if _, ok := dagql.UnwrapAs[*core.Secret](loaded); ok {
+				opts.ExtraSecretIDs[loaded.ID().Digest()] = &resource.ID{
+					ID: *loaded.ID(),
+				}
+			}
+
+			// TODO: this probably breaks if value is an optional, need to rewrap?
+			value = core.NewDynamicID(
+				loaded.ID().Type().NamedType(),
+				loaded.ID(),
+			)
+
+			// TODO:
+			slog.Info("PRELOAD ID",
+				"input", input.Name,
+				"type", fmt.Sprintf("%T", id),
+				"id", id.ID().Display(),
+				"idDgst", id.ID().Digest(),
+				"loadedID", loaded.ID().Display(),
+				"loadedDgst", loaded.ID().Digest(),
+			)
+		}
+
+		opts.Inputs = append(opts.Inputs, core.CallInput{
+			Name:  input.Name,
+			Value: value,
+		})
+	}
+
+	// NB: ensure deterministic order
+	sort.Slice(opts.Inputs, func(i, j int) bool {
+		return opts.Inputs[i].Name < opts.Inputs[j].Name
+	})
+
+	result, err := callable.Call(ctx, opts)
+	if err != nil {
+		return nil, fmt.Errorf("call failed: %w", err)
+	}
+
+	dt, err := json.Marshal(result.Unwrap())
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal result to JSON: %w", err)
+	}
+	return core.JSON(dt), nil
+}
+
 func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ struct{}) (dagql.Array[*core.TypeDef], error) {
 	deps, err := self.CurrentServedDeps(ctx)
 	if err != nil {
@@ -772,6 +918,28 @@ func (s *moduleSchema) moduleChecks(
 		}
 	}
 	return mod.Checks(ctx, include)
+}
+
+func (s *moduleSchema) moduleCheck(
+	ctx context.Context,
+	mod *core.Module,
+	args struct {
+		Name string
+	},
+) (*core.Check, error) {
+	checkGroup, err := mod.Checks(ctx, []string{args.Name})
+	if err != nil {
+		return nil, err
+	}
+
+	switch len(checkGroup.Checks) {
+	case 1:
+		return checkGroup.Checks[0].Clone(), nil
+	case 0:
+		return nil, fmt.Errorf("check %q not found in module %q", args.Name)
+	default:
+		return nil, fmt.Errorf("multiple checks found with name %q in module %q", args.Name, mod.Name)
+	}
 }
 
 func (s *moduleSchema) moduleDependencies(
