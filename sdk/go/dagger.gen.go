@@ -8626,6 +8626,19 @@ func (r *Module) Interfaces(ctx context.Context) ([]TypeDef, error) {
 	return convert(response), nil
 }
 
+// The introspection schema JSON file for this module.
+//
+// This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+//
+// Note: this is in the context of a module, so some core types may be hidden.
+func (r *Module) IntrospectionSchemaJSON() *File {
+	q := r.query.Select("introspectionSchemaJSON")
+
+	return &File{
+		query: q,
+	}
+}
+
 // The name of the module
 func (r *Module) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
@@ -8677,15 +8690,6 @@ func (r *Module) Runtime() *Container {
 	q := r.query.Select("runtime")
 
 	return &Container{
-		query: q,
-	}
-}
-
-// The JSON schema for the current module.
-func (r *Module) SchemaJSON() *File {
-	q := r.query.Select("schemaJSON")
-
-	return &File{
 		query: q,
 	}
 }
@@ -9172,6 +9176,19 @@ func (r *ModuleSource) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// The introspection schema JSON file for this module source.
+//
+// This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+//
+// Note: this is in the context of a module, so some core types may be hidden.
+func (r *ModuleSource) IntrospectionSchemaJSON() *File {
+	q := r.query.Select("introspectionSchemaJSON")
+
+	return &File{
+		query: q,
+	}
 }
 
 // The kind of module source (currently local, git or dir).

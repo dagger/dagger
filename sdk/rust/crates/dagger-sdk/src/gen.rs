@@ -9458,6 +9458,17 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         }]
     }
+    /// The introspection schema JSON file for this module.
+    /// This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+    /// Note: this is in the context of a module, so some core types may be hidden.
+    pub fn introspection_schema_json(&self) -> File {
+        let query = self.selection.select("introspectionSchemaJSON");
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The name of the module
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
@@ -9476,15 +9487,6 @@ impl Module {
     pub fn runtime(&self) -> Container {
         let query = self.selection.select("runtime");
         Container {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// The JSON schema for the current module.
-    pub fn schema_json(&self) -> File {
-        let query = self.selection.select("schemaJSON");
-        File {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -9750,6 +9752,17 @@ impl ModuleSource {
     pub async fn id(&self) -> Result<ModuleSourceId, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// The introspection schema JSON file for this module source.
+    /// This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+    /// Note: this is in the context of a module, so some core types may be hidden.
+    pub fn introspection_schema_json(&self) -> File {
+        let query = self.selection.select("introspectionSchemaJSON");
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// The kind of module source (currently local, git or dir).
     pub async fn kind(&self) -> Result<ModuleSourceKind, DaggerError> {

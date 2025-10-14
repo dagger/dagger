@@ -4281,6 +4281,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Module::introspectionSchemaJSON",
+			"p": "Dagger/Module.html#method_introspectionSchemaJSON",
+			"d": "<p>The introspection schema JSON file for this module.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Module::name",
 			"p": "Dagger/Module.html#method_name",
 			"d": "<p>The name of the module</p>"
@@ -4296,12 +4302,6 @@
 			"n": "Dagger\\Module::runtime",
 			"p": "Dagger/Module.html#method_runtime",
 			"d": "<p>The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Module::schemaJSON",
-			"p": "Dagger/Module.html#method_schemaJSON",
-			"d": "<p>The JSON schema for the current module.</p>"
 		},
 		{
 			"t": "M",
@@ -4470,6 +4470,12 @@
 			"n": "Dagger\\ModuleSource::id",
 			"p": "Dagger/ModuleSource.html#method_id",
 			"d": "<p>A unique identifier for this ModuleSource.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleSource::introspectionSchemaJSON",
+			"p": "Dagger/ModuleSource.html#method_introspectionSchemaJSON",
+			"d": "<p>The introspection schema JSON file for this module source.</p>"
 		},
 		{
 			"t": "M",

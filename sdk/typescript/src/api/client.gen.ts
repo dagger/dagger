@@ -8605,6 +8605,18 @@ export class Module_ extends BaseClient {
   }
 
   /**
+   * The introspection schema JSON file for this module.
+   *
+   * This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+   *
+   * Note: this is in the context of a module, so some core types may be hidden.
+   */
+  introspectionSchemaJSON = (): File => {
+    const ctx = this._ctx.select("introspectionSchemaJSON")
+    return new File(ctx)
+  }
+
+  /**
    * The name of the module
    */
   name = async (): Promise<string> => {
@@ -8640,14 +8652,6 @@ export class Module_ extends BaseClient {
   runtime = (): Container => {
     const ctx = this._ctx.select("runtime")
     return new Container(ctx)
-  }
-
-  /**
-   * The JSON schema for the current module.
-   */
-  schemaJSON = (): File => {
-    const ctx = this._ctx.select("schemaJSON")
-    return new File(ctx)
   }
 
   /**
@@ -9099,6 +9103,18 @@ export class ModuleSource extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * The introspection schema JSON file for this module source.
+   *
+   * This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+   *
+   * Note: this is in the context of a module, so some core types may be hidden.
+   */
+  introspectionSchemaJSON = (): File => {
+    const ctx = this._ctx.select("introspectionSchemaJSON")
+    return new File(ctx)
   }
 
   /**
