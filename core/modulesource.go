@@ -331,6 +331,8 @@ func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, string, er
 }
 
 func (src *ModuleSource) outerEnvFile(ctx context.Context) (*EnvFile, string, error) {
+	return &EnvFile{}, "", nil // HACK:
+
 	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, "", err
@@ -1160,7 +1162,7 @@ func NewCallerStatFS(bk *buildkit.Client) *CallerStatFS {
 func (fs CallerStatFS) Stat(ctx context.Context, path string) (*fsutiltypes.Stat, error) {
 	stat, err := fs.bk.StatCallerHostPath(ctx, path, true)
 	if err != nil {
-		if status.Code(err) == codes.NotFound || status.Code(err) == codes.Unimplemented {
+		if status.Code(err) == codes.NotFound {
 			return nil, os.ErrNotExist
 		}
 		return nil, err
