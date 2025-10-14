@@ -75,8 +75,10 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("dependencies", s.moduleDependencies).
 			Doc(`The dependencies of the module.`),
 
-		dagql.Func("schemaJSON", s.schemaJSON).
-			Doc(`The JSON schema for the current module.`),
+		dagql.Func("introspectionSchemaJSON", s.moduleIntrospectionSchemaJSON).
+			Doc(`The introspection schema JSON file for this module.`,
+				`This file represents the schema visible to the module's source code, including all core types and those from the dependencies.`,
+				`Note: this is in the context of a module, so some core types may be hidden.`),
 
 		dagql.NodeFunc("generatedContextDirectory", s.moduleGeneratedContextDirectory).
 			Doc(`The generated files and directories made on top of the module source's context directory.`),
@@ -638,7 +640,7 @@ func (s *moduleSchema) moduleUserDefaults(ctx context.Context, mod *core.Module,
 	return mod.UserDefaults(ctx)
 }
 
-func (s *moduleSchema) schemaJSON(
+func (s *moduleSchema) moduleIntrospectionSchemaJSON(
 	ctx context.Context,
 	mod *core.Module,
 	args struct{},

@@ -229,6 +229,24 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
+  The introspection schema JSON file for this module source.
+
+  This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+
+  Note: this is in the context of a module, so some core types may be hidden.
+  """
+  @spec introspection_schema_json(t()) :: Dagger.File.t()
+  def introspection_schema_json(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("introspectionSchemaJSON")
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
   The kind of module source (currently local, git or dir).
   """
   @spec kind(t()) :: {:ok, Dagger.ModuleSourceKind.t()} | {:error, term()}

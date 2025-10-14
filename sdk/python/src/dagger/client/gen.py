@@ -8711,6 +8711,19 @@ class Module(Type):
         _ctx = self._select("interfaces", _args)
         return await _ctx.execute_object_list(TypeDef)
 
+    def introspection_schema_json(self) -> File:
+        """The introspection schema JSON file for this module.
+
+        This file represents the schema visible to the module's source code,
+        including all core types and those from the dependencies.
+
+        Note: this is in the context of a module, so some core types may be
+        hidden.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("introspectionSchemaJSON", _args)
+        return File(_ctx)
+
     async def name(self) -> str:
         """The name of the module
 
@@ -8745,12 +8758,6 @@ class Module(Type):
         _args: list[Arg] = []
         _ctx = self._select("runtime", _args)
         return Container(_ctx)
-
-    def schema_json(self) -> File:
-        """The JSON schema for the current module."""
-        _args: list[Arg] = []
-        _ctx = self._select("schemaJSON", _args)
-        return File(_ctx)
 
     def sdk(self) -> "SDKConfig":
         """The SDK config used by this module."""
@@ -9194,6 +9201,19 @@ class ModuleSource(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(ModuleSourceID)
+
+    def introspection_schema_json(self) -> File:
+        """The introspection schema JSON file for this module source.
+
+        This file represents the schema visible to the module's source code,
+        including all core types and those from the dependencies.
+
+        Note: this is in the context of a module, so some core types may be
+        hidden.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("introspectionSchemaJSON", _args)
+        return File(_ctx)
 
     async def kind(self) -> ModuleSourceKind:
         """The kind of module source (currently local, git or dir).
