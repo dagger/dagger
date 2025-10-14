@@ -531,7 +531,7 @@ USAGE NOTES:
 func (d *Doug) Task(
 	ctx context.Context,
 	// A brief description of the task to show to the user
-	description string,
+	description string, //nolint:unparam
 	// The prompt for the sub-agent
 	prompt string,
 ) (string, error) {
@@ -628,9 +628,12 @@ func (d *Doug) TodoWrite(ctx context.Context, pending []string, inProgress []str
 		}
 	}
 
-	completedList := append(existingCompleted, completed...)
-	inProgressList := append(existingInProgress, inProgress...)
-	pendingList := append(existingPending, pending...)
+	completedList := existingCompleted
+	completedList = append(completedList, completed...)
+	inProgressList := existingInProgress
+	inProgressList = append(inProgressList, inProgress...)
+	pendingList := existingPending
+	pendingList = append(pendingList, pending...)
 
 	var formattedTodos, encodedTodos []string
 
@@ -667,7 +670,7 @@ func (d *Doug) reminderPrompt(ctx context.Context, source *dagger.Directory) (st
 
 	entries, err := source.Entries(ctx)
 	if err != nil {
-		return strings.Join(segments, "\n\n"), nil
+		return "", err
 	}
 
 	contextFiles := []string{"DOUG.md", "AGENT.md", "CLAUDE.md"}
@@ -706,6 +709,6 @@ found:
 //
 // but, even so, Doug works with relative paths, so we'll just clunkily strip
 // the prefix when it comes up.
-func (doug *Doug) normalizePath(filePath string) string {
-	return strings.TrimPrefix(filePath, doug.WorkspacePath)
+func (d *Doug) normalizePath(filePath string) string {
+	return strings.TrimPrefix(filePath, d.WorkspacePath)
 }

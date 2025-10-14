@@ -11,7 +11,7 @@ import (
 )
 
 // Test the Doug coding agent.
-func (m *Evals) AndOperator() *AndOperator {
+func (evals *Evals) AndOperator() *AndOperator {
 	return &AndOperator{}
 }
 
