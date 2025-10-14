@@ -128,12 +128,8 @@ func (s environmentSchema) currentEnvironment(ctx context.Context, parent *core.
 	if err != nil {
 		return res, err
 	}
-	fc, err := query.CurrentFunctionCall(ctx)
-	if err != nil {
-		return res, err
-	}
-	if fc.EnvID != nil {
-		return dagql.NewID[*core.Env](fc.EnvID).Load(ctx, s.srv)
+	if query.CurrentEnv != nil {
+		return dagql.NewID[*core.Env](query.CurrentEnv).Load(ctx, s.srv)
 	}
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {

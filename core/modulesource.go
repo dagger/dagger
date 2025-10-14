@@ -469,15 +469,6 @@ func (src *ModuleSource) LoadContextDir(
 	include []string,
 	exclude []string,
 ) (inst dagql.ObjectResult[*Directory], err error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get buildkit api: %w", err)
-	}
-
 	filterInputs := []dagql.NamedInput{}
 	if len(include) > 0 {
 		filterInputs = append(filterInputs, dagql.NamedInput{
@@ -492,6 +483,91 @@ func (src *ModuleSource) LoadContextDir(
 		})
 	}
 
+	// Check if there's an Env - if so, use its workspace as the context for
+	// defaultPath arguments.
+	//
+	// NOTE: this applies unilaterally, whether the module was loaded from Host,
+	// Git, or a Directory.
+	if envID, ok := EnvIDFromContext(ctx); ok {
+		inst, err = src.loadContextFromEnv(ctx, dag, envID, path, filterInputs)
+	} else {
+		inst, err = src.loadContextFromSource(ctx, dag, path, filterInputs)
+	}
+	if err != nil {
+		return inst, err
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	mainClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	if err := query.AddClientResourcesFromID(ctx, &resource.ID{ID: *inst.ID()}, mainClientMetadata.ClientID, false); err != nil {
+		return inst, fmt.Errorf("failed to add client resources from directory source: %w", err)
+	}
+
+	return inst, nil
+}
+
+func (src *ModuleSource) loadContextFromEnv(
+	ctx context.Context,
+	dag *dagql.Server,
+	envID *call.ID,
+	path string,
+	filterInputs []dagql.NamedInput,
+) (inst dagql.ObjectResult[*Directory], err error) {
+	// If path is not absolute, it's relative to the module root directory.
+	// If path is absolute, it's relative to the context directory.
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(src.SourceRootSubpath, path)
+	}
+	envRes, err := dag.Load(ctx, envID)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load current env: %w", err)
+	}
+	sels := []dagql.Selector{
+		{
+			Field: "workspace",
+		},
+	}
+	if path != "." {
+		sels = append(sels, dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(path)},
+			},
+		})
+	}
+	if len(filterInputs) > 0 {
+		sels = append(sels, dagql.Selector{
+			Field: "filter",
+			Args:  filterInputs,
+		})
+	}
+	err = dag.Select(ctx, envRes, &inst, sels...)
+	if err != nil {
+		return inst, fmt.Errorf("failed to select env directory: %w", err)
+	}
+	return inst, nil
+}
+
+func (src *ModuleSource) loadContextFromSource(
+	ctx context.Context,
+	dag *dagql.Server,
+	path string,
+	filterInputs []dagql.NamedInput,
+) (inst dagql.ObjectResult[*Directory], err error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get buildkit api: %w", err)
+	}
 	switch src.Kind {
 	case ModuleSourceKindLocal:
 		localSourceClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
@@ -539,7 +615,7 @@ func (src *ModuleSource) LoadContextDir(
 			},
 		)
 		if err != nil {
-			return inst, fmt.Errorf("failed to select directory: %w", err)
+			return inst, fmt.Errorf("failed to select host directory: %w", err)
 		}
 
 	case ModuleSourceKindGit:
@@ -629,14 +705,6 @@ func (src *ModuleSource) LoadContextDir(
 
 	default:
 		return inst, fmt.Errorf("unsupported module src kind: %q", src.Kind)
-	}
-
-	mainClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get client metadata: %w", err)
-	}
-	if err := query.AddClientResourcesFromID(ctx, &resource.ID{ID: *inst.ID()}, mainClientMetadata.ClientID, false); err != nil {
-		return inst, fmt.Errorf("failed to add client resources from directory source: %w", err)
 	}
 
 	return inst, nil
