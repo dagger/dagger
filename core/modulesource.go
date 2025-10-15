@@ -75,8 +75,9 @@ func (proto ModuleSourceKind) HumanString() string {
 }
 
 type SDKConfig struct {
-	Source string `field:"true" name:"source" doc:"Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
-	Config map[string]any
+	Source       string `field:"true" name:"source" doc:"Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
+	Config       map[string]any
+	Experimental map[string]bool
 }
 
 func (*SDKConfig) Type() *ast.Type {
@@ -93,6 +94,13 @@ func (*SDKConfig) TypeDescription() string {
 func (sdk SDKConfig) Clone() *SDKConfig {
 	cp := sdk
 	return &cp
+}
+
+func (sdk *SDKConfig) ExperimentalFeatureEnabled(feature ModuleSourceExperimentalFeature) bool {
+	if sdk.Experimental == nil {
+		return false
+	}
+	return sdk.Experimental[feature.String()]
 }
 
 type ModuleSource struct {
@@ -1211,4 +1219,33 @@ func (fs ModuleSourceStatFS) Stat(ctx context.Context, path string) (*fsutiltype
 	default:
 		return nil, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
 	}
+}
+
+type ModuleSourceExperimentalFeature string
+
+func (f ModuleSourceExperimentalFeature) String() string { return string(f) }
+
+var ModuleSourceExperimentalFeatures = dagql.NewEnum[ModuleSourceExperimentalFeature]()
+
+var (
+	ModuleSourceExperimentalFeatureSelfCalls = ModuleSourceExperimentalFeatures.Register("SELF_CALLS", "Self calls")
+)
+
+func (f ModuleSourceExperimentalFeature) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ModuleSourceExperimentalFeature",
+		NonNull:   true,
+	}
+}
+
+func (f ModuleSourceExperimentalFeature) TypeDescription() string {
+	return `Experimental features of a module`
+}
+
+func (f ModuleSourceExperimentalFeature) Decoder() dagql.InputDecoder {
+	return ModuleSourceExperimentalFeatures
+}
+
+func (f ModuleSourceExperimentalFeature) ToLiteral() call.Literal {
+	return ModuleSourceExperimentalFeatures.Literal(f)
 }

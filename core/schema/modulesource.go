@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dagger/dagger/engine/slog"
+
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
@@ -160,6 +162,18 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 
 		dagql.Func("withoutBlueprint", s.moduleSourceWithoutBlueprint).
 			Doc(`Remove the current blueprint from the module source.`),
+
+		dagql.Func("withExperimentalFeatures", s.moduleSourceWithExperimentalFeatures).
+			Doc(`Enable the experimental features for the module source.`).
+			Args(
+				dagql.Arg("features").Doc(`The experimental features to enable.`),
+			),
+
+		dagql.Func("withoutExperimentalFeatures", s.moduleSourceWithoutExperimentalFeatures).
+			Doc(`Disable experimental features for the module source.`).
+			Args(
+				dagql.Arg("features").Doc(`The experimental features to disable.`),
+			),
 
 		dagql.NodeFunc("generatedContextDirectory", s.moduleSourceGeneratedContextDirectory).
 			Doc(`The generated files and directories made on top of the module source's context directory.`),
@@ -888,8 +902,9 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 
 	if modCfg.SDK != nil {
 		src.SDK = &core.SDKConfig{
-			Source: modCfg.SDK.Source,
-			Config: modCfg.SDK.Config,
+			Source:       modCfg.SDK.Source,
+			Config:       modCfg.SDK.Config,
+			Experimental: modCfg.SDK.Experimental,
 		}
 	}
 
@@ -1540,6 +1555,53 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateBlueprint(
 	)
 	return inst, err
 }
+
+func (s *moduleSourceSchema) moduleSourceWithExperimentalFeatures(
+	_ context.Context,
+	parentSrc *core.ModuleSource,
+	args struct {
+		Features []core.ModuleSourceExperimentalFeature
+	},
+) (*core.ModuleSource, error) {
+	if parentSrc.SDK == nil {
+		return nil, fmt.Errorf("module source has no SDK")
+	}
+	tmpSrc := parentSrc.Clone()
+	if len(args.Features) > 0 {
+		if tmpSrc.SDK.Experimental == nil {
+			tmpSrc.SDK.Experimental = make(map[string]bool)
+		}
+		for _, feature := range args.Features {
+			tmpSrc.SDK.Experimental[feature.String()] = true
+		}
+	}
+	return tmpSrc, nil
+}
+
+func (s *moduleSourceSchema) moduleSourceWithoutExperimentalFeatures(
+	_ context.Context,
+	parentSrc *core.ModuleSource,
+	args struct {
+		Features []core.ModuleSourceExperimentalFeature
+	},
+) (*core.ModuleSource, error) {
+	if parentSrc.SDK == nil {
+		return nil, fmt.Errorf("module source has no SDK")
+	}
+	tmpSrc := parentSrc.Clone()
+	if len(args.Features) > 0 {
+		if tmpSrc.SDK.Experimental == nil {
+			tmpSrc.SDK.Experimental = make(map[string]bool)
+		}
+		for _, feature := range args.Features {
+			tmpSrc.SDK.Experimental[feature.String()] = false
+		}
+	} else {
+		tmpSrc.SDK.Experimental = make(map[string]bool)
+	}
+	return tmpSrc, nil
+}
+
 func (s *moduleSourceSchema) moduleSourceWithUpdateDependencies(
 	ctx context.Context,
 	parentSrc dagql.ObjectResult[*core.ModuleSource],
@@ -1803,8 +1865,9 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 
 	if src.SDK != nil {
 		modCfg.SDK = &modules.SDK{
-			Source: src.SDK.Source,
-			Config: src.SDK.Config,
+			Source:       src.SDK.Source,
+			Config:       src.SDK.Config,
+			Experimental: src.SDK.Experimental,
 		}
 	}
 
@@ -1934,6 +1997,10 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 	return modCfg, nil
 }
 
+func isSelfCallsEnabled(src dagql.ObjectResult[*core.ModuleSource]) bool {
+	return src.Self().SDK.ExperimentalFeatureEnabled(core.ModuleSourceExperimentalFeatureSelfCalls)
+}
+
 func (s *moduleSourceSchema) runCodegen(
 	ctx context.Context,
 	srcInst dagql.ObjectResult[*core.ModuleSource],
@@ -1964,6 +2031,26 @@ func (s *moduleSourceSchema) runCodegen(
 	generatedCodeImpl, ok := srcInst.Self().SDKImpl.AsCodeGenerator()
 	if !ok {
 		return res, ErrSDKCodegenNotImplemented{SDK: srcInst.Self().SDK.Source}
+	}
+
+	// If possible, add the types defined by the module itself to the "deps" so that they can be
+	// part of the code generation.
+	// This is not really a dependency as it's the module itself, but that will allow to generate
+	// the types.
+	if srcInst.Self().SDK != nil {
+		// Only if the SDK implements a specific function to get module type definitions.
+		// If not, we will have circular dependency issues.
+		if _, ok := srcInst.Self().SDKImpl.AsModuleTypes(); ok && isSelfCallsEnabled(srcInst) {
+			var mod dagql.ObjectResult[*core.Module]
+			err = dag.Select(ctx, srcInst, &mod, dagql.Selector{
+				Field: "asModule",
+			})
+			if err != nil {
+				return res, fmt.Errorf("failed to transform module source into module: %w", err)
+			}
+
+			deps = mod.Self().Deps.Append(mod.Self())
+		}
 	}
 
 	// run codegen to get the generated context directory
@@ -2255,16 +2342,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		return nil, ErrSDKRuntimeNotImplemented{SDK: src.Self().SDK.Source}
 	}
 
-	// get the runtime container, which is what is exec'd when calling functions in the module
-	runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get module runtime: %w", err)
-	}
-	mod.Runtime = dagql.NonNull(runtime)
-
-	// construct a special function with no object or function name, which tells
-	// the SDK to return the module's definition (in terms of objects, fields and
-	// functions)
+	var initialized *core.Module
 
 	// temporary instance ID to support CurrentModule calls made during the function, it will
 	// be finalized at the end of `asModule`
@@ -2288,58 +2366,76 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 
 	modName := src.Self().ModuleName
 
-	var initialized *core.Module
-	err = (func() (rerr error) {
-		ctx, span := core.Tracer(ctx).Start(ctx, "asModule getModDef", telemetry.Internal())
-		defer telemetry.End(span, func() error { return rerr })
-		getModDefFn, err := core.NewModFunction(
-			ctx,
-			mod,
-			nil,
-			mod.Runtime.Value,
-			core.NewFunction("", &core.TypeDef{
-				Kind:     core.TypeDefKindObject,
-				AsObject: dagql.NonNull(core.NewObjectTypeDef("Module", "")),
-			}))
+	typeDefsImpl, typeDefsEnabled := src.Self().SDKImpl.AsModuleTypes()
+	if typeDefsEnabled {
+		var resultInst dagql.ObjectResult[*core.Module]
+		resultInst, err = typeDefsImpl.ModuleTypes(ctx, mod.Deps, srcInstContentHashed, mod.ResultID)
 		if err != nil {
-			return fmt.Errorf("failed to create module definition function for module %q: %w", modName, err)
+			return nil, fmt.Errorf("failed to initialize module: %w", err)
 		}
-		result, err := getModDefFn.Call(ctx, &core.CallOpts{
-			Cache:          true,
-			SkipSelfSchema: true,
-			Server:         dag,
-			// Don't include the digest for the current call (which is a bunch of module source stuff, including
-			// APIs that are cached per-client when local sources are involved) in the cache key of this
-			// function call. That would needlessly invalidate the cache more than is needed, similar to how
-			// we want to scope the codegen cache keys by the content digested source instance above.
-			SkipCallDigestCacheKey: true,
-		})
+		initialized = resultInst.Self()
+	} else {
+		runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
 		if err != nil {
-			return fmt.Errorf("failed to call module %q to get functions: %w", modName, err)
+			return nil, fmt.Errorf("failed to get module runtime: %w", err)
 		}
-		if postCallRes, ok := dagql.UnwrapAs[dagql.PostCallable](result); ok {
-			postCall := postCallRes.GetPostCall()
+		mod.Runtime = dagql.NonNull(runtime)
+
+		// construct a special function with no object or function name, which tells
+		// the SDK to return the module's definition (in terms of objects, fields and
+		// functions)
+
+		err = (func() (rerr error) {
+			ctx, span := core.Tracer(ctx).Start(ctx, "asModule getModDef", telemetry.Internal())
+			defer telemetry.End(span, func() error { return rerr })
+			getModDefFn, err := core.NewModFunction(
+				ctx,
+				mod,
+				nil,
+				mod.Runtime.Value,
+				core.NewFunction("", &core.TypeDef{
+					Kind:     core.TypeDefKindObject,
+					AsObject: dagql.NonNull(core.NewObjectTypeDef("Module", "")),
+				}))
+			if err != nil {
+				return fmt.Errorf("failed to create module definition function for module %q: %w", modName, err)
+			}
+			result, err := getModDefFn.Call(ctx, &core.CallOpts{
+				Cache:          true,
+				SkipSelfSchema: true,
+				Server:         dag,
+				// Don't include the digest for the current call (which is a bunch of module source stuff, including
+				// APIs that are cached per-client when local sources are involved) in the cache key of this
+				// function call. That would needlessly invalidate the cache more than is needed, similar to how
+				// we want to scope the codegen cache keys by the content digested source instance above.
+				SkipCallDigestCacheKey: true,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to call module %q to get functions: %w", modName, err)
+			}
+			postCall := result.GetPostCall()
 			if postCall != nil {
 				if err := postCall(ctx); err != nil {
 					return fmt.Errorf("failed to run post-call for module %q: %w", modName, err)
 				}
 			}
-		}
 
-		resultInst, ok := result.(dagql.Result[*core.Module])
-		if !ok {
-			return fmt.Errorf("expected Module result, got %T", result)
+			resultInst, ok := result.(dagql.Result[*core.Module])
+			if !ok {
+				return fmt.Errorf("expected Module result, got %T", result)
+			}
+			initialized = resultInst.Self()
+			return nil
+		})()
+		if err != nil {
+			return nil, err
 		}
-		initialized = resultInst.Self()
-		return nil
-	})()
-	if err != nil {
-		return nil, err
 	}
 
 	// update the module's types with what was returned from the call above
 	mod.Description = initialized.Description
 	for _, obj := range initialized.ObjectDefs {
+		slog.ExtraDebug("ObjectDefs", "mod.Name", mod.Name(), "sourceModuleName", obj.AsObject.Value.SourceModuleName, "originalName", obj.AsObject.Value.OriginalName, "name", obj.AsObject.Value.Name)
 		mod, err = mod.WithObject(ctx, obj)
 		if err != nil {
 			return nil, fmt.Errorf("failed to add object to module %q: %w", modName, err)
@@ -2361,6 +2457,33 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 	if err != nil {
 		return nil, fmt.Errorf("failed to patch module %q: %w", modName, err)
 	}
+
+	if typeDefsEnabled && isSelfCallsEnabled(srcInstContentHashed) {
+		// append module types to the module itself so self calls are possible
+		mod.Deps = mod.Deps.Append(mod)
+	}
+
+	if !mod.Runtime.Valid {
+		// mod.Runtime is required for the module to be correctly loaded and usable.
+		// So set it if it doesn't yet exist (because moduleTypes does not create it)
+		runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
+		if err != nil {
+			return nil, err
+		}
+		mod.Runtime = dagql.NonNull(runtime)
+		var runtimeRes dagql.ID[*core.Container]
+		// But mod.Runtime itself is not enough, it needs to be fully resolved now. It's expected not only
+		// mod.Runtime exists, but it's expected the cache has been filled.
+		// If the SDK is not defining moduleTypes, then a function will be called against the module and creates all
+		// the required objects. Here we don't want that, so just sync it so it exists and will be available later to be
+		// invoked.
+		if err = dag.Select(ctx, mod.Runtime.Value, &runtimeRes, dagql.Selector{
+			Field: "sync",
+		}); err != nil {
+			return nil, err
+		}
+	}
+
 	return mod, nil
 }
 
@@ -2452,6 +2575,11 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		if err != nil {
 			return inst, err
 		}
+
+		if _, ok := src.Self().SDKImpl.AsModuleTypes(); ok && isSelfCallsEnabled(src) {
+			mod.Deps = mod.Deps.Append(mod)
+		}
+
 		mod.ResultID = dagql.CurrentID(ctx)
 	} else {
 		// For no SDK, provide an empty stub module definition

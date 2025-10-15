@@ -473,6 +473,23 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
+  Enable the experimental features for the module source.
+  """
+  @spec with_experimental_features(t(), [Dagger.ModuleSourceExperimentalFeature.t()]) ::
+          Dagger.ModuleSource.t()
+  def with_experimental_features(%__MODULE__{} = module_source, features) do
+    query_builder =
+      module_source.query_builder
+      |> QB.select("withExperimentalFeatures")
+      |> QB.put_arg("features", features)
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
   Update the module source with additional include patterns for files+directories from its context that are required for building it
   """
   @spec with_includes(t(), [String.t()]) :: Dagger.ModuleSource.t()
@@ -611,6 +628,23 @@ defmodule Dagger.ModuleSource do
       module_source.query_builder
       |> QB.select("withoutDependencies")
       |> QB.put_arg("dependencies", dependencies)
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
+  Disable experimental features for the module source.
+  """
+  @spec without_experimental_features(t(), [Dagger.ModuleSourceExperimentalFeature.t()]) ::
+          Dagger.ModuleSource.t()
+  def without_experimental_features(%__MODULE__{} = module_source, features) do
+    query_builder =
+      module_source.query_builder
+      |> QB.select("withoutExperimentalFeatures")
+      |> QB.put_arg("features", features)
 
     %Dagger.ModuleSource{
       query_builder: query_builder,

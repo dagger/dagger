@@ -3807,6 +3807,12 @@ type ModuleSource {
     version: String!
   ): ModuleSource!
 
+  """Enable the experimental features for the module source."""
+  withExperimentalFeatures(
+    """The experimental features to enable."""
+    features: [ModuleSourceExperimentalFeature!]!
+  ): ModuleSource!
+
   """
   Update the module source with additional include patterns for
   files+directories from its context that are required for building it
@@ -3867,6 +3873,18 @@ type ModuleSource {
     """The dependencies to remove."""
     dependencies: [String!]!
   ): ModuleSource!
+
+  """Disable experimental features for the module source."""
+  withoutExperimentalFeatures(
+    """The experimental features to disable."""
+    features: [ModuleSourceExperimentalFeature!]!
+  ): ModuleSource!
+}
+
+"""Experimental features of a module"""
+enum ModuleSourceExperimentalFeature {
+  """Self calls"""
+  SELF_CALLS
 }
 
 """

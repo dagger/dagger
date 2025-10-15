@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"dagger.io/dagger"
 	. "github.com/dave/jennifer/jen" //nolint:staticcheck
 )
 
@@ -167,29 +168,25 @@ type parsedObjectType struct {
 
 var _ NamedParsedType = &parsedObjectType{}
 
-func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
-	withObjectArgsCode := []Code{
-		Lit(spec.name),
-	}
-	withObjectOptsCode := []Code{}
+func (spec *parsedObjectType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error) {
+	withObjectOpts := dagger.TypeDefWithObjectOpts{}
 	if spec.doc != "" {
-		withObjectOptsCode = append(withObjectOptsCode, Id("Description").Op(":").Lit(strings.TrimSpace(spec.doc)))
+		withObjectOpts.Description = strings.TrimSpace(spec.doc)
 	}
 	if spec.sourceMap != nil {
-		withObjectOptsCode = append(withObjectOptsCode, Id("SourceMap").Op(":").Add(spec.sourceMap.TypeDefCode()))
+		withObjectOpts.SourceMap = spec.sourceMap.TypeDef(dag)
 	}
-	if len(withObjectOptsCode) > 0 {
-		withObjectArgsCode = append(withObjectArgsCode, Id("dagger").Dot("TypeDefWithObjectOpts").Values(withObjectOptsCode...))
+	if spec.name == "" {
+		return nil, fmt.Errorf("object name is empty")
 	}
+	typeDefObject := dag.TypeDef().WithObject(spec.name, withObjectOpts)
 
-	typeDefCode := Qual("dag", "TypeDef").Call().Dot("WithObject").Call(withObjectArgsCode...)
-
-	for _, method := range spec.methods {
-		fnTypeDefCode, err := method.TypeDefCode()
+	for _, m := range spec.methods {
+		fnTypeDef, err := m.TypeDefFunc(dag)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert method %s to function def: %w", method.name, err)
+			return nil, fmt.Errorf("failed to convert method %s to function def: %w", m.name, err)
 		}
-		typeDefCode = dotLine(typeDefCode, "WithFunction").Call(Add(Line(), fnTypeDefCode))
+		typeDefObject = typeDefObject.WithFunction(fnTypeDef)
 	}
 
 	for _, field := range spec.fields {
@@ -197,38 +194,29 @@ func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 			continue
 		}
 
-		fieldTypeDefCode, err := field.typeSpec.TypeDefCode()
+		fieldTypeDef, err := field.typeSpec.TypeDef(dag)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert field type: %w", err)
 		}
-		withFieldArgsCode := []Code{
-			Lit(field.name),
-			fieldTypeDefCode,
-		}
-		var withFieldOpts []Code
+		withFieldOpts := dagger.TypeDefWithFieldOpts{}
 		if field.doc != "" {
-			withFieldOpts = append(withFieldOpts, Id("Description").Op(":").Lit(field.doc))
+			withFieldOpts.Description = field.doc
 		}
 		if field.sourceMap != nil {
-			withFieldOpts = append(withFieldOpts, Id("SourceMap").Op(":").Add(field.sourceMap.TypeDefCode()))
+			withFieldOpts.SourceMap = field.sourceMap.TypeDef(dag)
 		}
-		if len(withFieldOpts) > 0 {
-			withFieldArgsCode = append(withFieldArgsCode,
-				Id("dagger").Dot("TypeDefWithFieldOpts").Values(withFieldOpts...),
-			)
-		}
-		typeDefCode = dotLine(typeDefCode, "WithField").Call(withFieldArgsCode...)
+		typeDefObject = typeDefObject.WithField(field.name, fieldTypeDef, withFieldOpts)
 	}
 
 	if spec.constructor != nil {
-		fnTypeDefCode, err := spec.constructor.TypeDefCode()
+		fnTypeDef, err := spec.constructor.TypeDefFunc(dag)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert constructor to function def: %w", err)
 		}
-		typeDefCode = dotLine(typeDefCode, "WithConstructor").Call(Add(Line(), fnTypeDefCode))
+		typeDefObject = typeDefObject.WithConstructor(fnTypeDef)
 	}
 
-	return typeDefCode, nil
+	return typeDefObject, nil
 }
 
 func (spec *parsedObjectType) GoType() types.Type {
