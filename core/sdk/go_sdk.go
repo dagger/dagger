@@ -235,7 +235,7 @@ func (sdk *goSDK) ModuleTypes(
 		return inst, fmt.Errorf("failed to get dag for go module sdk codegen: %w", err)
 	}
 
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, []string{})
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
 	}
