@@ -7,5 +7,5 @@ import (
 type MyblueprintWithDep struct{}
 
 func (m *MyblueprintWithDep) Hello(ctx context.Context) (string, error) {
-	return dag.Hello().Hello(ctx)
+	return dag.Hello().Message(ctx)
 }

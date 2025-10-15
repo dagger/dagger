@@ -2516,6 +2516,11 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 			},
 		}
 
+		// Initialize the map to store blueprint module references
+		if mod.BlueprintModules == nil {
+			mod.BlueprintModules = make(map[string]dagql.Result[*core.Module])
+		}
+
 		for _, bpSrc := range originalSrc.Self().Blueprints {
 			var bpModResult dagql.Result[*core.Module]
 			err = dag.Select(ctx, bpSrc, &bpModResult,
@@ -2524,6 +2529,9 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 			if err != nil {
 				return inst, fmt.Errorf("failed to load blueprint %q as module: %w", bpSrc.Self().ModuleName, err)
 			}
+
+			// Mark the blueprint module so it can be identified later
+			bpModResult.Self().IsBlueprint = true
 
 			// Add the blueprint module's functions as a namespaced field
 			for _, obj := range bpModResult.Self().ObjectDefs {
@@ -2534,6 +2542,8 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 					if err != nil {
 						return inst, fmt.Errorf("failed to add blueprint field %q: %w", fieldName, err)
 					}
+					// Store the blueprint module reference for runtime resolution
+					mod.BlueprintModules[fieldName] = bpModResult
 					break
 				}
 			}

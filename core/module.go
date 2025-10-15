@@ -59,6 +59,10 @@ type Module struct {
 	// Blueprint modules are allowed to share types with the modules that depend on them.
 	IsBlueprint bool
 
+	// BlueprintModules stores references to blueprint module instances by their field name
+	// This enables proxy field resolution to route calls to the blueprint's runtime
+	BlueprintModules map[string]dagql.Result[*Module]
+
 	// ResultID is the ID of the initialized module.
 	ResultID *call.ID
 }

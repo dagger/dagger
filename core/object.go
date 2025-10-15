@@ -425,6 +425,13 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fiel
 }
 
 func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
+	// Check if this is a blueprint proxy field
+	if mod.BlueprintModules != nil {
+		if bpMod, ok := mod.BlueprintModules[field.OriginalName]; ok {
+			return blueprintProxyField(mod, field, bpMod)
+		}
+	}
+
 	spec := &dagql.FieldSpec{
 		Name:        field.Name,
 		Description: field.Description,
@@ -454,6 +461,55 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 				fieldVal = nil
 			}
 			return modType.ConvertFromSDKResult(ctx, fieldVal)
+		},
+		CacheSpec: dagql.CacheSpec{
+			GetCacheConfig: mod.CacheConfigForCall,
+		},
+	}
+}
+
+// blueprintProxyField creates a field resolver that routes to a blueprint module's runtime.
+// Instead of reading from the parent object's fields, it returns the blueprint module's
+// main object instance, allowing that module's own resolvers to handle function calls.
+func blueprintProxyField(mod *Module, field *FieldTypeDef, bpModResult dagql.Result[*Module]) dagql.Field[*ModuleObject] {
+	spec := &dagql.FieldSpec{
+		Name:        field.Name,
+		Description: field.Description,
+		Type:        field.TypeDef.ToTyped(),
+		Module:      mod.IDModule(),
+	}
+	if field.SourceMap.Valid {
+		spec.Directives = append(spec.Directives, field.SourceMap.Value.TypeDirective())
+	}
+
+	return dagql.Field[*ModuleObject]{
+		Spec: spec,
+		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], _ map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
+			// Return the blueprint module's main object as a proxy
+			bpMod := bpModResult.Self()
+			if len(bpMod.ObjectDefs) == 0 {
+				return nil, fmt.Errorf("blueprint module %q has no objects", bpMod.Name())
+			}
+
+			// Find the main object (matches the module name)
+			var mainObjDef *ObjectTypeDef
+			for _, objDef := range bpMod.ObjectDefs {
+				if objDef.AsObject.Valid && gqlObjectName(objDef.AsObject.Value.OriginalName) == gqlObjectName(bpMod.OriginalName) {
+					mainObjDef = objDef.AsObject.Value
+					break
+				}
+			}
+			if mainObjDef == nil {
+				return nil, fmt.Errorf("blueprint module %q has no main object", bpMod.Name())
+			}
+
+			// Return an instance of the blueprint's main object with empty fields
+			// The blueprint module's own resolvers will handle function calls on this object
+			return dagql.NewResultForCurrentID(ctx, &ModuleObject{
+				Module:  bpMod,
+				TypeDef: mainObjDef,
+				Fields:  map[string]any{}, // empty fields, functions will be called on the blueprint's runtime
+			})
 		},
 		CacheSpec: dagql.CacheSpec{
 			GetCacheConfig: mod.CacheConfigForCall,

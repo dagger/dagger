@@ -4,7 +4,6 @@ package buildkit
 
 import (
 	"context"
-	"os"
 	"sync"
 	"time"
 

@@ -112,6 +112,12 @@ func (BlueprintSuite) TestMultipleBlueprints(ctx context.Context, t *testctx.T) 
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "hello from blueprint")
+		modGen = modGen.WithNewFile("app-config.txt", "this is the app configuration")
+		appConfig, err := modGen.
+			With(daggerExec("call", "hello", "app-config")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, appConfig, "this is the app configuration")
 	})
 }
 
