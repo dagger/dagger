@@ -46,7 +46,7 @@ var (
 	installName string
 
 	initBlueprint    string
-	blueprintAddName string
+	blueprintInstallName string
 
 	developSDK        string
 	developSourcePath string
@@ -163,11 +163,19 @@ func init() {
 	moduleDevelopCmd.Flags().BoolVar(&noSelfCalls, "without-self-calls", false, "Disable self-calls capability for the module")
 	moduleAddFlags(moduleDevelopCmd, moduleDevelopCmd.Flags(), false)
 
-	blueprintAddCmd.Flags().StringVarP(&blueprintAddName, "name", "n", "", "Name to use for the blueprint in the module. Defaults to the name of the blueprint being added.")
-	blueprintAddCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
-	moduleAddFlags(blueprintAddCmd, blueprintAddCmd.Flags(), false)
+	blueprintInstallCmd.Flags().StringVarP(&blueprintInstallName, "name", "n", "", "Name to use for the blueprint in the module. Defaults to the name of the blueprint being installed.")
+	blueprintInstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
+	moduleAddFlags(blueprintInstallCmd, blueprintInstallCmd.Flags(), false)
 
-	blueprintCmd.AddCommand(blueprintAddCmd)
+	blueprintUpdateCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
+	moduleAddFlags(blueprintUpdateCmd, blueprintUpdateCmd.Flags(), false)
+
+	blueprintUninstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
+	moduleAddFlags(blueprintUninstallCmd, blueprintUninstallCmd.Flags(), false)
+
+	blueprintCmd.AddCommand(blueprintInstallCmd)
+	blueprintCmd.AddCommand(blueprintUpdateCmd)
+	blueprintCmd.AddCommand(blueprintUninstallCmd)
 }
 
 var moduleInitCmd = &cobra.Command{
@@ -740,11 +748,11 @@ var blueprintCmd = &cobra.Command{
 	Short: "Manage blueprints",
 }
 
-var blueprintAddCmd = &cobra.Command{
-	Use:     "add [options] <module>",
-	Short:   "Add a blueprint to the current module",
-	Long:    "Add another module as a blueprint to the current module.",
-	Example: "dagger blueprint add github.com/example/blueprint",
+var blueprintInstallCmd = &cobra.Command{
+	Use:     "install [options] <module>",
+	Short:   "Install a blueprint to the current module",
+	Long:    "Install another module as a blueprint to the current module.",
+	Example: "dagger blueprint install github.com/example/blueprint",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
@@ -756,7 +764,7 @@ var blueprintAddCmd = &cobra.Command{
 				return err
 			}
 			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
-				// We can only add blueprints to a local module
+				// We can only install blueprints to a local module
 				RequireKind: dagger.ModuleSourceKindLocalSource,
 			})
 
@@ -778,8 +786,8 @@ var blueprintAddCmd = &cobra.Command{
 				DisableFindUp: true,
 			})
 
-			if blueprintAddName != "" {
-				blueprintSrc = blueprintSrc.WithName(blueprintAddName)
+			if blueprintInstallName != "" {
+				blueprintSrc = blueprintSrc.WithName(blueprintInstallName)
 			}
 
 			modSrc = modSrc.WithBlueprint(blueprintSrc)
@@ -792,10 +800,111 @@ var blueprintAddCmd = &cobra.Command{
 				GeneratedContextDirectory().
 				Export(ctx, contextDirPath)
 			if err != nil {
-				return fmt.Errorf("failed to add blueprint: %w", err)
+				return fmt.Errorf("failed to install blueprint: %w", err)
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "blueprint added\n")
+			fmt.Fprintf(cmd.OutOrStdout(), "blueprint installed\n")
+			return nil
+		})
+	},
+}
+
+var blueprintUpdateCmd = &cobra.Command{
+	Use:     "update [options] [<blueprint>...]",
+	Short:   "Update blueprints",
+	Long:    "Update all or specific blueprints of the current module.",
+	Example: "dagger blueprint update",
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
+		ctx := cmd.Context()
+		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			dag := engineClient.Dagger()
+
+			modRef, err := getModuleSourceRefWithDefault()
+			if err != nil {
+				return err
+			}
+			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
+				// We can only update blueprints on a local module
+				RequireKind: dagger.ModuleSourceKindLocalSource,
+			})
+
+			alreadyExists, err := modSrc.ConfigExists(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to check if module already exists: %w", err)
+			}
+			if !alreadyExists {
+				return fmt.Errorf("module must be fully initialized")
+			}
+
+			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get local context directory path: %w", err)
+			}
+
+			modSrc = modSrc.WithUpdateBlueprint()
+			if engineVersion := getCompatVersion(); engineVersion != "" {
+				modSrc = modSrc.WithEngineVersion(engineVersion)
+			}
+
+			_, err = modSrc.
+				GeneratedContextDirectory().
+				Export(ctx, contextDirPath)
+			if err != nil {
+				return fmt.Errorf("failed to update blueprints: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "blueprints updated\n")
+			return nil
+		})
+	},
+}
+
+var blueprintUninstallCmd = &cobra.Command{
+	Use:     "uninstall [options] <blueprint>",
+	Short:   "Uninstall a blueprint",
+	Long:    "Uninstall a blueprint from the current module.",
+	Example: "dagger blueprint uninstall myblueprint",
+	Args:    cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
+		ctx := cmd.Context()
+		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			dag := engineClient.Dagger()
+
+			modRef, err := getModuleSourceRefWithDefault()
+			if err != nil {
+				return err
+			}
+			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
+				// We can only uninstall blueprints on a local module
+				RequireKind: dagger.ModuleSourceKindLocalSource,
+			})
+
+			alreadyExists, err := modSrc.ConfigExists(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to check if module already exists: %w", err)
+			}
+			if !alreadyExists {
+				return fmt.Errorf("module must be fully initialized")
+			}
+
+			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get local context directory path: %w", err)
+			}
+
+			modSrc = modSrc.WithoutBlueprint()
+			if engineVersion := getCompatVersion(); engineVersion != "" {
+				modSrc = modSrc.WithEngineVersion(engineVersion)
+			}
+
+			_, err = modSrc.
+				GeneratedContextDirectory().
+				Export(ctx, contextDirPath)
+			if err != nil {
+				return fmt.Errorf("failed to uninstall blueprint: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "blueprint uninstalled\n")
 			return nil
 		})
 	},

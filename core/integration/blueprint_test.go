@@ -103,11 +103,11 @@ func (BlueprintSuite) TestMultipleBlueprints(ctx context.Context, t *testctx.T) 
 		require.Contains(t, out, "hello from blueprint")
 		// install another blueprint
 		modGen = modGen.
-			With(daggerExec("blueprint", "add", "../myblueprint-ts")).
-			With(daggerExec("blueprint", "add", "../myblueprint-py"))
+			With(daggerExec("blueprint", "install", "../myblueprint-ts")).
+			With(daggerExec("blueprint", "install", "../myblueprint-py"))
 		out, err = modGen.Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "blueprint added")
+		require.Contains(t, out, "blueprint installed")
 		out, err = modGen.
 			With(daggerExec("call", "hello", "message")).
 			Stdout(ctx)

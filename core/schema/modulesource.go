@@ -1555,39 +1555,45 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateBlueprint(
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	// If no blueprint is set, return without error
-	if parentSrc.Self().Blueprint.Self() == nil {
+	// If no blueprints are set, return without error
+	if len(parentSrc.Self().Blueprints) == 0 {
 		return parentSrc.Result, nil
 	}
 
-	bpSrc := parentSrc.Self().Blueprint.Self()
+	// Loop over the existing blueprints and update each one
+	var newUpdatedBpArgs []core.ModuleSourceID
+	for _, existingBp := range parentSrc.Self().Blueprints {
+		bpSrc := existingBp.Self()
 
-	// Only update git sources
-	if bpSrc.Kind != core.ModuleSourceKindGit {
-		return parentSrc.Result, nil
-	}
+		// Only update git sources, skip local blueprints
+		if bpSrc.Kind != core.ModuleSourceKindGit {
+			continue
+		}
 
-	// Update the blueprint by loading it fresh
-	var bpUpdated dagql.ObjectResult[*core.ModuleSource]
-	err = dag.Select(ctx, dag.Root(), &bpUpdated,
-		dagql.Selector{
-			Field: "moduleSource",
-			Args: []dagql.NamedInput{
-				{Name: "refString", Value: dagql.String(bpSrc.AsString())},
+		// Update the blueprint by loading it fresh
+		var bpUpdated dagql.ObjectResult[*core.ModuleSource]
+		err := dag.Select(ctx, dag.Root(), &bpUpdated,
+			dagql.Selector{
+				Field: "moduleSource",
+				Args: []dagql.NamedInput{
+					{Name: "refString", Value: dagql.String(bpSrc.AsString())},
+				},
 			},
-		},
-	)
-	if err != nil {
-		return inst, fmt.Errorf("failed to load updated blueprint: %w", err)
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to load updated blueprint: %w", err)
+		}
+
+		newUpdatedBpArgs = append(newUpdatedBpArgs, dagql.NewID[*core.ModuleSource](bpUpdated.ID()))
 	}
 
-	// Set the updated blueprint on the parent source
+	// Set the updated blueprints on the parent source
 	err = dag.Select(ctx, parentSrc, &inst,
 		dagql.Selector{
-			Field: "withBlueprint",
+			Field: "withBlueprints",
 			Args: []dagql.NamedInput{{
-				Name:  "blueprint",
-				Value: dagql.NewID[*core.ModuleSource](bpUpdated.ID()),
+				Name:  "blueprints",
+				Value: dagql.ArrayInput[core.ModuleSourceID](newUpdatedBpArgs),
 			}},
 		},
 	)
