@@ -444,6 +444,7 @@ func (mod *Module) validateTypeDef(ctx context.Context, typeDef *TypeDef) error 
 	return nil
 }
 
+//nolint:gocyclo
 func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) error {
 	// check whether this is a pre-existing object from core or another module
 	modType, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)

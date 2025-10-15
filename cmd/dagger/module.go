@@ -804,6 +804,7 @@ var blueprintInstallCmd = &cobra.Command{
 	},
 }
 
+//nolint:dupl
 var blueprintUpdateCmd = &cobra.Command{
 	Use:     "update [options] [<blueprint>...]",
 	Short:   "Update blueprints",
@@ -854,6 +855,7 @@ var blueprintUpdateCmd = &cobra.Command{
 	},
 }
 
+//nolint:dupl
 var blueprintUninstallCmd = &cobra.Command{
 	Use:     "uninstall [options] <blueprint>",
 	Short:   "Uninstall a blueprint",
