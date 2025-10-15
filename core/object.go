@@ -485,6 +485,9 @@ func blueprintProxyField(mod *Module, field *FieldTypeDef, bpMod *Module) dagql.
 	return dagql.Field[*ModuleObject]{
 		Spec: spec,
 		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], _ map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
+			// The blueprint module stored in BlueprintModules already has the correct ContextSource and Runtime
+			// set during initialization in moduleSourceAsModule, so we can use it directly
+
 			// Return the blueprint module's main object as a proxy
 			if len(bpMod.ObjectDefs) == 0 {
 				return nil, fmt.Errorf("blueprint module %q has no objects", bpMod.Name())

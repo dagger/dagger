@@ -2052,7 +2052,7 @@ func (s *moduleSourceSchema) runCodegen(
 	}
 
 	// load the deps as actual Modules
-	deps, err := s.loadDependencyModules(ctx, srcInst.Self())
+	deps, err := s.loadDependencyModules(ctx, srcInst)
 	if err != nil {
 		return res, fmt.Errorf("failed to load dependencies as modules: %w", err)
 	}
@@ -2245,7 +2245,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 		return genDirInst, fmt.Errorf("failed to add module source required files: %w", err)
 	}
 
-	deps, err := s.loadDependencyModules(ctx, srcInst.Self())
+	deps, err := s.loadDependencyModules(ctx, srcInst)
 	if err != nil {
 		return genDirInst, fmt.Errorf("failed to load dependencies of this modules: %w", err)
 	}
@@ -2533,7 +2533,7 @@ func (s *moduleSourceSchema) moduleSourceIntrospectionSchemaJSON(
 	src dagql.ObjectResult[*core.ModuleSource],
 	args struct{},
 ) (inst dagql.Result[*core.File], rerr error) {
-	deps, err := s.loadDependencyModules(ctx, src.Self())
+	deps, err := s.loadDependencyModules(ctx, src)
 	if err != nil {
 		return inst, err
 	}
@@ -2595,7 +2595,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	}
 
 	// load the deps as actual Modules
-	deps, err := s.loadDependencyModules(ctx, src.Self())
+	deps, err := s.loadDependencyModules(ctx, src)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load dependencies as modules: %w", err)
 	}
@@ -2680,24 +2680,22 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 				return inst, fmt.Errorf("failed to load blueprint %q as module: %w", bpSrc.Self().ModuleName, err)
 			}
 
-			// Mark the blueprint module so it can be identified later
-			bpModResult.Self().IsBlueprint = true
-
-			// Set the blueprint's ContextSource to use the main module's source
-			// This allows the blueprint to access files from the main module's workspace
-			bpModResult.Self().ContextSource = dagql.NonNull(originalSrc)
+			// Clone the blueprint module to create an instance for this main module
+			// Each main module using the blueprint needs its own instance with the correct ContextSource
+			bpMod := bpModResult.Self()
 
 			// Add the blueprint module's functions as a namespaced field
-			for _, obj := range bpModResult.Self().ObjectDefs {
-				if obj.AsObject.Value.Name == strcase.ToCamel(bpModResult.Self().NameField) {
-					// Create a field that maps to the bpModResult type using TypeDef.WithObjectField
-					fieldName := bpModResult.Self().NameField
+			for _, obj := range bpMod.ObjectDefs {
+				if obj.AsObject.Value.Name == strcase.ToCamel(bpMod.NameField) {
+					// Create a field that maps to the bpMod type using TypeDef.WithObjectField
+					fieldName := bpMod.NameField
 					shadowModule, err = shadowModule.WithObjectField(fieldName, obj, fmt.Sprintf("Blueprint module: %s", fieldName), nil)
 					if err != nil {
 						return inst, fmt.Errorf("failed to add blueprint field %q: %w", fieldName, err)
 					}
 					// Store the blueprint module reference for runtime resolution
-					mod.BlueprintModules[fieldName] = bpModResult.Self()
+					// This cloned instance already has the correct ContextSource and Runtime set
+					mod.BlueprintModules[fieldName] = bpMod
 					break
 				}
 			}
@@ -2724,7 +2722,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 }
 
 // load the given module source's dependencies as modules
-func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src *core.ModuleSource) (_ *core.ModDeps, rerr error) {
+func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagql.ObjectResult[*core.ModuleSource]) (_ *core.ModDeps, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "load dep modules", telemetry.Internal())
 	defer telemetry.End(span, func() error { return rerr })
 
@@ -2738,8 +2736,8 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src *cor
 	}
 
 	var eg errgroup.Group
-	depMods := make([]dagql.Result[*core.Module], len(src.Dependencies))
-	for i, depSrc := range src.Dependencies {
+	depMods := make([]dagql.Result[*core.Module], len(src.Self().Dependencies))
+	for i, depSrc := range src.Self().Dependencies {
 		i := i // capture loop variable
 		eg.Go(func() error {
 			return dag.Select(ctx, depSrc, &depMods[i],
@@ -2753,27 +2751,21 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src *cor
 
 	// Load all blueprints as dependencies
 	// TODO: dont expose dependencies as top level commands in shell
-	if len(src.Blueprints) > 1 {
+	bpMods := make([]dagql.Result[*core.Module], len(src.Self().Blueprints))
+	if len(src.Self().Blueprints) > 1 {
 		var bpeg errgroup.Group
-		bpMods := make([]dagql.Result[*core.Module], len(src.Blueprints))
-		for i, bpSrc := range src.Blueprints {
+		for i, bpSrc := range src.Self().Blueprints {
 			i := i // capture loop variable
 			bpeg.Go(func() error {
 				err := dag.Select(ctx, bpSrc, &bpMods[i],
 					dagql.Selector{Field: "asModule"},
 				)
-				if err == nil && bpMods[i].Self() != nil {
-					// Mark this module as a blueprint to allow type sharing
-					bpMods[i].Self().IsBlueprint = true
-				}
 				return err
 			})
 		}
 		if err := bpeg.Wait(); err != nil {
 			return nil, fmt.Errorf("failed to load module dependencies: %w", err)
 		}
-
-		depMods = append(depMods, bpMods...)
 	}
 
 	defaultDeps, err := query.DefaultDeps(ctx)
@@ -2784,13 +2776,19 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src *cor
 	for _, depMod := range depMods {
 		deps = deps.Append(depMod.Self())
 	}
+	for _, bpMod := range bpMods {
+		clone := bpMod.Self().Clone()
+		clone.IsBlueprint = true
+		clone.ContextSource = dagql.NonNull(src)
+		deps = deps.Append(clone)
+	}
 	for i, depMod := range deps.Mods {
 		if coreMod, ok := depMod.(*CoreMod); ok {
 			// this is needed so that a module's dependency on the core
 			// uses the correct schema version
 			dag := *coreMod.Dag
 
-			dag.View = call.View(engine.BaseVersion(engine.NormalizeVersion(src.EngineVersion)))
+			dag.View = call.View(engine.BaseVersion(engine.NormalizeVersion(src.Self().EngineVersion)))
 			deps.Mods[i] = &CoreMod{Dag: &dag}
 		}
 	}
