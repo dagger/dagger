@@ -38,7 +38,7 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 		"function", fieldName,
 	)
 
-	if checkValidName(fieldName) {
+	if !checkValidName(fieldName) {
 		log.Debug("skipping call with cloud hook due to field name")
 		return nil, false, nil
 	}
