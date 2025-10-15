@@ -69,6 +69,17 @@ defmodule Dagger.Changeset do
   end
 
   @doc """
+  Returns true if the changeset is empty (i.e. there are no changes).
+  """
+  @spec empty(t()) :: {:ok, boolean()} | {:error, term()}
+  def empty(%__MODULE__{} = changeset) do
+    query_builder =
+      changeset.query_builder |> QB.select("empty")
+
+    Client.execute(changeset.client, query_builder)
+  end
+
+  @doc """
   Applies the diff represented by this changeset to a path on the host.
   """
   @spec export(t(), String.t()) :: {:ok, String.t()} | {:error, term()}

@@ -945,6 +945,25 @@ class Changeset(Type):
         _ctx = self._select("before", _args)
         return Directory(_ctx)
 
+    async def empty(self) -> bool:
+        """Returns true if the changeset is empty (i.e. there are no changes).
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("empty", _args)
+        return await _ctx.execute(bool)
+
     async def export(self, path: str) -> str:
         """Applies the diff represented by this changeset to a path on the host.
 
