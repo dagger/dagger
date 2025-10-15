@@ -6082,52 +6082,52 @@ func (m *Test) PrintDefault(ctx context.Context) (string, error) {
 }
 `,
 		},
-		{
-			sdk: "typescript",
-			source: `import { dag, Container, object, func } from "@dagger.io/dagger"
-
-@object()
-export class Test {
-  /**
-   * Returns a container that echoes whatever string argument is provided
-   */
-  @func()
-  containerEcho(stringArg: string = "Hello Self Calls"): Container {
-    return dag.container().from("alpine:latest").withExec(["echo", stringArg])
-  }
-
-  @func()
-  async print(stringArg: string): Promise<string> {
-    return dag.test().containerEcho({stringArg}).stdout()
-  }
-
-  @func()
-  async printDefault(): Promise<string> {
-    return dag.test().containerEcho().stdout()
-  }
-}
-`,
-		},
-		{
-			sdk: "python",
-			source: `import dagger
-from dagger import dag, function, object_type
-
-@object_type
-class Test:
-    @function
-    def container_echo(self, string_arg: str = "Hello Self Calls") -> dagger.Container:
-        return dag.container().from_("alpine:latest").with_exec(["echo", string_arg])
-
-    @function
-    async def print(self, string_arg: str) -> str:
-        return await dag.test().container_echo(string_arg=string_arg).stdout()
-
-    @function
-    async def print_default(self) -> str:
-        return await dag.test().container_echo().stdout()
-`,
-		},
+		//		{
+		//			sdk: "typescript",
+		//			source: `import { dag, Container, object, func } from "@dagger.io/dagger"
+		//
+		// @object()
+		// export class Test {
+		//   /**
+		//    * Returns a container that echoes whatever string argument is provided
+		//    */
+		//   @func()
+		//   containerEcho(stringArg: string = "Hello Self Calls"): Container {
+		//     return dag.container().from("alpine:latest").withExec(["echo", stringArg])
+		//   }
+		//
+		//   @func()
+		//   async print(stringArg: string): Promise<string> {
+		//     return dag.test().containerEcho({stringArg}).stdout()
+		//   }
+		//
+		//   @func()
+		//   async printDefault(): Promise<string> {
+		//     return dag.test().containerEcho().stdout()
+		//   }
+		// }
+		// `,
+		//		},
+		//		{
+		//			sdk: "python",
+		//			source: `import dagger
+		// from dagger import dag, function, object_type
+		//
+		// @object_type
+		// class Test:
+		//     @function
+		//     def container_echo(self, string_arg: str = "Hello Self Calls") -> dagger.Container:
+		//         return dag.container().from_("alpine:latest").with_exec(["echo", string_arg])
+		//
+		//     @function
+		//     async def print(self, string_arg: str) -> str:
+		//         return await dag.test().container_echo(string_arg=string_arg).stdout()
+		//
+		//     @function
+		//     async def print_default(self) -> str:
+		//         return await dag.test().container_echo().stdout()
+		// `,
+		//		},
 	}
 
 	for _, tc := range tcs {
