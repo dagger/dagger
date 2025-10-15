@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
@@ -84,25 +85,26 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 	if err != nil {
 		return nil, false, fmt.Errorf("current query: %w", err)
 	}
-	spanExporter, err := q.CurrentSpanExporter(ctx)
-	if err != nil {
-		return nil, false, fmt.Errorf("current span exporter: %w", err)
-	}
-	logExporter, err := q.CurrentLogExporter(ctx)
-	if err != nil {
-		return nil, false, fmt.Errorf("current log exporter: %w", err)
-	}
-	metricExporter, err := q.CurrentMetricsExporter(ctx)
-	if err != nil {
-		return nil, false, fmt.Errorf("current metric exporter: %w", err)
-	}
-	grpcCaller, err := q.NonModuleParentClientSessionCaller(ctx)
+	grpcCaller, err := q.NonModuleParentClientSessionCaller(ctx) // TODO: rewrite to just SessionCaller, or just use the bk client, etc.
 	if err != nil {
 		return nil, false, fmt.Errorf("get session caller: %w", err)
 	}
 	callerClientMD, err := q.NonModuleParentClientMetadata(ctx)
 	if err != nil {
 		return nil, false, fmt.Errorf("main client metadata: %w", err)
+	}
+	callerCtx := engine.ContextWithClientMetadata(ctx, callerClientMD)
+	spanExporter, err := q.CurrentSpanExporter(callerCtx)
+	if err != nil {
+		return nil, false, fmt.Errorf("current span exporter: %w", err)
+	}
+	logExporter, err := q.CurrentLogExporter(callerCtx)
+	if err != nil {
+		return nil, false, fmt.Errorf("current log exporter: %w", err)
+	}
+	metricExporter, err := q.CurrentMetricsExporter(callerCtx)
+	if err != nil {
+		return nil, false, fmt.Errorf("current metric exporter: %w", err)
 	}
 
 	c, _, err := client.ConnectE2E(ctx, client.Params{
