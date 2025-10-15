@@ -47,6 +47,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 		dagql.Func("name", s.name).
 			View(AllVersion). // name returns different results in different versions
 			Doc(`Returns the name of the directory.`),
+		dagql.Func("origin", s.origin).
+			Doc(`Returns the absolute path on the host where this directory originated from, or null if it was not loaded from the host.`),
 		dagql.NodeFunc("entries", DagOpWrapper(srv, s.entries)).
 			View(AllVersion). // entries returns different results in different versions
 			Doc(`Returns a list of files and directories at the given path.`).
@@ -432,6 +434,13 @@ func (s *directorySchema) name(ctx context.Context, parent *core.Directory, args
 		name = strings.TrimSuffix(name, "/") + "/"
 	}
 	return dagql.NewString(name), nil
+}
+
+func (s *directorySchema) origin(ctx context.Context, parent *core.Directory, args struct{}) (dagql.Nullable[dagql.String], error) {
+	if parent.OriginPath == "" {
+		return dagql.Null[dagql.String](), nil
+	}
+	return dagql.NonNull(dagql.NewString(parent.OriginPath)), nil
 }
 
 type entriesArgs struct {

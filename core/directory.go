@@ -45,6 +45,10 @@ type Directory struct {
 
 	// Services necessary to provision the directory.
 	Services ServiceBindings
+
+	// OriginPath is the absolute path on the host where this directory originated from.
+	// This is only set when the directory was loaded via Host.directory.
+	OriginPath string
 }
 
 func (*Directory) Type() *ast.Type {
@@ -616,6 +620,11 @@ func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory,
 	}
 
 	dir.Dir = path.Join(dir.Dir, subdir)
+
+	// Update origin path if present to track subdirectory
+	if dir.OriginPath != "" {
+		dir.OriginPath = filepath.Join(dir.OriginPath, subdir)
+	}
 
 	// check that the directory actually exists so the user gets an error earlier
 	// rather than when the dir is used

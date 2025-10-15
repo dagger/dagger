@@ -359,6 +359,11 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	if err != nil {
 		return inst, err
 	}
+
+	// Set origin path to track back to host directory
+	// This is needed for proper export behavior when using Changeset
+	dir.OriginPath = hostPath
+
 	dirRes, err := dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 	if err != nil {
 		return inst, err

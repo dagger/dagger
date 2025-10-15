@@ -718,9 +718,15 @@ func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response a
 
 	var summary strings.Builder
 	var noChanges bool
+	var exportDest string = "."
 	if err := (func() (rerr error) {
 		ctx, span := Tracer().Start(ctx, "analyzing changes")
 		defer telemetry.End(span, func() error { return rerr })
+
+		// Try to get the origin path from the Before directory
+		if origin, err := changeset.Before().Origin(ctx); err == nil && origin != "" {
+			exportDest = origin
+		}
 
 		preview, err := idtui.PreviewPatch(ctx, changeset)
 		if err != nil {
@@ -744,7 +750,7 @@ func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response a
 	form := idtui.NewForm(
 		huh.NewGroup(
 			huh.NewConfirm().
-				Title("Apply changes?").
+				Title("Apply changes to " + exportDest + "?").
 				Description(summary.String()).
 				Affirmative("Apply").
 				Negative("Discard").
@@ -758,9 +764,10 @@ func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response a
 		return nil
 	}
 
-	ctx, span := Tracer().Start(ctx, "applying changes")
+	ctx, span := Tracer().Start(ctx, "applying changes to "+exportDest)
 	defer telemetry.End(span, func() error { return rerr })
-	if _, err := changeset.Export(ctx, "."); err != nil {
+
+	if _, err := changeset.Export(ctx, exportDest); err != nil {
 		return err
 	}
 	return nil

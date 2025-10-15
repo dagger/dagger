@@ -237,6 +237,15 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Returns the absolute path on the host where this directory originated from, or null if it was not loaded from the host.
+     */
+    public function origin(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('origin');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'origin');
+    }
+
+    /**
      * Searches for content matching the given regular expression or literal string.
      *
      * Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.

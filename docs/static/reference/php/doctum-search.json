@@ -2763,6 +2763,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Directory::origin",
+			"p": "Dagger/Directory.html#method_origin",
+			"d": "<p>Returns the absolute path on the host where this directory originated from, or null if it was not loaded from the host.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Directory::search",
 			"p": "Dagger/Directory.html#method_search",
 			"d": "<p>Searches for content matching the given regular expression or literal string.</p>"

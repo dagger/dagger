@@ -4218,6 +4218,7 @@ export class Directory extends BaseClient {
   private readonly _export?: string = undefined
   private readonly _findUp?: string = undefined
   private readonly _name?: string = undefined
+  private readonly _origin?: string = undefined
   private readonly _sync?: DirectoryID = undefined
 
   /**
@@ -4231,6 +4232,7 @@ export class Directory extends BaseClient {
     _export?: string,
     _findUp?: string,
     _name?: string,
+    _origin?: string,
     _sync?: DirectoryID,
   ) {
     super(ctx)
@@ -4241,6 +4243,7 @@ export class Directory extends BaseClient {
     this._export = _export
     this._findUp = _findUp
     this._name = _name
+    this._origin = _origin
     this._sync = _sync
   }
 
@@ -4483,6 +4486,21 @@ export class Directory extends BaseClient {
     }
 
     const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Returns the absolute path on the host where this directory originated from, or null if it was not loaded from the host.
+   */
+  origin = async (): Promise<string> => {
+    if (this._origin) {
+      return this._origin
+    }
+
+    const ctx = this._ctx.select("origin")
 
     const response: Awaited<string> = await ctx.execute()
 
