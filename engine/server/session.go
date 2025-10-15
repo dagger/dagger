@@ -1459,6 +1459,15 @@ func (srv *Server) Buildkit(ctx context.Context) (*buildkit.Client, error) {
 	return client.bkClient, nil
 }
 
+func (srv *Server) NonModuleParentClientSessionCaller(ctx context.Context) (bksession.Caller, error) {
+	client, err := srv.nonModuleParentClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ctx = engine.ContextWithClientMetadata(ctx, client.clientMetadata)
+	return client.bkClient.GetSessionCaller(ctx, false)
+}
+
 // The services for the current client's session
 func (srv *Server) Services(ctx context.Context) (*core.Services, error) {
 	client, err := srv.clientFromContext(ctx)

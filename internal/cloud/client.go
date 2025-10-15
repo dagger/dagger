@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -251,19 +250,13 @@ func (c *Client) Engine(ctx context.Context, req EngineRequest) (*EngineSpec, er
 	}
 	defer resp.Body.Close()
 
-	bs, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read remote Engine response body: %w", err)
-	}
-	body := json.NewDecoder(bytes.NewBuffer(bs))
+	body := json.NewDecoder(resp.Body)
 
 	if resp.StatusCode != http.StatusCreated {
 		errResponse := &ErrResponse{}
 		err = body.Decode(errResponse)
 		if err != nil {
-			// TODO: ??
-			// return nil, fmt.Errorf("response body is not valid JSON: %w", err)
-			return nil, fmt.Errorf("response body is not valid JSON: %w: %d %q", err, resp.StatusCode, string(bs))
+			return nil, fmt.Errorf("response body is not valid JSON: %w", err)
 		}
 		return nil, fmt.Errorf("failed to provision a remote Engine: %s", errResponse.Message)
 	}

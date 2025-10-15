@@ -3,7 +3,6 @@ package drivers
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -11,7 +10,6 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine/client/imageload"
-	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/cloud"
 )
 
@@ -104,18 +102,6 @@ func (d *DaggerCloudDriver) Provision(ctx context.Context, _ *url.URL, opts *Dri
 			return nil, errors.New("please associate this Engine with an org by running `dagger login <org>")
 		}
 		return nil, fmt.Errorf("failed to provision Cloud Engine: %w", err)
-	}
-
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
-	bs, err := json.Marshal(engineSpec)
-	if err != nil {
-		slog.Error("failed to marshal engine spec for logging", "error", err)
-	} else {
-		slog.Warn("provisioned cloud engine", "engine_spec", string(bs))
 	}
 
 	return &DaggerCloudConnector{EngineSpec: *engineSpec}, nil

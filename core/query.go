@@ -9,6 +9,7 @@ import (
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
+	"github.com/dagger/dagger/internal/buildkit/session"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/moby/locker"
@@ -137,6 +138,7 @@ type Server interface {
 	CurrentSpanExporter(ctx context.Context) (sdktrace.SpanExporter, error)
 	CurrentLogExporter(ctx context.Context) (sdklog.Exporter, error)
 	CurrentMetricsExporter(ctx context.Context) (sdkmetric.Exporter, error)
+	NonModuleParentClientSessionCaller(ctx context.Context) (session.Caller, error)
 }
 
 type queryKey struct{}

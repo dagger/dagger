@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
@@ -31,11 +30,6 @@ func init() {
 type CloudCallHook struct{}
 
 func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *CallOpts) (t dagql.AnyResult, ok bool, rerr error) {
-	md, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, false, fmt.Errorf("metadata: %w", err)
-	}
-
 	objName := opts.ParentModType.typeDef.Name
 	fieldName := fn.metadata.Name
 
@@ -48,7 +42,7 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 		return nil, false, nil
 	}
 
-	ok, err = checkValidMod(ctx, fn.mod)
+	ok, err := checkValidMod(ctx, fn.mod)
 	if err != nil {
 		return nil, false, err
 	}
@@ -119,13 +113,13 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 	if err != nil {
 		return nil, false, fmt.Errorf("current metric exporter: %w", err)
 	}
-	bk, err := q.Buildkit(ctx)
-	if err != nil {
-		return nil, false, fmt.Errorf("current buildkit: %w", err)
-	}
-	grpcCaller, err := bk.GetSessionCaller(ctx, false)
+	grpcCaller, err := q.NonModuleParentClientSessionCaller(ctx)
 	if err != nil {
 		return nil, false, fmt.Errorf("get session caller: %w", err)
+	}
+	callerClientMD, err := q.NonModuleParentClientMetadata(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("main client metadata: %w", err)
 	}
 
 	c, _, err := client.ConnectE2E(ctx, client.Params{
@@ -136,9 +130,9 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 		Function: fieldName,
 		// ExecCmd:  []string{"TODO2"},
 
-		CloudToken:      md.CloudToken,
-		CloudBasicToken: md.CloudBasicToken,
-		CloudOrgID:      md.CloudOrg,
+		CloudToken:      callerClientMD.CloudToken,
+		CloudBasicToken: callerClientMD.CloudBasicToken,
+		CloudOrgID:      callerClientMD.CloudOrg,
 
 		EngineTrace:   spanExporter,
 		EngineLogs:    logExporter,

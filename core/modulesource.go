@@ -331,8 +331,6 @@ func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, string, er
 }
 
 func (src *ModuleSource) outerEnvFile(ctx context.Context) (*EnvFile, string, error) {
-	return &EnvFile{}, "", nil // HACK:
-
 	dag, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, "", err
