@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
@@ -160,11 +161,19 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 	}
 
 	query := c.Dagger().QueryBuilder()
-	query = query.Select("moduleSource").
-		Arg("refString", fn.mod.Source.Value.Self().Git.Symbolic). // XXX: ain't right
-		Arg("refPin", fn.mod.Source.Value.Self().Git.Commit)
+	if fn.mod.Source.Value.Self().Kind == ModuleSourceKindGit {
+		query = query.Select("moduleSource").
+			Arg("refString", fn.mod.Source.Value.Self().Git.Symbolic). // XXX: ain't right
+			Arg("refPin", fn.mod.Source.Value.Self().Git.Commit)
 		// XXX: something is wrong with enum passing.
 		// Arg("requireKind", fn.mod.Source.Value.Self().Kind)
+	} else {
+		query = query.Select("moduleSource").
+			Arg("refString", filepath.Join(
+				fn.mod.Source.Value.Self().Local.ContextDirectoryPath,
+				fn.mod.Source.Value.Self().SourceRootSubpath,
+			))
+	}
 	query = query.Select("asModule")
 	query = query.Select("call").
 		Arg("object", objName).
@@ -224,11 +233,8 @@ func checkValidParent(ctx context.Context, parent *ModuleObjectType, value dagql
 }
 
 func checkValidMod(ctx context.Context, module *Module) (bool, error) {
-	if !module.Source.Valid {
-		return false, nil
-	}
 	source := module.Source.Value.Self()
-	if source.Kind == ModuleSourceKindGit {
+	if source.Kind == ModuleSourceKindGit || source.Kind == ModuleSourceKindLocal {
 		return true, nil
 	}
 
