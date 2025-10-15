@@ -135,6 +135,7 @@ type Server interface {
 	ClientTelemetry(ctc context.Context, sessID, clientID string) (*clientdb.Queries, func() error, error)
 
 	// TODO:
+	EngineName() string
 	CurrentSpanExporter(ctx context.Context) (sdktrace.SpanExporter, error)
 	CurrentLogExporter(ctx context.Context) (sdklog.Exporter, error)
 	CurrentMetricsExporter(ctx context.Context) (sdkmetric.Exporter, error)

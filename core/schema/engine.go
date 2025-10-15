@@ -44,7 +44,13 @@ func (s *engineSchema) Install(srv *dagql.Server) {
 }
 
 func (s *engineSchema) engine(ctx context.Context, parent *core.Query, args struct{}) (*core.Engine, error) {
-	return &core.Engine{}, nil
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &core.Engine{
+		Name: query.EngineName(),
+	}, nil
 }
 
 func (s *engineSchema) localCache(ctx context.Context, parent *core.Engine, args struct{}) (*core.EngineCache, error) {
