@@ -17,7 +17,7 @@ type DaggerDev struct {
 
 	Version string
 	Tag     string
-	Git     *dagger.VersionGit // +private
+	Git     *dagger.GitRepository
 
 	// When set, module codegen is automatically applied when retrieving the Dagger source code
 	ModCodegenTargets []string
@@ -46,6 +46,9 @@ func New(
 	// ]
 	source *dagger.Directory,
 
+	// +defaultPath="/"
+	git *dagger.GitRepository,
+
 	// +optional
 	dockerCfg *dagger.Secret,
 ) (*DaggerDev, error) {
@@ -62,7 +65,7 @@ func New(
 	dev := &DaggerDev{
 		Source:    source,
 		Tag:       tag,
-		Git:       v.Git(),
+		Git:       git,
 		Version:   version,
 		DockerCfg: dockerCfg,
 	}
@@ -110,32 +113,6 @@ func (dev *DaggerDev) SourceDeveloped(targets ...string) *dagger.Directory {
 		src = src.WithDirectory(module, layer)
 	}
 	return src
-}
-
-// Start a coding agent for the Dagger project.
-func (dev *DaggerDev) Coder(ctx context.Context) (*dagger.LLM, error) {
-	src := dev.Source
-
-	gopls := dag.Go(src).Base().
-		WithExec([]string{"go", "install", "golang.org/x/tools/gopls@latest"}).
-		WithDirectory("/workspace", src).
-		WithWorkdir("/workspace").
-		WithDefaultArgs([]string{"gopls", "mcp"})
-
-	goplsInstructions, err := gopls.WithExec([]string{"gopls", "mcp", "-instructions"}).Stdout(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return dag.Doug().Agent(
-		dag.LLM().
-			WithEnv(
-				dag.Env().
-					WithCurrentModule().
-					WithWorkspace(src)).
-			WithSystemPrompt(goplsInstructions).
-			WithMCPServer("gopls", gopls.AsService()),
-	), nil
 }
 
 // Develop the Dagger CLI

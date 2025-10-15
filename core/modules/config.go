@@ -93,6 +93,8 @@ type ModuleConfigUserFields struct {
 type SDK struct {
 	Source string         `json:"source"`
 	Config map[string]any `json:"config,omitempty"`
+	// The experimental features enabled for this module.
+	Experimental map[string]bool `json:"experimental,omitempty"`
 }
 
 func (sdk *SDK) UnmarshalJSON(data []byte) error {

@@ -21,10 +21,6 @@
     {
       "name": "go",
       "source": "../modules/go"
-    },
-    {
-      "name": "version",
-      "source": "../version"
     }
   ],
   "source": ".dagger"

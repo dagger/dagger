@@ -9458,6 +9458,17 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         }]
     }
+    /// The introspection schema JSON file for this module.
+    /// This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+    /// Note: this is in the context of a module, so some core types may be hidden.
+    pub fn introspection_schema_json(&self) -> File {
+        let query = self.selection.select("introspectionSchemaJSON");
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The name of the module
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
@@ -9742,6 +9753,17 @@ impl ModuleSource {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The introspection schema JSON file for this module source.
+    /// This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+    /// Note: this is in the context of a module, so some core types may be hidden.
+    pub fn introspection_schema_json(&self) -> File {
+        let query = self.selection.select("introspectionSchemaJSON");
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The kind of module source (currently local, git or dir).
     pub async fn kind(&self) -> Result<ModuleSourceKind, DaggerError> {
         let query = self.selection.select("kind");
@@ -9877,6 +9899,23 @@ impl ModuleSource {
     pub fn with_engine_version(&self, version: impl Into<String>) -> ModuleSource {
         let mut query = self.selection.select("withEngineVersion");
         query = query.arg("version", version.into());
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Enable the experimental features for the module source.
+    ///
+    /// # Arguments
+    ///
+    /// * `features` - The experimental features to enable.
+    pub fn with_experimental_features(
+        &self,
+        features: Vec<ModuleSourceExperimentalFeature>,
+    ) -> ModuleSource {
+        let mut query = self.selection.select("withExperimentalFeatures");
+        query = query.arg("features", features);
         ModuleSource {
             proc: self.proc.clone(),
             selection: query,
@@ -10031,6 +10070,23 @@ impl ModuleSource {
                 .map(|i| i.into())
                 .collect::<Vec<String>>(),
         );
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Disable experimental features for the module source.
+    ///
+    /// # Arguments
+    ///
+    /// * `features` - The experimental features to disable.
+    pub fn without_experimental_features(
+        &self,
+        features: Vec<ModuleSourceExperimentalFeature>,
+    ) -> ModuleSource {
+        let mut query = self.selection.select("withoutExperimentalFeatures");
+        query = query.arg("features", features);
         ModuleSource {
             proc: self.proc.clone(),
             selection: query,
@@ -12589,6 +12645,11 @@ pub enum ImageMediaTypes {
     Oci,
     #[serde(rename = "OCIMediaTypes")]
     OciMediaTypes,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum ModuleSourceExperimentalFeature {
+    #[serde(rename = "SELF_CALLS")]
+    SelfCalls,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ModuleSourceKind {

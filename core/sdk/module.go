@@ -182,6 +182,13 @@ func (sdk *module) AsRuntime() (core.Runtime, bool) {
 	return &runtimeModule{mod: sdk}, true
 }
 
+func (sdk *module) AsModuleTypes() (core.ModuleTypes, bool) {
+	if _, ok := sdk.funcs["moduleTypes"]; !ok {
+		return nil, false
+	}
+	return &moduleTypes{mod: sdk}, true
+}
+
 func (sdk *module) AsCodeGenerator() (core.CodeGenerator, bool) {
 	if _, ok := sdk.funcs["codegen"]; !ok {
 		return nil, false

@@ -52,6 +52,9 @@ var (
 	developSourcePath string
 	developRecursive  bool
 
+	selfCalls   bool
+	noSelfCalls bool
+
 	force bool
 )
 
@@ -134,6 +137,7 @@ func init() {
 	moduleInitCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate. See https://spdx.org/licenses/")
 	moduleInitCmd.Flags().StringSliceVar(&moduleIncludes, "include", nil, "Paths to include when loading the module. Only needed when extra paths are required to build the module. They are expected to be relative to the directory containing the module's dagger.json file (the module source root).")
 	moduleInitCmd.Flags().StringVar(&initBlueprint, "blueprint", "", "Reference another module as blueprint")
+	moduleInitCmd.Flags().BoolVar(&selfCalls, "with-self-calls", false, "Enable self-calls capability for the module (experimental)")
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
 	modulePublishCmd.Flags().StringVarP(&moduleURL, "mod", "m", "", "Module reference to publish, remote git repo (defaults to current directory)")
@@ -155,6 +159,8 @@ func init() {
 	moduleDevelopCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate. See https://spdx.org/licenses/")
 	moduleDevelopCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
 	moduleDevelopCmd.Flags().Lookup("compat").NoOptDefVal = "skip"
+	moduleDevelopCmd.Flags().BoolVar(&selfCalls, "with-self-calls", false, "Enable self-calls capability for the module (experimental)")
+	moduleDevelopCmd.Flags().BoolVar(&noSelfCalls, "without-self-calls", false, "Disable self-calls capability for the module")
 	moduleAddFlags(moduleDevelopCmd, moduleDevelopCmd.Flags(), false)
 
 	blueprintAddCmd.Flags().StringVarP(&blueprintAddName, "name", "n", "", "Name to use for the blueprint in the module. Defaults to the name of the blueprint being added.")
@@ -293,6 +299,13 @@ dagger init --sdk=go
 				})
 				// Install the blueprint
 				modSrc = modSrc.WithBlueprint(blueprintSrc)
+			}
+
+			if selfCalls {
+				if sdk == "" {
+					return fmt.Errorf("cannot enable self-calls feature without specifying --sdk")
+				}
+				modSrc = modSrc.WithExperimentalFeatures([]dagger.ModuleSourceExperimentalFeature{dagger.ModuleSourceExperimentalFeatureSelfCalls})
 			}
 
 			// Export generated files, including dagger.json
@@ -569,6 +582,12 @@ This command is idempotent: you can run it at any time, any number of times. It 
 `,
 	Args:    cobra.NoArgs,
 	GroupID: moduleGroup.ID,
+	PreRunE: func(cmd *cobra.Command, _ []string) error {
+		if selfCalls && noSelfCalls {
+			return fmt.Errorf("cannot use --with-self-calls and --without-self-calls at the same time")
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
@@ -582,6 +601,12 @@ This command is idempotent: you can run it at any time, any number of times. It 
 				// We can only export updated generated files for a local modules
 				RequireKind: dagger.ModuleSourceKindLocalSource,
 			})
+
+			if selfCalls {
+				modSrc = modSrc.WithExperimentalFeatures([]dagger.ModuleSourceExperimentalFeature{dagger.ModuleSourceExperimentalFeatureSelfCalls})
+			} else if noSelfCalls {
+				modSrc = modSrc.WithoutExperimentalFeatures([]dagger.ModuleSourceExperimentalFeature{dagger.ModuleSourceExperimentalFeatureSelfCalls})
+			}
 
 			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
 			if err != nil {

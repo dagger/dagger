@@ -29,6 +29,8 @@ func (cli *DaggerCli) Publish(
 	githubOrgName string,
 	githubToken *dagger.Secret, // +optional
 
+	git *dagger.GitRepository, // +defaultPath="/"
+
 	awsAccessKeyID *dagger.Secret, // +optional
 	awsSecretAccessKey *dagger.Secret, // +optional
 	awsRegion string, // +optional
@@ -44,7 +46,7 @@ func (cli *DaggerCli) Publish(
 	ctr = ctr.
 		WithWorkdir("/app").
 		WithDirectory(".", cli.Go.Source()).
-		WithDirectory(".", cli.Git.Directory()).
+		WithDirectory(".", git.Ref(tag).Tree()).
 		WithDirectory("build", cli.goreleaserBinaries())
 
 	if !semver.IsValid(tag) {

@@ -333,6 +333,13 @@ class ImageMediaTypes(Enum):
     OCI = "OCIMediaTypes"
 
 
+class ModuleSourceExperimentalFeature(Enum):
+    """Experimental features of a module"""
+
+    SELF_CALLS = "SELF_CALLS"
+    """Self calls"""
+
+
 class ModuleSourceKind(Enum):
     """The kind of module source."""
 
@@ -8711,6 +8718,19 @@ class Module(Type):
         _ctx = self._select("interfaces", _args)
         return await _ctx.execute_object_list(TypeDef)
 
+    def introspection_schema_json(self) -> File:
+        """The introspection schema JSON file for this module.
+
+        This file represents the schema visible to the module's source code,
+        including all core types and those from the dependencies.
+
+        Note: this is in the context of a module, so some core types may be
+        hidden.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("introspectionSchemaJSON", _args)
+        return File(_ctx)
+
     async def name(self) -> str:
         """The name of the module
 
@@ -9189,6 +9209,19 @@ class ModuleSource(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(ModuleSourceID)
 
+    def introspection_schema_json(self) -> File:
+        """The introspection schema JSON file for this module source.
+
+        This file represents the schema visible to the module's source code,
+        including all core types and those from the dependencies.
+
+        Note: this is in the context of a module, so some core types may be
+        hidden.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("introspectionSchemaJSON", _args)
+        return File(_ctx)
+
     async def kind(self) -> ModuleSourceKind:
         """The kind of module source (currently local, git or dir).
 
@@ -9493,6 +9526,23 @@ class ModuleSource(Type):
         _ctx = self._select("withEngineVersion", _args)
         return ModuleSource(_ctx)
 
+    def with_experimental_features(
+        self,
+        features: list[ModuleSourceExperimentalFeature],
+    ) -> Self:
+        """Enable the experimental features for the module source.
+
+        Parameters
+        ----------
+        features:
+            The experimental features to enable.
+        """
+        _args = [
+            Arg("features", features),
+        ]
+        _ctx = self._select("withExperimentalFeatures", _args)
+        return ModuleSource(_ctx)
+
     def with_includes(self, patterns: list[str]) -> Self:
         """Update the module source with additional include patterns for
         files+directories from its context that are required for building it
@@ -9618,6 +9668,23 @@ class ModuleSource(Type):
             Arg("dependencies", dependencies),
         ]
         _ctx = self._select("withoutDependencies", _args)
+        return ModuleSource(_ctx)
+
+    def without_experimental_features(
+        self,
+        features: list[ModuleSourceExperimentalFeature],
+    ) -> Self:
+        """Disable experimental features for the module source.
+
+        Parameters
+        ----------
+        features:
+            The experimental features to disable.
+        """
+        _args = [
+            Arg("features", features),
+        ]
+        _ctx = self._select("withoutExperimentalFeatures", _args)
         return ModuleSource(_ctx)
 
     def with_(self, cb: Callable[["ModuleSource"], "ModuleSource"]) -> "ModuleSource":
@@ -12093,6 +12160,7 @@ __all__ = [
     "ModuleConfigClientID",
     "ModuleID",
     "ModuleSource",
+    "ModuleSourceExperimentalFeature",
     "ModuleSourceID",
     "ModuleSourceKind",
     "NetworkProtocol",

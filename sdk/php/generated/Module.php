@@ -68,6 +68,19 @@ class Module extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The introspection schema JSON file for this module.
+     *
+     * This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+     *
+     * Note: this is in the context of a module, so some core types may be hidden.
+     */
+    public function introspectionSchemaJSON(): File
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('introspectionSchemaJSON');
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The name of the module
      */
     public function name(): string

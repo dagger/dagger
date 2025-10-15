@@ -18,7 +18,7 @@ Expected stderr:
 ✔ .pathArgs(
   ┆ file: Address.file: File!
   ┆ dir: Address.directory: Directory!
-  ┆ contextFile: Directory.file(path: "main.go"): File!
+  ┆ contextFile: Host.file(path: "/app/dagql/idtui/viztest/main.go", noCache: true): File!
   ┆ contextDir: Host.directory(path: "/app/dagql/idtui/viztest", noCache: true): Directory!
   ): Void X.Xs
 

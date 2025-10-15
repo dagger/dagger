@@ -45,6 +45,7 @@ func (s *querySchema) Install(srv *dagql.Server) {
 	core.TypeDefKinds.Install(srv)
 	core.ModuleSourceKindEnum.Install(srv)
 	core.ReturnTypesEnum.Install(srv)
+	core.ModuleSourceExperimentalFeatures.Install(srv)
 
 	dagql.MustInputSpec(PipelineLabel{}).Install(srv)
 	dagql.MustInputSpec(core.PortForward{}).Install(srv)

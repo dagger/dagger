@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"path"
 	"regexp"
 	"slices"
 	"sort"
@@ -522,13 +521,24 @@ func (m *MCP) typeTools(allTools *LLMToolSet, srv *dagql.Server, schema *ast.Sch
 		} else {
 			toolName = typeDef.Name + "_" + field.Name
 		}
+
 		allTools.Add(LLMTool{
 			Name:        toolName,
 			Field:       field,
 			Description: strings.TrimSpace(field.Description),
 			Schema:      toolSchema,
-			Strict:      false, // unused
-			HideSelf:    autoConstruct == nil,
+
+			// TODO: would be nice, but have to 'or-null' all args and list everything
+			// in required, which is annoying.
+			Strict: false,
+
+			// Only set Passthrough if this is a plain object method call, as opposed
+			// to a contextual module tool.
+			HideSelf: autoConstruct == nil,
+
+			// Tools that return Changeset or Env modify the environment.
+			ReadOnly: field.Type.NamedType != "Env" && field.Type.NamedType != "Changeset",
+
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
 				argsMap, ok := args.(map[string]any)
 				if !ok {
@@ -633,10 +643,10 @@ func (m *MCP) call(ctx context.Context,
 		return "", fmt.Errorf("no object of type %s found", selfType)
 	}
 
-	doSelect := func(ctx context.Context, env dagql.ObjectResult[*Env]) (dagql.AnyResult, bool, error) {
-		sels, usedContext, err := m.toolCallToSelections(ctx, env, srv, schema, target.ObjectType(), fieldDef, args, autoConstruct)
+	doSelect := func(ctx context.Context, env dagql.ObjectResult[*Env]) (dagql.AnyResult, error) {
+		sels, err := m.toolCallToSelections(ctx, srv, schema, target.ObjectType(), fieldDef, args, autoConstruct)
 		if err != nil {
-			return nil, false, fmt.Errorf("failed to convert call inputs: %w", err)
+			return nil, fmt.Errorf("failed to convert call inputs: %w", err)
 		}
 		var val dagql.AnyResult
 		if err := srv.Select(
@@ -646,21 +656,21 @@ func (m *MCP) call(ctx context.Context,
 			&val,
 			sels...,
 		); err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		if id, ok := dagql.UnwrapAs[dagql.IDType](val); ok {
 			// Handle ID results by turning them back into Objects, since these are
 			// typically implementation details hinting to SDKs to unlazy the call.
 			syncedObj, err := srv.Load(ctx, id.ID())
 			if err != nil {
-				return nil, false, fmt.Errorf("failed to load synced object: %w", err)
+				return nil, fmt.Errorf("failed to load synced object: %w", err)
 			}
 			val = syncedObj
 		}
-		return val, usedContext, nil
+		return val, nil
 	}
 
-	val, usedContext, err := doSelect(ctx, m.env)
+	val, err := doSelect(ctx, m.env)
 	if err != nil {
 		return "", err
 	}
@@ -704,7 +714,7 @@ func (m *MCP) call(ctx context.Context,
 		return "", nil
 	}
 
-	if usedContext {
+	if autoConstruct != nil {
 		if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](val); ok {
 			argsPayload, err := json.Marshal(args)
 			if err != nil {
@@ -721,10 +731,7 @@ func (m *MCP) call(ctx context.Context,
 				hash,
 				fmt.Sprintf("%s.%s %s", target.ObjectType().TypeName(), fieldDef.Name, string(argsPayload)),
 				obj.ObjectType().TypeName(),
-				func(ctx context.Context, env dagql.ObjectResult[*Env]) (dagql.AnyResult, error) {
-					val, _, err := doSelect(ctx, env)
-					return val, err
-				},
+				doSelect,
 			))
 		}
 	}
@@ -813,7 +820,6 @@ func (m *MCP) sanitizeResult(val dagql.Typed) (any, error) {
 
 func (m *MCP) toolCallToSelections(
 	ctx context.Context,
-	env dagql.ObjectResult[*Env],
 	srv *dagql.Server,
 	schema *ast.Schema,
 	targetObjType dagql.ObjectType,
@@ -821,18 +827,14 @@ func (m *MCP) toolCallToSelections(
 	fieldDef *ast.FieldDefinition,
 	argsMap map[string]any,
 	autoConstruct *ObjectTypeDef,
-) ([]dagql.Selector, bool, error) {
+) ([]dagql.Selector, error) {
 	var sels []dagql.Selector
-	var usedContext bool
 
 	if autoConstruct != nil {
 		consFieldDef := schema.Query.Fields.ForName(gqlFieldName(autoConstruct.Name))
-		consSels, consUsedContext, err := m.toolCallToSelections(ctx, env, srv, schema, srv.Root().ObjectType(), consFieldDef, nil, nil)
+		consSels, err := m.toolCallToSelections(ctx, srv, schema, srv.Root().ObjectType(), consFieldDef, nil, nil)
 		if err != nil {
-			return nil, false, fmt.Errorf("failed to convert constructor call inputs: %w", err)
-		}
-		if consUsedContext {
-			usedContext = true
+			return nil, fmt.Errorf("failed to convert constructor call inputs: %w", err)
 		}
 		// prepend constructor to the selection
 		sels = append(sels, consSels...)
@@ -840,7 +842,7 @@ func (m *MCP) toolCallToSelections(
 		// target the auto-constructed type for the field selection
 		t, ok := srv.ObjectType(autoConstruct.Name)
 		if !ok {
-			return nil, false, fmt.Errorf("object type %q not found", autoConstruct.Name)
+			return nil, fmt.Errorf("object type %q not found", autoConstruct.Name)
 		}
 		targetObjType = t
 	}
@@ -851,37 +853,28 @@ func (m *MCP) toolCallToSelections(
 	}
 	field, ok := targetObjType.FieldSpec(fieldDef.Name, call.View(engine.Version))
 	if !ok {
-		return nil, false, fmt.Errorf("field %q not found in object type %q",
+		return nil, fmt.Errorf("field %q not found in object type %q",
 			fieldDef.Name,
 			targetObjType.TypeName())
 	}
 	remainingArgs := make(map[string]any)
 	maps.Copy(remainingArgs, argsMap)
 	delete(remainingArgs, "self") // ignore the meta 'self' arg
+
 	for _, arg := range field.Args.Inputs(srv.View) {
 		if arg.Internal {
 			continue // skip internal args
 		}
 		val, ok := argsMap[arg.Name]
 		if !ok {
-			id, argUsedContext, err := m.maybeLoadContextualArg(ctx, srv, env, arg)
-			if err != nil {
-				return nil, false, fmt.Errorf("arg %q: %w", arg.Name, err)
-			}
-			if argUsedContext {
-				// value loaded from env context
-				usedContext = true
-				val = id
-			} else {
-				// value not available; arg not present
-				continue
-			}
+			// value not available; arg not present
+			continue
 		}
 		delete(remainingArgs, arg.Name)
 		argDef := fieldDef.Arguments.ForName(arg.Name)
 		scalar, ok := srv.ScalarType(argDef.Type.Name())
 		if !ok {
-			return nil, false, fmt.Errorf("arg %q: unknown scalar type %q", arg.Name, argDef.Type.Name())
+			return nil, fmt.Errorf("arg %q: unknown scalar type %q", arg.Name, argDef.Type.Name())
 		}
 		if idType, ok := dagql.UnwrapAs[dagql.IDType](scalar); ok {
 			idStr, ok := val.(string)
@@ -890,18 +883,18 @@ func (m *MCP) toolCallToSelections(
 				expectedType := strings.TrimSuffix(idType.TypeName(), "ID")
 				envVal, err := m.GetObject(ctx, idStr, expectedType)
 				if err != nil {
-					return nil, false, fmt.Errorf("arg %q: %w", arg.Name, err)
+					return nil, fmt.Errorf("arg %q: %w", arg.Name, err)
 				}
 				obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](envVal)
 				if !ok {
-					return nil, false, fmt.Errorf("arg %q: expected object, got %T", arg.Name, envVal)
+					return nil, fmt.Errorf("arg %q: expected object, got %T", arg.Name, envVal)
 				}
 				val = obj.ID()
 			}
 		}
 		input, err := arg.Type.Decoder().DecodeInput(val)
 		if err != nil {
-			return nil, false, fmt.Errorf("arg %q: decode %T: %w", arg.Name, val, err)
+			return nil, fmt.Errorf("arg %q: decode %T: %w", arg.Name, val, err)
 		}
 		sel.Args = append(sel.Args, dagql.NamedInput{
 			Name:  arg.Name,
@@ -909,7 +902,7 @@ func (m *MCP) toolCallToSelections(
 		})
 	}
 	if len(remainingArgs) > 0 {
-		return nil, false, fmt.Errorf("unknown args: %v", remainingArgs)
+		return nil, fmt.Errorf("unknown args: %v", remainingArgs)
 	}
 
 	sels = append(sels, sel)
@@ -926,77 +919,7 @@ func (m *MCP) toolCallToSelections(
 		}
 	}
 
-	return sels, usedContext, nil
-}
-
-func (m *MCP) maybeLoadContextualArg(ctx context.Context, srv *dagql.Server, env dagql.ObjectResult[*Env], arg dagql.InputSpec) (*call.ID, bool, error) {
-	schema := srv.Schema()
-
-	var defaultPath string
-	var ignorePatterns []dagql.String
-	for _, d := range arg.Directives {
-		d.Definition = schema.Directives[d.Name]
-		if d.Definition == nil {
-			return nil, false, fmt.Errorf("directive %q not found", d.Name)
-		}
-		args := d.ArgumentMap(nil)
-		switch d.Name {
-		case "defaultPath":
-			defaultPath, _ = args["path"].(string)
-		case "ignorePatterns":
-			ps, _ := args["patterns"].([]string)
-			for _, p := range ps {
-				ignorePatterns = append(ignorePatterns, dagql.String(p))
-			}
-		}
-	}
-	if defaultPath == "" {
-		return nil, false, nil
-	}
-	workspace := env.Self().Workspace
-	switch arg.Type.Type().Name() {
-	case "DirectoryID":
-		var dirArg dagql.ObjectResult[*Directory]
-		switch path.Clean(defaultPath) {
-		case ".", "/":
-			dirArg = workspace
-		default:
-			if err := srv.Select(ctx, workspace, &dirArg, dagql.Selector{
-				View:  srv.View,
-				Field: "directory",
-				Args: []dagql.NamedInput{
-					{
-						Name:  "path",
-						Value: dagql.String(defaultPath),
-					},
-					{
-						Name:  "ignore",
-						Value: dagql.ArrayInput[dagql.String](ignorePatterns),
-					},
-				},
-			}); err != nil {
-				return nil, false, fmt.Errorf("select subdir for default path for %s: %w", arg.Name, err)
-			}
-		}
-		return dirArg.ID(), true, nil
-	case "FileID":
-		var fileArg dagql.ObjectResult[*File]
-		if err := srv.Select(ctx, workspace, &fileArg, dagql.Selector{
-			View:  srv.View,
-			Field: "file",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "path",
-					Value: dagql.String(defaultPath),
-				},
-			},
-		}); err != nil {
-			return nil, false, fmt.Errorf("select file for default path for %s: %w", arg.Name, err)
-		}
-		return fileArg.ID(), true, nil
-	default:
-		return nil, false, fmt.Errorf("arg %q: defaultPath directive not supported on type %q", arg.Name, arg.Type.Type().Name())
-	}
+	return sels, nil
 }
 
 func (m *MCP) BlockFunction(ctx context.Context, typeName, funcName string) error {
@@ -1092,7 +1015,7 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 		fmt.Fprintln(stdio.Stdout, res)
 	}()
 
-	result, err := tool.Call(EnvToContext(ctx, m.env), toolCall.Function.Arguments)
+	result, err := tool.Call(EnvIDToContext(ctx, m.env.ID()), toolCall.Function.Arguments)
 	if err != nil {
 		return toolErrorMessage(err), true
 	}
@@ -1116,6 +1039,7 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToo
 	readOnlyMCPCalls := make(map[string][]LLMToolCall)    // server -> read-only calls
 	destructiveMCPCalls := make(map[string][]LLMToolCall) // server -> destructive calls
 	regularCalls := make([]LLMToolCall, 0)
+	destructiveCalls := make([]LLMToolCall, 0)
 
 	for _, toolCall := range toolCalls {
 		tool, err := m.LookupTool(toolCall.Function.Name, tools)
@@ -1128,7 +1052,12 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToo
 
 		if tool.Server == "" {
 			// Regular tool call (not MCP)
-			regularCalls = append(regularCalls, toolCall)
+			// Check if it modifies state (returns Env or Changeset)
+			if tool.ReadOnly {
+				regularCalls = append(regularCalls, toolCall)
+			} else {
+				destructiveCalls = append(destructiveCalls, toolCall)
+			}
 			continue
 		}
 
@@ -1142,7 +1071,7 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToo
 
 	var allResults []*ModelMessage
 
-	// 1. Execute all regular (non-MCP) calls in parallel
+	// 1. Execute all regular read-only (non-MCP) calls in parallel
 	if len(regularCalls) > 0 {
 		allResults = append(allResults, m.callBatchRegular(ctx, tools, regularCalls)...)
 	}
@@ -1156,7 +1085,18 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToo
 		allResults = append(allResults, m.callBatchRegular(ctx, tools, readOnlyToolCalls)...)
 	}
 
-	// 3. Execute destructive MCP calls one server at a time to avoid workspace conflicts
+	// 3. Execute destructive non-MCP calls sequentially (they modify Env/Changeset state)
+	for _, call := range destructiveCalls {
+		result, isError := m.Call(ctx, tools, call)
+		allResults = append(allResults, &ModelMessage{
+			Role:        "user",
+			Content:     result,
+			ToolCallID:  call.ID,
+			ToolErrored: isError,
+		})
+	}
+
+	// 4. Execute destructive MCP calls one server at a time to avoid workspace conflicts
 	for serverName, calls := range destructiveMCPCalls {
 		serverResults := m.callBatchMCPServer(ctx, tools, calls, serverName)
 		allResults = append(allResults, serverResults...)
@@ -1409,6 +1349,7 @@ func (m *MCP) saveTool(srv *dagql.Server) LLMTool {
 	return LLMTool{
 		Name:        "Save",
 		Description: desc,
+		ReadOnly:    false, // Modifies output state
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -1497,6 +1438,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSe
 		allTools.Add(LLMTool{
 			Name:        "DeclareOutput",
 			Description: "Declare a new output that can have a value saved to it",
+			ReadOnly:    false, // Modifies Env state
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -1557,6 +1499,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSe
 		allTools.Add(LLMTool{
 			Name:        "ListObjects",
 			Description: "List available objects.",
+			ReadOnly:    true, // Read-only operation
 			Schema: map[string]any{
 				"type":                 "object",
 				"properties":           map[string]any{},
@@ -1600,6 +1543,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSe
 	allTools.Add(LLMTool{
 		Name:        "ReadLogs",
 		Description: "Read logs from the most recent execution. Can filter with grep pattern or read the last N lines.",
+		ReadOnly:    true, // Read-only operation
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -1633,6 +1577,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSe
 		allTools.Add(LLMTool{
 			Name:        "UserProvidedValues",
 			Description: "Read the inputs supplied by the user.",
+			ReadOnly:    true, // Read-only operation
 			Schema: map[string]any{
 				"type":                 "object",
 				"properties":           map[string]any{},
@@ -1705,6 +1650,7 @@ func (m *MCP) loadStaticMethodCallingTools(srv *dagql.Server, allTools *LLMToolS
 	allTools.Add(LLMTool{
 		Name:        "ListMethods",
 		Description: "List the methods that can be selected.",
+		ReadOnly:    true, // Read-only operation
 		Schema: map[string]any{
 			"type":                 "object",
 			"properties":           map[string]any{},
@@ -1741,6 +1687,7 @@ func (m *MCP) loadStaticMethodCallingTools(srv *dagql.Server, allTools *LLMToolS
 		Name:        "CallMethod",
 		Description: "Call a method on an object. Methods must be selected with SelectMethods before calling them. Self represents the object to call the method on, and args specify any additional parameters to pass.",
 		HideSelf:    true,
+		ReadOnly:    false, // Can call methods that return Env or Changeset
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -1771,6 +1718,7 @@ func (m *MCP) loadStaticMethodCallingTools(srv *dagql.Server, allTools *LLMToolS
 
 NOTE: you must select methods before chaining them`,
 		HideSelf: true,
+		ReadOnly: false, // Can call methods that return Env or Changeset
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -2350,24 +2298,22 @@ func (m *MCP) displayLitLocked(lit call.Literal) string {
 		}
 	case *call.LiteralList:
 		list := "["
-		_ = x.Range(func(i int, value call.Literal) error {
+		for i, value := range x.Values() {
 			if i > 0 {
 				list += ","
 			}
 			list += m.displayLitLocked(value)
-			return nil
-		})
+		}
 		list += "]"
 		return list
 	case *call.LiteralObject:
 		obj := "{"
-		_ = x.Range(func(i int, name string, value call.Literal) error {
+		for i, arg := range x.Args() {
 			if i > 0 {
 				obj += ","
 			}
-			obj += name + ": " + m.displayLitLocked(value)
-			return nil
-		})
+			obj += arg.Name() + ": " + m.displayLitLocked(arg.Value())
+		}
 		obj += "}"
 		return obj
 	default:

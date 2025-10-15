@@ -3556,6 +3556,16 @@ type Module {
   """Interfaces served by this module."""
   interfaces: [TypeDef!]!
 
+  """
+  The introspection schema JSON file for this module.
+
+  This file represents the schema visible to the module's source code, including
+  all core types and those from the dependencies.
+
+  Note: this is in the context of a module, so some core types may be hidden.
+  """
+  introspectionSchemaJSON: File!
+
   """The name of the module"""
   name: String!
 
@@ -3703,6 +3713,16 @@ type ModuleSource {
   """A unique identifier for this ModuleSource."""
   id: ModuleSourceID!
 
+  """
+  The introspection schema JSON file for this module source.
+
+  This file represents the schema visible to the module's source code, including
+  all core types and those from the dependencies.
+
+  Note: this is in the context of a module, so some core types may be hidden.
+  """
+  introspectionSchemaJSON: File!
+
   """The kind of module source (currently local, git or dir)."""
   kind: ModuleSourceKind!
 
@@ -3787,6 +3807,12 @@ type ModuleSource {
     version: String!
   ): ModuleSource!
 
+  """Enable the experimental features for the module source."""
+  withExperimentalFeatures(
+    """The experimental features to enable."""
+    features: [ModuleSourceExperimentalFeature!]!
+  ): ModuleSource!
+
   """
   Update the module source with additional include patterns for
   files+directories from its context that are required for building it
@@ -3847,6 +3873,18 @@ type ModuleSource {
     """The dependencies to remove."""
     dependencies: [String!]!
   ): ModuleSource!
+
+  """Disable experimental features for the module source."""
+  withoutExperimentalFeatures(
+    """The experimental features to disable."""
+    features: [ModuleSourceExperimentalFeature!]!
+  ): ModuleSource!
+}
+
+"""Experimental features of a module"""
+enum ModuleSourceExperimentalFeature {
+  """Self calls"""
+  SELF_CALLS
 }
 
 """

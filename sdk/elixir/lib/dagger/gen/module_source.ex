@@ -229,6 +229,24 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
+  The introspection schema JSON file for this module source.
+
+  This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+
+  Note: this is in the context of a module, so some core types may be hidden.
+  """
+  @spec introspection_schema_json(t()) :: Dagger.File.t()
+  def introspection_schema_json(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("introspectionSchemaJSON")
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
   The kind of module source (currently local, git or dir).
   """
   @spec kind(t()) :: {:ok, Dagger.ModuleSourceKind.t()} | {:error, term()}
@@ -455,6 +473,23 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
+  Enable the experimental features for the module source.
+  """
+  @spec with_experimental_features(t(), [Dagger.ModuleSourceExperimentalFeature.t()]) ::
+          Dagger.ModuleSource.t()
+  def with_experimental_features(%__MODULE__{} = module_source, features) do
+    query_builder =
+      module_source.query_builder
+      |> QB.select("withExperimentalFeatures")
+      |> QB.put_arg("features", features)
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
   Update the module source with additional include patterns for files+directories from its context that are required for building it
   """
   @spec with_includes(t(), [String.t()]) :: Dagger.ModuleSource.t()
@@ -593,6 +628,23 @@ defmodule Dagger.ModuleSource do
       module_source.query_builder
       |> QB.select("withoutDependencies")
       |> QB.put_arg("dependencies", dependencies)
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
+  Disable experimental features for the module source.
+  """
+  @spec without_experimental_features(t(), [Dagger.ModuleSourceExperimentalFeature.t()]) ::
+          Dagger.ModuleSource.t()
+  def without_experimental_features(%__MODULE__{} = module_source, features) do
+    query_builder =
+      module_source.query_builder
+      |> QB.select("withoutExperimentalFeatures")
+      |> QB.put_arg("features", features)
 
     %Dagger.ModuleSource{
       query_builder: query_builder,

@@ -1514,6 +1514,45 @@ export type ModuleConfigClientID = string & { __ModuleConfigClientID: never }
 export type ModuleID = string & { __ModuleID: never }
 
 /**
+ * Experimental features of a module
+ */
+export enum ModuleSourceExperimentalFeature {
+  /**
+   * Self calls
+   */
+  SelfCalls = "SELF_CALLS",
+}
+
+/**
+ * Utility function to convert a ModuleSourceExperimentalFeature value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function ModuleSourceExperimentalFeatureValueToName(
+  value: ModuleSourceExperimentalFeature,
+): string {
+  switch (value) {
+    case ModuleSourceExperimentalFeature.SelfCalls:
+      return "SELF_CALLS"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a ModuleSourceExperimentalFeature name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function ModuleSourceExperimentalFeatureNameToValue(
+  name: string,
+): ModuleSourceExperimentalFeature {
+  switch (name) {
+    case "SELF_CALLS":
+      return ModuleSourceExperimentalFeature.SelfCalls
+    default:
+      return name as ModuleSourceExperimentalFeature
+  }
+}
+/**
  * The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
  */
 export type ModuleSourceID = string & { __ModuleSourceID: never }
@@ -8605,6 +8644,18 @@ export class Module_ extends BaseClient {
   }
 
   /**
+   * The introspection schema JSON file for this module.
+   *
+   * This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+   *
+   * Note: this is in the context of a module, so some core types may be hidden.
+   */
+  introspectionSchemaJSON = (): File => {
+    const ctx = this._ctx.select("introspectionSchemaJSON")
+    return new File(ctx)
+  }
+
+  /**
    * The name of the module
    */
   name = async (): Promise<string> => {
@@ -9094,6 +9145,18 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * The introspection schema JSON file for this module source.
+   *
+   * This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+   *
+   * Note: this is in the context of a module, so some core types may be hidden.
+   */
+  introspectionSchemaJSON = (): File => {
+    const ctx = this._ctx.select("introspectionSchemaJSON")
+    return new File(ctx)
+  }
+
+  /**
    * The kind of module source (currently local, git or dir).
    */
   kind = async (): Promise<ModuleSourceKind> => {
@@ -9308,6 +9371,17 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * Enable the experimental features for the module source.
+   * @param features The experimental features to enable.
+   */
+  withExperimentalFeatures = (
+    features: ModuleSourceExperimentalFeature[],
+  ): ModuleSource => {
+    const ctx = this._ctx.select("withExperimentalFeatures", { features })
+    return new ModuleSource(ctx)
+  }
+
+  /**
    * Update the module source with additional include patterns for files+directories from its context that are required for building it
    * @param patterns The new additional include patterns.
    */
@@ -9392,6 +9466,17 @@ export class ModuleSource extends BaseClient {
    */
   withoutDependencies = (dependencies: string[]): ModuleSource => {
     const ctx = this._ctx.select("withoutDependencies", { dependencies })
+    return new ModuleSource(ctx)
+  }
+
+  /**
+   * Disable experimental features for the module source.
+   * @param features The experimental features to disable.
+   */
+  withoutExperimentalFeatures = (
+    features: ModuleSourceExperimentalFeature[],
+  ): ModuleSource => {
+    const ctx = this._ctx.select("withoutExperimentalFeatures", { features })
     return new ModuleSource(ctx)
   }
 
