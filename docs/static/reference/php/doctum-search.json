@@ -4391,7 +4391,13 @@
 			"t": "M",
 			"n": "Dagger\\ModuleSource::blueprint",
 			"p": "Dagger/ModuleSource.html#method_blueprint",
-			"d": "<p>The blueprint referenced by the module source.</p>"
+			"d": "<p>The blueprint referenced by the module source (deprecated, use blueprints).</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleSource::blueprints",
+			"p": "Dagger/ModuleSource.html#method_blueprints",
+			"d": "<p>The blueprints referenced by the module source.</p>"
 		},
 		{
 			"t": "M",

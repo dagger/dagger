@@ -2733,7 +2733,6 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	var eg errgroup.Group
 	depMods := make([]dagql.Result[*core.Module], len(src.Self().Dependencies))
 	for i, depSrc := range src.Self().Dependencies {
-		i := i // capture loop variable
 		eg.Go(func() error {
 			return dag.Select(ctx, depSrc, &depMods[i],
 				dagql.Selector{Field: "asModule"},
@@ -2750,7 +2749,6 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	if len(src.Self().Blueprints) > 1 {
 		var bpeg errgroup.Group
 		for i, bpSrc := range src.Self().Blueprints {
-			i := i // capture loop variable
 			bpeg.Go(func() error {
 				err := dag.Select(ctx, bpSrc, &bpMods[i],
 					dagql.Selector{Field: "asModule"},

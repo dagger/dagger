@@ -41,7 +41,7 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
-  The blueprint referenced by the module source.
+  The blueprint referenced by the module source (deprecated, use blueprints).
   """
   @spec blueprint(t()) :: Dagger.ModuleSource.t()
   def blueprint(%__MODULE__{} = module_source) do
@@ -52,6 +52,28 @@ defmodule Dagger.ModuleSource do
       query_builder: query_builder,
       client: module_source.client
     }
+  end
+
+  @doc """
+  The blueprints referenced by the module source.
+  """
+  @spec blueprints(t()) :: {:ok, [Dagger.ModuleSource.t()]} | {:error, term()}
+  def blueprints(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("blueprints") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(module_source.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.ModuleSource{
+           query_builder:
+             QB.query()
+             |> QB.select("loadModuleSourceFromID")
+             |> QB.put_arg("id", id),
+           client: module_source.client
+         }
+       end}
+    end
   end
 
   @doc """

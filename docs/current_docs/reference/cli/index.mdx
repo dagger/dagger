@@ -33,6 +33,7 @@ dagger [options] [subcommand | file...]
 
 ### SEE ALSO
 
+* [dagger blueprint](#dagger-blueprint)	 - Manage blueprints
 * [dagger call](#dagger-call)	 - Call one or more functions, interconnected into a pipeline
 * [dagger config](#dagger-config)	 - Get or set module configuration
 * [dagger core](#dagger-core)	 - Call a core function
@@ -47,6 +48,74 @@ dagger [options] [subcommand | file...]
 * [dagger uninstall](#dagger-uninstall)	 - Uninstall a dependency
 * [dagger update](#dagger-update)	 - Update a module's dependencies
 * [dagger version](#dagger-version)	 - Print dagger version
+
+## dagger blueprint
+
+Manage blueprints
+
+### Options inherited from parent commands
+
+```
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
+* [dagger blueprint add](#dagger-blueprint-add)	 - Add a blueprint to the current module
+
+## dagger blueprint add
+
+Add a blueprint to the current module
+
+### Synopsis
+
+Add another module as a blueprint to the current module.
+
+```
+dagger blueprint add [options] <module> [flags]
+```
+
+### Examples
+
+```
+dagger blueprint add github.com/example/blueprint
+```
+
+### Options
+
+```
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --compat string       Engine API version to target (default "latest")
+  -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
+  -n, --name string         Name to use for the blueprint in the module. Defaults to the name of the blueprint being added.
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger blueprint](#dagger-blueprint)	 - Manage blueprints
 
 ## dagger call
 
@@ -332,7 +401,7 @@ Install a dependency
 
 ### Synopsis
 
-Install another module as a dependency to the current module. The target module must be local.
+Install another module as a dependency to the current module.
 
 ```
 dagger install [options] <module>

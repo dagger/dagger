@@ -8944,13 +8944,46 @@ func (r *ModuleSource) AsString(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The blueprint referenced by the module source.
+// The blueprint referenced by the module source (deprecated, use blueprints).
 func (r *ModuleSource) Blueprint() *ModuleSource {
 	q := r.query.Select("blueprint")
 
 	return &ModuleSource{
 		query: q,
 	}
+}
+
+// The blueprints referenced by the module source.
+func (r *ModuleSource) Blueprints(ctx context.Context) ([]ModuleSource, error) {
+	q := r.query.Select("blueprints")
+
+	q = q.Select("id")
+
+	type blueprints struct {
+		Id ModuleSourceID
+	}
+
+	convert := func(fields []blueprints) []ModuleSource {
+		out := []ModuleSource{}
+
+		for i := range fields {
+			val := ModuleSource{id: &fields[i].Id}
+			val.query = q.Root().Select("loadModuleSourceFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []blueprints
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // The ref to clone the root of the git repo from. Only valid for git sources.

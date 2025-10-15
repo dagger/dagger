@@ -8987,10 +8987,18 @@ class ModuleSource(Type):
         return await _ctx.execute(str)
 
     def blueprint(self) -> Self:
-        """The blueprint referenced by the module source."""
+        """The blueprint referenced by the module source (deprecated, use
+        blueprints).
+        """
         _args: list[Arg] = []
         _ctx = self._select("blueprint", _args)
         return ModuleSource(_ctx)
+
+    async def blueprints(self) -> list["ModuleSource"]:
+        """The blueprints referenced by the module source."""
+        _args: list[Arg] = []
+        _ctx = self._select("blueprints", _args)
+        return await _ctx.execute_object_list(ModuleSource)
 
     async def clone_ref(self) -> str:
         """The ref to clone the root of the git repo from. Only valid for git

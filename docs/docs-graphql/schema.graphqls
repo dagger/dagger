@@ -3653,8 +3653,13 @@ type ModuleSource {
   """A human readable ref string representation of this module source."""
   asString: String!
 
-  """The blueprint referenced by the module source."""
+  """
+  The blueprint referenced by the module source (deprecated, use blueprints).
+  """
   blueprint: ModuleSource!
+
+  """The blueprints referenced by the module source."""
+  blueprints: [ModuleSource!]!
 
   """
   The ref to clone the root of the git repo from. Only valid for git sources.

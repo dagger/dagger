@@ -8973,11 +8973,28 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The blueprint referenced by the module source.
+   * The blueprint referenced by the module source (deprecated, use blueprints).
    */
   blueprint = (): ModuleSource => {
     const ctx = this._ctx.select("blueprint")
     return new ModuleSource(ctx)
+  }
+
+  /**
+   * The blueprints referenced by the module source.
+   */
+  blueprints = async (): Promise<ModuleSource[]> => {
+    type blueprints = {
+      id: ModuleSourceID
+    }
+
+    const ctx = this._ctx.select("blueprints").select("id")
+
+    const response: Awaited<blueprints[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadModuleSourceFromID(r.id),
+    )
   }
 
   /**

@@ -9654,7 +9654,7 @@ impl ModuleSource {
         let query = self.selection.select("asString");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The blueprint referenced by the module source.
+    /// The blueprint referenced by the module source (deprecated, use blueprints).
     pub fn blueprint(&self) -> ModuleSource {
         let query = self.selection.select("blueprint");
         ModuleSource {
@@ -9662,6 +9662,15 @@ impl ModuleSource {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+    /// The blueprints referenced by the module source.
+    pub fn blueprints(&self) -> Vec<ModuleSource> {
+        let query = self.selection.select("blueprints");
+        vec![ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }]
     }
     /// The ref to clone the root of the git repo from. Only valid for git sources.
     pub async fn clone_ref(&self) -> Result<String, DaggerError> {
