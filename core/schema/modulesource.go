@@ -716,34 +716,19 @@ func (s *moduleSourceSchema) loadBlueprintModule(
 		return fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	// Load multiple blueprints if present
-	if len(src.ConfigBlueprints) > 0 {
-		src.Blueprints = make([]dagql.ObjectResult[*core.ModuleSource], len(src.ConfigBlueprints))
-		for i, pcfg := range src.ConfigBlueprints {
-			blueprint, err := core.ResolveDepToSource(ctx, bk, dag, src, pcfg.Source, pcfg.Pin, pcfg.Name)
-			if err != nil {
-				return fmt.Errorf("failed to resolve blueprint to source: %w", err)
-			}
-			src.Blueprints[i] = blueprint
-		}
-		// For backward compatibility, set the first blueprint as the single Blueprint
-		if len(src.Blueprints) == 1 {
-			src.Blueprint = src.Blueprints[0]
-		}
+	// Load blueprints array (note: config.go already migrates Blueprint -> Blueprints)
+	if len(src.ConfigBlueprints) == 0 {
 		return nil
 	}
 
-	// Fallback to single blueprint for backward compatibility
-	pcfg := src.ConfigBlueprint
-	if pcfg == nil {
-		return nil
+	src.Blueprints = make([]dagql.ObjectResult[*core.ModuleSource], len(src.ConfigBlueprints))
+	for i, pcfg := range src.ConfigBlueprints {
+		blueprint, err := core.ResolveDepToSource(ctx, bk, dag, src, pcfg.Source, pcfg.Pin, pcfg.Name)
+		if err != nil {
+			return fmt.Errorf("failed to resolve blueprint to source: %w", err)
+		}
+		src.Blueprints[i] = blueprint
 	}
-	blueprint, err := core.ResolveDepToSource(ctx, bk, dag, src, pcfg.Source, pcfg.Pin, pcfg.Name)
-	if err != nil {
-		return fmt.Errorf("failed to resolve dep to source: %w", err)
-	}
-	src.Blueprint = blueprint
-	src.Blueprints = []dagql.ObjectResult[*core.ModuleSource]{blueprint}
 	return nil
 }
 
@@ -1512,25 +1497,9 @@ func (s *moduleSourceSchema) moduleSourceWithBlueprint(
 	// (dependencies are added LIFO)
 	parentSrc = parentSrc.Clone()
 
-	// Migrate existing Blueprint to Blueprints array if needed
-	if parentSrc.ConfigBlueprint != nil {
-		// Move the existing deprecated Blueprint to the Blueprints array
-		parentSrc.ConfigBlueprints = append([]*modules.ModuleConfigDependency{parentSrc.ConfigBlueprint}, parentSrc.ConfigBlueprints...)
-		parentSrc.Blueprints = append([]dagql.ObjectResult[*core.ModuleSource]{parentSrc.Blueprint}, parentSrc.Blueprints...)
-		// Clear the deprecated fields
-		parentSrc.ConfigBlueprint = nil
-		parentSrc.Blueprint = dagql.ObjectResult[*core.ModuleSource]{}
-	}
-
-	// Append the new blueprint to the Blueprints array
+	// Append the new blueprint to the Blueprints array (config.go already handles upgrade)
 	parentSrc.ConfigBlueprints = append(parentSrc.ConfigBlueprints, tmpConfig.Dependencies[0])
 	parentSrc.Blueprints = append(parentSrc.Blueprints, tmpSrc.Dependencies[0])
-
-	// For backward compatibility, also set the deprecated Blueprint field to the first blueprint
-	if len(parentSrc.Blueprints) > 0 {
-		parentSrc.Blueprint = parentSrc.Blueprints[0]
-		parentSrc.ConfigBlueprint = parentSrc.ConfigBlueprints[0]
-	}
 
 	return parentSrc, nil
 }
@@ -1915,13 +1884,8 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 		}
 	}
 
-	// Copy blueprints configuration if present
-	if len(src.ConfigBlueprints) > 0 {
-		modCfg.Blueprints = src.ConfigBlueprints
-	} else if src.ConfigBlueprint != nil {
-		// Fallback to deprecated Blueprint field for backward compatibility
-		modCfg.Blueprint = src.ConfigBlueprint
-	}
+	// Copy blueprints configuration (config.go already upgrades Blueprint -> Blueprints)
+	modCfg.Blueprints = src.ConfigBlueprints
 
 	// Check version compatibility.
 	if !engine.CheckVersionCompatibility(modCfg.EngineVersion, engine.MinimumModuleVersion) {
@@ -2575,11 +2539,10 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	// Handle blueprint context separation
 	originalSrc := src
 
-	// Deprecated Blueprint field
-	blueprintSrc := src.Self().Blueprint
-
 	// for a single blueprint, use it as the module source
-	if blueprintSrc.Self() != nil {
+	var blueprintSrc dagql.ObjectResult[*core.ModuleSource]
+	if len(src.Self().Blueprints) == 1 {
+		blueprintSrc = src.Self().Blueprints[0]
 		src = blueprintSrc
 	}
 
@@ -2631,8 +2594,8 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		}
 
 		mod.ResultID = dagql.CurrentID(ctx)
-	} else if len(src.Self().Blueprints) == 0 {
-		// For no SDK, provide an empty stub module definition
+	} else if len(src.Self().Blueprints) <= 1 {
+		// For no SDK and not multiple blueprints, provide an empty stub module definition
 		typeDef := &core.ObjectTypeDef{
 			Name: mod.NameField,
 			// needed to trigger constructor creation in ModuleObject.Install
@@ -2750,9 +2713,8 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	}
 
 	// Load all blueprints as dependencies
-	// TODO: dont expose dependencies as top level commands in shell
 	bpMods := make([]dagql.Result[*core.Module], len(src.Self().Blueprints))
-	if len(src.Self().Blueprints) > 1 {
+	if len(src.Self().Blueprints) > 0 {
 		var bpeg errgroup.Group
 		for i, bpSrc := range src.Self().Blueprints {
 			bpeg.Go(func() error {

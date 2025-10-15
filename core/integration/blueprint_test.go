@@ -89,7 +89,6 @@ func (BlueprintSuite) TestBlueprintInit(ctx context.Context, t *testctx.T) {
 }
 
 func (BlueprintSuite) TestMultipleBlueprints(ctx context.Context, t *testctx.T) {
-
 	c := connect(ctx, t)
 	t.Run("install multiple blueprints", func(ctx context.Context, t *testctx.T) {
 		modGen := blueprintTestEnv(t, c).
