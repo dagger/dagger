@@ -168,15 +168,23 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 
 	// CALL!
 
-	var out any
-	err = query.Bind(&out).Execute(ctx)
+	var bind string
+	err = query.Bind(&bind).Execute(ctx)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to make query: %w", err)
 	}
 
-	input, err := fn.returnType.TypeDef().ToInput().Decoder().DecodeInput(out)
+	var result any
+	dec := json.NewDecoder(strings.NewReader(bind))
+	dec.UseNumber()
+	err = dec.Decode(&result)
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to decode result: %w", err)
+		return nil, false, fmt.Errorf("failed to decode result %q: %w", bind, err)
+	}
+
+	input, err := fn.returnType.TypeDef().ToInput().Decoder().DecodeInput(result)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to decode result %q: %w", result, err)
 	}
 
 	t, err = dagql.NewResultForCurrentID(ctx, input)
