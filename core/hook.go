@@ -56,7 +56,11 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 	}
 
 	for _, input := range opts.Inputs {
-		if !checkValidInput(fn.args[input.Name].modType.TypeDef(), input) {
+		ok, err := checkValidInputValue(ctx, fn.args[input.Name].modType, input.Value)
+		if err != nil {
+			return nil, false, err
+		}
+		if !ok {
 			slog.Debug(
 				"skipping call with cloud hook due to invalid input",
 				"object", objName,
@@ -77,7 +81,7 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 		return nil, false, nil
 	}
 
-	ok, err = checkValidParent(ctx, opts.ParentModType, opts.ParentTyped, opts.ParentFields)
+	ok, err = checkValidInput(ctx, opts.ParentModType, opts.ParentTyped)
 	if err != nil {
 		return nil, false, err
 	}
@@ -198,14 +202,6 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 	return t, true, err
 }
 
-func checkValidInput(typeDef *TypeDef, input CallInput) bool {
-	value := input.Value
-	if _, ok := value.(dagql.ScalarType); ok {
-		return true
-	}
-	return false
-}
-
 func checkValidReturn(typeDef *TypeDef) bool {
 	switch typeDef.Kind {
 	case TypeDefKindVoid:
@@ -218,7 +214,35 @@ func checkValidReturn(typeDef *TypeDef) bool {
 	return false
 }
 
-func checkValidParent(ctx context.Context, parent *ModuleObjectType, value dagql.AnyResult, fields map[string]any) (bool, error) {
+func checkValidInputValue(ctx context.Context, parent ModType, value dagql.Typed) (bool, error) {
+	// HACK: find all core ids in the input by converting to/from json via sdk
+	// this is kinda gross, but it works, because while the IDs returned via
+	// ConvertFromSDKResult are *wrong* for our own module IDs, they're correct
+	// for the Core IDs - which are the ones we care about
+
+	v, err := parent.ConvertToSDKInput(ctx, value)
+	if err != nil {
+		return false, err
+	}
+
+	dt, err := json.Marshal(v)
+	if err != nil {
+		return false, fmt.Errorf("marshal input to json: %w", err)
+	}
+	var v2 any
+	if err := json.Unmarshal(dt, &v2); err != nil {
+		return false, fmt.Errorf("unmarshal input from json: %w", err)
+	}
+
+	result, err := parent.ConvertFromSDKResult(ctx, v2)
+	if err != nil {
+		return false, err
+	}
+
+	return checkValidInput(ctx, parent, result)
+}
+
+func checkValidInput(ctx context.Context, parent ModType, value dagql.AnyResult) (bool, error) {
 	returnedIDs := map[digest.Digest]*resource.ID{}
 	if err := parent.CollectCoreIDs(ctx, value, returnedIDs); err != nil {
 		return false, fmt.Errorf("collect IDs: %w", err)
