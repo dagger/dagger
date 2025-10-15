@@ -2654,7 +2654,15 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	}
 
 	// When there are multiple blueprints, add them as namespaced fields
-	if len(originalSrc.Self().Blueprints) > 1 {
+	// Check if we have any blueprint modules in the dependencies (already loaded by loadDependencyModules)
+	var blueprintMods []*core.Module
+	for _, depMod := range mod.Deps.Mods {
+		if userMod, ok := depMod.(*core.Module); ok && userMod.IsBlueprint {
+			blueprintMods = append(blueprintMods, userMod)
+		}
+	}
+
+	if len(blueprintMods) > 1 {
 		// Initialize a shadow module object type to hold the namespaced blueprint fields
 		shadowModuleName := mod.NameField
 		shadowModule := &core.TypeDef{
@@ -2670,20 +2678,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 			mod.BlueprintModules = make(map[string]*core.Module)
 		}
 
-		for _, bpSrc := range originalSrc.Self().Blueprints {
-			var bpModResult dagql.Result[*core.Module]
-
-			err = dag.Select(ctx, bpSrc, &bpModResult,
-				dagql.Selector{Field: "asModule"},
-			)
-			if err != nil {
-				return inst, fmt.Errorf("failed to load blueprint %q as module: %w", bpSrc.Self().ModuleName, err)
-			}
-
-			// Clone the blueprint module to create an instance for this main module
-			// Each main module using the blueprint needs its own instance with the correct ContextSource
-			bpMod := bpModResult.Self()
-
+		for _, bpMod := range blueprintMods {
 			// Add the blueprint module's functions as a namespaced field
 			for _, obj := range bpMod.ObjectDefs {
 				if obj.AsObject.Value.Name == strcase.ToCamel(bpMod.NameField) {
@@ -2694,7 +2689,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 						return inst, fmt.Errorf("failed to add blueprint field %q: %w", fieldName, err)
 					}
 					// Store the blueprint module reference for runtime resolution
-					// This cloned instance already has the correct ContextSource and Runtime set
+					// This instance already has the correct ContextSource and Runtime set from loadDependencyModules
 					mod.BlueprintModules[fieldName] = bpMod
 					break
 				}
