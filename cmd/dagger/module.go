@@ -45,7 +45,7 @@ var (
 
 	installName string
 
-	initBlueprint    string
+	initBlueprint        string
 	blueprintInstallName string
 
 	developSDK        string
@@ -736,11 +736,6 @@ This command is idempotent: you can run it at any time, any number of times. It 
 			return eg.Wait()
 		})
 	},
-}
-
-var blueprintGroup = &cobra.Group{
-	ID:    "blueprint",
-	Title: "Blueprint Commands",
 }
 
 var blueprintCmd = &cobra.Command{
