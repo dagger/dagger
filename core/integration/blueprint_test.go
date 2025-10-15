@@ -32,10 +32,10 @@ func (BlueprintSuite) TestBlueprintUseLocal(ctx context.Context, t *testctx.T) {
 	t.Run("use local blueprint", func(ctx context.Context, t *testctx.T) {
 		modGen := blueprintTestEnv(t, c).
 			WithWorkdir("app").
-			With(daggerExec("init", "--blueprint=../myblueprint"))
+			With(daggerExec("init", "--blueprint=../hello"))
 		// Verify blueprint was installed by calling function
 		out, err := modGen.
-			With(daggerExec("call", "hello")).
+			With(daggerExec("call", "message")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "hello from blueprint")
@@ -94,10 +94,10 @@ func (BlueprintSuite) TestMultipleBlueprints(ctx context.Context, t *testctx.T) 
 	t.Run("install multiple blueprints", func(ctx context.Context, t *testctx.T) {
 		modGen := blueprintTestEnv(t, c).
 			WithWorkdir("app").
-			With(daggerExec("init", "--blueprint=../myblueprint"))
+			With(daggerExec("init", "--blueprint=../hello"))
 		// Verify blueprint was installed by calling function
 		out, err := modGen.
-			With(daggerExec("call", "hello")).
+			With(daggerExec("call", "message")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "hello from blueprint")
@@ -108,7 +108,7 @@ func (BlueprintSuite) TestMultipleBlueprints(ctx context.Context, t *testctx.T) 
 		require.NoError(t, err)
 		require.Contains(t, out, "blueprint added")
 		out, err = modGen.
-			With(daggerExec("call", "blueprint", "hello")).
+			With(daggerExec("call", "hello", "message")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "hello from blueprint")
@@ -121,7 +121,7 @@ func (BlueprintSuite) TestBlueprintNoSDK(ctx context.Context, t *testctx.T) {
 		modGen := blueprintTestEnv(t, c).
 			WithWorkdir("app").
 			WithExec(
-				[]string{"dagger", "init", "--sdk=go", "--blueprint=../myblueprint"},
+				[]string{"dagger", "init", "--sdk=go", "--blueprint=../hello"},
 				dagger.ContainerWithExecOpts{
 					ExperimentalPrivilegedNesting: true,
 					Expect:                        dagger.ReturnTypeFailure,
