@@ -181,7 +181,7 @@ func (m *PythonSdk) ModuleRuntime(
 }
 
 // Container for executing the Python module runtime
-func (m *PythonSdk) ModuleDefs(
+func (m *PythonSdk) ModuleTypes(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,

@@ -695,7 +695,7 @@ func (m *Coolsdk) WithDaggerJson(modSource *dagger.ModuleSource) *dagger.ModuleS
 		AsModuleSource()
 }
 
-func (m *Coolsdk) ModuleDefs(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
+func (m *Coolsdk) ModuleTypes(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
 	mod := m.WithDaggerJson(modSource).WithSDK("go").AsModule()
 	modID, err := mod.ID(ctx)
 	if err != nil {
@@ -912,7 +912,7 @@ import (
 
 type Coolsdk struct {}
 
-func (m *Coolsdk) ModuleDefs(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
+func (m *Coolsdk) ModuleTypes(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
 	mod := modSource.WithSDK("go").AsModule()
 	modID, err := mod.ID(ctx)
 	if err != nil {
@@ -1113,7 +1113,7 @@ import (
 
 type CoolSdk struct {}
 
-func (m *CoolSdk) ModuleDefs(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
+func (m *CoolSdk) ModuleTypes(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
 	mod := modSource.WithSDK("go").AsModule()
 	modID, err := mod.ID(ctx)
 	if err != nil {
@@ -1203,7 +1203,7 @@ func (tc vcsTestCase) token() string {
 	return string(decodedToken)
 }
 
-const vcsTestCaseCommit = "0cabe03cc0a9079e738c92b2c589d81fd560011f"
+const vcsTestCaseCommit = "e04b301a11c4fb11e02ecf9e4a16081894dd5255"
 
 var vcsTestCases = []vcsTestCase{
 	// Test cases for public repositories using Go-style references, without '.git' suffix (optional)

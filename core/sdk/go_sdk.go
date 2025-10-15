@@ -48,7 +48,7 @@ func (sdk *goSDK) AsRuntime() (core.Runtime, bool) {
 	return sdk, true
 }
 
-func (sdk *goSDK) AsModuleDefs() (core.ModuleDefs, bool) {
+func (sdk *goSDK) AsModuleTypes() (core.ModuleTypes, bool) {
 	return sdk, true
 }
 
@@ -224,7 +224,7 @@ func (sdk *goSDK) Codegen(
 	}, nil
 }
 
-func (sdk *goSDK) ModuleDefs(
+func (sdk *goSDK) ModuleTypes(
 	ctx context.Context,
 	deps *core.ModDeps,
 	src dagql.ObjectResult[*core.ModuleSource],

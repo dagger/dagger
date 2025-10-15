@@ -13,7 +13,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/identity"
 )
 
-type moduleDefs struct {
+type moduleTypes struct {
 	mod *module
 }
 
@@ -21,7 +21,7 @@ const (
 	moduleIDPath = "/module-typedefs.json"
 )
 
-func (sdk *moduleDefs) ModuleDefs(
+func (sdk *moduleTypes) ModuleTypes(
 	ctx context.Context,
 	deps *core.ModDeps,
 	source dagql.ObjectResult[*core.ModuleSource],
@@ -54,7 +54,7 @@ func (sdk *moduleDefs) ModuleDefs(
 	var ctr dagql.ObjectResult[*core.Container]
 	err = dag.Select(ctx, sdk.mod.sdk, &ctr,
 		dagql.Selector{
-			Field: "moduleDefs",
+			Field: "moduleTypes",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "modSource",
@@ -72,7 +72,7 @@ func (sdk *moduleDefs) ModuleDefs(
 		},
 	)
 	if err != nil {
-		return inst, fmt.Errorf("failed to call sdk moduleDefs: %w", err)
+		return inst, fmt.Errorf("failed to call sdk moduleTypes: %w", err)
 	}
 
 	var modDefsID string

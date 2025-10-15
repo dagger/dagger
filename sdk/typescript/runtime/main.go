@@ -61,7 +61,7 @@ func (t *TypescriptSdk) ModuleRuntime(
 		Container(), nil
 }
 
-func (t *TypescriptSdk) ModuleDefs(
+func (t *TypescriptSdk) ModuleTypes(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
