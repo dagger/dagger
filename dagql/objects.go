@@ -536,6 +536,9 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 		"",
 		idArgs...,
 	)
+	if field.Spec.Persistable {
+		newID = newID.WithPersistable()
+	}
 
 	doNotCache := field.CacheSpec.DoNotCache != ""
 	if field.CacheSpec.GetCacheConfig != nil {
@@ -579,6 +582,9 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 				"",
 				idArgs...,
 			)
+			if field.Spec.Persistable {
+				newID = newID.WithPersistable()
+			}
 		}
 
 		if cacheCfg.Digest != origDgst {
@@ -930,6 +936,8 @@ type FieldSpec struct {
 	Module *call.Module
 	// Directives is the list of GraphQL directives attached to this field.
 	Directives []*ast.Directive
+
+	Persistable bool
 
 	// ViewFilter is filter that specifies under which views this field is
 	// accessible. If not view is present, the default is the "global" view.
@@ -1376,6 +1384,14 @@ func (field Field[T]) Experimental(paras ...string) Field[T] {
 		panic("cannot call on extended field")
 	}
 	field.Spec.ExperimentalReason = FormatDescription(paras...)
+	return field
+}
+
+func (field Field[T]) Persistable() Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
+	field.Spec.Persistable = true
 	return field
 }
 

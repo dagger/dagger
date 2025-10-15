@@ -240,12 +240,13 @@ func checkValidInput(ctx context.Context, parent ModType, value dagql.AnyResult)
 		return false, fmt.Errorf("collect IDs: %w", err)
 	}
 
-	if len(returnedIDs) == 0 {
-		// no IDs! always transferrable :)
-		return true, nil
+	for _, id := range returnedIDs {
+		if !id.Call().IsRemoteable {
+			slog.Debug("skipping call with cloud hook due to non-remoteable ID", "id", id.Display())
+			return false, nil
+		}
 	}
-
-	return false, nil
+	return true, nil
 }
 
 func checkValidMod(ctx context.Context, module *Module) (bool, error) {

@@ -305,11 +305,19 @@ func (id *ID) Append(
 	return newID
 }
 
+func (id *ID) WithPersistable() *ID {
+	if id == nil {
+		return nil
+	}
+	id.pb.IsRemoteable = true
+	return id
+}
+
 // WithDigest returns a new ID that's the same as before except with the
 // given customDigest set as the ID's digest. If empty string, the default
 // digest for the call will be used (based on digest of encoded call pb).
 func (id *ID) WithDigest(customDigest digest.Digest) *ID {
-	return id.receiver.Append(
+	newID := id.receiver.Append(
 		id.pb.Type.ToAST(),
 		id.pb.Field,
 		View(id.pb.View),
@@ -318,6 +326,8 @@ func (id *ID) WithDigest(customDigest digest.Digest) *ID {
 		customDigest,
 		id.args...,
 	)
+	newID.pb.IsRemoteable = id.pb.IsRemoteable
+	return newID
 }
 
 func (id *ID) HasCustomDigest() bool {
@@ -352,7 +362,7 @@ func (id *ID) WithArgument(arg *Argument) *ID {
 		newArgs = append(newArgs, arg)
 	}
 
-	return id.receiver.Append(
+	newID := id.receiver.Append(
 		id.pb.Type.ToAST(),
 		id.pb.Field,
 		View(id.pb.View),
@@ -361,6 +371,8 @@ func (id *ID) WithArgument(arg *Argument) *ID {
 		"", // reset to default digest
 		newArgs...,
 	)
+	newID.pb.IsRemoteable = id.pb.IsRemoteable
+	return newID
 }
 
 func (id *ID) Encode() (string, error) {
