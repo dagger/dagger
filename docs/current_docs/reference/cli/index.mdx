@@ -70,24 +70,26 @@ Manage blueprints
 ### SEE ALSO
 
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
-* [dagger blueprint add](#dagger-blueprint-add)	 - Add a blueprint to the current module
+* [dagger blueprint install](#dagger-blueprint-install)	 - Install a blueprint to the current module
+* [dagger blueprint uninstall](#dagger-blueprint-uninstall)	 - Uninstall a blueprint
+* [dagger blueprint update](#dagger-blueprint-update)	 - Update blueprints
 
-## dagger blueprint add
+## dagger blueprint install
 
-Add a blueprint to the current module
+Install a blueprint to the current module
 
 ### Synopsis
 
-Add another module as a blueprint to the current module.
+Install another module as a blueprint to the current module.
 
 ```
-dagger blueprint add [options] <module> [flags]
+dagger blueprint install [options] <module> [flags]
 ```
 
 ### Examples
 
 ```
-dagger blueprint add github.com/example/blueprint
+dagger blueprint install github.com/example/blueprint
 ```
 
 ### Options
@@ -96,7 +98,95 @@ dagger blueprint add github.com/example/blueprint
       --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
       --compat string       Engine API version to target (default "latest")
   -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
-  -n, --name string         Name to use for the blueprint in the module. Defaults to the name of the blueprint being added.
+  -n, --name string         Name to use for the blueprint in the module. Defaults to the name of the blueprint being installed.
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger blueprint](#dagger-blueprint)	 - Manage blueprints
+
+## dagger blueprint uninstall
+
+Uninstall a blueprint
+
+### Synopsis
+
+Uninstall a blueprint from the current module.
+
+```
+dagger blueprint uninstall [options] <blueprint> [flags]
+```
+
+### Examples
+
+```
+dagger blueprint uninstall myblueprint
+```
+
+### Options
+
+```
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --compat string       Engine API version to target (default "latest")
+  -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger blueprint](#dagger-blueprint)	 - Manage blueprints
+
+## dagger blueprint update
+
+Update blueprints
+
+### Synopsis
+
+Update all or specific blueprints of the current module.
+
+```
+dagger blueprint update [options] [<blueprint>...] [flags]
+```
+
+### Examples
+
+```
+dagger blueprint update
+```
+
+### Options
+
+```
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --compat string       Engine API version to target (default "latest")
+  -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
 ```
 
 ### Options inherited from parent commands
