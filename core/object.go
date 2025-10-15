@@ -471,7 +471,7 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 // blueprintProxyField creates a field resolver that routes to a blueprint module's runtime.
 // Instead of reading from the parent object's fields, it returns the blueprint module's
 // main object instance, allowing that module's own resolvers to handle function calls.
-func blueprintProxyField(mod *Module, field *FieldTypeDef, bpModResult dagql.Result[*Module]) dagql.Field[*ModuleObject] {
+func blueprintProxyField(mod *Module, field *FieldTypeDef, bpMod *Module) dagql.Field[*ModuleObject] {
 	spec := &dagql.FieldSpec{
 		Name:        field.Name,
 		Description: field.Description,
@@ -486,7 +486,6 @@ func blueprintProxyField(mod *Module, field *FieldTypeDef, bpModResult dagql.Res
 		Spec: spec,
 		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], _ map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
 			// Return the blueprint module's main object as a proxy
-			bpMod := bpModResult.Self()
 			if len(bpMod.ObjectDefs) == 0 {
 				return nil, fmt.Errorf("blueprint module %q has no objects", bpMod.Name())
 			}

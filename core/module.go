@@ -61,7 +61,7 @@ type Module struct {
 
 	// BlueprintModules stores references to blueprint module instances by their field name
 	// This enables proxy field resolution to route calls to the blueprint's runtime
-	BlueprintModules map[string]dagql.Result[*Module]
+	BlueprintModules map[string]*Module
 
 	// ResultID is the ID of the initialized module.
 	ResultID *call.ID
