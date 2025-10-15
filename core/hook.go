@@ -33,12 +33,13 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 	objName := opts.ParentModType.typeDef.Name
 	fieldName := fn.metadata.Name
 
-	if !strings.Contains(strings.ToLower(fieldName), "scale") {
-		slog.Debug(
-			"skipping call with cloud hook due to field name",
-			"object", objName,
-			"function", fieldName,
-		)
+	log := slog.Default().With(
+		"object", objName,
+		"function", fieldName,
+	)
+
+	if checkValidName(fieldName) {
+		log.Debug("skipping call with cloud hook due to field name")
 		return nil, false, nil
 	}
 
@@ -47,11 +48,7 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 		return nil, false, err
 	}
 	if !ok {
-		slog.Debug(
-			"skipping call with cloud hook due to invalid module source",
-			"object", objName,
-			"function", fieldName,
-		)
+		log.Debug("skipping call with cloud hook due to invalid module source")
 		return nil, false, nil
 	}
 
@@ -61,23 +58,13 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 			return nil, false, err
 		}
 		if !ok {
-			slog.Debug(
-				"skipping call with cloud hook due to invalid input",
-				"object", objName,
-				"function", fieldName,
-				"input", input.Name,
-			)
+			log.Debug("skipping call with cloud hook due to invalid input", "input", input.Name)
 			return nil, false, nil
 		}
 	}
 
 	if !checkValidReturn(fn.returnType.TypeDef()) {
-		slog.Debug(
-			"skipping call with cloud hook due to invalid return type",
-			"object", objName,
-			"function", fieldName,
-			"returnType", fn.returnType.TypeDef(),
-		)
+		log.Debug("skipping call with cloud hook due to invalid return type", "returnType", fn.returnType.TypeDef())
 		return nil, false, nil
 	}
 
@@ -86,20 +73,12 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 		return nil, false, err
 	}
 	if !ok {
-		slog.Debug(
-			"skipping call with cloud hook due to invalid parent",
-			"object", objName,
-			"function", fieldName,
-		)
+		log.Debug("skipping call with cloud hook due to invalid parent")
 		return nil, false, nil
 	}
 
 	// all valid, handle the call
-	slog.Info(
-		"handling call with cloud hook",
-		"object", objName,
-		"function", fieldName,
-	)
+	log.Info("handling call with cloud hook")
 
 	q, err := CurrentQuery(ctx)
 	if err != nil {
@@ -200,6 +179,17 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 
 	t, err = dagql.NewResultForCurrentID(ctx, input)
 	return t, true, err
+}
+
+func checkValidName(name string) bool {
+	name = strings.ToLower(name)
+	if strings.HasPrefix(name, "scale") {
+		return true
+	}
+	if strings.HasPrefix(name, "check") {
+		return true
+	}
+	return false
 }
 
 func checkValidReturn(typeDef *TypeDef) bool {
