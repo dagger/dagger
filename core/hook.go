@@ -149,6 +149,12 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 	if err != nil {
 		return nil, false, fmt.Errorf("e2e connect: %w", err)
 	}
+	defer func() {
+		err := c.Close()
+		if err != nil && rerr == nil {
+			rerr = fmt.Errorf("close client: %w", err)
+		}
+	}()
 
 	fields, err := json.Marshal(opts.ParentFields)
 	if err != nil {
