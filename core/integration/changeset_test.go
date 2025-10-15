@@ -961,3 +961,41 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 		require.Empty(t, exists2) // Should be empty
 	})
 }
+
+func (ChangesetSuite) TestEmpty(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	baseDir := c.Directory().
+		WithNewFile("file.txt", "content")
+
+	// empty
+	empty, err := baseDir.Changes(baseDir).IsEmpty(ctx)
+	require.NoError(t, err)
+	require.True(t, empty)
+
+	// empty - added + removed
+	addedAndRemovedDir := baseDir.
+		WithNewFile("newfile.txt", "new").
+		WithoutFile("newfile.txt")
+	empty, err = addedAndRemovedDir.Changes(baseDir).IsEmpty(ctx)
+	require.NoError(t, err)
+	require.True(t, empty)
+
+	// not empty - modified
+	modifiedDir := baseDir.WithNewFile("file.txt", "modified")
+	empty, err = modifiedDir.Changes(baseDir).IsEmpty(ctx)
+	require.NoError(t, err)
+	require.False(t, empty)
+
+	// not empty - added
+	addedDir := baseDir.WithNewFile("newfile.txt", "new")
+	empty, err = addedDir.Changes(baseDir).IsEmpty(ctx)
+	require.NoError(t, err)
+	require.False(t, empty)
+
+	// not empty - removed
+	removedDir := baseDir.WithoutFile("file.txt")
+	empty, err = removedDir.Changes(baseDir).IsEmpty(ctx)
+	require.NoError(t, err)
+	require.False(t, empty)
+}

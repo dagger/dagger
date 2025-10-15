@@ -2266,6 +2266,11 @@ impl Changeset {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Returns true if the changeset is empty (i.e. there are no changes).
+    pub async fn is_empty(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("isEmpty");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Return a snapshot containing only the created and modified files
     pub fn layer(&self) -> Directory {
         let query = self.selection.select("layer");

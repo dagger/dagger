@@ -288,6 +288,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the copied directory (e.g., "logs/").`),
 			),
+		dagql.NodeFunc("isEmpty", s.changesetEmpty).
+			Doc(`Returns true if the changeset is empty (i.e. there are no changes).`),
 	}.Install(srv)
 }
 
@@ -833,6 +835,27 @@ func (s *directorySchema) changesetExport(ctx context.Context, parent *core.Chan
 		return "", err
 	}
 	return dagql.String(stat.Path), err
+}
+
+func (s *directorySchema) changesetEmpty(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args struct{}) (dagql.Boolean, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	var size dagql.Int
+	if err := srv.Select(ctx, parent, &size,
+		dagql.Selector{
+			Field: "asPatch",
+		},
+		dagql.Selector{
+			Field: "size",
+		},
+	); err != nil {
+		return false, err
+	}
+
+	return size == 0, nil
 }
 
 type dirExportArgs struct {
