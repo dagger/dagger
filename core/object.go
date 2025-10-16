@@ -542,15 +542,16 @@ func blueprintProxyFunction(ctx context.Context, mod *Module, fun *Function, bpM
 		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to merge user defaults for blueprint constructor %q: %w", fun.Name, err)
 	}
 
+	//nolint:dupl
 	return dagql.Field[*ModuleObject]{
 		Spec: &spec,
 		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
 			opts := &CallOpts{
-				ParentTyped:  obj,
-				ParentFields: obj.Self().Fields,
-				Cache:        dagql.IsInternal(ctx),
+				ParentTyped:    obj,
+				ParentFields:   obj.Self().Fields,
+				Cache:          dagql.IsInternal(ctx),
 				SkipSelfSchema: false,
-				Server:       dag,
+				Server:         dag,
 			}
 			for name, val := range args {
 				opts.Inputs = append(opts.Inputs, CallInput{
