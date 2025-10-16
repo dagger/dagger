@@ -1,6 +1,6 @@
-module dagger/dev
+module dagger/my-module
 
-go 1.25.1
+go 1.25.2
 
 require (
 	github.com/99designs/gqlgen v0.17.81

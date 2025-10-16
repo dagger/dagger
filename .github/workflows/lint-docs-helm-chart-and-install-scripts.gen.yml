@@ -1,5 +1,5 @@
 # This file was generated. See https://daggerverse.dev/mod/github.com/dagger/dagger/modules/gha
-name: Lint docs
+name: Lint docs, helm chart and install scripts
 "on":
     push:
         branches:
@@ -18,11 +18,11 @@ concurrency:
     group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
     cancel-in-progress: true
 jobs:
-    lint-docs:
+    lint-docs-helm-chart-and-install-scripts:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
             - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.4' || 'ubuntu-24.04' }}
-        name: Lint docs
+        name: Lint docs, helm chart and install scripts
         steps:
             - name: Checkout
               uses: actions/checkout@v4
@@ -30,7 +30,7 @@ jobs:
               id: exec
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                call: --docker-cfg=file:$HOME/.docker/config.json check-lint-scripts
+                call: --docker-cfg=file:$HOME/.docker/config.json lint-misc
                 cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
                 version: v0.19.4

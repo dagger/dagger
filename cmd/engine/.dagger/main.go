@@ -141,6 +141,9 @@ func (e *DaggerEngine) Service(
 	sharedCache bool,
 	// +optional
 	metrics bool,
+	// +optional
+	// +default="10.88.0.0/16"
+	networkCidr string,
 ) (*dagger.Service, error) {
 	cacheVolumeName := "dagger-dev-engine-state"
 	if !sharedCache {
@@ -182,7 +185,7 @@ func (e *DaggerEngine) Service(
 		Args: []string{
 			"--addr", "tcp://0.0.0.0:1234",
 			"--network-name", "dagger-dev",
-			"--network-cidr", "10.88.0.0/16",
+			"--network-cidr", networkCidr,
 		},
 		UseEntrypoint:            true,
 		InsecureRootCapabilities: true,
@@ -192,7 +195,7 @@ func (e *DaggerEngine) Service(
 // Generate any engine-related files
 // Note: this is codegen of the 'go generate' variety, not 'dagger develop'
 func (e *DaggerEngine) Generate(_ context.Context) (*dagger.Changeset, error) {
-	withGoGenerate := dag.Go(e.Source).Env().
+	withGoGenerate := dag.Go(dagger.GoOpts{Source: e.Source}).Env().
 		WithExec([]string{"go", "install", "google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2"}).
 		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogo@v1.3.2"}).
 		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2"}).
@@ -261,8 +264,8 @@ type targetResult struct {
 	Tags      []string
 }
 
-func (e *DaggerEngine) CheckReleaseDryRun(ctx context.Context) error {
-	return e.Publish(
+func (e *DaggerEngine) ReleaseDryRun(ctx context.Context) (MyCheckStatus, error) {
+	return CheckCompleted, e.Publish(
 		ctx,
 		"dagger-engine.dev", // image
 		// FIXME: why not from HEAD like the SDKs?

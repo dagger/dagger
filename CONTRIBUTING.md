@@ -11,24 +11,24 @@ your effort on something that will not get merged.
 
 For more information on SDK contributions, see the SDK-specific [CONTRIBUTING.md](https://github.com/dagger/dagger/tree/main/sdk/CONTRIBUTING.md).
 
-## Development environment
+## Initial setup
 
-For more detailed instructions on building, running and testing dagger locally,
-see the dagger [dev module](https://github.com/dagger/dagger/tree/main/.dagger/README.md).
+### 1. Join our Discord
 
-Working on dagger requires dagger to bootstrap it - you can install dagger
-using the instructions at [https://docs.dagger.io/install](https://docs.dagger.io/install).
-Because we dogfood all of our tooling ourselves, we recommend using the *most
-recent* version of dagger to build (you can find the exact version used in our
-ci by looking in `go.mod`).
+Dagger's community is one of its killer features. If you haven't already, we strongly recommend [joining our Discord server](https://discord.gg/UhXqKz7SRM). This will save you tons of time, and the constant feedback and encouragement will help you stay motivated.
 
-## GitHub Workflow
+### 2. Install Dagger
 
-The recommended workflow is to fork the repository and open pull requests from your fork.
+To develop Dagger, we use - surprise! - Dagger. Start by installing the [latest stable release](http://dagger.io/install). If you're using an old version, make sure to upgrade it.
 
-### 1. Fork, clone & configure Dagger upstream
+### 3. Install Changie
 
-- Click on the *Fork* button on GitHub
+Changie is a simple tool for managing release notes. You will need it to submit user-facing changes. Make sure to [install the latest version](https://changie.dev/guide/installation/).
+
+### 4. Git setup
+
+- Navigate to [github.com/dagger/dagger](https://github.com/dagger/dagger)
+- Click on the *Fork* button
 - Clone your fork
 
   ```shell
@@ -41,31 +41,71 @@ The recommended workflow is to fork the repository and open pull requests from y
   git remote add upstream git@github.com:dagger/dagger.git
   ```
 
-### 2. Create a pull request
+## Contribution workflow
 
-- Create a new feature branch for your changes:
+The overall workflow looks like this:
 
-  ```shell
-  git checkout -b my_feature_branch
-  ```
+### 1. Claim an issue
 
-- Make whatever changes you need
+[Find](https://github.com/dagger/dagger/issues) or [report](https://github.com/dagger/dagger/issues/new/choose) an issue on Github. This could be a bug, missing feature, missing documentation, or "rough edge". Write a comment to declare your intention to contribute a solution. If others are already working on it, make sure to coordinate with them.
 
-- Commit your changes
+### 2. Communicate
 
-  ```shell
-  git commit -s
-  ```
+For bigger contributions, communicate upfront your plan and design, and ask maintainers for feedback. You can do this in the Github issue, or on Discord. Communicate early and often! This will save your time as well as the maintainer's.
 
-- Push your changes to your fork
+### 3. Develop
 
-  ```shell
-  git push
-  ```
+Use your local dev environment to iterate until you're ready for review.
 
+#### Manual testing
+
+To run an interactive playground with all Dagger components built and integrated:
+
+```shell
+dagger call playground terminal
+```
+
+This will:
+
+1. Build the Dagger engine, with core SDKs bundled inside
+2. Run the dev engine as a Dagger service (dagger-in-dagger)
+3. Build the Dagger CLI
+4. Run an ephemeral container with the CLI installed, and the engine available as a sidecar
+5. Open an interactive terminal
+
+#### Integration testing
+
+- Run all core tests: `dagger call test all`
+- Run available core tests: `dagger call test list`
+- Run a specific core test (eg.  `TestNamespacing` in the `TestModule` suite): `dagger call test specific --pkg="./core/integration" --run="^TestModule/TestNamespacing$"`
+- Run SDK tests: `dagger call test-sdks`
+
+#### Linting
+
+To run all linters: `dagger call lint`
+
+#### Local docs server
+
+To run a local docs server: `dagger -m docs call server up`
+
+
+### 4. Prepare your pull request
+
+Before submitting your pull request, follow this checklist.
+
+- Generate API docs, client bindings, and other generated files with `dagger call generate`, and include the output in your git commit.
+- Call all linters: `dagger call lint`
+- If your change is user-facing, add a release note: run `changie new` then follow instructions. Add produced files to your commit.
+- Understand the license. All contributions are made under the Apache License 2.0 (Apache-2.0). Make sure you are willing and able to honor the terms of the license.
+- Make sure all your commits are accompanied by a [Developer Certificate of Origin (DCO)](https://developercertificate.org). You can do this with `git commit -s`. The `Signed-off-by` line must match the author's real name.
+- Make sure your git commit messages are useful, accurate and concise. See [How to Write a Git Commit Message](https://chris.beams.io/posts/git-commit/)
+
+### 5. Submit your pull request
+
+- Push your feature branch to your github fork
 - Create a new pull request from https://github.com/dagger/dagger
 
-### 3. Review process
+### 6. Review process
 
 - A maintainer will review your pull request and may suggest changes, etc.
 - If needed, make any changes and push them to your branch. If there are
@@ -74,77 +114,4 @@ The recommended workflow is to fork the repository and open pull requests from y
   familiar).
 - Once everything is good, a maintainer will merge your changes.
 
-## Release notes
-
-If this is a user-facing change, a maintainer will ask you to add a line for
-the release notes. You will need to have [`changie` installed](https://changie.dev/guide/installation/).
-
-Here is an example of what that looks like:
-
-```shell
-changie new
-✔ Kind … Added
-✔ Body … engine: add `Directory.Sync`
-✔ GitHub PR … 5414
-✔ GitHub Author … helderco
-```
-
-If there are code changes in the SDKs, run `changie new` in the corresponding directory, e.g. `sdk/go`, `sdk/typescript`, etc.
-
-Remember to add & commit the release notes fragment. This will be used at
-release time, in the changelog.
-
-## Commits
-
-### License
-
-Contributions to this project are made under the Apache License 2.0 (Apache-2.0).
-
-### DCO
-
-Contributions to this project must be accompanied by a Developer Certificate of
-Origin (DCO).
-
-All commit messages must contain the Signed-off-by line with an email address
-that matches the commit author. When committing, use the `--signoff` flag:
-
-```shell
-git commit -s
-```
-
-The Signed-off-by line must match the **author's real name**, otherwise the PR will be rejected.
-
-### Commit messages
-
-See:
-
-- [How to Write a Git Commit Message](https://chris.beams.io/posts/git-commit/)
-- [Conventional Commits](https://www.conventionalcommits.org)
-
-
-## Github Actions
-
-The workflows titled `*.gen.yml` under `.github/workflows` are generated using the [gha module](./modules/gha/main.go).
-
-Workflows are defined in [.github/main.go](./.github/main.go). To modify an existing workflow, you should modify its configuration in [.github/main.go](./.github/main.go) and then regenerate the workflow yaml.
-
-To regenerate the github actions yaml, run:
-
-```
-dagger -m .github <<.
- generate |
- export .
-.
-```
-
-## Docs
-
-### Running the docs locally
-
-The `docs` submodule handles everything needed for running the documentation site locally.
-
-It can be executed with:
-
-```
-dagger -m docs call server up
-```
+Thank you for considering a contribution! We appreciate it.

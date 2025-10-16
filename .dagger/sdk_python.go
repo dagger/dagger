@@ -18,7 +18,7 @@ func (t PythonSDK) Name() string {
 }
 
 // CheckPythonFormat checks the Python code formatting
-func (t PythonSDK) CheckLintPython(ctx context.Context) error {
+func (t PythonSDK) Lint(ctx context.Context) (MyCheckStatus, error) {
 	// Preserve same file hierarchy for docs because of extend rules in .ruff.toml
 	_, err := dag.PythonSDKDev().
 		WithDirectory(
@@ -35,40 +35,17 @@ func (t PythonSDK) CheckLintPython(ctx context.Context) error {
 				),
 		).
 		Lint(ctx, dagger.PythonSDKDevLintOpts{Paths: []string{"../.."}})
-	return err
-}
-
-func (t PythonSDK) RuntimeSource() *dagger.Directory {
-	return t.Dagger.Source.Filter(dagger.DirectoryFilterOpts{
-		Include: []string{"sdk/python/runtime"},
-	})
-}
-
-// CheckGoFormat checks the Go code formatting for the Python runtime
-func (t PythonSDK) CheckLintGo(ctx context.Context) error {
-	return t.godev().CheckLint(ctx)
-}
-
-func (t PythonSDK) godev() *dagger.Go {
-	return dag.Go(t.RuntimeSource())
-}
-
-// Lint the Python SDK
-func (t PythonSDK) CheckLint(ctx context.Context) error {
-	return parallel.New().
-		WithJob("lint Python code in the SDK and docs", t.CheckLintPython).
-		WithJob("lint the python runtime, which is written in Go", t.CheckLintGo).
-		Run(ctx)
+	return CheckCompleted, err
 }
 
 // Test the Python SDK
-func (t PythonSDK) Test(ctx context.Context) (rerr error) {
+func (t PythonSDK) Test(ctx context.Context) (MyCheckStatus, error) {
 	base := dag.PythonSDKDev().Container().With(t.Dagger.devEngineSidecar())
 	dev := dag.PythonSDKDev(dagger.PythonSDKDevOpts{Container: base})
 
 	versions, err := dag.PythonSDKDev().SupportedVersions(ctx)
 	if err != nil {
-		return err
+		return CheckCompleted, err
 	}
 	jobs := parallel.New()
 	for _, version := range versions {
@@ -83,7 +60,7 @@ func (t PythonSDK) Test(ctx context.Context) (rerr error) {
 			},
 		)
 	}
-	return jobs.Run(ctx)
+	return CheckCompleted, jobs.Run(ctx)
 }
 
 // Regenerate the Python SDK API
@@ -133,8 +110,8 @@ func (t PythonSDK) Generate(_ context.Context) (*dagger.Changeset, error) {
 }
 
 // Test the publishing process
-func (t PythonSDK) CheckReleaseDryRun(ctx context.Context) error {
-	return t.Publish(ctx, "HEAD", true, "", nil)
+func (t PythonSDK) ReleaseDryRun(ctx context.Context) (MyCheckStatus, error) {
+	return CheckCompleted, t.Publish(ctx, "HEAD", true, "", nil)
 }
 
 // Publish the Python SDK

@@ -77,7 +77,7 @@ func (d Docs) Server() *dagger.Container {
 }
 
 // Lint documentation files
-func (d Docs) CheckLint(ctx context.Context) error {
+func (d Docs) Lint(ctx context.Context) (MyCheckStatus, error) {
 	_, err := dag.Container().
 		From("tmknom/markdownlint:"+markdownlintVersion).
 		WithMountedDirectory("/src", d.Source).
@@ -93,7 +93,7 @@ func (d Docs) CheckLint(ctx context.Context) error {
 			"README.md",
 		}).
 		Sync(ctx)
-	return err
+	return CheckCompleted, err
 }
 
 // Regenerate the API schema and CLI reference docs
@@ -105,7 +105,7 @@ func (d Docs) Generate(
 ) (*dagger.Changeset, error) {
 	src := d.Source
 	// 1. Generate the GraphQL schema
-	withGqlSchema := dag.Go(src).Env().
+	withGqlSchema := dag.Go(dagger.GoOpts{Source: src}).Env().
 		WithExec([]string{"go", "run", "./cmd/introspect", "--version=" + version, "schema"}, dagger.ContainerWithExecOpts{
 			RedirectStdout: "docs/docs-graphql/schema.graphqls",
 		}).
@@ -132,7 +132,7 @@ func (d Docs) Generate(
 		},
 	))
 	// 4. Generate config file schemas?
-	withConfigSchemas := dag.Go(src).Env().
+	withConfigSchemas := dag.Go(dagger.GoOpts{Source: src}).Env().
 		WithExec([]string{"go", "run", "./cmd/json-schema", "dagger.json"}, dagger.ContainerWithExecOpts{
 			RedirectStdout: "docs/static/reference/dagger.schema.json",
 		}).
@@ -174,7 +174,7 @@ func (d Docs) Introspection(
 	version string, // +optional
 ) *dagger.File {
 	return dag.
-		Go(d.Source).
+		Go(dagger.GoOpts{Source: d.Source}).
 		Env().
 		WithExec([]string{"go", "run", "./cmd/introspect", "--version=" + version, "introspect"}, dagger.ContainerWithExecOpts{
 			RedirectStdout: "introspection.json",

@@ -2,6 +2,8 @@ package main
 
 import (
 	"dagger/changelog/internal/dagger"
+	"fmt"
+	"strings"
 )
 
 func New(
@@ -31,4 +33,19 @@ func (c *Changelog) Generate() *dagger.Changeset {
 		WithExec([]string{"/changie", "merge"}).
 		Directory(".").
 		Changes(c.Source)
+}
+
+// Lookup the change notes file for the given component and version
+func (c *Changelog) LookupEntry(
+	// The component to look up change notes for
+	// Example: "sdk/php"
+	component,
+	// The version to look up change notes for
+	version string,
+) *dagger.File {
+	path := fmt.Sprintf(".changes/%s.md", version)
+	if component != "" {
+		path = strings.TrimSuffix(component, "/") + "/" + path
+	}
+	return c.Source.File(path)
 }
