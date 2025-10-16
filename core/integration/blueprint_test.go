@@ -131,6 +131,28 @@ func (BlueprintSuite) TestMultipleBlueprints(ctx context.Context, t *testctx.T) 
 	})
 }
 
+func (BlueprintSuite) TestBlueprintsWithSDK(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	t.Run("use local blueprint", func(ctx context.Context, t *testctx.T) {
+		modGen := blueprintTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init", "--sdk=go")).
+			With(daggerExec("blueprint", "install", "../hello"))
+		// verify we can call function from our module code
+		out, err := modGen.
+			With(daggerExec("call", "container-echo", "--string-arg", "yoyo", "stdout")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "yoyo")
+		// verify we can call a function from our blueprint
+		out, err = modGen.
+			With(daggerExec("call", "hello", "message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello from blueprint")
+	})
+}
+
 func (BlueprintSuite) TestBlueprintNoSDK(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	t.Run("init with --sdk and --blueprint", func(ctx context.Context, t *testctx.T) {

@@ -870,19 +870,6 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 		return err
 	}
 
-	// blueprint is incompatible with some dagger.json fields
-	if modCfg.Blueprint != nil || len(modCfg.Blueprints) > 0 {
-		if modCfg.SDK != nil {
-			return fmt.Errorf("blueprint and sdk can't both be set")
-		}
-		if len(modCfg.Dependencies) != 0 {
-			return fmt.Errorf("blueprint and dependencies can't both be set")
-		}
-		if modCfg.Source != "" {
-			return fmt.Errorf("blueprint and source can't both be set")
-		}
-	}
-
 	src.ModuleName = modCfg.Name
 	src.ModuleOriginalName = modCfg.Name
 	src.IncludePaths = modCfg.Include
@@ -1473,13 +1460,6 @@ func (s *moduleSourceSchema) moduleSourceWithBlueprint(
 		Blueprint core.ModuleSourceID
 	},
 ) (*core.ModuleSource, error) {
-	// Validate blueprint compatibility
-	if parentSrc.SDK != nil {
-		return nil, fmt.Errorf("cannot set blueprint on module that already has SDK")
-	}
-	if parentSrc.Dependencies.Len() > 0 {
-		return nil, fmt.Errorf("cannot set blueprint on module that has dependencies")
-	}
 	tmpArgs := struct{ Dependencies []core.ModuleSourceID }{
 		Dependencies: []core.ModuleSourceID{args.Blueprint},
 	}
@@ -2539,12 +2519,8 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	// Handle blueprint context separation
 	originalSrc := src
 
-	// for a single blueprint, use it as the module source
+	// reference for a single blueprint
 	var blueprintSrc dagql.ObjectResult[*core.ModuleSource]
-	if len(src.Self().Blueprints) == 1 {
-		blueprintSrc = src.Self().Blueprints[0]
-		src = blueprintSrc
-	}
 
 	sdk := src.Self().SDK
 	if sdk == nil {
@@ -2595,6 +2571,11 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 		mod.ResultID = dagql.CurrentID(ctx)
 	} else if len(src.Self().Blueprints) <= 1 {
+		// If we have a single blueprint and no dependencies, use it as the main source
+		if len(src.Self().Blueprints) == 1 && len(src.Self().Dependencies) == 0 {
+			blueprintSrc = src.Self().Blueprints[0]
+			src = blueprintSrc
+		}
 		// For no SDK and not multiple blueprints, provide an empty stub module definition
 		typeDef := &core.ObjectTypeDef{
 			Name: mod.NameField,
@@ -2631,7 +2612,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		}
 	}
 
-	if len(blueprintMods) > 1 {
+	if len(blueprintMods) > 0 && blueprintSrc.Self() == nil {
 		// Initialize a shadow module object type to hold the namespaced blueprint fields
 		shadowModuleName := mod.NameField
 		shadowModule := &core.TypeDef{
@@ -2664,6 +2645,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 				}
 			}
 		}
+		// TODO: how do we handle this when there is sdk
 		mod, err = mod.WithObject(ctx, shadowModule)
 		if err != nil {
 			return inst, fmt.Errorf("failed to add blueprints to module: %w", err)
