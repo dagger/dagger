@@ -149,9 +149,8 @@ func (h *CloudCallHook) Call(ctx context.Context, fn *ModuleFunction, opts *Call
 	if fn.mod.Source.Value.Self().Kind == ModuleSourceKindGit {
 		query = query.Select("moduleSource").
 			Arg("refString", fn.mod.Source.Value.Self().Git.Symbolic). // XXX: ain't right
-			Arg("refPin", fn.mod.Source.Value.Self().Git.Commit)
-		// XXX: something is wrong with enum passing.
-		// Arg("requireKind", fn.mod.Source.Value.Self().Kind)
+			Arg("refPin", fn.mod.Source.Value.Self().Git.Commit).
+			Arg("requireKind", fn.mod.Source.Value.Self().Kind)
 	} else {
 		query = query.Select("moduleSource").
 			Arg("refString", filepath.Join(
@@ -203,11 +202,18 @@ func checkValidName(name string) bool {
 }
 
 func checkValidReturn(typeDef *TypeDef) bool {
+	// TODO: allow returning your own module objects
 	switch typeDef.Kind {
 	case TypeDefKindVoid:
 		return true
-	case TypeDefKindBoolean, TypeDefKindFloat, TypeDefKindInteger, TypeDefKindString, TypeDefKindScalar:
+	case TypeDefKindBoolean, TypeDefKindFloat, TypeDefKindInteger, TypeDefKindString:
 		return true
+	case TypeDefKindScalar, TypeDefKindEnum:
+		return true
+	// NOTE: we don't seem to support this is args right now, but theoretically
+	// these are seralizable
+	// case TypeDefKindInput:
+	// 	return true
 	case TypeDefKindList:
 		return checkValidReturn(typeDef.Underlying())
 	}
