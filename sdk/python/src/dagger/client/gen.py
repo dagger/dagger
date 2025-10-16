@@ -7463,6 +7463,12 @@ class GitRepository(Type):
         _ctx = self._select("tags", _args)
         return await _ctx.execute(list[str])
 
+    def uncommitted(self) -> Changeset:
+        """Returns the changeset of uncommitted changes in the git repository."""
+        _args: list[Arg] = []
+        _ctx = self._select("uncommitted", _args)
+        return Changeset(_ctx)
+
     async def url(self) -> str | None:
         """The URL of the git repository.
 

@@ -35,6 +35,8 @@ type GitCLI struct {
 
 	ignoreError bool
 	config      map[string]string
+
+	indexFile string
 }
 
 // Option provides a variadic option for configuring the git client.
@@ -170,6 +172,13 @@ func WithStreams(streams StreamFunc) Option {
 	}
 }
 
+// WithIndexFile sets the GIT_INDEX_FILE environment variable for the git commands.
+func WithIndexFile(indexFile string) Option {
+	return func(b *GitCLI) {
+		b.indexFile = indexFile
+	}
+}
+
 // New initializes a new git client
 func NewGitCLI(opts ...Option) *GitCLI {
 	c := &GitCLI{}
@@ -276,6 +285,9 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, rerr erro
 
 	if len(cli.config) > 0 {
 		cmd.Env = MergeGitConfigEnv(cmd.Env, cli.config)
+	}
+	if cli.indexFile != "" {
+		cmd.Env = append(cmd.Env, "GIT_INDEX_FILE="+cli.indexFile)
 	}
 
 	var err error

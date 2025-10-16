@@ -35,6 +35,12 @@ type GitRepositoryBackend interface {
 	// Get returns a reference to a specific git ref (branch, tag, or commit).
 	Get(ctx context.Context, ref *gitutil.Ref) (GitRefBackend, error)
 
+	// Dirty returns a Directory representing the repository in it's current state.
+	Dirty(ctx context.Context) (dagql.ObjectResult[*Directory], error)
+	// Cleaned returns a Directory representing the repository with all uncommitted changes discarded.
+	Cleaned(ctx context.Context) (dagql.ObjectResult[*Directory], error)
+
+	// mount mounts the repository with the provided refs and executes the given function.
 	mount(ctx context.Context, depth int, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error
 }
 

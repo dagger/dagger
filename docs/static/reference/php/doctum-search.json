@@ -3867,6 +3867,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\GitRepository::uncommitted",
+			"p": "Dagger/GitRepository.html#method_uncommitted",
+			"d": "<p>Returns the changeset of uncommitted changes in the git repository.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\GitRepository::url",
 			"p": "Dagger/GitRepository.html#method_url",
 			"d": "<p>The URL of the git repository.</p>"

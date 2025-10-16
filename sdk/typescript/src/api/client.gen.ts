@@ -7535,6 +7535,14 @@ export class GitRepository extends BaseClient {
   }
 
   /**
+   * Returns the changeset of uncommitted changes in the git repository.
+   */
+  uncommitted = (): Changeset => {
+    const ctx = this._ctx.select("uncommitted")
+    return new Changeset(ctx)
+  }
+
+  /**
    * The URL of the git repository.
    */
   url = async (): Promise<string> => {
