@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/util/gitutil"
 )
@@ -76,6 +77,78 @@ func (repo *LocalGitRepository) File(ctx context.Context, filename string) (*Fil
 	}
 
 	return repo.Directory.Self().File(ctx, filepath.Join(gitDir, filename))
+}
+
+func (repo *LocalGitRepository) Dirty(ctx context.Context) (_ dagql.ObjectResult[*Directory], rerr error) {
+	return repo.Directory, nil
+}
+
+func (repo *LocalGitRepository) Cleaned(ctx context.Context) (_ *Directory, rerr error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cache := query.BuildkitCache()
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	llb := repo.Directory.Self().LLB
+	res, err := bk.Solve(ctx, bkgw.SolveRequest{Definition: llb})
+	if err != nil {
+		return nil, err
+	}
+	ref, err := res.SingleRef()
+	if err != nil {
+		return nil, err
+	}
+	parent, err := ref.CacheRef(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// XXX: git reset --hard is WILDLY inefficient here since it has some funky layering?
+	bkref, err := cache.New(ctx, parent, bkSessionGroup,
+		bkcache.CachePolicyRetain,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(fmt.Sprintf("git cleaned worktree")))
+	defer func() {
+		if rerr != nil && bkref != nil {
+			bkref.Release(context.WithoutCancel(ctx))
+		}
+	}()
+	err = MountRef(ctx, bkref, bkSessionGroup, func(root string) error {
+		src, err := fs.RootPath(root, repo.Directory.Self().Dir)
+		if err != nil {
+			return err
+		}
+		git := gitutil.NewGitCLI(gitutil.WithDir(src))
+		// clean the worktree, removing untracked files and resetting changes
+		_, err = git.Run(ctx, "clean", "-fd")
+		if err != nil {
+			return err
+		}
+		_, err = git.Run(ctx, "reset", "--hard")
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	dir := NewDirectory(nil, "/", query.Platform(), nil)
+	snap, err := bkref.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bkref = nil
+	dir.Result = snap
+	return dir, nil
 }
 
 func (repo *LocalGitRepository) mount(ctx context.Context, depth int, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error {

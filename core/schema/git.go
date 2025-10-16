@@ -113,6 +113,9 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				dagql.Arg("patterns").Doc(`Glob patterns (e.g., "refs/tags/v*").`),
 			),
 
+		dagql.NodeFunc("__cleaned", DagOpDirectoryWrapper(srv, s.cleaned)),
+		dagql.NodeFunc("dirty", s.dirty),
+
 		dagql.Func("withAuthToken", s.withAuthToken).
 			Doc(`Token to authenticate the remote with.`).
 			View(BeforeVersion("v0.19.0")).
@@ -688,6 +691,53 @@ func (s *gitSchema) branches(ctx context.Context, parent *core.GitRepository, ar
 	}
 	remote := parent.Remote
 	return dagql.NewStringArray(remote.Filter(patterns).Branches().ShortNames()...), nil
+}
+
+func (s *gitSchema) cleaned(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args struct {
+	DagOpInternalArgs
+}) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	dir, err := parent.Self().Backend.Cleaned(ctx)
+	if err != nil {
+		return inst, err
+	}
+	if dir == nil {
+		return inst, fmt.Errorf("no cleaned directory available")
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+}
+
+func (s *gitSchema) dirty(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args struct{}) (inst dagql.ObjectResult[*core.Changeset], _ error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	dirty, err := parent.Self().Backend.Dirty(ctx)
+	if err != nil {
+		return inst, err
+	}
+	if dirty.Self() == nil {
+		// XXX: should not be an error case
+		return inst, fmt.Errorf("no dirty directory available")
+	}
+
+	var cleaned dagql.ObjectResult[*core.Directory]
+	if err := dag.Select(ctx, parent, &cleaned, dagql.Selector{
+		Field: "__cleaned",
+	}); err != nil {
+		return inst, fmt.Errorf("failed to select cleaned: %w", err)
+	}
+
+	changes, err := core.NewChangeset(ctx, dirty, cleaned)
+	if err != nil {
+		return inst, fmt.Errorf("failed to create changeset: %w", err)
+	}
+
+	return dagql.NewObjectResultForCurrentID(ctx, dag, changes)
 }
 
 type withAuthTokenArgs struct {
