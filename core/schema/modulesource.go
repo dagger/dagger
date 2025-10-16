@@ -2618,7 +2618,10 @@ func addBlueprintFieldsToObject(
 	for _, bpMod := range blueprintMods {
 		for _, obj := range bpMod.ObjectDefs {
 			if obj.AsObject.Value.Name == strcase.ToCamel(bpMod.NameField) {
-				fieldName := bpMod.NameField
+				// Use the original name (with hyphens) as the map key,
+				// but use camelCase for the GraphQL field name
+				originalName := bpMod.NameField
+				fieldName := strcase.ToLowerCamel(bpMod.NameField)
 
 				// Always add blueprints as functions (treating them as zero-argument constructors
 				// if they don't have an explicit constructor). This ensures consistent behavior
@@ -2634,8 +2637,8 @@ func addBlueprintFieldsToObject(
 				}
 
 				constructor.Name = fieldName
-				constructor.OriginalName = fieldName
-				constructor.Description = fmt.Sprintf("Blueprint module: %s", fieldName)
+				constructor.OriginalName = originalName
+				constructor.Description = fmt.Sprintf("Blueprint module: %s", originalName)
 				constructor.ReturnType = obj
 
 				var err error
@@ -2644,7 +2647,7 @@ func addBlueprintFieldsToObject(
 					return nil, fmt.Errorf("failed to add blueprint function %q: %w", fieldName, err)
 				}
 
-				mod.BlueprintModules[fieldName] = bpMod
+				mod.BlueprintModules[originalName] = bpMod
 				break
 			}
 		}
