@@ -2471,17 +2471,6 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 			return nil, err
 		}
 		mod.Runtime = dagql.NonNull(runtime)
-		var runtimeRes dagql.ID[*core.Container]
-		// But mod.Runtime itself is not enough, it needs to be fully resolved now. It's expected not only
-		// mod.Runtime exists, but it's expected the cache has been filled.
-		// If the SDK is not defining moduleTypes, then a function will be called against the module and creates all
-		// the required objects. Here we don't want that, so just sync it so it exists and will be available later to be
-		// invoked.
-		if err = dag.Select(ctx, mod.Runtime.Value, &runtimeRes, dagql.Selector{
-			Field: "sync",
-		}); err != nil {
-			return nil, err
-		}
 	}
 
 	return mod, nil
