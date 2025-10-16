@@ -104,16 +104,20 @@ func (mod *Module) GetContextSource() *ModuleSource {
 // Return all local defaults for this module
 func (mod *Module) UserDefaults(ctx context.Context) (*EnvFile, error) {
 	defaults := NewEnvFile(true)
-	src := mod.GetContextSource()
-	if src == nil {
-		return defaults, nil
+
+	// Use ContextSource for loading .env files (it has the actual context directory)
+	// but use Source for the module name prefix lookups
+	contextSrc := mod.GetContextSource()
+	if contextSrc != nil && contextSrc.UserDefaults != nil {
+		defaults = defaults.WithEnvFiles(contextSrc.UserDefaults)
 	}
-	// Add local defaults from the module source
-	defaults = defaults.WithEnvFiles(src.UserDefaults)
-	// If the module source has a blueprint, also add local defaults from that
-	if bp := src.Blueprint.Self(); bp != nil {
-		defaults = defaults.WithEnvFiles(bp.UserDefaults)
+
+	src := mod.GetSource()
+	if src != nil && src != contextSrc && src.UserDefaults != nil {
+		// Also merge in blueprint source defaults if different from context
+		defaults = defaults.WithEnvFiles(src.UserDefaults)
 	}
+
 	return defaults, nil
 }
 
