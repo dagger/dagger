@@ -662,6 +662,18 @@ func (s *moduleSchema) moduleCall(ctx context.Context, modMeta *core.Module, arg
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode input %q: %w", input.Name, err)
 		}
+
+		// HACK: need this so host.directory IDs get loaded now and put in the cache,
+		// otherwise ones that are coming from a remote engine won't be cached here
+		// and thus will result in the module function trying to load the dir from
+		// its own host in the container
+		if id, ok := dagql.UnwrapAs[dagql.IDable](value); ok {
+			_, err := dag.Load(ctx, id.ID())
+			if err != nil {
+				return nil, fmt.Errorf("failed to load ID for input %q: %w", input.Name, err)
+			}
+		}
+
 		opts.Inputs = append(opts.Inputs, core.CallInput{
 			Name:  input.Name,
 			Value: value,
