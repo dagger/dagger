@@ -3578,6 +3578,20 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Raise an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `err` - Message of the error to raise. If empty, the error will be ignored.
+    pub fn with_error(&self, err: impl Into<String>) -> Container {
+        let mut query = self.selection.select("withError");
+        query = query.arg("err", err.into());
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Execute a command in the container, and return a new snapshot of the container state after execution.
     ///
     /// # Arguments
@@ -5602,6 +5616,20 @@ impl Directory {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Raise an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `err` - Message of the error to raise. If empty, the error will be ignored.
+    pub fn with_error(&self, err: impl Into<String>) -> Directory {
+        let mut query = self.selection.select("withError");
+        query = query.arg("err", err.into());
         Directory {
             proc: self.proc.clone(),
             selection: query,

@@ -579,6 +579,16 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Raise an error.
+     */
+    public function withError(string $err): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withError');
+        $innerQueryBuilder->setArgument('err', $err);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Execute a command in the container, and return a new snapshot of the container state after execution.
      */
     public function withExec(

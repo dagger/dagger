@@ -794,6 +794,12 @@ type Container {
     expand: Boolean = false
   ): Container!
 
+  """Raise an error."""
+  withError(
+    """Message of the error to raise. If empty, the error will be ignored."""
+    err: String!
+  ): Container!
+
   """
   Execute a command in the container, and return a new snapshot of the container state after execution.
   """
@@ -1731,6 +1737,12 @@ type Directory {
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
+  ): Directory!
+
+  """Raise an error."""
+  withError(
+    """Message of the error to raise. If empty, the error will be ignored."""
+    err: String!
   ): Directory!
 
   """

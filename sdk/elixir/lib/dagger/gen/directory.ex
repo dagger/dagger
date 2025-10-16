@@ -427,6 +427,20 @@ defmodule Dagger.Directory do
   end
 
   @doc """
+  Raise an error.
+  """
+  @spec with_error(t(), String.t()) :: Dagger.Directory.t()
+  def with_error(%__MODULE__{} = directory, err) do
+    query_builder =
+      directory.query_builder |> QB.select("withError") |> QB.put_arg("err", err)
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc """
   Retrieves this directory plus the contents of the given file copied to the given path.
   """
   @spec with_file(t(), String.t(), Dagger.File.t(), [

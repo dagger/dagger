@@ -3582,6 +3582,15 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Raise an error.
+   * @param err Message of the error to raise. If empty, the error will be ignored.
+   */
+  withError = (err: string): Container => {
+    const ctx = this._ctx.select("withError", { err })
+    return new Container(ctx)
+  }
+
+  /**
    * Execute a command in the container, and return a new snapshot of the container state after execution.
    * @param args Command to execute. Must be valid exec() arguments, not a shell command. Example: ["go", "run", "main.go"].
    *
@@ -4569,6 +4578,15 @@ export class Directory extends BaseClient {
     opts?: DirectoryWithDirectoryOpts,
   ): Directory => {
     const ctx = this._ctx.select("withDirectory", { path, source, ...opts })
+    return new Directory(ctx)
+  }
+
+  /**
+   * Raise an error.
+   * @param err Message of the error to raise. If empty, the error will be ignored.
+   */
+  withError = (err: string): Directory => {
+    const ctx = this._ctx.select("withError", { err })
     return new Directory(ctx)
   }
 
