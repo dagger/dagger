@@ -10,7 +10,55 @@ import (
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
 	"github.com/dagger/dagger/engine/distconsts"
+	"github.com/dagger/dagger/util/parallel"
 )
+
+// Run all checks for all SDKs
+func (dev *DaggerDev) TestSDKs(ctx context.Context) (CheckStatus, error) {
+	type tester interface {
+		Name() string
+		Test(context.Context) (CheckStatus, error)
+	}
+	jobs := parallel.New()
+	for _, sdk := range allSDKs[tester](dev) {
+		jobs = jobs.WithJob(sdk.Name(), func(ctx context.Context) error {
+			_, err := sdk.Test(ctx)
+			return err
+		})
+	}
+	return CheckCompleted, jobs.Run(ctx)
+}
+
+// Run linters for all SDKs
+func (dev *DaggerDev) LintSDKs(ctx context.Context) (CheckStatus, error) {
+	type linter interface {
+		Name() string
+		Lint(context.Context) (CheckStatus, error)
+	}
+	jobs := parallel.New()
+	for _, sdk := range allSDKs[linter](dev) {
+		jobs = jobs.WithJob(sdk.Name(), func(ctx context.Context) error {
+			_, err := sdk.Lint(ctx)
+			return err
+		})
+	}
+	return CheckCompleted, jobs.Run(ctx)
+}
+
+func (dev *DaggerDev) releaseDryRunSDKs(ctx context.Context) (CheckStatus, error) {
+	type dryRunner interface {
+		Name() string
+		ReleaseDryRun(context.Context) (CheckStatus, error)
+	}
+	jobs := parallel.New()
+	for _, sdk := range allSDKs[dryRunner](dev) {
+		jobs = jobs.WithJob(sdk.Name(), func(ctx context.Context) error {
+			_, err := sdk.ReleaseDryRun(ctx)
+			return err
+		})
+	}
+	return CheckCompleted, jobs.Run(ctx)
+}
 
 // A dev environment for the official Dagger SDKs
 type SDK struct {

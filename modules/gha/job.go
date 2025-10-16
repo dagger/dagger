@@ -38,8 +38,6 @@ type Job struct {
 	Module string
 	// Dagger version to run this workflow
 	DaggerVersion string
-	// Build the dagger engine from scratch.
-	DaggerDev string
 	// Public Dagger Cloud token, for open-source projects. DO NOT PASS YOUR PRIVATE DAGGER CLOUD TOKEN!
 	// This is for a special "public" token which can safely be shared publicly.
 	// To get one, contact support@dagger.io
@@ -98,9 +96,6 @@ func (gha *Gha) Job(
 	// Dagger version to run this workflow
 	// +optional
 	daggerVersion string,
-	// Dagger dev version to run this workflow.
-	// +optional
-	daggerDev string,
 	// cloudEngine indicates whether to use Dagger Cloud Engine to run this workflow.
 	// +optional
 	cloudEngine bool,
@@ -120,7 +115,6 @@ func (gha *Gha) Job(
 		Runner:           runner,
 		Module:           module,
 		DaggerVersion:    daggerVersion,
-		DaggerDev:        daggerDev,
 		CloudEngine:      cloudEngine,
 	}
 	j.applyDefaults(gha.JobDefaults)
@@ -170,7 +164,6 @@ func (j *Job) applyDefaults(other *Job) *Job {
 	mergeDefault(&j.Runner, other.Runner)
 	setDefault(&j.Module, other.Module)
 	setDefault(&j.DaggerVersion, other.DaggerVersion)
-	setDefault(&j.DaggerDev, other.DaggerDev)
 	mergeDefault(&j.SetupCommands, other.SetupCommands)
 	mergeDefault(&j.TeardownCommands, other.TeardownCommands)
 	setDefault(&j.CloudEngine, other.CloudEngine)

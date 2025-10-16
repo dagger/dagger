@@ -31,11 +31,8 @@ type CI struct {
 	// +private
 	Workflows *dagger.Gha
 
-	GithubRunner       *dagger.Gha // +private
-	DaggerRunner       *dagger.Gha // +private
 	AltRunner          *dagger.Gha // +private
 	AltRunnerWithCache *dagger.Gha // +private
-	CloudRunner        *dagger.Gha // +private
 }
 
 func New() *CI {
@@ -57,21 +54,6 @@ func New() *CI {
 				DaggerVersion: daggerVersion,
 			}),
 		}),
-
-		GithubRunner: dag.Gha(dagger.GhaOpts{
-			JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
-				Runner:         []string{"ubuntu-latest"},
-				TimeoutMinutes: timeoutMinutes,
-			}),
-			WorkflowDefaults: workflow,
-		}),
-		DaggerRunner: dag.Gha(dagger.GhaOpts{
-			JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
-				Runner:         BronzeRunner(false),
-				TimeoutMinutes: timeoutMinutes,
-			}),
-			WorkflowDefaults: workflow,
-		}),
 		AltRunner: dag.Gha(dagger.GhaOpts{
 			JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
 				Runner:         AltGoldRunner(),
@@ -86,107 +68,18 @@ func New() *CI {
 			}),
 			WorkflowDefaults: workflow,
 		}),
-		CloudRunner: dag.Gha(dagger.GhaOpts{
-			JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
-				Runner:         []string{"ubuntu-24.04"},
-				TimeoutMinutes: timeoutMinutes,
-				CloudEngine:    true,
-			}),
-			WorkflowDefaults: dag.Gha().Workflow("", dagger.GhaWorkflowOpts{
-				PullRequestConcurrency:      "preempt",
-				Permissions:                 []dagger.GhaPermission{dagger.GhaPermissionReadContents, dagger.GhaPermissionWriteIdToken},
-				OnPushBranches:              []string{"main"},
-				OnPullRequestOpened:         true,
-				OnPullRequestReopened:       true,
-				OnPullRequestSynchronize:    true,
-				OnPullRequestReadyForReview: true,
-			}),
-		}),
 	}
-
 	return ci.
-		withWorkflow(
-			ci.AltRunnerWithCache,
-			false,
-			"Check generated files",
-			"check-generated",
-		).
-		withWorkflow(
-			ci.AltRunnerWithCache,
-			false,
-			"Lint go packages",
-			"check-lint-go",
-		).
-		withWorkflow(
-			ci.AltRunnerWithCache,
-			false,
-			"Check go tidy",
-			"check-tidy",
-		).
-		withWorkflow(
-			ci.AltRunnerWithCache,
-			false,
-			"Lint SDKs",
-			"check-lint-sdks",
-		).
-		withWorkflow(
-			ci.AltRunnerWithCache,
-			false,
-			"Lint docs",
-			"check-lint-docs",
-		).
-		withWorkflow(
-			ci.AltRunnerWithCache,
-			false,
-			"Lint docs",
-			"check-lint-helm",
-		).
-		withWorkflow(
-			ci.AltRunnerWithCache,
-			false,
-			"Lint docs",
-			"check-lint-scripts",
-		).
-		withWorkflow(
-			ci.AltRunnerWithCache,
-			false,
-			"Release dry run",
-			"check-release-dry-run",
-		).
-		withWorkflow(
-			ci.AltRunnerWithCache,
-			false,
-			"Security scan",
-			"check-scan",
-		).
-		withWorkflow(
-			ci.AltRunnerWithCache,
-			false,
-			"Test Helm chart",
-			"check-test-helm",
-		).
-		withWorkflow(
-			ci.AltRunnerWithCache,
-			false,
-			"Test SDKs",
-			"check-test-sdks",
-		).
-		withWorkflow(
-			ci.AltRunnerWithCache,
-			false,
-			"Test install scripts",
-			"check-test-scripts",
-		).
-		withCoreTestWorkflows(
-			ci.AltRunner,
-			"Core tests",
-		).
-		withWorkflow(
-			ci.AltRunner,
-			true,
-			"Dev Engine",
-			"check-test-sdks",
-		).
+		withSimpleDaggerCheck("check-generated", "Check generated files").
+		withSimpleDaggerCheck("lint", "Run all linters").
+		withSimpleDaggerCheck("check-tidy", "Check go tidy").
+		withSimpleDaggerCheck("release-dry-run", "Release dry run").
+		withSimpleDaggerCheck("scan", "Security scan").
+		withSimpleDaggerCheck("test-helm", "Test Helm chart").
+		withSimpleDaggerCheck("test-sdks", "Test SDKs").
+		withSimpleDaggerCheck("scripts test", "Test install scripts").
+		withSimpleDaggerCheck("ci-in-ci", "CI in CI").
+		withCoreTestWorkflows(ci.AltRunner, "Core tests").
 		withPrepareReleaseWorkflow().
 		withEvalsWorkflow()
 }
@@ -202,24 +95,21 @@ func (ci *CI) Generate(
 	}).Changes(repository)
 }
 
-// Add a workflow with our project-specific defaults
-func (ci *CI) withWorkflow(runner *dagger.Gha, devEngine bool, name string, command string) *CI {
-	jobOpts := dagger.GhaJobOpts{}
-	if devEngine {
-		jobOpts.DaggerDev = "${{ github.sha }}"
-	}
-	w := runner.
-		Workflow(name).
-		WithJob(runner.Job(name, daggerCommand(command), jobOpts))
-
-	ci.Workflows = ci.Workflows.WithWorkflow(w)
+// Add a simple workflow that runs 'dagger call' in a standard template
+func (ci *CI) withSimpleDaggerCheck(command, name string) *CI {
+	template := ci.AltRunnerWithCache
+	ci.Workflows = ci.Workflows.WithWorkflow(
+		template.
+			Workflow(name).
+			WithJob(template.Job(name, daggerCommand(command))),
+	)
 	return ci
 }
 
 func (ci *CI) withCoreTestWorkflows(runner *dagger.Gha, name string) *CI {
 	w := runner.
 		Workflow(name).
-		With(splitTests(runner, "test-", false, []testSplit{
+		With(splitTests(runner, "test-", []testSplit{
 			{"cgroupsv2", []string{"TestProvision", "TestTelemetry"}, &dagger.GhaJobOpts{}},
 			{"modules", []string{"TestModule"}, &dagger.GhaJobOpts{
 				Runner: AltPlatinumRunner(),
@@ -249,7 +139,7 @@ type testSplit struct {
 }
 
 // tests are temporarily split out - for context: https://github.com/dagger/dagger/pull/8998#issuecomment-2491426455
-func splitTests(runner *dagger.Gha, name string, dev bool, splits []testSplit) dagger.WithGhaWorkflowFunc {
+func splitTests(runner *dagger.Gha, name string, splits []testSplit) dagger.WithGhaWorkflowFunc {
 	return func(w *dagger.GhaWorkflow) *dagger.GhaWorkflow {
 		var doneTests []string
 		for _, split := range splits {
@@ -263,9 +153,6 @@ func splitTests(runner *dagger.Gha, name string, dev bool, splits []testSplit) d
 
 			opts := *split.opts
 			opts.TimeoutMinutes = 30
-			if dev {
-				opts.DaggerDev = "${{ github.sha }}"
-			}
 			w = w.WithJob(runner.Job(name+split.name, command, opts))
 		}
 		return w

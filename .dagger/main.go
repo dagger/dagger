@@ -291,8 +291,8 @@ func (dev *DaggerDev) SDK() *SDK {
 	}
 }
 
-// Creates a dev container that has a running CLI connected to a dagger engine
-func (dev *DaggerDev) Dev(
+// Creates a complete end-to-end build environment with CLI and engine for interactive testing
+func (dev *DaggerDev) Playground(
 	ctx context.Context,
 	// Mount a directory into the container's workdir, for convenience
 	// +defaultPath="/"

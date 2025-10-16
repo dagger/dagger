@@ -7,97 +7,102 @@ import (
 )
 
 // Verify that generated code is up to date
-func (dev *DaggerDev) CheckGenerated(ctx context.Context) error {
+func (dev *DaggerDev) CheckGenerated(ctx context.Context) (CheckStatus, error) {
 	_, err := dev.Generate(ctx, true)
-	return err
+	return CheckCompleted, err
 }
 
-func (dev *DaggerDev) CheckReleaseDryRun(ctx context.Context) error {
-	return parallel.New().
-		WithJob("Helm chart", dag.Helm().CheckReleaseDryRun).
-		WithJob("CLI", dag.DaggerCli().CheckReleaseDryRun).
-		WithJob("Engine", dag.DaggerEngine().CheckReleaseDryRun).
-		WithJob("SDKs", func(context.Context) error {
-			type dryRunner interface {
-				Name() string
-				CheckReleaseDryRun(context.Context) error
-			}
-			jobs := parallel.New()
-			for _, sdk := range allSDKs[dryRunner](dev) {
-				jobs = jobs.WithJob(sdk.Name(), sdk.CheckReleaseDryRun)
-			}
-			return jobs.Run(ctx)
+func (dev *DaggerDev) ReleaseDryRun(ctx context.Context) (CheckStatus, error) {
+	return CheckCompleted, parallel.New().
+		WithJob("Helm chart", func(ctx context.Context) error {
+			_, err := dag.Helm().ReleaseDryRun(ctx)
+			return err
+		}).
+		WithJob("CLI", func(ctx context.Context) error {
+			_, err := dag.DaggerCli().ReleaseDryRun(ctx)
+			return err
+		}).
+		WithJob("Engine", func(ctx context.Context) error {
+			_, err := dag.DaggerEngine().ReleaseDryRun(ctx)
+			return err
+		}).
+		WithJob("SDKs", func(ctx context.Context) error {
+			_, err := dev.releaseDryRunSDKs(ctx)
+			return err
 		}).
 		Run(ctx)
 }
 
-func (dev *DaggerDev) CheckLint(ctx context.Context) error {
-	return parallel.New().
-		WithJob("Go packages", dev.CheckLintGo).
-		WithJob("Docs", dev.CheckLintDocs).
-		WithJob("Helm chart", dev.CheckLintHelm).
-		WithJob("Install scripts", dev.CheckLintScripts).
-		WithJob("SDKs", dev.CheckLintSDKs).
+// Run all linters
+func (dev *DaggerDev) Lint(ctx context.Context) (CheckStatus, error) {
+	return CheckCompleted, parallel.New().
+		WithJob("Go packages", func(ctx context.Context) error {
+			_, err := dev.LintGo(ctx)
+			return err
+		}).
+		WithJob("Docs", func(ctx context.Context) error {
+			_, err := dev.LintDocs(ctx)
+			return err
+		}).
+		WithJob("Helm chart", func(ctx context.Context) error {
+			_, err := dev.LintHelm(ctx)
+			return err
+		}).
+		WithJob("Install scripts", func(ctx context.Context) error {
+			_, err := dev.Scripts().Lint(ctx)
+			return err
+		}).
+		WithJob("SDKs", func(ctx context.Context) error {
+			_, err := dev.LintSDKs(ctx)
+			return err
+		}).
 		Run(ctx)
 }
 
-// Check that go modules have up-to-date go.mod and go.sum
-func (dev *DaggerDev) CheckTidy(ctx context.Context) error {
-	return dev.godev().CheckTidy(ctx)
+// "CI in CI": check that Dagger can still run its own CI
+// Note: this doesn't actually call all CI checks: only a small subset,
+// selected for maximum coverage of Dagger features with limited compute expenditure.
+// The actual checks being performed is an implementation detail, and should NOT be relied on.
+// In other words, don't skip running <foo> just because it happens to be run here!
+func (dev *DaggerDev) CiInCi(ctx context.Context) (CheckStatus, error) {
+	ctr, err := dev.Dev(ctx, dev.Source, DistroAlpine, false, false)
+	if err != nil {
+		return CheckCompleted, err
+	}
+	ctr = ctr.WithMountedDirectory(".git/", dev.Git.Head().Tree().Directory(".git/"))
+
+	_, err = ctr.
+		WithExec([]string{"dagger", "call", "test-sdks"}).
+		Sync(ctx)
+	return CheckCompleted, err
 }
 
-// Run linters for all SDKs
-func (dev *DaggerDev) CheckLintSDKs(ctx context.Context) error {
-	type linter interface {
-		Name() string
-		CheckLint(context.Context) error
-	}
-	jobs := parallel.New()
-	for _, sdk := range allSDKs[linter](dev) {
-		jobs = jobs.WithJob(sdk.Name(), sdk.CheckLint)
-	}
-	return jobs.Run(ctx)
+// Check that go modules have up-to-date go.mod and go.sum
+func (dev *DaggerDev) CheckTidy(ctx context.Context) (CheckStatus, error) {
+	_, err := dev.godev().CheckTidy(ctx)
+	return CheckCompleted, err
 }
 
 // Lint the helm chart
-func (dev *DaggerDev) CheckLintHelm(ctx context.Context) error {
-	return dag.Helm().CheckLint(ctx)
+func (dev *DaggerDev) LintHelm(ctx context.Context) (CheckStatus, error) {
+	_, err := dag.Helm().Lint(ctx)
+	return CheckCompleted, err
 }
 
 // Lint the documentation
-func (dev *DaggerDev) CheckLintDocs(ctx context.Context) error {
-	return dag.Docs().CheckLint(ctx)
-}
-
-// Lint the install scripts
-func (dev *DaggerDev) CheckLintScripts(ctx context.Context) error {
-	return dev.Scripts().CheckLint(ctx)
+func (dev *DaggerDev) LintDocs(ctx context.Context) (CheckStatus, error) {
+	_, err := dag.Docs().Lint(ctx)
+	return CheckCompleted, err
 }
 
 // Lint the Go codebase
-func (dev *DaggerDev) CheckLintGo(ctx context.Context) error {
-	return dev.godev().CheckLint(ctx)
-}
-
-// Verify that scripts work correctly
-func (dev *DaggerDev) CheckTestScripts(ctx context.Context) error {
-	return dev.Scripts().Test(ctx)
+func (dev *DaggerDev) LintGo(ctx context.Context) (CheckStatus, error) {
+	_, err := dev.godev().Lint(ctx)
+	return CheckCompleted, err
 }
 
 // Verify that helm works correctly
-func (dev *DaggerDev) CheckTestHelm(ctx context.Context) error {
-	return dag.Helm().Test(ctx)
-}
-
-// Run all checks for all SDKs
-func (dev *DaggerDev) CheckTestSDKs(ctx context.Context) error {
-	type tester interface {
-		Name() string
-		Test(context.Context) error
-	}
-	jobs := parallel.New()
-	for _, sdk := range allSDKs[tester](dev) {
-		jobs = jobs.WithJob(sdk.Name(), sdk.Test)
-	}
-	return jobs.Run(ctx)
+func (dev *DaggerDev) TestHelm(ctx context.Context) (CheckStatus, error) {
+	_, err := dag.Helm().Test(ctx)
+	return CheckCompleted, err
 }
