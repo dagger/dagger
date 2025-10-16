@@ -166,13 +166,18 @@ type cache[K KeyType, V any] struct {
 
 	// calls that are in progress, keyed by a combination of the call key and the concurrency key
 	// two calls with the same call+concurrency key will be "single-flighted" (only one will actually run)
-	ongoingCalls map[string]*result[K, V]
+	ongoingCalls map[concurrencyKey]*result[K, V]
 
 	// calls that have completed successfully and are cached, keyed just by the call key
 	completedCalls map[string]*result[K, V]
 
 	// TODO: doc
 	db *modfunccache.Queries
+}
+
+type concurrencyKey struct {
+	callKey        string
+	concurrencyKey string
 }
 
 var _ Cache[string, string] = &cache[string, string]{}
@@ -183,7 +188,7 @@ type result[K KeyType, V any] struct {
 	// TODO: doc, probably find some better names
 	callKey        string
 	storageKey     string
-	concurrencyKey string
+	concurrencyKey concurrencyKey
 
 	val                V
 	err                error
@@ -274,7 +279,10 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 
 	// TODO: cleanup
 	callKey := string(key.CallKey)
-	concurrencyKey := digest.FromString(callKey + ":" + string(key.ConcurrencyKey)).String()
+	concKey := concurrencyKey{
+		callKey:        callKey,
+		concurrencyKey: string(key.ConcurrencyKey),
+	}
 
 	storageKey := callKey
 
@@ -337,7 +345,7 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 
 	c.mu.Lock()
 	if c.ongoingCalls == nil {
-		c.ongoingCalls = make(map[string]*result[K, V])
+		c.ongoingCalls = make(map[concurrencyKey]*result[K, V])
 	}
 	if c.completedCalls == nil {
 		c.completedCalls = make(map[string]*result[K, V])
@@ -353,7 +361,7 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 	}
 
 	if key.ConcurrencyKey != zeroKey {
-		if res, ok := c.ongoingCalls[concurrencyKey]; ok {
+		if res, ok := c.ongoingCalls[concKey]; ok {
 			// already an ongoing call
 			res.waiters++
 			c.mu.Unlock()
@@ -369,7 +377,7 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 
 		callKey:        string(key.CallKey),
 		storageKey:     storageKey,
-		concurrencyKey: concurrencyKey,
+		concurrencyKey: concKey,
 
 		// TODO: rename persist?
 		persist: saveStorageKey,
@@ -380,7 +388,7 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 	}
 
 	if key.ConcurrencyKey != zeroKey {
-		c.ongoingCalls[concurrencyKey] = res
+		c.ongoingCalls[concKey] = res
 	}
 
 	go func() {
