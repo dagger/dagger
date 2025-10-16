@@ -26,6 +26,7 @@ import (
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/session/auth/authprovider"
 	"github.com/dagger/dagger/internal/buildkit/session/filesync"
+	"github.com/dagger/dagger/internal/buildkit/session/secrets"
 	"github.com/dagger/dagger/internal/buildkit/util/grpcerrors"
 	"github.com/docker/cli/cli/config"
 	"github.com/google/uuid"
@@ -551,6 +552,7 @@ func (c *Client) startE2ESession(ctx context.Context) (rerr error) {
 		FilesyncTargetProxy{
 			Client: filesync.NewFileSendClient(c.ExistingSessionConn),
 		},
+		secretprovider.NewSecretProviderProxy(secrets.NewSecretsClient(c.ExistingSessionConn)),
 	}
 
 	slog.Warn("dialing session")
