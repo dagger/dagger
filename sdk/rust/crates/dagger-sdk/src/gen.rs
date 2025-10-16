@@ -2251,6 +2251,11 @@ impl Changeset {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Returns true if the changeset is empty (i.e. there are no changes).
+    pub async fn empty(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("empty");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Applies the diff represented by this changeset to a path on the host.
     ///
     /// # Arguments

@@ -195,6 +195,9 @@ type Changeset {
   """The older/lower snapshot to compare against."""
   before: Directory!
 
+  """Returns true if the changeset is empty (i.e. there are no changes)."""
+  empty: Boolean!
+
   """Applies the diff represented by this changeset to a path on the host."""
   export(
     """Location of the copied directory (e.g., "logs/")."""

@@ -2685,6 +2685,7 @@ export class CacheVolume extends BaseClient {
  */
 export class Changeset extends BaseClient {
   private readonly _id?: ChangesetID = undefined
+  private readonly _empty?: boolean = undefined
   private readonly _export?: string = undefined
   private readonly _sync?: ChangesetID = undefined
 
@@ -2694,12 +2695,14 @@ export class Changeset extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: ChangesetID,
+    _empty?: boolean,
     _export?: string,
     _sync?: ChangesetID,
   ) {
     super(ctx)
 
     this._id = _id
+    this._empty = _empty
     this._export = _export
     this._sync = _sync
   }
@@ -2752,6 +2755,21 @@ export class Changeset extends BaseClient {
   before = (): Directory => {
     const ctx = this._ctx.select("before")
     return new Directory(ctx)
+  }
+
+  /**
+   * Returns true if the changeset is empty (i.e. there are no changes).
+   */
+  empty = async (): Promise<boolean> => {
+    if (this._empty) {
+      return this._empty
+    }
+
+    const ctx = this._ctx.select("empty")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
   }
 
   /**

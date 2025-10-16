@@ -868,6 +868,7 @@ func (r *CacheVolume) MarshalJSON() ([]byte, error) {
 type Changeset struct {
 	query *querybuilder.Selection
 
+	empty  *bool
 	export *string
 	id     *ChangesetID
 	sync   *ChangesetID
@@ -914,6 +915,19 @@ func (r *Changeset) Before() *Directory {
 	return &Directory{
 		query: q,
 	}
+}
+
+// Returns true if the changeset is empty (i.e. there are no changes).
+func (r *Changeset) Empty(ctx context.Context) (bool, error) {
+	if r.empty != nil {
+		return *r.empty, nil
+	}
+	q := r.query.Select("empty")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Applies the diff represented by this changeset to a path on the host.
