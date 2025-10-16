@@ -25,16 +25,20 @@
       "source": ".github"
     },
     {
+      "name": "codegen",
+      "source": "cmd/codegen"
+    },
+    {
       "name": "dagger-cli",
       "source": "cmd/dagger"
     },
     {
-      "name": "dagger-engine",
-      "source": "cmd/engine"
+      "name": "dagger-docs",
+      "source": "docs"
     },
     {
-      "name": "docs",
-      "source": "docs"
+      "name": "dagger-engine",
+      "source": "cmd/engine"
     },
     {
       "name": "dotnet-sdk-dev",

@@ -44,7 +44,8 @@ func New(
 	return &DaggerCli{
 		Version: version,
 		Tag:     version,
-		Go: dag.Go(source, dagger.GoOpts{
+		Go: dag.Go(dagger.GoOpts{
+			Source: source,
 			Base:   base,
 			Values: values,
 		}),

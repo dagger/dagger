@@ -305,7 +305,8 @@ func (build *Builder) Go(version bool, race bool) *dagger.Go {
 	if version && build.tag != "" {
 		values = append(values, "github.com/dagger/dagger/engine.Tag="+build.tag)
 	}
-	return dag.Go(build.source, dagger.GoOpts{
+	return dag.Go(dagger.GoOpts{
+		Source: build.source,
 		Values: values,
 		Race:   race,
 	})
@@ -370,7 +371,7 @@ func (build *Builder) cniPlugins() (bins []*dagger.File) {
 		"./plugins/meta/firewall",
 		"./plugins/ipam/host-local",
 	} {
-		bin := dag.Go(src).Binary(pluginPath, dagger.GoBinaryOpts{
+		bin := dag.Go(dagger.GoOpts{Source: src}).Binary(pluginPath, dagger.GoBinaryOpts{
 			NoSymbols: true,
 			NoDwarf:   true,
 			Platform:  build.platform,

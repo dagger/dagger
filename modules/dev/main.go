@@ -47,7 +47,7 @@ func (dev *Dev) Agent(
 ) (*dagger.LLM, error) {
 	src := dev.Source
 
-	gopls := dag.Go(src).Base().
+	gopls := dag.Go(dagger.GoOpts{Source: src}).Base().
 		WithExec([]string{"go", "install", "golang.org/x/tools/gopls@latest"}).
 		WithDirectory("/workspace", src).
 		WithWorkdir("/workspace").
@@ -81,13 +81,13 @@ func (dev *Dev) Test(
 	// +optional
 	filter string,
 ) error {
+	var err error
 	if suite == "" {
-		return dag.DaggerDev().Test().All(ctx)
+		_, err = dag.DaggerDev().Test().All(ctx)
 	} else {
-		return dag.DaggerDev().Test().Specific(ctx, dagger.DaggerDevTestSpecificOpts{
-			Run: suite + "/" + filter,
-		})
+		_, err = dag.DaggerDev().Test().Specific(ctx, dagger.DaggerDevTestSpecificOpts{Run: suite + "/" + filter})
 	}
+	return err
 }
 
 // Run a git command and return its output.

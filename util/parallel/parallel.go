@@ -53,13 +53,13 @@ func startSpan(ctx context.Context, name string) (context.Context, trace.Span) {
 }
 
 func (job Job) Runner(ctx context.Context) func() error {
-	// FIXME: this starts the span before the job actually runs.
-	// In the case where jobs are long and parallelism is limited, the difference
-	// can be significant (ie. misleading)
-	// On the other hand, if we start the span inside the goroutine, display order will be random
+	// FIXME: this starts the span once the job actually runs.
+	//  - Pro: span duration is accurate
+	//  - Con: parallel jobs are run in random order
+	// If we start the span before the job runs, the pros and cons are switched.
 	// The clean solution is to reimplement errgroup.Group to get our cake and eat it too.
-	ctx, span := startSpan(ctx, job.Name)
 	return func() error {
+		ctx, span := startSpan(ctx, job.Name)
 		defer span.End()
 		if job.Func == nil {
 			return nil
