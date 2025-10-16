@@ -2572,7 +2572,7 @@ func createStubModule(ctx context.Context, mod *core.Module, dag *dagql.Server) 
 		Name:         mod.NameField,
 		OriginalName: mod.OriginalName,
 	}
-	
+
 	mod, err := mod.WithObject(ctx, &core.TypeDef{
 		Kind: core.TypeDefKindObject,
 		AsObject: dagql.Nullable[*core.ObjectTypeDef]{
@@ -2607,34 +2607,49 @@ func extractBlueprintModules(mod *core.Module) []*core.Module {
 	return blueprintMods
 }
 
-// addBlueprintFieldsToObject adds blueprint fields to an existing TypeDef
+// addBlueprintFieldsToObject adds blueprint fields/functions to an existing TypeDef
 func addBlueprintFieldsToObject(
 	objectDef *core.TypeDef,
 	blueprintMods []*core.Module,
 	mod *core.Module,
 ) (*core.TypeDef, error) {
 	objectDef = objectDef.Clone()
-	
+
 	for _, bpMod := range blueprintMods {
 		for _, obj := range bpMod.ObjectDefs {
 			if obj.AsObject.Value.Name == strcase.ToCamel(bpMod.NameField) {
 				fieldName := bpMod.NameField
-				var err error
-				objectDef, err = objectDef.WithObjectField(
-					fieldName,
-					obj,
-					fmt.Sprintf("Blueprint module: %s", fieldName),
-					nil,
-				)
-				if err != nil {
-					return nil, fmt.Errorf("failed to add blueprint field %q: %w", fieldName, err)
+
+				// Always add blueprints as functions (treating them as zero-argument constructors
+				// if they don't have an explicit constructor). This ensures consistent behavior
+				// and proper routing to the blueprint module's runtime.
+				var constructor *core.Function
+				if obj.AsObject.Value.Constructor.Valid {
+					constructor = obj.AsObject.Value.Constructor.Value.Clone()
+				} else {
+					// Create a zero-argument function for blueprints without constructors
+					constructor = &core.Function{
+						Args: []*core.FunctionArg{},
+					}
 				}
+
+				constructor.Name = fieldName
+				constructor.OriginalName = fieldName
+				constructor.Description = fmt.Sprintf("Blueprint module: %s", fieldName)
+				constructor.ReturnType = obj
+
+				var err error
+				objectDef, err = objectDef.WithFunction(constructor)
+				if err != nil {
+					return nil, fmt.Errorf("failed to add blueprint function %q: %w", fieldName, err)
+				}
+
 				mod.BlueprintModules[fieldName] = bpMod
 				break
 			}
 		}
 	}
-	
+
 	return objectDef, nil
 }
 
@@ -2644,7 +2659,7 @@ func mergeBlueprintsWithSDK(
 	blueprintMods []*core.Module,
 ) error {
 	mainModuleObjectName := strcase.ToCamel(mod.NameField)
-	
+
 	for i, obj := range mod.ObjectDefs {
 		if obj.AsObject.Valid && obj.AsObject.Value.Name == mainModuleObjectName {
 			mergedObj, err := addBlueprintFieldsToObject(obj, blueprintMods, mod)
@@ -2655,7 +2670,7 @@ func mergeBlueprintsWithSDK(
 			return nil
 		}
 	}
-	
+
 	return fmt.Errorf("main module object %q not found", mainModuleObjectName)
 }
 
@@ -2670,7 +2685,7 @@ func createShadowModuleForBlueprints(
 		Name:         mod.NameField,
 		OriginalName: mod.OriginalName,
 	}
-	
+
 	shadowModule := &core.TypeDef{
 		Kind: core.TypeDefKindObject,
 		AsObject: dagql.Nullable[*core.ObjectTypeDef]{
@@ -2725,7 +2740,7 @@ func (s *moduleSourceSchema) integrateBlueprints(
 
 	// Check if we have an SDK module (has object definitions)
 	hasSDK := len(mod.ObjectDefs) > 0
-	
+
 	var err error
 	if hasSDK {
 		// Merge blueprint fields into SDK's main object
@@ -2734,7 +2749,7 @@ func (s *moduleSourceSchema) integrateBlueprints(
 		// No SDK - create shadow module to hold blueprint fields
 		mod, err = createShadowModuleForBlueprints(ctx, mod, blueprintMods, dag)
 	}
-	
+
 	if err != nil {
 		return nil, err
 	}

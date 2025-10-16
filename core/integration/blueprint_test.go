@@ -60,14 +60,14 @@ func (BlueprintSuite) TestBlueprintConstructor(ctx context.Context, t *testctx.T
 		modGen := blueprintTestEnv(t, c).
 			WithWorkdir("app").
 			With(daggerExec("init", "--blueprint=../hello-with-constructor"))
-		modGen = modGen.WithNewFile("app-config.txt", "this is the app configuration")
+		modGen = modGen.WithNewFile("app-config.txt", "this is the app configuration").
+			WithNewFile("other-config.txt", "this is the other app configuration")
 		appConfig, err := modGen.
 			With(daggerExec("call", "field-config")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, appConfig, "this is the app configuration")
 		appConfig, err = modGen.
-			WithNewFile("other-config.txt", "this is the other app configuration").
 			With(daggerExec("call", "--config", "other-config.txt", "field-config")).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -80,7 +80,6 @@ func (BlueprintSuite) TestBlueprintConstructor(ctx context.Context, t *testctx.T
 		require.NoError(t, err)
 		require.Contains(t, appConfig, "this is the app configuration")
 		appConfig, err = modGen.
-			WithNewFile("other-config.txt", "this is the other app configuration").
 			With(daggerExec("call", "hello", "--config", "other-config.txt", "field-config")).
 			Stdout(ctx)
 		require.NoError(t, err)
