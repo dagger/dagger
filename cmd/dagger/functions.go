@@ -876,7 +876,7 @@ func writeOutputFile(path string, buf *bytes.Buffer) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, buf.Bytes(), 0o644) //nolint: gosec
+	return os.WriteFile(path, buf.Bytes(), 0o644)
 }
 
 func printPlainResult(w io.Writer, r any) error {

@@ -6,72 +6,41 @@ import (
 	"regexp"
 	"strings"
 
-	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/mod/semver"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
-)
-
-const (
-	elixirSDKPath            = "sdk/elixir"
-	elixirSDKVersionFilePath = elixirSDKPath + "/lib/dagger/core/version.ex"
 )
 
 type ElixirSDK struct {
 	Dagger *DaggerDev // +private
 }
 
-// Lint the Elixir SDK
-func (t ElixirSDK) Lint(ctx context.Context) error {
-	eg := errgroup.Group{}
-	eg.Go(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "lint the elixir source")
-		defer func() {
-			if rerr != nil {
-				span.SetStatus(codes.Error, rerr.Error())
-			}
-			span.End()
-		}()
+func (t ElixirSDK) Name() string {
+	return "elixir"
+}
 
-		installer := t.Dagger.installer("sdk")
-		return t.sdkDevWithInstaller(installer).Lint(ctx)
-	})
-	eg.Go(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "check that the generated client library is up-to-date")
-		defer func() {
-			if rerr != nil {
-				span.SetStatus(codes.Error, rerr.Error())
-			}
-			span.End()
-		}()
-		before := t.Dagger.Source
-		after, err := t.Generate(ctx)
-		if err != nil {
-			return err
-		}
-		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{"sdk/elixir/lib/dagger/gen"})
-	})
-	return eg.Wait()
+// Lint the Elixir SDK
+func (t ElixirSDK) CheckLint(ctx context.Context) error {
+	return t.native().Lint(ctx)
 }
 
 // Test the Elixir SDK
 func (t ElixirSDK) Test(ctx context.Context) error {
-	installer := t.Dagger.installer("sdk")
-	return t.sdkDevWithInstaller(installer).Test(ctx)
+	return t.native().Test(ctx)
 }
 
 // Regenerate the Elixir SDK API
-func (t ElixirSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	installer := t.Dagger.installer("sdk")
-	introspection := t.Dagger.introspection(installer)
-
-	return t.sdkDevWithInstaller(installer).Generate(introspection), nil
+func (t ElixirSDK) Generate(_ context.Context) (*dagger.Changeset, error) {
+	// Make sure everything is relatve to git root
+	before := dag.Directory().WithDirectory("sdk/elixir", t.native().Source())
+	layer := t.native().Generate(t.Dagger.introspectionJSON())
+	after := before.WithDirectory("", layer)
+	return changes(before, after, nil), nil
 }
 
 // Test the publishing process
-func (t ElixirSDK) TestPublish(ctx context.Context, tag string) error {
-	return t.Publish(ctx, tag, true, nil)
+func (t ElixirSDK) CheckReleaseDryRun(ctx context.Context) error {
+	return t.Publish(ctx, "HEAD", true, nil)
 }
 
 // Publish the Elixir SDK
@@ -86,7 +55,7 @@ func (t ElixirSDK) Publish(
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/elixir/")
 
-	ctr := t.sdkDev().Container()
+	ctr := t.Container()
 
 	if semver.IsValid(version) {
 		mixFile := "/sdk/elixir/mix.exs"
@@ -114,24 +83,28 @@ func (t ElixirSDK) Publish(
 var elixirVersionRe = regexp.MustCompile(`@dagger_cli_version "([0-9\.-a-zA-Z]+)"`)
 
 // Bump the Elixir SDK's Engine dependency
-func (t ElixirSDK) Bump(ctx context.Context, version string) (*dagger.Directory, error) {
-	contents, err := t.Dagger.Source.File(elixirSDKVersionFilePath).Contents(ctx)
+func (t ElixirSDK) Bump(ctx context.Context, version string) (*dagger.Changeset, error) {
+	versionFilePath := "sdk/elixir/lib/dagger/core/version.ex"
+	contents, err := t.Dagger.Source.File(versionFilePath).Contents(ctx)
 	if err != nil {
 		return nil, err
 	}
-
 	newVersion := fmt.Sprintf(`@dagger_cli_version "%s"`, strings.TrimPrefix(version, "v"))
 	newContents := elixirVersionRe.ReplaceAllString(contents, newVersion)
-
-	return dag.Directory().WithNewFile(elixirSDKVersionFilePath, newContents), nil
+	layer := dag.Directory().WithNewFile(versionFilePath, newContents)
+	return layer.Changes(dag.Directory()), nil
 }
 
-func (t ElixirSDK) sdkDev() *dagger.ElixirSDKDev {
-	return dag.ElixirSDKDev()
+// Wrap the native elixir SDK dev module, with the dev engine sidecar attached
+func (t ElixirSDK) native() *dagger.ElixirSDKDev {
+	// Start from the native module's default container,
+	// then attach the dev engine on top
+	return dag.ElixirSDKDev(dagger.ElixirSDKDevOpts{
+		Container: dag.ElixirSDKDev().Container().With(t.Dagger.devEngineSidecar()),
+	})
 }
 
-func (t ElixirSDK) sdkDevWithInstaller(
-	installer func(*dagger.Container) *dagger.Container,
-) *dagger.ElixirSDKDev {
-	return dag.ElixirSDKDev(dagger.ElixirSDKDevOpts{Container: t.sdkDev().Container().With(installer)})
+// Return the dev container from the native elixir SDK dev
+func (t ElixirSDK) Container() *dagger.Container {
+	return dag.ElixirSDKDev().Container()
 }

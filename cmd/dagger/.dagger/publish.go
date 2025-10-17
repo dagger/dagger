@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/dagger/dagger/util/parallel"
 	"golang.org/x/mod/semver"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/cmd/dagger/.dagger/internal/dagger"
 	"github.com/dagger/dagger/cmd/dagger/.dagger/util"
@@ -194,26 +194,29 @@ func s3Path(bucket string, path string, args ...any) string {
 }
 
 // Verify that the CLI builds without actually publishing anything
-func (cli *DaggerCli) TestPublish(ctx context.Context) error {
-	// TODO: ideally this would also use go releaser, but we want to run this
-	// step in PRs and locally and we use goreleaser pro features that require
-	// a key which is private. For now, this just builds the CLI for the same
-	// targets so there's at least some coverage
-
-	var eg errgroup.Group
-	eg.Go(func() error {
-		_, err := cli.goreleaserBinaries().Sync(ctx)
-		return err
-	})
-	eg.Go(func() error {
-		env, err := publishEnv(ctx)
-		if err != nil {
-			return err
-		}
-		_, err = env.Sync(ctx)
-		return err
-	})
-	return eg.Wait()
+func (cli *DaggerCli) CheckReleaseDryRun(ctx context.Context) error {
+	return parallel.New().
+		WithJob(
+			"dry-run build on all targets",
+			// TODO: ideally this would also use go releaser, but we want to run this
+			// step in PRs and locally and we use goreleaser pro features that require
+			// a key which is private. For now, this just builds the CLI for the same
+			// targets so there's at least some coverage
+			func(ctx context.Context) error {
+				_, err := cli.goreleaserBinaries().Sync(ctx)
+				return err
+			}).
+		WithJob(
+			"dry-run build the goreleaser environment",
+			func(ctx context.Context) error {
+				env, err := publishEnv(ctx)
+				if err != nil {
+					return err
+				}
+				_, err = env.Sync(ctx)
+				return err
+			}).
+		Run(ctx)
 }
 
 func (cli *DaggerCli) goreleaserBinaries() *dagger.Directory {

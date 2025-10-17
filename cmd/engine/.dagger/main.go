@@ -8,8 +8,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/engine/distconsts"
-	"go.opentelemetry.io/otel/codes"
-	"golang.org/x/sync/errgroup"
+	"github.com/dagger/dagger/util/parallel"
 
 	"github.com/dagger/dagger/cmd/engine/.dagger/build"
 	"github.com/dagger/dagger/cmd/engine/.dagger/internal/dagger"
@@ -192,12 +191,10 @@ func (e *DaggerEngine) Service(
 
 // Generate any engine-related files
 // Note: this is codegen of the 'go generate' variety, not 'dagger develop'
-func (e *DaggerEngine) Generate() *dagger.Directory {
-	generated := dag.Go(e.Source.WithoutDirectory("sdk")).Env()
-	original := generated.Directory(".")
-
-	// protobuf dependencies
-	generated = generated.
+func (e *DaggerEngine) Generate(_ context.Context) (*dagger.Changeset, error) {
+	// There's Go code in the SDKs, don't include them in this.
+	src := e.Source.WithoutDirectory("sdk")
+	changes := dag.Go(src).Env().
 		WithExec([]string{"go", "install", "google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2"}).
 		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogo@v1.3.2"}).
 		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2"}).
@@ -205,23 +202,11 @@ func (e *DaggerEngine) Generate() *dagger.Directory {
 		WithExec([]string{"go", "install", "google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.4.0"}).
 		WithMountedDirectory("./github.com/gogo/googleapis", dag.Git("https://github.com/gogo/googleapis.git").Tag("v1.4.1").Tree()).
 		WithMountedDirectory("./github.com/gogo/protobuf", dag.Git("https://github.com/gogo/protobuf.git").Tag("v1.3.2").Tree()).
-		WithMountedDirectory("./github.com/tonistiigi/fsutil", dag.Git("https://github.com/tonistiigi/fsutil.git").Commit("069baf6a66f5c63a82fb679ff2319ed2ee970fbd").Tree())
-
-	generated = generated.
+		WithMountedDirectory("./github.com/tonistiigi/fsutil", dag.Git("https://github.com/tonistiigi/fsutil.git").Commit("069baf6a66f5c63a82fb679ff2319ed2ee970fbd").Tree()).
 		WithExec([]string{"go", "generate", "-v", "./..."}).
-		WithoutMount("./github.com/gogo/googleapis").
-		WithoutMount("./github.com/gogo/protobuf").
-		WithoutMount("./github.com/tonistiigi/fsutil").
-		WithoutDirectory("github.com")
-
-	return original.Diff(generated.Directory("."))
-}
-
-// Lint any generated engine-related files
-func (e *DaggerEngine) LintGenerate(ctx context.Context) error {
-	before := dag.Go(e.Source.WithoutDirectory("sdk")).Env().Directory(".")
-	after := before.WithDirectory(".", e.Generate())
-	return dag.Dirdiff().AssertEqual(ctx, before, after, []string{"."})
+		Directory(".").
+		Changes(src)
+	return changes, nil
 }
 
 var targets = []struct {
@@ -259,6 +244,23 @@ var targets = []struct {
 	},
 }
 
+type targetResult struct {
+	Platforms []*dagger.Container
+	Tags      []string
+}
+
+func (e *DaggerEngine) CheckReleaseDryRun(ctx context.Context) error {
+	return e.Publish(
+		ctx,
+		"dagger-engine.dev", // image
+		// FIXME: why not from HEAD like the SDKs?
+		[]string{"main"}, // tag
+		true,             // dryRun
+		nil,              // registryUsername
+		nil,              // registryPassword
+	)
+}
+
 // Publish all engine images to a registry
 func (e *DaggerEngine) Publish(
 	ctx context.Context,
@@ -277,86 +279,77 @@ func (e *DaggerEngine) Publish(
 	// +optional
 	registryPassword *dagger.Secret,
 ) error {
-	// collect all the targets that we are trying to build together, along with
-	// where they need to go to
-	targetResults := make([]struct {
-		Platforms []*dagger.Container
-		Tags      []string
-	}, len(targets))
-	eg := errgroup.Group{}
-	for i, target := range targets {
-		// determine the target tags
-		for _, tag := range tag {
-			targetResults[i].Tags = append(targetResults[i].Tags, fmt.Sprintf(target.Tag, tag))
-		}
-
-		// build all the target platforms
-		targetResults[i].Platforms = make([]*dagger.Container, len(target.Platforms))
-		for j, platform := range target.Platforms {
-			egCtx, span := Tracer().Start(ctx, fmt.Sprintf("building %s [%s]", target.Name, platform))
-			eg.Go(func() (rerr error) {
-				defer func() {
-					if rerr != nil {
-						span.SetStatus(codes.Error, rerr.Error())
-					}
-					span.End()
-				}()
-
-				ctr, err := e.Container(egCtx, platform, target.Image, target.GPUSupport, "", "")
-				if err != nil {
-					return err
-				}
-				ctr, err = ctr.Sync(egCtx)
-				if err != nil {
-					return err
-				}
-
-				targetResults[i].Platforms[j] = ctr
-				return nil
-			})
-		}
-	}
-	if err := eg.Wait(); err != nil {
+	targetResults, err := e.buildTargets(ctx, tag)
+	if err != nil {
 		return err
 	}
-
 	if dryRun {
 		return nil
 	}
+	return e.pushTargets(ctx, targetResults, image, registryUsername, registryPassword)
+}
 
-	// push all the targets
+func (e *DaggerEngine) buildTargets(ctx context.Context, tags []string) ([]targetResult, error) {
+	targetResults := make([]targetResult, len(targets))
+	jobs := parallel.New()
+	for i, target := range targets {
+		// determine the target tags
+		for _, tag := range tags {
+			targetResults[i].Tags = append(targetResults[i].Tags, fmt.Sprintf(target.Tag, tag))
+		}
+		// build all the target platforms
+		targetResults[i].Platforms = make([]*dagger.Container, len(target.Platforms))
+		for j, platform := range target.Platforms {
+			jobs = jobs.WithJob(fmt.Sprintf("build %s for %s", target.Name, platform),
+				func(ctx context.Context) error {
+					ctr, err := e.Container(ctx, platform, target.Image, target.GPUSupport, "", "")
+					if err != nil {
+						return err
+					}
+					ctr, err = ctr.Sync(ctx)
+					if err != nil {
+						return err
+					}
+					targetResults[i].Platforms[j] = ctr
+					return nil
+				},
+			)
+		}
+	}
+	if err := jobs.Run(ctx); err != nil {
+		return nil, err
+	}
+	return targetResults, nil
+}
+
+func (e *DaggerEngine) pushTargets(
+	ctx context.Context,
+	targetResults []targetResult,
+	image string,
+	registryUsername *string,
+	registryPassword *dagger.Secret,
+) error {
 	ctr := dag.Container()
 	if registryUsername != nil && registryPassword != nil {
 		registry, _, _ := strings.Cut(image, "/")
 		ctr = ctr.WithRegistryAuth(registry, *registryUsername, registryPassword)
 	}
+	jobs := parallel.New()
 	for i, target := range targets {
 		result := targetResults[i]
-
-		if err := func() (rerr error) {
-			ctx, span := Tracer().Start(ctx, fmt.Sprintf("pushing %s", target.Name))
-			defer func() {
-				if rerr != nil {
-					span.SetStatus(codes.Error, rerr.Error())
+		jobs = jobs.WithJob(fmt.Sprintf("push target %s", target.Name),
+			func(ctx context.Context) error {
+				for _, tag := range result.Tags {
+					if _, err := ctr.Publish(ctx, image+":"+tag, dagger.ContainerPublishOpts{
+						PlatformVariants: result.Platforms,
+						// use gzip to avoid incompatibility w/ older docker versions
+						ForcedCompression: dagger.ImageLayerCompressionGzip,
+					}); err != nil {
+						return err
+					}
 				}
-				span.End()
-			}()
-
-			for _, tag := range result.Tags {
-				_, err := ctr.
-					Publish(ctx, fmt.Sprintf("%s:%s", image, tag), dagger.ContainerPublishOpts{
-						PlatformVariants:  result.Platforms,
-						ForcedCompression: dagger.ImageLayerCompressionGzip, // use gzip to avoid incompatibility w/ older docker versions
-					})
-				if err != nil {
-					return err
-				}
-			}
-			return nil
-		}(); err != nil {
-			return err
-		}
+				return nil
+			})
 	}
-
-	return nil
+	return jobs.Run(ctx)
 }

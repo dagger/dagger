@@ -1,6 +1,6 @@
 {
   "name": "ruff",
-  "engineVersion": "v0.12.4",
+  "engineVersion": "v0.19.2",
   "sdk": {
     "source": "go"
   }

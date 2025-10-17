@@ -5,126 +5,136 @@ import (
 	"fmt"
 	"strings"
 
-	"go.opentelemetry.io/otel/codes"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/dagger/dagger/.dagger/internal/dagger"
-)
-
-const (
-	pythonSubdir           = "sdk/python"
-	pythonRuntimeSubdir    = "sdk/python/runtime"
-	pythonGeneratedAPIPath = "sdk/python/src/dagger/client/gen.py"
+	"github.com/dagger/dagger/util/parallel"
 )
 
 type PythonSDK struct {
 	Dagger *DaggerDev // +private
 }
 
-// Lint the Python SDK
-func (t PythonSDK) Lint(ctx context.Context) (rerr error) {
-	eg := errgroup.Group{}
+func (t PythonSDK) Name() string {
+	return "python"
+}
 
-	// TODO: create function in PythonSDKDev to lint any directory as input
-	// but reusing the same linter configuration in the SDK.
-	eg.Go(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "lint Python code in the SDK and docs")
-		defer func() {
-			if rerr != nil {
-				span.SetStatus(codes.Error, rerr.Error())
-			}
-			span.End()
-		}()
-		// Preserve same file hierarchy for docs because of extend rules in .ruff.toml
-		_, err := dag.PythonSDKDev().
-			WithDirectory(
-				dag.Directory().
-					WithDirectory(
-						"",
-						t.Dagger.Source,
-						dagger.DirectoryWithDirectoryOpts{
-							Include: []string{
-								"docs/current_docs/**/*.py",
-								"**/.ruff.toml",
-							},
+// CheckPythonFormat checks the Python code formatting
+func (t PythonSDK) CheckLintPython(ctx context.Context) error {
+	// Preserve same file hierarchy for docs because of extend rules in .ruff.toml
+	_, err := dag.PythonSDKDev().
+		WithDirectory(
+			dag.Directory().
+				WithDirectory(
+					"",
+					t.Dagger.Source,
+					dagger.DirectoryWithDirectoryOpts{
+						Include: []string{
+							"docs/current_docs/**/*.py",
+							"**/.ruff.toml",
 						},
-					),
-			).
-			Lint(ctx, dagger.PythonSDKDevLintOpts{Paths: []string{"../.."}})
+					},
+				),
+		).
+		Lint(ctx, dagger.PythonSDKDevLintOpts{Paths: []string{"../.."}})
+	return err
+}
 
-		return err
+func (t PythonSDK) RuntimeSource() *dagger.Directory {
+	return t.Dagger.Source.Filter(dagger.DirectoryFilterOpts{
+		Include: []string{"sdk/python/runtime"},
 	})
+}
 
-	eg.Go(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "check that the generated client library is up-to-date")
-		defer func() {
-			if rerr != nil {
-				span.SetStatus(codes.Error, rerr.Error())
-			}
-			span.End()
-		}()
-		before := t.Dagger.Source
-		after, err := t.Generate(ctx)
-		if err != nil {
-			return err
-		}
-		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{pythonGeneratedAPIPath})
-	})
+// CheckGoFormat checks the Go code formatting for the Python runtime
+func (t PythonSDK) CheckLintGo(ctx context.Context) error {
+	return t.godev().CheckLint(ctx)
+}
 
-	eg.Go(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "lint the python runtime, which is written in Go")
-		defer func() {
-			if rerr != nil {
-				span.SetStatus(codes.Error, rerr.Error())
-			}
-			span.End()
-		}()
-		return dag.
-			Go(t.Dagger.SourceDeveloped(pythonRuntimeSubdir)).
-			Lint(ctx, dagger.GoLintOpts{Packages: []string{pythonRuntimeSubdir}})
-	})
+func (t PythonSDK) godev() *dagger.Go {
+	return dag.Go(t.RuntimeSource())
+}
 
-	return eg.Wait()
+// Lint the Python SDK
+func (t PythonSDK) CheckLint(ctx context.Context) error {
+	return parallel.New().
+		WithJob("lint Python code in the SDK and docs", t.CheckLintPython).
+		WithJob("lint the python runtime, which is written in Go", t.CheckLintGo).
+		Run(ctx)
 }
 
 // Test the Python SDK
 func (t PythonSDK) Test(ctx context.Context) (rerr error) {
-	installer := t.Dagger.installer("sdk")
-	base := dag.PythonSDKDev().Container().With(installer)
+	base := dag.PythonSDKDev().Container().With(t.Dagger.devEngineSidecar())
 	dev := dag.PythonSDKDev(dagger.PythonSDKDevOpts{Container: base})
 
 	versions, err := dag.PythonSDKDev().SupportedVersions(ctx)
 	if err != nil {
 		return err
 	}
-
-	eg := errgroup.Group{}
+	jobs := parallel.New()
 	for _, version := range versions {
-		eg.Go(func() error {
-			_, err := dev.
-				Test(dagger.PythonSDKDevTestOpts{Version: version}).
-				Default().
-				Sync(ctx)
-			return err
-		})
+		jobs = jobs.WithJob(
+			fmt.Sprintf("test with python version %s", version),
+			func(ctx context.Context) error {
+				_, err := dev.
+					Test(dagger.PythonSDKDevTestOpts{Version: version}).
+					Default().
+					Sync(ctx)
+				return err
+			},
+		)
 	}
-
-	return eg.Wait()
+	return jobs.Run(ctx)
 }
 
 // Regenerate the Python SDK API
-func (t PythonSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	installer := t.Dagger.installer("sdk")
-	introspection := t.Dagger.introspection(installer)
-	return dag.Directory().WithDirectory(
-		pythonSubdir,
-		dag.PythonSDKDev().Generate(introspection),
+func (t PythonSDK) Generate(_ context.Context) (*dagger.Changeset, error) {
+	devContainer := dag.PythonSDKDev().Container()
+
+	// We don't control the input source, it's defined in wrapped native module
+	srcMountPath := "/src"
+	src := devContainer.Directory(srcMountPath)
+	// FIXME: workaround for Directory.changes() bug
+	src = dag.Directory().WithDirectory("", src)
+	genFile := devContainer.
+		WithMountedFile("/schema.json", t.Dagger.introspectionJSON()).
+		WithWorkdir("codegen").
+		WithExec([]string{
+			"uv", "run", "python", "-m", "codegen",
+			"generate", "-i", "/schema.json", "-o", "gen.py",
+		}).
+		WithExec([]string{
+			"uv", "run", "ruff", "check", "--fix-only", "gen.py",
+		}).
+		WithExec([]string{
+			"uv", "run", "ruff", "format", "gen.py",
+		}).
+		File("gen.py")
+	genRelPath := "src/dagger/client/gen.py"
+	formattedGenFile := devContainer.
+		WithFile(genRelPath, genFile).
+		WithExec([]string{
+			"uv", "run", "ruff", "check", "--fix-only", genRelPath,
+		}).
+		WithExec([]string{
+			"uv", "run", "ruff", "format", genRelPath,
+		}).
+		File(genRelPath)
+	return changes(
+		src,
+		src.WithFile("sdk/python/"+genRelPath, formattedGenFile),
+		[]string{
+			"sdk/python/.uv_cache",
+			"sdk/python/.venv",
+			"sdk/python/__pycache__",
+			"sdk/python/uv.lock",
+			"sdk/python/**/__pycache__",
+		},
 	), nil
 }
 
 // Test the publishing process
-func (t PythonSDK) TestPublish(ctx context.Context, tag string) error {
-	return t.Publish(ctx, tag, true, "", nil)
+func (t PythonSDK) CheckReleaseDryRun(ctx context.Context) error {
+	return t.Publish(ctx, "HEAD", true, "", nil)
 }
 
 // Publish the Python SDK
@@ -163,12 +173,13 @@ func (t PythonSDK) Publish(
 }
 
 // Bump the Python SDK's Engine dependency
-func (t PythonSDK) Bump(ctx context.Context, version string) (*dagger.Directory, error) {
+func (t PythonSDK) Bump(_ context.Context, version string) (*dagger.Changeset, error) {
 	// trim leading v from version
 	version = strings.TrimPrefix(version, "v")
 	engineReference := fmt.Sprintf("# Code generated by dagger. DO NOT EDIT.\n\nCLI_VERSION = %q\n", version)
 
 	// NOTE: if you change this path, be sure to update .github/workflows/publish.yml so that
 	// provision tests run whenever this file changes.
-	return dag.Directory().WithNewFile("sdk/python/src/dagger/_engine/_version.py", engineReference), nil
+	layer := t.Dagger.Source.WithNewFile("sdk/python/src/dagger/_engine/_version.py", engineReference)
+	return layer.Changes(t.Dagger.Source), nil
 }
