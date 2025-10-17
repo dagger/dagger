@@ -9,8 +9,10 @@ package vcs
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/url"
 	"os"
@@ -339,10 +341,10 @@ type RepoRoot struct {
 
 // RepoRootForImportPath analyzes importPath to determine the
 // version control system, and code repository to use.
-func RepoRootForImportPath(importPath string, verbose bool) (*RepoRoot, error) {
+func RepoRootForImportPath(ctx context.Context, importPath string, verbose bool) (*RepoRoot, error) {
 	rr, err := RepoRootForImportPathStatic(importPath, "")
 	if err == errUnknownSite {
-		rr, err = RepoRootForImportDynamic(importPath, verbose)
+		rr, err = RepoRootForImportDynamic(ctx, importPath, verbose)
 
 		// RepoRootForImportDynamic returns error detail
 		// that is irrelevant if the user didn't intend to use a
@@ -439,7 +441,7 @@ func RepoRootForImportPathStatic(importPath, scheme string) (*RepoRoot, error) {
 // statically known by RepoRootForImportPathStatic.
 //
 // This handles custom import paths like "name.tld/pkg/foo" or just "name.tld".
-func RepoRootForImportDynamic(importPath string, verbose bool) (*RepoRoot, error) {
+func RepoRootForImportDynamic(ctx context.Context, importPath string, verbose bool) (*RepoRoot, error) {
 	// Preserve the original importPath for matching and error messages
 	originalImportPath := importPath
 
@@ -457,7 +459,7 @@ func RepoRootForImportDynamic(importPath string, verbose bool) (*RepoRoot, error
 		return nil, errors.New("import path doesn't contain a hostname")
 	}
 
-	urlStr, body, err := httpsOrHTTP(importPath)
+	urlStr, body, err := httpsOrHTTP(ctx, importPath)
 	if err != nil {
 		return nil, fmt.Errorf("http/https fetch: %w", err)
 	}
@@ -487,7 +489,7 @@ func RepoRootForImportDynamic(importPath string, verbose bool) (*RepoRoot, error
 			log.Printf("get %q: verifying non-authoritative meta tag", originalImportPath)
 		}
 		urlStr0 := urlStr
-		urlStr, body, err = httpsOrHTTP(metaImport.Prefix)
+		urlStr, body, err = httpsOrHTTP(ctx, metaImport.Prefix)
 		if err != nil {
 			return nil, fmt.Errorf("fetch %s: %w", urlStr, err)
 		}
@@ -722,4 +724,21 @@ func launchpadVCS(match map[string]string) error {
 		match["repo"] = expand(match, "https://{root}")
 	}
 	return nil
+}
+
+// httpGET returns the data from an HTTP GET request for the given URL.
+func httpGET(url string) ([]byte, error) {
+	resp, err := httpClient.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("%s: %s", url, resp.Status)
+	}
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", url, err)
+	}
+	return b, nil
 }

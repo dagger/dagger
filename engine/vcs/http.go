@@ -5,7 +5,7 @@
 package vcs
 
 import (
-	"fmt"
+	"context"
 	"io"
 	"log"
 	"net/http"
@@ -16,26 +16,9 @@ import (
 // changed by tests, without modifying http.DefaultClient.
 var httpClient = http.DefaultClient
 
-// httpGET returns the data from an HTTP GET request for the given URL.
-func httpGET(url string) ([]byte, error) {
-	resp, err := httpClient.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("%s: %s", url, resp.Status)
-	}
-	b, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", url, err)
-	}
-	return b, nil
-}
-
 // httpsOrHTTP returns the body of either the importPath's
 // https resource or, if unavailable, the http resource.
-func httpsOrHTTP(importPath string) (urlStr string, body io.ReadCloser, err error) {
+func httpsOrHTTP(ctx context.Context, importPath string) (urlStr string, body io.ReadCloser, err error) {
 	fetch := func(scheme string) (urlStr string, res *http.Response, err error) {
 		u, err := url.Parse(scheme + "://" + importPath)
 		if err != nil {
@@ -46,7 +29,11 @@ func httpsOrHTTP(importPath string) (urlStr string, body io.ReadCloser, err erro
 		if Verbose {
 			log.Printf("Fetching %s", urlStr)
 		}
-		res, err = httpClient.Get(urlStr)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlStr, nil)
+		if err != nil {
+			return "", nil, err
+		}
+		res, err = httpClient.Do(req)
 		return
 	}
 	closeBody := func(res *http.Response) {
