@@ -14,7 +14,7 @@ func New(
 
 	// +optional
 	// +defaultPath="/"
-	// +ignore=["*", ".*", "!cmd/dagger/*", "!**/go.sum", "!**/go.mod", "!**/*.go", "!vendor/**/*", "!**.graphql", "!.goreleaser*.yml", "!.changes", "!LICENSE", "!install.sh", "!install.ps1"]
+	// +ignore=["*", ".*", "!cmd/dagger/*", "!**/go.sum", "!**/go.mod", "!**/*.go", "!vendor/**/*", "!**.graphql", "!.goreleaser*.yml", "!.changes", "!LICENSE", "!install.sh", "!install.ps1", "!**/*.sql"]
 	source *dagger.Directory,
 
 	// Base image for go build environment

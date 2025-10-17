@@ -33,7 +33,11 @@ func Introspect(cmd *cobra.Command, args []string) error {
 
 func getIntrospection(ctx context.Context) (*introspection.Response, error) {
 	root := &core.Query{}
-	dag := dagql.NewServer(root, dagql.NewSessionCache(cache.NewCache[string, dagql.AnyResult]()))
+	baseCache, err := cache.NewCache[string, dagql.AnyResult](ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	dag := dagql.NewServer(root, dagql.NewSessionCache(baseCache))
 	dag.View = call.View(version)
 	coreMod := &schema.CoreMod{Dag: dag}
 	if err := coreMod.Install(ctx, dag); err != nil {
