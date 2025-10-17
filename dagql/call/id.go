@@ -354,6 +354,9 @@ func (id *ID) WithArgument(arg *Argument) *ID {
 }
 
 func (id *ID) Encode() (string, error) {
+	if id == nil {
+		return "", nil
+	}
 	dagPB, err := id.ToProto()
 	if err != nil {
 		return "", fmt.Errorf("failed to convert ID to proto: %w", err)
