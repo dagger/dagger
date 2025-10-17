@@ -319,26 +319,7 @@ func ptr[T any](v T) *T {
 // To simplify external logic, when the ref is nil, i.e. scratch, the callback
 // just receives a tmpdir that gets deleted when the function completes.
 func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(string) error) error {
-	if ref == nil {
-		dir, err := os.MkdirTemp("", "readonly-scratch")
-		if err != nil {
-			return err
-		}
-		defer os.RemoveAll(dir)
-		return f(dir)
-	}
-	mount, err := ref.Mount(ctx, false, g)
-	if err != nil {
-		return err
-	}
-	lm := snapshot.LocalMounter(mount)
-	defer lm.Unmount()
-
-	dir, err := lm.Mount()
-	if err != nil {
-		return err
-	}
-	return f(dir)
+	return mountRef(ctx, ref, false, g, f)
 }
 
 // ReadonlyMountRef is a utility for easily mounting a ref read-only.
@@ -346,26 +327,47 @@ func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(st
 // To simplify external logic, when the ref is nil, i.e. scratch, the callback
 // just receives a tmpdir that gets deleted when the function completes.
 func ReadonlyMountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(string) error) error {
+	return mountRef(ctx, ref, true, g, f)
+}
+
+func mountRef(ctx context.Context, ref bkcache.Ref, readonly bool, g bksession.Group, f func(string) error) error {
+	dir, closer, err := MountRefCloser(ctx, ref, readonly, g)
+	if err != nil {
+		return err
+	}
+	err = f(dir)
+	if err != nil {
+		_ = closer()
+		return err
+	}
+	return closer()
+}
+
+// MountRefCloser is a utility for mounting a ref.
+//
+// To simplify external logic, when the ref is nil, i.e. scratch, a tmpdir is created (and deleted when the closer func is called).
+
+// NOTE: prefer MountRef where possible, unless finer-grained control of when the directory is unmounted is needed.
+func MountRefCloser(ctx context.Context, ref bkcache.Ref, readonly bool, g bksession.Group) (string, func() error, error) {
 	if ref == nil {
 		dir, err := os.MkdirTemp("", "readonly-scratch")
 		if err != nil {
-			return err
+			return "", func() error { return nil }, err
 		}
-		defer os.RemoveAll(dir)
-		return f(dir)
+		return dir, func() error {
+			return os.RemoveAll(dir)
+		}, nil
 	}
-	mount, err := ref.Mount(ctx, true, g)
+	mount, err := ref.Mount(ctx, readonly, g)
 	if err != nil {
-		return err
+		return "", func() error { return nil }, err
 	}
 	lm := snapshot.LocalMounter(mount)
-	defer lm.Unmount()
-
 	dir, err := lm.Mount()
 	if err != nil {
-		return err
+		return "", func() error { return nil }, err
 	}
-	return f(dir)
+	return dir, lm.Unmount, nil
 }
 
 // mountLLB is a utility for easily mounting an llb definition
@@ -481,61 +483,96 @@ type fileOrDirectory interface {
 	Evaluatable
 }
 
-// execInMount is a helper used by Directory.execInMount and File.execInMount
+// execInMount evaluates a file or directory, mounts it, then calls the supplied callback function.
 func execInMount[T fileOrDirectory](ctx context.Context, obj T, f func(string) error, optFns ...execInMountOptFn) (T, error) {
+	root, closer, err := execInMountCloser(ctx, obj, optFns...)
+	if err != nil {
+		return nil, err
+	}
+	err = f(root)
+	if err != nil {
+		_, _ = closer(true)
+		return nil, err
+	}
+	return closer(false)
+}
+
+// execInMountCloser evaluates an object and mounts the root fs and returns the mounted path and a closer, which will unmount
+// the file or directory object's root filesystem, and potentially return a modified object, if both the withSavedSnapshot option is specified and the abort flag was not set.
+// The abort flag is only used when the withSavedSnapshot option is specified.
+// NOTE: prefer execInMount where possible, unless finer-grained control of the filesystem mount is required.
+func execInMountCloser[T fileOrDirectory](ctx context.Context, obj T, optFns ...execInMountOptFn) (string, func(abort bool) (T, error), error) {
 	var opt execInMountOpt
 	for _, optFn := range optFns {
 		optFn(&opt)
 	}
 
+	noOpCloser := func(_ bool) (T, error) { return nil, nil }
+
 	parentRef, err := getRefOrEvaluate(ctx, obj)
 	if err != nil {
-		return nil, err
+		return "", noOpCloser, err
 	}
 
 	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
 	if !ok {
 		if !opt.allowNilBuildkitSession {
-			return nil, fmt.Errorf("no buildkit session group in context")
+			return "", noOpCloser, fmt.Errorf("no buildkit session group in context")
 		}
 	}
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return "", noOpCloser, err
 	}
 
 	var mountRef bkcache.Ref
 	var newRef bkcache.MutableRef
 	if opt.commitSnapshot {
 		if opt.cacheDesc == "" {
-			return nil, fmt.Errorf("execInMount saveSnapshotOpt missing cache description")
+			return "", noOpCloser, fmt.Errorf("execInMount saveSnapshotOpt missing cache description")
 		}
 		newRef, err = query.BuildkitCache().New(ctx, parentRef, bkSessionGroup,
 			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular), bkcache.WithDescription(opt.cacheDesc))
 		if err != nil {
-			return nil, err
+			return "", noOpCloser, err
 		}
 		mountRef = newRef
 	} else {
 		if parentRef == nil {
-			return nil, errEmptyResultRef
+			return "", noOpCloser, errEmptyResultRef
 		}
 		mountRef = parentRef
 	}
-	err = MountRef(ctx, mountRef, bkSessionGroup, f)
+	rootPath, closer, err := MountRefCloser(ctx, mountRef, false, bkSessionGroup)
 	if err != nil {
-		return nil, err
+		return "", noOpCloser, err
 	}
+
 	if opt.commitSnapshot {
-		snap, err := newRef.Commit(ctx)
+		return rootPath, func(abort bool) (T, error) {
+			err := closer()
+			if err != nil {
+				return nil, err
+			}
+			if !abort {
+				snap, err := newRef.Commit(ctx)
+				if err != nil {
+					return nil, err
+				}
+				obj.setResult(snap)
+			}
+			return obj, nil
+		}, nil
+	}
+
+	return rootPath, func(_ bool) (T, error) {
+		err := closer()
 		if err != nil {
 			return nil, err
 		}
-		obj.setResult(snap)
 		return obj, nil
-	}
-	return obj, nil
+	}, nil
 }
 
 func getRefOrEvaluate[T fileOrDirectory](ctx context.Context, t T) (bkcache.ImmutableRef, error) {
