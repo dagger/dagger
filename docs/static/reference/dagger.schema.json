@@ -73,7 +73,14 @@
         },
         "blueprint": {
           "$ref": "#/$defs/ModuleConfigDependency",
-          "description": "An optional blueprint module"
+          "description": "An optional blueprint module (single blueprint - deprecated in favor of Blueprints)"
+        },
+        "blueprints": {
+          "items": {
+            "$ref": "#/$defs/ModuleConfigDependency"
+          },
+          "type": "array",
+          "description": "Multiple blueprint modules"
         },
         "include": {
           "items": {

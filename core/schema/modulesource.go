@@ -27,6 +27,7 @@ import (
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/server/resource"
+	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	fsutiltypes "github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
@@ -715,16 +716,19 @@ func (s *moduleSourceSchema) loadBlueprintModule(
 		return fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	// If we have a blueprint module, load it
-	pcfg := src.ConfigBlueprint
-	if pcfg == nil {
+	// Load blueprints array (note: config.go already migrates Blueprint -> Blueprints)
+	if len(src.ConfigBlueprints) == 0 {
 		return nil
 	}
-	blueprint, err := core.ResolveDepToSource(ctx, bk, dag, src, pcfg.Source, pcfg.Pin, pcfg.Name)
-	if err != nil {
-		return fmt.Errorf("failed to resolve dep to source: %w", err)
+
+	src.Blueprints = make([]dagql.ObjectResult[*core.ModuleSource], len(src.ConfigBlueprints))
+	for i, pcfg := range src.ConfigBlueprints {
+		blueprint, err := core.ResolveDepToSource(ctx, bk, dag, src, pcfg.Source, pcfg.Pin, pcfg.Name)
+		if err != nil {
+			return fmt.Errorf("failed to resolve blueprint to source: %w", err)
+		}
+		src.Blueprints[i] = blueprint
 	}
-	src.Blueprint = blueprint
 	return nil
 }
 
@@ -866,19 +870,6 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 		return err
 	}
 
-	// blueprint is incompatible with some dagger.json fields
-	if modCfg.Blueprint != nil {
-		if modCfg.SDK != nil {
-			return fmt.Errorf("blueprint and sdk can't both be set")
-		}
-		if len(modCfg.Dependencies) != 0 {
-			return fmt.Errorf("blueprint and dependencies can't both be set")
-		}
-		if modCfg.Source != "" {
-			return fmt.Errorf("blueprint and source can't both be set")
-		}
-	}
-
 	src.ModuleName = modCfg.Name
 	src.ModuleOriginalName = modCfg.Name
 	src.IncludePaths = modCfg.Include
@@ -886,6 +877,7 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	src.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
 	src.ConfigDependencies = modCfg.Dependencies
 	src.ConfigBlueprint = modCfg.Blueprint
+	src.ConfigBlueprints = modCfg.Blueprints
 	src.ConfigClients = modCfg.Clients
 
 	engineVersion := modCfg.EngineVersion
@@ -1468,13 +1460,6 @@ func (s *moduleSourceSchema) moduleSourceWithBlueprint(
 		Blueprint core.ModuleSourceID
 	},
 ) (*core.ModuleSource, error) {
-	// Validate blueprint compatibility
-	if parentSrc.SDK != nil {
-		return nil, fmt.Errorf("cannot set blueprint on module that already has SDK")
-	}
-	if parentSrc.Dependencies.Len() > 0 {
-		return nil, fmt.Errorf("cannot set blueprint on module that has dependencies")
-	}
 	tmpArgs := struct{ Dependencies []core.ModuleSourceID }{
 		Dependencies: []core.ModuleSourceID{args.Blueprint},
 	}
@@ -1491,8 +1476,10 @@ func (s *moduleSourceSchema) moduleSourceWithBlueprint(
 	// The blueprint is the last dependency added
 	// (dependencies are added LIFO)
 	parentSrc = parentSrc.Clone()
-	parentSrc.Blueprint = tmpSrc.Dependencies[0]
-	parentSrc.ConfigBlueprint = tmpConfig.Dependencies[0]
+
+	// Append the new blueprint to the Blueprints array (config.go already handles upgrade)
+	parentSrc.ConfigBlueprints = append(parentSrc.ConfigBlueprints, tmpConfig.Dependencies[0])
+	parentSrc.Blueprints = append(parentSrc.Blueprints, tmpSrc.Dependencies[0])
 
 	return parentSrc, nil
 }
@@ -1517,39 +1504,45 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateBlueprint(
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	// If no blueprint is set, return without error
-	if parentSrc.Self().Blueprint.Self() == nil {
+	// If no blueprints are set, return without error
+	if len(parentSrc.Self().Blueprints) == 0 {
 		return parentSrc.Result, nil
 	}
 
-	bpSrc := parentSrc.Self().Blueprint.Self()
+	// Loop over the existing blueprints and update each one
+	var newUpdatedBpArgs []core.ModuleSourceID
+	for _, existingBp := range parentSrc.Self().Blueprints {
+		bpSrc := existingBp.Self()
 
-	// Only update git sources
-	if bpSrc.Kind != core.ModuleSourceKindGit {
-		return parentSrc.Result, nil
-	}
+		// Only update git sources, skip local blueprints
+		if bpSrc.Kind != core.ModuleSourceKindGit {
+			continue
+		}
 
-	// Update the blueprint by loading it fresh
-	var bpUpdated dagql.ObjectResult[*core.ModuleSource]
-	err = dag.Select(ctx, dag.Root(), &bpUpdated,
-		dagql.Selector{
-			Field: "moduleSource",
-			Args: []dagql.NamedInput{
-				{Name: "refString", Value: dagql.String(bpSrc.AsString())},
+		// Update the blueprint by loading it fresh
+		var bpUpdated dagql.ObjectResult[*core.ModuleSource]
+		err := dag.Select(ctx, dag.Root(), &bpUpdated,
+			dagql.Selector{
+				Field: "moduleSource",
+				Args: []dagql.NamedInput{
+					{Name: "refString", Value: dagql.String(bpSrc.AsString())},
+				},
 			},
-		},
-	)
-	if err != nil {
-		return inst, fmt.Errorf("failed to load updated blueprint: %w", err)
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to load updated blueprint: %w", err)
+		}
+
+		newUpdatedBpArgs = append(newUpdatedBpArgs, dagql.NewID[*core.ModuleSource](bpUpdated.ID()))
 	}
 
-	// Set the updated blueprint on the parent source
+	// Set the updated blueprints on the parent source
 	err = dag.Select(ctx, parentSrc, &inst,
 		dagql.Selector{
-			Field: "withBlueprint",
+			Field: "withBlueprints",
 			Args: []dagql.NamedInput{{
-				Name:  "blueprint",
-				Value: dagql.NewID[*core.ModuleSource](bpUpdated.ID()),
+				Name:  "blueprints",
+				Value: dagql.ArrayInput[core.ModuleSourceID](newUpdatedBpArgs),
 			}},
 		},
 	)
@@ -1871,10 +1864,8 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 		}
 	}
 
-	// Copy blueprint configuration if present
-	if src.ConfigBlueprint != nil {
-		modCfg.Blueprint = src.ConfigBlueprint
-	}
+	// Copy blueprints configuration (config.go already upgrades Blueprint -> Blueprints)
+	modCfg.Blueprints = src.ConfigBlueprints
 
 	// Check version compatibility.
 	if !engine.CheckVersionCompatibility(modCfg.EngineVersion, engine.MinimumModuleVersion) {
@@ -2011,7 +2002,7 @@ func (s *moduleSourceSchema) runCodegen(
 	}
 
 	// load the deps as actual Modules
-	deps, err := s.loadDependencyModules(ctx, srcInst.Self())
+	deps, err := s.loadDependencyModules(ctx, srcInst)
 	if err != nil {
 		return res, fmt.Errorf("failed to load dependencies as modules: %w", err)
 	}
@@ -2204,7 +2195,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 		return genDirInst, fmt.Errorf("failed to add module source required files: %w", err)
 	}
 
-	deps, err := s.loadDependencyModules(ctx, srcInst.Self())
+	deps, err := s.loadDependencyModules(ctx, srcInst)
 	if err != nil {
 		return genDirInst, fmt.Errorf("failed to load dependencies of this modules: %w", err)
 	}
@@ -2492,7 +2483,7 @@ func (s *moduleSourceSchema) moduleSourceIntrospectionSchemaJSON(
 	src dagql.ObjectResult[*core.ModuleSource],
 	args struct{},
 ) (inst dagql.Result[*core.File], rerr error) {
-	deps, err := s.loadDependencyModules(ctx, src.Self())
+	deps, err := s.loadDependencyModules(ctx, src)
 	if err != nil {
 		return inst, err
 	}
@@ -2501,6 +2492,277 @@ func (s *moduleSourceSchema) moduleSourceIntrospectionSchemaJSON(
 		return inst, err
 	}
 	return file, nil
+}
+
+// blueprintContext holds information about blueprint handling for a module
+type blueprintContext struct {
+	originalSrc  dagql.ObjectResult[*core.ModuleSource]
+	src          dagql.ObjectResult[*core.ModuleSource]
+	isSingleMode bool // true when single blueprint without SDK - becomes top-level
+}
+
+// detectSingleBlueprintMode checks if we should use single blueprint mode (no namespacing)
+func detectSingleBlueprintMode(src *core.ModuleSource) bool {
+	return len(src.Blueprints) == 1 && len(src.Dependencies) == 0 && src.SDK == nil
+}
+
+// createBaseModule creates the initial module structure with dependencies
+func (s *moduleSourceSchema) createBaseModule(
+	ctx context.Context,
+	src dagql.ObjectResult[*core.ModuleSource],
+	bpCtx blueprintContext,
+) (*core.Module, error) {
+	sdk := src.Self().SDK
+	if sdk == nil {
+		sdk = &core.SDKConfig{}
+	}
+
+	mod := &core.Module{
+		Source:        dagql.NonNull(src),
+		ContextSource: dagql.NonNull(bpCtx.originalSrc),
+		NameField:     src.Self().ModuleName,
+		OriginalName:  src.Self().ModuleOriginalName,
+		SDKConfig:     sdk,
+	}
+
+	// Load dependencies as modules
+	deps, err := s.loadDependencyModules(ctx, src)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load dependencies as modules: %w", err)
+	}
+	mod.Deps = deps
+
+	return mod, nil
+}
+
+// initializeSDKModule initializes a module with SDK implementation
+func (s *moduleSourceSchema) initializeSDKModule(
+	ctx context.Context,
+	src dagql.ObjectResult[*core.ModuleSource],
+	mod *core.Module,
+	dag *dagql.Server,
+) (*core.Module, error) {
+	// Cache the source instance by digest
+	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
+		ResultKey: src.Self().Digest,
+	}
+	_, err := dag.Cache.GetOrInitializeValue(ctx, cacheKey, src)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get or initialize instance: %w", err)
+	}
+	srcInstContentHashed := src.WithObjectDigest(digest.Digest(src.Self().Digest))
+
+	// Run SDK codegen
+	mod, err = s.runModuleDefInSDK(ctx, src, srcInstContentHashed, mod)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, ok := src.Self().SDKImpl.AsModuleTypes(); ok && isSelfCallsEnabled(src) {
+		mod.Deps = mod.Deps.Append(mod)
+	}
+
+	mod.ResultID = dagql.CurrentID(ctx)
+	return mod, nil
+}
+
+// createStubModule creates an empty module definition (no SDK, no blueprints)
+func createStubModule(ctx context.Context, mod *core.Module, dag *dagql.Server) (*core.Module, error) {
+	typeDef := &core.ObjectTypeDef{
+		Name:         mod.NameField,
+		OriginalName: mod.OriginalName,
+	}
+
+	mod, err := mod.WithObject(ctx, &core.TypeDef{
+		Kind: core.TypeDefKindObject,
+		AsObject: dagql.Nullable[*core.ObjectTypeDef]{
+			Value: typeDef,
+			Valid: true,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module definition for no-sdk module %q: %w", mod.NameField, err)
+	}
+
+	obj := &core.ModuleObject{
+		Module:  mod,
+		TypeDef: typeDef,
+	}
+	mod.ResultID = dagql.CurrentID(ctx)
+	if err := obj.Install(ctx, dag); err != nil {
+		return nil, fmt.Errorf("failed to install no-sdk module %q: %w", mod.NameField, err)
+	}
+
+	return mod, nil
+}
+
+// extractBlueprintModules finds all blueprint modules from dependencies
+func extractBlueprintModules(mod *core.Module) []*core.Module {
+	var blueprintMods []*core.Module
+	for _, depMod := range mod.Deps.Mods {
+		if userMod, ok := depMod.(*core.Module); ok && userMod.IsBlueprint {
+			blueprintMods = append(blueprintMods, userMod)
+		}
+	}
+	return blueprintMods
+}
+
+// addBlueprintFieldsToObject adds blueprint fields/functions to an existing TypeDef
+func addBlueprintFieldsToObject(
+	objectDef *core.TypeDef,
+	blueprintMods []*core.Module,
+	mod *core.Module,
+) (*core.TypeDef, error) {
+	objectDef = objectDef.Clone()
+
+	for _, bpMod := range blueprintMods {
+		for _, obj := range bpMod.ObjectDefs {
+			if obj.AsObject.Value.Name == strcase.ToCamel(bpMod.NameField) {
+				// Use the original name (with hyphens) as the map key,
+				// but use camelCase for the GraphQL field name
+				originalName := bpMod.NameField
+				fieldName := strcase.ToLowerCamel(bpMod.NameField)
+
+				// Always add blueprints as functions (treating them as zero-argument constructors
+				// if they don't have an explicit constructor). This ensures consistent behavior
+				// and proper routing to the blueprint module's runtime.
+				var constructor *core.Function
+				if obj.AsObject.Value.Constructor.Valid {
+					constructor = obj.AsObject.Value.Constructor.Value.Clone()
+				} else {
+					// Create a zero-argument function for blueprints without constructors
+					constructor = &core.Function{
+						Args: []*core.FunctionArg{},
+					}
+				}
+
+				constructor.Name = fieldName
+				constructor.OriginalName = originalName
+				constructor.Description = fmt.Sprintf("Blueprint module: %s", originalName)
+				constructor.ReturnType = obj
+
+				var err error
+				objectDef, err = objectDef.WithFunction(constructor)
+				if err != nil {
+					return nil, fmt.Errorf("failed to add blueprint function %q: %w", fieldName, err)
+				}
+
+				mod.BlueprintModules[originalName] = bpMod
+				break
+			}
+		}
+	}
+
+	return objectDef, nil
+}
+
+// mergeBlueprintsWithSDK merges blueprint fields into SDK's main object
+func mergeBlueprintsWithSDK(
+	mod *core.Module,
+	blueprintMods []*core.Module,
+) error {
+	mainModuleObjectName := strcase.ToCamel(mod.NameField)
+
+	for i, obj := range mod.ObjectDefs {
+		if obj.AsObject.Valid && obj.AsObject.Value.Name == mainModuleObjectName {
+			mergedObj, err := addBlueprintFieldsToObject(obj, blueprintMods, mod)
+			if err != nil {
+				return err
+			}
+			mod.ObjectDefs[i] = mergedObj
+			return nil
+		}
+	}
+
+	return fmt.Errorf("main module object %q not found", mainModuleObjectName)
+}
+
+// createShadowModuleForBlueprints creates a new module object to hold blueprint fields
+func createShadowModuleForBlueprints(
+	ctx context.Context,
+	mod *core.Module,
+	blueprintMods []*core.Module,
+	dag *dagql.Server,
+) (*core.Module, error) {
+	shadowTypeDef := &core.ObjectTypeDef{
+		Name:         mod.NameField,
+		OriginalName: mod.OriginalName,
+	}
+
+	shadowModule := &core.TypeDef{
+		Kind: core.TypeDefKindObject,
+		AsObject: dagql.Nullable[*core.ObjectTypeDef]{
+			Value: shadowTypeDef,
+			Valid: true,
+		},
+	}
+
+	shadowModule, err := addBlueprintFieldsToObject(shadowModule, blueprintMods, mod)
+	if err != nil {
+		return nil, err
+	}
+
+	mod, err = mod.WithObject(ctx, shadowModule)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add blueprints to module: %w", err)
+	}
+
+	obj := &core.ModuleObject{
+		Module:  mod,
+		TypeDef: shadowTypeDef,
+	}
+	mod.ResultID = dagql.CurrentID(ctx)
+	if err := obj.Install(ctx, dag); err != nil {
+		return nil, fmt.Errorf("failed to install no-sdk module with blueprints %q: %w", mod.NameField, err)
+	}
+
+	return mod, nil
+}
+
+// integrateBlueprints adds blueprint modules as fields to the main module
+func (s *moduleSourceSchema) integrateBlueprints(
+	ctx context.Context,
+	mod *core.Module,
+	bpCtx blueprintContext,
+	dag *dagql.Server,
+) (*core.Module, error) {
+	// Skip if we're in single blueprint mode (already handled)
+	if bpCtx.isSingleMode {
+		return mod, nil
+	}
+
+	blueprintMods := extractBlueprintModules(mod)
+	if len(blueprintMods) == 0 {
+		return mod, nil
+	}
+
+	// Initialize blueprint modules map
+	if mod.BlueprintModules == nil {
+		mod.BlueprintModules = make(map[string]*core.Module)
+	}
+
+	// Check if we have an SDK module (has object definitions)
+	hasSDK := len(mod.ObjectDefs) > 0
+
+	var err error
+	if hasSDK {
+		// Merge blueprint fields into SDK's main object
+		err = mergeBlueprintsWithSDK(mod, blueprintMods)
+	} else {
+		// No SDK - create shadow module to hold blueprint fields
+		mod, err = createShadowModuleForBlueprints(ctx, mod, blueprintMods, dag)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Ensure ResultID is set
+	if mod.ResultID == nil {
+		mod.ResultID = dagql.CurrentID(ctx)
+	}
+
+	return mod, nil
 }
 
 func (s *moduleSourceSchema) moduleSourceAsModule(
@@ -2517,6 +2779,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("module name must be set")
 	}
 
+	// Check engine version compatibility
 	engineVersion := src.Self().EngineVersion
 	if !engine.CheckVersionCompatibility(engineVersion, engine.MinimumModuleVersion) {
 		return inst, fmt.Errorf("module requires dagger %s, but support for that version has been removed", engineVersion)
@@ -2525,105 +2788,59 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("module requires dagger %s, but you have %s", engineVersion, engine.Version)
 	}
 
-	// Handle blueprint context separation
-	originalSrc := src
-	blueprintSrc := src.Self().Blueprint
-
-	if blueprintSrc.Self() != nil {
-		src = blueprintSrc
+	// Set up blueprint context
+	bpCtx := blueprintContext{
+		originalSrc:  src,
+		src:          src,
+		isSingleMode: detectSingleBlueprintMode(src.Self()),
 	}
 
-	sdk := src.Self().SDK
-	if sdk == nil {
-		sdk = &core.SDKConfig{}
+	// In single blueprint mode, use the blueprint as the main source
+	if bpCtx.isSingleMode {
+		src = src.Self().Blueprints[0]
+		bpCtx.src = src
 	}
 
-	// Create module with blueprint source for SDK operations
-	mod := &core.Module{
-		Source: dagql.NonNull(src),
-
-		ContextSource: dagql.NonNull(originalSrc),
-
-		NameField:    src.Self().ModuleName,
-		OriginalName: src.Self().ModuleOriginalName,
-
-		SDKConfig: sdk,
-	}
-
-	// load the deps as actual Modules
-	deps, err := s.loadDependencyModules(ctx, src.Self())
+	// Create base module with dependencies
+	mod, err := s.createBaseModule(ctx, src, bpCtx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to load dependencies as modules: %w", err)
+		return inst, err
 	}
-	mod.Deps = deps
 
-	// cache the current source instance by it's digest before passing to codegen
-	// this scopes the cache key of codegen calls to an exact content hash detached
-	// from irrelevant details like specific host paths, specific git repos+commits, etc.
-	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-		ResultKey: src.Self().Digest,
-	}
-	_, err = dag.Cache.GetOrInitializeValue(ctx, cacheKey, src)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get or initialize instance: %w", err)
-	}
-	srcInstContentHashed := src.WithObjectDigest(digest.Digest(src.Self().Digest))
-	modName := src.Self().ModuleName
-
+	// Initialize module based on SDK presence
 	if src.Self().SDKImpl != nil {
-		mod, err = s.runModuleDefInSDK(ctx, src, srcInstContentHashed, mod)
+		mod, err = s.initializeSDKModule(ctx, src, mod, dag)
 		if err != nil {
 			return inst, err
 		}
-
-		if _, ok := src.Self().SDKImpl.AsModuleTypes(); ok && isSelfCallsEnabled(src) {
-			mod.Deps = mod.Deps.Append(mod)
-		}
-
-		mod.ResultID = dagql.CurrentID(ctx)
-	} else {
-		// For no SDK, provide an empty stub module definition
-		typeDef := &core.ObjectTypeDef{
-			Name: mod.NameField,
-			// needed to trigger constructor creation in ModuleObject.Install
-			OriginalName: mod.OriginalName,
-		}
-		mod, err = mod.WithObject(ctx, &core.TypeDef{
-			Kind: core.TypeDefKindObject,
-			AsObject: dagql.Nullable[*core.ObjectTypeDef]{
-				Value: typeDef,
-				Valid: true,
-			},
-		})
+	} else if len(src.Self().Blueprints) == 0 {
+		// No SDK and no blueprints - create stub module
+		mod, err = createStubModule(ctx, mod, dag)
 		if err != nil {
-			return inst, fmt.Errorf("failed to get module definition for no-sdk module %q: %w", modName, err)
-		}
-		obj := &core.ModuleObject{
-			Module:  mod,
-			TypeDef: typeDef,
-		}
-		// obj.Install() requires ResultID to be set.
-		mod.ResultID = dagql.CurrentID(ctx)
-		if err := obj.Install(ctx, dag); err != nil {
-			return inst, fmt.Errorf("failed to install no-sdk module %q: %w", modName, err)
+			return inst, err
 		}
 	}
 
-	if bp := blueprintSrc.Self(); bp != nil {
-		// Show the downstream module name to clients, not the blueprint name
-		// NOTE: we don't change OriginalName, that's used internally at runtime
-		mod.NameField = originalSrc.Self().ModuleName
+	// Integrate blueprint modules as fields
+	mod, err = s.integrateBlueprints(ctx, mod, bpCtx, dag)
+	if err != nil {
+		return inst, err
+	}
+
+	// In single blueprint mode, show the downstream module name
+	if bpCtx.isSingleMode {
+		mod.NameField = bpCtx.originalSrc.Self().ModuleName
 	}
 
 	inst, err = dagql.NewResultForCurrentID(ctx, mod)
 	if err != nil {
-		return inst, fmt.Errorf("failed to create instance for module %q: %w", modName, err)
+		return inst, fmt.Errorf("failed to create instance for module %q: %w", src.Self().ModuleName, err)
 	}
 	return inst, nil
 }
 
 // load the given module source's dependencies as modules
-func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src *core.ModuleSource) (_ *core.ModDeps, rerr error) {
+func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagql.ObjectResult[*core.ModuleSource]) (_ *core.ModDeps, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "load dep modules", telemetry.Internal())
 	defer telemetry.End(span, func() error { return rerr })
 
@@ -2637,8 +2854,8 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src *cor
 	}
 
 	var eg errgroup.Group
-	depMods := make([]dagql.Result[*core.Module], len(src.Dependencies))
-	for i, depSrc := range src.Dependencies {
+	depMods := make([]dagql.Result[*core.Module], len(src.Self().Dependencies))
+	for i, depSrc := range src.Self().Dependencies {
 		eg.Go(func() error {
 			return dag.Select(ctx, depSrc, &depMods[i],
 				dagql.Selector{Field: "asModule"},
@@ -2649,6 +2866,23 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src *cor
 		return nil, fmt.Errorf("failed to load module dependencies: %w", err)
 	}
 
+	// Load all blueprints as dependencies
+	bpMods := make([]dagql.Result[*core.Module], len(src.Self().Blueprints))
+	if len(src.Self().Blueprints) > 0 {
+		var bpeg errgroup.Group
+		for i, bpSrc := range src.Self().Blueprints {
+			bpeg.Go(func() error {
+				err := dag.Select(ctx, bpSrc, &bpMods[i],
+					dagql.Selector{Field: "asModule"},
+				)
+				return err
+			})
+		}
+		if err := bpeg.Wait(); err != nil {
+			return nil, fmt.Errorf("failed to load module dependencies: %w", err)
+		}
+	}
+
 	defaultDeps, err := query.DefaultDeps(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get default dependencies: %w", err)
@@ -2657,13 +2891,19 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src *cor
 	for _, depMod := range depMods {
 		deps = deps.Append(depMod.Self())
 	}
+	for _, bpMod := range bpMods {
+		clone := bpMod.Self().Clone()
+		clone.IsBlueprint = true
+		clone.ContextSource = dagql.NonNull(src)
+		deps = deps.Append(clone)
+	}
 	for i, depMod := range deps.Mods {
 		if coreMod, ok := depMod.(*CoreMod); ok {
 			// this is needed so that a module's dependency on the core
 			// uses the correct schema version
 			dag := *coreMod.Dag
 
-			dag.View = call.View(engine.BaseVersion(engine.NormalizeVersion(src.EngineVersion)))
+			dag.View = call.View(engine.BaseVersion(engine.NormalizeVersion(src.Self().EngineVersion)))
 			deps.Mods[i] = &CoreMod{Dag: &dag}
 		}
 	}

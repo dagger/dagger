@@ -32,12 +32,21 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The blueprint referenced by the module source.
+     * The blueprint referenced by the module source (deprecated, use blueprints).
      */
     public function blueprint(): ModuleSource
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('blueprint');
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The blueprints referenced by the module source.
+     */
+    public function blueprints(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('blueprints');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'blueprints');
     }
 
     /**

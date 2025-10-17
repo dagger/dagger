@@ -415,6 +415,18 @@ func (obj *ModuleObject) fields() (fields []dagql.Field[*ModuleObject]) {
 func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fields []dagql.Field[*ModuleObject], err error) {
 	objDef := obj.TypeDef
 	for _, fun := range obj.TypeDef.Functions {
+		// Check if this is a blueprint proxy function
+		if obj.Module.BlueprintModules != nil {
+			if bpMod, ok := obj.Module.BlueprintModules[fun.OriginalName]; ok {
+				bpFun, err := blueprintProxyFunction(ctx, obj.Module, fun, bpMod, dag)
+				if err != nil {
+					return nil, err
+				}
+				fields = append(fields, bpFun)
+				continue
+			}
+		}
+
 		objFun, err := objFun(ctx, obj.Module, objDef, fun, dag)
 		if err != nil {
 			return nil, err
@@ -461,6 +473,104 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 	}
 }
 
+// blueprintProxyFunction creates a function resolver that calls a blueprint module's constructor.
+// This is used when a blueprint has a constructor - instead of returning a pre-initialized object,
+// it calls the constructor function with the provided arguments.
+// If the blueprint has no constructor, it returns an uninitialized object (treating it like a
+// zero-argument constructor).
+func blueprintProxyFunction(ctx context.Context, mod *Module, fun *Function, bpMod *Module, dag *dagql.Server) (dagql.Field[*ModuleObject], error) {
+	// Find the blueprint's main object type
+	if len(bpMod.ObjectDefs) == 0 {
+		return dagql.Field[*ModuleObject]{}, fmt.Errorf("blueprint module %q has no objects", bpMod.Name())
+	}
+
+	var mainObjDef *ObjectTypeDef
+	for _, objDef := range bpMod.ObjectDefs {
+		if objDef.AsObject.Valid && gqlObjectName(objDef.AsObject.Value.OriginalName) == gqlObjectName(bpMod.OriginalName) {
+			mainObjDef = objDef.AsObject.Value
+			break
+		}
+	}
+	if mainObjDef == nil {
+		return dagql.Field[*ModuleObject]{}, fmt.Errorf("blueprint module %q has no main object", bpMod.Name())
+	}
+
+	// Check if blueprint has a constructor
+	hasConstructor := mainObjDef.Constructor.Valid
+
+	spec, err := fun.FieldSpec(ctx, mod)
+	if err != nil {
+		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to get field spec for blueprint: %w", err)
+	}
+	spec.Module = mod.IDModule()
+
+	if !hasConstructor {
+		// No constructor - treat as a zero-argument function that returns an uninitialized object
+		return dagql.Field[*ModuleObject]{
+			Spec: &spec,
+			Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
+				// Return an instance of the blueprint's main object with empty fields
+				// The blueprint module's own resolvers will handle function calls on this object
+				return dagql.NewResultForCurrentID(ctx, &ModuleObject{
+					Module:  bpMod,
+					TypeDef: mainObjDef,
+					Fields:  map[string]any{}, // empty fields, functions will be called on the blueprint's runtime
+				})
+			},
+			CacheSpec: dagql.CacheSpec{
+				GetCacheConfig: mod.CacheConfigForCall,
+			},
+		}, nil
+	}
+
+	// Has constructor - create a ModFunction for it
+	constructor := mainObjDef.Constructor.Value
+
+	modFun, err := NewModFunction(
+		ctx,
+		bpMod,
+		mainObjDef,
+		bpMod.Runtime.Value,
+		constructor,
+	)
+	if err != nil {
+		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to create blueprint constructor function %q: %w", fun.Name, err)
+	}
+
+	// Apply local user defaults
+	if err := modFun.mergeUserDefaultsTypeDefs(ctx); err != nil {
+		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to merge user defaults for blueprint constructor %q: %w", fun.Name, err)
+	}
+
+	//nolint:dupl
+	return dagql.Field[*ModuleObject]{
+		Spec: &spec,
+		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
+			opts := &CallOpts{
+				ParentTyped:    obj,
+				ParentFields:   obj.Self().Fields,
+				Cache:          dagql.IsInternal(ctx),
+				SkipSelfSchema: false,
+				Server:         dag,
+			}
+			for name, val := range args {
+				opts.Inputs = append(opts.Inputs, CallInput{
+					Name:  name,
+					Value: val,
+				})
+			}
+			// NB: ensure deterministic order
+			sort.Slice(opts.Inputs, func(i, j int) bool {
+				return opts.Inputs[i].Name < opts.Inputs[j].Name
+			})
+			return modFun.Call(ctx, opts)
+		},
+		CacheSpec: dagql.CacheSpec{
+			GetCacheConfig: modFun.CacheConfigForCall,
+		},
+	}, nil
+}
+
 // objFun creates a dagql.Field for a function defined on a module object type.
 // This is used during the GraphQL schema installation process to convert
 // user-defined functions in module object types into callable GraphQL fields.
@@ -499,6 +609,7 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 	}
 	spec.Module = mod.IDModule()
 
+	//nolint:dupl
 	return dagql.Field[*ModuleObject]{
 		Spec: &spec,
 		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {

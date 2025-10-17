@@ -32,10 +32,10 @@ func (BlueprintSuite) TestBlueprintUseLocal(ctx context.Context, t *testctx.T) {
 	t.Run("use local blueprint", func(ctx context.Context, t *testctx.T) {
 		modGen := blueprintTestEnv(t, c).
 			WithWorkdir("app").
-			With(daggerExec("init", "--blueprint=../myblueprint"))
+			With(daggerExec("init", "--blueprint=../hello"))
 		// Verify blueprint was installed by calling function
 		out, err := modGen.
-			With(daggerExec("call", "hello")).
+			With(daggerExec("call", "message")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "hello from blueprint")
@@ -50,6 +50,40 @@ func (BlueprintSuite) TestBlueprintUseLocal(ctx context.Context, t *testctx.T) {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, appConfig, "this is the app configuration")
+	})
+}
+
+func (BlueprintSuite) TestBlueprintConstructor(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	// Test single blueprint installation
+	t.Run("use blueprint constructor", func(ctx context.Context, t *testctx.T) {
+		modGen := blueprintTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init", "--blueprint=../hello-with-constructor"))
+		modGen = modGen.WithNewFile("app-config.txt", "this is the app configuration").
+			WithNewFile("other-config.txt", "this is the other app configuration")
+		appConfig, err := modGen.
+			With(daggerExec("call", "field-config")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, appConfig, "this is the app configuration")
+		appConfig, err = modGen.
+			With(daggerExec("call", "--config", "other-config.txt", "field-config")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, appConfig, "this is the other app configuration")
+		// Test multiple blueprint installations
+		modGen = modGen.With(daggerExec("blueprint", "install", "../myblueprint-ts"))
+		appConfig, err = modGen.
+			With(daggerExec("call", "hello", "field-config")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, appConfig, "this is the app configuration")
+		appConfig, err = modGen.
+			With(daggerExec("call", "hello", "--config", "other-config.txt", "field-config")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, appConfig, "this is the other app configuration")
 	})
 }
 
@@ -88,21 +122,67 @@ func (BlueprintSuite) TestBlueprintInit(ctx context.Context, t *testctx.T) {
 	}
 }
 
-func (BlueprintSuite) TestBlueprintNoSDK(ctx context.Context, t *testctx.T) {
+func (BlueprintSuite) TestMultipleBlueprints(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	t.Run("init with --sdk and --blueprint", func(ctx context.Context, t *testctx.T) {
+	t.Run("install multiple blueprints", func(ctx context.Context, t *testctx.T) {
 		modGen := blueprintTestEnv(t, c).
 			WithWorkdir("app").
-			WithExec(
-				[]string{"dagger", "init", "--sdk=go", "--blueprint=../myblueprint"},
-				dagger.ContainerWithExecOpts{
-					ExperimentalPrivilegedNesting: true,
-					Expect:                        dagger.ReturnTypeFailure,
-				},
-			)
-		stderr, err := modGen.Stderr(ctx)
+			With(daggerExec("init", "--blueprint=../hello"))
+		// Verify blueprint was installed by calling function
+		out, err := modGen.
+			With(daggerExec("call", "message")).
+			Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, stderr, "--sdk")
-		require.Contains(t, stderr, "--blueprint")
+		require.Contains(t, out, "hello from blueprint")
+		// install another blueprint
+		modGen = modGen.
+			With(daggerExec("blueprint", "install", "../myblueprint-ts")).
+			With(daggerExec("blueprint", "install", "../myblueprint-py"))
+		out, err = modGen.Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "blueprint installed")
+		out, err = modGen.
+			With(daggerExec("call", "hello", "message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello from blueprint")
+		out, err = modGen.
+			With(daggerExec("call", "myblueprint-py", "hello")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello from blueprint")
+		out, err = modGen.
+			With(daggerExec("call", "myblueprint-ts", "hello")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello from blueprint")
+		modGen = modGen.WithNewFile("app-config.txt", "this is the app configuration")
+		appConfig, err := modGen.
+			With(daggerExec("call", "hello", "app-config")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, appConfig, "this is the app configuration")
+	})
+}
+
+func (BlueprintSuite) TestBlueprintsWithSDK(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	t.Run("use blueprint with sdk", func(ctx context.Context, t *testctx.T) {
+		modGen := blueprintTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init", "--sdk=go")).
+			With(daggerExec("blueprint", "install", "../hello"))
+		// verify we can call function from our module code
+		out, err := modGen.
+			With(daggerExec("call", "container-echo", "--string-arg", "yoyo", "stdout")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "yoyo")
+		// verify we can call a function from our blueprint
+		out, err = modGen.
+			With(daggerExec("call", "hello", "message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello from blueprint")
 	})
 }

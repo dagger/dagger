@@ -1,0 +1,500 @@
+time="2025-10-16T19:09:05Z" level=debug msg="exporting spans to clients" clients=1 spans=1
+time="2025-10-16T19:09:05Z" level=debug msg="container done" args="[/.init apk add ca-certificates]" call_id="xxh3:8239809b9c7811a5" caller_client_id=z6ehqx924plhrcuok28xv5hre error="<nil>" id=kk9a5vwltvh7g1c9tcr3llhxr span="dagop.ctr Container.withExec" spanID=37fd8350cf88aa80 traceID=587e9ebaab5722a9fb25efb07f1809f9
+dnsmasq[53]: read /etc/hosts - 13 names
+dnsmasq[53]: read /var/run/containers/cni/dnsname/dagger-dev/addnhosts - 0 names
+time="2025-10-16T19:09:05Z" level=debug msg="created new ref for cache dir \"Tp5zjR6kvBfiSBXy7FPw/WfBEigsfHCYXr5aeG2eKYk=\": dwwq2hmhfo1b84xtxu2i04skd" span="dagop.ctr Container.withExec" spanID=90397e6281b77ad4 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:06Z" level=debug msg="created new ref for cache dir \"sg41RdHZyRHUTMTRRDXR3l/83bP+e8W6GHSozmZ+nh8=\": mqduprxj87iv0cyozt4rdiil3" span="dagop.ctr Container.withExec" spanID=90397e6281b77ad4 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:06Z" level=debug msg="created new ref for cache dir \"e7Ba7oInVp19tNMe1R7TvqFMshquButUSgbOYixtEK4=\": qwtybrpn26fbuvep06bztwy9s" span="dagop.ctr Container.withExec" spanID=90397e6281b77ad4 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:06Z" level=debug msg="exporting logs to clients" clients=1
+dnsmasq[53]: read /etc/hosts - 13 names
+dnsmasq[53]: read /var/run/containers/cni/dnsname/dagger-dev/addnhosts - 2 names
+time="2025-10-16T19:09:06Z" level=debug msg="starting container" args="[/.init ln -s /usr/local/lib/node_modules/tsx/dist/cli.mjs /usr/local/bin/tsx]" call_id="xxh3:4d82a7285987a9f1" caller_client_id=z6ehqx924plhrcuok28xv5hre id=p0my90lb7h13jedbjnu6ahk9y span="dagop.ctr Container.withExec" spanID=90397e6281b77ad4 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:06Z" level=debug msg="container done" args="[/.init ln -s /usr/local/lib/node_modules/tsx/dist/cli.mjs /usr/local/bin/tsx]" call_id="xxh3:4d82a7285987a9f1" caller_client_id=z6ehqx924plhrcuok28xv5hre error="<nil>" id=p0my90lb7h13jedbjnu6ahk9y span="dagop.ctr Container.withExec" spanID=90397e6281b77ad4 traceID=587e9ebaab5722a9fb25efb07f1809f9
+dnsmasq[53]: read /etc/hosts - 13 names
+dnsmasq[53]: read /var/run/containers/cni/dnsname/dagger-dev/addnhosts - 0 names
+time="2025-10-16T19:09:06Z" level=debug msg="exporting spans to clients" clients=1 spans=2
+time="2025-10-16T19:09:06Z" level=debug msg="handling http request" client_hostname=dagger client_id=z6ehqx924plhrcuok28xv5hre contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=dafdd4c56a3e2016 spanID=dafdd4c56a3e2016 trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:06Z" level=debug msg="handling http request" client_hostname=dagger client_id=z6ehqx924plhrcuok28xv5hre contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=dafdd4c56a3e2016 spanID=dafdd4c56a3e2016 trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:06Z" level=debug msg="exporting metrics to clients" clients=1
+dnsmasq[53]: read /etc/hosts - 13 names
+dnsmasq[53]: read /var/run/containers/cni/dnsname/dagger-dev/addnhosts - 2 names
+time="2025-10-16T19:09:06Z" level=debug msg="exporting metrics to clients" clients=1
+time="2025-10-16T19:09:06Z" level=debug msg="starting container" args="[/.init npm pkg set type=module]" call_id="xxh3:6fa7c87a8735a07b" caller_client_id=z6ehqx924plhrcuok28xv5hre id=6k2nxvhbve303b31hyhlronsl span="dagop.ctr Container.withExec" spanID=abfed6beb9f5b586 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:06Z" level=debug msg="exporting spans to clients" clients=1 spans=26
+time="2025-10-16T19:09:06Z" level=debug msg="exporting logs to clients" clients=1
+time="2025-10-16T19:09:06Z" level=debug msg="handling http request" client_hostname=dagger client_id=l6nwfgdbnysvhqegnl63igm11 contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=ad32e32145c0128d spanID=ad32e32145c0128d trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:06Z" level=debug msg="container done" args="[/.init npm pkg set type=module]" call_id="xxh3:6fa7c87a8735a07b" caller_client_id=z6ehqx924plhrcuok28xv5hre error="<nil>" id=6k2nxvhbve303b31hyhlronsl span="dagop.ctr Container.withExec" spanID=abfed6beb9f5b586 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:06Z" level=debug msg="exporting metrics to clients" clients=2
+dnsmasq[53]: read /etc/hosts - 13 names
+dnsmasq[53]: read /var/run/containers/cni/dnsname/dagger-dev/addnhosts - 0 names
+time="2025-10-16T19:09:06Z" level=debug msg="exporting metrics to clients" clients=1
+time="2025-10-16T19:09:06Z" level=debug msg="handling http request" client_hostname=dagger client_id=z6ehqx924plhrcuok28xv5hre contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=dafdd4c56a3e2016 spanID=dafdd4c56a3e2016 trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:06Z" level=debug msg="handling http request" client_hostname=dagger client_id=l6nwfgdbnysvhqegnl63igm11 contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=ad32e32145c0128d spanID=ad32e32145c0128d trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:06Z" level=debug msg="reusing ref for cache dir \"Tp5zjR6kvBfiSBXy7FPw/WfBEigsfHCYXr5aeG2eKYk=\": dwwq2hmhfo1b84xtxu2i04skd" span="dagop.ctr Container.withExec" spanID=88d95ed0f12bf699 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:06Z" level=debug msg="reusing ref for cache dir \"sg41RdHZyRHUTMTRRDXR3l/83bP+e8W6GHSozmZ+nh8=\": mqduprxj87iv0cyozt4rdiil3" span="dagop.ctr Container.withExec" spanID=88d95ed0f12bf699 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:06Z" level=debug msg="reusing ref for cache dir \"e7Ba7oInVp19tNMe1R7TvqFMshquButUSgbOYixtEK4=\": qwtybrpn26fbuvep06bztwy9s" span="dagop.ctr Container.withExec" spanID=88d95ed0f12bf699 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:06Z" level=debug msg="handling http request" client_hostname=dagger client_id=l6nwfgdbnysvhqegnl63igm11 contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=ad32e32145c0128d spanID=ad32e32145c0128d trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:06Z" level=debug msg="handling http request" client_hostname=dagger client_id=l6nwfgdbnysvhqegnl63igm11 contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=ad32e32145c0128d spanID=ad32e32145c0128d trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:06Z" level=debug msg="handling http request" client_hostname=dagger client_id=l6nwfgdbnysvhqegnl63igm11 contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=ad32e32145c0128d spanID=ad32e32145c0128d trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:06Z" level=debug msg="handling http request" client_hostname=dagger client_id=l6nwfgdbnysvhqegnl63igm11 contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=ad32e32145c0128d spanID=ad32e32145c0128d trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:06Z" level=debug msg="handling http request" client_hostname=dagger client_id=l6nwfgdbnysvhqegnl63igm11 contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=ad32e32145c0128d spanID=ad32e32145c0128d trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:06Z" level=debug msg="handling http request" client_hostname=dagger client_id=l6nwfgdbnysvhqegnl63igm11 contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=ad32e32145c0128d spanID=ad32e32145c0128d trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:06Z" level=debug msg="handling http request" client_hostname=dagger client_id=l6nwfgdbnysvhqegnl63igm11 contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=ad32e32145c0128d spanID=ad32e32145c0128d trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:06Z" level=debug msg="exporting bytes" client_hostname=dagger client_id=l6nwfgdbnysvhqegnl63igm11 export_path=/.daggermod/output.json session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=f0450cb0ca6a80ca traceID=587e9ebaab5722a9fb25efb07f1809f9
+dnsmasq[53]: read /etc/hosts - 13 names
+dnsmasq[53]: read /var/run/containers/cni/dnsname/dagger-dev/addnhosts - 2 names
+time="2025-10-16T19:09:06Z" level=debug msg="exporting logs to clients" clients=1
+time="2025-10-16T19:09:06Z" level=debug msg="starting container" args="[/.init tsx /opt/module/bin/__tsconfig.updator.ts --sdk-lib-origin=bundle]" call_id="xxh3:07d4fde07c7da15d" caller_client_id=z6ehqx924plhrcuok28xv5hre id=foxmsi72ac2071iwbed57bmrl span="dagop.ctr Container.withExec" spanID=88d95ed0f12bf699 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:06Z" level=debug msg="container done" args="[/.init /runtime]" call_id="xxh3:abe193542087e4bb" caller_client_id=ryl9fneczpxar80xibotmpq2j error="<nil>" id=o1h0wnuva9ephoaidmk6porik nested_client_id=l6nwfgdbnysvhqegnl63igm11 span="dagop.ctr Container.withExec" spanID=174af078df0c2cdc traceID=587e9ebaab5722a9fb25efb07f1809f9
+dnsmasq[53]: read /etc/hosts - 13 names
+dnsmasq[53]: read /var/run/containers/cni/dnsname/dagger-dev/addnhosts - 0 names
+time="2025-10-16T19:09:06Z" level=debug msg="exporting spans to clients" clients=1 spans=56
+time="2025-10-16T19:09:06Z" level=debug msg="function call done" client_hostname=dagger client_id=ryl9fneczpxar80xibotmpq2j function= module=myblueprint-py session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=ad32e32145c0128d traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:06Z" level=debug msg="exporting logs to clients" clients=1
+time="2025-10-16T19:09:06Z" level=debug msg="exporting spans to clients" clients=1 spans=3
+time="2025-10-16T19:09:06Z" level=debug msg="exporting logs to clients" clients=1
+time="2025-10-16T19:09:06Z" level=debug msg="container done" args="[/.init tsx /opt/module/bin/__tsconfig.updator.ts --sdk-lib-origin=bundle]" call_id="xxh3:07d4fde07c7da15d" caller_client_id=z6ehqx924plhrcuok28xv5hre error="<nil>" id=foxmsi72ac2071iwbed57bmrl span="dagop.ctr Container.withExec" spanID=88d95ed0f12bf699 traceID=587e9ebaab5722a9fb25efb07f1809f9
+dnsmasq[53]: read /etc/hosts - 13 names
+dnsmasq[53]: read /var/run/containers/cni/dnsname/dagger-dev/addnhosts - 0 names
+time="2025-10-16T19:09:06Z" level=debug msg="exporting logs to clients" clients=1
+time="2025-10-16T19:09:06Z" level=debug msg="exporting spans to clients" clients=1 spans=1
+time="2025-10-16T19:09:06Z" level=debug msg="reusing ref for cache dir \"Tp5zjR6kvBfiSBXy7FPw/WfBEigsfHCYXr5aeG2eKYk=\": dwwq2hmhfo1b84xtxu2i04skd" span="dagop.ctr Container.withExec" spanID=66c5e2307df0a63b traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:06Z" level=debug msg="reusing ref for cache dir \"sg41RdHZyRHUTMTRRDXR3l/83bP+e8W6GHSozmZ+nh8=\": mqduprxj87iv0cyozt4rdiil3" span="dagop.ctr Container.withExec" spanID=66c5e2307df0a63b traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:06Z" level=debug msg="reusing ref for cache dir \"e7Ba7oInVp19tNMe1R7TvqFMshquButUSgbOYixtEK4=\": qwtybrpn26fbuvep06bztwy9s" span="dagop.ctr Container.withExec" spanID=66c5e2307df0a63b traceID=587e9ebaab5722a9fb25efb07f1809f9
+dnsmasq[53]: read /etc/hosts - 13 names
+dnsmasq[53]: read /var/run/containers/cni/dnsname/dagger-dev/addnhosts - 2 names
+time="2025-10-16T19:09:06Z" level=debug msg="starting container" args="[/.init /codegen generate-module --lang typescript --output /src --module-name myblueprint-ts --module-source-path /src/myblueprint-ts --introspection-json-path /schema.json --bundle]" call_id="xxh3:3c856fb9bb67eef8" caller_client_id=z6ehqx924plhrcuok28xv5hre id=8vk28n1kr12jzp2p049adsl8f nested_client_id=muftcfyryadf4g4bx728zy9j4 span="dagop.ctr Container.withExec" spanID=66c5e2307df0a63b traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:06Z" level=debug msg="exporting logs to clients" clients=1
+time="2025-10-16T19:09:06Z" level=debug msg="handling http request" client_hostname=dagger client_id=muftcfyryadf4g4bx728zy9j4 contentType= method=GET path=/sessionAttachables session_id=z9nuqz2ns5k0sci635ov8ov8n span=0000000000000000 trace=00000000000000000000000000000000 upgradeHeader=
+time="2025-10-16T19:09:06Z" level=debug msg="buildkit session.Manager handleConn" client_hostname=dagger client_id=muftcfyryadf4g4bx728zy9j4 session.id=8ce93nnwxk9flcy1zjehj07i6 session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:06Z" level=debug msg="buildkit session.Manager handleConn connected successfully" client_hostname=dagger client_id=muftcfyryadf4g4bx728zy9j4 session.id=8ce93nnwxk9flcy1zjehj07i6 session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:06Z" level=debug msg="session manager handling conn muftcfyryadf4g4bx728zy9j4" client_hostname=dagger client_id=muftcfyryadf4g4bx728zy9j4 session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:06Z" level=debug msg="buildkit session.Manager handleConn" client_hostname=dagger client_id=muftcfyryadf4g4bx728zy9j4 session.id=muftcfyryadf4g4bx728zy9j4 session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:06Z" level=debug msg="buildkit session.Manager handleConn connected successfully" client_hostname=dagger client_id=muftcfyryadf4g4bx728zy9j4 session.id=muftcfyryadf4g4bx728zy9j4 session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:06Z" level=debug msg="container done" args="[/.init /codegen generate-module --lang typescript --output /src --module-name myblueprint-ts --module-source-path /src/myblueprint-ts --introspection-json-path /schema.json --bundle]" call_id="xxh3:3c856fb9bb67eef8" caller_client_id=z6ehqx924plhrcuok28xv5hre error="<nil>" id=8vk28n1kr12jzp2p049adsl8f nested_client_id=muftcfyryadf4g4bx728zy9j4 span="dagop.ctr Container.withExec" spanID=66c5e2307df0a63b traceID=587e9ebaab5722a9fb25efb07f1809f9
+dnsmasq[53]: read /etc/hosts - 13 names
+dnsmasq[53]: read /var/run/containers/cni/dnsname/dagger-dev/addnhosts - 0 names
+time="2025-10-16T19:09:06Z" level=debug msg="exporting spans to clients" clients=1 spans=5
+time="2025-10-16T19:09:07Z" level=debug msg="handling http request" client_hostname=dagger client_id=z6ehqx924plhrcuok28xv5hre contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=dafdd4c56a3e2016 spanID=dafdd4c56a3e2016 trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:07Z" level=debug msg="handling http request" client_hostname=dagger client_id=z6ehqx924plhrcuok28xv5hre contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=dafdd4c56a3e2016 spanID=dafdd4c56a3e2016 trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:07Z" level=debug msg="exporting logs to clients" clients=1
+time="2025-10-16T19:09:07Z" level=debug msg="handling http request" client_hostname=dagger client_id=z6ehqx924plhrcuok28xv5hre contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=dafdd4c56a3e2016 spanID=dafdd4c56a3e2016 trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:07Z" level=debug msg="exporting bytes" client_hostname=dagger client_id=z6ehqx924plhrcuok28xv5hre export_path=/.daggermod/output.json session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=f0b7ad5efb47408c traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:07Z" level=debug msg="container done" args="[/.init /runtime]" call_id="xxh3:9e68164e7fd1a5a4" caller_client_id=ryl9fneczpxar80xibotmpq2j error="<nil>" id=humh25t79mjddlg3veoigig2u nested_client_id=z6ehqx924plhrcuok28xv5hre span="dagop.ctr Container.withExec" spanID=a4456c552ba93234 traceID=587e9ebaab5722a9fb25efb07f1809f9
+dnsmasq[53]: read /etc/hosts - 13 names
+dnsmasq[53]: read /var/run/containers/cni/dnsname/dagger-dev/addnhosts - 0 names
+time="2025-10-16T19:09:07Z" level=debug msg="exporting spans to clients" clients=1 spans=35
+time="2025-10-16T19:09:07Z" level=debug msg="function call done" client_hostname=dagger client_id=ryl9fneczpxar80xibotmpq2j function=moduleRuntime module=typescript-sdk object=TypescriptSdk session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=dafdd4c56a3e2016 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:07Z" level=debug msg="function call" client_hostname=dagger client_id=ryl9fneczpxar80xibotmpq2j function= module=myblueprint-ts session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=b60174112104407f traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:07Z" level=debug msg="exporting metrics to clients" clients=1
+time="2025-10-16T19:09:07Z" level=debug msg="exporting logs to clients" clients=1
+time="2025-10-16T19:09:07Z" level=debug msg="exporting metrics to clients" clients=1
+time="2025-10-16T19:09:07Z" level=debug msg="exporting spans to clients" clients=1 spans=14
+time="2025-10-16T19:09:07Z" level=debug msg="exporting logs to clients" clients=1
+time="2025-10-16T19:09:07Z" level=debug msg="reusing ref for cache dir \"Tp5zjR6kvBfiSBXy7FPw/WfBEigsfHCYXr5aeG2eKYk=\": dwwq2hmhfo1b84xtxu2i04skd" span="dagop.ctr Container.withExec" spanID=b7fffba8ada8b052 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:07Z" level=debug msg="reusing ref for cache dir \"sg41RdHZyRHUTMTRRDXR3l/83bP+e8W6GHSozmZ+nh8=\": mqduprxj87iv0cyozt4rdiil3" span="dagop.ctr Container.withExec" spanID=b7fffba8ada8b052 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:07Z" level=debug msg="reusing ref for cache dir \"e7Ba7oInVp19tNMe1R7TvqFMshquButUSgbOYixtEK4=\": qwtybrpn26fbuvep06bztwy9s" span="dagop.ctr Container.withExec" spanID=b7fffba8ada8b052 traceID=587e9ebaab5722a9fb25efb07f1809f9
+dnsmasq[53]: read /etc/hosts - 13 names
+dnsmasq[53]: read /var/run/containers/cni/dnsname/dagger-dev/addnhosts - 2 names
+time="2025-10-16T19:09:07Z" level=debug msg="starting container" args="[/.init corepack enable]" call_id="xxh3:e0d495b2d3f926de" caller_client_id=z6ehqx924plhrcuok28xv5hre id=j0un770lk30mmaf6x9asa753t span="dagop.ctr Container.withExec" spanID=b7fffba8ada8b052 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:07Z" level=debug msg="exporting spans to clients" clients=1 spans=7
+time="2025-10-16T19:09:07Z" level=debug msg="container done" args="[/.init corepack enable]" call_id="xxh3:e0d495b2d3f926de" caller_client_id=z6ehqx924plhrcuok28xv5hre error="<nil>" id=j0un770lk30mmaf6x9asa753t span="dagop.ctr Container.withExec" spanID=b7fffba8ada8b052 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:07Z" level=debug msg="exporting metrics to clients" clients=1
+dnsmasq[53]: read /etc/hosts - 13 names
+dnsmasq[53]: read /var/run/containers/cni/dnsname/dagger-dev/addnhosts - 0 names
+time="2025-10-16T19:09:07Z" level=debug msg="exporting logs to clients" clients=1
+time="2025-10-16T19:09:07Z" level=debug msg="reusing ref for cache dir \"Tp5zjR6kvBfiSBXy7FPw/WfBEigsfHCYXr5aeG2eKYk=\": dwwq2hmhfo1b84xtxu2i04skd" span="dagop.ctr Container.withExec" spanID=a2aca054bfff0b4f traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:07Z" level=debug msg="reusing ref for cache dir \"sg41RdHZyRHUTMTRRDXR3l/83bP+e8W6GHSozmZ+nh8=\": mqduprxj87iv0cyozt4rdiil3" span="dagop.ctr Container.withExec" spanID=a2aca054bfff0b4f traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:07Z" level=debug msg="reusing ref for cache dir \"e7Ba7oInVp19tNMe1R7TvqFMshquButUSgbOYixtEK4=\": qwtybrpn26fbuvep06bztwy9s" span="dagop.ctr Container.withExec" spanID=a2aca054bfff0b4f traceID=587e9ebaab5722a9fb25efb07f1809f9
+dnsmasq[53]: read /etc/hosts - 13 names
+dnsmasq[53]: read /var/run/containers/cni/dnsname/dagger-dev/addnhosts - 2 names
+time="2025-10-16T19:09:07Z" level=debug msg="starting container" args="[/.init corepack use yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e]" call_id="xxh3:6a34ccbcfc3d2f57" caller_client_id=z6ehqx924plhrcuok28xv5hre id=7wkmauhc8ldvkd0t5t8rell0f span="dagop.ctr Container.withExec" spanID=a2aca054bfff0b4f traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:07Z" level=debug msg="exporting spans to clients" clients=1 spans=2
+time="2025-10-16T19:09:07Z" level=debug msg="exporting logs to clients" clients=1
+time="2025-10-16T19:09:08Z" level=debug msg="exporting logs to clients" clients=1
+time="2025-10-16T19:09:08Z" level=debug msg="exporting metrics to clients" clients=1
+time="2025-10-16T19:09:08Z" level=debug msg="exporting logs to clients" clients=1
+time="2025-10-16T19:09:08Z" level=debug msg="exporting metrics to clients" clients=1
+time="2025-10-16T19:09:08Z" level=warning msg="healthcheck failed" actualDuration="153.708µs" client_hostname=dagger client_id=z6ehqx924plhrcuok28xv5hre session_id=z9nuqz2ns5k0sci635ov8ov8n timeout=30s
+time="2025-10-16T19:09:08Z" level=warning msg="healthcheck failed" actualDuration="99.333µs" client_hostname=dagger client_id=lyshpa53m5bb45p1ioiwf6rjs session_id=z9nuqz2ns5k0sci635ov8ov8n timeout=30s
+time="2025-10-16T19:09:08Z" level=debug msg="container done" args="[/.init corepack use yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e]" call_id="xxh3:6a34ccbcfc3d2f57" caller_client_id=z6ehqx924plhrcuok28xv5hre error="<nil>" id=7wkmauhc8ldvkd0t5t8rell0f span="dagop.ctr Container.withExec" spanID=a2aca054bfff0b4f traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:08Z" level=debug msg="exporting logs to clients" clients=1
+dnsmasq[53]: read /etc/hosts - 13 names
+dnsmasq[53]: read /var/run/containers/cni/dnsname/dagger-dev/addnhosts - 0 names
+time="2025-10-16T19:09:08Z" level=debug msg="reusing ref for cache dir \"Tp5zjR6kvBfiSBXy7FPw/WfBEigsfHCYXr5aeG2eKYk=\": dwwq2hmhfo1b84xtxu2i04skd" span="dagop.ctr Container.withExec" spanID=fda3334267700932 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:08Z" level=debug msg="reusing ref for cache dir \"sg41RdHZyRHUTMTRRDXR3l/83bP+e8W6GHSozmZ+nh8=\": mqduprxj87iv0cyozt4rdiil3" span="dagop.ctr Container.withExec" spanID=fda3334267700932 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:08Z" level=debug msg="reusing ref for cache dir \"e7Ba7oInVp19tNMe1R7TvqFMshquButUSgbOYixtEK4=\": qwtybrpn26fbuvep06bztwy9s" span="dagop.ctr Container.withExec" spanID=fda3334267700932 traceID=587e9ebaab5722a9fb25efb07f1809f9
+dnsmasq[53]: read /etc/hosts - 13 names
+dnsmasq[53]: read /var/run/containers/cni/dnsname/dagger-dev/addnhosts - 2 names
+time="2025-10-16T19:09:08Z" level=debug msg="starting container" args="[/.init yarn install --frozen-lockfile --prod]" call_id="xxh3:c80ef007fc95a934" caller_client_id=z6ehqx924plhrcuok28xv5hre id=wxkp8zbzsz3ge0e00so4r2uxb span="dagop.ctr Container.withExec" spanID=fda3334267700932 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:09Z" level=debug msg="exporting spans to clients" clients=1 spans=2
+time="2025-10-16T19:09:09Z" level=debug msg="exporting metrics to clients" clients=1
+time="2025-10-16T19:09:09Z" level=debug msg="exporting metrics to clients" clients=1
+time="2025-10-16T19:09:09Z" level=debug msg="container done" args="[/.init yarn install --frozen-lockfile --prod]" call_id="xxh3:c80ef007fc95a934" caller_client_id=z6ehqx924plhrcuok28xv5hre error="<nil>" id=wxkp8zbzsz3ge0e00so4r2uxb span="dagop.ctr Container.withExec" spanID=fda3334267700932 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:09Z" level=debug msg="exporting logs to clients" clients=1
+dnsmasq[53]: read /etc/hosts - 13 names
+dnsmasq[53]: read /var/run/containers/cni/dnsname/dagger-dev/addnhosts - 0 names
+time="2025-10-16T19:09:09Z" level=debug msg="exporting logs to clients" clients=1
+time="2025-10-16T19:09:09Z" level=debug msg="Using double walk diff for /tmp/buildkit-mount3866902409/src/myblueprint-ts/node_modules/.bin from /tmp/buildkit-mount1069586659/src/myblueprint-ts/node_modules/.bin" span="dagop.ctr Container.withExec" spanID=f0f8ec18e82b0a17 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:09Z" level=debug msg="reusing ref for cache dir \"Tp5zjR6kvBfiSBXy7FPw/WfBEigsfHCYXr5aeG2eKYk=\": dwwq2hmhfo1b84xtxu2i04skd" span="dagop.ctr Container.withExec" spanID=f0f8ec18e82b0a17 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:09Z" level=debug msg="reusing ref for cache dir \"sg41RdHZyRHUTMTRRDXR3l/83bP+e8W6GHSozmZ+nh8=\": mqduprxj87iv0cyozt4rdiil3" span="dagop.ctr Container.withExec" spanID=f0f8ec18e82b0a17 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:09Z" level=debug msg="reusing ref for cache dir \"e7Ba7oInVp19tNMe1R7TvqFMshquButUSgbOYixtEK4=\": qwtybrpn26fbuvep06bztwy9s" span="dagop.ctr Container.withExec" spanID=f0f8ec18e82b0a17 traceID=587e9ebaab5722a9fb25efb07f1809f9
+dnsmasq[53]: read /etc/hosts - 13 names
+dnsmasq[53]: read /var/run/containers/cni/dnsname/dagger-dev/addnhosts - 2 names
+time="2025-10-16T19:09:09Z" level=debug msg="starting container" args="[/.init tsx --no-deprecation --tsconfig /src/myblueprint-ts/tsconfig.json /src/myblueprint-ts/src/__dagger.entrypoint.ts]" call_id="xxh3:2d7bad5cb9b9dfe0" caller_client_id=ryl9fneczpxar80xibotmpq2j id=gu2dxkbg3y454a4wortf2fcc3 nested_client_id=a0ugv5zbod96knzoq9xd7jzll span="dagop.ctr Container.withExec" spanID=f0f8ec18e82b0a17 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:09Z" level=debug msg="exporting spans to clients" clients=1 spans=4
+time="2025-10-16T19:09:09Z" level=debug msg="handling http request" client_hostname=dagger client_id=a0ugv5zbod96knzoq9xd7jzll contentType= method=GET path=/sessionAttachables session_id=z9nuqz2ns5k0sci635ov8ov8n span=0000000000000000 trace=00000000000000000000000000000000 upgradeHeader=
+time="2025-10-16T19:09:09Z" level=debug msg="buildkit session.Manager handleConn" client_hostname=dagger client_id=a0ugv5zbod96knzoq9xd7jzll session.id=c06yi26hpgnwxv59nt3hie4it session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:09Z" level=debug msg="session manager handling conn a0ugv5zbod96knzoq9xd7jzll" client_hostname=dagger client_id=a0ugv5zbod96knzoq9xd7jzll session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:09Z" level=debug msg="buildkit session.Manager handleConn connected successfully" client_hostname=dagger client_id=a0ugv5zbod96knzoq9xd7jzll session.id=c06yi26hpgnwxv59nt3hie4it session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:09Z" level=debug msg="buildkit session.Manager handleConn" client_hostname=dagger client_id=a0ugv5zbod96knzoq9xd7jzll session.id=a0ugv5zbod96knzoq9xd7jzll session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:09Z" level=debug msg="buildkit session.Manager handleConn connected successfully" client_hostname=dagger client_id=a0ugv5zbod96knzoq9xd7jzll session.id=a0ugv5zbod96knzoq9xd7jzll session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:10Z" level=debug msg="exporting metrics to clients" clients=1
+time="2025-10-16T19:09:10Z" level=debug msg="exporting metrics to clients" clients=1
+time="2025-10-16T19:09:10Z" level=debug msg="handling http request" client_hostname=dagger client_id=a0ugv5zbod96knzoq9xd7jzll contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=b60174112104407f spanID=b60174112104407f trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:10Z" level=debug msg="exporting spans to clients" clients=1 spans=2
+time="2025-10-16T19:09:10Z" level=debug msg="handling http request" client_hostname=dagger client_id=a0ugv5zbod96knzoq9xd7jzll contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=b60174112104407f spanID=b60174112104407f trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:10Z" level=debug msg="handling http request" client_hostname=dagger client_id=a0ugv5zbod96knzoq9xd7jzll contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=b60174112104407f spanID=b60174112104407f trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:10Z" level=debug msg="handling http request" client_hostname=dagger client_id=a0ugv5zbod96knzoq9xd7jzll contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=b60174112104407f spanID=b60174112104407f trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:10Z" level=debug msg="handling http request" client_hostname=dagger client_id=a0ugv5zbod96knzoq9xd7jzll contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=b60174112104407f spanID=b60174112104407f trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:10Z" level=debug msg="handling http request" client_hostname=dagger client_id=a0ugv5zbod96knzoq9xd7jzll contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=b60174112104407f spanID=b60174112104407f trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:10Z" level=debug msg="handling http request" client_hostname=dagger client_id=a0ugv5zbod96knzoq9xd7jzll contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=b60174112104407f spanID=b60174112104407f trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:10Z" level=warning msg="healthcheck failed" actualDuration="120µs" client_hostname=dagger client_id=l6nwfgdbnysvhqegnl63igm11 session_id=z9nuqz2ns5k0sci635ov8ov8n timeout=30s
+time="2025-10-16T19:09:10Z" level=debug msg="handling http request" client_hostname=dagger client_id=a0ugv5zbod96knzoq9xd7jzll contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=b60174112104407f spanID=b60174112104407f trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:10Z" level=debug msg="handling http request" client_hostname=dagger client_id=a0ugv5zbod96knzoq9xd7jzll contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=b60174112104407f spanID=b60174112104407f trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:10Z" level=debug msg="exporting bytes" client_hostname=dagger client_id=a0ugv5zbod96knzoq9xd7jzll export_path=/.daggermod/output.json session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=a0a5a3df03f12876 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:10Z" level=debug msg="exporting logs to clients" clients=1
+time="2025-10-16T19:09:10Z" level=debug msg="container done" args="[/.init tsx --no-deprecation --tsconfig /src/myblueprint-ts/tsconfig.json /src/myblueprint-ts/src/__dagger.entrypoint.ts]" call_id="xxh3:2d7bad5cb9b9dfe0" caller_client_id=ryl9fneczpxar80xibotmpq2j error="<nil>" id=gu2dxkbg3y454a4wortf2fcc3 nested_client_id=a0ugv5zbod96knzoq9xd7jzll span="dagop.ctr Container.withExec" spanID=f0f8ec18e82b0a17 traceID=587e9ebaab5722a9fb25efb07f1809f9
+dnsmasq[53]: read /etc/hosts - 13 names
+dnsmasq[53]: read /var/run/containers/cni/dnsname/dagger-dev/addnhosts - 0 names
+time="2025-10-16T19:09:10Z" level=debug msg="function call done" client_hostname=dagger client_id=ryl9fneczpxar80xibotmpq2j function= module=myblueprint-ts session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=b60174112104407f traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:10Z" level=debug msg="handling http request" client_hostname=dagger client_id=ryl9fneczpxar80xibotmpq2j contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=cedb37433c4d11c1 spanID=cedb37433c4d11c1 trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:10Z" level=debug msg="exporting logs to clients" clients=1
+time="2025-10-16T19:09:10Z" level=debug msg="GetContentHashKey setting ref ndftu8nza93to9t2i66h67xey with digest sha256:3db22d163c0bb8521dba4c128c837bc5cce0850decf5f9d76f30428f05e15762" client_hostname=dagger client_id=ryl9fneczpxar80xibotmpq2j session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=b8f85a21ef69f24e traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:10Z" level=debug msg="handling http request" client_hostname=dagger client_id=ryl9fneczpxar80xibotmpq2j contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=cedb37433c4d11c1 spanID=cedb37433c4d11c1 trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:10Z" level=debug msg="exporting spans to clients" clients=1 spans=32
+time="2025-10-16T19:09:10Z" level=debug msg="handling http request" client_hostname=dagger client_id=ryl9fneczpxar80xibotmpq2j contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=83f43f9b1e1e8b46 spanID=83f43f9b1e1e8b46 trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:11Z" level=debug msg="handling http request" client_hostname=dagger client_id=ryl9fneczpxar80xibotmpq2j contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=9c267f7846cc89fb spanID=9c267f7846cc89fb trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:11Z" level=debug msg="exporting logs to clients" clients=1
+time="2025-10-16T19:09:11Z" level=debug msg="function call" client_hostname=dagger client_id=ryl9fneczpxar80xibotmpq2j function=message module=hello object=Hello session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=8289ee402e4a5fdb traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="exporting spans to clients" clients=1 spans=71
+
+[90m▶[0m [32m.[0m[32m.[0m[32m.[0m
+
+▼ Container.[1masService[0m([36margs: [0m[[33m"--addr"[0m, [33m"unix:///run/dagger-engine.sock"[0m, [33m"--addr"[0m, [33m"tcp://0.0.0.0:1234"[0m, [33m"--network-name"[0m, [33m"dagger-dev"[0m, [33m"--network-cidr"[0m, [33m"10.88.0.0/16"[0m, [33m"--debugaddr"[0m, [33m"0.0.0.0:6060"[0m], [36museEntrypoint: [0m[31mtrue[0m, [36minsecureRootCapabilities: [0m[31mtrue[0m)[2m: Service![0m
+dnsmasq[53]: read /etc/hosts - 13 names
+dnsmasq[53]: read /var/run/containers/cni/dnsname/dagger-dev/addnhosts - 2 names
+time="2025-10-16T19:09:11Z" level=debug msg="starting container" args="[/.init /runtime]" call_id="xxh3:264a97e89fad064a" caller_client_id=ryl9fneczpxar80xibotmpq2j id=5kfb5j5ihl90zn451p3sogw3d nested_client_id=nfyrz41kdfa1ziu66ewkbsoc2 span="dagop.ctr Container.withExec" spanID=b070a7ed47eb8e85 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="handling http request" client_hostname=dagger client_id=nfyrz41kdfa1ziu66ewkbsoc2 contentType= method=GET path=/sessionAttachables session_id=z9nuqz2ns5k0sci635ov8ov8n span=0000000000000000 trace=00000000000000000000000000000000 upgradeHeader=
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn" client_hostname=dagger client_id=nfyrz41kdfa1ziu66ewkbsoc2 session.id=dytxtlzpncgehb79tcf9hurd7 session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn connected successfully" client_hostname=dagger client_id=nfyrz41kdfa1ziu66ewkbsoc2 session.id=dytxtlzpncgehb79tcf9hurd7 session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="session manager handling conn nfyrz41kdfa1ziu66ewkbsoc2" client_hostname=dagger client_id=nfyrz41kdfa1ziu66ewkbsoc2 session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn" client_hostname=dagger client_id=nfyrz41kdfa1ziu66ewkbsoc2 session.id=nfyrz41kdfa1ziu66ewkbsoc2 session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn connected successfully" client_hostname=dagger client_id=nfyrz41kdfa1ziu66ewkbsoc2 session.id=nfyrz41kdfa1ziu66ewkbsoc2 session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="handling http request" client_hostname=dagger client_id=nfyrz41kdfa1ziu66ewkbsoc2 contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=8289ee402e4a5fdb spanID=8289ee402e4a5fdb trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:11Z" level=debug msg="GetContentHashKey setting ref 6wg5r0gmywd81mjymjgs9esuo with digest sha256:44b74cdfe1d57cbb2da3c577a8b1089da4dd05236ca77024f45016f1318aa584" client_hostname=dagger client_id=nfyrz41kdfa1ziu66ewkbsoc2 session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=e2e953eb85b3668d traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="handling http request" client_hostname=dagger client_id=nfyrz41kdfa1ziu66ewkbsoc2 contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=8289ee402e4a5fdb spanID=8289ee402e4a5fdb trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:11Z" level=debug msg="handling http request" client_hostname=dagger client_id=nfyrz41kdfa1ziu66ewkbsoc2 contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=8289ee402e4a5fdb spanID=8289ee402e4a5fdb trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:11Z" level=debug msg="handling http request" client_hostname=dagger client_id=nfyrz41kdfa1ziu66ewkbsoc2 contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=8289ee402e4a5fdb spanID=8289ee402e4a5fdb trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:11Z" level=debug msg="handling http request" client_hostname=dagger client_id=nfyrz41kdfa1ziu66ewkbsoc2 contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=8289ee402e4a5fdb spanID=8289ee402e4a5fdb trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:11Z" level=debug msg="exporting bytes" client_hostname=dagger client_id=nfyrz41kdfa1ziu66ewkbsoc2 export_path=/.daggermod/output.json session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=a720b2e4bd659146 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="container done" args="[/.init /runtime]" call_id="xxh3:264a97e89fad064a" caller_client_id=ryl9fneczpxar80xibotmpq2j error="<nil>" id=5kfb5j5ihl90zn451p3sogw3d nested_client_id=nfyrz41kdfa1ziu66ewkbsoc2 span="dagop.ctr Container.withExec" spanID=b070a7ed47eb8e85 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="exporting metrics to clients" clients=1
+time="2025-10-16T19:09:11Z" level=debug msg="exporting logs to clients" clients=1
+dnsmasq[53]: read /etc/hosts - 13 names
+dnsmasq[53]: read /var/run/containers/cni/dnsname/dagger-dev/addnhosts - 0 names
+time="2025-10-16T19:09:11Z" level=debug msg="exporting spans to clients" clients=1 spans=8
+
+▼ Container.[1mwithExec[0m([36margs: [0m[[33m"dagger"[0m, [33m"call"[0m, [33m"hello"[0m, [33m"message"[0m], [36mexperimentalPrivilegedNesting: [0m[31mtrue[0m)[2m: Container![0m
+[95m5   : [0m[90;2m┆ [0minspecting module metadata
+
+[90m▶[0m [32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m
+
+▼ Container.[1mwithExec[0m([36margs: [0m[[33m"dagger"[0m, [33m"call"[0m, [33m"hello"[0m, [33m"message"[0m], [36mexperimentalPrivilegedNesting: [0m[31mtrue[0m)[2m: Container![0m
+[95m4   : [0m[90;2m┆ [0minitializing module[32m DONE[0m[90m [17.7s][0m
+[95m5   : [0m[90;2m┆ [0minspecting module metadata[32m DONE[0m[90m [0.0s][0m
+[95m6   : [0m[90;2m┆ [0mloading type definitions
+[95m6   : [0m[90;2m┆ [0mloading type definitions[32m DONE[0m[90m [0.1s][0m
+[95m2   : [0m[90;2m[0mload module: .[32m DONE[0m[90m [17.9s][0m
+
+[95m7   : [0m[90;2m[0mparsing command line arguments
+[95m7   : [0m[90;2m[0mparsing command line arguments[32m DONE[0m[90m [0.0s][0m
+
+▼ Container.[1masService[0m([36margs: [0m[[33m"--addr"[0m, [33m"unix:///run/dagger-engine.sock"[0m, [33m"--addr"[0m, [33m"tcp://0.0.0.0:1234"[0m, [33m"--network-name"[0m, [33m"dagger-dev"[0m, [33m"--network-cidr"[0m, [33m"10.88.0.0/16"[0m, [33m"--debugaddr"[0m, [33m"0.0.0.0:6060"[0m], [36museEntrypoint: [0m[31mtrue[0m, [36minsecureRootCapabilities: [0m[31mtrue[0m)[2m: Service![0m
+time="2025-10-16T19:09:11Z" level=debug msg="function call done" client_hostname=dagger client_id=ryl9fneczpxar80xibotmpq2j function=message module=hello object=Hello session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=8289ee402e4a5fdb traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="handling http request" client_hostname=dagger client_id=ryl9fneczpxar80xibotmpq2j contentType= method=POST path=/shutdown session_id=z9nuqz2ns5k0sci635ov8ov8n span=9c267f7846cc89fb spanID=9c267f7846cc89fb trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:11Z" level=debug msg="exporting metrics to clients" clients=1
+time="2025-10-16T19:09:11Z" level=debug msg="exporting spans to clients" clients=1 spans=18
+time="2025-10-16T19:09:11Z" level=debug msg="exporting logs to clients" clients=1
+time="2025-10-16T19:09:11Z" level=debug msg="container done" args="[/.init dagger call hello message]" call_id="xxh3:c5395f2d61d1b0e4" caller_client_id=8pfntudkc3c0l5t29futsrjnd error="<nil>" id=4ib19o36dd4aeg825i47tj1zx nested_client_id=ryl9fneczpxar80xibotmpq2j span="dagop.ctr Container.withExec" spanID=bd2981cd935c41d9 traceID=587e9ebaab5722a9fb25efb07f1809f9
+dnsmasq[53]: read /etc/hosts - 13 names
+dnsmasq[53]: read /var/run/containers/cni/dnsname/dagger-dev/addnhosts - 0 names
+time="2025-10-16T19:09:11Z" level=debug msg="handling http request" client_hostname=dagger client_id=8pfntudkc3c0l5t29futsrjnd contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=fe09493fbfc9ed71 spanID=fe09493fbfc9ed71 trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+
+[90m▶[0m [32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m
+
+▼ [1mhello message[0m
+hello from blueprint[90m⏎[0m
+
+▼ Container.[1masService[0m([36margs: [0m[[33m"--addr"[0m, [33m"unix:///run/dagger-engine.sock"[0m, [33m"--addr"[0m, [33m"tcp://0.0.0.0:1234"[0m, [33m"--network-name"[0m, [33m"dagger-dev"[0m, [33m"--network-cidr"[0m, [33m"10.88.0.0/16"[0m, [33m"--debugaddr"[0m, [33m"0.0.0.0:6060"[0m], [36museEntrypoint: [0m[31mtrue[0m, [36minsecureRootCapabilities: [0m[31mtrue[0m)[2m: Service![0m
+dnsmasq[53]: read /etc/hosts - 13 names
+dnsmasq[53]: read /var/run/containers/cni/dnsname/dagger-dev/addnhosts - 2 names
+time="2025-10-16T19:09:11Z" level=debug msg="starting container" args="[/.init dagger call myblueprint-py hello]" call_id="xxh3:aa3c3fffa7b02a61" caller_client_id=8pfntudkc3c0l5t29futsrjnd id=jm4vfza7pb9og6ldpdkt1v69i nested_client_id=rwlpc6av202knnb243h51iyxl span="dagop.ctr Container.withExec" spanID=f3b9f0399c88672f traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="handling http request" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl contentType= method=GET path=/sessionAttachables session_id=z9nuqz2ns5k0sci635ov8ov8n span=0000000000000000 trace=00000000000000000000000000000000 upgradeHeader=
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl session.id=k6zl8czif027wqsn0jba7ugx7 session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn connected successfully" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl session.id=k6zl8czif027wqsn0jba7ugx7 session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="session manager handling conn rwlpc6av202knnb243h51iyxl" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl session.id=rwlpc6av202knnb243h51iyxl session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn connected successfully" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl session.id=rwlpc6av202knnb243h51iyxl session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="handling http request" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl contentType= method=POST path=/init session_id=z9nuqz2ns5k0sci635ov8ov8n span=ed5dbd634fcd3662 spanID=ed5dbd634fcd3662 trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:11Z" level=debug msg="handling http request" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl contentType= method=GET path=/v1/traces session_id=z9nuqz2ns5k0sci635ov8ov8n span=567b5cb93eb13b95 spanID=567b5cb93eb13b95 trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:11Z" level=debug msg="handling http request" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl contentType= method=GET path=/v1/logs session_id=z9nuqz2ns5k0sci635ov8ov8n span=452b2ff60da794b8 spanID=452b2ff60da794b8 trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:11Z" level=debug msg="handling http request" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl contentType= method=GET path=/v1/metrics session_id=z9nuqz2ns5k0sci635ov8ov8n span=d41b3f0c5d250546 spanID=d41b3f0c5d250546 trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:11Z" level=debug msg="handling http request" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=379797ef83a9fc97 spanID=379797ef83a9fc97 trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:11Z" level=debug msg="new ref for local: f8v1gstf86phs4hxj2gq20jqh (\"mgpix2menmo4cgo95s7qjzjeu\")" span="upload / from mgpix2menmo4cgo95s7qjzjeu (client id: rwlpc6av202knnb243h51iyxl, session id: z9nuqz2ns5k0sci635ov8ov8n) (include: app/dagger.json, app/**/*) (with gitignore)" spanID=7127fb83e260d4d3 traceID=587e9ebaab5722a9fb25efb07f1809f9
+
+▼ Container.[1mwithExec[0m([36margs: [0m[[33m"dagger"[0m, [33m"call"[0m, [33m"hello"[0m, [33m"message"[0m], [36mexperimentalPrivilegedNesting: [0m[31mtrue[0m)[2m: Container![0m
+
+[95m8   : [0m[90;2m[0m[1mapp[0m[2m: App![0m
+[95m8   : [0m[90;2m[0m[1mapp[0m[32m DONE[0m[90m [0.0s][0m
+
+[95m9   : [0m[90;2m[0m[35mApp[0m.[1mhello[0m[2m: Hello![0m
+[95m9   : [0m[90;2m[0m[35mApp[0m.[1mhello[0m[32m DONE[0m[90m [0.0s][0m
+
+[95m10  : [0m[90;2m[0m[35mHello[0m.[1mmessage[0m[2m: String![0m
+[95m10  : [0m[90;2m[0m[35mHello[0m.[1mmessage[0m[32m DONE[0m[90m [0.1s][0m
+hello from blueprint
+
+
+[90m▶[0m [32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m
+
+▼ Container.[1masService[0m([36margs: [0m[[33m"--addr"[0m, [33m"unix:///run/dagger-engine.sock"[0m, [33m"--addr"[0m, [33m"tcp://0.0.0.0:1234"[0m, [33m"--network-name"[0m, [33m"dagger-dev"[0m, [33m"--network-cidr"[0m, [33m"10.88.0.0/16"[0m, [33m"--debugaddr"[0m, [33m"0.0.0.0:6060"[0m], [36museEntrypoint: [0m[31mtrue[0m, [36minsecureRootCapabilities: [0m[31mtrue[0m)[2m: Service![0m
+time="2025-10-16T19:09:11Z" level=debug msg="reusing copy ref u7wt3cf0nmotcwruoqt7npr27" span="upload / from mgpix2menmo4cgo95s7qjzjeu (client id: rwlpc6av202knnb243h51iyxl, session id: z9nuqz2ns5k0sci635ov8ov8n) (include: app/dagger.json, app/**/*) (with gitignore)" spanID=10b35cca53393a2c traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="reusing copy ref zi0y67n3vy33tvuw4y33ijn6a" span="upload / from mgpix2menmo4cgo95s7qjzjeu (client id: rwlpc6av202knnb243h51iyxl, session id: z9nuqz2ns5k0sci635ov8ov8n) (include: hello/dagger.json, hello/**/*) (with gitignore)" spanID=87b5257a92a9dd82 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="GetContentHashKey reusing ref u7wt3cf0nmotcwruoqt7npr27 with digest sha256:413b4c778b974ab2b94d460315580d70ec0214a4008c7b0d14a982c1ce7f8dcf" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=142b726748048c56 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="GetContentHashKey reusing ref zi0y67n3vy33tvuw4y33ijn6a with digest sha256:cbcc1d39b3abc0d75f142691dec88dfbaa449be394a29e420559faa7a3d0a6f3" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=b4ef6c9e3006d048 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="reusing ref for local: f8v1gstf86phs4hxj2gq20jqh (\"mgpix2menmo4cgo95s7qjzjeu\")" span="upload /hello from mgpix2menmo4cgo95s7qjzjeu (client id: rwlpc6av202knnb243h51iyxl, session id: z9nuqz2ns5k0sci635ov8ov8n) (include: .env)" spanID=c61bee09ddb54103 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="reusing copy ref styt7cjxf51da4zizwcnu0ay2" span="upload /hello from mgpix2menmo4cgo95s7qjzjeu (client id: rwlpc6av202knnb243h51iyxl, session id: z9nuqz2ns5k0sci635ov8ov8n) (include: .env)" spanID=bf3fc1b96b7913db traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="GetContentHashKey reusing ref styt7cjxf51da4zizwcnu0ay2 with digest sha256:0e5db88383bce812f795689f5318a2b2f4fde740ef31c2a2365a46368aafddd2" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=f2ad07ca9d4f4135 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="reusing ref for local: f8v1gstf86phs4hxj2gq20jqh (\"mgpix2menmo4cgo95s7qjzjeu\")" span="upload / from mgpix2menmo4cgo95s7qjzjeu (client id: rwlpc6av202knnb243h51iyxl, session id: z9nuqz2ns5k0sci635ov8ov8n) (include: myblueprint-ts/dagger.json, myblueprint-ts/**/*) (with gitignore)" spanID=68817c13ba2888bb traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="reusing copy ref dj7nqdpefj4r3cesdnpx1eaa5" span="upload / from mgpix2menmo4cgo95s7qjzjeu (client id: rwlpc6av202knnb243h51iyxl, session id: z9nuqz2ns5k0sci635ov8ov8n) (include: myblueprint-ts/dagger.json, myblueprint-ts/**/*) (with gitignore)" spanID=b662a2dfd1c84975 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="GetContentHashKey reusing ref dj7nqdpefj4r3cesdnpx1eaa5 with digest sha256:e91510e4c0aa3db505b9c6bb73f46e5dd6a55c60e532d8e9dc0353ab2b4d38d2" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=ae077f7f122c5055 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="reusing ref for local: f8v1gstf86phs4hxj2gq20jqh (\"mgpix2menmo4cgo95s7qjzjeu\")" span="upload /myblueprint-ts from mgpix2menmo4cgo95s7qjzjeu (client id: rwlpc6av202knnb243h51iyxl, session id: z9nuqz2ns5k0sci635ov8ov8n) (include: .env)" spanID=a172c0c3ae376b2d traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="reusing copy ref styt7cjxf51da4zizwcnu0ay2" span="upload /myblueprint-ts from mgpix2menmo4cgo95s7qjzjeu (client id: rwlpc6av202knnb243h51iyxl, session id: z9nuqz2ns5k0sci635ov8ov8n) (include: .env)" spanID=1ddc354d96cc9df2 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="GetContentHashKey reusing ref styt7cjxf51da4zizwcnu0ay2 with digest sha256:0e5db88383bce812f795689f5318a2b2f4fde740ef31c2a2365a46368aafddd2" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=40e11e3cb6fe03aa traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="reusing ref for local: f8v1gstf86phs4hxj2gq20jqh (\"mgpix2menmo4cgo95s7qjzjeu\")" span="upload / from mgpix2menmo4cgo95s7qjzjeu (client id: rwlpc6av202knnb243h51iyxl, session id: z9nuqz2ns5k0sci635ov8ov8n) (include: myblueprint-py/dagger.json, myblueprint-py/**/*) (with gitignore)" spanID=a9862ec501d5fb23 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="exporting spans to clients" clients=1 spans=13
+time="2025-10-16T19:09:11Z" level=debug msg="reusing copy ref e1318t772o8ddq2xuk1h24gpt" span="upload / from mgpix2menmo4cgo95s7qjzjeu (client id: rwlpc6av202knnb243h51iyxl, session id: z9nuqz2ns5k0sci635ov8ov8n) (include: myblueprint-py/dagger.json, myblueprint-py/**/*) (with gitignore)" spanID=19d67d58fc7971f5 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="GetContentHashKey reusing ref e1318t772o8ddq2xuk1h24gpt with digest sha256:651181b20275937b74c705e5564c8d171b9729a2686e844821488571364a6374" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=3b7bd7f680e31e56 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="reusing ref for local: f8v1gstf86phs4hxj2gq20jqh (\"mgpix2menmo4cgo95s7qjzjeu\")" span="upload /myblueprint-py from mgpix2menmo4cgo95s7qjzjeu (client id: rwlpc6av202knnb243h51iyxl, session id: z9nuqz2ns5k0sci635ov8ov8n) (include: .env)" spanID=929def0633784fc4 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="reusing copy ref styt7cjxf51da4zizwcnu0ay2" span="upload /myblueprint-py from mgpix2menmo4cgo95s7qjzjeu (client id: rwlpc6av202knnb243h51iyxl, session id: z9nuqz2ns5k0sci635ov8ov8n) (include: .env)" spanID=3ba54d9f447017a0 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="GetContentHashKey reusing ref styt7cjxf51da4zizwcnu0ay2 with digest sha256:0e5db88383bce812f795689f5318a2b2f4fde740ef31c2a2365a46368aafddd2" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=b4795c88c69e8a87 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="reusing ref for local: f8v1gstf86phs4hxj2gq20jqh (\"mgpix2menmo4cgo95s7qjzjeu\")" span="upload /app from mgpix2menmo4cgo95s7qjzjeu (client id: rwlpc6av202knnb243h51iyxl, session id: z9nuqz2ns5k0sci635ov8ov8n) (include: .env)" spanID=c9a1d0975b1f9391 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="reusing copy ref styt7cjxf51da4zizwcnu0ay2" span="upload /app from mgpix2menmo4cgo95s7qjzjeu (client id: rwlpc6av202knnb243h51iyxl, session id: z9nuqz2ns5k0sci635ov8ov8n) (include: .env)" spanID=1e3324e0290badee traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="GetContentHashKey reusing ref styt7cjxf51da4zizwcnu0ay2 with digest sha256:0e5db88383bce812f795689f5318a2b2f4fde740ef31c2a2365a46368aafddd2" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=610e91feaed748e5 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="handling http request" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=67d45303826029f4 spanID=67d45303826029f4 trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:11Z" level=debug msg="function call" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl function= module=myblueprint-py session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=1a2b5ccf79e9b8a6 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="function call" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl function= module=myblueprint-ts session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=d6bb8734be989706 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="function call done" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl function= module=myblueprint-py session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=1a2b5ccf79e9b8a6 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="function call done" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl function= module=myblueprint-ts session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=d6bb8734be989706 traceID=587e9ebaab5722a9fb25efb07f1809f9
+
+[90m▶[0m [32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m
+
+▼ Container.[1masService[0m([36margs: [0m[[33m"--addr"[0m, [33m"unix:///run/dagger-engine.sock"[0m, [33m"--addr"[0m, [33m"tcp://0.0.0.0:1234"[0m, [33m"--network-name"[0m, [33m"dagger-dev"[0m, [33m"--network-cidr"[0m, [33m"10.88.0.0/16"[0m, [33m"--debugaddr"[0m, [33m"0.0.0.0:6060"[0m], [36museEntrypoint: [0m[31mtrue[0m, [36minsecureRootCapabilities: [0m[31mtrue[0m)[2m: Service![0m
+time="2025-10-16T19:09:11Z" level=debug msg="handling http request" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=918c07e179e5a2a7 spanID=918c07e179e5a2a7 trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:11Z" level=debug msg="handling http request" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=918c07e179e5a2a7 spanID=918c07e179e5a2a7 trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:11Z" level=debug msg="handling http request" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=c95889b051c2c8ea spanID=c95889b051c2c8ea trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:11Z" level=debug msg="exporting spans to clients" clients=1 spans=80
+time="2025-10-16T19:09:11Z" level=debug msg="exporting logs to clients" clients=1
+
+[90m▶[0m [32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m
+
+▼ Container.[1mwithExec[0m([36margs: [0m[[33m"dagger"[0m, [33m"call"[0m, [33m"myblueprint-py"[0m, [33m"hello"[0m], [36mexperimentalPrivilegedNesting: [0m[31mtrue[0m)[2m: Container![0m
+[95m1   : [0m[90;2m[0mconnect
+[95m1   : [0m[90;2m[0mconnect[32m DONE[0m[90m [0.0s][0m
+
+[95m2   : [0m[90;2m[0mload module: .
+[95m3   : [0m[90;2m┆ [0mfinding module configuration
+
+▼ Container.[1masService[0m([36margs: [0m[[33m"--addr"[0m, [33m"unix:///run/dagger-engine.sock"[0m, [33m"--addr"[0m, [33m"tcp://0.0.0.0:1234"[0m, [33m"--network-name"[0m, [33m"dagger-dev"[0m, [33m"--network-cidr"[0m, [33m"10.88.0.0/16"[0m, [33m"--debugaddr"[0m, [33m"0.0.0.0:6060"[0m], [36museEntrypoint: [0m[31mtrue[0m, [36minsecureRootCapabilities: [0m[31mtrue[0m)[2m: Service![0m
+time="2025-10-16T19:09:11Z" level=debug msg="handling http request" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl contentType=application/json method=POST path=/query session_id=z9nuqz2ns5k0sci635ov8ov8n span=659e6153b0d31dda spanID=659e6153b0d31dda trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:11Z" level=debug msg="handling http request" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl contentType= method=POST path=/shutdown session_id=z9nuqz2ns5k0sci635ov8ov8n span=659e6153b0d31dda spanID=659e6153b0d31dda trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:11Z" level=debug msg="exporting spans to clients" clients=1 spans=121
+time="2025-10-16T19:09:11Z" level=debug msg="exporting logs to clients" clients=1
+
+[90m▶[0m [32m.[0m[32m.[0m[32m.[0m[32m.[0m[31mX[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m
+
+▼ Container.[1mwithExec[0m([36margs: [0m[[33m"dagger"[0m, [33m"call"[0m, [33m"myblueprint-py"[0m, [33m"hello"[0m], [36mexperimentalPrivilegedNesting: [0m[31mtrue[0m)[2m: Container![0m
+[95m3   : [0m[90;2m┆ [0mfinding module configuration[32m DONE[0m[90m [0.1s][0m
+[95m4   : [0m[90;2m┆ [0minitializing module
+[95m4   : [0m[90;2m┆ [0minitializing module[32m DONE[0m[90m [0.0s][0m
+[95m5   : [0m[90;2m┆ [0minspecting module metadata
+[95m5   : [0m[90;2m┆ [0minspecting module metadata[32m DONE[0m[90m [0.0s][0m
+[95m6   : [0m[90;2m┆ [0mloading type definitions
+[95m6   : [0m[90;2m┆ [0mloading type definitions[32m DONE[0m[90m [0.1s][0m
+[95m2   : [0m[90;2m[0mload module: .[32m DONE[0m[90m [0.2s][0m
+
+[95m7   : [0m[90;2m[0mparsing command line arguments
+[95m7   : [0m[90;2m[0mparsing command line arguments[32m DONE[0m[90m [0.0s][0m
+
+
+Error: returned error 422: {"data":null,"errors":[{"message":"Expected Name, found \u003cInvalid\u003e","locations":[{"line":1,"column":23}],"extensions":{"code":"GRAPHQL_PARSE_FAILED"}}]}
+
+▼ [1mmyblueprint-py hello[0m
+Error: returned error 422: {"data":null,"errors":[{"message":"Expected Name, found \u003cInvalid\u003e","locations":[{"line":1,"column":23}],"extensions":{"code":"GRAPHQL_PARSE_FAILED"}}]}
+
+▼ Container.[1masService[0m([36margs: [0m[[33m"--addr"[0m, [33m"unix:///run/dagger-engine.sock"[0m, [33m"--addr"[0m, [33m"tcp://0.0.0.0:1234"[0m, [33m"--network-name"[0m, [33m"dagger-dev"[0m, [33m"--network-cidr"[0m, [33m"10.88.0.0/16"[0m, [33m"--debugaddr"[0m, [33m"0.0.0.0:6060"[0m], [36museEntrypoint: [0m[31mtrue[0m, [36minsecureRootCapabilities: [0m[31mtrue[0m)[2m: Service![0m
+time="2025-10-16T19:09:11Z" level=debug msg="container done" args="[/.init dagger call myblueprint-py hello]" call_id="xxh3:aa3c3fffa7b02a61" caller_client_id=8pfntudkc3c0l5t29futsrjnd error="exit code: 1" id=jm4vfza7pb9og6ldpdkt1v69i nested_client_id=rwlpc6av202knnb243h51iyxl span="dagop.ctr Container.withExec" spanID=f3b9f0399c88672f traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=error msg="executor run" error="exit code: 1" span="dagop.ctr Container.withExec" spanID=f3b9f0399c88672f traceID=587e9ebaab5722a9fb25efb07f1809f9
+dnsmasq[53]: read /etc/hosts - 13 names
+dnsmasq[53]: read /var/run/containers/cni/dnsname/dagger-dev/addnhosts - 0 names
+
+[90m▶[0m [31mX[0m[31mX[0m[32m.[0m[32m.[0m[31mX[0m
+
+▼ [1minstall_multiple_blueprints[0m
+
+	Error Trace:	/app/core/integration/blueprint_test.go:152
+	            				/go/pkg/mod/github.com/dagger/testctx@v0.0.4/testctx.go:295
+	            				/go/pkg/mod/github.com/dagger/testctx/oteltest@v0.0.3/log.go:37
+	            				/go/pkg/mod/github.com/dagger/testctx/oteltest@v0.0.3/trace.go:83
+	            				/go/pkg/mod/github.com/dagger/testctx@v0.0.4/middleware.go:25
+	            				/go/pkg/mod/github.com/dagger/testctx@v0.0.4/testctx.go:149
+	Error:      	Received unexpected error:
+	            	input: container.from.withExec.withExec.withMountedFile.withDirectory.withDirectory.withWorkdir.withExec.withExec.withExec.withExec.stdout process "dagger call myblueprint-py hello" did not complete successfully: exit code: 1
+	Test:       	TestBlueprint/TestMultipleBlueprints/install_multiple_blueprints
+
+
+▼ Container.[1masService[0m([36margs: [0m[[33m"--addr"[0m, [33m"unix:///run/dagger-engine.sock"[0m, [33m"--addr"[0m, [33m"tcp://0.0.0.0:1234"[0m, [33m"--network-name"[0m, [33m"dagger-dev"[0m, [33m"--network-cidr"[0m, [33m"10.88.0.0/16"[0m, [33m"--debugaddr"[0m, [33m"0.0.0.0:6060"[0m], [36museEntrypoint: [0m[31mtrue[0m, [36minsecureRootCapabilities: [0m[31mtrue[0m)[2m: Service![0m
+time="2025-10-16T19:09:11Z" level=error msg="solve error: process \"dagger call myblueprint-py hello\" did not complete successfully: exit code: 1\ngithub.com/dagger/dagger/internal/buildkit/solver.(*edge).execOp\n\t/app/internal/buildkit/solver/edge.go:912\ngithub.com/dagger/dagger/internal/buildkit/solver/internal/pipe.NewWithFunction[...].func2\n\t/app/internal/buildkit/solver/internal/pipe/pipe.go:78\nruntime.goexit\n\t/usr/lib/go/src/runtime/asm_arm64.s:1268" client_hostname=dagger client_id=8pfntudkc3c0l5t29futsrjnd session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=71038e23f43ef17b traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=warning msg="error resolving" error="map[error:process \"dagger call myblueprint-py hello\" did not complete successfully: exit code: 1 kind:*buildkit.ExecError stack:<nil>]" field=stdout receiver=0x400db8cad0
+time="2025-10-16T19:09:11Z" level=debug msg="handling http request" client_hostname=dagger client_id=8pfntudkc3c0l5t29futsrjnd contentType= method=POST path=/shutdown session_id=z9nuqz2ns5k0sci635ov8ov8n span=4b733dc14daf9478 spanID=4b733dc14daf9478 trace=587e9ebaab5722a9fb25efb07f1809f9 traceID=587e9ebaab5722a9fb25efb07f1809f9 upgradeHeader=
+time="2025-10-16T19:09:11Z" level=debug msg="main client is shutting down" clientID=8pfntudkc3c0l5t29futsrjnd isMainClient=true mainClientID=8pfntudkc3c0l5t29futsrjnd sessionID=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=muftcfyryadf4g4bx728zy9j4 session.id=muftcfyryadf4g4bx728zy9j4 session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="session manager handle conn done muftcfyryadf4g4bx728zy9j4" client_hostname=dagger client_id=muftcfyryadf4g4bx728zy9j4 error="<nil>" session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=nfyrz41kdfa1ziu66ewkbsoc2 session.id=nfyrz41kdfa1ziu66ewkbsoc2 session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="session manager handle conn done nfyrz41kdfa1ziu66ewkbsoc2" client_hostname=dagger client_id=nfyrz41kdfa1ziu66ewkbsoc2 error="<nil>" session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=l6nwfgdbnysvhqegnl63igm11 session.id=l6nwfgdbnysvhqegnl63igm11 session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=z6ehqx924plhrcuok28xv5hre session.id=z6ehqx924plhrcuok28xv5hre session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=ryl9fneczpxar80xibotmpq2j session.id=ryl9fneczpxar80xibotmpq2j session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="session manager handle conn done ryl9fneczpxar80xibotmpq2j" client_hostname=dagger client_id=ryl9fneczpxar80xibotmpq2j error="<nil>" session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=lyshpa53m5bb45p1ioiwf6rjs session.id=lyshpa53m5bb45p1ioiwf6rjs session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="session manager handle conn done lyshpa53m5bb45p1ioiwf6rjs" client_hostname=dagger client_id=lyshpa53m5bb45p1ioiwf6rjs error="<nil>" session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="session manager handle conn done z6ehqx924plhrcuok28xv5hre" client_hostname=dagger client_id=z6ehqx924plhrcuok28xv5hre error="<nil>" session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="session manager handle conn done l6nwfgdbnysvhqegnl63igm11" client_hostname=dagger client_id=l6nwfgdbnysvhqegnl63igm11 error="<nil>" session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=a0ugv5zbod96knzoq9xd7jzll session.id=a0ugv5zbod96knzoq9xd7jzll session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="session manager handle conn done a0ugv5zbod96knzoq9xd7jzll" client_hostname=dagger client_id=a0ugv5zbod96knzoq9xd7jzll error="<nil>" session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=8pfntudkc3c0l5t29futsrjnd session.id=8pfntudkc3c0l5t29futsrjnd session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=5198193466932883 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="session manager handle conn done 8pfntudkc3c0l5t29futsrjnd" client_hostname=dagger client_id=8pfntudkc3c0l5t29futsrjnd error="<nil>" session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=5198193466932883 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="removing session; stopping client services and flushing" session=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="stopped services" session=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl session.id=rwlpc6av202knnb243h51iyxl session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="session manager handle conn done rwlpc6av202knnb243h51iyxl" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl error="<nil>" session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=kdopqtjndzlovcpvi3s1e5j92 session.id=ncmme658wgdrzel2ipmhqjytp session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=q09ukyiatybvfnlg74qpsfn8c session.id=pg0qoltdygdq1nowmhsoklbff session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=0zz61jnivnkyrdep5hkfmbmx7 session.id=trycz7edkj32dxlwuqjktj0t0 session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=u17vxbji8ptooov5e4u5ijkeb session.id=wgxkqgwpoe9tu17k9pjg88drt session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=lyshpa53m5bb45p1ioiwf6rjs session.id=2jri02x1qzumbf9dcpbxh9ekl session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=l6nwfgdbnysvhqegnl63igm11 session.id=g27hjlq4jvq7n92zsbs24c46f session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=7c54gmkykk10qubtqi273afat session.id=wc4vlumzb7e1933tnj79clmk7 session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=u59wii6wjm96s1citifv1wxky session.id=wdt73dz4qj1543pkzuvmre3rf session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=7kvcewbf672a8cyi234s92fc4 session.id=hzryc17me6gzbzbjs8iv20mo4 session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=qm8b0qqyzztfrqnwtmejojay7 session.id=a1yujgjzlb8u6cs0d2mei22ka session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=8pfntudkc3c0l5t29futsrjnd session.id=z2sj1l66c8ycj18naqt6j5rkk session_id=z9nuqz2ns5k0sci635ov8ov8n spanID=5198193466932883 traceID=587e9ebaab5722a9fb25efb07f1809f9
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=a0ugv5zbod96knzoq9xd7jzll session.id=c06yi26hpgnwxv59nt3hie4it session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=1q2swnryfrfg0fnapp50tnsf0 session.id=ng7e5vmvsm5z2osq3gz8rztxt session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=r5zg86me5ofbf1txwmson4bi6 session.id=rq32wuzf91c3w8gvs9qdjkj6x session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=z6ehqx924plhrcuok28xv5hre session.id=toh3zh5x6mbu70oezubdvpxju session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=muftcfyryadf4g4bx728zy9j4 session.id=8ce93nnwxk9flcy1zjehj07i6 session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=rwlpc6av202knnb243h51iyxl session.id=k6zl8czif027wqsn0jba7ugx7 session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=nfyrz41kdfa1ziu66ewkbsoc2 session.id=dytxtlzpncgehb79tcf9hurd7 session_id=z9nuqz2ns5k0sci635ov8ov8n
+time="2025-10-16T19:09:11Z" level=debug msg="buildkit session.Manager handleConn done" client_hostname=dagger client_id=ryl9fneczpxar80xibotmpq2j session.id=v2ulzhbf550su9w232sf2a3bb session_id=z9nuqz2ns5k0sci635ov8ov8n
+
+▼ Container.[1mwithExec[0m([36margs: [0m[[33m"go"[0m, [33m"test"[0m, [33m"-ldflags"[0m, [33m"-X github.com/dagger/dagger/engine.Version=v0.19.3-010101000000-dev-5029f2885cd3 -X github.com/dagger/dagger/engine.Tag=44c9087a050e3fe157e8e63f6ac6b5191de10e8a"[0m, [33m"-timeout=120s"[0m, [33m"-count=1"[0m, [33m"-run"[0m, [33m"TestBlueprint/TestMultipleBlueprints"[0m, [33m"./core/integration"[0m])[2m: Container![0m
+--- FAIL: TestBlueprint (0.00s)
+    --- FAIL: TestBlueprint/TestMultipleBlueprints (0.05s)
+        --- FAIL: TestBlueprint/TestMultipleBlueprints/install_multiple_blueprints (40.35s)
+            testctx.go:173: 
+                	Error Trace:	/app/core/integration/blueprint_test.go:152
+                	            				/go/pkg/mod/github.com/dagger/testctx@v0.0.4/testctx.go:295
+                	            				/go/pkg/mod/github.com/dagger/testctx/oteltest@v0.0.3/log.go:37
+                	            				/go/pkg/mod/github.com/dagger/testctx/oteltest@v0.0.3/trace.go:83
+                	            				/go/pkg/mod/github.com/dagger/testctx@v0.0.4/middleware.go:25
+                	            				/go/pkg/mod/github.com/dagger/testctx@v0.0.4/testctx.go:149
+                	Error:      	Received unexpected error:
+                	            	input: container.from.withExec.withExec.withMountedFile.withDirectory.withDirectory.withWorkdir.withExec.withExec.withExec.withExec.stdout process "dagger call myblueprint-py hello" did not complete successfully: exit code: 1
+                	Test:       	TestBlueprint/TestMultipleBlueprints/install_multiple_blueprints
+FAIL
+FAIL	github.com/dagger/dagger/core/integration	40.413s
+FAIL
+
+
+
+[90m▶[0m [31mX[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m
+
+▼ Container.[1masService[0m([36margs: [0m[[33m"--addr"[0m, [33m"unix:///run/dagger-engine.sock"[0m, [33m"--addr"[0m, [33m"tcp://0.0.0.0:1234"[0m, [33m"--network-name"[0m, [33m"dagger-dev"[0m, [33m"--network-cidr"[0m, [33m"10.88.0.0/16"[0m, [33m"--debugaddr"[0m, [33m"0.0.0.0:6060"[0m], [36museEntrypoint: [0m[31mtrue[0m, [36minsecureRootCapabilities: [0m[31mtrue[0m)[2m: Service![0m
+time="2025-10-16T19:09:12Z" level=debug msg="session removed" session=z9nuqz2ns5k0sci635ov8ov8n
+
+[90m▶[0m [31mX[0m[31mX[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[31mX[0m[32m▶[0m connect [2m0.2s[0m
+[32m▶[0m load module: . [2m3.5s[0m
+[32m✔[0m parsing command line arguments [2m0.0s[0m
+
+[32m▶[0m [1mdaggerDev[0m(
+[90;2m  [0m[90;2m┆ [0m[36msource:[0m Host.[1mdirectory[0m([36mpath: [0m[33m"/Users/kylepenfound/github.com/kpenfound/dagger"[0m, [36mexclude: [0m[[33m"bin"[0m, [33m".git"[0m, [33m"**/node_modules"[0m, [33m"**/.venv"[0m, [33m"**/__pycache__"[0m, [33m"docs/node_modules"[0m, [33m"sdk/typescript/node_modules"[0m, [33m"sdk/typescript/dist"[0m, [33m"sdk/rust/examples/backend/target"[0m, [33m"sdk/rust/target"[0m, [33m"sdk/php/vendor"[0m], [36mnoCache: [0m[31mtrue[0m)[2m: Directory![0m
+[90;2m  [0m[90;2m┆ [0m[36mgit:[0m Directory.[1masGit[0m[2m: GitRepository![0m
+[90;2m  [0m[90;2m[0m)[2m: DaggerDev![0m [2m9.9s[0m
+[32m✔[0m .[1mtest[0m[2m: DaggerDevTest![0m [2m0.1s[0m
+[31m▼[0m .[1mspecific[0m([36mrun: [0m[33m"TestBlueprint/TestMultipleBlueprints"[0m, [36mpkg: [0m[33m"./core/integration"[0m, [36mtimeout: [0m[33m"120s"[0m)[2m: Void[0m [2m1m8s[0m [31mERROR[0m
+[31;2m  [0m[31m▼[0m Container.[1mwithExec[0m([36margs: [0m[[33m"go"[0m, [33m"test"[0m, [33m"-ldflags"[0m, [33m"-X github.com/dagger/dagger/engine.Version=v0.19.3-010101000000-dev-5029f2885cd3 -X github.com/dagger/dagger/engine.Tag=44c9087a050e3fe157e8e63f6ac6b5191de10e8a"[0m, [33m"-timeout=120s"[0m, [33m"-count=1"[0m, [33m"-run"[0m, [33m"TestBlueprint/TestMultipleBlueprints"[0m, [33m"./core/integration"[0m])[2m: Container![0m [2m42.1s[0m [31mERROR[0m
+[31;2m  [0m[31m! process "go test -ldflags -X github.com/dagger/dagger/engine.Version=v0.19.3-010101000000-dev-5029f2885cd3 -X github.com/dagger/dagger/engine.Tag=44c9087a050e3fe157e8e63f6ac6b5191de10e8a -timeout=120s -count=1 -run TestBlueprint/TestMultipleBlueprints ./core/integration" did not complete successfully: exit code: 1[0m
+[31;2m  [0m[31;2m  [0m[31m▼[0m TestBlueprint [2m40.4s[0m [31mERROR[0m [31m✘[0m [3mTestMultipleBlueprints[0m
+[31;2m  [0m[31;2m  [0m[31m! test failed[0m
+[31;2m  [0m[31;2m  [0m[31;2m╰╴[0m[31m▼[0m [3mTestMultipleBlueprints[0m [2m40.4s[0m [31mERROR[0m [31m✘[0m [3minstall_multiple_blueprints[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31m! test failed[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m├╴[0m[32m▶[0m .dagger-cli session --label dagger.io/sdk.name:go --label dagger.io/sdk.version:n/a [2m40.4s[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m╰╴[0m[31m▼[0m [3minstall_multiple_blueprints[0m [2m40.3s[0m [31mERROR[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31m! test failed[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m├╴[0m[32m✔[0m [1mhost[0m[2m: Host![0m [2m0.0s[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m├╴[0m[32m✔[0m .[1mfile[0m([36mpath: [0m[33m"/.dagger-cli"[0m)[2m: File![0m [2m0.1s[0m [32;2m✔[0m [2m1[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m│ [0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m├╴[0m[32m✔[0m [1mdirectory[0m[2m: Directory![0m [2m0.0s[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m│ [0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m├╴[0m[32m▶[0m Host.[1mdirectory[0m([36mpath: [0m[33m"./testdata/test-blueprint"[0m)[2m: Directory![0m [2m0.0s[0m [32;2m✔[0m [2m1[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m│ [0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m├╴[0m[32m✔[0m [1mcontainer[0m[2m: Container![0m [2m0.0s[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m├╴[0m[32m✔[0m .[1mfrom[0m([36maddress: [0m[33m"alpine:3.22.1"[0m)[2m: Container![0m [2m3.2s[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m├╴[0m[32m▶[0m .[1mwithExec[0m([36margs: [0m[[33m"apk"[0m, [33m"add"[0m, [33m"git"[0m])[2m: Container![0m [2m2.8s[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m├╴[0m[32m▶[0m .[1mwithExec[0m([36margs: [0m[[33m"git"[0m, [33m"init"[0m])[2m: Container![0m [2m0.1s[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m├╴[0m[32m✔[0m .[1mwithMountedFile[0m(
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m│ [0m[90;2m  [0m[90;2m┆ [0m[36mpath:[0m [33m"/bin/dagger"[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m│ [0m[90;2m  [0m[90;2m┆ [0m[36msource:[0m Host.[1mfile[0m([36mpath: [0m[33m"/.dagger-cli"[0m)[2m: File![0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m│ [0m[90;2m  [0m[90;2m[0m)[2m: Container![0m [2m0.0s[0m [32;2m✔[0m [2m1[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m├╴[0m[32m✔[0m .[1mwithDirectory[0m(
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m│ [0m[90;2m  [0m[90;2m┆ [0m[36mpath:[0m [33m"."[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m│ [0m[90;2m  [0m[90;2m┆ [0m[36msource:[0m Host.[1mdirectory[0m([36mpath: [0m[33m"./testdata/test-blueprint"[0m)[2m: Directory![0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m│ [0m[90;2m  [0m[90;2m[0m)[2m: Container![0m [2m0.0s[0m [32;2m✔[0m [2m1[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m├╴[0m[32m✔[0m .[1mwithDirectory[0m(
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m│ [0m[90;2m  [0m[90;2m┆ [0m[36mpath:[0m [33m"app"[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m│ [0m[90;2m  [0m[90;2m┆ [0m[36msource:[0m [1mdirectory[0m[2m: Directory![0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m│ [0m[90;2m  [0m[90;2m[0m)[2m: Container![0m [2m0.0s[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m├╴[0m[32m✔[0m .[1mwithWorkdir[0m([36mpath: [0m[33m"app"[0m)[2m: Container![0m [2m0.0s[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m├╴[0m[32m▶[0m .[1mwithExec[0m([36margs: [0m[[33m"dagger"[0m, [33m"init"[0m, [33m"--blueprint=../hello"[0m], [36mexperimentalPrivilegedNesting: [0m[31mtrue[0m)[2m: Container![0m [2m0.5s[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m├╴[0m[32m▶[0m .[1mwithExec[0m([36margs: [0m[[33m"dagger"[0m, [33m"call"[0m, [33m"message"[0m], [36mexperimentalPrivilegedNesting: [0m[31mtrue[0m)[2m: Container![0m [2m7.1s[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m├╴[0m[32m▶[0m .[1mstdout[0m[2m: String![0m [2m10.6s[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m│ [0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m├╴[0m[32m▶[0m Container.[1mwithExec[0m([36margs: [0m[[33m"dagger"[0m, [33m"blueprint"[0m, [33m"install"[0m, [33m"../myblueprint-ts"[0m], [36mexperimentalPrivilegedNesting: [0m[31mtrue[0m)[2m: Container![0m [2m2.9s[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m├╴[0m[32m▶[0m .[1mwithExec[0m([36margs: [0m[[33m"dagger"[0m, [33m"blueprint"[0m, [33m"install"[0m, [33m"../myblueprint-py"[0m], [36mexperimentalPrivilegedNesting: [0m[31mtrue[0m)[2m: Container![0m [2m4.7s[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m├╴[0m[32m▶[0m .[1mstdout[0m[2m: String![0m [2m7.6s[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m│ [0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m├╴[0m[32m▶[0m Container.[1mwithExec[0m([36margs: [0m[[33m"dagger"[0m, [33m"call"[0m, [33m"hello"[0m, [33m"message"[0m], [36mexperimentalPrivilegedNesting: [0m[31mtrue[0m)[2m: Container![0m [2m18.2s[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m├╴[0m[32m▶[0m .[1mstdout[0m[2m: String![0m [2m18.2s[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m│ [0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m├╴[0m[31m▼[0m Container.[1mwithExec[0m([36margs: [0m[[33m"dagger"[0m, [33m"call"[0m, [33m"myblueprint-py"[0m, [33m"hello"[0m], [36mexperimentalPrivilegedNesting: [0m[31mtrue[0m)[2m: Container![0m [2m0.6s[0m [31mERROR[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m│ [0m[31m! process "dagger call myblueprint-py hello" did not complete successfully: exit code: 1[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m│ [0m[31;2m╰╴[0m[31m▼[0m myblueprint-py hello [2m0.2s[0m [31mERROR[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m│ [0m[31;2m  [0m[31m! exit code 1[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m│ [0m[31;2m  [0m[31;2m├╴[0m[32m✔[0m connect [2m0.0s[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m│ [0m[31;2m  [0m[31;2m├╴[0m[32m▶[0m load module: . [2m0.2s[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m│ [0m[31;2m  [0m[31;2m╰╴[0m[32m✔[0m parsing command line arguments [2m0.0s[0m
+[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m  [0m[31;2m╰╴[0m[31m✘[0m .[1mstdout[0m[2m: String![0m [2m0.6s[0m [31mERROR[0m
+
+[1mFull trace at [0mhttps://dagger.cloud/dagger/traces/587e9ebaab5722a9fb25efb07f1809f9
