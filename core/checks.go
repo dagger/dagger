@@ -11,7 +11,9 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -175,13 +177,16 @@ func (r *CheckGroup) List(ctx context.Context) ([]*Check, error) {
 
 // Run all the checks in the group
 func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
+	attr := []attribute.KeyValue{
+		attribute.Bool("dagger.io/ui.reveal", true),
+	}
 	r = r.Clone()
 	eg := errgroup.Group{}
 	for i, check := range r.Checks {
 		i := i
 		eg.Go(func() (rerr error) {
 			// FIXME: use parallel
-			ctx, span := Tracer(ctx).Start(ctx, check.FullName())
+			ctx, span := Tracer(ctx).Start(ctx, check.FullName(), trace.WithAttributes(attr...))
 			defer func() {
 				if rerr != nil {
 					span.SetStatus(codes.Error, rerr.Error())
@@ -314,7 +319,7 @@ func (c *Check) Run(ctx context.Context) (*Check, error) {
 	if checkErr != nil {
 		// FIXME: can't differentiate real errors from failed checks
 		c.Passed = false // redundant but let's be explicit
-		c.Message = err.Error()
+		c.Message = checkErr.Error()
 	}
 	if status == CheckCompleted {
 		c.Completed = true
