@@ -332,6 +332,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&interactiveCommand, "interactive-command", "/bin/sh", "Change the default command for interactive mode")
 	flags.BoolVarP(&web, "web", "w", false, "Open trace URL in a web browser")
 	flags.BoolVarP(&noExit, "no-exit", "E", false, "Leave the TUI running after completion")
+	flags.BoolVarP(&autoApply, "auto-apply", "y", false, "Automatically apply changes when a changeset is returned")
 
 	flags.StringVar(&dotOutputFilePath, "dot-output", "", "If set, write the calls made during execution to a dot file at the given path before exiting")
 	flags.StringVar(&dotFocusField, "dot-focus-field", "", "In dot output, filter out vertices that aren't this field or descendents of this field")
