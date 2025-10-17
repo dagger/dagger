@@ -314,7 +314,7 @@ func (c *Check) Run(ctx context.Context) (*Check, error) {
 	if checkErr != nil {
 		// FIXME: can't differentiate real errors from failed checks
 		c.Passed = false // redundant but let's be explicit
-		c.Message = err.Error()
+		c.Message = checkErr.Error()
 	}
 	if status == CheckCompleted {
 		c.Completed = true
