@@ -574,7 +574,7 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 		// else to sub-select. In that case `q` will be nil to signal that we
 		// just want to return the object's name, without making an API request.
 		if q == nil {
-			return handleResponse(ctx, fc.c.Dagger(), fn.ReturnType, nil, o, e)
+			return handleResponse(ctx, fc.c.Dagger(), fn.ReturnType, nil, o, e, autoApply)
 		}
 
 		var response any
@@ -583,7 +583,7 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 			return err
 		}
 
-		return handleResponse(ctx, fc.c.Dagger(), fn.ReturnType, response, o, e)
+		return handleResponse(ctx, fc.c.Dagger(), fn.ReturnType, response, o, e, autoApply)
 	}
 }
 
@@ -648,7 +648,7 @@ func makeRequest(ctx context.Context, q *querybuilder.Selection, response any) e
 	return nil
 }
 
-func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modTypeDef, response any, o, e io.Writer) error {
+func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modTypeDef, response any, o, e io.Writer, autoApply bool) error {
 	if returnType.Kind == dagger.TypeDefKindVoidKind {
 		return nil
 	}
@@ -659,7 +659,7 @@ func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modType
 	case Changeset:
 		// Handle the `export` convenience, i.e, -o,--output flag.
 		if outputPath == "" {
-			return handleChangesetResponse(ctx, dag, response)
+			return handleChangesetResponse(ctx, dag, response, autoApply)
 		}
 		fallthrough
 	case Container, Directory, File:
@@ -705,7 +705,7 @@ func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modType
 	return err
 }
 
-func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response any) (rerr error) {
+func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response any, autoApply bool) (rerr error) {
 	var changesetID string
 	switch v := response.(type) {
 	case string:
@@ -740,22 +740,24 @@ func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response a
 		return nil
 	}
 
-	var confirm bool
-	form := idtui.NewForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Apply changes?").
-				Description(summary.String()).
-				Affirmative("Apply").
-				Negative("Discard").
-				Value(&confirm),
-		),
-	)
-	if err := Frontend.HandleForm(ctx, form); err != nil {
-		return err
-	}
-	if !confirm {
-		return nil
+	if !autoApply {
+		var confirm bool
+		form := idtui.NewForm(
+			huh.NewGroup(
+				huh.NewConfirm().
+					Title("Apply changes?").
+					Description(summary.String()).
+					Affirmative("Apply").
+					Negative("Discard").
+					Value(&confirm),
+			),
+		)
+		if err := Frontend.HandleForm(ctx, form); err != nil {
+			return err
+		}
+		if !confirm {
+			return nil
+		}
 	}
 
 	ctx, span := Tracer().Start(ctx, "applying changes")

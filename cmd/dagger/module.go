@@ -55,6 +55,8 @@ var (
 	noSelfCalls bool
 
 	force bool
+
+	autoApply bool
 )
 
 const (
