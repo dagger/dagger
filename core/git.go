@@ -35,6 +35,9 @@ type GitRepositoryBackend interface {
 	// Get returns a reference to a specific git ref (branch, tag, or commit).
 	Get(ctx context.Context, ref *gitutil.Ref) (GitRefBackend, error)
 
+	Dirty(ctx context.Context) (dagql.ObjectResult[*Directory], error)
+	Cleaned(ctx context.Context) (*Directory, error)
+
 	mount(ctx context.Context, depth int, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error
 }
 
