@@ -9654,7 +9654,7 @@ impl ModuleSource {
         let query = self.selection.select("asString");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The blueprint referenced by the module source (deprecated, use blueprints).
+    /// The blueprint referenced by the module source.
     pub fn blueprint(&self) -> ModuleSource {
         let query = self.selection.select("blueprint");
         ModuleSource {
@@ -9662,15 +9662,6 @@ impl ModuleSource {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
-    }
-    /// The blueprints referenced by the module source.
-    pub fn blueprints(&self) -> Vec<ModuleSource> {
-        let query = self.selection.select("blueprints");
-        vec![ModuleSource {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }]
     }
     /// The ref to clone the root of the git repo from. Only valid for git sources.
     pub async fn clone_ref(&self) -> Result<String, DaggerError> {
@@ -9831,6 +9822,15 @@ impl ModuleSource {
     pub async fn sync(&self) -> Result<ModuleSourceId, DaggerError> {
         let query = self.selection.select("sync");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// The toolchains referenced by the module source.
+    pub fn toolchains(&self) -> Vec<ModuleSource> {
+        let query = self.selection.select("toolchains");
+        vec![ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }]
     }
     /// User-defined defaults read from local .env files
     pub fn user_defaults(&self) -> EnvFile {
@@ -9993,6 +9993,26 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Add a toolchain to the module source.
+    ///
+    /// # Arguments
+    ///
+    /// * `toolchain` - The toolchain module to add.
+    pub fn with_toolchain(&self, toolchain: impl IntoID<ModuleSourceId>) -> ModuleSource {
+        let mut query = self.selection.select("withToolchain");
+        query = query.arg_lazy(
+            "toolchain",
+            Box::new(move || {
+                let toolchain = toolchain.clone();
+                Box::pin(async move { toolchain.into_id().await.unwrap().quote() })
+            }),
+        );
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Update the blueprint module to the latest version.
     pub fn with_update_blueprint(&self) -> ModuleSource {
         let query = self.selection.select("withUpdateBlueprint");
@@ -10012,6 +10032,26 @@ impl ModuleSource {
         query = query.arg(
             "dependencies",
             dependencies
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Update one or more toolchains.
+    ///
+    /// # Arguments
+    ///
+    /// * `toolchains` - The toolchains to update.
+    pub fn with_update_toolchains(&self, toolchains: Vec<impl Into<String>>) -> ModuleSource {
+        let mut query = self.selection.select("withUpdateToolchains");
+        query = query.arg(
+            "toolchains",
+            toolchains
                 .into_iter()
                 .map(|i| i.into())
                 .collect::<Vec<String>>(),
@@ -10096,6 +10136,26 @@ impl ModuleSource {
     ) -> ModuleSource {
         let mut query = self.selection.select("withoutExperimentalFeatures");
         query = query.arg("features", features);
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Remove the provided toolchains from the module source.
+    ///
+    /// # Arguments
+    ///
+    /// * `toolchains` - The toolchains to remove.
+    pub fn without_toolchains(&self, toolchains: Vec<impl Into<String>>) -> ModuleSource {
+        let mut query = self.selection.select("withoutToolchains");
+        query = query.arg(
+            "toolchains",
+            toolchains
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
         ModuleSource {
             proc: self.proc.clone(),
             selection: query,

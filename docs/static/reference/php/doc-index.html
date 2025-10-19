@@ -224,9 +224,7 @@
 <abbr title="Dagger\LLM">LLM</abbr>::bindResult</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>returns the type of the current state</p></dd><dt><a href="Dagger/ModuleSource.html#method_blueprint">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::blueprint</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>The blueprint referenced by the module source (deprecated, use blueprints).</p></dd><dt><a href="Dagger/ModuleSource.html#method_blueprints">
-<abbr title="Dagger\ModuleSource">ModuleSource</abbr>::blueprints</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>The blueprints referenced by the module source.</p></dd>        </dl><h2 id="letterC">C</h2>
+                    <dd><p>The blueprint referenced by the module source.</p></dd>        </dl><h2 id="letterC">C</h2>
         <dl id="indexC"><dt><a href="Dagger/Address.html#method_container">
 <abbr title="Dagger\Address">Address</abbr>::container</a>() &mdash; <em>Method in class <a href="Dagger/Address.html"><abbr title="Dagger\Address">Address</abbr></a></em></dt>
                     <dd><p>Load a container from the address.</p></dd><dt><a href="Dagger/CacheVolume.html"><abbr title="Dagger\CacheVolume">CacheVolume</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
@@ -1150,7 +1148,9 @@
 <abbr title="Dagger\LLM">LLM</abbr>::tools</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>print documentation for available tools</p></dd><dt><a href="Dagger/LLMTokenUsage.html#method_totalTokens">
 <abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr>::totalTokens</a>() &mdash; <em>Method in class <a href="Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a></em></dt>
-                    <dd></dd><dt><a href="Dagger/SearchSubmatch.html#method_text">
+                    <dd></dd><dt><a href="Dagger/ModuleSource.html#method_toolchains">
+<abbr title="Dagger\ModuleSource">ModuleSource</abbr>::toolchains</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
+                    <dd><p>The toolchains referenced by the module source.</p></dd><dt><a href="Dagger/SearchSubmatch.html#method_text">
 <abbr title="Dagger\SearchSubmatch">SearchSubmatch</abbr>::text</a>() &mdash; <em>Method in class <a href="Dagger/SearchSubmatch.html"><abbr title="Dagger\SearchSubmatch">SearchSubmatch</abbr></a></em></dt>
                     <dd><p>The matched text.</p></dd><dt><a href="Dagger/Service.html#method_terminal">
 <abbr title="Dagger\Service">Service</abbr>::terminal</a>() &mdash; <em>Method in class <a href="Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a></em></dt>
@@ -1481,11 +1481,15 @@
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withSDK</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>Update the module source with a new SDK.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withSourceSubpath">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withSourceSubpath</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>Update the module source with a new source subpath.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withUpdateBlueprint">
+                    <dd><p>Update the module source with a new source subpath.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withToolchain">
+<abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withToolchain</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
+                    <dd><p>Add a toolchain to the module source.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withUpdateBlueprint">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withUpdateBlueprint</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>Update the blueprint module to the latest version.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withUpdateDependencies">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withUpdateDependencies</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>Update one or more module dependencies.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withUpdatedClients">
+                    <dd><p>Update one or more module dependencies.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withUpdateToolchains">
+<abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withUpdateToolchains</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
+                    <dd><p>Update one or more toolchains.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withUpdatedClients">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withUpdatedClients</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>Update one or more clients.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withoutBlueprint">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withoutBlueprint</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -1495,7 +1499,9 @@
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withoutDependencies</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>Remove the provided dependencies from the module source's dependency list.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withoutExperimentalFeatures">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withoutExperimentalFeatures</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>Disable experimental features for the module source.</p></dd><dt><a href="Dagger/Service.html#method_withHostname">
+                    <dd><p>Disable experimental features for the module source.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withoutToolchains">
+<abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withoutToolchains</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
+                    <dd><p>Remove the provided toolchains from the module source.</p></dd><dt><a href="Dagger/Service.html#method_withHostname">
 <abbr title="Dagger\Service">Service</abbr>::withHostname</a>() &mdash; <em>Method in class <a href="Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a></em></dt>
                     <dd><p>Configures a hostname which can be used by clients within the session to reach this container.</p></dd><dt><a href="Dagger/TypeDef.html#method_withConstructor">
 <abbr title="Dagger\TypeDef">TypeDef</abbr>::withConstructor</a>() &mdash; <em>Method in class <a href="Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></em></dt>

@@ -145,6 +145,7 @@ func init() {
 		moduleDevelopCmd,
 		modulePublishCmd,
 		blueprintCmd,
+		toolchainCmd,
 		funcListCmd,
 		callCoreCmd.Command(),
 		callModCmd.Command(),

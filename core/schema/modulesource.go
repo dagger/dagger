@@ -158,6 +158,24 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("blueprint").Doc(`The blueprint module to set.`),
 			),
 
+		dagql.Func("withToolchain", s.moduleSourceWithToolchain).
+			Doc(`Add a toolchain to the module source.`).
+			Args(
+				dagql.Arg("toolchain").Doc(`The toolchain module to add.`),
+			),
+
+		dagql.NodeFunc("withUpdateToolchains", s.moduleSourceWithUpdateToolchains).
+			Doc(`Update one or more toolchains.`).
+			Args(
+				dagql.Arg("toolchains").Doc(`The toolchains to update.`),
+			),
+
+		dagql.Func("withoutToolchains", s.moduleSourceWithoutToolchains).
+			Doc(`Remove the provided toolchains from the module source.`).
+			Args(
+				dagql.Arg("toolchains").Doc(`The toolchains to remove.`),
+			),
+
 		dagql.NodeFunc("withUpdateBlueprint", s.moduleSourceWithUpdateBlueprint).
 			Doc(`Update the blueprint module to the latest version.`),
 
@@ -716,19 +734,28 @@ func (s *moduleSourceSchema) loadBlueprintModule(
 		return fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	// Load blueprints array (note: config.go already migrates Blueprint -> Blueprints)
-	if len(src.ConfigBlueprints) == 0 {
-		return nil
-	}
-
-	src.Blueprints = make([]dagql.ObjectResult[*core.ModuleSource], len(src.ConfigBlueprints))
-	for i, pcfg := range src.ConfigBlueprints {
-		blueprint, err := core.ResolveDepToSource(ctx, bk, dag, src, pcfg.Source, pcfg.Pin, pcfg.Name)
+	// Load single blueprint
+	if src.ConfigBlueprint != nil {
+		blueprint, err := core.ResolveDepToSource(ctx, bk, dag, src, src.ConfigBlueprint.Source, src.ConfigBlueprint.Pin, src.ConfigBlueprint.Name)
 		if err != nil {
 			return fmt.Errorf("failed to resolve blueprint to source: %w", err)
 		}
-		src.Blueprints[i] = blueprint
+
+		src.Blueprint = blueprint
 	}
+
+	// Load toolchains array
+	if len(src.ConfigToolchains) > 0 {
+		src.Toolchains = make([]dagql.ObjectResult[*core.ModuleSource], len(src.ConfigToolchains))
+		for i, pcfg := range src.ConfigToolchains {
+			toolchain, err := core.ResolveDepToSource(ctx, bk, dag, src, pcfg.Source, pcfg.Pin, pcfg.Name)
+			if err != nil {
+				return fmt.Errorf("failed to resolve toolchain to source: %w", err)
+			}
+			src.Toolchains[i] = toolchain
+		}
+	}
+
 	return nil
 }
 
@@ -877,7 +904,7 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	src.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
 	src.ConfigDependencies = modCfg.Dependencies
 	src.ConfigBlueprint = modCfg.Blueprint
-	src.ConfigBlueprints = modCfg.Blueprints
+	src.ConfigToolchains = modCfg.Toolchains
 	src.ConfigClients = modCfg.Clients
 
 	engineVersion := modCfg.EngineVersion
@@ -1477,10 +1504,303 @@ func (s *moduleSourceSchema) moduleSourceWithBlueprint(
 	// (dependencies are added LIFO)
 	parentSrc = parentSrc.Clone()
 
-	// Append the new blueprint to the Blueprints array (config.go already handles upgrade)
-	parentSrc.ConfigBlueprints = append(parentSrc.ConfigBlueprints, tmpConfig.Dependencies[0])
-	parentSrc.Blueprints = append(parentSrc.Blueprints, tmpSrc.Dependencies[0])
+	// Set the single blueprint field (for `dagger init --blueprint`)
+	parentSrc.ConfigBlueprint = tmpConfig.Dependencies[0]
+	parentSrc.Blueprint = tmpSrc.Dependencies[0]
 
+	return parentSrc, nil
+}
+
+func (s *moduleSourceSchema) moduleSourceWithToolchain(
+	ctx context.Context,
+	parentSrc *core.ModuleSource,
+	args struct {
+		Toolchain core.ModuleSourceID
+	},
+) (*core.ModuleSource, error) {
+	// Load config for the toolchain
+	tmpArgs := struct{ Dependencies []core.ModuleSourceID }{
+		Dependencies: []core.ModuleSourceID{args.Toolchain},
+	}
+	tmpSrc := parentSrc.Clone()
+	tmpSrc.Dependencies = nil
+	tmpSrc, err := s.moduleSourceWithDependencies(ctx, tmpSrc, tmpArgs)
+	if err != nil {
+		return nil, err
+	}
+	tmpConfig, err := s.loadModuleSourceConfig(tmpSrc)
+	if err != nil {
+		return nil, err
+	}
+
+	parentSrc = parentSrc.Clone()
+
+	// Add to toolchains array
+	parentSrc.ConfigToolchains = append(parentSrc.ConfigToolchains, tmpConfig.Dependencies[0])
+	parentSrc.Toolchains = append(parentSrc.Toolchains, tmpSrc.Dependencies[0])
+
+	parentSrc.Digest = parentSrc.CalcDigest(ctx).String()
+	return parentSrc, nil
+}
+
+func (s *moduleSourceSchema) moduleSourceWithUpdateToolchains(
+	ctx context.Context,
+	parentSrc dagql.ObjectResult[*core.ModuleSource],
+	args struct {
+		Toolchains []string
+	},
+) (inst dagql.Result[*core.ModuleSource], _ error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	type updateReq struct {
+		symbolic string
+		version  string
+	}
+	updateReqs := make(map[updateReq]struct{}, len(args.Toolchains))
+	for _, updateArg := range args.Toolchains {
+		req := updateReq{}
+		req.symbolic, req.version, _ = strings.Cut(updateArg, "@")
+		updateReqs[req] = struct{}{}
+	}
+
+	var newUpdatedToolchainArgs []core.ModuleSourceID
+	for _, existingToolchain := range parentSrc.Self().Toolchains {
+		// If no update requests, implicitly update all toolchains
+		if len(updateReqs) == 0 {
+			if existingToolchain.Self().Kind == core.ModuleSourceKindLocal {
+				continue
+			}
+
+			var updatedToolchain dagql.ObjectResult[*core.ModuleSource]
+			err := dag.Select(ctx, dag.Root(), &updatedToolchain,
+				dagql.Selector{
+					Field: "moduleSource",
+					Args: []dagql.NamedInput{
+						{Name: "refString", Value: dagql.String(existingToolchain.Self().AsString())},
+					},
+				},
+			)
+			if err != nil {
+				return inst, fmt.Errorf("failed to load existing toolchain: %w", err)
+			}
+
+			newUpdatedToolchainArgs = append(newUpdatedToolchainArgs, dagql.NewID[*core.ModuleSource](updatedToolchain.ID()))
+			continue
+		}
+
+		// If the existing toolchain is local and requested to be updated, return error
+		if existingToolchain.Self().Kind == core.ModuleSourceKindLocal {
+			for updateReq := range updateReqs {
+				if updateReq.symbolic == existingToolchain.Self().ModuleName {
+					return inst, fmt.Errorf("updating local toolchains is not supported")
+				}
+
+				var contextRoot string
+				switch parentSrc.Self().Kind {
+				case core.ModuleSourceKindLocal:
+					contextRoot = parentSrc.Self().Local.ContextDirectoryPath
+				case core.ModuleSourceKindGit:
+					contextRoot = "/"
+				default:
+					return inst, fmt.Errorf("unknown module source kind: %s", parentSrc.Self().Kind)
+				}
+
+				parentSrcRoot := filepath.Join(contextRoot, parentSrc.Self().SourceRootSubpath)
+				tcSrcRoot := filepath.Join(contextRoot, existingToolchain.Self().SourceRootSubpath)
+				existingSymbolic, err := pathutil.LexicalRelativePath(parentSrcRoot, tcSrcRoot)
+				if err != nil {
+					return inst, fmt.Errorf("failed to get relative path: %w", err)
+				}
+
+				if updateReq.symbolic == existingSymbolic {
+					return inst, fmt.Errorf("updating local toolchains is not supported")
+				}
+			}
+			continue
+		}
+
+		existingName := existingToolchain.Self().ModuleName
+		existingVersion := existingToolchain.Self().Git.Version
+		existingSymbolic := existingToolchain.Self().Git.CloneRef
+		if tcSrcRoot := existingToolchain.Self().SourceRootSubpath; tcSrcRoot != "" {
+			existingSymbolic += "/" + strings.TrimPrefix(tcSrcRoot, "/")
+		}
+
+		for updateReq := range updateReqs {
+			if updateReq.symbolic != existingName && updateReq.symbolic != existingSymbolic {
+				continue
+			}
+			delete(updateReqs, updateReq)
+
+			updateVersion := updateReq.version
+			if updateVersion == "" {
+				updateVersion = existingVersion
+			}
+			updateRef := existingSymbolic
+			if updateVersion != "" {
+				updateRef += "@" + updateVersion
+			}
+
+			var updatedToolchain dagql.ObjectResult[*core.ModuleSource]
+			err := dag.Select(ctx, dag.Root(), &updatedToolchain,
+				dagql.Selector{
+					Field: "moduleSource",
+					Args: []dagql.NamedInput{
+						{Name: "refString", Value: dagql.String(updateRef)},
+					},
+				},
+			)
+			if err != nil {
+				return inst, fmt.Errorf("failed to load updated toolchain: %w", err)
+			}
+
+			newUpdatedToolchainArgs = append(newUpdatedToolchainArgs, dagql.NewID[*core.ModuleSource](updatedToolchain.ID()))
+		}
+	}
+
+	if len(updateReqs) > 0 {
+		toolchains := make([]string, 0, len(updateReqs))
+		for updateReq := range updateReqs {
+			toolchains = append(toolchains, updateReq.symbolic)
+		}
+		return inst, fmt.Errorf("toolchain %q was requested to be updated, but it is not found in the toolchains list", strings.Join(toolchains, ","))
+	}
+
+	// Build a new module source with updated toolchains
+	tmpSrc := parentSrc.Self().Clone()
+	tmpSrc.Toolchains = nil
+	tmpSrc.ConfigToolchains = nil
+
+	for _, toolchainID := range newUpdatedToolchainArgs {
+		var toolchainSrc dagql.ObjectResult[*core.ModuleSource]
+		err := dag.Select(ctx, dag.Root(), &toolchainSrc,
+			dagql.Selector{
+				Field: "loadID",
+				Args: []dagql.NamedInput{
+					{Name: "id", Value: toolchainID},
+				},
+			},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to load toolchain from ID: %w", err)
+		}
+
+		tmpSrc.Toolchains = append(tmpSrc.Toolchains, toolchainSrc)
+	}
+
+	// Load config for the updated toolchains
+	tmpConfig, err := s.loadModuleSourceConfig(tmpSrc)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load module source config: %w", err)
+	}
+
+	resultSrc := parentSrc.Self().Clone()
+	resultSrc.ConfigToolchains = tmpConfig.Toolchains
+	resultSrc.Toolchains = tmpSrc.Toolchains
+	resultSrc.Digest = resultSrc.CalcDigest(ctx).String()
+
+	return dagql.NewResultForCurrentID(ctx, resultSrc)
+}
+
+func (s *moduleSourceSchema) moduleSourceWithoutToolchains(
+	ctx context.Context,
+	parentSrc *core.ModuleSource,
+	args struct {
+		Toolchains []string
+	},
+) (*core.ModuleSource, error) {
+	parentSrc = parentSrc.Clone()
+
+	var filteredToolchains []dagql.ObjectResult[*core.ModuleSource]
+	var filteredConfigToolchains []*modules.ModuleConfigDependency
+
+	for i, existingToolchain := range parentSrc.Toolchains {
+		existingName := existingToolchain.Self().ModuleName
+		var existingSymbolic, existingVersion string
+
+		switch existingToolchain.Self().Kind {
+		case core.ModuleSourceKindLocal:
+			if parentSrc.Kind != core.ModuleSourceKindLocal {
+				return nil, fmt.Errorf("cannot remove local toolchain from non-local module source kind %s", parentSrc.Kind)
+			}
+			parentSrcRoot := filepath.Join(parentSrc.Local.ContextDirectoryPath, parentSrc.SourceRootSubpath)
+			tcSrcRoot := filepath.Join(parentSrc.Local.ContextDirectoryPath, existingToolchain.Self().SourceRootSubpath)
+			var err error
+			existingSymbolic, err = pathutil.LexicalRelativePath(parentSrcRoot, tcSrcRoot)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get relative path: %w", err)
+			}
+
+		case core.ModuleSourceKindGit:
+			existingSymbolic = existingToolchain.Self().Git.CloneRef
+			if existingToolchain.Self().SourceRootSubpath != "" {
+				existingSymbolic += "/" + strings.TrimPrefix(existingToolchain.Self().SourceRootSubpath, "/")
+			}
+			existingVersion = existingToolchain.Self().Git.Version
+
+		default:
+			return nil, fmt.Errorf("unhandled toolchain kind: %s", existingToolchain.Self().Kind)
+		}
+
+		keep := true
+		for _, toolchainArg := range args.Toolchains {
+			toolchainSymbolic, toolchainVersion, _ := strings.Cut(toolchainArg, "@")
+			toolchainSymbolic = filepath.Clean(toolchainSymbolic)
+
+			if toolchainSymbolic != existingName && toolchainSymbolic != existingSymbolic {
+				continue
+			}
+			keep = false
+
+			if toolchainVersion == "" {
+				break
+			}
+
+			if existingVersion == "" {
+				return nil, fmt.Errorf(
+					"version %q was requested to be removed but the toolchain %q was installed without a specific version. Try re-running without specifying the version number",
+					toolchainVersion,
+					existingSymbolic,
+				)
+			}
+
+			parsedToolchainGitRef, err := core.ParseGitRefString(ctx, toolchainArg)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse git ref string %q: %w", toolchainArg, err)
+			}
+
+			_, err = matchVersion([]string{existingVersion}, toolchainVersion, parsedToolchainGitRef.RepoRootSubdir)
+			if err != nil {
+				toolchainReqModVersion := parsedToolchainGitRef.ModVersion
+				if !strings.HasPrefix(toolchainReqModVersion, parsedToolchainGitRef.RepoRootSubdir) {
+					toolchainReqModVersion, _ = strings.CutPrefix(toolchainReqModVersion, parsedToolchainGitRef.RepoRootSubdir+"/")
+					existingVersion, _ = strings.CutPrefix(existingVersion, existingToolchain.Self().SourceRootSubpath+"/")
+				}
+				return nil, fmt.Errorf(
+					"version %q was requested to be removed but the toolchain %q was installed with %q. Try re-running without specifying the version number",
+					toolchainReqModVersion,
+					existingSymbolic,
+					existingVersion,
+				)
+			}
+
+			break
+		}
+
+		if keep {
+			filteredToolchains = append(filteredToolchains, existingToolchain)
+			if i < len(parentSrc.ConfigToolchains) {
+				filteredConfigToolchains = append(filteredConfigToolchains, parentSrc.ConfigToolchains[i])
+			}
+		}
+	}
+
+	parentSrc.Toolchains = filteredToolchains
+	parentSrc.ConfigToolchains = filteredConfigToolchains
+	parentSrc.Digest = parentSrc.CalcDigest(ctx).String()
 	return parentSrc, nil
 }
 
@@ -1505,14 +1825,14 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateBlueprint(
 	}
 
 	// If no blueprints are set, return without error
-	if len(parentSrc.Self().Blueprints) == 0 {
+	if len(parentSrc.Self().Toolchains) == 0 {
 		return parentSrc.Result, nil
 	}
 
 	// Loop over the existing blueprints and update each one
 	var newUpdatedBpArgs []core.ModuleSourceID
-	for _, existingBp := range parentSrc.Self().Blueprints {
-		bpSrc := existingBp.Self()
+	for _, existingTc := range parentSrc.Self().Toolchains {
+		bpSrc := existingTc.Self()
 
 		// Only update git sources, skip local blueprints
 		if bpSrc.Kind != core.ModuleSourceKindGit {
@@ -1864,8 +2184,11 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 		}
 	}
 
-	// Copy blueprints configuration (config.go already upgrades Blueprint -> Blueprints)
-	modCfg.Blueprints = src.ConfigBlueprints
+	// Copy blueprint and toolchains configuration
+	if src.ConfigBlueprint != nil {
+		modCfg.Blueprint = src.ConfigBlueprint
+	}
+	modCfg.Toolchains = src.ConfigToolchains
 
 	// Check version compatibility.
 	if !engine.CheckVersionCompatibility(modCfg.EngineVersion, engine.MinimumModuleVersion) {
@@ -2494,23 +2817,17 @@ func (s *moduleSourceSchema) moduleSourceIntrospectionSchemaJSON(
 	return file, nil
 }
 
-// blueprintContext holds information about blueprint handling for a module
-type blueprintContext struct {
-	originalSrc  dagql.ObjectResult[*core.ModuleSource]
-	src          dagql.ObjectResult[*core.ModuleSource]
-	isSingleMode bool // true when single blueprint without SDK - becomes top-level
-}
-
-// detectSingleBlueprintMode checks if we should use single blueprint mode (no namespacing)
-func detectSingleBlueprintMode(src *core.ModuleSource) bool {
-	return len(src.Blueprints) == 1 && len(src.Dependencies) == 0 && src.SDK == nil
+// toolchainContext holds information about blueprint handling for a module
+type toolchainContext struct {
+	originalSrc dagql.ObjectResult[*core.ModuleSource]
+	src         dagql.ObjectResult[*core.ModuleSource]
 }
 
 // createBaseModule creates the initial module structure with dependencies
 func (s *moduleSourceSchema) createBaseModule(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
-	bpCtx blueprintContext,
+	bpCtx toolchainContext,
 ) (*core.Module, error) {
 	sdk := src.Self().SDK
 	if sdk == nil {
@@ -2596,26 +2913,26 @@ func createStubModule(ctx context.Context, mod *core.Module, dag *dagql.Server) 
 	return mod, nil
 }
 
-// extractBlueprintModules finds all blueprint modules from dependencies
-func extractBlueprintModules(mod *core.Module) []*core.Module {
-	var blueprintMods []*core.Module
+// extractToolchainModules finds all blueprint modules from dependencies
+func extractToolchainModules(mod *core.Module) []*core.Module {
+	var toolchainMods []*core.Module
 	for _, depMod := range mod.Deps.Mods {
 		if userMod, ok := depMod.(*core.Module); ok && userMod.IsBlueprint {
-			blueprintMods = append(blueprintMods, userMod)
+			toolchainMods = append(toolchainMods, userMod)
 		}
 	}
-	return blueprintMods
+	return toolchainMods
 }
 
-// addBlueprintFieldsToObject adds blueprint fields/functions to an existing TypeDef
-func addBlueprintFieldsToObject(
+// addToolchainFieldsToObject adds toolchain fields/functions to an existing TypeDef
+func addToolchainFieldsToObject(
 	objectDef *core.TypeDef,
-	blueprintMods []*core.Module,
+	toolchainMods []*core.Module,
 	mod *core.Module,
 ) (*core.TypeDef, error) {
 	objectDef = objectDef.Clone()
 
-	for _, bpMod := range blueprintMods {
+	for _, bpMod := range toolchainMods {
 		for _, obj := range bpMod.ObjectDefs {
 			if obj.AsObject.Value.Name == strcase.ToCamel(bpMod.NameField) {
 				// Use the original name (with hyphens) as the map key,
@@ -2623,14 +2940,14 @@ func addBlueprintFieldsToObject(
 				originalName := bpMod.NameField
 				fieldName := strcase.ToLowerCamel(bpMod.NameField)
 
-				// Always add blueprints as functions (treating them as zero-argument constructors
+				// Always add toolchains as functions (treating them as zero-argument constructors
 				// if they don't have an explicit constructor). This ensures consistent behavior
 				// and proper routing to the blueprint module's runtime.
 				var constructor *core.Function
 				if obj.AsObject.Value.Constructor.Valid {
 					constructor = obj.AsObject.Value.Constructor.Value.Clone()
 				} else {
-					// Create a zero-argument function for blueprints without constructors
+					// Create a zero-argument function for toolchains without constructors
 					constructor = &core.Function{
 						Args: []*core.FunctionArg{},
 					}
@@ -2638,16 +2955,16 @@ func addBlueprintFieldsToObject(
 
 				constructor.Name = fieldName
 				constructor.OriginalName = originalName
-				constructor.Description = fmt.Sprintf("Blueprint module: %s", originalName)
+				constructor.Description = fmt.Sprintf("Toolchain module: %s", originalName)
 				constructor.ReturnType = obj
 
 				var err error
 				objectDef, err = objectDef.WithFunction(constructor)
 				if err != nil {
-					return nil, fmt.Errorf("failed to add blueprint function %q: %w", fieldName, err)
+					return nil, fmt.Errorf("failed to add toolchain function %q: %w", fieldName, err)
 				}
 
-				mod.BlueprintModules[originalName] = bpMod
+				mod.ToolchainModules[originalName] = bpMod
 				break
 			}
 		}
@@ -2656,16 +2973,16 @@ func addBlueprintFieldsToObject(
 	return objectDef, nil
 }
 
-// mergeBlueprintsWithSDK merges blueprint fields into SDK's main object
-func mergeBlueprintsWithSDK(
+// mergeToolchainsWithSDK merges toolchain fields into SDK's main object
+func mergeToolchainsWithSDK(
 	mod *core.Module,
-	blueprintMods []*core.Module,
+	toolchainMods []*core.Module,
 ) error {
 	mainModuleObjectName := strcase.ToCamel(mod.NameField)
 
 	for i, obj := range mod.ObjectDefs {
 		if obj.AsObject.Valid && obj.AsObject.Value.Name == mainModuleObjectName {
-			mergedObj, err := addBlueprintFieldsToObject(obj, blueprintMods, mod)
+			mergedObj, err := addToolchainFieldsToObject(obj, toolchainMods, mod)
 			if err != nil {
 				return err
 			}
@@ -2677,11 +2994,11 @@ func mergeBlueprintsWithSDK(
 	return fmt.Errorf("main module object %q not found", mainModuleObjectName)
 }
 
-// createShadowModuleForBlueprints creates a new module object to hold blueprint fields
-func createShadowModuleForBlueprints(
+// createShadowModuleForToolchains creates a new module object to hold toolchain fields
+func createShadowModuleForToolchains(
 	ctx context.Context,
 	mod *core.Module,
-	blueprintMods []*core.Module,
+	toolchainMods []*core.Module,
 	dag *dagql.Server,
 ) (*core.Module, error) {
 	shadowTypeDef := &core.ObjectTypeDef{
@@ -2697,14 +3014,14 @@ func createShadowModuleForBlueprints(
 		},
 	}
 
-	shadowModule, err := addBlueprintFieldsToObject(shadowModule, blueprintMods, mod)
+	shadowModule, err := addToolchainFieldsToObject(shadowModule, toolchainMods, mod)
 	if err != nil {
 		return nil, err
 	}
 
 	mod, err = mod.WithObject(ctx, shadowModule)
 	if err != nil {
-		return nil, fmt.Errorf("failed to add blueprints to module: %w", err)
+		return nil, fmt.Errorf("failed to add toolchains to module: %w", err)
 	}
 
 	obj := &core.ModuleObject{
@@ -2713,32 +3030,27 @@ func createShadowModuleForBlueprints(
 	}
 	mod.ResultID = dagql.CurrentID(ctx)
 	if err := obj.Install(ctx, dag); err != nil {
-		return nil, fmt.Errorf("failed to install no-sdk module with blueprints %q: %w", mod.NameField, err)
+		return nil, fmt.Errorf("failed to install no-sdk module with toolchains %q: %w", mod.NameField, err)
 	}
 
 	return mod, nil
 }
 
-// integrateBlueprints adds blueprint modules as fields to the main module
-func (s *moduleSourceSchema) integrateBlueprints(
+// integrateToolchains adds toolchain modules as fields to the main module
+func (s *moduleSourceSchema) integrateToolchains(
 	ctx context.Context,
 	mod *core.Module,
-	bpCtx blueprintContext,
+	bpCtx toolchainContext,
 	dag *dagql.Server,
 ) (*core.Module, error) {
-	// Skip if we're in single blueprint mode (already handled)
-	if bpCtx.isSingleMode {
+	toolchainMods := extractToolchainModules(mod)
+	if len(toolchainMods) == 0 {
 		return mod, nil
 	}
 
-	blueprintMods := extractBlueprintModules(mod)
-	if len(blueprintMods) == 0 {
-		return mod, nil
-	}
-
-	// Initialize blueprint modules map
-	if mod.BlueprintModules == nil {
-		mod.BlueprintModules = make(map[string]*core.Module)
+	// Initialize toolchain modules map
+	if mod.ToolchainModules == nil {
+		mod.ToolchainModules = make(map[string]*core.Module)
 	}
 
 	// Check if we have an SDK module (has object definitions)
@@ -2746,11 +3058,11 @@ func (s *moduleSourceSchema) integrateBlueprints(
 
 	var err error
 	if hasSDK {
-		// Merge blueprint fields into SDK's main object
-		err = mergeBlueprintsWithSDK(mod, blueprintMods)
+		// Merge toolchain fields into SDK's main object
+		err = mergeToolchainsWithSDK(mod, toolchainMods)
 	} else {
-		// No SDK - create shadow module to hold blueprint fields
-		mod, err = createShadowModuleForBlueprints(ctx, mod, blueprintMods, dag)
+		// No SDK - create shadow module to hold toolchain fields
+		mod, err = createShadowModuleForToolchains(ctx, mod, toolchainMods, dag)
 	}
 
 	if err != nil {
@@ -2788,21 +3100,26 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("module requires dagger %s, but you have %s", engineVersion, engine.Version)
 	}
 
-	// Set up blueprint context
-	bpCtx := blueprintContext{
-		originalSrc:  src,
-		src:          src,
-		isSingleMode: detectSingleBlueprintMode(src.Self()),
+	// Set up toolchain context
+	originalSrc := src
+	// Blueprint mode is ONLY when we have the legacy Blueprint field set (from `dagger init --blueprint`)
+	// Toolchains are always loaded as toolchains, even if there's just one
+	isBlueprintMode := src.Self().Blueprint.Self() != nil
+
+	tcCtx := toolchainContext{
+		originalSrc: src,
+		src:         src,
 	}
 
-	// In single blueprint mode, use the blueprint as the main source
-	if bpCtx.isSingleMode {
-		src = src.Self().Blueprints[0]
-		bpCtx.src = src
+	// In blueprint mode, use the blueprint as the main source
+	// This must happen BEFORE creating the module so the SDK loads from blueprint source
+	if isBlueprintMode {
+		src = src.Self().Blueprint
+		tcCtx.src = src
 	}
 
 	// Create base module with dependencies
-	mod, err := s.createBaseModule(ctx, src, bpCtx)
+	mod, err := s.createBaseModule(ctx, src, tcCtx)
 	if err != nil {
 		return inst, err
 	}
@@ -2813,23 +3130,26 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		if err != nil {
 			return inst, err
 		}
-	} else if len(src.Self().Blueprints) == 0 {
-		// No SDK and no blueprints - create stub module
+	} else if len(originalSrc.Self().Toolchains) == 0 && !isBlueprintMode {
+		// No SDK, no toolchains, and no single blueprint - create stub module
 		mod, err = createStubModule(ctx, mod, dag)
 		if err != nil {
 			return inst, err
 		}
 	}
 
-	// Integrate blueprint modules as fields
-	mod, err = s.integrateBlueprints(ctx, mod, bpCtx, dag)
-	if err != nil {
-		return inst, err
+	// Integrate toolchain modules as fields (but not in single blueprint mode)
+	if !isBlueprintMode {
+		mod, err = s.integrateToolchains(ctx, mod, tcCtx, dag)
+		if err != nil {
+			return inst, err
+		}
 	}
 
-	// In single blueprint mode, show the downstream module name
-	if bpCtx.isSingleMode {
-		mod.NameField = bpCtx.originalSrc.Self().ModuleName
+	// In single blueprint mode, show the downstream module name to clients
+	// NOTE: we don't change OriginalName, that's used internally at runtime
+	if isBlueprintMode {
+		mod.NameField = originalSrc.Self().ModuleName
 	}
 
 	inst, err = dagql.NewResultForCurrentID(ctx, mod)
@@ -2867,10 +3187,10 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	}
 
 	// Load all blueprints as dependencies
-	bpMods := make([]dagql.Result[*core.Module], len(src.Self().Blueprints))
-	if len(src.Self().Blueprints) > 0 {
+	bpMods := make([]dagql.Result[*core.Module], len(src.Self().Toolchains))
+	if len(src.Self().Toolchains) > 0 {
 		var bpeg errgroup.Group
-		for i, bpSrc := range src.Self().Blueprints {
+		for i, bpSrc := range src.Self().Toolchains {
 			bpeg.Go(func() error {
 				err := dag.Select(ctx, bpSrc, &bpMods[i],
 					dagql.Selector{Field: "asModule"},

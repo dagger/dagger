@@ -47,6 +47,7 @@ var (
 
 	initBlueprint        string
 	blueprintInstallName string
+	toolchainInstallName string
 
 	developSDK        string
 	developSourcePath string
@@ -173,9 +174,23 @@ func init() {
 	blueprintUninstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
 	moduleAddFlags(blueprintUninstallCmd, blueprintUninstallCmd.Flags(), false)
 
+	toolchainInstallCmd.Flags().StringVarP(&toolchainInstallName, "name", "n", "", "Name to use for the toolchain in the module. Defaults to the name of the toolchain being installed.")
+	toolchainInstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
+	moduleAddFlags(toolchainInstallCmd, toolchainInstallCmd.Flags(), false)
+
+	toolchainUpdateCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
+	moduleAddFlags(toolchainUpdateCmd, toolchainUpdateCmd.Flags(), false)
+
+	toolchainUninstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
+	moduleAddFlags(toolchainUninstallCmd, toolchainUninstallCmd.Flags(), false)
+
 	blueprintCmd.AddCommand(blueprintInstallCmd)
 	blueprintCmd.AddCommand(blueprintUpdateCmd)
 	blueprintCmd.AddCommand(blueprintUninstallCmd)
+
+	toolchainCmd.AddCommand(toolchainInstallCmd)
+	toolchainCmd.AddCommand(toolchainUpdateCmd)
+	toolchainCmd.AddCommand(toolchainUninstallCmd)
 }
 
 var moduleInitCmd = &cobra.Command{
@@ -902,6 +917,175 @@ var blueprintUninstallCmd = &cobra.Command{
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "blueprint uninstalled\n")
+			return nil
+		})
+	},
+}
+
+var toolchainCmd = &cobra.Command{
+	Use:   "toolchain",
+	Short: "Manage toolchains",
+}
+
+var toolchainInstallCmd = &cobra.Command{
+	Use:     "install [options] <module>",
+	Short:   "Install a toolchain to the current module",
+	Long:    "Install another module as a toolchain to the current module.",
+	Example: "dagger toolchain install github.com/example/toolchain",
+	Args:    cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
+		ctx := cmd.Context()
+		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			dag := engineClient.Dagger()
+
+			modRef, err := getModuleSourceRefWithDefault()
+			if err != nil {
+				return err
+			}
+			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
+				// We can only install toolchains to a local module
+				RequireKind: dagger.ModuleSourceKindLocalSource,
+			})
+
+			alreadyExists, err := modSrc.ConfigExists(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to check if module already exists: %w", err)
+			}
+			if !alreadyExists {
+				return fmt.Errorf("module must be fully initialized")
+			}
+
+			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get local context directory path: %w", err)
+			}
+
+			toolchainRefStr := extraArgs[0]
+			toolchainSrc := dag.ModuleSource(toolchainRefStr, dagger.ModuleSourceOpts{
+				DisableFindUp: true,
+			})
+
+			if toolchainInstallName != "" {
+				toolchainSrc = toolchainSrc.WithName(toolchainInstallName)
+			}
+
+			modSrc = modSrc.WithToolchain(toolchainSrc)
+
+			if engineVersion := getCompatVersion(); engineVersion != "" {
+				modSrc = modSrc.WithEngineVersion(engineVersion)
+			}
+
+			_, err = modSrc.
+				GeneratedContextDirectory().
+				Export(ctx, contextDirPath)
+			if err != nil {
+				return fmt.Errorf("failed to install toolchain: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "toolchain installed\n")
+			return nil
+		})
+	},
+}
+
+//nolint:dupl
+var toolchainUpdateCmd = &cobra.Command{
+	Use:     "update [options] [<toolchain>...]",
+	Short:   "Update toolchains",
+	Long:    "Update all or specific toolchains of the current module.",
+	Example: "dagger toolchain update",
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
+		ctx := cmd.Context()
+		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			dag := engineClient.Dagger()
+
+			modRef, err := getModuleSourceRefWithDefault()
+			if err != nil {
+				return err
+			}
+			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
+				// We can only update toolchains on a local module
+				RequireKind: dagger.ModuleSourceKindLocalSource,
+			})
+
+			alreadyExists, err := modSrc.ConfigExists(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to check if module already exists: %w", err)
+			}
+			if !alreadyExists {
+				return fmt.Errorf("module must be fully initialized")
+			}
+
+			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get local context directory path: %w", err)
+			}
+
+			modSrc = modSrc.WithUpdateBlueprint()
+			if engineVersion := getCompatVersion(); engineVersion != "" {
+				modSrc = modSrc.WithEngineVersion(engineVersion)
+			}
+
+			_, err = modSrc.
+				GeneratedContextDirectory().
+				Export(ctx, contextDirPath)
+			if err != nil {
+				return fmt.Errorf("failed to update toolchains: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "toolchains updated\n")
+			return nil
+		})
+	},
+}
+
+//nolint:dupl
+var toolchainUninstallCmd = &cobra.Command{
+	Use:     "uninstall [options] <toolchain>",
+	Short:   "Uninstall a toolchain",
+	Long:    "Uninstall a toolchain from the current module.",
+	Example: "dagger toolchain uninstall mytoolchain",
+	Args:    cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
+		ctx := cmd.Context()
+		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			dag := engineClient.Dagger()
+
+			modRef, err := getModuleSourceRefWithDefault()
+			if err != nil {
+				return err
+			}
+			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
+				// We can only uninstall toolchains on a local module
+				RequireKind: dagger.ModuleSourceKindLocalSource,
+			})
+
+			alreadyExists, err := modSrc.ConfigExists(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to check if module already exists: %w", err)
+			}
+			if !alreadyExists {
+				return fmt.Errorf("module must be fully initialized")
+			}
+
+			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get local context directory path: %w", err)
+			}
+
+			modSrc = modSrc.WithoutBlueprint()
+			if engineVersion := getCompatVersion(); engineVersion != "" {
+				modSrc = modSrc.WithEngineVersion(engineVersion)
+			}
+
+			_, err = modSrc.
+				GeneratedContextDirectory().
+				Export(ctx, contextDirPath)
+			if err != nil {
+				return fmt.Errorf("failed to uninstall toolchain: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "toolchain uninstalled\n")
 			return nil
 		})
 	},

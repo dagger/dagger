@@ -4391,13 +4391,7 @@
 			"t": "M",
 			"n": "Dagger\\ModuleSource::blueprint",
 			"p": "Dagger/ModuleSource.html#method_blueprint",
-			"d": "<p>The blueprint referenced by the module source (deprecated, use blueprints).</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\ModuleSource::blueprints",
-			"p": "Dagger/ModuleSource.html#method_blueprints",
-			"d": "<p>The blueprints referenced by the module source.</p>"
+			"d": "<p>The blueprint referenced by the module source.</p>"
 		},
 		{
 			"t": "M",
@@ -4551,6 +4545,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::toolchains",
+			"p": "Dagger/ModuleSource.html#method_toolchains",
+			"d": "<p>The toolchains referenced by the module source.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::userDefaults",
 			"p": "Dagger/ModuleSource.html#method_userDefaults",
 			"d": "<p>User-defined defaults read from local .env files</p>"
@@ -4617,6 +4617,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::withToolchain",
+			"p": "Dagger/ModuleSource.html#method_withToolchain",
+			"d": "<p>Add a toolchain to the module source.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::withUpdateBlueprint",
 			"p": "Dagger/ModuleSource.html#method_withUpdateBlueprint",
 			"d": "<p>Update the blueprint module to the latest version.</p>"
@@ -4626,6 +4632,12 @@
 			"n": "Dagger\\ModuleSource::withUpdateDependencies",
 			"p": "Dagger/ModuleSource.html#method_withUpdateDependencies",
 			"d": "<p>Update one or more module dependencies.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleSource::withUpdateToolchains",
+			"p": "Dagger/ModuleSource.html#method_withUpdateToolchains",
+			"d": "<p>Update one or more toolchains.</p>"
 		},
 		{
 			"t": "M",
@@ -4656,6 +4668,12 @@
 			"n": "Dagger\\ModuleSource::withoutExperimentalFeatures",
 			"p": "Dagger/ModuleSource.html#method_withoutExperimentalFeatures",
 			"d": "<p>Disable experimental features for the module source.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleSource::withoutToolchains",
+			"p": "Dagger/ModuleSource.html#method_withoutToolchains",
+			"d": "<p>Remove the provided toolchains from the module source.</p>"
 		},
 		{
 			"t": "M",

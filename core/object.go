@@ -415,10 +415,10 @@ func (obj *ModuleObject) fields() (fields []dagql.Field[*ModuleObject]) {
 func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fields []dagql.Field[*ModuleObject], err error) {
 	objDef := obj.TypeDef
 	for _, fun := range obj.TypeDef.Functions {
-		// Check if this is a blueprint proxy function
-		if obj.Module.BlueprintModules != nil {
-			if bpMod, ok := obj.Module.BlueprintModules[fun.OriginalName]; ok {
-				bpFun, err := blueprintProxyFunction(ctx, obj.Module, fun, bpMod, dag)
+		// Check if this is a toolchain proxy function
+		if obj.Module.ToolchainModules != nil {
+			if bpMod, ok := obj.Module.ToolchainModules[fun.OriginalName]; ok {
+				bpFun, err := toolchainProxyFunction(ctx, obj.Module, fun, bpMod, dag)
 				if err != nil {
 					return nil, err
 				}
@@ -473,15 +473,15 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 	}
 }
 
-// blueprintProxyFunction creates a function resolver that calls a blueprint module's constructor.
-// This is used when a blueprint has a constructor - instead of returning a pre-initialized object,
+// toolchainProxyFunction creates a function resolver that calls a toolchain module's constructor.
+// This is used when a toolchain has a constructor - instead of returning a pre-initialized object,
 // it calls the constructor function with the provided arguments.
-// If the blueprint has no constructor, it returns an uninitialized object (treating it like a
+// If the toolchain has no constructor, it returns an uninitialized object (treating it like a
 // zero-argument constructor).
-func blueprintProxyFunction(ctx context.Context, mod *Module, fun *Function, bpMod *Module, dag *dagql.Server) (dagql.Field[*ModuleObject], error) {
-	// Find the blueprint's main object type
+func toolchainProxyFunction(ctx context.Context, mod *Module, fun *Function, bpMod *Module, dag *dagql.Server) (dagql.Field[*ModuleObject], error) {
+	// Find the toolchain's main object type
 	if len(bpMod.ObjectDefs) == 0 {
-		return dagql.Field[*ModuleObject]{}, fmt.Errorf("blueprint module %q has no objects", bpMod.Name())
+		return dagql.Field[*ModuleObject]{}, fmt.Errorf("toolchain module %q has no objects", bpMod.Name())
 	}
 
 	var mainObjDef *ObjectTypeDef
@@ -492,29 +492,29 @@ func blueprintProxyFunction(ctx context.Context, mod *Module, fun *Function, bpM
 		}
 	}
 	if mainObjDef == nil {
-		return dagql.Field[*ModuleObject]{}, fmt.Errorf("blueprint module %q has no main object", bpMod.Name())
+		return dagql.Field[*ModuleObject]{}, fmt.Errorf("toolchain module %q has no main object", bpMod.Name())
 	}
 
-	// Check if blueprint has a constructor
+	// Check if toolchain has a constructor
 	hasConstructor := mainObjDef.Constructor.Valid
-
-	spec, err := fun.FieldSpec(ctx, mod)
-	if err != nil {
-		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to get field spec for blueprint: %w", err)
-	}
-	spec.Module = mod.IDModule()
 
 	if !hasConstructor {
 		// No constructor - treat as a zero-argument function that returns an uninitialized object
+		spec, err := fun.FieldSpec(ctx, mod)
+		if err != nil {
+			return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to get field spec for toolchain: %w", err)
+		}
+		spec.Module = mod.IDModule()
+		
 		return dagql.Field[*ModuleObject]{
 			Spec: &spec,
 			Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
-				// Return an instance of the blueprint's main object with empty fields
-				// The blueprint module's own resolvers will handle function calls on this object
+				// Return an instance of the toolchain's main object with empty fields
+				// The toolchain module's own resolvers will handle function calls on this object
 				return dagql.NewResultForCurrentID(ctx, &ModuleObject{
 					Module:  bpMod,
 					TypeDef: mainObjDef,
-					Fields:  map[string]any{}, // empty fields, functions will be called on the blueprint's runtime
+					Fields:  map[string]any{}, // empty fields, functions will be called on the toolchain's runtime
 				})
 			},
 			CacheSpec: dagql.CacheSpec{
@@ -523,7 +523,7 @@ func blueprintProxyFunction(ctx context.Context, mod *Module, fun *Function, bpM
 		}, nil
 	}
 
-	// Has constructor - create a ModFunction for it
+	// Has constructor - create a ModFunction for it and use its spec
 	constructor := mainObjDef.Constructor.Value
 
 	modFun, err := NewModFunction(
@@ -534,13 +534,22 @@ func blueprintProxyFunction(ctx context.Context, mod *Module, fun *Function, bpM
 		constructor,
 	)
 	if err != nil {
-		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to create blueprint constructor function %q: %w", fun.Name, err)
+		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to create toolchain constructor function %q: %w", fun.Name, err)
 	}
 
 	// Apply local user defaults
 	if err := modFun.mergeUserDefaultsTypeDefs(ctx); err != nil {
-		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to merge user defaults for blueprint constructor %q: %w", fun.Name, err)
+		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to merge user defaults for toolchain constructor %q: %w", fun.Name, err)
 	}
+
+	// Get the constructor's spec, which includes its arguments
+	spec, err := constructor.FieldSpec(ctx, bpMod)
+	if err != nil {
+		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to get field spec for toolchain constructor: %w", err)
+	}
+	// But use the toolchain name from the parent module
+	spec.Name = fun.Name
+	spec.Module = mod.IDModule()
 
 	//nolint:dupl
 	return dagql.Field[*ModuleObject]{

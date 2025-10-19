@@ -53,27 +53,28 @@ func (BlueprintSuite) TestBlueprintUseLocal(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (BlueprintSuite) TestBlueprintConstructor(ctx context.Context, t *testctx.T) {
+func (BlueprintSuite) TestToolchainConstructor(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	// Test single blueprint installation
-	t.Run("use blueprint constructor", func(ctx context.Context, t *testctx.T) {
+	// Test single toolchain installation
+	t.Run("use toolchain constructor", func(ctx context.Context, t *testctx.T) {
 		modGen := blueprintTestEnv(t, c).
 			WithWorkdir("app").
-			With(daggerExec("init", "--blueprint=../hello-with-constructor"))
+			With(daggerExec("init")).
+			With(daggerExec("toolchain", "install", "../hello-with-constructor"))
 		modGen = modGen.WithNewFile("app-config.txt", "this is the app configuration").
 			WithNewFile("other-config.txt", "this is the other app configuration")
 		appConfig, err := modGen.
-			With(daggerExec("call", "field-config")).
+			With(daggerExec("call", "hello", "field-config")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, appConfig, "this is the app configuration")
 		appConfig, err = modGen.
-			With(daggerExec("call", "--config", "other-config.txt", "field-config")).
+			With(daggerExec("call", "hello", "--config", "other-config.txt", "field-config")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, appConfig, "this is the other app configuration")
-		// Test multiple blueprint installations
-		modGen = modGen.With(daggerExec("blueprint", "install", "../myblueprint-ts"))
+		// Test multiple toolchain installations
+		modGen = modGen.With(daggerExec("toolchain", "install", "../myblueprint-ts"))
 		appConfig, err = modGen.
 			With(daggerExec("call", "hello", "field-config")).
 			Stdout(ctx)
@@ -122,25 +123,26 @@ func (BlueprintSuite) TestBlueprintInit(ctx context.Context, t *testctx.T) {
 	}
 }
 
-func (BlueprintSuite) TestMultipleBlueprints(ctx context.Context, t *testctx.T) {
+func (BlueprintSuite) TestMultipleToolchains(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	t.Run("install multiple blueprints", func(ctx context.Context, t *testctx.T) {
+	t.Run("install multiple toolchains", func(ctx context.Context, t *testctx.T) {
 		modGen := blueprintTestEnv(t, c).
 			WithWorkdir("app").
-			With(daggerExec("init", "--blueprint=../hello"))
-		// Verify blueprint was installed by calling function
+			With(daggerExec("init")).
+			With(daggerExec("toolchain", "install", "../hello"))
+		// Verify toolchain was installed by calling function
 		out, err := modGen.
-			With(daggerExec("call", "message")).
+			With(daggerExec("call", "hello", "message")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "hello from blueprint")
-		// install another blueprint
+		// install another toolchain
 		modGen = modGen.
-			With(daggerExec("blueprint", "install", "../myblueprint-ts")).
-			With(daggerExec("blueprint", "install", "../myblueprint-py"))
+			With(daggerExec("toolchain", "install", "../myblueprint-ts")).
+			With(daggerExec("toolchain", "install", "../myblueprint-py"))
 		out, err = modGen.Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "blueprint installed")
+		require.Contains(t, out, "toolchain installed")
 		out, err = modGen.
 			With(daggerExec("call", "hello", "message")).
 			Stdout(ctx)
@@ -165,13 +167,13 @@ func (BlueprintSuite) TestMultipleBlueprints(ctx context.Context, t *testctx.T) 
 	})
 }
 
-func (BlueprintSuite) TestBlueprintsWithSDK(ctx context.Context, t *testctx.T) {
+func (BlueprintSuite) TestToolchainsWithSDK(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	t.Run("use blueprint with sdk", func(ctx context.Context, t *testctx.T) {
 		modGen := blueprintTestEnv(t, c).
 			WithWorkdir("app").
 			With(daggerExec("init", "--sdk=go")).
-			With(daggerExec("blueprint", "install", "../hello"))
+			With(daggerExec("toolchain", "install", "../hello"))
 		// verify we can call function from our module code
 		out, err := modGen.
 			With(daggerExec("call", "container-echo", "--string-arg", "yoyo", "stdout")).

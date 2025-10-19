@@ -8973,28 +8973,11 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The blueprint referenced by the module source (deprecated, use blueprints).
+   * The blueprint referenced by the module source.
    */
   blueprint = (): ModuleSource => {
     const ctx = this._ctx.select("blueprint")
     return new ModuleSource(ctx)
-  }
-
-  /**
-   * The blueprints referenced by the module source.
-   */
-  blueprints = async (): Promise<ModuleSource[]> => {
-    type blueprints = {
-      id: ModuleSourceID
-    }
-
-    const ctx = this._ctx.select("blueprints").select("id")
-
-    const response: Awaited<blueprints[]> = await ctx.execute()
-
-    return response.map((r) =>
-      new Client(ctx.copy()).loadModuleSourceFromID(r.id),
-    )
   }
 
   /**
@@ -9328,6 +9311,23 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * The toolchains referenced by the module source.
+   */
+  toolchains = async (): Promise<ModuleSource[]> => {
+    type toolchains = {
+      id: ModuleSourceID
+    }
+
+    const ctx = this._ctx.select("toolchains").select("id")
+
+    const response: Awaited<toolchains[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadModuleSourceFromID(r.id),
+    )
+  }
+
+  /**
    * User-defined defaults read from local .env files
    */
   userDefaults = (): EnvFile => {
@@ -9435,6 +9435,15 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * Add a toolchain to the module source.
+   * @param toolchain The toolchain module to add.
+   */
+  withToolchain = (toolchain: ModuleSource): ModuleSource => {
+    const ctx = this._ctx.select("withToolchain", { toolchain })
+    return new ModuleSource(ctx)
+  }
+
+  /**
    * Update the blueprint module to the latest version.
    */
   withUpdateBlueprint = (): ModuleSource => {
@@ -9448,6 +9457,15 @@ export class ModuleSource extends BaseClient {
    */
   withUpdateDependencies = (dependencies: string[]): ModuleSource => {
     const ctx = this._ctx.select("withUpdateDependencies", { dependencies })
+    return new ModuleSource(ctx)
+  }
+
+  /**
+   * Update one or more toolchains.
+   * @param toolchains The toolchains to update.
+   */
+  withUpdateToolchains = (toolchains: string[]): ModuleSource => {
+    const ctx = this._ctx.select("withUpdateToolchains", { toolchains })
     return new ModuleSource(ctx)
   }
 
@@ -9494,6 +9512,15 @@ export class ModuleSource extends BaseClient {
     features: ModuleSourceExperimentalFeature[],
   ): ModuleSource => {
     const ctx = this._ctx.select("withoutExperimentalFeatures", { features })
+    return new ModuleSource(ctx)
+  }
+
+  /**
+   * Remove the provided toolchains from the module source.
+   * @param toolchains The toolchains to remove.
+   */
+  withoutToolchains = (toolchains: string[]): ModuleSource => {
+    const ctx = this._ctx.select("withoutToolchains", { toolchains })
     return new ModuleSource(ctx)
   }
 
