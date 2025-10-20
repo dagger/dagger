@@ -17,13 +17,13 @@
     "lint:fix": "markdownlint -c ../.markdownlint.yaml --fix ."
   },
   "dependencies": {
-    "@docusaurus/core": "^3.9.1",
+    "@docusaurus/core": "^3.9.2",
     "@docusaurus/mdx-loader": "^3.8.1",
-    "@docusaurus/plugin-content-docs": "^3.9.1",
-    "@docusaurus/preset-classic": "^3.9.1",
+    "@docusaurus/plugin-content-docs": "^3.9.2",
+    "@docusaurus/preset-classic": "^3.9.2",
     "@docusaurus/theme-classic": "^3.5.2",
     "@docusaurus/theme-common": "^3.8.1",
-    "@docusaurus/theme-mermaid": "^3.9.1",
+    "@docusaurus/theme-mermaid": "^3.9.2",
     "@mdx-js/mdx": "^3.1.1",
     "@mdx-js/react": "3.x",
     "clsx": "^2.1.1",
@@ -31,7 +31,7 @@
     "docusaurus-plugin-sass": "^0.2.6",
     "docusaurus-plugin-typedoc": "^1.4.2",
     "posthog-docusaurus": "^2.0.5",
-    "posthog-js": "^1.275.1",
+    "posthog-js": "^1.276.0",
     "prism-react-renderer": "^2.4.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
@@ -45,9 +45,9 @@
   },
   "devDependencies": {
     "@docusaurus/module-type-aliases": "^3.5.2",
-    "@docusaurus/tsconfig": "^3.9.1",
+    "@docusaurus/tsconfig": "^3.9.2",
     "@docusaurus/types": "^3.5.2",
-    "@types/node": "^24.7",
+    "@types/node": "^24.8",
     "markdownlint-cli": "^0.45.0"
   },
   "browserslist": {
