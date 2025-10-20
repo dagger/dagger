@@ -246,10 +246,6 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	// The operation is not wrapped in dagOp at the schema level, so we manually handle
-	// it inside the resolver.
-	// That's because it's more convenient to call `MakeDirectoryContentHashed` here
-	// that having an option in the `dagOpDirectoryWrapper`
 	copyPath := path.Clean(args.Path)
 	initialAbsCopyPath, err := bk.AbsPath(ctx, copyPath)
 	if err != nil {
