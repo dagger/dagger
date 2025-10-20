@@ -1,4 +1,4 @@
-package local
+package filesync
 
 import (
 	"encoding/binary"

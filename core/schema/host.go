@@ -2,7 +2,6 @@ package schema
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,7 +14,6 @@ import (
 	"github.com/containerd/containerd/leases"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	bkworker "github.com/dagger/dagger/internal/buildkit/worker"
@@ -145,7 +143,11 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Host]{
-		dagql.NodeFuncWithCacheKey("directory", s.directory, dagql.CacheAsRequested).
+		dagql.NodeFuncWithCacheKey("directory",
+			DagOpDirectoryWrapper(
+				srv, s.directory,
+				WithHashContentDir[*core.Host, hostDirectoryArgs](),
+			), dagql.CacheAsRequested).
 			Doc(`Accesses a directory on the host.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to access (e.g., ".").`),
@@ -225,6 +227,7 @@ type hostDirectoryArgs struct {
 
 	GitIgnoreRoot string `internal:"true" default:""`
 	Gitignore     bool   `default:"false"`
+	DagOpInternalArgs
 }
 
 func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
@@ -232,8 +235,6 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	if err != nil {
 		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
-
-	args.Path = path.Clean(args.Path)
 
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
@@ -245,125 +246,88 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	hostPath := args.Path
-	hostPath, err = bk.AbsPath(ctx, hostPath)
+	copyPath := path.Clean(args.Path)
+	initialAbsCopyPath, err := bk.AbsPath(ctx, copyPath)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get absolute path from git ignore root %s: %w", hostPath, err)
+		return inst, fmt.Errorf("failed to get host absolute path for %s: %w", copyPath, err)
 	}
 
-	relPath := "."
+	// Relpath is the actual path the user wants to copy, relative to the absRootCopyPath.
+	// If `args.GitIgnore` is set, absRootCopyPath changes to the .git directory location
+	// so we can load .gitignore patterns from there.
+	// Then we copy everything from relPathFromRoot which is the actual path the caller
+	// wants to copy.
+	absRootCopyPath := initialAbsCopyPath
+	relPathFromRoot := "."
 
 	if args.Gitignore {
-		// load all the .gitgnore patterns inside the context directory (if
-		// ContextDirectoryPath is set) or the git repo if .git is found.
-		originalPath := hostPath
+		// If `args.GitIgnoreRoot` is set, we use it as the root to load .gitignores
+		// patterns from.
+		// Otherwise, we search for a .git directory to be the new root.
 		if args.GitIgnoreRoot != "" {
-			hostPath = args.GitIgnoreRoot
-			hostPath, err = bk.AbsPath(ctx, hostPath)
+			gitRootPath := args.GitIgnoreRoot
+			absRootCopyPath, err = bk.AbsPath(ctx, gitRootPath)
 			if err != nil {
-				return inst, fmt.Errorf("failed to get absolute path from git ignore root %s: %w", hostPath, err)
+				return inst, fmt.Errorf("failed to get absolute path from git ignore root %s: %w", gitRootPath, err)
 			}
 		} else {
-			dotGitPath, found, err := host.Self().FindUp(ctx, core.NewCallerStatFS(bk), hostPath, ".git")
+			dotGitPath, found, err := host.Self().FindUp(ctx, core.NewCallerStatFS(bk), initialAbsCopyPath, ".git")
 			if err != nil {
 				return inst, fmt.Errorf("failed to find up .git: %w", err)
 			}
 			if found {
-				hostPath = dotGitPath
+				absRootCopyPath = dotGitPath
 			}
 		}
-		relPath, err = filepath.Rel(hostPath, originalPath)
+
+		// Compute the relative path to know what the caller actually wants to copy.
+		relPathFromRoot, err = filepath.Rel(absRootCopyPath, initialAbsCopyPath)
 		if err != nil {
-			return inst, fmt.Errorf("failed to get relative path from %q: %w", originalPath, err)
+			return inst, fmt.Errorf("failed to get relative path from %q: %w", initialAbsCopyPath, err)
 		}
 	}
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get requester session ID: %w", err)
-	}
-	stableID := clientMetadata.ClientStableID
-	if stableID == "" {
-		slog.WarnContext(ctx, "client stable ID not set, using random value")
-		stableID = identity.NewID()
-	}
-
-	localOpts := []llb.LocalOption{
-		llb.SessionID(clientMetadata.ClientID),
-		llb.SharedKeyHint(stableID),
-		buildkit.WithTracePropagation(ctx),
-	}
-
-	localName := fmt.Sprintf("upload %s from %s (client id: %s, session id: %s)", args.Path, stableID, clientMetadata.ClientID, clientMetadata.SessionID)
-
-	includePatterns := make([]string, 0, 2+len(args.Include))
-	if relPath != "." {
-		includePatterns = append(includePatterns, "!*", relPath)
+	// If relPathFromRoot is different from the rootCopyPath, we include everything
+	// inside the relPathFromRoot directory by default.
+	includePatterns := make([]string, 0, 1+len(args.Include))
+	if relPathFromRoot != "." {
+		includePatterns = append(includePatterns, "!*", relPathFromRoot)
 	}
 	for _, include := range args.Include {
 		include, negative := strings.CutPrefix(include, "!")
 		if !filepath.IsLocal(include) {
 			continue
 		}
-		include = filepath.Join(relPath, include)
+		include = filepath.Join(relPathFromRoot, include)
 		if negative {
 			include = "!" + include
 		}
 		includePatterns = append(includePatterns, include)
 	}
-	localOpts = append(localOpts, llb.IncludePatterns(includePatterns))
-	if len(args.Include) > 0 {
-		localName += fmt.Sprintf(" (include: %s)", strings.Join(args.Include, ", "))
-	}
 
 	excludePatterns := make([]string, 0, len(args.Exclude))
-	// HACK: to bust the cache and pass custom options, we put them in
-	// excludePatterns. we filter them out later.
-	if args.Gitignore {
-		excludePatterns = append(excludePatterns, "[dagger.gitignore]")
-	}
-	if args.NoCache {
-		excludePatterns = append(excludePatterns, "[dagger.cachebuster="+rand.Text()+"]")
-	}
 	for _, exclude := range args.Exclude {
 		exclude, negative := strings.CutPrefix(exclude, "!")
 		if !filepath.IsLocal(exclude) {
 			continue
 		}
-		exclude = filepath.Join(relPath, exclude)
+		exclude = filepath.Join(relPathFromRoot, exclude)
 		if negative {
 			exclude = "!" + exclude
 		}
 		excludePatterns = append(excludePatterns, exclude)
 	}
-	localOpts = append(localOpts, llb.ExcludePatterns(excludePatterns))
-	if len(args.Exclude) > 0 {
-		localName += fmt.Sprintf(" (exclude: %s)", strings.Join(args.Exclude, ", "))
-	}
 
-	if args.Gitignore {
-		localName += " (with gitignore)"
-	}
+	dir, err := host.Self().Directory(ctx, absRootCopyPath, core.CopyFilter{
+		Include: includePatterns,
+		Exclude: excludePatterns,
+	}, args.Gitignore, args.NoCache, relPathFromRoot)
 
-	localOpts = append(localOpts, llb.WithCustomName(localName))
-
-	localLLB := llb.Local(hostPath, localOpts...)
-
-	localDef, err := localLLB.Marshal(ctx, llb.Platform(query.Platform().Spec()))
 	if err != nil {
-		return inst, fmt.Errorf("failed to marshal local LLB: %w", err)
+		return inst, fmt.Errorf("failed to get directory: %w", err)
 	}
-	localPB := localDef.ToPB()
 
-	dir, err := core.NewDirectory(localPB, "/", query.Platform(), nil).Directory(ctx, relPath)
-	if err != nil {
-		return inst, err
-	}
-	dirRes, err := dagql.NewObjectResultForCurrentID(ctx, srv, dir)
-	if err != nil {
-		return inst, err
-	}
-	return core.MakeDirectoryContentHashed(ctx, bk, dirRes)
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 type hostSocketArgs struct {

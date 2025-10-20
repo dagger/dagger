@@ -1,4 +1,4 @@
-package local
+package filesync
 
 import (
 	"context"
@@ -8,11 +8,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
-	"time"
 
 	"github.com/containerd/continuity/sysx"
-	fscopy "github.com/dagger/dagger/engine/sources/local/copy"
+	fscopy "github.com/dagger/dagger/engine/filesync/copy"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkcontenthash "github.com/dagger/dagger/internal/buildkit/cache/contenthash"
 	"github.com/dagger/dagger/internal/buildkit/session"
@@ -62,6 +62,11 @@ type localFS struct {
 	// /foo/bar/ dir this will be /foo/bar and we will be syncing into <rootPath>/foo/bar
 	subdir string
 
+	// The actual copy path to use for that sync.
+	// In 90% of the case, this will be `/` but if the client is syncing into a parent dir
+	// for example to fetch .gitignore patterns then this will be the actual directory to copy.
+	copyPath string
+
 	// filterFS is the fs that applies the include/exclude patterns to our view of the current
 	// cache filesystem at <rootPath>/<subdir>
 	filterFS     fsutil.FS
@@ -70,7 +75,7 @@ type localFS struct {
 	useGitignore bool     // whether we're using gitignore rules or not
 }
 
-func newLocalFS(sharedState *localFSSharedState, subdir string, includes, excludes []string, useGitIgnore bool) (*localFS, error) {
+func newLocalFS(sharedState *localFSSharedState, subdir string, includes, excludes []string, useGitIgnore bool, copyPath string) (*localFS, error) {
 	baseFS, err := fsutil.NewFS(filepath.Join(sharedState.rootPath, subdir))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create base fs: %w", err)
@@ -97,6 +102,7 @@ func newLocalFS(sharedState *localFSSharedState, subdir string, includes, exclud
 		includes:           includes,
 		excludes:           excludes,
 		useGitignore:       useGitIgnore,
+		copyPath:           copyPath,
 	}, nil
 }
 
@@ -173,6 +179,11 @@ func (local *localFS) Sync( //nolint:gocyclo
 
 	only := map[string]struct{}{}
 
+	// We assert if we find a file/dir in the given relative path to correctly return
+	// an error if nothing exist in there.
+	// See explanations here: https://github.com/dagger/dagger/pull/10995#issuecomment-3347636652
+	relPathFound := false
+
 	// Hardlinks are a bit hard; we can't create them until their source file exists but we sync in files asynchronously.
 	// To deal with this we keep track of the hardlinks we need to make and apply them all at once after everything else
 	// is done.
@@ -197,7 +208,10 @@ func (local *localFS) Sync( //nolint:gocyclo
 				cachedResults = append(cachedResults, appliedChange)
 				only[path] = struct{}{}
 				cachedResultsMu.Unlock()
-				if cacheCtx != nil {
+
+				path, ok := strings.CutPrefix(path, local.copyPath)
+				if cacheCtx != nil && ok {
+					relPathFound = true
 					if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
 						return fmt.Errorf("failed to handle change in content hasher: %w", err)
 					}
@@ -220,7 +234,10 @@ func (local *localFS) Sync( //nolint:gocyclo
 				cachedResults = append(cachedResults, appliedChange)
 				only[path] = struct{}{}
 				cachedResultsMu.Unlock()
-				if cacheCtx != nil {
+
+				path, ok := strings.CutPrefix(path, local.copyPath)
+				if cacheCtx != nil && ok {
+					relPathFound = true
 					if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
 						return fmt.Errorf("failed to handle change in content hasher: %w", err)
 					}
@@ -250,7 +267,10 @@ func (local *localFS) Sync( //nolint:gocyclo
 					cachedResults = append(cachedResults, appliedChange)
 					only[path] = struct{}{}
 					cachedResultsMu.Unlock()
-					if cacheCtx != nil {
+
+					path, ok := strings.CutPrefix(path, local.copyPath)
+					if cacheCtx != nil && ok {
+						relPathFound = true
 						if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
 							return fmt.Errorf("failed to handle change in content hasher: %w", err)
 						}
@@ -282,7 +302,10 @@ func (local *localFS) Sync( //nolint:gocyclo
 			cachedResults = append(cachedResults, appliedChange)
 			only[path] = struct{}{}
 			cachedResultsMu.Unlock()
-			if cacheCtx != nil {
+
+			path, ok := strings.CutPrefix(path, local.copyPath)
+			if cacheCtx != nil && ok {
+				relPathFound = true
 				if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
 					return fmt.Errorf("failed to handle change in content hasher: %w", err)
 				}
@@ -308,8 +331,11 @@ func (local *localFS) Sync( //nolint:gocyclo
 		cachedResults = append(cachedResults, appliedChange)
 		only[hardlink.path] = struct{}{}
 		cachedResultsMu.Unlock()
-		if cacheCtx != nil {
-			if err := cacheCtx.HandleChange(appliedChange.Result().kind, hardlink.path, appliedChange.Result().stat, nil); err != nil {
+
+		path, ok := strings.CutPrefix(hardlink.path, local.copyPath)
+		if cacheCtx != nil && ok {
+			relPathFound = true
+			if err := cacheCtx.HandleChange(appliedChange.Result().kind, path, appliedChange.Result().stat, nil); err != nil {
 				return nil, fmt.Errorf("failed to handle change in content hasher: %w", err)
 			}
 		}
@@ -320,8 +346,13 @@ func (local *localFS) Sync( //nolint:gocyclo
 		return nil, nil
 	}
 
-	ctx, copySpan := newSpan(ctx, "copy")
+	ctx, copySpan := Tracer(ctx).Start(ctx, "copy")
 	defer telemetry.End(copySpan, func() error { return rerr })
+
+	// If we didn't find any files/dir in the given relative path, we can early return an error.
+	if local.copyPath != "" && !relPathFound {
+		return nil, fmt.Errorf("%s: no such file or directory", local.copyPath)
+	}
 
 	dgst, err := cacheCtx.Checksum(ctx, newCopyRef, "/", bkcontenthash.ChecksumOpts{}, session)
 	if err != nil {
@@ -366,6 +397,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 			// only copy files that we know about changes for
 			ci.Only = only
 			ci.CopyDirContents = true
+			ci.BaseCopyPath = local.copyPath
 		},
 		fscopy.WithXAttrErrorHandler(func(dst, src, key string, err error) error {
 			bklog.G(ctx).Debugf("xattr error during local import copy: %v", err)
@@ -374,7 +406,8 @@ func (local *localFS) Sync( //nolint:gocyclo
 	}
 
 	if err := fscopy.Copy(ctx,
-		local.rootPath, local.subdir,
+		local.rootPath,
+		filepath.Join(local.subdir, local.copyPath),
 		copyRefMntPath, "/",
 		copyOpts...,
 	); err != nil {
@@ -725,51 +758,6 @@ func (local *localFS) WriteFile(ctx context.Context, expectedChangeKind ChangeKi
 
 func (local *localFS) Walk(ctx context.Context, path string, walkFn fs.WalkDirFunc) error {
 	return local.filterFS.Walk(ctx, path, walkFn)
-}
-
-type StatInfo struct {
-	*types.Stat
-}
-
-func (s *StatInfo) Name() string {
-	return filepath.Base(s.Stat.Path)
-}
-
-func (s *StatInfo) Size() int64 {
-	return s.Stat.Size_
-}
-
-func (s *StatInfo) Mode() os.FileMode {
-	return os.FileMode(s.Stat.Mode)
-}
-
-func (s *StatInfo) ModTime() time.Time {
-	return time.Unix(s.Stat.ModTime/1e9, s.Stat.ModTime%1e9)
-}
-
-func (s *StatInfo) IsDir() bool {
-	return s.Mode().IsDir()
-}
-
-func (s *StatInfo) Sys() any {
-	return s.Stat
-}
-
-func (s *StatInfo) Type() fs.FileMode {
-	return fs.FileMode(s.Stat.Mode)
-}
-
-func (s *StatInfo) Info() (fs.FileInfo, error) {
-	return s, nil
-}
-
-type HashedStatInfo struct {
-	StatInfo
-	dgst digest.Digest
-}
-
-func (s *HashedStatInfo) Digest() digest.Digest {
-	return s.dgst
 }
 
 func rewriteMetadata(p string, upperStat *types.Stat) error {
