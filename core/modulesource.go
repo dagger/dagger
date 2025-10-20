@@ -128,11 +128,11 @@ type ModuleSource struct {
 	// Dependencies are the loaded sources for the module's dependencies
 	Dependencies dagql.ObjectResultArray[*ModuleSource] `field:"true" name:"dependencies" doc:"The dependencies of the module source."`
 
-	// Single blueprint (from `dagger init --blueprint`)
+	// Blueprint (from `dagger init --blueprint`)
 	ConfigBlueprint *modules.ModuleConfigDependency
 	Blueprint       dagql.ObjectResult[*ModuleSource] `field:"true" name:"blueprint" doc:"The blueprint referenced by the module source."`
 
-	// Multiple toolchains (from `dagger blueprint install` or `dagger toolchain install`)
+	// Toolchains (from `dagger toolchain install`)
 	ConfigToolchains []*modules.ModuleConfigDependency
 	Toolchains       dagql.ObjectResultArray[*ModuleSource] `field:"true" name:"toolchains" doc:"The toolchains referenced by the module source."`
 

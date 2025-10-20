@@ -417,8 +417,8 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fiel
 	for _, fun := range obj.TypeDef.Functions {
 		// Check if this is a toolchain proxy function
 		if obj.Module.ToolchainModules != nil {
-			if bpMod, ok := obj.Module.ToolchainModules[fun.OriginalName]; ok {
-				bpFun, err := toolchainProxyFunction(ctx, obj.Module, fun, bpMod, dag)
+			if tcMod, ok := obj.Module.ToolchainModules[fun.OriginalName]; ok {
+				bpFun, err := toolchainProxyFunction(ctx, obj.Module, fun, tcMod, dag)
 				if err != nil {
 					return nil, err
 				}
@@ -478,21 +478,21 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 // it calls the constructor function with the provided arguments.
 // If the toolchain has no constructor, it returns an uninitialized object (treating it like a
 // zero-argument constructor).
-func toolchainProxyFunction(ctx context.Context, mod *Module, fun *Function, bpMod *Module, dag *dagql.Server) (dagql.Field[*ModuleObject], error) {
+func toolchainProxyFunction(ctx context.Context, mod *Module, fun *Function, tcMod *Module, dag *dagql.Server) (dagql.Field[*ModuleObject], error) {
 	// Find the toolchain's main object type
-	if len(bpMod.ObjectDefs) == 0 {
-		return dagql.Field[*ModuleObject]{}, fmt.Errorf("toolchain module %q has no objects", bpMod.Name())
+	if len(tcMod.ObjectDefs) == 0 {
+		return dagql.Field[*ModuleObject]{}, fmt.Errorf("toolchain module %q has no objects", tcMod.Name())
 	}
 
 	var mainObjDef *ObjectTypeDef
-	for _, objDef := range bpMod.ObjectDefs {
-		if objDef.AsObject.Valid && gqlObjectName(objDef.AsObject.Value.OriginalName) == gqlObjectName(bpMod.OriginalName) {
+	for _, objDef := range tcMod.ObjectDefs {
+		if objDef.AsObject.Valid && gqlObjectName(objDef.AsObject.Value.OriginalName) == gqlObjectName(tcMod.OriginalName) {
 			mainObjDef = objDef.AsObject.Value
 			break
 		}
 	}
 	if mainObjDef == nil {
-		return dagql.Field[*ModuleObject]{}, fmt.Errorf("toolchain module %q has no main object", bpMod.Name())
+		return dagql.Field[*ModuleObject]{}, fmt.Errorf("toolchain module %q has no main object", tcMod.Name())
 	}
 
 	// Check if toolchain has a constructor
@@ -505,14 +505,14 @@ func toolchainProxyFunction(ctx context.Context, mod *Module, fun *Function, bpM
 			return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to get field spec for toolchain: %w", err)
 		}
 		spec.Module = mod.IDModule()
-		
+
 		return dagql.Field[*ModuleObject]{
 			Spec: &spec,
 			Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
 				// Return an instance of the toolchain's main object with empty fields
 				// The toolchain module's own resolvers will handle function calls on this object
 				return dagql.NewResultForCurrentID(ctx, &ModuleObject{
-					Module:  bpMod,
+					Module:  tcMod,
 					TypeDef: mainObjDef,
 					Fields:  map[string]any{}, // empty fields, functions will be called on the toolchain's runtime
 				})
@@ -528,9 +528,9 @@ func toolchainProxyFunction(ctx context.Context, mod *Module, fun *Function, bpM
 
 	modFun, err := NewModFunction(
 		ctx,
-		bpMod,
+		tcMod,
 		mainObjDef,
-		bpMod.Runtime.Value,
+		tcMod.Runtime.Value,
 		constructor,
 	)
 	if err != nil {
@@ -543,7 +543,7 @@ func toolchainProxyFunction(ctx context.Context, mod *Module, fun *Function, bpM
 	}
 
 	// Get the constructor's spec, which includes its arguments
-	spec, err := constructor.FieldSpec(ctx, bpMod)
+	spec, err := constructor.FieldSpec(ctx, tcMod)
 	if err != nil {
 		return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to get field spec for toolchain constructor: %w", err)
 	}

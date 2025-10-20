@@ -734,7 +734,7 @@ func (s *moduleSourceSchema) loadBlueprintModule(
 		return fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	// Load single blueprint
+	// Load blueprint
 	if src.ConfigBlueprint != nil {
 		blueprint, err := core.ResolveDepToSource(ctx, bk, dag, src, src.ConfigBlueprint.Source, src.ConfigBlueprint.Pin, src.ConfigBlueprint.Name)
 		if err != nil {
@@ -1504,7 +1504,7 @@ func (s *moduleSourceSchema) moduleSourceWithBlueprint(
 	// (dependencies are added LIFO)
 	parentSrc = parentSrc.Clone()
 
-	// Set the single blueprint field (for `dagger init --blueprint`)
+	// Set the blueprint field (for `dagger init --blueprint`)
 	parentSrc.ConfigBlueprint = tmpConfig.Dependencies[0]
 	parentSrc.Blueprint = tmpSrc.Dependencies[0]
 
@@ -2917,7 +2917,7 @@ func createStubModule(ctx context.Context, mod *core.Module, dag *dagql.Server) 
 func extractToolchainModules(mod *core.Module) []*core.Module {
 	var toolchainMods []*core.Module
 	for _, depMod := range mod.Deps.Mods {
-		if userMod, ok := depMod.(*core.Module); ok && userMod.IsBlueprint {
+		if userMod, ok := depMod.(*core.Module); ok && userMod.IsToolchain {
 			toolchainMods = append(toolchainMods, userMod)
 		}
 	}
@@ -3102,8 +3102,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 	// Set up toolchain context
 	originalSrc := src
-	// Blueprint mode is ONLY when we have the legacy Blueprint field set (from `dagger init --blueprint`)
-	// Toolchains are always loaded as toolchains, even if there's just one
+	// Blueprint mode is ONLY when we have the Blueprint field set (from `dagger init --blueprint`)
 	isBlueprintMode := src.Self().Blueprint.Self() != nil
 
 	tcCtx := toolchainContext{
@@ -3112,7 +3111,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	}
 
 	// In blueprint mode, use the blueprint as the main source
-	// This must happen BEFORE creating the module so the SDK loads from blueprint source
+	// This must happen before creating the module so the SDK loads from blueprint source
 	if isBlueprintMode {
 		src = src.Self().Blueprint
 		tcCtx.src = src
@@ -3131,22 +3130,20 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 			return inst, err
 		}
 	} else if len(originalSrc.Self().Toolchains) == 0 && !isBlueprintMode {
-		// No SDK, no toolchains, and no single blueprint - create stub module
+		// No SDK, no toolchains, and no blueprint - create stub module
 		mod, err = createStubModule(ctx, mod, dag)
 		if err != nil {
 			return inst, err
 		}
 	}
 
-	// Integrate toolchain modules as fields (but not in single blueprint mode)
-	if !isBlueprintMode {
-		mod, err = s.integrateToolchains(ctx, mod, tcCtx, dag)
-		if err != nil {
-			return inst, err
-		}
+	// Integrate toolchain modules as fields
+	mod, err = s.integrateToolchains(ctx, mod, tcCtx, dag)
+	if err != nil {
+		return inst, err
 	}
 
-	// In single blueprint mode, show the downstream module name to clients
+	// In blueprint mode, show the downstream module name to clients
 	// NOTE: we don't change OriginalName, that's used internally at runtime
 	if isBlueprintMode {
 		mod.NameField = originalSrc.Self().ModuleName
@@ -3213,7 +3210,7 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	}
 	for _, bpMod := range bpMods {
 		clone := bpMod.Self().Clone()
-		clone.IsBlueprint = true
+		clone.IsToolchain = true
 		clone.ContextSource = dagql.NonNull(src)
 		deps = deps.Append(clone)
 	}

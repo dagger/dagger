@@ -22,7 +22,7 @@ type Module struct {
 	// The source of the module
 	Source dagql.Nullable[dagql.ObjectResult[*ModuleSource]] `field:"true" name:"source" doc:"The source for the module."`
 
-	// The source to load contextual dirs/files from, which may be different than Source for blueprints
+	// The source to load contextual dirs/files from, which may be different than Source for toolchains
 	ContextSource dagql.Nullable[dagql.ObjectResult[*ModuleSource]]
 
 	// The name of the module
@@ -55,12 +55,12 @@ type Module struct {
 	// The module's enumerations
 	EnumDefs []*TypeDef `field:"true" name:"enums" doc:"Enumerations served by this module."`
 
-	// IsBlueprint indicates this module was loaded as a blueprint dependency.
+	// IsToolchain indicates this module was loaded as a toolchain dependency.
 	// Blueprint modules are allowed to share types with the modules that depend on them.
-	IsBlueprint bool
+	IsToolchain bool
 
-	// BlueprintModules stores references to blueprint module instances by their field name
-	// This enables proxy field resolution to route calls to the blueprint's runtime
+	// ToolchainModules stores references to toolchain module instances by their field name
+	// This enables proxy field resolution to route calls to the toolchain's runtime
 	ToolchainModules map[string]*Module
 
 	// ResultID is the ID of the initialized module.
@@ -92,8 +92,8 @@ func (mod *Module) GetSource() *ModuleSource {
 }
 
 // The "context source" is the module used as the execution context for the module.
-// Usually it's simply the module source itself. But when using blueprints, it will
-// point to the downstrea, module applying the blueprint, not the blueprint itself.
+// Usually it's simply the module source itself. But when using toolchains, it will
+// point to the downstream module applying the toolchain, not the toolchain itself.
 func (mod *Module) GetContextSource() *ModuleSource {
 	if !mod.ContextSource.Valid {
 		return nil
@@ -114,7 +114,7 @@ func (mod *Module) UserDefaults(ctx context.Context) (*EnvFile, error) {
 
 	src := mod.GetSource()
 	if src != nil && src != contextSrc && src.UserDefaults != nil {
-		// Also merge in blueprint source defaults if different from context
+		// Also merge in toolchain source defaults if different from context
 		defaults = defaults.WithEnvFiles(src.UserDefaults)
 	}
 
@@ -475,10 +475,10 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 		if ok {
 			sourceMod := fieldType.SourceMod()
 			// fields can reference core types and local types, but not types from
-			// other modules (unless the source module is a blueprint)
+			// other modules (unless the source module is a toolchain)
 			if sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
-				// Allow types from blueprint modules
-				if bpMod, ok := sourceMod.(*Module); !ok || !bpMod.IsBlueprint {
+				// Allow types from toolchain modules
+				if tcMod, ok := sourceMod.(*Module); !ok || !tcMod.IsToolchain {
 					return fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
 						obj.OriginalName,
 						field.OriginalName,
@@ -503,8 +503,8 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 		}
 		if ok {
 			if sourceMod := retType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
-				// Allow types from blueprint modules
-				if bpMod, ok := sourceMod.(*Module); !ok || !bpMod.IsBlueprint {
+				// Allow types from toolchain modules
+				if tcMod, ok := sourceMod.(*Module); !ok || !tcMod.IsToolchain {
 					return fmt.Errorf("object %q function %q cannot return external type from dependency module %q",
 						obj.OriginalName,
 						fn.OriginalName,
@@ -524,8 +524,8 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 			}
 			if ok {
 				if sourceMod := argType.SourceMod(); sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod != mod {
-					// Allow types from blueprint modules
-					if bpMod, ok := sourceMod.(*Module); !ok || !bpMod.IsBlueprint {
+					// Allow types from toolchain modules
+					if tcMod, ok := sourceMod.(*Module); !ok || !tcMod.IsToolchain {
 						return fmt.Errorf("object %q function %q arg %q cannot reference external type from dependency module %q",
 							obj.OriginalName,
 							fn.OriginalName,
