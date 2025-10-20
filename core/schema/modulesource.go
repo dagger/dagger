@@ -897,6 +897,19 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 		return err
 	}
 
+	// blueprint is incompatible with some dagger.json fields
+	if modCfg.Blueprint != nil {
+		if modCfg.SDK != nil {
+			return fmt.Errorf("blueprint and sdk can't both be set")
+		}
+		if len(modCfg.Dependencies) != 0 {
+			return fmt.Errorf("blueprint and dependencies can't both be set")
+		}
+		if modCfg.Source != "" {
+			return fmt.Errorf("blueprint and source can't both be set")
+		}
+	}
+
 	src.ModuleName = modCfg.Name
 	src.ModuleOriginalName = modCfg.Name
 	src.IncludePaths = modCfg.Include
@@ -1487,6 +1500,13 @@ func (s *moduleSourceSchema) moduleSourceWithBlueprint(
 		Blueprint core.ModuleSourceID
 	},
 ) (*core.ModuleSource, error) {
+	// Validate blueprint compatibility
+	if parentSrc.SDK != nil {
+		return nil, fmt.Errorf("cannot set blueprint on module that already has SDK")
+	}
+	if parentSrc.Dependencies.Len() > 0 {
+		return nil, fmt.Errorf("cannot set blueprint on module that has dependencies")
+	}
 	tmpArgs := struct{ Dependencies []core.ModuleSourceID }{
 		Dependencies: []core.ModuleSourceID{args.Blueprint},
 	}
@@ -1824,45 +1844,39 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateBlueprint(
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	// If no blueprints are set, return without error
-	if len(parentSrc.Self().Toolchains) == 0 {
+	// If no blueprint is set, return without error
+	if parentSrc.Self().Blueprint.Self() == nil {
 		return parentSrc.Result, nil
 	}
 
-	// Loop over the existing blueprints and update each one
-	var newUpdatedBpArgs []core.ModuleSourceID
-	for _, existingTc := range parentSrc.Self().Toolchains {
-		bpSrc := existingTc.Self()
+	bpSrc := parentSrc.Self().Blueprint.Self()
 
-		// Only update git sources, skip local blueprints
-		if bpSrc.Kind != core.ModuleSourceKindGit {
-			continue
-		}
-
-		// Update the blueprint by loading it fresh
-		var bpUpdated dagql.ObjectResult[*core.ModuleSource]
-		err := dag.Select(ctx, dag.Root(), &bpUpdated,
-			dagql.Selector{
-				Field: "moduleSource",
-				Args: []dagql.NamedInput{
-					{Name: "refString", Value: dagql.String(bpSrc.AsString())},
-				},
-			},
-		)
-		if err != nil {
-			return inst, fmt.Errorf("failed to load updated blueprint: %w", err)
-		}
-
-		newUpdatedBpArgs = append(newUpdatedBpArgs, dagql.NewID[*core.ModuleSource](bpUpdated.ID()))
+	// Only update git sources
+	if bpSrc.Kind != core.ModuleSourceKindGit {
+		return parentSrc.Result, nil
 	}
 
-	// Set the updated blueprints on the parent source
+	// Update the blueprint by loading it fresh
+	var bpUpdated dagql.ObjectResult[*core.ModuleSource]
+	err = dag.Select(ctx, dag.Root(), &bpUpdated,
+		dagql.Selector{
+			Field: "moduleSource",
+			Args: []dagql.NamedInput{
+				{Name: "refString", Value: dagql.String(bpSrc.AsString())},
+			},
+		},
+	)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load updated blueprint: %w", err)
+	}
+
+	// Set the updated blueprint on the parent source
 	err = dag.Select(ctx, parentSrc, &inst,
 		dagql.Selector{
-			Field: "withBlueprints",
+			Field: "withBlueprint",
 			Args: []dagql.NamedInput{{
-				Name:  "blueprints",
-				Value: dagql.ArrayInput[core.ModuleSourceID](newUpdatedBpArgs),
+				Name:  "blueprint",
+				Value: dagql.NewID[*core.ModuleSource](bpUpdated.ID()),
 			}},
 		},
 	)
@@ -2817,7 +2831,7 @@ func (s *moduleSourceSchema) moduleSourceIntrospectionSchemaJSON(
 	return file, nil
 }
 
-// toolchainContext holds information about blueprint handling for a module
+// toolchainContext holds information about toolchain handling for a module
 type toolchainContext struct {
 	originalSrc dagql.ObjectResult[*core.ModuleSource]
 	src         dagql.ObjectResult[*core.ModuleSource]
@@ -2827,7 +2841,7 @@ type toolchainContext struct {
 func (s *moduleSourceSchema) createBaseModule(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
-	bpCtx toolchainContext,
+	tcCtx toolchainContext,
 ) (*core.Module, error) {
 	sdk := src.Self().SDK
 	if sdk == nil {
@@ -2836,8 +2850,8 @@ func (s *moduleSourceSchema) createBaseModule(
 
 	mod := &core.Module{
 		Source:        dagql.NonNull(src),
-		ContextSource: dagql.NonNull(bpCtx.originalSrc),
-		NameField:     src.Self().ModuleName,
+		ContextSource: dagql.NonNull(tcCtx.originalSrc),
+		NameField:     tcCtx.originalSrc.Self().ModuleName,
 		OriginalName:  src.Self().ModuleOriginalName,
 		SDKConfig:     sdk,
 	}
@@ -3106,7 +3120,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	isBlueprintMode := src.Self().Blueprint.Self() != nil
 
 	tcCtx := toolchainContext{
-		originalSrc: src,
+		originalSrc: originalSrc,
 		src:         src,
 	}
 
@@ -3129,7 +3143,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		if err != nil {
 			return inst, err
 		}
-	} else if len(originalSrc.Self().Toolchains) == 0 && !isBlueprintMode {
+	} else if len(originalSrc.Self().Toolchains) == 0 {
 		// No SDK, no toolchains, and no blueprint - create stub module
 		mod, err = createStubModule(ctx, mod, dag)
 		if err != nil {
@@ -3141,12 +3155,6 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	mod, err = s.integrateToolchains(ctx, mod, tcCtx, dag)
 	if err != nil {
 		return inst, err
-	}
-
-	// In blueprint mode, show the downstream module name to clients
-	// NOTE: we don't change OriginalName, that's used internally at runtime
-	if isBlueprintMode {
-		mod.NameField = originalSrc.Self().ModuleName
 	}
 
 	inst, err = dagql.NewResultForCurrentID(ctx, mod)
