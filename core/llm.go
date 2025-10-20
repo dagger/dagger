@@ -885,7 +885,7 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 	}
 
 	var sels []dagql.Selector
-	if res.Content != "" {
+	{
 		args := []dagql.NamedInput{
 			{
 				Name:  "content",
