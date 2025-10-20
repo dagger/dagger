@@ -33,7 +33,8 @@ func (e *EnvPropagation) Prompt(ctx context.Context, base *dagger.LLM) (*dagger.
 					WithNewFile("marker.txt", "initial"),
 			).
 			WithStringOutput("marker", "The content read from the marker.")).
-		WithPrompt("Update the marker with 'potato' and then read it."), nil
+		WithPrompt("Update the marker with 'potato' and then read it.").
+		Loop(), nil
 }
 
 func (e *EnvPropagation) Check(ctx context.Context, prompt *dagger.LLM) error {

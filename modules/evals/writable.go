@@ -30,7 +30,8 @@ func (e *Writable) Prompt(base *dagger.LLM) *dagger.LLM {
 		Loop().
 		WithPrompt(`Save the File as a new output, "helloFile".`).
 		Loop().
-		WithPrompt(`Now declare another output "food" of type String, and save it as "potato".`)
+		WithPrompt(`Now declare another output "food" of type String, and save it as "potato".`).
+		Loop()
 }
 
 func (e *Writable) Check(ctx context.Context, prompt *dagger.LLM) error {

@@ -43,7 +43,8 @@ func (e *Responses) Prompt(base *dagger.LLM) *dagger.LLM {
 				"The size of the file.").
 			WithStringOutput("dir_entries",
 				"Line-separated list of directory entries.")).
-		WithPrompt("Provide the requested values.")
+		WithPrompt("Provide the requested values.").
+		Loop()
 }
 
 func (e *Responses) Check(ctx context.Context, prompt *dagger.LLM) error {
