@@ -3129,6 +3129,9 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	if isBlueprintMode {
 		src = src.Self().Blueprint
 		tcCtx.src = src
+		// Copy toolchains from original source to blueprint source
+		// A blueprint having toolchains is currently not supported
+		tcCtx.src.Self().Toolchains = tcCtx.originalSrc.Self().Toolchains
 	}
 
 	// Create base module with dependencies
@@ -3191,19 +3194,19 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 		return nil, fmt.Errorf("failed to load module dependencies: %w", err)
 	}
 
-	// Load all blueprints as dependencies
-	bpMods := make([]dagql.Result[*core.Module], len(src.Self().Toolchains))
+	// Load all toolchains as dependencies
+	tcMods := make([]dagql.Result[*core.Module], len(src.Self().Toolchains))
 	if len(src.Self().Toolchains) > 0 {
-		var bpeg errgroup.Group
-		for i, bpSrc := range src.Self().Toolchains {
-			bpeg.Go(func() error {
-				err := dag.Select(ctx, bpSrc, &bpMods[i],
+		var tceg errgroup.Group
+		for i, tcSrc := range src.Self().Toolchains {
+			tceg.Go(func() error {
+				err := dag.Select(ctx, tcSrc, &tcMods[i],
 					dagql.Selector{Field: "asModule"},
 				)
 				return err
 			})
 		}
-		if err := bpeg.Wait(); err != nil {
+		if err := tceg.Wait(); err != nil {
 			return nil, fmt.Errorf("failed to load module dependencies: %w", err)
 		}
 	}
@@ -3216,8 +3219,8 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	for _, depMod := range depMods {
 		deps = deps.Append(depMod.Self())
 	}
-	for _, bpMod := range bpMods {
-		clone := bpMod.Self().Clone()
+	for _, tcMod := range tcMods {
+		clone := tcMod.Self().Clone()
 		clone.IsToolchain = true
 		clone.ContextSource = dagql.NonNull(src)
 		deps = deps.Append(clone)

@@ -188,3 +188,25 @@ func (BlueprintSuite) TestToolchainsWithSDK(ctx context.Context, t *testctx.T) {
 		require.Contains(t, out, "hello from blueprint")
 	})
 }
+
+func (BlueprintSuite) TestToolchainsWithBlueprint(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	t.Run("use blueprint with sdk", func(ctx context.Context, t *testctx.T) {
+		modGen := blueprintTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init", "--blueprint=../hello")).
+			With(daggerExec("toolchain", "install", "../myblueprint-py"))
+		// verify we can call function from our module code
+		out, err := modGen.
+			With(daggerExec("call", "message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello from blueprint")
+		// verify we can call a function from our blueprint
+		out, err = modGen.
+			With(daggerExec("call", "myblueprint-py", "hello")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello from blueprint")
+	})
+}
