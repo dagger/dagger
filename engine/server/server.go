@@ -31,7 +31,6 @@ import (
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	"github.com/dagger/dagger/internal/buildkit/cache/metadata"
 	"github.com/dagger/dagger/internal/buildkit/cache/remotecache"
-	"github.com/dagger/dagger/internal/buildkit/cache/remotecache/azblob"
 	"github.com/dagger/dagger/internal/buildkit/cache/remotecache/gha"
 	inlineremotecache "github.com/dagger/dagger/internal/buildkit/cache/remotecache/inline"
 	localremotecache "github.com/dagger/dagger/internal/buildkit/cache/remotecache/local"
@@ -518,14 +517,12 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		"inline":   inlineremotecache.ResolveCacheExporterFunc(),
 		"gha":      gha.ResolveCacheExporterFunc(),
 		"s3":       s3remotecache.ResolveCacheExporterFunc(),
-		"azblob":   azblob.ResolveCacheExporterFunc(),
 	}
 	srv.cacheImporters = map[string]remotecache.ResolveCacheImporterFunc{
 		"registry": registryremotecache.ResolveCacheImporterFunc(srv.bkSessionManager, srv.contentStore, srv.registryHosts),
 		"local":    localremotecache.ResolveCacheImporterFunc(srv.bkSessionManager),
 		"gha":      gha.ResolveCacheImporterFunc(),
 		"s3":       s3remotecache.ResolveCacheImporterFunc(),
-		"azblob":   azblob.ResolveCacheImporterFunc(),
 	}
 
 	srv.solver = solver.NewSolver(solver.SolverOpt{

@@ -10,7 +10,7 @@ retract (
 )
 
 require (
-	github.com/99designs/gqlgen v0.17.80
+	github.com/99designs/gqlgen v0.17.81
 	github.com/Khan/genqlient v0.8.1
 	github.com/adrg/xdg v0.5.3
 	github.com/mitchellh/go-homedir v1.1.0
@@ -31,7 +31,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.38.0
 	go.opentelemetry.io/proto/otlp v1.8.0
 	golang.org/x/sync v0.17.0
-	google.golang.org/grpc v1.75.1
+	google.golang.org/grpc v1.76.0
 )
 
 require (
