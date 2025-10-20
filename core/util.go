@@ -352,7 +352,7 @@ func MountRefCloser(ctx context.Context, ref bkcache.Ref, readonly bool, g bkses
 	if ref == nil {
 		dir, err := os.MkdirTemp("", "readonly-scratch")
 		if err != nil {
-			return "", func() error { return nil }, err
+			return "", nil, err
 		}
 		return dir, func() error {
 			return os.RemoveAll(dir)
@@ -360,12 +360,12 @@ func MountRefCloser(ctx context.Context, ref bkcache.Ref, readonly bool, g bkses
 	}
 	mount, err := ref.Mount(ctx, readonly, g)
 	if err != nil {
-		return "", func() error { return nil }, err
+		return "", nil, err
 	}
 	lm := snapshot.LocalMounter(mount)
 	dir, err := lm.Mount()
 	if err != nil {
-		return "", func() error { return nil }, err
+		return "", nil, err
 	}
 	return dir, lm.Unmount, nil
 }
@@ -507,46 +507,44 @@ func execInMountCloser[T fileOrDirectory](ctx context.Context, obj T, optFns ...
 		optFn(&opt)
 	}
 
-	noOpCloser := func(_ bool) (T, error) { return nil, nil }
-
 	parentRef, err := getRefOrEvaluate(ctx, obj)
 	if err != nil {
-		return "", noOpCloser, err
+		return "", nil, err
 	}
 
 	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
 	if !ok {
 		if !opt.allowNilBuildkitSession {
-			return "", noOpCloser, fmt.Errorf("no buildkit session group in context")
+			return "", nil, fmt.Errorf("no buildkit session group in context")
 		}
 	}
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return "", noOpCloser, err
+		return "", nil, err
 	}
 
 	var mountRef bkcache.Ref
 	var newRef bkcache.MutableRef
 	if opt.commitSnapshot {
 		if opt.cacheDesc == "" {
-			return "", noOpCloser, fmt.Errorf("execInMount saveSnapshotOpt missing cache description")
+			return "", nil, fmt.Errorf("mountObj saveSnapshotOpt missing cache description")
 		}
 		newRef, err = query.BuildkitCache().New(ctx, parentRef, bkSessionGroup,
 			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular), bkcache.WithDescription(opt.cacheDesc))
 		if err != nil {
-			return "", noOpCloser, err
+			return "", nil, err
 		}
 		mountRef = newRef
 	} else {
 		if parentRef == nil {
-			return "", noOpCloser, errEmptyResultRef
+			return "", nil, errEmptyResultRef
 		}
 		mountRef = parentRef
 	}
 	rootPath, closer, err := MountRefCloser(ctx, mountRef, false, bkSessionGroup)
 	if err != nil {
-		return "", noOpCloser, err
+		return "", nil, err
 	}
 
 	if opt.commitSnapshot {
