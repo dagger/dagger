@@ -83,8 +83,6 @@ type MCP struct {
 	blockedMethods map[string][]string
 	// The last value returned by a function.
 	lastResult dagql.Typed
-	// Indicates that the model has returned
-	returned bool
 	// Saved objects by ID (Foo#123)
 	objsByID map[string]*call.ID
 	// Auto incrementing number per-type
@@ -176,7 +174,6 @@ func (m *MCP) Clone() *MCP {
 	cp.typeCounts = maps.Clone(cp.typeCounts)
 	cp.idByHash = maps.Clone(cp.idByHash)
 	cp.mcpServers = maps.Clone(cp.mcpServers)
-	cp.returned = false
 	cp.mu = &sync.Mutex{}
 	return &cp
 }
@@ -203,10 +200,6 @@ func (m *MCP) Input(ctx context.Context, key string) (*Binding, bool, error) {
 	}
 	bnd, found := m.env.Self().Input(key)
 	return bnd, found, nil
-}
-
-func (m *MCP) Returned() bool {
-	return m.returned
 }
 
 // Get an object saved at a given key
@@ -1448,17 +1441,6 @@ func (m *MCP) saveTool(srv *dagql.Server) LLMTool {
 				output.Value = obj
 			}
 
-			// If all outputs have been saved, we can flag the MCP as having completed
-			// its task.
-			var anyNotSaved bool
-			for _, output := range m.env.Self().outputsByName {
-				if output.Value == nil {
-					anyNotSaved = true
-					break
-				}
-			}
-			m.returned = !anyNotSaved
-
 			return checklist(), nil
 		}),
 	}
@@ -2073,10 +2055,6 @@ func (m *MCP) userProvidedValues() (string, error) {
 		return "", nil
 	}
 	return toolStructuredResponse(values)
-}
-
-func (m *MCP) IsDone() bool {
-	return len(m.env.Self().outputsByName) == 0 || m.returned
 }
 
 var idRegex = regexp.MustCompile(`^(?P<type>[A-Z]\w*)#(?P<nth>\d+)$`)
