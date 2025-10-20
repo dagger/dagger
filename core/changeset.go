@@ -222,12 +222,12 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = ReadonlyMountRef(ctx, beforeRef, bkSessionGroup, func(before string) error {
+	err = MountRef(ctx, beforeRef, bkSessionGroup, func(before string) error {
 		beforeDir, err := containerdfs.RootPath(before, ch.Before.Self().Dir)
 		if err != nil {
 			return err
 		}
-		return ReadonlyMountRef(ctx, afterRef, bkSessionGroup, func(after string) error {
+		return MountRef(ctx, afterRef, bkSessionGroup, func(after string) error {
 			afterDir, err := containerdfs.RootPath(after, ch.After.Self().Dir)
 			if err != nil {
 				return err
@@ -312,8 +312,8 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 				}
 				return nil
 			})
-		})
-	})
+		}, mountRefAsReadOnly)
+	}, mountRefAsReadOnly)
 	if err != nil {
 		return nil, err
 	}

@@ -314,24 +314,22 @@ func ptr[T any](v T) *T {
 	return &v
 }
 
+type mountRefOpt struct {
+	readOnly bool
+}
+
+type mountRefOptFn func(opt *mountRefOpt)
+
+func mountRefAsReadOnly(opt *mountRefOpt) {
+	opt.readOnly = true
+}
+
 // MountRef is a utility for easily mounting a ref.
 //
 // To simplify external logic, when the ref is nil, i.e. scratch, the callback
 // just receives a tmpdir that gets deleted when the function completes.
-func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(string) error) error {
-	return mountRef(ctx, ref, false, g, f)
-}
-
-// ReadonlyMountRef is a utility for easily mounting a ref read-only.
-//
-// To simplify external logic, when the ref is nil, i.e. scratch, the callback
-// just receives a tmpdir that gets deleted when the function completes.
-func ReadonlyMountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(string) error) error {
-	return mountRef(ctx, ref, true, g, f)
-}
-
-func mountRef(ctx context.Context, ref bkcache.Ref, readonly bool, g bksession.Group, f func(string) error) error {
-	dir, closer, err := MountRefCloser(ctx, ref, readonly, g)
+func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(string) error, optFns ...mountRefOptFn) error {
+	dir, closer, err := MountRefCloser(ctx, ref, g, optFns...)
 	if err != nil {
 		return err
 	}
@@ -346,9 +344,14 @@ func mountRef(ctx context.Context, ref bkcache.Ref, readonly bool, g bksession.G
 // MountRefCloser is a utility for mounting a ref.
 //
 // To simplify external logic, when the ref is nil, i.e. scratch, a tmpdir is created (and deleted when the closer func is called).
-
+//
 // NOTE: prefer MountRef where possible, unless finer-grained control of when the directory is unmounted is needed.
-func MountRefCloser(ctx context.Context, ref bkcache.Ref, readonly bool, g bksession.Group) (string, func() error, error) {
+func MountRefCloser(ctx context.Context, ref bkcache.Ref, g bksession.Group, optFns ...mountRefOptFn) (string, func() error, error) {
+	var opt mountRefOpt
+	for _, optFn := range optFns {
+		optFn(&opt)
+	}
+
 	if ref == nil {
 		dir, err := os.MkdirTemp("", "readonly-scratch")
 		if err != nil {
@@ -358,7 +361,7 @@ func MountRefCloser(ctx context.Context, ref bkcache.Ref, readonly bool, g bkses
 			return os.RemoveAll(dir)
 		}, nil
 	}
-	mount, err := ref.Mount(ctx, readonly, g)
+	mount, err := ref.Mount(ctx, opt.readOnly, g)
 	if err != nil {
 		return "", nil, err
 	}
@@ -457,22 +460,22 @@ func RootPathWithoutFinalSymlink(root, containerPath string) (string, error) {
 	return path.Join(resolvedLinkDir, linkBasename), nil
 }
 
-type execInMountOpt struct {
+type mountObjOpt struct {
 	commitSnapshot          bool
 	cacheDesc               string
 	allowNilBuildkitSession bool
 }
 
-type execInMountOptFn func(opt *execInMountOpt)
+type mountObjOptFn func(opt *mountObjOpt)
 
-func withSavedSnapshot(format string, a ...any) execInMountOptFn {
-	return func(opt *execInMountOpt) {
+func withSavedSnapshot(format string, a ...any) mountObjOptFn {
+	return func(opt *mountObjOpt) {
 		opt.cacheDesc = fmt.Sprintf(format, a...)
 		opt.commitSnapshot = true
 	}
 }
 
-func allowNilBuildkitSession(opt *execInMountOpt) {
+func allowNilBuildkitSession(opt *mountObjOpt) {
 	opt.allowNilBuildkitSession = true
 }
 
@@ -484,8 +487,8 @@ type fileOrDirectory interface {
 }
 
 // execInMount evaluates a file or directory, mounts it, then calls the supplied callback function.
-func execInMount[T fileOrDirectory](ctx context.Context, obj T, f func(string) error, optFns ...execInMountOptFn) (T, error) {
-	root, closer, err := execInMountCloser(ctx, obj, optFns...)
+func execInMount[T fileOrDirectory](ctx context.Context, obj T, f func(string) error, optFns ...mountObjOptFn) (T, error) {
+	root, closer, err := mountObj(ctx, obj, optFns...)
 	if err != nil {
 		return nil, err
 	}
@@ -497,12 +500,12 @@ func execInMount[T fileOrDirectory](ctx context.Context, obj T, f func(string) e
 	return closer(false)
 }
 
-// execInMountCloser evaluates an object and mounts the root fs and returns the mounted path and a closer, which will unmount
+// mountObj evaluates an object and mounts the root fs and returns the mounted path and a closer, which will unmount
 // the file or directory object's root filesystem, and potentially return a modified object, if both the withSavedSnapshot option is specified and the abort flag was not set.
 // The abort flag is only used when the withSavedSnapshot option is specified.
 // NOTE: prefer execInMount where possible, unless finer-grained control of the filesystem mount is required.
-func execInMountCloser[T fileOrDirectory](ctx context.Context, obj T, optFns ...execInMountOptFn) (string, func(abort bool) (T, error), error) {
-	var opt execInMountOpt
+func mountObj[T fileOrDirectory](ctx context.Context, obj T, optFns ...mountObjOptFn) (string, func(abort bool) (T, error), error) {
+	var opt mountObjOpt
 	for _, optFn := range optFns {
 		optFn(&opt)
 	}
@@ -542,7 +545,7 @@ func execInMountCloser[T fileOrDirectory](ctx context.Context, obj T, optFns ...
 		}
 		mountRef = parentRef
 	}
-	rootPath, closer, err := MountRefCloser(ctx, mountRef, false, bkSessionGroup)
+	rootPath, closer, err := MountRefCloser(ctx, mountRef, bkSessionGroup)
 	if err != nil {
 		return "", nil, err
 	}

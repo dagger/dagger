@@ -525,7 +525,7 @@ func (frc fileReadCloser) Close() error {
 var _ io.ReadCloser = fileReadCloser{}
 
 func (file *File) Open(ctx context.Context) (io.ReadCloser, error) {
-	root, closer, err := execInMountCloser(ctx, file, allowNilBuildkitSession)
+	root, closer, err := mountObj(ctx, file, allowNilBuildkitSession)
 	if err != nil {
 		return nil, err
 	}
