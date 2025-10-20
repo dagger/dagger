@@ -183,9 +183,9 @@ func New() *CI {
 		).
 		withWorkflow(
 			ci.AltRunner,
-			true,
-			"Dev Engine",
-			"check-test-sdks",
+			true,       // run this on a dev engine
+			"No brick", // Check that the engine being tested, can itself run the testing module (to avoid being "bricked")
+			"check-no-brick",
 		).
 		withPrepareReleaseWorkflow().
 		withEvalsWorkflow()

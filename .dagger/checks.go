@@ -89,6 +89,17 @@ func (dev *DaggerDev) CheckTestHelm(ctx context.Context) error {
 	return dag.Helm().Test(ctx)
 }
 
+// "No-brick" check: verify that the version of dagger being checked by this module, can itself run this module.
+// In other words, we use Dagger's own CI as a test workload in Dagger's CI.
+// We only run a small subset of the module, selected to be as representative as possible, without wasting compute.
+// NOTE: the caller is responsible for calling this with the right engine.
+// FIXME: use dagger-in-dagger to no longer require on the caller.
+func (dev *DaggerDev) CheckNoBrick(ctx context.Context) error {
+	// Testing SDKs is not as compute-intensive as the core tests,
+	// and exercises more engine features, including loading modules across SDKs.
+	return dev.CheckTestSDKs(ctx)
+}
+
 // Run all checks for all SDKs
 func (dev *DaggerDev) CheckTestSDKs(ctx context.Context) error {
 	type tester interface {
