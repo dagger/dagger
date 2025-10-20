@@ -545,7 +545,11 @@ func mountObj[T fileOrDirectory](ctx context.Context, obj T, optFns ...mountObjO
 		}
 		mountRef = parentRef
 	}
-	rootPath, closer, err := MountRefCloser(ctx, mountRef, bkSessionGroup)
+	var mountRefOpts []mountRefOptFn
+	if !opt.commitSnapshot {
+		mountRefOpts = append(mountRefOpts, mountRefAsReadOnly)
+	}
+	rootPath, closer, err := MountRefCloser(ctx, mountRef, bkSessionGroup, mountRefOpts...)
 	if err != nil {
 		return "", nil, err
 	}
