@@ -32,7 +32,8 @@ func (e *UndoChanges) Prompt(base *dagger.LLM) *dagger.LLM {
 		Loop().
 		WithPrompt("Create the file /b with contents 2.").
 		Loop().
-		WithPrompt("Nevermind - go back to just /a and create /c with contents 3, and return that.")
+		WithPrompt("Nevermind - go back to just /a and create /c with contents 3, and return that.").
+		Loop()
 }
 
 func (e *UndoChanges) Check(ctx context.Context, prompt *dagger.LLM) error {

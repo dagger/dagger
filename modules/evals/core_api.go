@@ -25,7 +25,8 @@ func (e *CoreAPI) Prompt(base *dagger.LLM) *dagger.LLM {
 	return base.
 		WithEnv(dag.Env(dagger.EnvOpts{Privileged: true}).
 			WithFileOutput("starch", "A file containing the word potato")).
-		WithPrompt("Create a file that contains the word potato, and return it.")
+		WithPrompt("Create a file that contains the word potato, and return it.").
+		Loop()
 }
 
 func (e *CoreAPI) Check(ctx context.Context, prompt *dagger.LLM) error {

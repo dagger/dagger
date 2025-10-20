@@ -27,7 +27,8 @@ func (e *LifeAlert) Prompt(base *dagger.LLM) *dagger.LLM {
 			WithDirectoryInput("dir", dag.Directory(), "A directory to write a file into.").
 			WithFileOutput("file", "A file containing knowledge you don't have."),
 		).
-		WithPrompt("Ask me what to write to the file.")
+		WithPrompt("Ask me what to write to the file.").
+		Loop()
 }
 
 func (e *LifeAlert) Check(ctx context.Context, prompt *dagger.LLM) error {
