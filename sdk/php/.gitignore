@@ -3,6 +3,7 @@ vendor/
 
 .php-cs-fixer.php
 .php-cs-fixer.cache
+phpstan.neon
 phpunit.xml
 
 docker-compose.override.yml

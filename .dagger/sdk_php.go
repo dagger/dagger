@@ -49,6 +49,19 @@ func (t PHPSDK) Test(ctx context.Context) error {
 	return err
 }
 
+// Run Static Analysis on the PHP SDK
+func (t PHPSDK) Analyze(ctx context.Context) error {
+	installer := t.Dagger.installer("sdk")
+	src := t.Dagger.Source.Directory(phpSDKPath)
+	base := dag.PhpSDKDev().Base().
+		With(installer).
+		WithEnvVariable("PATH", "./vendor/bin:$PATH", dagger.ContainerWithEnvVariableOpts{Expand: true})
+
+	dev := dag.PhpSDKDev(dagger.PhpSDKDevOpts{Container: base, Source: src})
+	_, err := dev.Analyze().Sync(ctx)
+	return err
+}
+
 // Regenerate the PHP SDK API + docs
 func (t PHPSDK) Generate(ctx context.Context) (*dagger.Changeset, error) {
 	genClient := t.generateClient()
