@@ -1587,6 +1587,7 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateToolchains(
 	}
 
 	var newUpdatedToolchainArgs []core.ModuleSourceID
+	//nolint:dupl
 	for _, existingToolchain := range parentSrc.Self().Toolchains {
 		// If no update requests, implicitly update all toolchains
 		if len(updateReqs) == 0 {
@@ -1766,6 +1767,7 @@ func (s *moduleSourceSchema) moduleSourceWithoutToolchains(
 		}
 
 		keep := true
+		//nolint:dupl
 		for _, toolchainArg := range args.Toolchains {
 			toolchainSymbolic, toolchainVersion, _ := strings.Cut(toolchainArg, "@")
 			toolchainSymbolic = filepath.Clean(toolchainSymbolic)
@@ -1956,6 +1958,7 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateDependencies(
 	// this is technically O(n^2) but not expected to matter for the relatively low values of n we deal
 	// with here
 	var newUpdatedDepArgs []core.ModuleSourceID
+	//nolint:dupl
 	for _, existingDep := range parentSrc.Self().Dependencies {
 		// if no update requests, implicitly update all deps
 		if len(updateReqs) == 0 {
@@ -2114,6 +2117,7 @@ func (s *moduleSourceSchema) moduleSourceWithoutDependencies(
 		}
 
 		keep := true // assume we keep it until we find a match
+		//nolint:dupl
 		for _, depArg := range args.Dependencies {
 			depSymbolic, depVersion, _ := strings.Cut(depArg, "@")
 
@@ -3054,7 +3058,6 @@ func createShadowModuleForToolchains(
 func (s *moduleSourceSchema) integrateToolchains(
 	ctx context.Context,
 	mod *core.Module,
-	bpCtx toolchainContext,
 	dag *dagql.Server,
 ) (*core.Module, error) {
 	toolchainMods := extractToolchainModules(mod)
@@ -3155,7 +3158,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	}
 
 	// Integrate toolchain modules as fields
-	mod, err = s.integrateToolchains(ctx, mod, tcCtx, dag)
+	mod, err = s.integrateToolchains(ctx, mod, dag)
 	if err != nil {
 		return inst, err
 	}
