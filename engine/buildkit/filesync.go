@@ -11,12 +11,13 @@ import (
 	"path/filepath"
 
 	"github.com/containerd/continuity/fs"
-	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/dagger/dagger/internal/buildkit/exporter/local"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/session/filesync"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	bksolverpb "github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	"github.com/dagger/dagger/internal/fsutil"
 	fsutiltypes "github.com/dagger/dagger/internal/fsutil/types"
 
 	"github.com/dagger/dagger/engine"
@@ -89,7 +90,7 @@ func (c *Client) StatCallerHostPath(ctx context.Context, path string, returnAbsP
 
 func (c *Client) LocalDirExport(
 	ctx context.Context,
-	def *bksolverpb.Definition,
+	srcPath string,
 	destPath string,
 	merge bool,
 	removePaths []string,
@@ -110,46 +111,34 @@ func (c *Client) LocalDirExport(
 	}
 	defer cancel(errors.New("local dir export done"))
 
-	destPath = path.Clean(destPath)
-
-	res, err := c.Solve(ctx, bkgw.SolveRequest{Definition: def})
-	if err != nil {
-		return fmt.Errorf("failed to solve for local export: %w", err)
-	}
-	cacheRes, err := ConvertToWorkerCacheResult(ctx, res)
-	if err != nil {
-		return fmt.Errorf("failed to convert result: %w", err)
-	}
-
-	// TODO: lift this to dagger
-	exporter, err := c.Worker.Exporter(bkclient.ExporterLocal, c.SessionManager)
+	outputFS, err := fsutil.NewFS(srcPath)
 	if err != nil {
 		return err
 	}
 
-	expResult, err := exporter.Resolve(ctx, 0, nil)
-	if err != nil {
-		return fmt.Errorf("failed to resolve exporter: %w", err)
-	}
-
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get requester session ID: %w", err)
+		return err
 	}
 
+	caller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
+	if err != nil {
+		return err
+	}
+
+	destPath = path.Clean(destPath)
 	ctx = engine.LocalExportOpts{
 		Path:        destPath,
 		Merge:       merge,
 		RemovePaths: removePaths,
 	}.AppendToOutgoingContext(ctx)
 
-	_, descRef, err := expResult.Export(ctx, cacheRes, nil, clientMetadata.ClientID)
-	if err != nil {
-		return fmt.Errorf("failed to export: %w", err)
+	lbl := "copying files"
+	progress := local.NewProgressHandler(ctx, lbl)
+	if err := filesync.CopyToCaller(ctx, outputFS, 0, caller, progress); err != nil {
+		return err
 	}
-	if descRef != nil {
-		descRef.Release()
-	}
+
 	return nil
 }
 

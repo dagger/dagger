@@ -18,7 +18,6 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
-	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/log"
@@ -336,6 +335,11 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 }
 
 func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
+	dir, err := ch.Before.Self().Diff(ctx, ch.After.Self())
+	if err != nil {
+		return err
+	}
+
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -345,32 +349,19 @@ func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
 		return fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	dir, err := ch.Before.Self().DiffLLB(ctx, ch.After.Self())
+	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("export changeset to host %s", destPath))
+	defer telemetry.EndWithCause(span, &rerr)
+
+	root, closer, err := mountObj(ctx, dir)
+	if err != nil {
+		return fmt.Errorf("failed to mount directory: %w", err)
+	}
+	defer closer(false)
+
+	root, err = containerdfs.RootPath(root, dir.Dir)
 	if err != nil {
 		return err
 	}
 
-	var defPB *pb.Definition
-	if dir.Dir != "" && dir.Dir != "/" {
-		src, err := dir.State()
-		if err != nil {
-			return err
-		}
-		src = llb.Scratch().File(llb.Copy(src, dir.Dir, ".", &llb.CopyInfo{
-			CopyDirContentsOnly: true,
-		}))
-
-		def, err := src.Marshal(ctx, llb.Platform(dir.Platform.Spec()))
-		if err != nil {
-			return err
-		}
-		defPB = def.ToPB()
-	} else {
-		defPB = dir.LLB
-	}
-
-	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("export directory %s to host %s", dir.Dir, destPath))
-	defer telemetry.EndWithCause(span, &rerr)
-
-	return bk.LocalDirExport(ctx, defPB, destPath, true, ch.RemovedPaths)
+	return bk.LocalDirExport(ctx, root, destPath, true, ch.RemovedPaths)
 }
