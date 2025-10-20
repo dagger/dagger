@@ -591,6 +591,15 @@ func (llm *LLM) ToolsDoc(ctx context.Context) (string, error) {
 	return result, nil
 }
 
+func (llm *LLM) HasMissingOutputs() bool {
+	for _, out := range llm.Env().Self().outputsByName {
+		if out.Value == nil {
+			return false
+		}
+	}
+	return true
+}
+
 func (llm *LLM) WithModel(model string) *LLM {
 	llm = llm.Clone()
 	llm.model = model
@@ -734,8 +743,9 @@ func (llm *LLM) WithMCPServer(name string, svc dagql.ObjectResult[*Service]) *LL
 }
 
 // Return the last message sent by the agent
-func (llm *LLM) LastReply(ctx context.Context) (string, error) {
+func (llm *LLM) LastReply() (string, bool) {
 	var reply string = "(no reply)"
+	var foundReply bool
 	for _, msg := range llm.Messages {
 		if msg.Role != "assistant" {
 			continue
@@ -744,9 +754,10 @@ func (llm *LLM) LastReply(ctx context.Context) (string, error) {
 		if len(txt) == 0 {
 			continue
 		}
+		foundReply = true
 		reply = txt
 	}
-	return reply, nil
+	return reply, foundReply
 }
 
 func (llm *LLM) messagesWithSystemPrompt() []*LLMMessage {
@@ -1011,18 +1022,33 @@ func (llm *LLM) Loop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxAPIC
 	if err := llm.allowed(ctx); err != nil {
 		return inst, err
 	}
-	return llmLoop(ctx, inst, maxAPICalls)
-}
 
-func llmLoop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxAPICalls int) (dagql.ObjectResult[*LLM], error) {
 	var apiCalls int
 	for {
 		llm := inst.Self()
 
 		if !llm.HasPrompt() {
-			// dirty but no messages, possibly just a state change, nothing to do
-			// until a prompt is given
-			return inst, errors.New("LLM has no prompt or tool result")
+			if llm.HasMissingOutputs() {
+				// There's no prompt, and yet there are outputs unfulfilled. This means
+				// future calls to Env.Output may fail, so we should interject to help
+				// the LLM along.
+
+				if newLLM, interjected, interjectErr := llm.Interject(ctx, inst); interjectErr != nil {
+					// interjecting failed or was interrupted
+					return inst, interjectErr
+				} else if interjected {
+					inst = newLLM
+					// interjected - continue
+					continue
+				} else {
+					// no interjection - user gave up?
+					break
+				}
+			}
+
+			// nothing to do - either never prompted, or naturally reached the end of
+			// the loop (e.g. LLM reply with no additional tool calls)
+			return inst, nil
 		}
 
 		if maxAPICalls > 0 && apiCalls >= maxAPICalls {
@@ -1034,28 +1060,11 @@ func llmLoop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxAPICalls int
 		var err error
 		inst, err = inst.Self().Step(ctx, inst)
 		if err != nil {
-			var finished *ModelFinishedError
-			if errors.As(err, &finished) {
-				if newLLM, interjected, interjectErr := llm.autoInterject(ctx, inst); interjectErr != nil {
-					// interjecting failed or was interrupted
-					return inst, errors.Join(err, interjectErr)
-				} else if interjected {
-					inst = newLLM
-					// interjected - continue
-					continue
-				} else {
-					// no interjection and none needed - we're just done
-					break
-				}
-			}
 			// Handle persistent error after all retries failed.
 			return inst, err
 		}
-		if llm.mcp.Returned() {
-			// we returned; exit the loop, since some models just keep going
-			break
-		}
 	}
+
 	return inst, nil
 }
 
@@ -1067,6 +1076,9 @@ func (llm *LLM) Interject(ctx context.Context, self dagql.ObjectResult[*LLM]) (d
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return self, false, err
+	}
+	if !bk.Opts.Interactive {
+		return self, false, nil
 	}
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
@@ -1081,14 +1093,8 @@ func (llm *LLM) Interject(ctx context.Context, self dagql.ObjectResult[*LLM]) (d
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
 		log.String(telemetry.ContentTypeAttr, "text/markdown"))
 	defer stdio.Close()
-	var lastAssistantMessage string
-	for i := len(llm.Messages) - 1; i >= 0; i-- {
-		if llm.Messages[i].Role == "assistant" {
-			lastAssistantMessage = llm.Messages[i].Content
-			break
-		}
-	}
-	if lastAssistantMessage == "" {
+	lastAssistantMessage, foundReply := llm.LastReply()
+	if !foundReply {
 		return self, false, fmt.Errorf("no message from assistant")
 	}
 	msg, err := bk.PromptHumanHelp(ctx, "LLM needs help!", fmt.Sprintf("The LLM was unable to complete its task and needs a prompt to continue. Here is its last message:\n%s", mdQuote(lastAssistantMessage)))
@@ -1121,27 +1127,6 @@ func mdQuote(msg string) string {
 		lines[i] = fmt.Sprintf("> %s", line)
 	}
 	return strings.Join(lines, "\n")
-}
-
-// autoInterject keeps the loop going if necessary, by prompting for a new
-// input, adding it to the message history, and returning true
-func (llm *LLM) autoInterject(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], bool, error) {
-	if llm.mcp.IsDone() {
-		// we either didn't expect a return value, or got one - done!
-		return inst, false, nil
-	}
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return inst, false, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return inst, false, err
-	}
-	if !bk.Opts.Interactive {
-		return inst, false, nil
-	}
-	return llm.Interject(ctx, inst)
 }
 
 func (llm *LLM) HasPrompt() bool {

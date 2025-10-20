@@ -178,12 +178,10 @@ func (s *llmSchema) provider(ctx context.Context, llm *core.LLM, args struct{}) 
 	return string(ep.Provider), nil
 }
 
-func (s *llmSchema) lastReply(ctx context.Context, llm *core.LLM, args struct{}) (dagql.String, error) {
-	reply, err := llm.LastReply(ctx)
-	if err != nil {
-		return "", err
-	}
-	return dagql.NewString(reply), nil
+func (s *llmSchema) lastReply(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {
+	reply, _ := llm.LastReply()
+	// TODO: should we error if no last reply? (breaking)
+	return reply, nil
 }
 
 func (s *llmSchema) withModel(ctx context.Context, llm *core.LLM, args struct {
