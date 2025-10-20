@@ -1657,29 +1657,21 @@ func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (
 		return fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	var defPB *pb.Definition
-	if dir.Dir != "" && dir.Dir != "/" {
-		src, err := dir.State()
-		if err != nil {
-			return err
-		}
-		src = llb.Scratch().File(llb.Copy(src, dir.Dir, ".", &llb.CopyInfo{
-			CopyDirContentsOnly: true,
-		}))
-
-		def, err := src.Marshal(ctx, llb.Platform(dir.Platform.Spec()))
-		if err != nil {
-			return err
-		}
-		defPB = def.ToPB()
-	} else {
-		defPB = dir.LLB
-	}
-
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("export directory %s to host %s", dir.Dir, destPath))
 	defer telemetry.EndWithCause(span, &rerr)
 
-	return bk.LocalDirExport(ctx, defPB, destPath, merge, nil)
+	root, closer, err := mountObj(ctx, dir)
+	if err != nil {
+		return fmt.Errorf("failed to mount directory: %w", err)
+	}
+	defer closer(false)
+
+	root, err = containerdfs.RootPath(root, dir.Dir)
+	if err != nil {
+		return err
+	}
+
+	return bk.LocalDirExport(ctx, root, destPath, merge, nil)
 }
 
 // Root removes any relative path from the directory.
