@@ -30,7 +30,8 @@ func (e *WorkspacePattern) Prompt(base *dagger.LLM) *dagger.LLM {
 			WithWorkspaceOutput("out",
 				"The workspace containing your facts."),
 		).
-		WithPrompt(`You are a researcher with convenient access to new facts. Research and record three facts. Don't rely on your own knowledge - only rely on the workspace. You can't find a new fact until you've recorded the last one.`)
+		WithPrompt(`You are a researcher with convenient access to new facts. Research and record three facts. Don't rely on your own knowledge - only rely on the workspace. You can't find a new fact until you've recorded the last one.`).
+		Loop()
 }
 
 func (e *WorkspacePattern) Check(ctx context.Context, prompt *dagger.LLM) error {
