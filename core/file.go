@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -27,7 +28,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger/telemetry"
-	"github.com/dagger/dagger/core/reffs"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
 )
@@ -509,22 +509,60 @@ func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 	}, withSavedSnapshot("withTimestamps %d", unix))
 }
 
+type fileReadCloser struct {
+	read  func(p []byte) (n int, err error)
+	close func() error
+}
+
+func (frc fileReadCloser) Read(p []byte) (n int, err error) {
+	return frc.read(p)
+}
+
+func (frc fileReadCloser) Close() error {
+	return frc.close()
+}
+
+var _ io.ReadCloser = fileReadCloser{}
+
 func (file *File) Open(ctx context.Context) (io.ReadCloser, error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
-	fs, err := reffs.OpenDef(ctx, bk, file.LLB)
+	root, closer, err := mountObj(ctx, file, allowNilBuildkitSession)
 	if err != nil {
 		return nil, err
 	}
 
-	return fs.Open(file.File)
+	filePath, err := containerdfs.RootPath(root, file.File)
+	if err != nil {
+		_, closeErr := closer(true)
+		if closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
+		return nil, err
+	}
+
+	r, err := os.Open(filePath)
+	if err != nil {
+		_, closeErr := closer(true)
+		if closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
+		return nil, err
+	}
+
+	return &fileReadCloser{
+		read: r.Read,
+		close: func() error {
+			var errs error
+			var abort bool
+			if err := r.Close(); err != nil {
+				errs = errors.Join(errs, err)
+				abort = true
+			}
+			if _, err := closer(abort); err != nil {
+				errs = errors.Join(errs, err)
+			}
+			return errs
+		},
+	}, nil
 }
 
 func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bool) (rerr error) {
