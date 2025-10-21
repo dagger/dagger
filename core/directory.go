@@ -784,7 +784,8 @@ func (dir *Directory) WithDirectory(
 	canDoDirectMerge :=
 		filter.IsEmpty() &&
 			destDir == "/" &&
-			src.Dir == "/"
+			src.Dir == "/" &&
+			owner == ""
 
 	cache := query.BuildkitCache()
 
