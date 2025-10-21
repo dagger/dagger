@@ -32,7 +32,7 @@ Expected stderr:
 │
 ├╴$ Directory.withDirectory(
 │   ┆ path: "sub"
-│   ┆ directory: Directory.withFile(
+│   ┆ source: Directory.withFile(
 │   ┆ ┆ path: "file"
 │   ┆ ┆ source: file(name: "file", contents: "hey"): File!
 │   ┆ ┆ permissions: 420
@@ -42,7 +42,7 @@ Expected stderr:
 ├╴✔ container: Container! X.Xs
 ├╴$ .withDirectory(
 │   ┆ path: "/level-1"
-│   ┆ directory: Directory.withFile(
+│   ┆ source: Directory.withFile(
 │   ┆ ┆ path: "file"
 │   ┆ ┆ source: file(name: "file", contents: "hey"): File!
 │   ┆ ┆ permissions: 420
@@ -50,9 +50,9 @@ Expected stderr:
 │   ): Container! X.Xs CACHED
 ├╴$ .withDirectory(
 │   ┆ path: "/level-2"
-│   ┆ directory: Directory.withDirectory(
+│   ┆ source: Directory.withDirectory(
 │   ┆ ┆ path: "sub"
-│   ┆ ┆ directory: Directory.withFile(
+│   ┆ ┆ source: Directory.withFile(
 │   ┆ ┆ ┆ path: "file"
 │   ┆ ┆ ┆ source: file(name: "file", contents: "hey"): File!
 │   ┆ ┆ ┆ permissions: 420
