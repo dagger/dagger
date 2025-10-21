@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -13,7 +12,7 @@ const (
 	upstreamRepository = "dagger/dagger"
 	ubuntuVersion      = "24.04"
 	defaultRunner      = "ubuntu-" + ubuntuVersion
-	publicToken        = "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
+	publicToken        = "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw" //nolint:gosec
 	timeoutMinutes     = 20
 )
 
@@ -106,45 +105,87 @@ func New() *CI {
 	}
 
 	return ci.
-		withModuleWorkflow(
+		withWorkflow(
 			ci.AltRunnerWithCache,
-			module(".github"),
-			"Github",
-			"check",
+			false,
+			"Check generated files",
+			"check-generated",
 		).
 		withWorkflow(
 			ci.AltRunnerWithCache,
 			false,
-			"docs",
-			"check --targets=docs",
+			"Lint go packages",
+			"check-lint-go",
 		).
 		withWorkflow(
 			ci.AltRunnerWithCache,
 			false,
-			"Helm",
-			"check --targets=helm",
+			"Check go tidy",
+			"check-tidy",
+		).
+		withWorkflow(
+			ci.AltRunnerWithCache,
+			false,
+			"Lint SDKs",
+			"check-lint-sdks",
+		).
+		withWorkflow(
+			ci.AltRunnerWithCache,
+			false,
+			"Lint docs",
+			"check-lint-docs",
+		).
+		withWorkflow(
+			ci.AltRunnerWithCache,
+			false,
+			"Lint docs",
+			"check-lint-helm",
+		).
+		withWorkflow(
+			ci.AltRunnerWithCache,
+			false,
+			"Lint docs",
+			"check-lint-scripts",
+		).
+		withWorkflow(
+			ci.AltRunnerWithCache,
+			false,
+			"Release dry run",
+			"check-release-dry-run",
+		).
+		withWorkflow(
+			ci.AltRunnerWithCache,
+			false,
+			"Security scan",
+			"check-scan",
+		).
+		withWorkflow(
+			ci.AltRunnerWithCache,
+			false,
+			"Test Helm chart",
+			"check-test-helm",
+		).
+		withWorkflow(
+			ci.AltRunnerWithCache,
+			false,
+			"Test SDKs",
+			"check-test-sdks",
+		).
+		withWorkflow(
+			ci.AltRunnerWithCache,
+			false,
+			"Test install scripts",
+			"check-test-scripts",
+		).
+		withCoreTestWorkflows(
+			ci.AltRunner,
+			"Core tests",
 		).
 		withWorkflow(
 			ci.AltRunner,
 			true,
 			"Dev Engine",
-			"check --targets=sdk",
-		).
-		withTestWorkflows(
-			ci.AltRunner,
-			"Engine & CLI",
-		).
-		withSDKWorkflows(
-			ci.AltRunnerWithCache,
-			"SDKs",
-			"python",
-			"typescript",
-			"go",
-			"java",
-			"elixir",
-			"rust",
-			"php",
-			"dotnet",
+			"check-test-sdks",
 		).
 		withPrepareReleaseWorkflow().
 		withEvalsWorkflow()
@@ -161,14 +202,6 @@ func (ci *CI) Generate(
 	}).Changes(repository)
 }
 
-func (ci *CI) Check(ctx context.Context,
-	// +defaultPath="/"
-	// +ignore=["*", "!.github"]
-	repository *dagger.Directory,
-) error {
-	return dag.Dirdiff().AssertNoChanges(ctx, ci.Generate(repository))
-}
-
 // Add a workflow with our project-specific defaults
 func (ci *CI) withWorkflow(runner *dagger.Gha, devEngine bool, name string, command string) *CI {
 	jobOpts := dagger.GhaJobOpts{}
@@ -183,50 +216,9 @@ func (ci *CI) withWorkflow(runner *dagger.Gha, devEngine bool, name string, comm
 	return ci
 }
 
-// Add a general workflow
-func (ci *CI) withModuleWorkflow(runner *dagger.Gha, module string, name string, command string) *CI {
+func (ci *CI) withCoreTestWorkflows(runner *dagger.Gha, name string) *CI {
 	w := runner.
 		Workflow(name).
-		WithJob(runner.Job(name, command, dagger.GhaJobOpts{
-			Module: module,
-		}))
-
-	ci.Workflows = ci.Workflows.WithWorkflow(w)
-	return ci
-}
-
-func (ci *CI) withSDKWorkflows(runner *dagger.Gha, name string, sdks ...string) *CI {
-	w := runner.Workflow(name)
-	for _, sdk := range sdks {
-		command := daggerCommand("check --targets=sdk/" + sdk)
-		w = w.
-			WithJob(runner.Job(sdk, command))
-	}
-
-	ci.Workflows = ci.Workflows.WithWorkflow(w)
-	return ci
-}
-
-func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
-	w := runner.
-		Workflow(name).
-		WithJob(runner.Job("lint", "lint", dagger.GhaJobOpts{
-			Runner: AltPlatinumRunnerWithCache(),
-		})).
-		WithJob(runner.Job("scripts", "check --targets=scripts", dagger.GhaJobOpts{
-			Runner: AltBronzeRunnerWithCache(),
-		})).
-		WithJob(runner.Job("cli-test-publish", "test-publish", dagger.GhaJobOpts{
-			Module: module("cmd/dagger"),
-			Runner: AltGoldRunnerWithCache(),
-		})).
-		WithJob(runner.Job("engine-test-publish", "publish --image=dagger-engine.dev --tag=main --dry-run", dagger.GhaJobOpts{
-			Module: module("cmd/engine"),
-			Runner: AltBronzeRunnerWithCache(),
-		})).
-		WithJob(runner.Job("scan-engine", "scan", dagger.GhaJobOpts{
-			Runner: AltBronzeRunnerWithCache(),
-		})).
 		With(splitTests(runner, "test-", false, []testSplit{
 			{"cgroupsv2", []string{"TestProvision", "TestTelemetry"}, &dagger.GhaJobOpts{}},
 			{"modules", []string{"TestModule"}, &dagger.GhaJobOpts{
@@ -246,7 +238,6 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 			}},
 		}))
 	ci.Workflows = ci.Workflows.WithWorkflow(w)
-
 	return ci
 }
 

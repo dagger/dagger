@@ -273,7 +273,6 @@ func main() { //nolint:gocyclo
 			if out, err := exec.CommandContext(ctx, "update-ca-certificates").CombinedOutput(); err != nil {
 				bklog.G(ctx).WithError(err).Warnf("failed to update ca-certificates: %s", out)
 			} else {
-				//nolint:gosec // it thinks we're using untrusted input even though we're only using consts here...?
 				if out, err := exec.CommandContext(ctx, "c_rehash", cacerts.EngineCustomCACertsDir).CombinedOutput(); err != nil {
 					bklog.G(ctx).WithError(err).Warnf("failed to rehash ca-certificates: %s", out)
 				}

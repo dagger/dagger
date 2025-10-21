@@ -1,4 +1,7 @@
 version: "2"
+
+run:
+  relative-path-mode: wd
 linters:
   default: none
   enable:
@@ -33,6 +36,24 @@ linters:
     gocritic:
       disabled-checks:
         - ifElseChain
+    gosec:
+      excludes:
+        # All these excludes have been added on a case-by-cases basis, after reviewing the specific code that triggered them.
+        # PLEASE DO NOT BLINDLY DISABLE CHECKS TO MAKE YOUR LINTING ERRORS GO AWAY!
+        #
+        # G115: Potential integer overflow when converting between integer types
+        - G115
+        # G114: Use of net/http serve function that has no support for setting timeouts
+        - G114
+        # G112: Potential slowloris attack
+        - G112
+        # G204: Subprocess launched with variable
+        - G204
+        # G306: Expect WriteFile permissions to be 0600 or less
+        - G306
+        # G107: Url provided to HTTP request as taint input
+        - G107
+
     govet:
       disable:
         - lostcancel
@@ -72,7 +93,7 @@ linters:
         path: _test\.go
 
       - linters:
-        - staticcheck
+          - staticcheck
         text: "idtools.IdentityMapping"
 
       - linters:

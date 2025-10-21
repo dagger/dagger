@@ -148,7 +148,7 @@ func run(cmd *cobra.Command, args []string) error {
 		// shell because Ctrl+C sends to the process group.)
 		ensureChildProcessesAreKilled(subCmd)
 
-		srv := &http.Server{ //nolint:gosec
+		srv := &http.Server{
 			Handler: engineClient,
 			BaseContext: func(listener net.Listener) context.Context {
 				return ctx

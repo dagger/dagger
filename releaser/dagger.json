@@ -4,6 +4,10 @@
   "sdk": {
     "source": "go"
   },
+  "include": [
+    "../go.mod",
+    "../go.sum"
+  ],
   "dependencies": [
     {
       "name": "dagger-cli",

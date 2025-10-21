@@ -40,7 +40,7 @@ func Introspect(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("marshal introspection json: %w", err)
 		}
 		if outputSchema != "" {
-			return os.WriteFile(outputSchema, jsonData, 0o644) //nolint: gosec
+			return os.WriteFile(outputSchema, jsonData, 0o644)
 		}
 		cmd.Println(string(jsonData))
 	}
