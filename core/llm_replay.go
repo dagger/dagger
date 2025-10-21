@@ -21,7 +21,7 @@ func (*LLMReplayer) IsRetryable(err error) bool {
 }
 
 func (c *LLMReplayer) SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
-	if len(history) > 0 && history[0].Role == "system" {
+	if len(history) > 0 && history[0].Role == LLMMessageRoleSystem {
 		// HACK: drop the default system prompt, since we don't return it in
 		// HistoryJSON
 		history = history[1:]
