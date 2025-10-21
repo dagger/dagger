@@ -556,7 +556,6 @@ func (*Viztest) TraceFunctionCalls(ctx context.Context) error {
 func (*Viztest) TraceRemoteFunctionCalls(ctx context.Context) error {
 	dag.Versioned().Hello(ctx)
 	dag.VersionedGit().Hello(ctx)
-	dag.VersionedGitColon().Hello(ctx)
 	return nil
 }
 
