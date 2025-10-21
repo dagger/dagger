@@ -43,6 +43,6 @@ func (e *ChainedContext) Check(ctx context.Context, prompt *dagger.LLM) error {
 
 		middleConfig, err := env.Output("marker").AsString(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "chained: POTATO!", middleConfig)
+		require.Equal(t, "POTATO!", middleConfig)
 	})
 }
