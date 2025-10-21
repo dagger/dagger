@@ -1167,7 +1167,7 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMTo
 	for _, call := range destructiveCalls {
 		result, isError := m.Call(ctx, tools, call)
 		allResults = append(allResults, &LLMMessage{
-			Role:        "user",
+			Role:        LLMMessageRoleUser,
 			Content:     result,
 			ToolCallID:  call.CallID,
 			ToolErrored: isError,
@@ -1260,7 +1260,7 @@ func (m *MCP) callBatchRegular(ctx context.Context, tools []LLMTool, toolCalls [
 		toolCallsPool.Go(func() *LLMMessage {
 			content, isError := m.Call(ctx, tools, toolCall)
 			return &LLMMessage{
-				Role:        "user", // Anthropic only allows tool call results in user messages
+				Role:        LLMMessageRoleUser,
 				Content:     content,
 				ToolCallID:  toolCall.CallID,
 				ToolErrored: isError,

@@ -89,10 +89,10 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 		}
 		var blocks []openai.ChatCompletionContentPartUnionParam
 		switch msg.Role {
-		case "user":
+		case LLMMessageRoleUser:
 			blocks = append(blocks, openai.TextContentPart(msg.Content))
 			openAIMessages = append(openAIMessages, openai.UserMessage(blocks))
-		case "assistant":
+		case LLMMessageRoleAssistant:
 			assistantMsg := openai.AssistantMessage(msg.Content)
 			calls := make([]openai.ChatCompletionMessageToolCallParam, len(msg.ToolCalls))
 			for i, call := range msg.ToolCalls {
@@ -108,7 +108,7 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []*LLMMessage, too
 				assistantMsg.OfAssistant.ToolCalls = calls
 			}
 			openAIMessages = append(openAIMessages, assistantMsg)
-		case "system":
+		case LLMMessageRoleSystem:
 			openAIMessages = append(openAIMessages, openai.SystemMessage(msg.Content))
 		}
 	}
