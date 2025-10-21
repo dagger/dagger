@@ -75,14 +75,14 @@ func (c *GenaiClient) prepareGenaiHistory(history []*LLMMessage) (genaiHistory [
 	for _, msg := range history {
 		var content *genai.Content
 		switch msg.Role {
-		case "system":
+		case LLMMessageRoleSystem:
 			content = systemInstruction
-		case "user", "function":
+		case LLMMessageRoleUser:
 			content = &genai.Content{
 				Parts: []*genai.Part{},
 				Role:  "user",
 			}
-		case "model", "assistant":
+		case LLMMessageRoleAssistant:
 			content = &genai.Content{
 				Parts: []*genai.Part{},
 				Role:  "model",

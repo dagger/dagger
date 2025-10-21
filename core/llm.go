@@ -146,9 +146,9 @@ type LLMMessageRole string
 var LLMMessageRoles = dagql.NewEnum[LLMMessageRole]()
 
 var (
-	LLMMessageRoleUser      = LLMMessageRoles.Register("LLM_ROLE_USER", "A user prompt or tool response.")
-	LLMMessageRoleAssistant = LLMMessageRoles.Register("LLM_ROLE_ASSISTANT", "A reply from the model.")
-	LLMMessageRoleSystem    = LLMMessageRoles.Register("LLM_ROLE_SYSTEM", "A system prompt.")
+	LLMMessageRoleUser      = LLMMessageRoles.Register("USER", "A user prompt or tool response.")
+	LLMMessageRoleAssistant = LLMMessageRoles.Register("ASSISTANT", "A reply from the model.")
+	LLMMessageRoleSystem    = LLMMessageRoles.Register("SYSTEM", "A system prompt.")
 )
 
 func (LLMMessageRole) Type() *ast.Type {
@@ -625,7 +625,7 @@ func (llm *LLM) WithPrompt(
 	})
 	llm = llm.Clone()
 	llm.Messages = append(llm.Messages, &LLMMessage{
-		Role:    "user",
+		Role:    LLMMessageRoleUser,
 		Content: prompt,
 	})
 	return llm
@@ -644,7 +644,7 @@ func (llm *LLM) WithPromptFile(ctx context.Context, file *File) (*LLM, error) {
 func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
 	llm = llm.Clone()
 	llm.Messages = append(llm.Messages, &LLMMessage{
-		Role:    "system",
+		Role:    LLMMessageRoleSystem,
 		Content: prompt,
 	})
 	return llm
@@ -654,7 +654,7 @@ func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
 func (llm *LLM) WithResponse(content string, tokenUsage LLMTokenUsage) *LLM {
 	llm = llm.Clone()
 	llm.Messages = append(llm.Messages, &LLMMessage{
-		Role:       "assistant",
+		Role:       LLMMessageRoleAssistant,
 		Content:    content,
 		TokenUsage: tokenUsage,
 	})
@@ -666,7 +666,7 @@ func (llm *LLM) WithToolCall(callID, tool string, arguments JSON) *LLM {
 	llm = llm.Clone()
 	// Find the last assistant message and append the tool call to it
 	for i := len(llm.Messages) - 1; i >= 0; i-- {
-		if llm.Messages[i].Role == "assistant" {
+		if llm.Messages[i].Role == LLMMessageRoleAssistant {
 			llm.Messages[i].ToolCalls = append(llm.Messages[i].ToolCalls, &LLMToolCall{
 				CallID:    callID,
 				Name:      tool,
@@ -682,7 +682,7 @@ func (llm *LLM) WithToolCall(callID, tool string, arguments JSON) *LLM {
 func (llm *LLM) WithToolResponse(callID, content string, errored bool) *LLM {
 	llm = llm.Clone()
 	llm.Messages = append(llm.Messages, &LLMMessage{
-		Role:        "user",
+		Role:        LLMMessageRoleUser,
 		Content:     content,
 		ToolCallID:  callID,
 		ToolErrored: errored,
@@ -728,7 +728,7 @@ func (llm *LLM) LastReply() (string, bool) {
 	var reply string = "(no reply)"
 	var foundReply bool
 	for _, msg := range llm.Messages {
-		if msg.Role != "assistant" {
+		if msg.Role != LLMMessageRoleAssistant {
 			continue
 		}
 		txt := msg.Content
@@ -748,7 +748,7 @@ func (llm *LLM) messagesWithSystemPrompt() []*LLMMessage {
 	}
 	if systemPrompt != "" {
 		return append([]*LLMMessage{{
-			Role:    "system",
+			Role:    LLMMessageRoleSystem,
 			Content: systemPrompt,
 		}}, llm.Messages...)
 	}
@@ -791,7 +791,7 @@ func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.
 
 	var newMessages []*LLMMessage
 	for _, msg := range slices.Backward(messagesToSend) {
-		if msg.Role == "assistant" || msg.ToolCallID != "" {
+		if msg.Role == LLMMessageRoleAssistant || msg.ToolCallID != "" {
 			// only display messages appended since the last response
 			break
 		}
@@ -1111,7 +1111,7 @@ func mdQuote(msg string) string {
 }
 
 func (llm *LLM) HasPrompt() bool {
-	return len(llm.Messages) > 0 && llm.Messages[len(llm.Messages)-1].Role == "user"
+	return len(llm.Messages) > 0 && llm.Messages[len(llm.Messages)-1].Role == LLMMessageRoleUser
 }
 
 func (llm *LLM) allowed(ctx context.Context) error {
@@ -1209,7 +1209,7 @@ func (llm *LLM) HistoryJSON(ctx context.Context) (JSON, error) {
 
 func (llm *LLM) WithEnv(env dagql.ObjectResult[*Env]) *LLM {
 	llm = llm.Clone()
-	llm.mcp.env = env
+	llm.mcp.setEnv(env)
 	return llm
 }
 

@@ -160,11 +160,11 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []*LLMMessage, 
 		}
 
 		switch msg.Role {
-		case "user":
+		case LLMMessageRoleUser:
 			messages = append(messages, anthropic.NewUserMessage(blocks...))
-		case "assistant":
+		case LLMMessageRoleAssistant:
 			messages = append(messages, anthropic.NewAssistantMessage(blocks...))
-		case "system":
+		case LLMMessageRoleSystem:
 			// Collect all system prompt messages.
 			systemPrompts = append(systemPrompts, anthropic.TextBlockParam{Text: msg.Content})
 		}
