@@ -277,7 +277,7 @@ func (dev *DaggerDev) SDK() *SDK {
 func (dev *DaggerDev) Dev(
 	ctx context.Context,
 	// Mount a directory into the container's workdir, for convenience
-	// +optional
+	// +defaultPath="/"
 	target *dagger.Directory,
 	// Set target distro
 	// +default="alpine"
