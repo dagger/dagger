@@ -204,6 +204,9 @@ type Changeset {
   """A unique identifier for this Changeset."""
   id: ChangesetID!
 
+  """Returns true if the changeset is empty (i.e. there are no changes)."""
+  isEmpty: Boolean!
+
   """Return a snapshot containing only the created and modified files"""
   layer: Directory!
 
@@ -792,6 +795,12 @@ type Container {
     variables defined in the container (e.g. "/opt/bin:$PATH").
     """
     expand: Boolean = false
+  ): Container!
+
+  """Raise an error."""
+  withError(
+    """Message of the error to raise. If empty, the error will be ignored."""
+    err: String!
   ): Container!
 
   """
@@ -1731,6 +1740,12 @@ type Directory {
     If the group is omitted, it defaults to the same as the user.
     """
     owner: String = ""
+  ): Directory!
+
+  """Raise an error."""
+  withError(
+    """Message of the error to raise. If empty, the error will be ignored."""
+    err: String!
   ): Directory!
 
   """

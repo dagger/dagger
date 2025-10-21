@@ -2686,6 +2686,7 @@ export class CacheVolume extends BaseClient {
 export class Changeset extends BaseClient {
   private readonly _id?: ChangesetID = undefined
   private readonly _export?: string = undefined
+  private readonly _isEmpty?: boolean = undefined
   private readonly _sync?: ChangesetID = undefined
 
   /**
@@ -2695,12 +2696,14 @@ export class Changeset extends BaseClient {
     ctx?: Context,
     _id?: ChangesetID,
     _export?: string,
+    _isEmpty?: boolean,
     _sync?: ChangesetID,
   ) {
     super(ctx)
 
     this._id = _id
     this._export = _export
+    this._isEmpty = _isEmpty
     this._sync = _sync
   }
 
@@ -2766,6 +2769,21 @@ export class Changeset extends BaseClient {
     const ctx = this._ctx.select("export", { path })
 
     const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Returns true if the changeset is empty (i.e. there are no changes).
+   */
+  isEmpty = async (): Promise<boolean> => {
+    if (this._isEmpty) {
+      return this._isEmpty
+    }
+
+    const ctx = this._ctx.select("isEmpty")
+
+    const response: Awaited<boolean> = await ctx.execute()
 
     return response
   }
@@ -3578,6 +3596,15 @@ export class Container extends BaseClient {
     opts?: ContainerWithEnvVariableOpts,
   ): Container => {
     const ctx = this._ctx.select("withEnvVariable", { name, value, ...opts })
+    return new Container(ctx)
+  }
+
+  /**
+   * Raise an error.
+   * @param err Message of the error to raise. If empty, the error will be ignored.
+   */
+  withError = (err: string): Container => {
+    const ctx = this._ctx.select("withError", { err })
     return new Container(ctx)
   }
 
@@ -4569,6 +4596,15 @@ export class Directory extends BaseClient {
     opts?: DirectoryWithDirectoryOpts,
   ): Directory => {
     const ctx = this._ctx.select("withDirectory", { path, source, ...opts })
+    return new Directory(ctx)
+  }
+
+  /**
+   * Raise an error.
+   * @param err Message of the error to raise. If empty, the error will be ignored.
+   */
+  withError = (err: string): Directory => {
+    const ctx = this._ctx.select("withError", { err })
     return new Directory(ctx)
   }
 

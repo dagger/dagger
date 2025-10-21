@@ -359,6 +359,16 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Raise an error.
+     */
+    public function withError(string $err): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withError');
+        $innerQueryBuilder->setArgument('err', $err);
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieves this directory plus the contents of the given file copied to the given path.
      */
     public function withFile(

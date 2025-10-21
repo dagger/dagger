@@ -868,9 +868,10 @@ func (r *CacheVolume) MarshalJSON() ([]byte, error) {
 type Changeset struct {
 	query *querybuilder.Selection
 
-	export *string
-	id     *ChangesetID
-	sync   *ChangesetID
+	export  *string
+	id      *ChangesetID
+	isEmpty *bool
+	sync    *ChangesetID
 }
 
 func (r *Changeset) WithGraphQLQuery(q *querybuilder.Selection) *Changeset {
@@ -968,6 +969,19 @@ func (r *Changeset) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// Returns true if the changeset is empty (i.e. there are no changes).
+func (r *Changeset) IsEmpty(ctx context.Context) (bool, error) {
+	if r.isEmpty != nil {
+		return *r.isEmpty, nil
+	}
+	q := r.query.Select("isEmpty")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Return a snapshot containing only the created and modified files
@@ -2060,6 +2074,16 @@ func (r *Container) WithEnvVariable(name string, value string, opts ...Container
 	}
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Raise an error.
+func (r *Container) WithError(err string) *Container {
+	q := r.query.Select("withError")
+	q = q.Arg("err", err)
 
 	return &Container{
 		query: q,
@@ -3613,6 +3637,16 @@ func (r *Directory) WithDirectory(path string, source *Directory, opts ...Direct
 	}
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Raise an error.
+func (r *Directory) WithError(err string) *Directory {
+	q := r.query.Select("withError")
+	q = q.Arg("err", err)
 
 	return &Directory{
 		query: q,

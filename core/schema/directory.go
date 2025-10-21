@@ -264,6 +264,11 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 					`The user and group must be an ID (1000:1000), not a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
+		dagql.NodeFunc("withError", s.withError).
+			Doc(`Raise an error.`).
+			Args(
+				dagql.Arg("err").Doc(`Message of the error to raise. If empty, the error will be ignored.`),
+			),
 	}.Install(srv)
 
 	dagql.Fields[*core.SearchResult]{}.Install(srv)
@@ -283,6 +288,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the copied directory (e.g., "logs/").`),
 			),
+		dagql.NodeFunc("isEmpty", s.changesetEmpty).
+			Doc(`Returns true if the changeset is empty (i.e. there are no changes).`),
 	}.Install(srv)
 }
 
@@ -830,6 +837,27 @@ func (s *directorySchema) changesetExport(ctx context.Context, parent *core.Chan
 	return dagql.String(stat.Path), err
 }
 
+func (s *directorySchema) changesetEmpty(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args struct{}) (dagql.Boolean, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	var size dagql.Int
+	if err := srv.Select(ctx, parent, &size,
+		dagql.Selector{
+			Field: "asPatch",
+		},
+		dagql.Selector{
+			Field: "size",
+		},
+	); err != nil {
+		return false, err
+	}
+
+	return size == 0, nil
+}
+
 type dirExportArgs struct {
 	Path string
 	Wipe bool `default:"false"`
@@ -1071,6 +1099,14 @@ func (s *directorySchema) withSymlink(ctx context.Context, parent dagql.ObjectRe
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+}
+
+func (s *directorySchema) withError(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args struct{ Err string }) (dagql.ObjectResult[*core.Directory], error) {
+	_ = ctx
+	if args.Err == "" {
+		return parent, nil
+	}
+	return parent, errors.New(args.Err)
 }
 
 type directoryChownArgs struct {

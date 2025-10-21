@@ -1,6 +1,3 @@
-//go:build !nydus
-// +build !nydus
-
 package containerimage
 
 import (

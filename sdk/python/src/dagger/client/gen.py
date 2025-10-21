@@ -997,6 +997,25 @@ class Changeset(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(ChangesetID)
 
+    async def is_empty(self) -> bool:
+        """Returns true if the changeset is empty (i.e. there are no changes).
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("isEmpty", _args)
+        return await _ctx.execute(bool)
+
     def layer(self) -> "Directory":
         """Return a snapshot containing only the created and modified files"""
         _args: list[Arg] = []
@@ -2186,6 +2205,21 @@ class Container(Type):
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withEnvVariable", _args)
+        return Container(_ctx)
+
+    def with_error(self, err: str) -> Self:
+        """Raise an error.
+
+        Parameters
+        ----------
+        err:
+            Message of the error to raise. If empty, the error will be
+            ignored.
+        """
+        _args = [
+            Arg("err", err),
+        ]
+        _ctx = self._select("withError", _args)
         return Container(_ctx)
 
     def with_exec(
@@ -3827,6 +3861,21 @@ class Directory(Type):
             Arg("owner", owner, ""),
         ]
         _ctx = self._select("withDirectory", _args)
+        return Directory(_ctx)
+
+    def with_error(self, err: str) -> Self:
+        """Raise an error.
+
+        Parameters
+        ----------
+        err:
+            Message of the error to raise. If empty, the error will be
+            ignored.
+        """
+        _args = [
+            Arg("err", err),
+        ]
+        _ctx = self._select("withError", _args)
         return Directory(_ctx)
 
     def with_file(

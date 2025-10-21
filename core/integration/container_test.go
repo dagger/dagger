@@ -176,6 +176,54 @@ func (ContainerSuite) TestExecSync(ctx context.Context, t *testctx.T) {
 	requireErrOut(t, err, `process "false" did not complete successfully`)
 }
 
+func (ContainerSuite) TestError(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		name        string
+		query       string
+		expectedErr *string
+	}{
+		{
+			"with error message",
+			`
+			{
+				container {
+					from(address: "` + alpineImage + `") {
+						withError(err: "error raised")
+					}
+				}
+			}`,
+			ptr("error raised"),
+		},
+		{
+			"with empty error message",
+			`
+			{
+				container {
+					from(address: "` + alpineImage + `") {
+						withError(err: "")
+					}
+				}
+			}`,
+			nil,
+		},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			_, err := testutil.Query[struct {
+				Container struct {
+					From struct {
+						WithError struct{}
+					}
+				}
+			}](t, tc.query, nil)
+			if tc.expectedErr == nil {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, *tc.expectedErr)
+			}
+		})
+	}
+}
+
 func (ContainerSuite) TestExecStdoutStderr(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

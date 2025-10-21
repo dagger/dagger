@@ -2266,6 +2266,11 @@ impl Changeset {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Returns true if the changeset is empty (i.e. there are no changes).
+    pub async fn is_empty(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("isEmpty");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Return a snapshot containing only the created and modified files
     pub fn layer(&self) -> Directory {
         let query = self.selection.select("layer");
@@ -3572,6 +3577,20 @@ impl Container {
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
         }
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Raise an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `err` - Message of the error to raise. If empty, the error will be ignored.
+    pub fn with_error(&self, err: impl Into<String>) -> Container {
+        let mut query = self.selection.select("withError");
+        query = query.arg("err", err.into());
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -5602,6 +5621,20 @@ impl Directory {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Raise an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `err` - Message of the error to raise. If empty, the error will be ignored.
+    pub fn with_error(&self, err: impl Into<String>) -> Directory {
+        let mut query = self.selection.select("withError");
+        query = query.arg("err", err.into());
         Directory {
             proc: self.proc.clone(),
             selection: query,

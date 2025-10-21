@@ -20,6 +20,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/clientdb"
+	"github.com/dagger/dagger/engine/filesync"
 	"github.com/dagger/dagger/engine/server/resource"
 )
 
@@ -119,6 +120,9 @@ type Server interface {
 
 	// Gets the buildkit session manager
 	BuildkitSession() *bksession.Manager
+
+	// Gets the local source
+	FileSyncer() *filesync.FileSyncer
 
 	// A global lock for the engine, can be used to synchronize access to
 	// shared resources between multiple potentially concurrent calls.

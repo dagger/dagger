@@ -94,7 +94,14 @@ func (apple) ContainerRun(ctx context.Context, name string, opts runOpts) error 
 
 	cmd := exec.CommandContext(ctx, "container", args...)
 	cmd.Env = envs
-	return traceexec.Exec(ctx, cmd)
+	_, stderr, err := traceexec.ExecOutput(ctx, cmd)
+	if err != nil {
+		if isAppleContainerAlreadyInUseOutput(stderr) {
+			return errContainerAlreadyExists
+		}
+		return err
+	}
+	return nil
 }
 
 func (apple) ContainerExec(ctx context.Context, name string, args []string) (string, string, error) {
@@ -111,21 +118,47 @@ func (apple) ContainerRemove(ctx context.Context, name string) error {
 	return traceexec.Exec(ctx, exec.CommandContext(ctx, "container", "rm", "-f", name))
 }
 
-func (apple) ContainerStart(ctx context.Context, name string) error {
-	_, stderr, err := traceexec.ExecOutput(ctx, exec.CommandContext(ctx, "container", "start", name), telemetry.Encapsulated())
-	if err == nil {
+func (a apple) ContainerStart(ctx context.Context, name string) error {
+	// TODO: remove is running check when apple container will stop removing running container
+	// When doing a 'container start' on an existing running container, apple container
+	// will fail to start it. That's expected as the container is already running.
+	// But when an error occurs, apple container will stop and remove the container.
+	// That way, to 'container start' an already running container will stop and remove it.
+	if running, err := a.ContainerIsRunning(ctx, name); err == nil && running {
 		return nil
 	}
-	if strings.Contains(stderr, "running") { // already running
-		return nil
-	}
-	return err
+	return traceexec.Exec(ctx, exec.CommandContext(ctx, "container", "start", name), telemetry.Encapsulated())
 }
 
 func (apple) ContainerExists(ctx context.Context, name string) (bool, error) {
 	cmd := exec.CommandContext(ctx, "container", "inspect", name)
 	err := traceexec.Exec(ctx, cmd, telemetry.Encapsulated())
 	return err == nil, nil
+}
+
+func (apple) ContainerIsRunning(ctx context.Context, name string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "container", "ls", "-a", "--format", "json")
+	stdout, _, err := traceexec.ExecOutput(ctx, cmd)
+	if err != nil {
+		return false, err
+	}
+
+	var result []struct {
+		Status        string `json:"status"`
+		Configuration struct {
+			ID string `json:"id"`
+		} `json:"configuration"`
+	}
+	err = json.Unmarshal([]byte(stdout), &result)
+	if err != nil {
+		return false, err
+	}
+	for _, res := range result {
+		if res.Configuration.ID == name && res.Status == "running" {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (apple) ContainerLs(ctx context.Context) ([]string, error) {
@@ -150,4 +183,8 @@ func (apple) ContainerLs(ctx context.Context) ([]string, error) {
 		ids = append(ids, res.Configuration.ID)
 	}
 	return ids, nil
+}
+
+func isAppleContainerAlreadyInUseOutput(output string) bool {
+	return strings.Contains(output, "already exists")
 }
