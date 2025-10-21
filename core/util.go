@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -335,7 +336,10 @@ func MountRef(ctx context.Context, ref bkcache.Ref, g bksession.Group, f func(st
 	}
 	err = f(dir)
 	if err != nil {
-		_ = closer()
+		closeErr := closer()
+		if closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
 		return err
 	}
 	return closer()
@@ -494,7 +498,10 @@ func execInMount[T fileOrDirectory](ctx context.Context, obj T, f func(string) e
 	}
 	err = f(root)
 	if err != nil {
-		_, _ = closer(true)
+		_, closeErr := closer(true)
+		if closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
 		return nil, err
 	}
 	return closer(false)

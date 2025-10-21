@@ -532,13 +532,19 @@ func (file *File) Open(ctx context.Context) (io.ReadCloser, error) {
 
 	filePath, err := containerdfs.RootPath(root, file.File)
 	if err != nil {
-		_, _ = closer(true)
+		_, closeErr := closer(true)
+		if closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
 		return nil, err
 	}
 
 	r, err := os.Open(filePath)
 	if err != nil {
-		_, _ = closer(true)
+		_, closeErr := closer(true)
+		if closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
 		return nil, err
 	}
 
