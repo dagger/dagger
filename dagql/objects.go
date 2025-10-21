@@ -606,8 +606,30 @@ func (r ObjectResult[T]) Call(ctx context.Context, s *Server, newID *call.ID) (A
 		return nil, err
 	}
 
-	doNotCache := field.Spec.Cache.DoNotCache != ""
-	return r.call(ctx, s, newID, inputArgs, doNotCache)
+	if newID.HasCustomDigest() {
+		// If the ID has a custom digest, just trust it; don't do any rewriting,
+		// just go for the cache hit.
+		doNotCache := field.Spec.Cache.DoNotCache != ""
+		return r.call(ctx, s, newID, inputArgs, doNotCache)
+	}
+
+	// If there's no custom digest, pass through to Select so that contextual args
+	// etc. are handled.
+	//
+	// This is necessary to support use cases like ID rewriting, e.g. to remove
+	// contextual args and persist IDs that pick up the latest context when
+	// they're eventually loaded.
+	sel := Selector{
+		View:  view,
+		Field: fieldName,
+	}
+	for name, arg := range inputArgs {
+		sel.Args = append(sel.Args, NamedInput{
+			Name:  name,
+			Value: arg,
+		})
+	}
+	return r.Select(ctx, s, sel)
 }
 
 func ExtractIDArgs(specs InputSpecs, id *call.ID) (map[string]Input, error) {
