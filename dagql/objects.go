@@ -164,7 +164,7 @@ func (class Class[T]) TypeName() string {
 	return class.inner.Type().Name()
 }
 
-func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec) {
+func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
 	class.fieldsL.Lock()
 	f := &Field[T]{
 		Spec: &spec,
@@ -172,7 +172,6 @@ func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec)
 			return fun(ctx, self, args)
 		},
 	}
-	f.CacheSpec = cacheSpec
 	class.fields[spec.Name] = append(class.fields[spec.Name], f)
 	class.fieldsL.Unlock()
 
@@ -537,13 +536,13 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 		idArgs...,
 	)
 
-	doNotCache := field.CacheSpec.DoNotCache != ""
-	if field.CacheSpec.GetCacheConfig != nil {
+	doNotCache := field.Spec.Cache.DoNotCache != ""
+	if field.Spec.Cache.GetCacheConfig != nil {
 		origDgst := newID.Digest()
 
 		cacheCfgCtx := idToContext(ctx, newID)
 		cacheCfgCtx = srvToContext(cacheCfgCtx, s)
-		cacheCfg, err := field.CacheSpec.GetCacheConfig(cacheCfgCtx, r, inputArgs, view, CacheConfig{
+		cacheCfg, err := field.Spec.Cache.GetCacheConfig(cacheCfgCtx, r, inputArgs, view, CacheConfig{
 			Digest: origDgst,
 		})
 		if err != nil {
@@ -607,7 +606,7 @@ func (r ObjectResult[T]) Call(ctx context.Context, s *Server, newID *call.ID) (A
 		return nil, err
 	}
 
-	doNotCache := field.CacheSpec.DoNotCache != ""
+	doNotCache := field.Spec.Cache.DoNotCache != ""
 	return r.call(ctx, s, newID, inputArgs, doNotCache)
 }
 
@@ -888,7 +887,7 @@ func NodeFuncWithCacheKey[T Typed, A any, R any](
 	}
 
 	if cacheFn != nil {
-		field.CacheSpec.GetCacheConfig = func(ctx context.Context, self AnyResult, argVals map[string]Input, view call.View, baseCfg CacheConfig) (*CacheConfig, error) {
+		field.Spec.Cache.GetCacheConfig = func(ctx context.Context, self AnyResult, argVals map[string]Input, view call.View, baseCfg CacheConfig) (*CacheConfig, error) {
 			if argsErr != nil {
 				// this error is deferred until runtime, since it's better (at least
 				// more testable) than panicking
@@ -934,6 +933,9 @@ type FieldSpec struct {
 	// ViewFilter is filter that specifies under which views this field is
 	// accessible. If not view is present, the default is the "global" view.
 	ViewFilter ViewFilter
+
+	// Cache controls the caching behavior of the field.
+	Cache CacheSpec
 
 	// extend is used during installation to copy the spec of a previous field
 	// with the same name
@@ -1279,9 +1281,8 @@ type CacheConfig struct {
 
 // Field defines a field of an Object type.
 type Field[T Typed] struct {
-	Spec      *FieldSpec
-	CacheSpec CacheSpec
-	Func      func(context.Context, ObjectResult[T], map[string]Input, call.View) (AnyResult, error)
+	Spec *FieldSpec
+	Func func(context.Context, ObjectResult[T], map[string]Input, call.View) (AnyResult, error)
 }
 
 func (field Field[T]) Extend() Field[T] {
@@ -1305,7 +1306,7 @@ func (field Field[T]) DoNotCache(reason string, paras ...string) Field[T] {
 	if field.Spec.extend {
 		panic("cannot call on extended field")
 	}
-	field.CacheSpec.DoNotCache = FormatDescription(append([]string{reason}, paras...)...)
+	field.Spec.Cache.DoNotCache = FormatDescription(append([]string{reason}, paras...)...)
 	return field
 }
 
