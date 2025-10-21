@@ -1233,7 +1233,10 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 		return nil, err
 	}
 
-	err = dir.SetState(ctx, llb.Diff(lowerSt, upperSt))
+	st := llb.
+		Diff(lowerSt, upperSt).
+		File(llb.Mkdir(dir.Dir, 0755, llb.WithParents(true)))
+	err = dir.SetState(ctx, st)
 	if err != nil {
 		return nil, err
 	}
