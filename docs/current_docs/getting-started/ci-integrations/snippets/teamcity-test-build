@@ -1,0 +1,52 @@
+import jetbrains.buildServer.configs.kotlin.*
+import jetbrains.buildServer.configs.kotlin.vcs.GitVcsRoot
+
+version = "2025.07"
+
+object Conf {
+    const val DAGGER_VERSION = "0.19.2"
+    const val DAGGER_TEAMCITY_RECIPE = "tc:recipe:jetbrains/dagger@1.0.0"
+    const val TEST_REPO = "github.com/kpenfound/dagger-modules"
+    const val TEST_DAGGER_MODULE = "$TEST_REPO/golang@v0.2.0"
+    val address
+        get() = "ttl.sh/my-app-%env.BUILD_NUMBER%"
+}
+
+project {
+    vcsRoot(TestVscRoot)
+    buildType(Build)
+}
+
+object Build : BuildType({
+    name = "Build"
+    requirements {
+        exists("docker.server.version")
+    }
+    vcs {
+        root(TestVscRoot)
+    }
+    steps {
+        step {
+            id = "run tests"
+            type = Conf.DAGGER_TEAMCITY_RECIPE
+            param("env.input_version", Conf.DAGGER_VERSION)
+            param("env.input_command", """dagger -m ${Conf.TEST_DAGGER_MODULE} call test --source=./golang""")
+        }
+        step {
+            id = "build and publish"
+            type = Conf.DAGGER_TEAMCITY_RECIPE
+            param("env.input_version", Conf.DAGGER_VERSION)
+            param(
+                "env.input_command",
+                """dagger -m ${Conf.TEST_DAGGER_MODULE} call build-container --source=. --args=. publish --address=${Conf.address}"""
+            )
+        }
+    }
+})
+
+object TestVscRoot : GitVcsRoot({
+    name = "dagger-modules"
+    url = "https://${Conf.TEST_REPO}.git"
+    branchSpec = "+:refs/heads/*"
+    branch = "refs/heads/main"
+})
