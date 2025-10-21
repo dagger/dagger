@@ -729,6 +729,11 @@ func (m *MCP) call(ctx context.Context,
 
 	if autoConstruct != nil {
 		if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](val); ok {
+			// If this object came from an auto-constructed path, we store it in
+			// "contextual" form by stripping out contextual args, thereby
+			// "un-pinning" the object from the context used for this individual call,
+			// such that future references to the object will be initialized with the
+			// freshest context.
 			unpinned, err := dagql.VisitID(obj.ID(), func(id *call.ID) (*call.ID, error) {
 				var recvType string
 				if id.Receiver() == nil {
@@ -782,19 +787,6 @@ func (m *MCP) call(ctx context.Context,
 			if err != nil {
 				return "", err
 			}
-			slog.Warn("!!! UNPINNED", "unpinned", unpinned.Display(), "digest", unpinned.Digest())
-
-			// argsPayload, err := json.Marshal(args)
-			// if err != nil {
-			// 	return "", err
-			// }
-
-			// hash := dagql.HashFrom(
-			// 	target.ObjectType().TypeName(),
-			// 	fieldDef.Name,
-			// 	string(argsPayload),
-			// )
-
 			return m.toolObjectResponse(ctx, srv, obj, m.IngestBy(unpinned, "", unpinned.Digest()))
 		}
 	}
