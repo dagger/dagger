@@ -193,6 +193,15 @@ func (id *ID) Path() string {
 	return buf.String()
 }
 
+func (id *ID) DisplayShort() string {
+	buf := new(strings.Builder)
+	if id.Receiver() != nil {
+		fmt.Fprintf(buf, "%s@%s.", id.Receiver().Type().NamedType(), id.Receiver().Digest())
+	}
+	buf.WriteString(id.DisplaySelf())
+	return buf.String()
+}
+
 func (id *ID) DisplaySelf() string {
 	buf := new(strings.Builder)
 	fmt.Fprintf(buf, "%s", id.pb.Field)

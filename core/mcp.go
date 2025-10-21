@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
 	"regexp"
 	"slices"
 	"sort"
@@ -25,6 +26,7 @@ import (
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/iancoleman/strcase"
+	"github.com/koron-go/prefixw"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
@@ -86,7 +88,7 @@ type MCP struct {
 	// Saved objects by ID (Foo#123)
 	objsByID map[string]*call.ID
 	// Auto incrementing number per-type
-	typeCounts map[string]int
+	objsByType map[string]map[digest.Digest]*call.ID
 	// The LLM-friendly ID ("Container#123") for each object
 	idByHash map[digest.Digest]string
 	// Configured MCP servers.
@@ -100,25 +102,39 @@ func newMCP(env dagql.ObjectResult[*Env]) *MCP {
 	for typeName, methods := range blocked {
 		blocked[typeName] = slices.Clone(methods)
 	}
-	return &MCP{
-		env:             env,
+	m := &MCP{
 		selectedMethods: map[string]bool{},
 		blockedMethods:  blocked,
 		objsByID:        map[string]*call.ID{},
-		typeCounts:      map[string]int{},
+		objsByType:      map[string]map[digest.Digest]*call.ID{},
 		idByHash:        map[digest.Digest]string{},
 		mcpServers:      make(map[string]*MCPServerConfig),
 		mu:              &sync.Mutex{},
 	}
+	m.setEnv(env)
+	return m
 }
 
-func (m *MCP) WithObject(tag string, id ID) *MCP {
-	cp := m.Clone()
-	// FIXME: we want to respect the given tag, but still be honest about the
-	// object and its hash. really, one of these should be the source of truth.
-	cp.IngestBy(id.Inner, "", id.Inner.Digest())
-	cp.objsByID[tag] = id.Inner
-	return cp
+func (m *MCP) trackObject(id *call.ID) int {
+	typeName := id.Type().NamedType()
+	objs, ok := m.objsByType[typeName]
+	if !ok {
+		objs = map[digest.Digest]*call.ID{}
+		m.objsByType[typeName] = objs
+	}
+	objs[id.Digest()] = id
+	return len(objs)
+}
+
+func (m *MCP) WithObject(llmID string, id ID) *MCP {
+	m = m.Clone()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	hash := id.Inner.Digest()
+	m.trackObject(id.Inner)
+	m.idByHash[hash] = llmID
+	m.objsByID[llmID] = id.Inner
+	return m
 }
 
 func (m *MCP) DefaultSystemPrompt() string {
@@ -171,11 +187,24 @@ func (m *MCP) Clone() *MCP {
 		cp.blockedMethods[typeName] = slices.Clone(methods)
 	}
 	cp.objsByID = maps.Clone(cp.objsByID)
-	cp.typeCounts = maps.Clone(cp.typeCounts)
+	cp.objsByType = maps.Clone(cp.objsByType)
+	for t, objs := range cp.objsByType {
+		cp.objsByType[t] = maps.Clone(objs)
+	}
 	cp.idByHash = maps.Clone(cp.idByHash)
 	cp.mcpServers = maps.Clone(cp.mcpServers)
 	cp.mu = &sync.Mutex{}
 	return &cp
+}
+
+func (m *MCP) setEnv(env dagql.ObjectResult[*Env]) {
+	m.env = env
+	// internalize input object IDs ASAP
+	for _, input := range m.env.Self().Inputs() {
+		if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](input.Value); ok {
+			m.Ingest(obj, input.Description)
+		}
+	}
 }
 
 // Lookup an input binding
@@ -626,7 +655,7 @@ func (m *MCP) call(ctx context.Context,
 		return "", fmt.Errorf("no object of type %s found", selfType)
 	}
 
-	doSelect := func(ctx context.Context, env dagql.ObjectResult[*Env]) (dagql.AnyResult, error) {
+	doSelect := func(ctx context.Context) (dagql.AnyResult, error) {
 		sels, err := m.toolCallToSelections(ctx, srv, schema, target.ObjectType(), fieldDef, args, autoConstruct)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert call inputs: %w", err)
@@ -653,7 +682,7 @@ func (m *MCP) call(ctx context.Context,
 		return val, nil
 	}
 
-	val, err := doSelect(ctx, m.env)
+	val, err := doSelect(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -753,7 +782,7 @@ func (m *MCP) call(ctx context.Context,
 			if err != nil {
 				return "", err
 			}
-			slog.Warn("!!! UNPINNED", "pinned", obj.ID().Display(), "unpinned", unpinned.Display(), "digest", unpinned.Digest())
+			slog.Warn("!!! UNPINNED", "unpinned", unpinned.Display(), "digest", unpinned.Digest())
 
 			// argsPayload, err := json.Marshal(args)
 			// if err != nil {
@@ -2186,14 +2215,18 @@ const jsonSchemaIDAttr = "x-id-type"
 func (m *MCP) TypeCounts() map[string]int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return maps.Clone(m.typeCounts)
+	counts := make(map[string]int, len(m.objsByType))
+	for k, v := range m.objsByType {
+		counts[k] = len(v)
+	}
+	return counts
 }
 
 func (m *MCP) toolObjectResponse(ctx context.Context, srv *dagql.Server, target dagql.AnyObjectResult, objID string) (string, error) {
 	schema := srv.Schema()
 	typeName := target.Type().Name()
 	m.mu.Lock()
-	_, known := m.typeCounts[typeName]
+	_, known := m.objsByType[typeName]
 	m.mu.Unlock()
 	res := map[string]any{
 		"result": objID,
@@ -2250,8 +2283,8 @@ func (m *MCP) IngestBy(id *call.ID, desc string, hash digest.Digest) string {
 	typeName := id.Type().NamedType()
 	llmID, ok := m.idByHash[hash]
 	if !ok {
-		m.typeCounts[typeName]++
-		llmID = fmt.Sprintf("%s#%d", typeName, m.typeCounts[typeName])
+		num := m.trackObject(id)
+		llmID = fmt.Sprintf("%s#%d", typeName, num)
 		if desc == "" {
 			desc = m.describeLocked(id)
 		}
@@ -2324,13 +2357,21 @@ func (m *MCP) displayLitLocked(lit call.Literal) string {
 }
 
 func (m *MCP) Types() []string {
-	// Make sure we count env inputs
-	for _, input := range m.env.Self().Inputs() {
-		if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](input.Value); ok {
-			m.Ingest(obj, input.Description)
-		}
-	}
 	return slices.Collect(maps.Keys(m.TypeCounts()))
+}
+
+// break glass when needed
+func (m *MCP) dumpState(tag string) {
+	objs := map[string]string{}
+	for id, obj := range m.objsByID {
+		objs[id] = obj.DisplayShort()
+	}
+	enc := json.NewEncoder(prefixw.New(os.Stderr, "!!! "+tag))
+	enc.SetIndent("", "  ")
+	enc.Encode(map[string]any{
+		"self":  fmt.Sprintf("%p", m),
+		"by-id": objs,
+	})
 }
 
 func toolStructuredResponse(val any) (string, error) {

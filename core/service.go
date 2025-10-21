@@ -324,7 +324,7 @@ func (svc *Service) startContainer(
 
 	dig := id.Digest()
 
-	slog := slog.With("service", dig.String(), "id", id.DisplaySelf())
+	slog := slog.With("service", dig.String(), "id", id.DisplayShort())
 
 	host, err := svc.Hostname(ctx, id)
 	if err != nil {
