@@ -40,8 +40,13 @@ func DagOp[T dagql.Typed, A any, R dagql.Typed](
 	if err != nil {
 		return inst, err
 	}
-	filename := "output.json"
+	argDeps, err := core.InputsOf(ctx, args)
+	if err != nil {
+		return inst, err
+	}
+	deps = append(deps, argDeps...)
 
+	filename := "output.json"
 	curIDForRawDagOp, err := currentIDForRawDagOp(ctx, filename)
 	if err != nil {
 		return inst, err
@@ -306,12 +311,16 @@ func DagOpContainer[A any](
 	if err != nil {
 		return nil, err
 	}
+	deps, err := core.InputsOf(ctx, args)
+	if err != nil {
+		return nil, err
+	}
 
 	curIDForContainerDagOp, err := currentIDForContainerDagOp(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return core.NewContainerDagOp(ctx, curIDForContainerDagOp, argDigest, ctr)
+	return core.NewContainerDagOp(ctx, curIDForContainerDagOp, argDigest, deps, ctr)
 }
 
 const (
