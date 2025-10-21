@@ -790,6 +790,9 @@ func (dir *Directory) WithDirectory(
 	cache := query.BuildkitCache()
 
 	if dirRef == nil {
+		// handle case where WithDirectory is called on an empty dir (i.e. scratch dir)
+		// note this always occurs when creating the rebasedDir (to prevent infinite recursion)
+
 		if canDoDirectMerge && srcRef != nil {
 			dir.Result = srcRef
 			return dir, nil
