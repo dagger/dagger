@@ -1551,6 +1551,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Changeset::isEmpty",
+			"p": "Dagger/Changeset.html#method_isEmpty",
+			"d": "<p>Returns true if the changeset is empty (i.e. there are no changes).</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Changeset::layer",
 			"p": "Dagger/Changeset.html#method_layer",
 			"d": "<p>Return a snapshot containing only the created and modified files</p>"

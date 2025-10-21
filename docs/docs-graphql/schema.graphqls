@@ -204,6 +204,9 @@ type Changeset {
   """A unique identifier for this Changeset."""
   id: ChangesetID!
 
+  """Returns true if the changeset is empty (i.e. there are no changes)."""
+  isEmpty: Boolean!
+
   """Return a snapshot containing only the created and modified files"""
   layer: Directory!
 
