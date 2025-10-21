@@ -646,6 +646,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	} else {
 		cacheMixins = append(cacheMixins, cache.CurrentStorageKey(ctx))
 	}
+
 	execMD.CacheMixin = dagql.HashFrom(cacheMixins...)
 
 	callInputs, err := fn.setCallInputs(ctx, opts)
