@@ -13,6 +13,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/moby/patternmatcher/ignorefile"
 	"github.com/opencontainers/go-digest"
 )
@@ -130,7 +131,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to retrieve. Example: "/src"`),
 			),
-		dagql.Func("withDirectory", s.withDirectory).
+		dagql.NodeFunc("withDirectory", DagOpDirectoryWrapper(srv, s.withDirectory, WithPathFn(keepParentDir[WithDirectoryArgs]))).
 			View(AllVersion).
 			Doc(`Return a snapshot with a directory added`).
 			Args(
@@ -143,7 +144,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 					`The user and group must be an ID (1000:1000), not a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
-		dagql.Func("filter", s.filter).
+		dagql.NodeFunc("filter", DagOpDirectoryWrapper(srv, s.filter, WithPathFn(keepParentDir[FilterArgs]))).
 			Doc(`Return a snapshot with some paths included or excluded`).
 			Args(
 				dagql.Arg("exclude").Doc(`If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: ["node_modules/", ".git*", ".env"]`),
@@ -382,37 +383,73 @@ type WithDirectoryArgs struct {
 	Directory core.DirectoryID // legacy, use Source instead
 
 	core.CopyFilter
+	DagOpInternalArgs
 }
 
-func (s *directorySchema) withDirectory(ctx context.Context, parent *core.Directory, args WithDirectoryArgs) (*core.Directory, error) {
+var _ core.Inputs = WithDirectoryArgs{}
+
+func (args WithDirectoryArgs) Inputs(ctx context.Context) ([]llb.State, error) {
+	deps := []llb.State{}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
 
-	dir, err := cmp.Or(args.Source, args.Directory).Load(ctx, srv)
+	if args.Source.ID() == nil {
+		return nil, nil
+	}
+
+	sourceRes, err := args.Source.Load(ctx, srv)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load source: %w", err)
+	}
+	sourceOp, err := llb.NewDefinitionOp(sourceRes.Self().LLB)
+	if err != nil {
+		return nil, fmt.Errorf("source op: %w", err)
+	}
+	if sourceOp.Output() != nil {
+		deps = append(deps, llb.NewState(sourceOp))
 	}
 
-	return parent.WithDirectory(ctx, args.Path, dir.Self(), args.CopyFilter, args.Owner)
+	return deps, nil
+}
+
+func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithDirectoryArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	src := cmp.Or(args.Source, args.Directory)
+	with, err := parent.Self().WithDirectory(ctx, args.Path, src.ID(), args.CopyFilter, args.Owner)
+	if err != nil {
+		return res, fmt.Errorf("failed to add directory %q: %w", args.Path, err)
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, with)
 }
 
 type FilterArgs struct {
 	core.CopyFilter
+
+	DagOpInternalArgs
 }
 
-func (s *directorySchema) filter(ctx context.Context, parent *core.Directory, args FilterArgs) (*core.Directory, error) {
-	query, err := core.CurrentQuery(ctx)
+func (s *directorySchema) filter(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args FilterArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, err
-	}
-	dir, err := s.directory(ctx, query, struct{}{})
-	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
-	return dir.WithDirectory(ctx, "/", parent, args.CopyFilter, "")
+	platform := parent.Self().Platform
+	scratchDir := core.Directory{
+		Platform: platform,
+		Dir:      parent.Self().Dir,
+	}
+
+	filtered, err := scratchDir.WithDirectory(ctx, "/", parent.ID(), args.CopyFilter, "")
+	if err != nil {
+		return inst, fmt.Errorf("failed to filter: %w", err)
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, filtered)
 }
 
 type dirWithTimestampsArgs struct {
