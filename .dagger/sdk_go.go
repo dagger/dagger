@@ -70,7 +70,6 @@ func (t GoSDK) CheckReleaseDryRun(ctx context.Context) error {
 		"HEAD",
 		true,
 		"https://github.com/dagger/dagger-go-sdk.git",
-		"https://github.com/dagger/dagger.git",
 		"dagger-ci",
 		"hello@dagger.io",
 		nil,
@@ -89,9 +88,6 @@ func (t GoSDK) Publish(
 	// +default="https://github.com/dagger/dagger-go-sdk.git"
 	gitRepo string,
 	// +optional
-	// +default="https://github.com/dagger/dagger.git"
-	gitRepoSource string,
-	// +optional
 	// +default="dagger-ci"
 	gitUserName string,
 	// +optional
@@ -105,7 +101,6 @@ func (t GoSDK) Publish(
 
 	if err := gitPublish(ctx, t.Dagger.Git, gitPublishOpts{
 		sdk:          "go",
-		source:       gitRepoSource,
 		sourceTag:    tag,
 		sourcePath:   "sdk/go/",
 		sourceFilter: "if [ -f go.mod ]; then go mod edit -dropreplace github.com/dagger/dagger; fi",

@@ -98,7 +98,7 @@ func (dev *DaggerDev) introspectionJSON() *dagger.File {
 type gitPublishOpts struct {
 	sdk string
 
-	source, dest       string
+	dest               string
 	sourceTag, destTag string
 	sourcePath         string
 	sourceFilter       string
@@ -142,6 +142,7 @@ func gitPublish(ctx context.Context, git *dagger.GitRepository, opts gitPublishO
 		WithWorkdir("/src/dagger").
 		WithDirectory(".", git.Ref(opts.sourceTag).Tree(dagger.GitRefTreeOpts{Depth: -1})).
 		WithEnvVariable("FILTER_BRANCH_SQUELCH_WARNING", "1").
+		WithExec([]string{"git", "status"}).
 		WithExec([]string{
 			"git", "filter-branch", "-f", "--prune-empty",
 			"--subdirectory-filter", opts.sourcePath,

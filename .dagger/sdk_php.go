@@ -122,7 +122,15 @@ func (t PHPSDK) doctumConfig() *dagger.File {
 
 // Test the publishing process
 func (t PHPSDK) CheckReleaseDryRun(ctx context.Context) error {
-	return t.Publish(ctx, "HEAD", true, "https://github.com/dagger/dagger-php-sdk.git", "https://github.com/dagger/dagger.git", "dagger-ci", "hello@dagger.io", nil)
+	return t.Publish(
+		ctx,
+		"HEAD",
+		true,
+		"https://github.com/dagger/dagger-php-sdk.git",
+		"dagger-ci",
+		"hello@dagger.io",
+		nil,
+	)
 }
 
 // Publish the PHP SDK
@@ -137,9 +145,6 @@ func (t PHPSDK) Publish(
 	// +default="https://github.com/dagger/dagger-php-sdk.git"
 	gitRepo string,
 	// +optional
-	// +default="https://github.com/dagger/dagger.git"
-	gitRepoSource string,
-	// +optional
 	// +default="dagger-ci"
 	gitUserName string,
 	// +optional
@@ -153,7 +158,6 @@ func (t PHPSDK) Publish(
 
 	if err := gitPublish(ctx, t.Dagger.Git, gitPublishOpts{
 		sdk:         "php",
-		source:      gitRepoSource,
 		sourcePath:  "sdk/php/",
 		sourceTag:   tag,
 		dest:        gitRepo,

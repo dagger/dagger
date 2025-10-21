@@ -6,8 +6,7 @@
   },
   "include": [
     "../go.mod",
-    "../go.sum",
-    "../util/parallel"
+    "../go.sum"
   ],
   "dependencies": [
     {
