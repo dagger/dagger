@@ -1207,7 +1207,8 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permiss
 	}, withSavedSnapshot("withNewDirectory %s", dest))
 }
 
-func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, error) {
+// DiffLLB is legacy and will be deleted once all ops are dagops
+func (dir *Directory) DiffLLB(ctx context.Context, other *Directory) (*Directory, error) {
 	dir = dir.Clone()
 
 	thisDirPath := dir.Dir
@@ -1241,6 +1242,72 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 		return nil, err
 	}
 
+	return dir, nil
+}
+
+func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, error) {
+	dir = dir.Clone()
+
+	thisDirPath := dir.Dir
+	if thisDirPath == "" {
+		thisDirPath = "/"
+	}
+	otherDirPath := other.Dir
+	if otherDirPath == "" {
+		otherDirPath = "/"
+	}
+	if thisDirPath != otherDirPath {
+		// TODO investigate removing this limitation
+		return nil, fmt.Errorf("cannot diff with different relative paths: %q != %q", dir.Dir, other.Dir)
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current query: %w", err)
+	}
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return nil, fmt.Errorf("no buildkit session group in context")
+	}
+
+	thisDirRef, err := getRefOrEvaluate(ctx, dir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get directory ref: %w", err)
+	}
+	otherDirRef, err := getRefOrEvaluate(ctx, other)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get other directory ref: %w", err)
+	}
+
+	cache := query.BuildkitCache()
+	ref, err := cache.Diff(ctx, thisDirRef, otherDirRef, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to diff directories: %w", err)
+	}
+
+	newRef, err := cache.New(ctx, ref, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("diff"))
+	if err != nil {
+		return nil, err
+	}
+
+	err = MountRef(ctx, newRef, bkSessionGroup, func(root string) error {
+		fullPath, err := RootPathWithoutFinalSymlink(root, dir.Dir)
+		if err != nil {
+			return err
+		}
+		return os.MkdirAll(fullPath, 0755)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	dirRef, err := newRef.Commit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to commit diff directory: %w", err)
+	}
+
+	dir.Result = dirRef
 	return dir, nil
 }
 
@@ -1297,11 +1364,35 @@ func (dir *Directory) WithChanges(ctx context.Context, changes *Changeset) (*Dir
 		return nil, fmt.Errorf("failed to compute diff between before and after directories: %w", err)
 	}
 
-	// Apply the diff (added + changed files) using WithDirectory
-	dir, err = dir.WithDirectoryLLB(ctx, "/", diffDir, CopyFilter{}, "")
-	if err != nil {
-		return nil, fmt.Errorf("failed to apply diff directory: %w", err)
+	if dir.Dir != "" && dir.Dir != "/" {
+		panic(dir.Dir)
 	}
+
+	parentRef, err := getRefOrEvaluate(ctx, dir)
+	if err != nil {
+		return nil, err
+	}
+
+	diffDirRef, err := getRefOrEvaluate(ctx, diffDir)
+	if err != nil {
+		return nil, err
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current query: %w", err)
+	}
+
+	mergeRefs := []bkcache.ImmutableRef{parentRef, diffDirRef}
+	ref, err := query.BuildkitCache().Merge(ctx, mergeRefs, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to merge directories: %w", err)
+	}
+	err = ref.Finalize(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dir.Result = ref
 
 	// Remove all the paths in Changes.removedPaths using Without
 	if len(changes.RemovedPaths) > 0 {

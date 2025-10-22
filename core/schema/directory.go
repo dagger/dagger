@@ -161,7 +161,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Path of the subdirectory to remove. Example: ".github/workflows"`),
 			),
-		dagql.Func("diff", s.diff).
+		dagql.NodeFunc("diff", DagOpDirectoryWrapper(srv, s.diff, WithPathFn(keepParentDir[diffArgs]))).
 			Doc(`Return the difference between this directory and an another directory. The difference is encoded as a directory.`).
 			Args(
 				dagql.Arg("other").Doc(`The directory to compare against`),
@@ -751,19 +751,25 @@ func (s *directorySchema) exists(ctx context.Context, parent *core.Directory, ar
 
 type diffArgs struct {
 	Other core.DirectoryID
+
+	FSDagOpInternalArgs
 }
 
-func (s *directorySchema) diff(ctx context.Context, parent *core.Directory, args diffArgs) (*core.Directory, error) {
+func (s *directorySchema) diff(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args diffArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 
 	dir, err := args.Other.Load(ctx, srv)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
-	return parent.Diff(ctx, dir.Self())
+	diff, err := parent.Self().Diff(ctx, dir.Self())
+	if err != nil {
+		return res, err
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, diff)
 }
 
 type findUpArgs struct {
