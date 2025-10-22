@@ -1886,6 +1886,9 @@ type Engine {
 
   """The local (on-disk) cache for the Dagger engine"""
   localCache: EngineCache!
+
+  """The name of the engine instance."""
+  name: String!
 }
 
 """A cache storage for the Dagger engine"""

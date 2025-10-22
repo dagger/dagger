@@ -5956,6 +5956,11 @@ impl Engine {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// The name of the engine instance.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
 }
 #[derive(Clone)]
 pub struct EngineCache {

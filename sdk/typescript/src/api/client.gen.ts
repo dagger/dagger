@@ -4754,14 +4754,16 @@ export class Directory extends BaseClient {
  */
 export class Engine extends BaseClient {
   private readonly _id?: EngineID = undefined
+  private readonly _name?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: EngineID) {
+  constructor(ctx?: Context, _id?: EngineID, _name?: string) {
     super(ctx)
 
     this._id = _id
+    this._name = _name
   }
 
   /**
@@ -4785,6 +4787,21 @@ export class Engine extends BaseClient {
   localCache = (): EngineCache => {
     const ctx = this._ctx.select("localCache")
     return new EngineCache(ctx)
+  }
+
+  /**
+   * The name of the engine instance.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 
