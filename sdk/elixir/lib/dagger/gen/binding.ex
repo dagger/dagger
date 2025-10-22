@@ -58,6 +58,34 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type Check
+  """
+  @spec as_check(t()) :: Dagger.Check.t()
+  def as_check(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asCheck")
+
+    %Dagger.Check{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
+  Retrieve the binding value, as type CheckGroup
+  """
+  @spec as_check_group(t()) :: Dagger.CheckGroup.t()
+  def as_check_group(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asCheckGroup")
+
+    %Dagger.CheckGroup{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Retrieve the binding value, as type Cloud
   """
   @spec as_cloud(t()) :: Dagger.Cloud.t()
