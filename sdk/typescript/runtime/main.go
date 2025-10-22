@@ -79,7 +79,7 @@ func (t *TypescriptSdk) ModuleTypes(
 	return NewIntrospector(t.SDKSourceDir).
 		AsEntrypoint(outputFilePath,
 			cfg.name,
-			modSource.ContextDirectory().Directory(cfg.subPath),
+			modSource.ContextDirectory().Directory(cfg.subPath).Directory("src"),
 			clientBindings,
 		), nil
 }

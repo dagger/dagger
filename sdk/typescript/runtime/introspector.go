@@ -1,7 +1,6 @@
 package main
 
 import (
-	"path/filepath"
 	"typescript-sdk/internal/dagger"
 	"typescript-sdk/tsdistconsts"
 )
@@ -19,7 +18,8 @@ type Introspector struct {
 func NewIntrospector(sdkSourceDir *dagger.Directory) *Introspector {
 	ctr := dag.
 		Container().
-		From(tsdistconsts.DefaultBunImageRef).
+		From(tsdistconsts.DefaultAlpineImageRef).
+		WithExec([]string{"apk", "add", "libgcc", "libstdc++"}).
 		WithMountedFile(introspectorBinPath, sdkSourceDir.File(introspectorBinPath)).
 		WithMountedDirectory(typescriptLibPath, sdkSourceDir.Directory("typescript-library")).
 		WithWorkdir(ModSourceDirPath)
@@ -39,10 +39,8 @@ func (i *Introspector) AsEntrypoint(
 	clientBindings *dagger.File,
 ) *dagger.Container {
 	return i.Ctr.
-		WithDirectory(ModSourceDirPath, sourceCode, dagger.ContainerWithDirectoryOpts{
-			Include: []string{"src"},
-		}).
-		WithFile(filepath.Join(ModSourceDirPath, "sdk/client.gen.ts"), clientBindings).
+		WithMountedDirectory("src", sourceCode).
+		WithMountedFile("sdk/client.gen.ts", clientBindings).
 		WithEnvVariable("TYPEDEF_OUTPUT_FILE", outputFilePath).
 		WithEntrypoint([]string{introspectorBinPath, moduleName, "src", "sdk/client.gen.ts"})
 }
