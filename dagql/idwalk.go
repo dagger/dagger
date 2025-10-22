@@ -45,7 +45,7 @@ func visitID(id *call.ID, fn VisitorFunc, mutable bool) (resID *call.ID, _ error
 			return nil, err
 		}
 		if newRecv != nil {
-			resID = cmp.Or(resID, id).WithReceiver(newRecv)
+			resID = cmp.Or(resID, id).With(call.WithReceiver(newRecv))
 		}
 	}
 

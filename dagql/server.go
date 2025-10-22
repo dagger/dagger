@@ -684,6 +684,11 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 		return nil, fmt.Errorf("toSelectable: %w", err)
 	}
 
+	if id.Receiver().WantsReload() && baseObj.ID().Digest() != id.Receiver().Digest() {
+		// If we're based on an ID that needed to be reloaded, rebase on it.
+		id = id.With(call.WithReceiver(baseObj.ID()))
+	}
+
 	return baseObj.Call(ctx, s, id)
 }
 

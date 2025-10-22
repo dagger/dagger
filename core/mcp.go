@@ -779,14 +779,9 @@ func (m *MCP) call(ctx context.Context,
 				if !updated {
 					return nil, nil
 				}
-				return id.Receiver().Append(
-					id.Type().ToAST(),
-					id.Field(),
-					id.View(),
-					id.Module(),
-					int(id.Nth()),
-					"",
-					updatedArgs...,
+				return id.With(
+					call.WithArgs(updatedArgs...),
+					call.WithReload(true),
 				), nil
 			})
 			if err != nil {
