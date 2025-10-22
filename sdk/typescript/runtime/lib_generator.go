@@ -65,7 +65,8 @@ func (l *LibGenerator) GenerateBindings(
 		WithExec(codegenArgs, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		}).
-		File(filepath.Join(modulePath, "sdk/src/api/client.gen.ts"))
+		Directory(modulePath).
+		File("sdk/src/api/client.gen.ts")
 }
 
 // Add the bundle library (code.js & core.d.ts) to the sdk directory.
