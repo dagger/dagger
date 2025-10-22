@@ -21,7 +21,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sync/errgroup"
 )
 
 // NewChangeset creates a Changeset object with all fields computed upfront
@@ -47,43 +46,30 @@ func (ch *Changeset) computeChanges(ctx context.Context) error {
 	}
 
 	// Get all paths from before and after directories
-	// (in parallel since these can actually be quite slow for large directories)
 	var beforePaths, afterPaths, diffPaths []string
-	var eg errgroup.Group
-	eg.Go(func() error {
-		if err := srv.Select(ctx, ch.Before, &beforePaths, dagql.Selector{
-			Field: "glob",
-			Args:  []dagql.NamedInput{{Name: "pattern", Value: dagql.String("**")}},
-		}); err != nil {
-			return fmt.Errorf("failed to get paths from before directory: %w", err)
-		}
-		return nil
-	})
-	eg.Go(func() error {
-		if err := srv.Select(ctx, ch.After, &afterPaths, dagql.Selector{
-			Field: "glob",
-			Args:  []dagql.NamedInput{{Name: "pattern", Value: dagql.String("**")}},
-		}); err != nil {
-			return fmt.Errorf("failed to get paths from after directory: %w", err)
-		}
-		return nil
-	})
-	eg.Go(func() error {
-		if err := srv.Select(ctx, ch.Before, &diffPaths, dagql.Selector{
-			Field: "diff",
-			Args: []dagql.NamedInput{
-				{Name: "other", Value: dagql.NewID[*Directory](ch.After.ID())},
-			},
-		}, dagql.Selector{
-			Field: "glob",
-			Args:  []dagql.NamedInput{{Name: "pattern", Value: dagql.String("**")}},
-		}); err != nil {
-			return fmt.Errorf("failed to get paths from diff directory: %w", err)
-		}
-		return nil
-	})
-	if err := eg.Wait(); err != nil {
-		return err
+	if err := srv.Select(ctx, ch.Before, &beforePaths, dagql.Selector{
+		Field: "glob",
+		Args:  []dagql.NamedInput{{Name: "pattern", Value: dagql.String("**")}},
+	}); err != nil {
+		return fmt.Errorf("failed to get paths from before directory: %w", err)
+	}
+	if err := srv.Select(ctx, ch.After, &afterPaths, dagql.Selector{
+		Field: "glob",
+		Args:  []dagql.NamedInput{{Name: "pattern", Value: dagql.String("**")}},
+	}); err != nil {
+		return fmt.Errorf("failed to get paths from after directory: %w", err)
+	}
+	// Get diff paths (changed + added files)
+	if err := srv.Select(ctx, ch.Before, &diffPaths, dagql.Selector{
+		Field: "diff",
+		Args: []dagql.NamedInput{
+			{Name: "other", Value: dagql.NewID[*Directory](ch.After.ID())},
+		},
+	}, dagql.Selector{
+		Field: "glob",
+		Args:  []dagql.NamedInput{{Name: "pattern", Value: dagql.String("**")}},
+	}); err != nil {
+		return fmt.Errorf("failed to get paths from diff directory: %w", err)
 	}
 
 	// Create sets for efficient lookups
