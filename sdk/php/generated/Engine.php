@@ -30,4 +30,13 @@ class Engine extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('localCache');
         return new \Dagger\EngineCache($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
+
+    /**
+     * The name of the engine instance.
+     */
+    public function name(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
 }

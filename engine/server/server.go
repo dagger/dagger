@@ -572,6 +572,10 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	return srv, nil
 }
 
+func (srv *Server) EngineName() string {
+	return srv.engineName
+}
+
 func (srv *Server) Close() error {
 	err := srv.baseWorker.Close()
 

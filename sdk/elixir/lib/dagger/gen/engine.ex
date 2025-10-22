@@ -39,6 +39,17 @@ defmodule Dagger.Engine do
       client: engine.client
     }
   end
+
+  @doc """
+  The name of the engine instance.
+  """
+  @spec name(t()) :: {:ok, String.t()} | {:error, term()}
+  def name(%__MODULE__{} = engine) do
+    query_builder =
+      engine.query_builder |> QB.select("name")
+
+    Client.execute(engine.client, query_builder)
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.Engine do

@@ -2889,6 +2889,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Engine::name",
+			"p": "Dagger/Engine.html#method_name",
+			"d": "<p>The name of the engine instance.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\EngineCache::entrySet",
 			"p": "Dagger/EngineCache.html#method_entrySet",
 			"d": "<p>The current set of entries in the cache</p>"

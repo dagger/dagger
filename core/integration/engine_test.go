@@ -228,18 +228,25 @@ func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
 
 	clientCtr := engineClientContainer(ctx, t, c, devEngineSvc)
 
-	clientCtr = clientCtr.
-		WithNewFile("/query.graphql", `{ version }`).
-		WithExec([]string{"dagger", "query", "--doc", "/query.graphql"})
+	clientCtr = clientCtr.WithExec([]string{"dagger", "core", "version"})
+
+	// version call
 	stdout, err := clientCtr.Stdout(ctx)
 	require.NoError(t, err)
+	require.Equal(t, engineVersion, strings.TrimSpace(stdout))
+
+	// in progress output
 	stderr, err := clientCtr.Stderr(ctx)
 	require.NoError(t, err)
-
 	require.Contains(t, stderr, engineName)
 	require.Contains(t, stderr, engineVersion)
 
-	require.Contains(t, stdout, engineVersion)
+	clientCtr = clientCtr.WithExec([]string{"dagger", "core", "engine", "name"})
+
+	// name call
+	stdout, err = clientCtr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, engineName, strings.TrimSpace(stdout))
 }
 
 func (EngineSuite) TestDaggerRun(ctx context.Context, t *testctx.T) {
