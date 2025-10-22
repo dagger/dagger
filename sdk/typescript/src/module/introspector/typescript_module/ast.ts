@@ -182,7 +182,7 @@ export class AST {
     // from the module path so we exclude the module path from the given path.
     // But since root will always start with `/src`, we want to catch the second `src`
     // inside the module.
-    const pathParts = sourceFile.fileName.split(path.sep)
+    const pathParts = path.resolve(sourceFile.fileName).split(path.sep)
     const srcIndex = pathParts.indexOf("src", 2)
 
     return {

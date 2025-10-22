@@ -20,7 +20,6 @@ func NewLibGenerator(sdkSourceDir *dagger.Directory) *LibGenerator {
 	ctr := dag.
 		Container().
 		From(tsdistconsts.DefaultAlpineImageRef).
-		WithWorkdir(ModSourceDirPath).
 		WithMountedFile(codegenBinPath, sdkSourceDir.File("/codegen"))
 
 	return &LibGenerator{
@@ -58,6 +57,7 @@ func (l *LibGenerator) GenerateBindings(
 	}
 
 	return l.Ctr.
+		WithWorkdir(modulePath).
 		// Mount the introspection file.
 		WithMountedFile(schemaPath, introspectionJSON).
 		// Execute the code generator using the given introspection file.
