@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,7 +35,8 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
-const defaultCacheTTLSeconds = 7 * 24 * 60 * 60 // 1 week
+const MaxFunctionCacheTTLSeconds = 7 * 24 * 60 * 60 // 1 week
+const MinFunctionCacheTTLSeconds = 1
 
 type ModuleFunction struct {
 	mod     *Module
@@ -99,10 +101,6 @@ type CallOpts struct {
 	ParentFields   map[string]any
 	SkipSelfSchema bool
 	Server         *dagql.Server
-
-	// TODO: doc
-	CacheTTLSeconds int64
-	CachePerSession bool
 
 	// If set, don't mix in the digest for the current dagql call into the cache key for
 	// the exec-op underlying the function call, instead mix in this string.
@@ -578,19 +576,31 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		}
 	}
 
-	if fn.metadata.CachePerSession || fn.mod.DisableDefaultFunctionCaching {
-		// Scope the exec cache key to the current session ID. It will still be
-		// cached in the context of the session but invalidated across
-		// different sessions.
+	cachePolicy := fn.metadata.CachePolicy
+	if cachePolicy == "" {
+		cachePolicy = FunctionCachePolicyDefault
+	}
+	if cachePolicy == FunctionCachePolicyDefault && fn.mod.DisableDefaultFunctionCaching {
+		cachePolicy = FunctionCachePolicyPerSession
+	}
+
+	switch cachePolicy {
+	case FunctionCachePolicyNever:
+		dgstInputs = append(dgstInputs, rand.Text())
+
+	case FunctionCachePolicyPerSession:
 		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 		if err != nil {
 			return nil, err
 		}
 		dgstInputs = append(dgstInputs, clientMetadata.SessionID)
-	} else if fn.metadata.CacheTTLSeconds.Valid {
-		cacheCfg.TTL = fn.metadata.CacheTTLSeconds.Value.Int64()
-	} else {
-		cacheCfg.TTL = defaultCacheTTLSeconds
+
+	case FunctionCachePolicyDefault:
+		if fn.metadata.CacheTTLSeconds.Valid {
+			cacheCfg.TTL = fn.metadata.CacheTTLSeconds.Value.Int64()
+		} else {
+			cacheCfg.TTL = MaxFunctionCacheTTLSeconds
+		}
 	}
 
 	cacheCfg.Digest = dagql.HashFrom(dgstInputs...)

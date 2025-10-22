@@ -8012,6 +8012,12 @@ pub struct FunctionWithArgOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub source_map: Option<SourceMapId>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct FunctionWithCachePolicyOpts<'a> {
+    /// The TTL for the cache policy, if applicable. Provided as a duration string, e.g. "5m", "1h30s".
+    #[builder(setter(into, strip_option), default)]
+    pub time_to_live: Option<&'a str>,
+}
 impl Function {
     /// Arguments accepted by the function, if any.
     pub fn args(&self) -> Vec<FunctionArg> {
@@ -8121,23 +8127,37 @@ impl Function {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Mark this function as only cached for callers in the current session.
-    pub fn with_cache_per_session(&self) -> Function {
-        let query = self.selection.select("withCachePerSession");
+    /// TODO doc
+    ///
+    /// # Arguments
+    ///
+    /// * `policy` - The cache policy to use.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_cache_policy(&self, policy: FunctionCachePolicy) -> Function {
+        let mut query = self.selection.select("withCachePolicy");
+        query = query.arg("policy", policy);
         Function {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Mark the persistent cache entries for this function as expiring after the given duration.
+    /// TODO doc
     ///
     /// # Arguments
     ///
-    /// * `duration` - The duration of the cache TTL as a string, e.g. "5m", "1h30s".
-    pub fn with_cache_ttl(&self, duration: impl Into<String>) -> Function {
-        let mut query = self.selection.select("withCacheTTL");
-        query = query.arg("duration", duration.into());
+    /// * `policy` - The cache policy to use.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_cache_policy_opts<'a>(
+        &self,
+        policy: FunctionCachePolicy,
+        opts: FunctionWithCachePolicyOpts<'a>,
+    ) -> Function {
+        let mut query = self.selection.select("withCachePolicy");
+        query = query.arg("policy", policy);
+        if let Some(time_to_live) = opts.time_to_live {
+            query = query.arg("timeToLive", time_to_live);
+        }
         Function {
             proc: self.proc.clone(),
             selection: query,
@@ -12705,6 +12725,15 @@ pub enum ExistsType {
     RegularType,
     #[serde(rename = "SYMLINK_TYPE")]
     SymlinkType,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum FunctionCachePolicy {
+    #[serde(rename = "Default")]
+    Default,
+    #[serde(rename = "Never")]
+    Never,
+    #[serde(rename = "PerSession")]
+    PerSession,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ImageLayerCompression {

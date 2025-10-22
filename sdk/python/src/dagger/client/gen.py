@@ -307,6 +307,16 @@ class ExistsType(Enum):
     """Tests path is a symlink"""
 
 
+class FunctionCachePolicy(Enum):
+    """The behavior configured for function result caching."""
+
+    Default = "Default"
+
+    Never = "Never"
+
+    PerSession = "PerSession"
+
+
 class ImageLayerCompression(Enum):
     """Compression algorithm to use for image layers."""
 
@@ -6716,25 +6726,27 @@ class Function(Type):
         _ctx = self._select("withArg", _args)
         return Function(_ctx)
 
-    def with_cache_per_session(self) -> Self:
-        """Mark this function as only cached for callers in the current session."""
-        _args: list[Arg] = []
-        _ctx = self._select("withCachePerSession", _args)
-        return Function(_ctx)
-
-    def with_cache_ttl(self, duration: str) -> Self:
-        """Mark the persistent cache entries for this function as expiring after
-        the given duration.
+    def with_cache_policy(
+        self,
+        policy: FunctionCachePolicy,
+        *,
+        time_to_live: str | None = None,
+    ) -> Self:
+        """TODO doc
 
         Parameters
         ----------
-        duration:
-            The duration of the cache TTL as a string, e.g. "5m", "1h30s".
+        policy:
+            The cache policy to use.
+        time_to_live:
+            The TTL for the cache policy, if applicable. Provided as a
+            duration string, e.g. "5m", "1h30s".
         """
         _args = [
-            Arg("duration", duration),
+            Arg("policy", policy),
+            Arg("timeToLive", time_to_live, None),
         ]
-        _ctx = self._select("withCacheTTL", _args)
+        _ctx = self._select("withCachePolicy", _args)
         return Function(_ctx)
 
     def with_description(self, description: str) -> Self:
@@ -12243,6 +12255,7 @@ __all__ = [
     "Function",
     "FunctionArg",
     "FunctionArgID",
+    "FunctionCachePolicy",
     "FunctionCall",
     "FunctionCallArgValue",
     "FunctionCallArgValueID",

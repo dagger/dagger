@@ -129,26 +129,16 @@ defmodule Dagger.Function do
   end
 
   @doc """
-  Mark this function as only cached for callers in the current session.
+  TODO doc
   """
-  @spec with_cache_per_session(t()) :: Dagger.Function.t()
-  def with_cache_per_session(%__MODULE__{} = function) do
+  @spec with_cache_policy(t(), Dagger.FunctionCachePolicy.t(), [{:time_to_live, String.t() | nil}]) ::
+          Dagger.Function.t()
+  def with_cache_policy(%__MODULE__{} = function, policy, optional_args \\ []) do
     query_builder =
-      function.query_builder |> QB.select("withCachePerSession")
-
-    %Dagger.Function{
-      query_builder: query_builder,
-      client: function.client
-    }
-  end
-
-  @doc """
-  Mark the persistent cache entries for this function as expiring after the given duration.
-  """
-  @spec with_cache_ttl(t(), String.t()) :: Dagger.Function.t()
-  def with_cache_ttl(%__MODULE__{} = function, duration) do
-    query_builder =
-      function.query_builder |> QB.select("withCacheTTL") |> QB.put_arg("duration", duration)
+      function.query_builder
+      |> QB.select("withCachePolicy")
+      |> QB.put_arg("policy", policy)
+      |> QB.maybe_put_arg("timeToLive", optional_args[:time_to_live])
 
     %Dagger.Function{
       query_builder: query_builder,

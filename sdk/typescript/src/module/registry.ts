@@ -41,14 +41,13 @@ export type ArgumentOptions = {
 
 export type FunctionOptions = {
   /**
-    * The time-to-live for persistent caching of the result of the function.
+    * The caching behavior of this function.
+    * "never" means no caching.
+    * "session" means caching only for the duration of the current client's session.
+    * A duration string (e.g., "5m", "1h") means persistent caching for that duration.
+    * By default, caching is enabled with a long default set by the engine.
     */
-  cacheTTL?: string
-
-  /**
-    * If true, the result of the function is cached only per session, not persistently across sessions.
-    */
-  cachePerSession?: boolean
+  cache?: string
 
   /**
     * An optional alias to use for the function when exposed on the API.

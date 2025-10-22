@@ -28,13 +28,10 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 	docPragmas, docComment := parsePragmaComment(funcDecl.Doc.Text())
 	spec.doc = docComment
 
-	if _, ok := docPragmas["cache-per-session"]; ok {
-		spec.cachePerSession = true
-	}
-	if v, ok := docPragmas["cache-ttl"]; ok {
-		spec.cacheTTL, ok = v.(string)
+	if v, ok := docPragmas["cache"]; ok {
+		spec.cachePolicy, ok = v.(string)
 		if !ok {
-			return nil, fmt.Errorf("cache-ttl pragma %q, must be a valid string", v)
+			return nil, fmt.Errorf("cache pragma %q, must be a valid string", v)
 		}
 	}
 
@@ -90,11 +87,10 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 }
 
 type funcTypeSpec struct {
-	name            string
-	doc             string
-	sourceMap       *sourceMap
-	cachePerSession bool
-	cacheTTL        string
+	name        string
+	doc         string
+	sourceMap   *sourceMap
+	cachePolicy string
 
 	argSpecs []paramSpec
 
@@ -129,11 +125,22 @@ func (spec *funcTypeSpec) TypeDefFunc(dag *dagger.Client) (*dagger.Function, err
 		fnTypeDef = fnTypeDef.WithDescription(strings.TrimSpace(spec.doc))
 	}
 
-	if spec.cachePerSession {
-		fnTypeDef = fnTypeDef.WithCachePerSession()
-	}
-	if spec.cacheTTL != "" {
-		fnTypeDef = fnTypeDef.WithCacheTTL(strings.TrimSpace(spec.cacheTTL))
+	switch spec.cachePolicy {
+	case "never":
+		fnTypeDef = fnTypeDef.WithCachePolicy(dagger.FunctionCachePolicyNever)
+
+	case "session":
+		fnTypeDef = fnTypeDef.WithCachePolicy(dagger.FunctionCachePolicyPerSession)
+
+	case "":
+
+	default:
+		fnTypeDef = fnTypeDef.WithCachePolicy(
+			dagger.FunctionCachePolicyDefault,
+			dagger.FunctionWithCachePolicyOpts{
+				TimeToLive: strings.TrimSpace(spec.cachePolicy),
+			},
+		)
 	}
 
 	if spec.sourceMap != nil {

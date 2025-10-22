@@ -2900,15 +2900,15 @@ type Function {
     sourceMap: SourceMapID
   ): Function!
 
-  """Mark this function as only cached for callers in the current session."""
-  withCachePerSession: Function!
+  """TODO doc"""
+  withCachePolicy(
+    """The cache policy to use."""
+    policy: FunctionCachePolicy!
 
-  """
-  Mark the persistent cache entries for this function as expiring after the given duration.
-  """
-  withCacheTTL(
-    """The duration of the cache TTL as a string, e.g. "5m", "1h30s"."""
-    duration: String!
+    """
+    The TTL for the cache policy, if applicable. Provided as a duration string, e.g. "5m", "1h30s".
+    """
+    timeToLive: String
   ): Function!
 
   """Returns the function with the given doc string."""
@@ -2968,6 +2968,13 @@ type FunctionArg {
 The `FunctionArgID` scalar type represents an identifier for an object of type FunctionArg.
 """
 scalar FunctionArgID
+
+"""The behavior configured for function result caching."""
+enum FunctionCachePolicy {
+  Default
+  PerSession
+  Never
+}
 
 """An active function call."""
 type FunctionCall {

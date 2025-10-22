@@ -3747,15 +3747,9 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Function_::withCachePerSession",
-			"p": "Dagger/Function_.html#method_withCachePerSession",
-			"d": "<p>Mark this function as only cached for callers in the current session.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Function_::withCacheTTL",
-			"p": "Dagger/Function_.html#method_withCacheTTL",
-			"d": "<p>Mark the persistent cache entries for this function as expiring after the given duration.</p>"
+			"n": "Dagger\\Function_::withCachePolicy",
+			"p": "Dagger/Function_.html#method_withCachePolicy",
+			"d": "<p>TODO doc</p>"
 		},
 		{
 			"t": "M",

@@ -158,13 +158,11 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("sourceMap").Doc(`The source map for the argument definition.`),
 			),
 
-		dagql.Func("withCachePerSession", s.functionWithCachePerSession).
-			Doc(`Mark this function as only cached for callers in the current session.`),
-
-		dagql.Func("withCacheTTL", s.functionWithCacheTTL).
-			Doc(`Mark the persistent cache entries for this function as expiring after the given duration.`).
+		dagql.Func("withCachePolicy", s.functionWithCachePolicy).
+			Doc(`TODO doc`).
 			Args(
-				dagql.Arg("duration").Doc(`The duration of the cache TTL as a string, e.g. "5m", "1h30s".`),
+				dagql.Arg("policy").Doc(`The cache policy to use.`),
+				dagql.Arg("timeToLive").Doc(`The TTL for the cache policy, if applicable. Provided as a duration string, e.g. "5m", "1h30s".`),
 			),
 	}.Install(dag)
 
@@ -570,22 +568,51 @@ func (s *moduleSchema) functionWithSourceMap(ctx context.Context, fn *core.Funct
 	return fn.WithSourceMap(sourceMap.Self()), nil
 }
 
-func (s *moduleSchema) functionWithCachePerSession(ctx context.Context, fn *core.Function, args struct{}) (*core.Function, error) {
+func (s *moduleSchema) functionWithCachePolicy(
+	ctx context.Context,
+	fn *core.Function,
+	args struct {
+		Policy     core.FunctionCachePolicy
+		TimeToLive dagql.Optional[dagql.String]
+	},
+) (*core.Function, error) {
 	fn = fn.Clone()
-	fn.CachePerSession = true
-	return fn, nil
-}
 
-func (s *moduleSchema) functionWithCacheTTL(ctx context.Context, fn *core.Function, args struct {
-	Duration string
-}) (*core.Function, error) {
-	durationTime, err := time.ParseDuration(args.Duration)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse duration %q: %w", args.Duration, err)
+	fn.CachePolicy = args.Policy
+
+	if args.TimeToLive.Valid {
+		// For now, restrict TTLs to the default policy. We could support it
+		// for PerSession in the future if desired.
+		if fn.CachePolicy != core.FunctionCachePolicyDefault {
+			return nil, errors.New("time to live can only be set with default cache policy")
+		}
+
+		ttlDuration, err := time.ParseDuration(string(args.TimeToLive.Value))
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse time to live duration %q: %w", args.TimeToLive.Value, err)
+		}
+
+		switch {
+		case ttlDuration == 0:
+			fn.CachePolicy = core.FunctionCachePolicyNever
+
+		case ttlDuration < core.MinFunctionCacheTTLSeconds*time.Second:
+			return nil, fmt.Errorf("time to live duration must be at least %q, got %q",
+				(core.MinFunctionCacheTTLSeconds * time.Second).String(),
+				args.TimeToLive.Value,
+			)
+
+		case ttlDuration > core.MaxFunctionCacheTTLSeconds*time.Second:
+			return nil, fmt.Errorf("time to live duration must be at most %q, got %q",
+				(core.MaxFunctionCacheTTLSeconds * time.Second).String(),
+				args.TimeToLive.Value,
+			)
+
+		default:
+			fn.CacheTTLSeconds = dagql.NonNull(dagql.Int(int(ttlDuration.Seconds())))
+		}
 	}
 
-	fn = fn.Clone()
-	fn.CacheTTLSeconds = dagql.NonNull(dagql.Int(int(durationTime.Seconds())))
 	return fn, nil
 }
 

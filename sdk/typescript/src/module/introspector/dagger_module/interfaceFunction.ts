@@ -27,8 +27,7 @@ export class DaggerInterfaceFunction extends Locatable {
 
   // Just placeholders to be compatible with `Method` during registration
   public alias: undefined
-  public cacheTTL: undefined
-  public cachePerSession: undefined
+  public cache: undefined
 
   constructor(
     private readonly node: ts.PropertySignature | ts.MethodSignature,

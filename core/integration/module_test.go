@@ -6470,14 +6470,20 @@ import (
 type Test struct{}
 
 // My cool doc on TestTtl
-// +cache-ttl="40s"
+// +cache="40s"
 func (m *Test) TestTtl() string {
 	return rand.Text()
 }
 
 // My dope doc on TestCachePerSession
-// +cache-per-session
+// +cache="session"
 func (m *Test) TestCachePerSession() string {
+	return rand.Text()
+}
+
+// My darling doc on TestNeverCache
+// +cache="never"
+func (m *Test) TestNeverCache() string {
 	return rand.Text()
 }
 
@@ -6495,12 +6501,16 @@ import string
 
 @dagger.object_type
 class Test:
-		@dagger.function(cache_ttl="40s")
+		@dagger.function(cache="40s")
 		def test_ttl(self) -> str:
 				return ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
 
-		@dagger.function(cache_per_session=True)
+		@dagger.function(cache="session")
 		def test_cache_per_session(self) -> str:
+				return ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
+
+		@dagger.function(cache="never")
+		def test_never_cache(self) -> str:
 				return ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
 
 		@dagger.function
@@ -6518,13 +6528,18 @@ import {  object, func } from "@dagger.io/dagger"
 
 @object()
 export class Test {
-	@func({ cacheTTL: "40s"})
+	@func({ cache: "40s"})
 	testTtl(): string {
 		return crypto.randomBytes(16).toString("hex")
 	}
 
-	@func({ cachePerSession: true })
+	@func({ cache: "session" })
 	testCachePerSession(): string {
+		return crypto.randomBytes(16).toString("hex")
+	}
+
+	@func({ cache: "never" })
+	testNeverCache(): string {
 		return crypto.randomBytes(16).toString("hex")
 	}
 
@@ -6540,20 +6555,22 @@ export class Test {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			t.Run("always cache", func(ctx context.Context, t *testctx.T) {
 				c1 := connect(ctx, t)
-				modGen1 := modInit(t, c1, tc.sdk, tc.source).
-					WithEnvVariable("CACHE_BUST", rand.Text()) // don't cache the nested execs themselves
+				modGen1 := modInit(t, c1, tc.sdk, tc.source)
 
 				// TODO: this is gonna be flaky to cache prunes, might need an isolated engine
 
-				out1, err := modGen1.With(daggerCall("test-always-cache")).Stdout(ctx)
+				out1, err := modGen1.
+					WithEnvVariable("CACHE_BUST", rand.Text()). // don't cache the nested execs themselves
+					With(daggerCall("test-always-cache")).Stdout(ctx)
 				require.NoError(t, err)
 				require.NoError(t, c1.Close())
 
 				c2 := connect(ctx, t)
-				modGen2 := modInit(t, c2, tc.sdk, tc.source).
-					WithEnvVariable("CACHE_BUST", rand.Text()) // don't cache the nested execs themselves
+				modGen2 := modInit(t, c2, tc.sdk, tc.source)
 
-				out2, err := modGen2.With(daggerCall("test-always-cache")).Stdout(ctx)
+				out2, err := modGen2.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-always-cache")).Stdout(ctx)
 				require.NoError(t, err)
 
 				require.Equal(t, out1, out2, "outputs should be equal since the result is always cached")
@@ -6561,44 +6578,83 @@ export class Test {
 
 			t.Run("cache per session", func(ctx context.Context, t *testctx.T) {
 				c1 := connect(ctx, t)
-				modGen1 := modInit(t, c1, tc.sdk, tc.source).
-					WithEnvVariable("CACHE_BUST", rand.Text()) // don't cache the nested execs themselves
+				modGen1 := modInit(t, c1, tc.sdk, tc.source)
 
-				out1a, err := modGen1.With(daggerCall("test-cache-per-session")).Stdout(ctx)
+				out1a, err := modGen1.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-cache-per-session")).Stdout(ctx)
 				require.NoError(t, err)
-				out1b, err := modGen1.With(daggerCall("test-cache-per-session")).Stdout(ctx)
+				out1b, err := modGen1.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-cache-per-session")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, out1a, out1b, "outputs should be equal since they are from the same session")
 				require.NoError(t, c1.Close())
 
 				c2 := connect(ctx, t)
-				modGen2 := modInit(t, c2, tc.sdk, tc.source).
-					WithEnvVariable("CACHE_BUST", rand.Text()) // don't cache the nested execs themselves
+				modGen2 := modInit(t, c2, tc.sdk, tc.source)
 
-				out2a, err := modGen2.With(daggerCall("test-cache-per-session")).Stdout(ctx)
+				out2a, err := modGen2.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-cache-per-session")).Stdout(ctx)
 				require.NoError(t, err)
-				out2b, err := modGen2.With(daggerCall("test-cache-per-session")).Stdout(ctx)
+				out2b, err := modGen2.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-cache-per-session")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, out2a, out2b, "outputs should be equal since they are from the same session")
 
 				require.NotEqual(t, out1a, out2a, "outputs should not be equal since they are from different sessions")
 			})
 
+			t.Run("never cache", func(ctx context.Context, t *testctx.T) {
+				c1 := connect(ctx, t)
+				modGen1 := modInit(t, c1, tc.sdk, tc.source)
+
+				out1a, err := modGen1.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-never-cache")).Stdout(ctx)
+				require.NoError(t, err)
+				out1b, err := modGen1.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-never-cache")).Stdout(ctx)
+				require.NoError(t, err)
+				require.NotEqual(t, out1a, out1b, "outputs should not be equal since they are never cached")
+				require.NoError(t, c1.Close())
+
+				c2 := connect(ctx, t)
+				modGen2 := modInit(t, c2, tc.sdk, tc.source)
+
+				out2a, err := modGen2.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-never-cache")).Stdout(ctx)
+				require.NoError(t, err)
+				out2b, err := modGen2.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-never-cache")).Stdout(ctx)
+				require.NoError(t, err)
+				require.NotEqual(t, out2a, out2b, "outputs should not be equal since they are never cached")
+
+				require.NotEqual(t, out1a, out2a, "outputs should not be equal since they are never cached")
+			})
+
 			// TODO: this is gonna be hella flaky probably, need isolated engine to combat pruning and probably more generous times...
 			t.Run("cache ttl", func(ctx context.Context, t *testctx.T) {
 				c1 := connect(ctx, t)
-				modGen1 := modInit(t, c1, tc.sdk, tc.source).
-					WithEnvVariable("CACHE_BUST", rand.Text()) // don't cache the nested execs themselves
+				modGen1 := modInit(t, c1, tc.sdk, tc.source)
 
-				out1, err := modGen1.With(daggerCall("test-ttl")).Stdout(ctx)
+				out1, err := modGen1.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-ttl")).Stdout(ctx)
 				require.NoError(t, err)
 				require.NoError(t, c1.Close())
 
 				c2 := connect(ctx, t)
-				modGen2 := modInit(t, c2, tc.sdk, tc.source).
-					WithEnvVariable("CACHE_BUST", rand.Text()) // don't cache the nested execs themselves
+				modGen2 := modInit(t, c2, tc.sdk, tc.source)
 
-				out2, err := modGen2.With(daggerCall("test-ttl")).Stdout(ctx)
+				out2, err := modGen2.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-ttl")).Stdout(ctx)
 				require.NoError(t, err)
 				require.NoError(t, c2.Close())
 
@@ -6606,10 +6662,11 @@ export class Test {
 				time.Sleep(41 * time.Second)
 
 				c3 := connect(ctx, t)
-				modGen3 := modInit(t, c3, tc.sdk, tc.source).
-					WithEnvVariable("CACHE_BUST", rand.Text()) // don't cache the nested execs themselves
+				modGen3 := modInit(t, c3, tc.sdk, tc.source)
 
-				out3, err := modGen3.With(daggerCall("test-ttl")).Stdout(ctx)
+				out3, err := modGen3.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-ttl")).Stdout(ctx)
 				require.NoError(t, err)
 				require.NotEqual(t, out1, out3, "outputs should not be equal since the cache ttl has expired")
 			})

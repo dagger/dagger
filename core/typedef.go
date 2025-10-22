@@ -27,8 +27,7 @@ type Function struct {
 	SourceMap dagql.Nullable[*SourceMap] `field:"true" doc:"The location of this function declaration."`
 
 	// Below are not in public API
-
-	CachePerSession bool
+	CachePolicy     FunctionCachePolicy
 	CacheTTLSeconds dagql.Nullable[dagql.Int]
 
 	// OriginalName of the parent object
@@ -224,6 +223,35 @@ func (fn *Function) LookupArg(nameAnyCase string) (*FunctionArg, bool) {
 		}
 	}
 	return nil, false
+}
+
+type FunctionCachePolicy string
+
+var FunctionCachePolicyEnum = dagql.NewEnum[FunctionCachePolicy]()
+
+var (
+	FunctionCachePolicyDefault    = FunctionCachePolicyEnum.Register("Default")
+	FunctionCachePolicyPerSession = FunctionCachePolicyEnum.Register("PerSession")
+	FunctionCachePolicyNever      = FunctionCachePolicyEnum.Register("Never")
+)
+
+func (proto FunctionCachePolicy) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "FunctionCachePolicy",
+		NonNull:   true,
+	}
+}
+
+func (proto FunctionCachePolicy) TypeDescription() string {
+	return "The behavior configured for function result caching."
+}
+
+func (proto FunctionCachePolicy) Decoder() dagql.InputDecoder {
+	return FunctionCachePolicyEnum
+}
+
+func (proto FunctionCachePolicy) ToLiteral() call.Literal {
+	return FunctionCachePolicyEnum.Literal(proto)
 }
 
 type FunctionArg struct {

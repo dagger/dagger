@@ -24,8 +24,7 @@ export class DaggerFunction extends Locatable {
   public returnType?: TypeDef<TypeDefKind>
   public arguments: DaggerArguments = {}
   public alias: string | undefined
-  public cacheTTL: string | undefined
-  public cachePerSession: boolean | undefined
+  public cache: string | undefined
 
   private signature: ts.Signature
   private symbol: ts.Symbol
@@ -50,13 +49,12 @@ export class DaggerFunction extends Locatable {
     )
     if (functionArguments) {
       if (typeof functionArguments === "string") {
+        // previously only a single arg was accepted for alias, so if there's just
+        // a string we intrepret it that way for backward compatibility
         this.alias = functionArguments
       } else {
-        if (functionArguments.alias) {
-          this.alias = functionArguments.alias
-        }
-        this.cacheTTL = functionArguments.cacheTTL
-        this.cachePerSession = functionArguments.cachePerSession
+        this.alias = functionArguments.alias
+        this.cache = functionArguments.cache
       }
     }
 

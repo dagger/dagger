@@ -385,12 +385,10 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 				})
 			}
 			return fn.Call(ctx, &CallOpts{
-				Inputs:          callInput,
-				ParentTyped:     nil,
-				ParentFields:    nil,
-				Server:          dag,
-				CachePerSession: fnTypeDef.CachePerSession,
-				CacheTTLSeconds: fnTypeDef.CacheTTLSeconds.Value.Int64(),
+				Inputs:       callInput,
+				ParentTyped:  nil,
+				ParentFields: nil,
+				Server:       dag,
 			})
 		},
 		dagql.CacheSpec{
@@ -499,12 +497,10 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 		Spec: &spec,
 		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
 			opts := &CallOpts{
-				ParentTyped:     obj,
-				ParentFields:    obj.Self().Fields,
-				SkipSelfSchema:  false,
-				Server:          dag,
-				CachePerSession: fun.CachePerSession,
-				CacheTTLSeconds: fun.CacheTTLSeconds.Value.Int64(),
+				ParentTyped:    obj,
+				ParentFields:   obj.Self().Fields,
+				SkipSelfSchema: false,
+				Server:         dag,
 			}
 			for name, val := range args {
 				opts.Inputs = append(opts.Inputs, CallInput{

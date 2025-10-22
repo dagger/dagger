@@ -110,6 +110,10 @@
           },
           "type": "array",
           "description": "The clients generated for this module."
+        },
+        "disableDefaultFunctionCaching": {
+          "type": "boolean",
+          "description": "TODO: doc"
         }
       },
       "additionalProperties": false,
