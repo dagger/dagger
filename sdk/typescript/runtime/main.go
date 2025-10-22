@@ -78,8 +78,13 @@ func (t *TypescriptSdk) ModuleTypes(
 		return nil, fmt.Errorf("could not load module config source root subpath: %w", err)
 	}
 
+	modulePath, err := modSource.SourceRootSubpath(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not load module config source root subpath: %w", err)
+	}
+
 	clientBindings := NewLibGenerator(t.SDKSourceDir).
-		GenerateBindings(introspectionJSON, moduleName, moduleSourcePath, Bundle)
+		GenerateBindings(introspectionJSON, moduleName, modulePath, Bundle)
 
 	return NewIntrospector(t.SDKSourceDir).
 		AsEntrypoint(outputFilePath,
