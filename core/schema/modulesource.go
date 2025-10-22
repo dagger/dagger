@@ -2950,13 +2950,13 @@ func addToolchainFieldsToObject(
 ) (*core.TypeDef, error) {
 	objectDef = objectDef.Clone()
 
-	for _, bpMod := range toolchainMods {
-		for _, obj := range bpMod.ObjectDefs {
-			if obj.AsObject.Value.Name == strcase.ToCamel(bpMod.NameField) {
+	for _, tcMod := range toolchainMods {
+		for _, obj := range tcMod.ObjectDefs {
+			if obj.AsObject.Value.Name == strcase.ToCamel(tcMod.NameField) {
 				// Use the original name (with hyphens) as the map key,
 				// but use camelCase for the GraphQL field name
-				originalName := bpMod.NameField
-				fieldName := strcase.ToLowerCamel(bpMod.NameField)
+				originalName := tcMod.NameField
+				fieldName := strcase.ToLowerCamel(tcMod.NameField)
 
 				// Always add toolchains as functions (treating them as zero-argument constructors
 				// if they don't have an explicit constructor). This ensures consistent behavior
@@ -2973,7 +2973,7 @@ func addToolchainFieldsToObject(
 
 				constructor.Name = fieldName
 				constructor.OriginalName = originalName
-				constructor.Description = fmt.Sprintf("Toolchain module: %s", originalName)
+				constructor.Description = fmt.Sprintf("toolchain '%s': %s", originalName, tcMod.Description)
 				constructor.ReturnType = obj
 
 				var err error
@@ -2982,7 +2982,7 @@ func addToolchainFieldsToObject(
 					return nil, fmt.Errorf("failed to add toolchain function %q: %w", fieldName, err)
 				}
 
-				mod.ToolchainModules[originalName] = bpMod
+				mod.ToolchainModules[originalName] = tcMod
 				break
 			}
 		}
