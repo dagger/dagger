@@ -454,6 +454,95 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		// Verify root.txt is NOT included (unchanged)
 		require.NotContains(t, entries, "root.txt")
 	})
+
+	t.Run("test withChanges can be applied on subdir", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Create initial directory with a single file
+		oldDir := c.Directory().
+			WithNewFile("file1.txt", "content1")
+
+		// Create new directory with multiple files
+		newDir := c.Directory().
+			WithNewFile("file1.txt", "content1").
+			WithNewFile("file2.txt", "content2") // new file
+
+		changes := newDir.Changes(oldDir)
+
+		addedFiles, err := changes.AddedPaths(ctx)
+		require.NoError(t, err)
+		require.Equal(t, addedFiles, []string{"file2.txt"})
+
+		modifiedFiles, err := changes.ModifiedPaths(ctx)
+		require.NoError(t, err)
+		require.Empty(t, modifiedFiles)
+
+		removedFiles, err := changes.RemovedPaths(ctx)
+		require.NoError(t, err)
+		require.Empty(t, removedFiles)
+
+		// apply changes to a subdirectory
+		d := c.Directory().WithNewDirectory("subdir").Directory("/subdir").WithChanges(changes)
+
+		entries, err := d.Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"file2.txt"}, entries)
+
+		topLevelDir := d.Directory("..")
+
+		entries, err = topLevelDir.Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"subdir/"}, entries)
+
+		s, err := topLevelDir.File("subdir/file2.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, s, "content2")
+	})
+
+	t.Run("test changes are restricted to subdir", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		oldDir := c.Directory().
+			WithNewFile("ignored.txt", "").
+			WithNewDirectory("new-dir").
+			Directory("/new-dir").
+			WithNewFile("file1.txt", "content1").
+			WithTimestamps(0) // without this file1.txt will have different timestamps, which would cause it to show up as being modified
+
+		newDir := c.Directory().
+			WithNewDirectory("new-dir").
+			Directory("/new-dir").
+			WithNewFile("file1.txt", "content1").
+			WithNewFile("file2.txt", "content2"). // new file
+			WithTimestamps(0)
+
+		changes := newDir.Changes(oldDir)
+
+		addedFiles, err := changes.AddedPaths(ctx)
+		require.NoError(t, err)
+		require.Equal(t, addedFiles, []string{"file2.txt"})
+
+		modifiedFiles, err := changes.ModifiedPaths(ctx)
+		require.NoError(t, err)
+		require.Empty(t, modifiedFiles)
+
+		removedFiles, err := changes.RemovedPaths(ctx)
+		require.NoError(t, err)
+		require.Empty(t, removedFiles)
+
+		// re-create the same "new-dir" directory structure, and apply changes to it
+		d := c.Directory().WithNewDirectory("new-dir").Directory("/new-dir").WithChanges(changes)
+
+		// make sure we only got file2.txt added
+		entries, err := d.Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"file2.txt"}, entries)
+
+		// make sure ignored.txt didn't show up in the parent dir
+		entries, err = d.Directory("..").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"new-dir/"}, entries)
+	})
 }
 
 func (s ChangesetSuite) TestExport(ctx context.Context, t *testctx.T) {

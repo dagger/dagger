@@ -161,7 +161,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Path of the subdirectory to remove. Example: ".github/workflows"`),
 			),
-		dagql.Func("diff", s.diff).
+		dagql.NodeFunc("diff", DagOpDirectoryWrapper(srv, s.diff, WithStaticPath[*core.Directory, diffArgs]("/"))).
 			Doc(`Return the difference between this directory and an another directory. The difference is encoded as a directory.`).
 			Args(
 				dagql.Arg("other").Doc(`The directory to compare against`),
@@ -751,19 +751,59 @@ func (s *directorySchema) exists(ctx context.Context, parent *core.Directory, ar
 
 type diffArgs struct {
 	Other core.DirectoryID
+
+	FSDagOpInternalArgs
 }
 
-func (s *directorySchema) diff(ctx context.Context, parent *core.Directory, args diffArgs) (*core.Directory, error) {
+func (s *directorySchema) diff(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args diffArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 
-	dir, err := args.Other.Load(ctx, srv)
-	if err != nil {
-		return nil, err
+	if parent.Self().Dir != "" && parent.Self().Dir != "/" {
+		// in order to compare different directories, they must be rebased to /
+		var rebasedDir dagql.ObjectResult[*core.Directory]
+		err = srv.Select(ctx, srv.Root(), &rebasedDir,
+			dagql.Selector{Field: "directory"}, // scratch
+			dagql.Selector{Field: "withDirectory", Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String("/")},
+				{Name: "source", Value: dagql.NewID[*core.Directory](parent.ID())},
+			}},
+		)
+		if err != nil {
+			return res, err
+		}
+		parent = rebasedDir
 	}
-	return parent.Diff(ctx, dir.Self())
+
+	otherDir, err := args.Other.Load(ctx, srv)
+	if err != nil {
+		return res, err
+	}
+
+	if otherDir.Self().Dir != "" && otherDir.Self().Dir != "/" {
+		// in order to compare different directories, they must be rebased to /
+		var rebasedDir dagql.ObjectResult[*core.Directory]
+		err = srv.Select(ctx, srv.Root(), &rebasedDir,
+			dagql.Selector{Field: "directory"}, // scratch
+			dagql.Selector{Field: "withDirectory", Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String("/")},
+				{Name: "source", Value: dagql.NewID[*core.Directory](otherDir.ID())},
+			}},
+		)
+		if err != nil {
+			return res, err
+		}
+		otherDir = rebasedDir
+	}
+
+	diff, err := parent.Self().Diff(ctx, otherDir.Self())
+	if err != nil {
+		return res, err
+	}
+
+	return dagql.NewObjectResultForCurrentID(ctx, srv, diff)
 }
 
 type findUpArgs struct {
