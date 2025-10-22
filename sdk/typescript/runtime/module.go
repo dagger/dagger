@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"typescript-sdk/internal/dagger"
 	"typescript-sdk/tsdistconsts"
@@ -188,7 +189,7 @@ func (m *moduleRuntimeContainer) withSetupPackageManager() *moduleRuntimeContain
 		}
 	case Npm:
 		m.ctr = m.ctr.
-			WithExec([]string{"npm", "install", "-g", fmt.Sprintf("npm@%s", version)})
+			WithExec([]string{"sh", "-c", "npm -v | grep -qx " + strings.ReplaceAll(version, ".", `\.`) + " || npm install -g npm@" + version})
 	}
 
 	return m

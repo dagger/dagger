@@ -1,6 +1,8 @@
 package tsdistconsts
 
 const (
+	// NOTE: when changing this version, check if the `NpmDefaultVersion` var in sdk/typescript/runtime/config.go
+	// should be updated to match the version of npm pre-installed in this container
 	DefaultNodeVersion  = "22.11.0" // LTS version, JOD (https://nodejs.org/en/about/previous-releases)
 	nodeImageDigest     = "sha256:b64ced2e7cd0a4816699fe308ce6e8a08ccba463c757c00c14cd372e3d2c763e"
 	DefaultNodeImageRef = "node:" + DefaultNodeVersion + "-alpine@" + nodeImageDigest
