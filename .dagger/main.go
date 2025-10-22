@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
@@ -267,7 +268,7 @@ func (dev *DaggerDev) Generate(ctx context.Context,
 	// FIXME: this is a workaround to TUI being too noisy
 	err = parallel.Run(ctx, "merge all changesets", func(ctx context.Context) error {
 		var err error
-		changes := genSDKs
+		changes := slices.Clone(genSDKs)
 		changes = append(changes, genDocs, genEngine, genChangelog, genGHA)
 		result, err = changesetMerge(dev.Source, changes...).Sync(ctx)
 		return err
