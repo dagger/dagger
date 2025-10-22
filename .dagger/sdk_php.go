@@ -80,10 +80,10 @@ func (t PHPSDK) generateClient() *dagger.Changeset {
 			},
 		})
 	// Make the change relative to the repo root
-	absLayer := t.Source().
+	absLayer := t.Dagger.Source.
 		WithoutDirectory("sdk/php").
 		WithDirectory("sdk/php", relLayer)
-	return absLayer.Changes(t.Source())
+	return absLayer.Changes(t.Dagger.Source)
 }
 
 func (t PHPSDK) generateDocs(ctx context.Context, genClient *dagger.Changeset) (*dagger.Changeset, error) {
@@ -112,7 +112,7 @@ func (t PHPSDK) generateDocs(ctx context.Context, genClient *dagger.Changeset) (
 	absLayer := t.Dagger.Source.
 		WithoutDirectory("docs/static/reference/php/").
 		WithDirectory("docs/static/reference/php/", relLayer)
-	return absLayer.Changes(dag.Directory()), nil
+	return absLayer.Changes(t.Dagger.Source), nil
 }
 
 // Return the doctum config file from the dagger repo
