@@ -522,10 +522,8 @@ func (iface *InterfaceAnnotatedValue) PBDefinitions(ctx context.Context) ([]*pb.
 		fieldID := curID.Append(
 			field.TypeDef.ToType(),
 			field.Name,
-			curID.View(),
-			curID.Module(),
-			0,
-			"",
+			call.WithView(curID.View()),
+			call.WithModule(curID.Module()),
 		)
 		ctx := dagql.ContextWithID(ctx, fieldID)
 

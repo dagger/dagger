@@ -166,18 +166,14 @@ func (s *secretSchema) setSecret(
 		accessor,
 	)
 
-	currentID := dagql.CurrentID(ctx)
-	callID := currentID.Receiver().Append(
-		currentID.Type().ToAST(),
-		currentID.Field(),
-		currentID.View(),
-		currentID.Module(),
-		0,
-		dgst,
-		call.NewArgument("name", call.NewLiteralString(args.Name), false),
-		// hide plaintext in the returned ID, we instead rely on the
-		// digest of the ID for uniqueness+identity
-		call.NewArgument("plaintext", call.NewLiteralString("***"), false),
+	callID := dagql.CurrentID(ctx).With(
+		call.WithArgs(
+			call.NewArgument("name", call.NewLiteralString(args.Name), false),
+			// hide plaintext in the returned ID, we instead rely on the
+			// digest of the ID for uniqueness+identity
+			call.NewArgument("plaintext", call.NewLiteralString("***"), false),
+		),
+		call.WithCustomDigest(dgst),
 	)
 
 	secretStore, err := parent.Self().Secrets(ctx)

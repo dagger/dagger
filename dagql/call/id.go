@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"sync"
 
@@ -61,6 +62,10 @@ type ID struct {
 }
 
 type View string
+
+func (v View) String() string {
+	return string(v)
+}
 
 // The ID of the object that the field selection will be evaluated against.
 //
@@ -232,82 +237,106 @@ func (id *ID) SelectNth(nth int) *ID {
 	h := xxh3.New()
 	h.Write(buf)
 	dgst := digest.NewDigest("xxh3", h)
-
-	return id.Append(
-		id.pb.Type.Elem.ToAST(),
-		id.pb.Field,
-		View(id.pb.View),
-		id.module,
-		nth,
-		dgst,
+	return id.With(
+		WithReceiver(id),
+		WithNth(nth),
+		WithType(id.pb.Type.Elem.ToAST()),
+		WithCustomDigest(dgst),
 	)
 }
 
-func (id *ID) Append(
-	ret *ast.Type,
-	field string,
-	view View,
-	mod *Module,
-	nth int,
-	customDigest digest.Digest,
-	args ...*Argument,
-) *ID {
+type IDOpt func(*ID)
+
+func WithModule(mod *Module) IDOpt {
+	return func(id *ID) {
+		if mod != nil {
+			id.module = mod
+			id.pb.Module = mod.pb
+		} else {
+			id.module = nil
+			id.pb.Module = nil
+		}
+	}
+}
+
+func WithType(typ *ast.Type) IDOpt {
+	return func(id *ID) {
+		id.typ = NewType(typ)
+		id.pb.Type = id.typ.pb
+	}
+}
+
+func WithNth(n int) IDOpt {
+	return func(id *ID) {
+		id.pb.Nth = int64(n)
+	}
+}
+
+func WithView(view View) IDOpt {
+	return func(id *ID) {
+		id.pb.View = view.String()
+	}
+}
+
+func WithCustomDigest(dig digest.Digest) IDOpt {
+	return func(id *ID) {
+		if dig != "" {
+			id.pb.Digest = dig.String()
+			id.pb.IsCustomDigest = true
+		} else {
+			id.pb.Digest = ""
+			id.pb.IsCustomDigest = false
+		}
+	}
+}
+
+func WithArgs(args ...*Argument) IDOpt {
+	return func(id *ID) {
+		id.args = args
+		id.pb.Args = make([]*callpbv1.Argument, 0, len(args))
+		for _, arg := range args {
+			if arg.isSensitive {
+				continue
+			}
+			id.pb.Args = append(id.pb.Args, arg.pb)
+		}
+	}
+}
+
+func WithReceiver(recv *ID) IDOpt {
+	return func(id *ID) {
+		id.receiver = recv
+		if recv != nil {
+			id.pb.ReceiverDigest = recv.pb.Digest
+		} else {
+			id.pb.ReceiverDigest = ""
+		}
+	}
+}
+
+func (id *ID) With(opts ...IDOpt) *ID {
+	return id.shallowClone().apply(opts...)
+}
+
+func (id *ID) Append(ret *ast.Type, field string, opts ...IDOpt) *ID {
+	typ := NewType(ret)
 	newID := &ID{
 		pb: &callpbv1.Call{
-			ReceiverDigest: string(id.Digest()),
+			Type:           typ.pb,
+			ReceiverDigest: id.Digest().String(),
 			Field:          field,
-			View:           string(view),
-			Args:           make([]*callpbv1.Argument, 0, len(args)),
-			Nth:            int64(nth),
 		},
 		receiver: id,
-		module:   mod,
-		args:     args,
-		typ:      NewType(ret),
+		typ:      typ,
 	}
-
-	newID.pb.Type = newID.typ.pb
-
-	if mod != nil {
-		newID.pb.Module = mod.pb
-	}
-
-	for _, arg := range args {
-		if arg.isSensitive {
-			continue
-		}
-		newID.pb.Args = append(newID.pb.Args, arg.pb)
-	}
-
-	if customDigest != "" {
-		newID.pb.Digest = string(customDigest)
-		newID.pb.IsCustomDigest = true
-	} else {
-		var err error
-		newID.pb.Digest, err = newID.calcDigest()
-		if err != nil {
-			// something has to be deeply wrong if we can't
-			// marshal proto and hash the bytes
-			panic(err)
-		}
-	}
-
-	return newID
+	return newID.apply(opts...)
 }
 
 // WithDigest returns a new ID that's the same as before except with the
 // given customDigest set as the ID's digest. If empty string, the default
 // digest for the call will be used (based on digest of encoded call pb).
 func (id *ID) WithDigest(customDigest digest.Digest) *ID {
-	return id.receiver.Append(
-		id.pb.Type.ToAST(),
-		id.pb.Field,
-		View(id.pb.View),
-		id.module,
-		int(id.pb.Nth),
-		customDigest,
-		id.args...,
-	)
+	return id.With(WithCustomDigest(customDigest))
 }
 
 func (id *ID) HasCustomDigest() bool {
@@ -327,8 +356,7 @@ func (id *ID) WithArgument(arg *Argument) *ID {
 		return nil
 	}
 
-	newArgs := make([]*Argument, len(id.args))
-	copy(newArgs, id.args)
+	newArgs := slices.Clone(id.args)
 	var replaced bool
 	for i, existingArg := range newArgs {
 		if existingArg.pb.Name == arg.pb.Name {
@@ -342,15 +370,7 @@ func (id *ID) WithArgument(arg *Argument) *ID {
 		newArgs = append(newArgs, arg)
 	}
 
-	return id.receiver.Append(
-		id.pb.Type.ToAST(),
-		id.pb.Field,
-		View(id.pb.View),
-		id.module,
-		int(id.pb.Nth),
-		"", // reset to default digest
-		newArgs...,
-	)
+	return id.With(WithArgs(newArgs...))
 }
 
 func (id *ID) Encode() (string, error) {
@@ -408,6 +428,43 @@ func (id *ID) FromProto(dagPB *callpbv1.DAG) error {
 		return fmt.Errorf("failed to decode DAG: %w", err)
 	}
 	return nil
+}
+
+func (id *ID) shallowClone() *ID {
+	cp := *id
+	// NB: this is finnicky, but shouldn't change much, seems worth avoiding
+	// reflection in proto.CloneOf
+	cp.pb = &callpbv1.Call{
+		ReceiverDigest: cp.pb.ReceiverDigest,
+		Type:           cp.pb.Type,
+		Field:          cp.pb.Field,
+		Args:           cp.pb.Args, // NOTE: no slices.Clone here - ALWAYS use WithArgs
+		Nth:            cp.pb.Nth,
+		Module:         cp.pb.Module,
+		Digest:         cp.pb.Digest,
+		View:           cp.pb.View,
+		IsCustomDigest: cp.pb.IsCustomDigest,
+	}
+	return &cp
+}
+
+func (id *ID) apply(opts ...IDOpt) *ID {
+	// clear any existing digest; must be re-applied each time
+	id.pb.Digest = ""
+	id.pb.IsCustomDigest = false
+	for _, opt := range opts {
+		opt(id)
+	}
+	if !id.HasCustomDigest() {
+		var err error
+		id.pb.Digest, err = id.calcDigest()
+		if err != nil {
+			// something has to be deeply wrong if we can't
+			// marshal proto and hash the bytes
+			panic(err)
+		}
+	}
+	return id
 }
 
 func (id *ID) gatherCalls(callsByDigest map[string]*callpbv1.Call) {

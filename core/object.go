@@ -130,10 +130,8 @@ func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.AnyRe
 		fieldID := curID.Append(
 			fieldTypeDef.TypeDef.ToType(),
 			fieldTypeDef.Name,
-			curID.View(),
-			curID.Module(),
-			0,
-			"",
+			call.WithView(curID.View()),
+			call.WithModule(curID.Module()),
 		)
 		ctx := dagql.ContextWithID(ctx, fieldID)
 
@@ -256,10 +254,8 @@ func (obj *ModuleObject) PBDefinitions(ctx context.Context) ([]*pb.Definition, e
 		fieldID := curID.Append(
 			field.TypeDef.ToType(),
 			field.Name,
-			curID.View(),
-			curID.Module(),
-			0,
-			"",
+			call.WithView(curID.View()),
+			call.WithModule(curID.Module()),
 		)
 		ctx := dagql.ContextWithID(ctx, fieldID)
 

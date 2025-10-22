@@ -20,10 +20,8 @@ import (
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/moby/locker"
-	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/zeebo/xxh3"
 )
 
 type mockServer struct {
@@ -33,9 +31,7 @@ func (ms *mockServer) ServeModule(ctx context.Context, mod *Module, includeDepen
 	return nil
 }
 func (ms *mockServer) CurrentModule(context.Context) (*Module, error) {
-	x3 := xxh3.New()
-	x3.WriteString("foo")
-	c := call.New().Append(&ast.Type{}, "caller1", "foo", &call.Module{}, 0, digest.NewDigest("xxh3", x3))
+	c := call.New().Append(&ast.Type{}, "caller1")
 	rs, err := dagql.NewResultForID(&ModuleSource{}, c)
 	if err != nil {
 		panic(err)
@@ -99,16 +95,13 @@ func (ms *mockServer) ClientTelemetry(ctc context.Context, sessID, clientID stri
 }
 
 func TestParseCallerCalleeRefs(t *testing.T) {
-	pcID := call.New()
-	pcd := xxh3.New()
-	pcd.WriteString("foo")
-
-	mID := call.New()
-	md := xxh3.New()
-	md.WriteString("foo")
-	mID = mID.Append(&ast.Type{}, "callee1", "foo", nil, 0, digest.NewDigest("xxh3", md))
-
-	pcID = pcID.Append(&ast.Type{}, "VersionedGitSSH.hello", "foo", call.NewModule(mID, "versioned_git_ssh", "git@github.com:dagger/dagger-test-modules/versioned@main", "0cabe03cc0a9079e738c92b2c589d81fd560011f"), 0, digest.NewDigest("xxh3", pcd))
+	mID := call.New().Append(&ast.Type{}, "callee1")
+	pcID := call.New().Append(&ast.Type{}, "VersionedGitSSH.hello",
+		call.WithModule(call.NewModule(
+			mID,
+			"versioned_git_ssh",
+			"git@github.com:dagger/dagger-test-modules/versioned@main", "0cabe03cc0a9079e738c92b2c589d81fd560011f",
+		)))
 	_, calleeRef := parseCallerCalleeRefs(t.Context(), &Query{Server: &mockServer{}}, pcID)
 
 	require.Equal(t, "github.com/dagger/dagger-test-modules/versioned", calleeRef.ref)

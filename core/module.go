@@ -280,21 +280,15 @@ func (mod *Module) CacheConfigForCall(
 	// the module ID digest (which has a per-client cache key in order to deal with
 	// local dir and git repo loading)
 	id := dagql.CurrentID(ctx)
-	curIDNoMod := id.Receiver().Append(
-		id.Type().ToAST(),
-		id.Field(),
-		id.View(),
-		nil,
-		int(id.Nth()),
-		"",
-		id.Args()...,
+	curIDNoMod := id.With(
+		call.WithModule(nil),
+		call.WithCustomDigest(""),
 	)
 	cacheCfg.Digest = dagql.HashFrom(
 		curIDNoMod.Digest().String(),
 		mod.Source.Value.Self().Digest,
 		mod.NameField, // the module source content digest only includes the original name
 	)
-
 	return &cacheCfg, nil
 }
 
