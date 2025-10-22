@@ -67,29 +67,19 @@ func (t *TypescriptSdk) ModuleTypes(
 	introspectionJSON *dagger.File,
 	outputFilePath string,
 ) (*dagger.Container, error) {
-	moduleName, err := modSource.ModuleOriginalName(ctx)
+	cfg, err := analyzeModuleConfig(ctx, modSource)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get module name: %w", err)
+		return nil, fmt.Errorf("failed to analyze module config: %w", err)
 	}
 
 	// TODO(TomChv): Update the TypeScript Codegen so it doesn't rely on moduleSourcePath anymore.
-	moduleSourcePath, err := modSource.SourceSubpath(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("could not load module config source root subpath: %w", err)
-	}
-
-	modulePath, err := modSource.SourceRootSubpath(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("could not load module config source root subpath: %w", err)
-	}
-
 	clientBindings := NewLibGenerator(t.SDKSourceDir).
-		GenerateBindings(introspectionJSON, moduleName, modulePath, Bundle)
+		GenerateBindings(introspectionJSON, cfg.name, cfg.modulePath(), Bundle)
 
 	return NewIntrospector(t.SDKSourceDir).
 		AsEntrypoint(outputFilePath,
-			moduleName,
-			modSource.ContextDirectory().Directory(moduleSourcePath),
+			cfg.name,
+			modSource.ContextDirectory().Directory(cfg.subPath),
 			clientBindings,
 		), nil
 }
