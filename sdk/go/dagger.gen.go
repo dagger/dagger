@@ -8533,6 +8533,7 @@ func (r *ListTypeDef) MarshalJSON() ([]byte, error) {
 type Module struct {
 	query *querybuilder.Selection
 
+	call        *JSON
 	description *string
 	id          *ModuleID
 	name        *string
@@ -8552,6 +8553,23 @@ func (r *Module) WithGraphQLQuery(q *querybuilder.Selection) *Module {
 	return &Module{
 		query: q,
 	}
+}
+
+// Call a function defined in this module, returning a JSON-encoded representation of the resulting state.
+func (r *Module) Call(ctx context.Context, object string, function string, parent JSON, inputs JSON) (JSON, error) {
+	if r.call != nil {
+		return *r.call, nil
+	}
+	q := r.query.Select("call")
+	q = q.Arg("object", object)
+	q = q.Arg("function", function)
+	q = q.Arg("parent", parent)
+	q = q.Arg("inputs", inputs)
+
+	var response JSON
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // The dependencies of the module.

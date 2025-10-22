@@ -143,6 +143,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    <a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_call">call</a>(string $object, string $function, <a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a> $parent, <a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a> $inputs)
+        
+                                            <p><p>Call a function defined in this module, returning a JSON-encoded representation of the resulting state.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     array
                 </div>
                 <div class="col-md-8">
@@ -427,8 +437,65 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_dependencies">
+                    <h3 id="method_call">
         <div class="location">at line 19</div>
+        <code>                    <a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a>
+    <strong>call</strong>(string $object, string $function, <a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a> $parent, <a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a> $inputs)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Call a function defined in this module, returning a JSON-encoded representation of the resulting state.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$object</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string</td>
+                <td>$function</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a></td>
+                <td>$parent</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a></td>
+                <td>$inputs</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_dependencies">
+        <div class="location">at line 32</div>
         <code>                    array
     <strong>dependencies</strong>()
         </code>
@@ -460,7 +527,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_description">
-        <div class="location">at line 28</div>
+        <div class="location">at line 41</div>
         <code>                    string
     <strong>description</strong>()
         </code>
@@ -492,7 +559,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_enums">
-        <div class="location">at line 37</div>
+        <div class="location">at line 50</div>
         <code>                    array
     <strong>enums</strong>()
         </code>
@@ -524,7 +591,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_generatedContextDirectory">
-        <div class="location">at line 46</div>
+        <div class="location">at line 59</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>generatedContextDirectory</strong>()
         </code>
@@ -556,7 +623,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 55</div>
+        <div class="location">at line 68</div>
         <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
     <strong>id</strong>()
         </code>
@@ -588,7 +655,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_interfaces">
-        <div class="location">at line 64</div>
+        <div class="location">at line 77</div>
         <code>                    array
     <strong>interfaces</strong>()
         </code>
@@ -620,7 +687,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_introspectionSchemaJSON">
-        <div class="location">at line 77</div>
+        <div class="location">at line 90</div>
         <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
     <strong>introspectionSchemaJSON</strong>()
         </code>
@@ -653,7 +720,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_name">
-        <div class="location">at line 86</div>
+        <div class="location">at line 99</div>
         <code>                    string
     <strong>name</strong>()
         </code>
@@ -685,7 +752,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_objects">
-        <div class="location">at line 95</div>
+        <div class="location">at line 108</div>
         <code>                    array
     <strong>objects</strong>()
         </code>
@@ -717,7 +784,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_runtime">
-        <div class="location">at line 104</div>
+        <div class="location">at line 117</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>runtime</strong>()
         </code>
@@ -749,7 +816,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sdk">
-        <div class="location">at line 113</div>
+        <div class="location">at line 126</div>
         <code>                    <a href="../Dagger/SDKConfig.html"><abbr title="Dagger\SDKConfig">SDKConfig</abbr></a>
     <strong>sdk</strong>()
         </code>
@@ -781,7 +848,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_serve">
-        <div class="location">at line 124</div>
+        <div class="location">at line 137</div>
         <code>                    void
     <strong>serve</strong>(bool|null $includeDependencies = null)
         </code>
@@ -823,7 +890,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_source">
-        <div class="location">at line 136</div>
+        <div class="location">at line 149</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>source</strong>()
         </code>
@@ -855,7 +922,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sync">
-        <div class="location">at line 145</div>
+        <div class="location">at line 158</div>
         <code>                    <a href="../Dagger/ModuleId.html"><abbr title="Dagger\ModuleId">ModuleId</abbr></a>
     <strong>sync</strong>()
         </code>
@@ -887,7 +954,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_userDefaults">
-        <div class="location">at line 154</div>
+        <div class="location">at line 167</div>
         <code>                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
     <strong>userDefaults</strong>()
         </code>
@@ -919,7 +986,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withDescription">
-        <div class="location">at line 163</div>
+        <div class="location">at line 176</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>withDescription</strong>(string $description)
         </code>
@@ -961,7 +1028,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withEnum">
-        <div class="location">at line 173</div>
+        <div class="location">at line 186</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>withEnum</strong>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $enum)
         </code>
@@ -1003,7 +1070,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withInterface">
-        <div class="location">at line 183</div>
+        <div class="location">at line 196</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>withInterface</strong>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $iface)
         </code>
@@ -1045,7 +1112,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withObject">
-        <div class="location">at line 193</div>
+        <div class="location">at line 206</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>withObject</strong>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $object)
         </code>

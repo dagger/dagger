@@ -4287,6 +4287,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Module::call",
+			"p": "Dagger/Module.html#method_call",
+			"d": "<p>Call a function defined in this module, returning a JSON-encoded representation of the resulting state.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Module::dependencies",
 			"p": "Dagger/Module.html#method_dependencies",
 			"d": "<p>The dependencies of the module.</p>"

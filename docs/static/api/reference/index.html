@@ -11539,6 +11539,35 @@
                       </tr>
                     </thead>
                     <tbody>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Module-call" href="#Module-call"><code>call</code></a> - <span class="property-type"><a href="#definition-JSON"><code>JSON!</code></a></span> </td>
+                        <td> Call a function defined in this module, returning a JSON-encoded representation of the resulting state. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>object</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the object the function is defined on.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>function</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the function to call, or empty for the object constructor.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>parent</code></span> - <span class="property-type"><a href="#definition-JSON"><code>JSON!</code></a></span></h6>
+                                <p>A JSON-encoded representation of the parent&#39;s state.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>inputs</code></span> - <span class="property-type"><a href="#definition-JSON"><code>JSON!</code></a></span></h6>
+                                <p>A map of argument names to JSON-encoded representations of their values.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Module-dependencies" href="#Module-dependencies"><code>dependencies</code></a> - <span class="property-type"><a href="#definition-Module"><code>[Module!]!</code></a></span> </td>
                         <td> The dependencies of the module. </td>

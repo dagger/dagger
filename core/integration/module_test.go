@@ -6728,6 +6728,313 @@ func (m *Test) TestSetSecret() *dagger.Container {
 	})
 }
 
+func (ModuleSuite) TestManualCall(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	dir := c.Directory().
+		WithNewFile("dagger.json", `{
+	"name": "test",
+	"engineVersion": "`+engine.Version+`",
+	"sdk": {
+		"source": "go"
+	}
+}`).
+		WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"crypto/rand"
+	"fmt"
+	"strings"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {
+	Count int
+	CountPrivate int  // +private
+}
+
+func New() *Test {
+	return &Test{
+		Count: 0,
+		CountPrivate: 1,
+	}
+}
+
+func (m *Test) Echo(str string) string {
+	return strings.Repeat(str, m.Count + m.CountPrivate)
+}
+
+func (m *Test) Add(n int) *Test {
+	m.Count += n
+	return m
+}
+
+func (m *Test) Join(n *Test) *Test {
+	m.Count += n.Count
+	m.CountPrivate += n.CountPrivate
+	return m
+}
+func (m *Test) Joins(ns []*Test) []*Test {
+	for i := range ns {
+		ns[i].Count += m.Count
+		ns[i].CountPrivate += m.CountPrivate
+	}
+	return ns
+}
+
+func (m *Test) Wait(ctr *dagger.Container) *dagger.Container {
+	return ctr.WithExec([]string{"echo", "=", fmt.Sprint(m.Count + m.CountPrivate)})
+}
+func (m *Test) Waits(ctrs []*dagger.Container) []*dagger.Container {
+	for i, ctr := range ctrs {
+		ctrs[i] = ctr.WithExec([]string{"echo", "=", fmt.Sprint(m.Count + m.CountPrivate)})
+	}
+	return ctrs
+}
+
+type Dir struct {
+	Dir *dagger.Directory
+}
+
+func (m *Dir) Entries(ctx context.Context) ([]string, error) {
+	ents, err := m.Dir.Entries(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return ents, nil
+}
+
+func (m *Test) Entries(ctx context.Context, dir *Dir) ([]string, error) {
+	ents, err := dir.Entries(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return ents, nil
+}
+
+func (m *Test) RandomAlways() string {
+	return rand.Text()
+}
+
+// +cache="never"
+func (m *Test) RandomNever() string {
+	return rand.Text()
+}
+`)
+	mod := dir.AsModule()
+
+	t.Run("scalars", func(ctx context.Context, t *testctx.T) {
+		parent, err := json.Marshal(map[string]any{
+			"Count":        1,
+			"CountPrivate": 2,
+		})
+		require.NoError(t, err)
+		inputs, err := json.Marshal(map[string]any{
+			"str": "hi ",
+		})
+		require.NoError(t, err)
+		out, err := mod.Call(ctx, "Test", "echo", dagger.JSON(parent), dagger.JSON(inputs))
+		require.NoError(t, err)
+		require.JSONEq(t, `"hi hi hi "`, string(out))
+	})
+
+	t.Run("chaining", func(ctx context.Context, t *testctx.T) {
+		parent, err := json.Marshal(map[string]any{
+			"Count":        1,
+			"CountPrivate": 2,
+		})
+		require.NoError(t, err)
+		inputs, err := json.Marshal(map[string]any{
+			"n": 1,
+		})
+		require.NoError(t, err)
+		out, err := mod.Call(ctx, "Test", "add", dagger.JSON(parent), dagger.JSON(inputs))
+		require.NoError(t, err)
+		require.JSONEq(t, `{"Count":2,"CountPrivate":2}`, string(out))
+
+		parent = []byte(out)
+		inputs, err = json.Marshal(map[string]any{
+			"str": "hi ",
+		})
+		require.NoError(t, err)
+		out, err = mod.Call(ctx, "Test", "echo", dagger.JSON(parent), dagger.JSON(inputs))
+		require.NoError(t, err)
+		require.JSONEq(t, `"hi hi hi hi "`, string(out))
+	})
+
+	t.Run("constructor", func(ctx context.Context, t *testctx.T) {
+		out, err := mod.Call(ctx, "Test", "", dagger.JSON("null"), dagger.JSON("null"))
+		require.NoError(t, err)
+		require.JSONEq(t, `{"Count":0,"CountPrivate":1}`, string(out))
+	})
+
+	t.Run("field", func(ctx context.Context, t *testctx.T) {
+		parent, err := json.Marshal(map[string]any{
+			"Count":        5,
+			"CountPrivate": 10,
+		})
+		require.NoError(t, err)
+		out, err := mod.Call(ctx, "Test", "count", dagger.JSON(parent), dagger.JSON("null"))
+		require.NoError(t, err)
+		require.JSONEq(t, `5`, string(out))
+	})
+
+	t.Run("module objects", func(ctx context.Context, t *testctx.T) {
+		parent, err := json.Marshal(map[string]any{
+			"Count":        1,
+			"CountPrivate": 2,
+		})
+		require.NoError(t, err)
+		inputs, err := json.Marshal(map[string]any{
+			"n": map[string]any{
+				"Count":        3,
+				"CountPrivate": 4,
+			},
+		})
+		require.NoError(t, err)
+		out, err := mod.Call(ctx, "Test", "join", dagger.JSON(parent), dagger.JSON(inputs))
+		require.NoError(t, err)
+		require.JSONEq(t, `{"Count":4,"CountPrivate":6}`, string(out))
+	})
+
+	t.Run("module object lists", func(ctx context.Context, t *testctx.T) {
+		parent, err := json.Marshal(map[string]any{
+			"Count":        1,
+			"CountPrivate": 2,
+		})
+		require.NoError(t, err)
+		inputs, err := json.Marshal(map[string]any{
+			"ns": []map[string]any{
+				{
+					"Count":        3,
+					"CountPrivate": 4,
+				},
+				{
+					"Count":        5,
+					"CountPrivate": 6,
+				},
+			},
+		})
+		require.NoError(t, err)
+		out, err := mod.Call(ctx, "Test", "joins", dagger.JSON(parent), dagger.JSON(inputs))
+		require.NoError(t, err)
+		require.JSONEq(t, `[{"Count":4,"CountPrivate":6},{"Count":6,"CountPrivate":8}]`, string(out))
+	})
+
+	t.Run("core objects", func(ctx context.Context, t *testctx.T) {
+		ctr, err := c.Container().From(alpineImage).ID(ctx)
+		require.NoError(t, err)
+		parent, err := json.Marshal(map[string]any{
+			"Count":        1,
+			"CountPrivate": 2,
+		})
+		require.NoError(t, err)
+		inputs, err := json.Marshal(map[string]any{
+			"ctr": ctr,
+		})
+		require.NoError(t, err)
+		out, err := mod.Call(ctx, "Test", "wait", dagger.JSON(parent), dagger.JSON(inputs))
+		require.NoError(t, err)
+		var resultCtrID dagger.ContainerID
+		err = json.Unmarshal([]byte(out), &resultCtrID)
+		require.NoError(t, err)
+
+		resultCtr := c.LoadContainerFromID(resultCtrID)
+		stdout, err := resultCtr.Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "= 3\n", stdout)
+	})
+
+	t.Run("core object lists", func(ctx context.Context, t *testctx.T) {
+		ctr, err := c.Container().From(alpineImage).ID(ctx)
+		require.NoError(t, err)
+		parent, err := json.Marshal(map[string]any{
+			"Count":        1,
+			"CountPrivate": 2,
+		})
+		require.NoError(t, err)
+		inputs, err := json.Marshal(map[string]any{
+			"ctrs": []dagger.ContainerID{ctr, ctr},
+		})
+		require.NoError(t, err)
+		out, err := mod.Call(ctx, "Test", "waits", dagger.JSON(parent), dagger.JSON(inputs))
+		require.NoError(t, err)
+		var resultCtrIDs []dagger.ContainerID
+		err = json.Unmarshal([]byte(out), &resultCtrIDs)
+		require.NoError(t, err)
+		require.Len(t, resultCtrIDs, 2)
+
+		for _, resultCtrID := range resultCtrIDs {
+			resultCtr := c.LoadContainerFromID(resultCtrID)
+			stdout, err := resultCtr.Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "= 3\n", stdout)
+		}
+	})
+
+	t.Run("core object receiver not loaded", func(ctx context.Context, t *testctx.T) {
+		c2 := connect(ctx, t)
+		tmpDir := t.TempDir()
+		err := os.WriteFile(filepath.Join(tmpDir, "foo.txt"), nil, 0o644)
+		require.NoError(t, err)
+		dirID, err := c2.Host().Directory(tmpDir).ID(ctx)
+		require.NoError(t, err)
+		require.NoError(t, c2.Close())
+
+		parent, err := json.Marshal(map[string]any{
+			"Dir": dirID,
+		})
+		require.NoError(t, err)
+		inputs, err := json.Marshal(nil)
+		require.NoError(t, err)
+		out, err := mod.Call(ctx, "TestDir", "entries", dagger.JSON(parent), dagger.JSON(inputs))
+		require.NoError(t, err)
+		require.JSONEq(t, `["foo.txt"]`, string(out))
+	})
+
+	t.Run("core object arg not loaded", func(ctx context.Context, t *testctx.T) {
+		c2 := connect(ctx, t)
+		tmpDir := t.TempDir()
+		err := os.WriteFile(filepath.Join(tmpDir, "bar.txt"), nil, 0o644)
+		require.NoError(t, err)
+		dirID, err := c2.Host().Directory(tmpDir).ID(ctx)
+		require.NoError(t, err)
+		require.NoError(t, c2.Close())
+
+		parent, err := json.Marshal(nil)
+		require.NoError(t, err)
+		inputs, err := json.Marshal(map[string]any{
+			"dir": map[string]any{
+				"Dir": dirID,
+			},
+		})
+		require.NoError(t, err)
+		out, err := mod.Call(ctx, "Test", "entries", dagger.JSON(parent), dagger.JSON(inputs))
+		require.NoError(t, err)
+		require.JSONEq(t, `["bar.txt"]`, string(out))
+	})
+
+	t.Run("cache", func(ctx context.Context, t *testctx.T) {
+		parent, err := json.Marshal(nil)
+		require.NoError(t, err)
+		inputs, err := json.Marshal(nil)
+		require.NoError(t, err)
+
+		out1, err := mod.Call(ctx, "Test", "randomAlways", dagger.JSON(parent), dagger.JSON(inputs))
+		require.NoError(t, err)
+		out2, err := mod.Call(ctx, "Test", "randomAlways", dagger.JSON(parent), dagger.JSON(inputs))
+		require.NoError(t, err)
+		require.Equal(t, out1, out2, "outputs should be equal due to caching")
+
+		out1, err = mod.Call(ctx, "Test", "randomNever", dagger.JSON(parent), dagger.JSON(inputs))
+		require.NoError(t, err)
+		out2, err = mod.Call(ctx, "Test", "randomNever", dagger.JSON(parent), dagger.JSON(inputs))
+		require.NoError(t, err)
+		require.NotEqual(t, out1, out2, "outputs should not be equal since caching is disabled")
+	})
+}
+
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{

@@ -3586,6 +3586,25 @@ scalar ListTypeDefID
 
 """A Dagger module."""
 type Module {
+  """
+  Call a function defined in this module, returning a JSON-encoded representation of the resulting state.
+  """
+  call(
+    """The name of the object the function is defined on."""
+    object: String!
+
+    """The name of the function to call, or empty for the object constructor."""
+    function: String!
+
+    """A JSON-encoded representation of the parent's state."""
+    parent: JSON!
+
+    """
+    A map of argument names to JSON-encoded representations of their values.
+    """
+    inputs: JSON!
+  ): JSON!
+
   """The dependencies of the module."""
   dependencies: [Module!]!
 

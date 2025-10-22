@@ -9516,6 +9516,28 @@ pub struct ModuleServeOpts {
     pub include_dependencies: Option<bool>,
 }
 impl Module {
+    /// Call a function defined in this module, returning a JSON-encoded representation of the resulting state.
+    ///
+    /// # Arguments
+    ///
+    /// * `object` - The name of the object the function is defined on.
+    /// * `function` - The name of the function to call, or empty for the object constructor.
+    /// * `parent` - A JSON-encoded representation of the parent's state.
+    /// * `inputs` - A map of argument names to JSON-encoded representations of their values.
+    pub async fn call(
+        &self,
+        object: impl Into<String>,
+        function: impl Into<String>,
+        parent: Json,
+        inputs: Json,
+    ) -> Result<Json, DaggerError> {
+        let mut query = self.selection.select("call");
+        query = query.arg("object", object.into());
+        query = query.arg("function", function.into());
+        query = query.arg("parent", parent);
+        query = query.arg("inputs", inputs);
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The dependencies of the module.
     pub fn dependencies(&self) -> Vec<Module> {
         let query = self.selection.select("dependencies");

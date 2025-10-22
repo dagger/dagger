@@ -14,6 +14,19 @@ namespace Dagger;
 class Module extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * Call a function defined in this module, returning a JSON-encoded representation of the resulting state.
+     */
+    public function call(string $object, string $function, Json $parent, Json $inputs): Json
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('call');
+        $leafQueryBuilder->setArgument('object', $object);
+        $leafQueryBuilder->setArgument('function', $function);
+        $leafQueryBuilder->setArgument('parent', $parent);
+        $leafQueryBuilder->setArgument('inputs', $inputs);
+        return new \Dagger\Json((string)$this->queryLeaf($leafQueryBuilder, 'call'));
+    }
+
+    /**
      * The dependencies of the module.
      */
     public function dependencies(): array

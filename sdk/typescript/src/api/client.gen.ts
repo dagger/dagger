@@ -8675,6 +8675,7 @@ export class ListTypeDef extends BaseClient {
  */
 export class Module_ extends BaseClient {
   private readonly _id?: ModuleID = undefined
+  private readonly _call?: JSON = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
   private readonly _serve?: Void = undefined
@@ -8686,6 +8687,7 @@ export class Module_ extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: ModuleID,
+    _call?: JSON,
     _description?: string,
     _name?: string,
     _serve?: Void,
@@ -8694,6 +8696,7 @@ export class Module_ extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._call = _call
     this._description = _description
     this._name = _name
     this._serve = _serve
@@ -8711,6 +8714,35 @@ export class Module_ extends BaseClient {
     const ctx = this._ctx.select("id")
 
     const response: Awaited<ModuleID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Call a function defined in this module, returning a JSON-encoded representation of the resulting state.
+   * @param object The name of the object the function is defined on.
+   * @param function The name of the function to call, or empty for the object constructor.
+   * @param parent A JSON-encoded representation of the parent's state.
+   * @param inputs A map of argument names to JSON-encoded representations of their values.
+   */
+  call = async (
+    object: string,
+    function_: string,
+    parent: JSON,
+    inputs: JSON,
+  ): Promise<JSON> => {
+    if (this._call) {
+      return this._call
+    }
+
+    const ctx = this._ctx.select("call", {
+      object,
+      function: function_,
+      parent,
+      inputs,
+    })
+
+    const response: Awaited<JSON> = await ctx.execute()
 
     return response
   }

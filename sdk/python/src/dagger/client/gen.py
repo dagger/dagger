@@ -8774,6 +8774,50 @@ class ListTypeDef(Type):
 class Module(Type):
     """A Dagger module."""
 
+    async def call(
+        self,
+        object: str,
+        function: str,
+        parent: JSON,
+        inputs: JSON,
+    ) -> JSON:
+        """Call a function defined in this module, returning a JSON-encoded
+        representation of the resulting state.
+
+        Parameters
+        ----------
+        object:
+            The name of the object the function is defined on.
+        function:
+            The name of the function to call, or empty for the object
+            constructor.
+        parent:
+            A JSON-encoded representation of the parent's state.
+        inputs:
+            A map of argument names to JSON-encoded representations of their
+            values.
+
+        Returns
+        -------
+        JSON
+            An arbitrary JSON-encoded value.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("object", object),
+            Arg("function", function),
+            Arg("parent", parent),
+            Arg("inputs", inputs),
+        ]
+        _ctx = self._select("call", _args)
+        return await _ctx.execute(JSON)
+
     async def dependencies(self) -> list["Module"]:
         """The dependencies of the module."""
         _args: list[Arg] = []

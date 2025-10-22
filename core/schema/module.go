@@ -1,16 +1,21 @@
 package schema
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
+	"sort"
 	"time"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/server/resource"
+	"github.com/opencontainers/go-digest"
 )
 
 type moduleSchema struct{}
@@ -111,6 +116,15 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				`Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.`).
 			Args(
 				dagql.Arg("includeDependencies").Doc("Expose the dependencies of this module to the client"),
+			),
+
+		dagql.FuncWithCacheKey("call", s.moduleCall, s.moduleCallCacheKey).
+			Doc(`Call a function defined in this module, returning a JSON-encoded representation of the resulting state.`).
+			Args(
+				dagql.Arg("object").Doc(`The name of the object the function is defined on.`),
+				dagql.Arg("function").Doc(`The name of the function to call, or empty for the object constructor.`),
+				dagql.Arg("parent").Doc(`A JSON-encoded representation of the parent's state.`),
+				dagql.Arg("inputs").Doc(`A map of argument names to JSON-encoded representations of their values.`),
 			),
 	}.Install(dag)
 
@@ -656,6 +670,203 @@ func (s *moduleSchema) moduleServe(ctx context.Context, modMeta *core.Module, ar
 
 	includeDependencies := args.IncludeDependencies.Valid && args.IncludeDependencies.Value.Bool()
 	return void, query.ServeModule(ctx, modMeta, includeDependencies)
+}
+
+type moduleCallArgs struct {
+	Object   string
+	Function string
+	Parent   core.JSON
+	Inputs   core.JSON
+}
+
+func (s *moduleSchema) moduleCall(ctx context.Context, mod *core.Module, args moduleCallArgs) (inst dagql.Result[core.JSON], _ error) {
+	typeDef := &core.TypeDef{
+		Kind:     core.TypeDefKindObject,
+		AsObject: dagql.NonNull(&core.ObjectTypeDef{Name: args.Object}),
+	}
+	modType, ok, err := mod.ModTypeFor(ctx, typeDef, false)
+	if err != nil {
+		return inst, err
+	}
+	if !ok {
+		return inst, fmt.Errorf("failed to find receiver mod type %q", args.Object)
+	}
+
+	modObj := modType.(*core.ModuleObjectType)
+	callable, err := modObj.GetCallable(ctx, args.Function)
+	if err != nil {
+		return inst, err
+	}
+
+	var fields map[string]any
+	err = json.Unmarshal(args.Parent, &fields)
+	if err != nil {
+		return inst, fmt.Errorf("failed to unmarshal parent JSON: %w", err)
+	}
+	receiver, _, err := modType.ConvertFromSDKResult(ctx, nil, fields)
+	if err != nil {
+		return inst, fmt.Errorf("failed to decode parent object: %w", err)
+	}
+
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	// HACK: need this so Host.directory IDs get loaded now and put in the cache,
+	// otherwise ones that haven't already been loaded in this engine won't
+	// be cached here and thus will result in the module function trying to
+	// load the dir from its own host in the container.
+	if err := loadIDsInServer(ctx, dag, modType, receiver); err != nil {
+		return inst, err
+	}
+
+	opts := &core.CallOpts{
+		ParentTyped:    nil,
+		ParentFields:   fields,
+		ParentModType:  modObj,
+		SkipSelfSchema: false,
+		Server:         dag,
+	}
+
+	dec := json.NewDecoder(bytes.NewReader(args.Inputs))
+	dec.UseNumber()
+	var callInputs map[string]any
+	err = dec.Decode(&callInputs)
+	if err != nil {
+		return inst, fmt.Errorf("failed to unmarshal inputs JSON: %w", err)
+	}
+	if dec.More() {
+		return inst, fmt.Errorf("unexpected extra data in inputs JSON")
+	}
+
+	for name, value := range callInputs {
+		argType, err := callable.ArgType(name)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get type for argument %q: %w", name, err)
+		}
+		// NOTE: we use the SDK wire format here, even though this isn't really a SDK
+		// Mostly, this is just because it's easily available.
+		decodedValue, _, err := argType.ConvertFromSDKResult(ctx, nil, value)
+		if err != nil {
+			return inst, fmt.Errorf("failed to decode input %q: %w", name, err)
+		}
+
+		// HACK: same as above
+		if err := loadIDsInServer(ctx, dag, argType, decodedValue); err != nil {
+			return inst, err
+		}
+
+		opts.Inputs = append(opts.Inputs, core.CallInput{
+			Name:  name,
+			Value: decodedValue,
+		})
+	}
+
+	// NB: ensure deterministic order (as in objFun)
+	sort.Slice(opts.Inputs, func(i, j int) bool {
+		return opts.Inputs[i].Name < opts.Inputs[j].Name
+	})
+
+	typed, _, err := callable.Call(ctx, opts)
+	if err != nil {
+		return inst, err
+	}
+
+	returnType, err := callable.ReturnType()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get return type: %w", err)
+	}
+	out, err := returnType.ConvertToSDKInput(ctx, typed)
+	if err != nil {
+		return inst, err
+	}
+
+	dt, err := json.Marshal(out)
+	if err != nil {
+		return inst, fmt.Errorf("failed to marshal result to JSON: %w", err)
+	}
+
+	inst, err = dagql.NewResultForCurrentID(ctx, core.JSON(dt))
+	if err != nil {
+		return inst, err
+	}
+
+	// HACK: this isn't quite right, but there's no way to actually transfer
+	// secrets between calls of this form
+	inst = inst.ResultWithSafeToPersistCache(true)
+
+	return inst, nil
+}
+
+func (s *moduleSchema) moduleCallCacheKey(
+	ctx context.Context,
+	mod dagql.ObjectResult[*core.Module],
+	args moduleCallArgs,
+	req dagql.GetCacheConfigRequest,
+) (*dagql.GetCacheConfigResponse, error) {
+	typeDef := &core.TypeDef{
+		Kind:     core.TypeDefKindObject,
+		AsObject: dagql.NonNull(&core.ObjectTypeDef{Name: args.Object}),
+	}
+	modType, ok, err := mod.Self().ModTypeFor(ctx, typeDef, false)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("failed to find receiver mod type %q", args.Object)
+	}
+
+	modObj := modType.(*core.ModuleObjectType)
+	callable, err := modObj.GetCallable(ctx, args.Function)
+	if err != nil {
+		return nil, err
+	}
+
+	dec := json.NewDecoder(bytes.NewReader(args.Inputs))
+	dec.UseNumber()
+	var callInputs map[string]any
+	err = dec.Decode(&callInputs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal inputs JSON: %w", err)
+	}
+	if dec.More() {
+		return nil, fmt.Errorf("unexpected extra data in inputs JSON")
+	}
+
+	// HACK: CacheConfigForCall doesn't *actually* use the inputs (we should
+	// update the function signature to clarify this)
+	inputs := make(map[string]dagql.Input, len(callInputs))
+	for name := range callInputs {
+		inputs[name] = nil
+	}
+
+	resp, err := callable.CacheConfigForCall(ctx, mod, inputs, dagql.CurrentID(ctx).View(), req)
+	if err != nil {
+		return nil, err
+	}
+	// Prefix the call key with a special string to avoid potential collisions
+	// with the "actual" query (this function returns JSON, not the actual type)
+	resp.CacheKey.CallKey = "moduleCall:" + resp.CacheKey.CallKey
+	resp.UpdatedArgs = nil
+
+	return resp, nil
+}
+
+func loadIDsInServer(ctx context.Context, dag *dagql.Server, modType core.ModType, value dagql.Typed) error {
+	coreIDs := make(map[digest.Digest]*resource.ID)
+	err := modType.CollectCoreIDs(ctx, value, coreIDs)
+	if err != nil {
+		return fmt.Errorf("failed to collect core IDs from parent object: %w", err)
+	}
+	for _, id := range coreIDs {
+		_, err := dag.Load(ctx, &id.ID)
+		if err != nil && !id.Optional {
+			return fmt.Errorf("failed to load ID for parent object: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ struct{}) (dagql.Array[*core.TypeDef], error) {
