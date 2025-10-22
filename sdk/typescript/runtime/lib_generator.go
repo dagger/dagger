@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"typescript-sdk/internal/dagger"
 	"typescript-sdk/tsdistconsts"
 )
@@ -64,7 +65,7 @@ func (l *LibGenerator) GenerateBindings(
 		WithExec(codegenArgs, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		}).
-		File("/src/sdk/src/api/client.gen.ts")
+		File(filepath.Join(modulePath, "sdk/src/api/client.gen.ts"))
 }
 
 // Add the bundle library (code.js & core.d.ts) to the sdk directory.
