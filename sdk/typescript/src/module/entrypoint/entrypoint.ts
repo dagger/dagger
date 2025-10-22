@@ -1,5 +1,3 @@
-import fs from "node:fs"
-
 import { dag, Error as DaggerError } from "../../api/client.gen.js"
 import type { JSON } from "../../api/client.gen.js"
 import { ExecError } from "../../common/errors/ExecError.js"
@@ -16,21 +14,6 @@ export async function entrypoint(files: string[]) {
   // Start a Dagger session to get the call context
   await connection(
     async () => {
-      // Check if REGISTER_TYPEDEF is set, if so we save the moduleID
-      // to a file and early exit.
-      // We cannot call `fnCall.parentName()` before because it will
-      // be a zero-value leading to a crash.
-      if (process.env.REGISTER_TYPEDEF !== undefined) {
-        const scanResult = await scan(files, process.env.MODULE_NAME)
-        const outputFilePath =
-          process.env.TYPEDEF_OUTPUT_FILE ?? "/module-id.json"
-        const moduleID = await new Register(scanResult).run()
-
-        await fs.promises.writeFile(outputFilePath, JSON.stringify(moduleID))
-
-        return
-      }
-
       const fnCall = dag.currentFunctionCall()
       const moduleName = await dag.currentModule().name()
       const scanResult = await scan(files, moduleName)

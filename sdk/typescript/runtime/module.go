@@ -101,7 +101,11 @@ func (m *moduleRuntimeContainer) withConfiguredRuntimeEnvironment() *moduleRunti
 					dagger.ContainerWithDirectoryOpts{Include: []string{"*.json"}},
 				)
 
-			break
+			// TODO: disappear once `dagger init` is split
+			// We need to initialize the packageJSONConfig because it was set from the template.
+			m.cfg.packageJSONConfig = &packageJSONConfig{
+				Dependencies: make(map[string]string),
+			}
 		}
 
 		m.ctr = m.ctr.
@@ -116,7 +120,11 @@ func (m *moduleRuntimeContainer) withConfiguredRuntimeEnvironment() *moduleRunti
 					dagger.ContainerWithDirectoryOpts{Include: []string{"*.json"}},
 				)
 
-			break
+			// TODO: disappear once `dagger init` is split
+			// We need to initialize the packageJSONConfig because it was set from the template.
+			m.cfg.packageJSONConfig = &packageJSONConfig{
+				Dependencies: make(map[string]string),
+			}
 		}
 
 		m.ctr = m.ctr.
@@ -126,7 +134,10 @@ func (m *moduleRuntimeContainer) withConfiguredRuntimeEnvironment() *moduleRunti
 	case Deno:
 		m.ctr = m.ctr.
 			WithMountedFile("/opt/module/bin/__deno_config_updator.ts", denoConfigUpdatorFile()).
-			WithExec([]string{"deno", "run", "-A", "/opt/module/bin/__deno_config_updator.ts", fmt.Sprintf("--sdk-lib-origin=%s", m.cfg.sdkLibOrigin)})
+			WithExec([]string{"deno", "run", "-A", "/opt/module/bin/__deno_config_updator.ts",
+				fmt.Sprintf("--sdk-lib-origin=%s", m.cfg.sdkLibOrigin),
+				fmt.Sprintf("--default-typescript-version=%s", tsdistconsts.DefaultTypeScriptVersion),
+			})
 	}
 
 	return m
@@ -149,7 +160,7 @@ func (m *moduleRuntimeContainer) configurePackageJSON(file *dagger.File) *dagger
 	if m.cfg.packageJSONConfig != nil {
 		_, ok := m.cfg.packageJSONConfig.Dependencies["typescript"]
 		if !ok {
-			ctr = ctr.WithExec([]string{"npm", "pkg", "set", "dependencies.typescript=^5.5.4"})
+			ctr = ctr.WithExec([]string{"npm", "pkg", "set", fmt.Sprintf("dependencies.typescript=%s", tsdistconsts.DefaultTypeScriptVersion)})
 		}
 	}
 

@@ -148,9 +148,13 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 		WithExec([]string{"apk", "add", "nodejs"}).
 		// Install tsc binary.
 		WithExec([]string{"bun", "install", "-g", "typescript"}).
-		WithMountedDirectory("/src", rootfs).
+		// We cannot mount the directory because bun will struggle with symlinks when compiling
+		// the introspector binary.
+		WithDirectory("/src", rootfs).
 		WithWorkdir("/src").
 		WithExec([]string{"bun", "install"}).
+		// Create introspector binary
+		WithExec([]string{"bun", "build", "src/module/entrypoint/introspection_entrypoint.ts", "--compile", "--outfile", "/bin/ts-introspector"}).
 		// Build the SDK bundled that contains the whole static library + default client
 		// The bundle works for all runtimes as long as we target node since deno & bun have compatibility API for node.
 		WithExec([]string{"bun", "build", "./src/index.ts", "--external=typescript", "--target=node", "--outfile", "/out-node/core.js"}).
@@ -161,6 +165,12 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 	sdkCtrTarball := dag.Container().
 		WithRootfs(rootfs).
 		WithFile("/codegen", build.CodegenBinary()).
+		// We need to mount the typescript library because bun will not be able to resolve the
+		// typescript library when introspecting the user's module.
+		// TODO: As a follow up, this also enable skipping dependencies installation inside the module
+		// runtime if only typescript library is used (by default)
+		WithDirectory("/typescript-library", bunBuilderCtr.Directory("/src/node_modules/typescript")).
+		WithFile("/bin/ts-introspector", bunBuilderCtr.File("/bin/ts-introspector")).
 		WithDirectory("/tsx_module", tsxNodeModule).
 		WithDirectory("/bundled_lib", bunBuilderCtr.Directory("/out-node")).
 		AsTarball(dagger.ContainerAsTarballOpts{

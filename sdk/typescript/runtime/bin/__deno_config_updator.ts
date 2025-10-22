@@ -19,7 +19,7 @@
  * If any value is already set with a wrong value, the script will update it to its expected value.
  *
  * Usage:
- *   deno_config_updator --sdk-lib-origin=bundle|local|remote --standalone-client=true|false --output-dir=string
+ *   deno_config_updator --sdk-lib-origin=bundle|local|remote --standalone-client=true|false --output-dir=string --default-typescript-version=string
  *
  * Note: The file is heavily documented because it's a single script and it can be quite
  * confusing when reading through it otherwise.
@@ -28,7 +28,7 @@
 /*******************************************************************************
  * CLI configuration and parsing
  ******************************************************************************/
-const help = `Usage: deno_config_updator <--sdk-lib-origin=bundle|local> --standalone-client=true|false --output-dir=string>`
+const help = `Usage: deno_config_updator <--sdk-lib-origin=bundle|local> --standalone-client=true|false --output-dir=string> --default-typescript-version=string>`
 const args = Deno.args
 
 class Arg<T> {
@@ -41,6 +41,10 @@ class Arg<T> {
 const sdkLibOrigin = new Arg<string>("sdk-lib-origin", null)
 const standaloneClient = new Arg<boolean>("standalone-client", false)
 const clientDir = new Arg<string>("client-dir", null)
+const defaultTypeScriptVersion = new Arg<string>(
+  "default-typescript-version",
+  null,
+)
 
 // Parse arguments from the CLI.
 for (const arg of args) {
@@ -85,6 +89,17 @@ for (const arg of args) {
       clientDir.value = value
 
       break
+    case defaultTypeScriptVersion.name:
+      if (value === undefined) {
+        console.error(
+          `Missing value for ${defaultTypeScriptVersion.name}\n ${help}`,
+        )
+        Deno.exit(1)
+      }
+
+      defaultTypeScriptVersion.value = value
+
+      break
   }
 }
 
@@ -97,6 +112,11 @@ if (standaloneClient.value === true && clientDir.value === null) {
   console.error(
     `Missing output-dir argument while standalone client is set to true\n${help}`,
   )
+  Deno.exit(1)
+}
+
+if (defaultTypeScriptVersion.value === null) {
+  console.error(`Missing default-typescript-version argument\n${help}`)
   Deno.exit(1)
 }
 
@@ -121,7 +141,7 @@ const daggerTelemetryFilename = {
   local: "./sdk/src/telemetry/index.ts",
 }
 
-const typescriptImport = `npm:typescript@^5.8.2`
+const typescriptImport = `npm:typescript@${defaultTypeScriptVersion.value}`
 
 // Imports map to be added to the deno.json file.
 const daggerImports = {

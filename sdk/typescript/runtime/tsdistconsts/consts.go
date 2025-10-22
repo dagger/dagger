@@ -14,4 +14,10 @@ const (
 	DefaultDenoVersion  = "2.4.0"
 	denoImageDigest     = "sha256:fcf215ca621c2834157dcb8a8c8c48b64d273b542b4fc8baee1b5c6de50b326c"
 	DefaultDenoImageRef = "denoland/deno:alpine-" + DefaultDenoVersion + "@" + denoImageDigest
+
+	DefaultAlpineVersion  = "3.22.2"
+	defaultAlpineDigest   = "sha256:4b7ce07002c69e8f3d704a9c5d6fd3053be500b7f1c69fc0d80990c2ad8dd412"
+	DefaultAlpineImageRef = "alpine:" + DefaultAlpineVersion + "@" + defaultAlpineDigest
+
+	DefaultTypeScriptVersion = "5.9.3"
 )
