@@ -315,9 +315,14 @@ func (m *MCP) loadMCPTools(ctx context.Context, allTools *LLMToolSet) error {
 			if err != nil {
 				return err
 			}
-			anied, err := toAny(tool.InputSchema)
+			schema, err := toAny(tool.InputSchema)
 			if err != nil {
 				return err
+			}
+			if schema["properties"] == nil {
+				// OpenAI is very particular; it wants there to always define
+				// properties, even if empty.
+				schema["properties"] = map[string]any{}
 			}
 
 			// Check if the tool is read-only from MCP annotations
@@ -327,7 +332,7 @@ func (m *MCP) loadMCPTools(ctx context.Context, allTools *LLMToolSet) error {
 				Name:        tool.Name,
 				Server:      serverName,
 				Description: tool.Description,
-				Schema:      anied,
+				Schema:      schema,
 				ReadOnly:    isReadOnly,
 				Call: func(ctx context.Context, args any) (any, error) {
 					res, err := sess.CallTool(ctx, &mcp.CallToolParams{
