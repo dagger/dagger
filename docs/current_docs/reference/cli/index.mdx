@@ -582,6 +582,7 @@ Manage toolchains
 
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
 * [dagger toolchain install](#dagger-toolchain-install)	 - Install a toolchain to the current module
+* [dagger toolchain list](#dagger-toolchain-list)	 - List all toolchains
 * [dagger toolchain uninstall](#dagger-toolchain-uninstall)	 - Uninstall a toolchain
 * [dagger toolchain update](#dagger-toolchain-update)	 - Update toolchains
 
@@ -610,6 +611,50 @@ dagger toolchain install github.com/example/toolchain
       --compat string       Engine API version to target (default "latest")
   -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
   -n, --name string         Name to use for the toolchain in the module. Defaults to the name of the toolchain being installed.
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger toolchain](#dagger-toolchain)	 - Manage toolchains
+
+## dagger toolchain list
+
+List all toolchains
+
+### Synopsis
+
+List all toolchains of the current module.
+
+```
+dagger toolchain list [options] [flags]
+```
+
+### Examples
+
+```
+dagger toolchain list
+```
+
+### Options
+
+```
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+  -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
 ```
 
 ### Options inherited from parent commands
