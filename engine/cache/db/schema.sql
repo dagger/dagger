@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS calls (
     call_key TEXT PRIMARY KEY,
+    storage_key TEXT NOT NULL,
     expiration INTEGER NOT NULL
 ) STRICT, WITHOUT ROWID;
 

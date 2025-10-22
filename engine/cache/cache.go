@@ -11,6 +11,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/dagger/dagger/engine"
 	cachedb "github.com/dagger/dagger/engine/cache/db"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
@@ -305,39 +306,60 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 		if err == nil || errors.Is(err, sql.ErrNoRows) {
 			now := time.Now().Unix()
 			expiration := now + key.TTL
+
+			// TODO:(sipsma) we unfortunately have to incorporate the session ID into the storage key
+			// for now in order to get functions that make SetSecret calls to behave as "per-session"
+			// caches (while *also* retaining the correct behavior in all other cases). It would be
+			// nice to find some more elegant way of modeling this that disentangles this cache
+			// from engine client metadata.
 			switch {
 			case call == nil:
+				md, err := engine.ClientMetadataFromContext(ctx)
+				if err != nil {
+					return nil, fmt.Errorf("get client metadata: %w", err)
+				}
+				storageKey = hashutil.NewHasher().
+					WithString(storageKey).
+					WithString(md.SessionID).
+					DigestAndClose()
+
 				// Nothing saved in the cache yet, use a new expiration. Don't save yet, that only happens
 				// once a call completes successfully and has been determined to be safe to cache.
 				saveExpiration = func(ctx context.Context) error {
 					return c.db.SetExpiration(ctx, cachedb.SetExpirationParams{
 						CallKey:        string(key.CallKey),
+						StorageKey:     storageKey,
 						Expiration:     expiration,
-						PrevExpiration: 0,
+						PrevStorageKey: "",
 					})
 				}
 
 			case call.Expiration < now:
+				md, err := engine.ClientMetadataFromContext(ctx)
+				if err != nil {
+					return nil, fmt.Errorf("get client metadata: %w", err)
+				}
+				storageKey = hashutil.NewHasher().
+					WithString(storageKey).
+					WithString(md.SessionID).
+					DigestAndClose()
+
 				// We do have a cached entry, but it expired, so don't use it. Use a new expiration, but again
 				// don't store it yet until the call completes successfully and is determined to be safe
 				// to cache.
 				saveExpiration = func(ctx context.Context) error {
 					return c.db.SetExpiration(ctx, cachedb.SetExpirationParams{
 						CallKey:        string(key.CallKey),
+						StorageKey:     storageKey,
 						Expiration:     expiration,
-						PrevExpiration: call.Expiration,
+						PrevStorageKey: call.StorageKey,
 					})
 				}
 
 			default:
 				// We have a cached entry and it hasn't expired yet, use it
-				expiration = call.Expiration
+				storageKey = call.StorageKey
 			}
-
-			storageKey = hashutil.NewHasher().
-				WithString(storageKey).
-				WithInt64(expiration).
-				DigestAndClose()
 		} else {
 			slog.Error("failed to select call from cache", "err", err)
 		}

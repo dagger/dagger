@@ -6672,6 +6672,60 @@ export class Test {
 			})
 		})
 	}
+
+	// rest of tests are SDK agnostic so just test w/ go
+	t.Run("setSecret invalidates cache", func(ctx context.Context, t *testctx.T) {
+		const modSDK = "go"
+		const modSrc = `package main
+
+import (
+	"crypto/rand"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) TestSetSecret() *dagger.Container {
+	r := rand.Text()
+	s := dag.SetSecret(r, r)
+	return dag.Container().
+		From("` + alpineImage + `").
+		WithSecretVariable("TOP_SECRET", s)
+}
+`
+
+		// in memory cache should be hit within a session, but
+		// no cache hits across sessions should happen
+
+		c1 := connect(ctx, t)
+		modGen1 := modInit(t, c1, modSDK, modSrc)
+
+		out1a, err := modGen1.
+			WithEnvVariable("CACHE_BUST", rand.Text()).
+			With(daggerCall("test-set-secret")).Stdout(ctx)
+		require.NoError(t, err)
+		out1b, err := modGen1.
+			WithEnvVariable("CACHE_BUST", rand.Text()).
+			With(daggerCall("test-set-secret")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, out1a, out1b)
+		require.NoError(t, c1.Close())
+
+		c2 := connect(ctx, t)
+		modGen2 := modInit(t, c2, modSDK, modSrc)
+
+		out2a, err := modGen2.
+			WithEnvVariable("CACHE_BUST", rand.Text()).
+			With(daggerCall("test-set-secret")).Stdout(ctx)
+		require.NoError(t, err)
+		out2b, err := modGen2.
+			WithEnvVariable("CACHE_BUST", rand.Text()).
+			With(daggerCall("test-set-secret")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, out2a, out2b)
+
+		require.NotEqual(t, out1a, out2a)
+	})
 }
 
 func daggerExec(args ...string) dagger.WithContainerFunc {
