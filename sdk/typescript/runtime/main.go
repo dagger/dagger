@@ -73,16 +73,20 @@ func (t *TypescriptSdk) ModuleTypes(
 	}
 
 	// TODO(TomChv): Update the TypeScript Codegen so it doesn't rely on moduleSourcePath anymore.
-	modulePath, err := modSource.SourceRootSubpath(ctx)
+	moduleSourcePath, err := modSource.SourceSubpath(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not load module config source root subpath: %w", err)
 	}
 
 	clientBindings := NewLibGenerator(t.SDKSourceDir).
-		GenerateBindings(introspectionJSON, moduleName, modulePath, Bundle)
+		GenerateBindings(introspectionJSON, moduleName, moduleSourcePath, Bundle)
 
 	return NewIntrospector(t.SDKSourceDir).
-		AsEntrypoint(outputFilePath, moduleName, modSource.ContextDirectory(), clientBindings), nil
+		AsEntrypoint(outputFilePath,
+			moduleName,
+			modSource.ContextDirectory().Directory(moduleSourcePath),
+			clientBindings,
+		), nil
 }
 
 // Codegen implements the `Codegen` method from the SDK module interface.
