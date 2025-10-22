@@ -41,13 +41,6 @@ func (t JavaSDK) Test(ctx context.Context) error {
 	return err
 }
 
-// Regenerate the Java SDK API
-func (t JavaSDK) Generate(ctx context.Context) (*dagger.Changeset, error) {
-	return dag.Directory().
-		Changes(dag.Directory()).
-		Sync(ctx)
-}
-
 // Publish the Java SDK
 func (t JavaSDK) Publish(
 	ctx context.Context,
