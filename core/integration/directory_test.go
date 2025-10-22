@@ -824,10 +824,20 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 	})
 
 	// this is a regression test for: https://github.com/dagger/dagger/pull/7328
-	t.Run("equivalent subdirs", func(ctx context.Context, t *testctx.T) {
+	t.Run("equivalent", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		a := c.Git("github.com/dagger/dagger").Ref("main").Tree()
 		b := c.Directory().WithDirectory("", a)
+		ents, err := a.Diff(b).Entries(ctx)
+		require.NoError(t, err)
+		require.Len(t, ents, 0)
+	})
+
+	// this is a regression test for: https://github.com/dagger/dagger/pull/11107
+	t.Run("equivalent subdirs", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		a := c.Git("github.com/dagger/dagger").Ref("main").Tree().Directory("engine")
+		b := c.Directory().WithDirectory("engine", a).Directory("engine")
 		ents, err := a.Diff(b).Entries(ctx)
 		require.NoError(t, err)
 		require.Len(t, ents, 0)
