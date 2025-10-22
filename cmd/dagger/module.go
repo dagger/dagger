@@ -175,9 +175,12 @@ func init() {
 	toolchainUninstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
 	moduleAddFlags(toolchainUninstallCmd, toolchainUninstallCmd.Flags(), false)
 
+	moduleAddFlags(toolchainListCmd, toolchainListCmd.Flags(), false)
+
 	toolchainCmd.AddCommand(toolchainInstallCmd)
 	toolchainCmd.AddCommand(toolchainUpdateCmd)
 	toolchainCmd.AddCommand(toolchainUninstallCmd)
+	toolchainCmd.AddCommand(toolchainListCmd)
 }
 
 var moduleInitCmd = &cobra.Command{
@@ -904,6 +907,66 @@ var toolchainUninstallCmd = &cobra.Command{
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "toolchain uninstalled\n")
+			return nil
+		})
+	},
+}
+
+var toolchainListCmd = &cobra.Command{
+	Use:     "list [options]",
+	Short:   "List all toolchains",
+	Long:    "List all toolchains of the current module.",
+	Example: "dagger toolchain list",
+	Args:    cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
+		ctx := cmd.Context()
+		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			dag := engineClient.Dagger()
+
+			modRef, err := getModuleSourceRefWithDefault()
+			if err != nil {
+				return err
+			}
+			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
+				// We can only list toolchains from a local module
+				RequireKind: dagger.ModuleSourceKindLocalSource,
+			})
+
+			alreadyExists, err := modSrc.ConfigExists(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to check if module already exists: %w", err)
+			}
+			if !alreadyExists {
+				return fmt.Errorf("module must be fully initialized")
+			}
+
+			toolchains, err := modSrc.Toolchains(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get toolchains: %w", err)
+			}
+
+			if len(toolchains) == 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "No toolchains found\n")
+				return nil
+			}
+
+			// Print header
+			fmt.Fprintf(cmd.OutOrStdout(), "Name\tDescription\n")
+
+			// Print each toolchain
+			for _, toolchain := range toolchains {
+				mod := toolchain.AsModule()
+				name, err := mod.Name(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get toolchain name: %w", err)
+				}
+				description, err := mod.Description(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get toolchain description: %w", err)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", name, description)
+			}
+
 			return nil
 		})
 	},
