@@ -20,6 +20,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	bkworker "github.com/dagger/dagger/internal/buildkit/worker"
 	"github.com/dagger/dagger/util/gitutil"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
@@ -603,7 +604,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		}
 	}
 
-	cacheCfg.Digest = dagql.HashFrom(dgstInputs...)
+	cacheCfg.Digest = hashutil.HashStrings(dgstInputs...)
 	return cacheCfg, nil
 }
 
@@ -647,7 +648,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		cacheMixins = append(cacheMixins, cache.CurrentStorageKey(ctx))
 	}
 
-	execMD.CacheMixin = dagql.HashFrom(cacheMixins...)
+	execMD.CacheMixin = hashutil.HashStrings(cacheMixins...)
 
 	callInputs, err := fn.setCallInputs(ctx, opts)
 	if err != nil {

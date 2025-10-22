@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
@@ -287,7 +288,7 @@ func (mod *Module) CacheConfigForCall(
 		call.WithModule(nil),
 		call.WithCustomDigest(""),
 	)
-	cacheCfg.Digest = dagql.HashFrom(
+	cacheCfg.Digest = hashutil.HashStrings(
 		curIDNoMod.Digest().String(),
 		mod.Source.Value.Self().Digest,
 		mod.NameField, // the module source content digest only includes the original name

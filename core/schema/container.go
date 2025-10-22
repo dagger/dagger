@@ -27,6 +27,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/exporter/containerimage/exptypes"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/shell"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/distribution/reference"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -967,7 +968,7 @@ func (args containerExecArgs) Digest() (digest.Digest, error) {
 		inputs = append(inputs, string(args.ExecMD.Self.CacheMixin))
 	}
 
-	return dagql.HashFrom(inputs...), nil
+	return hashutil.HashStrings(inputs...), nil
 }
 
 func (s *containerSchema) withError(ctx context.Context, parent dagql.ObjectResult[*core.Container], args struct{ Err string }) (dagql.ObjectResult[*core.Container], error) {
@@ -1034,7 +1035,7 @@ func (s *containerSchema) withExecCacheKey(ctx context.Context, parent dagql.Obj
 	if err != nil {
 		return nil, err
 	}
-	cacheCfg.Digest = dagql.HashFrom(
+	cacheCfg.Digest = hashutil.HashStrings(
 		parent.ID().Digest().String(),
 		string(argDigest),
 	)

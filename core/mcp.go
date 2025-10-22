@@ -24,6 +24,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/iancoleman/strcase"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/opencontainers/go-digest"
@@ -721,7 +722,7 @@ func (m *MCP) call(ctx context.Context,
 				return "", err
 			}
 
-			hash := dagql.HashFrom(
+			hash := hashutil.HashStrings(
 				target.ObjectType().TypeName(),
 				fieldDef.Name,
 				string(argsPayload),

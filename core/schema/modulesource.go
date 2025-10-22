@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/hashutil"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
@@ -2400,7 +2401,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 	// temporary instance ID to support CurrentModule calls made during the function, it will
 	// be finalized at the end of `asModule`
 	tmpModInst, err := dagql.NewResultForID(mod, dagql.CurrentID(ctx).WithDigest(
-		dagql.HashFrom(
+		hashutil.HashStrings(
 			srcInstContentHashed.ID().Digest().String(),
 			"modInit",
 		),

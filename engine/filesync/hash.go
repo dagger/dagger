@@ -7,13 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/opencontainers/go-digest"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/zeebo/xxh3"
-)
-
-const (
-	XXH3 digest.Algorithm = "xxh3"
 )
 
 var statHashBufPool = &sync.Pool{

@@ -9,6 +9,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -249,7 +250,7 @@ func (b *Binding) Digest() digest.Digest {
 	if err != nil {
 		return digest.FromString("")
 	}
-	return dagql.HashFrom(string(jsonBytes))
+	return hashutil.HashStrings(string(jsonBytes))
 }
 
 func (b *Binding) AsString() (string, bool) {

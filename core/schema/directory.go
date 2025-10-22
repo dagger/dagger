@@ -1165,7 +1165,7 @@ func maintainContentHashing[A any](
 		}
 
 		// in practice right now, a custom digest is always a content hash
-		// *unless* it's been manually rewritten using dagql.HashFrom (e.g. in
+		// *unless* it's been manually rewritten using hashutil.HashFrom (e.g. in
 		// the case of GitRef.tree - that case is manually rewritten to avoid
 		// accidental collisions later)
 		if parent.ID().HasCustomDigest() && parent.ID().Digest().Algorithm() == digest.SHA256 {

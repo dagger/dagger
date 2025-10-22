@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 	fsutiltypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -466,7 +467,7 @@ func (src *ModuleSource) CalcDigest(ctx context.Context) digest.Digest {
 		inputs = append(inputs, client.Generator, client.Directory)
 	}
 
-	return dagql.HashFrom(inputs...)
+	return hashutil.HashStrings(inputs...)
 }
 
 // LoadContextDir loads addition files+directories from the module source's context, including those that

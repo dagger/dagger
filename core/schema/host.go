@@ -30,6 +30,7 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/ctrns"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 type hostSchema struct{}
@@ -366,7 +367,7 @@ func (s *hostSchema) socket(ctx context.Context, host dagql.ObjectResult[*core.H
 	if err != nil {
 		return inst, fmt.Errorf("failed to get client resource name: %w", err)
 	}
-	dgst := dagql.HashFrom(accessor)
+	dgst := hashutil.HashStrings(accessor)
 
 	sock := &core.Socket{IDDigest: dgst}
 	inst, err = dagql.NewResultForCurrentID(ctx, sock)

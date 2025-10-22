@@ -6,7 +6,12 @@ import (
 	"math"
 	"sync"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/zeebo/xxh3"
+)
+
+const (
+	XXH3 digest.Algorithm = "xxh3"
 )
 
 var bufPool = &sync.Pool{New: func() any {
@@ -33,6 +38,13 @@ func NewHasher() *Hasher {
 	}
 }
 
+// Hasher enables efficient hashing of mixed inputs of various types. It's intended for hot
+// codepaths where minimizing allocations and overhead is important.
+//
+// Inputs are separated by null bytes to avoid collisions (e.g. "ab" + "c" vs "a" + "bc").
+//
+// NOTE: all the With* methods are mutating Hasher, so it can't "branch" off to compute different
+// hashes. It also is not safe to use after Close or DigestAndClose have been called.
 type Hasher struct {
 	bufPtr *[]byte
 	xxh3   *xxh3.Hasher
@@ -98,4 +110,20 @@ func (h *Hasher) DigestAndClose() string {
 
 	h.Close()
 	return string(hexStr)
+}
+
+// HashStrings returns the xxh3 digest of the concatenation of the input
+// strings, separated by null bytes to avoid collisions. It's more convenient
+// than NewHasher when all inputs are already strings.
+func HashStrings(ins ...string) digest.Digest {
+	h := hasherPool.Get().(*xxh3.Hasher)
+	for _, in := range ins {
+		h.WriteString(in)
+		h.Write([]byte{0})
+	}
+
+	dgst := digest.NewDigest(XXH3, h)
+	h.Reset()
+	hasherPool.Put(h)
+	return dgst
 }

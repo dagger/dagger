@@ -5,14 +5,9 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
-	"github.com/opencontainers/go-digest"
-	"github.com/zeebo/xxh3"
+	"github.com/dagger/dagger/util/hashutil"
 
 	"github.com/dagger/dagger/engine"
-)
-
-const (
-	XXH3 digest.Algorithm = "xxh3"
 )
 
 // CachePerClient is a CacheKeyFunc that scopes the cache key to the client by mixing in the client ID to the original digest of the operation.
@@ -42,7 +37,7 @@ func CachePerClientObject[A any](
 		return nil, fmt.Errorf("client ID not found in context")
 	}
 
-	cacheCfg.Digest = HashFrom(cacheCfg.Digest.String(), clientMD.ClientID)
+	cacheCfg.Digest = hashutil.HashStrings(cacheCfg.Digest.String(), clientMD.ClientID)
 	return &cacheCfg, nil
 }
 
@@ -72,7 +67,7 @@ func CachePerSessionObject[A any](
 		return nil, fmt.Errorf("session ID not found in context")
 	}
 
-	cacheCfg.Digest = HashFrom(cacheCfg.Digest.String(), clientMD.SessionID)
+	cacheCfg.Digest = hashutil.HashStrings(cacheCfg.Digest.String(), clientMD.SessionID)
 	return &cacheCfg, nil
 }
 
@@ -111,7 +106,7 @@ func CachePerCall[P Typed, A any](
 	cacheCfg CacheConfig,
 ) (*CacheConfig, error) {
 	randID := identity.NewID()
-	cacheCfg.Digest = HashFrom(randID)
+	cacheCfg.Digest = hashutil.HashStrings(randID)
 	return &cacheCfg, nil
 }
 
@@ -127,7 +122,7 @@ func CachePerSchema[P Typed, A any](srv *Server) func(context.Context, ObjectRes
 		_ A,
 		cfg CacheConfig,
 	) (*CacheConfig, error) {
-		cfg.Digest = HashFrom(
+		cfg.Digest = hashutil.HashStrings(
 			cfg.Digest.String(),
 			srv.SchemaDigest().String(),
 		)
@@ -154,20 +149,11 @@ func CachePerClientSchema[P Typed, A any](srv *Server) func(context.Context, Obj
 		if clientMD.ClientID == "" {
 			return nil, fmt.Errorf("client ID not found in context")
 		}
-		cfg.Digest = HashFrom(
+		cfg.Digest = hashutil.HashStrings(
 			cfg.Digest.String(),
 			srv.SchemaDigest().String(),
 			clientMD.ClientID,
 		)
 		return &cfg, nil
 	}
-}
-
-func HashFrom(ins ...string) digest.Digest {
-	h := xxh3.New()
-	for _, in := range ins {
-		h.WriteString(in)
-		h.Write([]byte{0}) // separate all inputs with a null byte to help avoid collisions
-	}
-	return digest.NewDigest(XXH3, h)
 }

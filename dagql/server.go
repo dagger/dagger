@@ -24,6 +24,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 // Server represents a GraphQL server whose schema is dynamically modified at
@@ -476,7 +477,7 @@ func (s *Server) Schema() *ast.Schema {
 		h := xxh3.New()
 		json.NewEncoder(h).Encode(schema)
 		s.schemas[view] = schema
-		s.schemaDigests[view] = digest.NewDigest(XXH3, h)
+		s.schemaDigests[view] = digest.NewDigest(hashutil.XXH3, h)
 	})
 
 	return s.schemas[view]

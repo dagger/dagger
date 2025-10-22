@@ -6,6 +6,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 type cacheSchema struct{}
@@ -47,7 +48,7 @@ func (s *cacheSchema) cacheVolumeCacheKey(ctx context.Context, parent dagql.Obje
 		return nil, err
 	}
 	namespaceKey := namespaceFromModule(m)
-	cacheCfg.Digest = dagql.HashFrom(cacheCfg.Digest.String(), namespaceKey)
+	cacheCfg.Digest = hashutil.HashStrings(cacheCfg.Digest.String(), namespaceKey)
 	return &cacheCfg, nil
 }
 
