@@ -71,7 +71,8 @@ func (ms *mockServer) Auth(context.Context) (*auth.RegistryAuthProvider, error) 
 
 func (ms *mockServer) Buildkit(context.Context) (*buildkit.Client, error) { return nil, nil }
 
-func (ms *mockServer) Services(context.Context) (*Services, error) { return nil, nil }
+func (ms *mockServer) Services(context.Context) (*Services, error)     { return nil, nil }
+func (ms *mockServer) MCPClients(context.Context) (*MCPClients, error) { return nil, nil }
 
 func (ms *mockServer) Platform() Platform               { return Platform{} }
 func (ms *mockServer) OCIStore() content.Store          { return nil }
