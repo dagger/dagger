@@ -17,6 +17,10 @@ Expected stderr:
 ✔ viztest: Viztest! X.Xs
 ▼ .traceRemoteFunctionCalls: Void X.Xs
 ├╴✔ versioned: Versioned! X.Xs
+├╴▼ .hello: String! X.Xs
+│ ┃ version 3
+│
+├╴✔ versionedGit: VersionedGit! X.Xs
 ╰╴▼ .hello: String! X.Xs
   ┃ version 3
 
