@@ -530,11 +530,10 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 	newID := r.constructor.Append(
 		astType,
 		sel.Field,
-		view,
-		field.Spec.Module,
-		sel.Nth,
-		"",
-		idArgs...,
+		call.WithView(view),
+		call.WithModule(field.Spec.Module),
+		call.WithNth(sel.Nth),
+		call.WithArgs(idArgs...),
 	)
 
 	doNotCache := field.CacheSpec.DoNotCache != ""
@@ -573,11 +572,10 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 			newID = r.constructor.Append(
 				astType,
 				sel.Field,
-				view,
-				field.Spec.Module,
-				sel.Nth,
-				"",
-				idArgs...,
+				call.WithView(view),
+				call.WithModule(field.Spec.Module),
+				call.WithNth(sel.Nth),
+				call.WithArgs(idArgs...),
 			)
 		}
 
