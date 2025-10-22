@@ -1,7 +1,6 @@
 package main
 
 import (
-	"path/filepath"
 	"typescript-sdk/internal/dagger"
 	"typescript-sdk/tsdistconsts"
 )
