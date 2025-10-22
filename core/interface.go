@@ -31,11 +31,11 @@ type loadedIfaceImpl struct {
 
 var _ ModType = (*InterfaceType)(nil)
 
-func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.AnyResult, error) {
+func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, id *call.ID, value any) (typed dagql.Typed, result dagql.AnyResult, err error) {
 	if value == nil {
 		// TODO remove if this is OK. Why is this not handled by a wrapping Nullable instead?
 		slog.Warn("InterfaceType.ConvertFromSDKResult: got nil value")
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	// TODO: this seems expensive
@@ -63,13 +63,21 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 	case string:
 		var id call.ID
 		if err := id.Decode(value); err != nil {
-			return nil, fmt.Errorf("decode ID: %w", err)
+			return nil, nil, fmt.Errorf("decode ID: %w", err)
 		}
-		return fromID(&id)
+		result, err := fromID(&id)
+		if err != nil {
+			return nil, nil, err
+		}
+		return result, result, nil
 	case dagql.IDable:
-		return fromID(value.ID())
+		result, err := fromID(value.ID())
+		if err != nil {
+			return nil, nil, err
+		}
+		return result, result, nil
 	default:
-		return nil, fmt.Errorf("unexpected interface value type for conversion from sdk result %T: %+v", value, value)
+		return nil, nil, fmt.Errorf("unexpected interface value type for conversion from sdk result %T: %+v", value, value)
 	}
 }
 
@@ -294,11 +302,12 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 					})
 				}
 
-				res, err := callable.Call(ctx, &CallOpts{
-					Inputs:       callInputs,
-					ParentTyped:  self,
-					ParentFields: runtimeVal.Fields,
-					Server:       dag,
+				_, res, err := callable.Call(ctx, &CallOpts{
+					Inputs:        callInputs,
+					ParentTyped:   self,
+					ParentFields:  runtimeVal.Fields,
+					ParentModType: userModObj,
+					Server:        dag,
 				})
 				if err != nil {
 					return nil, fmt.Errorf("failed to call interface function %s.%s: %w", ifaceName, fieldDef.Name, err)
@@ -388,7 +397,8 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			Module: iface.mod.IDModule(),
 		},
 		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
-			return iface.ConvertFromSDKResult(ctx, args["id"])
+			_, result, err := iface.ConvertFromSDKResult(ctx, dagql.CurrentID(ctx), args["id"])
+			return result, err
 		},
 		dagql.CacheSpec{
 			DoNotCache: "There's no point caching the loading call of an ID vs. letting the ID's calls cache on their own.",
@@ -527,7 +537,7 @@ func (iface *InterfaceAnnotatedValue) PBDefinitions(ctx context.Context) ([]*pb.
 		)
 		ctx := dagql.ContextWithID(ctx, fieldID)
 
-		converted, err := fieldType.ConvertFromSDKResult(ctx, val)
+		_, converted, err := fieldType.ConvertFromSDKResult(ctx, dagql.CurrentID(ctx), val)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert arg %q: %w", name, err)
 		}

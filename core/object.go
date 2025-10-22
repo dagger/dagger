@@ -36,23 +36,30 @@ func (t *ModuleObjectType) SourceMod() Mod {
 	return t.mod
 }
 
-func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.AnyResult, error) {
+func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, id *call.ID, value any) (typed dagql.Typed, result dagql.AnyResult, err error) {
 	if value == nil {
 		// TODO remove if this is OK. Why is this not handled by a wrapping Nullable instead?
 		slog.Warn("ModuleObjectType.ConvertFromSDKResult: got nil value")
-		return nil, nil
+		return nil, nil, nil
 	}
 
-	switch value := value.(type) {
-	case map[string]any:
-		return dagql.NewResultForCurrentID(ctx, &ModuleObject{
-			Module:  t.mod,
-			TypeDef: t.typeDef,
-			Fields:  value,
-		})
-	default:
-		return nil, fmt.Errorf("unexpected result value type %T for object %q", value, t.typeDef.Name)
+	fields, ok := value.(map[string]any)
+	if !ok {
+		return nil, nil, fmt.Errorf("unexpected result value type %T for object %q", value, t.typeDef.Name)
 	}
+
+	typed = &ModuleObject{
+		Module:  t.mod,
+		TypeDef: t.typeDef,
+		Fields:  fields,
+	}
+	if id != nil {
+		result, err = dagql.NewResultForID(typed, id)
+		if err != nil {
+			return nil, nil, fmt.Errorf("ModuleObjectType.ConvertFromSDKResult: NewResultForID: %w", err)
+		}
+	}
+	return typed, result, nil
 }
 
 func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
@@ -65,6 +72,10 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 	// serialization rather than as an ID (so that SDKs can decode them without
 	// needing to make calls to their own API).
 	switch x := value.(type) {
+	case *ModuleObject:
+		return x.Fields, nil
+	case *InterfaceAnnotatedValue:
+		return x.Fields, nil
 	case DynamicID:
 		query, err := CurrentQuery(ctx)
 		if err != nil {
@@ -133,9 +144,8 @@ func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.AnyRe
 			call.WithView(curID.View()),
 			call.WithModule(curID.Module()),
 		)
-		ctx := dagql.ContextWithID(ctx, fieldID)
 
-		typed, err := modType.ConvertFromSDKResult(ctx, v)
+		_, typed, err := modType.ConvertFromSDKResult(ctx, fieldID, v)
 		if err != nil {
 			return fmt.Errorf("failed to convert field %q: %w", k, err)
 		}
@@ -181,7 +191,7 @@ func (t *ModuleObjectType) TypeDef() *TypeDef {
 }
 
 type Callable interface {
-	Call(context.Context, *CallOpts) (dagql.AnyResult, error)
+	Call(context.Context, *CallOpts) (dagql.Typed, dagql.AnyResult, error)
 	ReturnType() (ModType, error)
 	ArgType(argName string) (ModType, error)
 	CacheConfigForCall(context.Context, dagql.AnyResult, map[string]dagql.Input, call.View, dagql.CacheConfig) (*dagql.CacheConfig, error)
@@ -203,7 +213,15 @@ func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callab
 			Return: fieldType,
 		}, nil
 	}
-	if fun, ok := t.typeDef.FunctionByName(name); ok {
+
+	var fun *Function
+	var ok bool
+	if name == "" {
+		fun, ok = t.typeDef.Constructor.Value, t.typeDef.Constructor.Valid
+	} else {
+		fun, ok = t.typeDef.FunctionByName(name)
+	}
+	if ok {
 		return NewModFunction(
 			ctx,
 			mod,
@@ -257,9 +275,8 @@ func (obj *ModuleObject) PBDefinitions(ctx context.Context) ([]*pb.Definition, e
 			call.WithView(curID.View()),
 			call.WithModule(curID.Module()),
 		)
-		ctx := dagql.ContextWithID(ctx, fieldID)
 
-		converted, err := fieldType.ConvertFromSDKResult(ctx, val)
+		_, converted, err := fieldType.ConvertFromSDKResult(ctx, fieldID, val)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert field %q: %w", name, err)
 		}
@@ -384,13 +401,14 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 					Value: v,
 				})
 			}
-			return fn.Call(ctx, &CallOpts{
+			_, result, err := fn.Call(ctx, &CallOpts{
 				Inputs:       callInput,
 				ParentTyped:  nil,
 				ParentFields: nil,
 				Cache:        dagql.IsInternal(ctx),
 				Server:       dag,
 			})
+			return result, err
 		},
 		dagql.CacheSpec{
 			GetCacheConfig: fn.CacheConfigForCall,
@@ -448,7 +466,8 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 				// though the typedef has it) - so just pick a suitable zero value
 				fieldVal = nil
 			}
-			return modType.ConvertFromSDKResult(ctx, fieldVal)
+			_, result, err := modType.ConvertFromSDKResult(ctx, dagql.CurrentID(ctx), fieldVal)
+			return result, err
 		},
 		CacheSpec: dagql.CacheSpec{
 			GetCacheConfig: mod.CacheConfigForCall,
@@ -500,6 +519,10 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 			opts := &CallOpts{
 				ParentTyped:  obj,
 				ParentFields: obj.Self().Fields,
+				ParentModType: &ModuleObjectType{
+					typeDef: objDef,
+					mod:     mod,
+				},
 				// TODO: there may be a more elegant way to do this, but the desired
 				// effect is to cache SDK module calls, which we used to do pre-DagQL.
 				// We should figure out how user modules can opt in to caching, too.
@@ -517,7 +540,8 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 			sort.Slice(opts.Inputs, func(i, j int) bool {
 				return opts.Inputs[i].Name < opts.Inputs[j].Name
 			})
-			return modFun.Call(ctx, opts)
+			_, result, err := modFun.Call(ctx, opts)
+			return result, err
 		},
 		CacheSpec: dagql.CacheSpec{
 			GetCacheConfig: modFun.CacheConfigForCall,
@@ -533,16 +557,16 @@ type CallableField struct {
 
 var _ Callable = &CallableField{}
 
-func (f *CallableField) Call(ctx context.Context, opts *CallOpts) (dagql.AnyResult, error) {
+func (f *CallableField) Call(ctx context.Context, opts *CallOpts) (dagql.Typed, dagql.AnyResult, error) {
 	val, ok := opts.ParentFields[f.Field.OriginalName]
 	if !ok {
-		return nil, fmt.Errorf("field %q not found on object %q", f.Field.Name, opts.ParentFields)
+		return nil, nil, fmt.Errorf("field %q not found on object %q", f.Field.Name, opts.ParentFields)
 	}
-	typed, err := f.Return.ConvertFromSDKResult(ctx, val)
+	typed, result, err := f.Return.ConvertFromSDKResult(ctx, dagql.CurrentID(ctx), val)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert field %q: %w", f.Field.Name, err)
+		return nil, nil, fmt.Errorf("failed to convert field %q: %w", f.Field.Name, err)
 	}
-	return typed, nil
+	return typed, result, nil
 }
 
 func (f *CallableField) ReturnType() (ModType, error) {

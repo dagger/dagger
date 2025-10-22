@@ -6452,6 +6452,148 @@ func (m *Test) Nothing() (*dagger.Directory, error) {
 	require.NoError(t, err)
 }
 
+func (ModuleSuite) TestManualCall(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	dir := c.Directory().
+		WithNewFile("dagger.json", `{
+	"name": "test",
+	"engineVersion": "`+engine.Version+`",
+	"sdk": {
+		"source": "go"
+	}
+}`).
+		WithNewFile("main.go", `package main
+
+import (
+	"fmt"
+	"strings"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {
+	Count int
+	CountPrivate int  // +private
+}
+
+func New() *Test {
+	return &Test{
+		Count: 0,
+		CountPrivate: 1,
+	}
+}
+
+func (m *Test) Echo(str string) string {
+	return strings.Repeat(str, m.Count + m.CountPrivate)
+}
+
+func (m *Test) Add(n int) *Test {
+	m.Count += n
+	return m
+}
+
+func (m *Test) Join(n *Test) *Test {
+	m.Count += n.Count
+	m.CountPrivate += n.CountPrivate
+	return m
+}
+
+func (m *Test) Wait(ctr *dagger.Container) *dagger.Container {
+	return ctr.WithExec([]string{"echo", "=", fmt.Sprint(m.Count + m.CountPrivate)})
+}
+`)
+	mod := dir.AsModule()
+
+	t.Run("scalars", func(ctx context.Context, t *testctx.T) {
+		parent, err := json.Marshal(map[string]any{
+			"Count":        1,
+			"CountPrivate": 2,
+		})
+		require.NoError(t, err)
+		inputs, err := json.Marshal(map[string]any{
+			"str": "hi ",
+		})
+		require.NoError(t, err)
+		out, err := mod.Call(ctx, "Test", "echo", dagger.JSON(parent), dagger.JSON(inputs))
+		require.NoError(t, err)
+		require.JSONEq(t, `"hi hi hi "`, string(out))
+	})
+
+	t.Run("chaining", func(ctx context.Context, t *testctx.T) {
+		parent, err := json.Marshal(map[string]any{
+			"Count":        1,
+			"CountPrivate": 2,
+		})
+		require.NoError(t, err)
+		inputs, err := json.Marshal(map[string]any{
+			"n": 1,
+		})
+		require.NoError(t, err)
+		out, err := mod.Call(ctx, "Test", "add", dagger.JSON(parent), dagger.JSON(inputs))
+		require.NoError(t, err)
+		require.JSONEq(t, `{"Count":2,"CountPrivate":2}`, string(out))
+
+		parent = []byte(out)
+		inputs, err = json.Marshal(map[string]any{
+			"str": "hi ",
+		})
+		require.NoError(t, err)
+		out, err = mod.Call(ctx, "Test", "echo", dagger.JSON(parent), dagger.JSON(inputs))
+		require.NoError(t, err)
+		require.JSONEq(t, `"hi hi hi hi "`, string(out))
+	})
+
+	t.Run("constructor", func(ctx context.Context, t *testctx.T) {
+		out, err := mod.Call(ctx, "Test", "", dagger.JSON("null"), dagger.JSON("null"))
+		require.NoError(t, err)
+		require.JSONEq(t, `{"Count":0,"CountPrivate":1}`, string(out))
+	})
+
+	t.Run("module objects", func(ctx context.Context, t *testctx.T) {
+		parent, err := json.Marshal(map[string]any{
+			"Count":        1,
+			"CountPrivate": 2,
+		})
+		require.NoError(t, err)
+		inputs, err := json.Marshal(map[string]any{
+			"n": map[string]any{
+				"Count":        3,
+				"CountPrivate": 4,
+			},
+		})
+		require.NoError(t, err)
+		out, err := mod.Call(ctx, "Test", "join", dagger.JSON(parent), dagger.JSON(inputs))
+		require.NoError(t, err)
+		require.JSONEq(t, `{"Count":4,"CountPrivate":6}`, string(out))
+	})
+
+	t.Run("core objects", func(ctx context.Context, t *testctx.T) {
+		ctr, err := c.Container().From(alpineImage).ID(ctx)
+		require.NoError(t, err)
+		parent, err := json.Marshal(map[string]any{
+			"Count":        1,
+			"CountPrivate": 2,
+		})
+		require.NoError(t, err)
+		inputs, err := json.Marshal(map[string]any{
+			"ctr": ctr,
+		})
+		require.NoError(t, err)
+		out, err := mod.Call(ctx, "Test", "wait", dagger.JSON(parent), dagger.JSON(inputs))
+		require.NoError(t, err)
+		var resultCtrID dagger.ContainerID
+		err = json.Unmarshal([]byte(out), &resultCtrID)
+		require.NoError(t, err)
+
+		resultCtr := c.LoadContainerFromID(resultCtrID)
+		stdout, err := resultCtr.Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "= 3\n", stdout)
+	})
+
+	// TODO: tests for complex types, like lists, etc.
+}
+
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{

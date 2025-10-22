@@ -2400,7 +2400,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 			if err != nil {
 				return fmt.Errorf("failed to create module definition function for module %q: %w", modName, err)
 			}
-			result, err := getModDefFn.Call(ctx, &core.CallOpts{
+			_, result, err := getModDefFn.Call(ctx, &core.CallOpts{
 				Cache:          true,
 				SkipSelfSchema: true,
 				Server:         dag,

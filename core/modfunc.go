@@ -91,9 +91,12 @@ func NewModFunction(
 }
 
 type CallOpts struct {
-	Inputs         []CallInput
-	ParentTyped    dagql.AnyResult
-	ParentFields   map[string]any
+	Inputs []CallInput
+
+	ParentTyped   dagql.AnyResult
+	ParentFields  map[string]any
+	ParentModType *ModuleObjectType
+
 	Cache          bool
 	SkipSelfSchema bool
 	Server         *dagql.Server
@@ -575,7 +578,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	return cacheCfg, nil
 }
 
-func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.AnyResult, rerr error) { //nolint: gocyclo
+func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (_ dagql.Typed, _ dagql.AnyResult, rerr error) { //nolint: gocyclo
 	mod := fn.mod
 
 	lg := bklog.G(ctx).WithField("module", mod.Name()).WithField("function", fn.metadata.Name)
@@ -590,7 +593,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	callID := dagql.CurrentID(ctx)
@@ -620,7 +623,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 
 	callInputs, err := fn.setCallInputs(ctx, opts)
 	if err != nil {
-		return nil, fmt.Errorf("set call inputs: %w", err)
+		return nil, nil, fmt.Errorf("set call inputs: %w", err)
 	}
 
 	bklog.G(ctx).Debug("function call")
@@ -633,7 +636,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 
 	parentJSON, err := json.Marshal(opts.ParentFields)
 	if err != nil {
-		return nil, fmt.Errorf("marshal parent value: %w", err)
+		return nil, nil, fmt.Errorf("marshal parent value: %w", err)
 	}
 
 	if opts.ParentTyped != nil {
@@ -644,20 +647,20 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 			AsObject: dagql.NonNull(fn.objDef),
 		}, true)
 		if err != nil {
-			return nil, fmt.Errorf("get mod type for parent: %w", err)
+			return nil, nil, fmt.Errorf("get mod type for parent: %w", err)
 		}
 		if !ok {
-			return nil, fmt.Errorf("find mod type for parent %q", fn.objDef.Name)
+			return nil, nil, fmt.Errorf("find mod type for parent %q", fn.objDef.Name)
 		}
 		if err := parentModType.CollectCoreIDs(ctx, opts.ParentTyped, execMD.ParentIDs); err != nil {
-			return nil, fmt.Errorf("collect IDs from parent fields: %w", err)
+			return nil, nil, fmt.Errorf("collect IDs from parent fields: %w", err)
 		}
 	}
 
 	if mod.ResultID != nil {
 		execMD.EncodedModuleID, err = mod.ResultID.Encode()
 		if err != nil {
-			return nil, fmt.Errorf("encode module ID: %w", err)
+			return nil, nil, fmt.Errorf("encode module ID: %w", err)
 		}
 	}
 
@@ -675,7 +678,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 	execMD.EncodedFunctionCall, err = json.Marshal(fnCall)
 	if err != nil {
-		return nil, fmt.Errorf("marshal function call: %w", err)
+		return nil, nil, fmt.Errorf("marshal function call: %w", err)
 	}
 
 	srv := dagql.CurrentDagqlServer(ctx)
@@ -687,7 +690,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("create mod metadata directory: %w", err)
+		return nil, nil, fmt.Errorf("create mod metadata directory: %w", err)
 	}
 
 	var ctr dagql.ObjectResult[*Container]
@@ -701,7 +704,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("exec function: %w", err)
+		return nil, nil, fmt.Errorf("exec function: %w", err)
 	}
 
 	execCtx := ctx
@@ -718,16 +721,16 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("exec function: %w", err)
+		return nil, nil, fmt.Errorf("exec function: %w", err)
 	}
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("get buildkit client: %w", err)
+		return nil, nil, fmt.Errorf("get buildkit client: %w", err)
 	}
 
 	_, err = ctr.Self().Evaluate(ctx)
@@ -736,12 +739,12 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		if extractErr != nil {
 			// if the module hasn't provided us with a nice error, just return the
 			// original error
-			return nil, err
+			return nil, nil, err
 		}
 		if ok {
 			errInst, err := id.Load(ctx, opts.Server)
 			if err != nil {
-				return nil, fmt.Errorf("load error instance: %w", err)
+				return nil, nil, fmt.Errorf("load error instance: %w", err)
 			}
 			dagErr := errInst.Self().Clone()
 			originCtx := trace.SpanContextFromContext(
@@ -759,7 +762,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 					val := tm.Get(key)
 					valJSON, err := json.Marshal(val)
 					if err != nil {
-						return nil, fmt.Errorf("marshal value: %w", err)
+						return nil, nil, fmt.Errorf("marshal value: %w", err)
 					}
 					dagErr.Values = append(dagErr.Values, &ErrorValue{
 						Name:  key,
@@ -767,26 +770,26 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 					})
 				}
 			}
-			return nil, dagErr
+			return nil, nil, dagErr
 		}
 		if fn.metadata.OriginalName == "" {
-			return nil, fmt.Errorf("call constructor: %w", err)
+			return nil, nil, fmt.Errorf("call constructor: %w", err)
 		} else {
-			return nil, fmt.Errorf("call function %q: %w", fn.metadata.OriginalName, err)
+			return nil, nil, fmt.Errorf("call function %q: %w", fn.metadata.OriginalName, err)
 		}
 	}
 
 	ctrOutputDir, err := ctr.Self().Directory(ctx, modMetaDirPath)
 	if err != nil {
-		return nil, fmt.Errorf("get function output directory: %w", err)
+		return nil, nil, fmt.Errorf("get function output directory: %w", err)
 	}
 
 	result, err := ctrOutputDir.Evaluate(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("evaluate function: %w", err)
+		return nil, nil, fmt.Errorf("evaluate function: %w", err)
 	}
 	if result == nil {
-		return nil, fmt.Errorf("function returned nil result")
+		return nil, nil, fmt.Errorf("function returned nil result")
 	}
 
 	// Read the output of the function
@@ -794,35 +797,35 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		Filename: modMetaOutputPath,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("read function output file: %w", err)
+		return nil, nil, fmt.Errorf("read function output file: %w", err)
 	}
 
 	var returnValueAny any
 	dec := json.NewDecoder(strings.NewReader(string(outputBytes)))
 	dec.UseNumber()
 	if err := dec.Decode(&returnValueAny); err != nil {
-		return nil, fmt.Errorf("unmarshal result: %w", err)
+		return nil, nil, fmt.Errorf("unmarshal result: %w", err)
 	}
 
-	returnValue, err := fn.returnType.ConvertFromSDKResult(ctx, returnValueAny)
+	returnValue, returnResult, err := fn.returnType.ConvertFromSDKResult(ctx, dagql.CurrentID(ctx), returnValueAny)
 	if err != nil {
-		return nil, fmt.Errorf("convert return value: %w", err)
+		return nil, nil, fmt.Errorf("convert return value: %w", err)
 	}
 
-	if returnValue != nil {
+	if returnResult != nil {
 		// Get the client ID actually used during the function call - this might not
 		// be the same as execMD.ClientID if the function call was cached at the
 		// buildkit level
 		clientID, err := ctr.Self().usedClientID(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("could not get used client id")
+			return nil, nil, fmt.Errorf("could not get used client id")
 		}
 
 		// If the function returned anything that's isolated per-client, this caller client should
 		// have access to it now since it was returned to them (i.e. secrets/sockets/etc).
 		returnedIDs := map[digest.Digest]*resource.ID{}
-		if err := fn.returnType.CollectCoreIDs(ctx, returnValue, returnedIDs); err != nil {
-			return nil, fmt.Errorf("collect IDs: %w", err)
+		if err := fn.returnType.CollectCoreIDs(ctx, returnResult, returnedIDs); err != nil {
+			return nil, nil, fmt.Errorf("collect IDs: %w", err)
 		}
 
 		// NOTE: once generalized function caching is enabled we need to ensure that any non-reproducible
@@ -838,13 +841,13 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		}
 		secretTransferPostCall, err := ResourceTransferPostCall(ctx, query, clientID, returnedIDsList...)
 		if err != nil {
-			return nil, fmt.Errorf("create secret transfer post call: %w", err)
+			return nil, nil, fmt.Errorf("create secret transfer post call: %w", err)
 		}
 
-		returnValue = returnValue.WithPostCall(secretTransferPostCall)
+		returnResult = returnResult.WithPostCall(secretTransferPostCall)
 	}
 
-	return returnValue, nil
+	return returnValue, returnResult, nil
 }
 
 func extractError(ctx context.Context, client *buildkit.Client, baseErr error) (dagql.ID[*Error], bool, error) {
