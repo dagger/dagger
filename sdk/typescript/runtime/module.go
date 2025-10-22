@@ -149,7 +149,7 @@ func (m *moduleRuntimeContainer) configurePackageJSON(file *dagger.File) *dagger
 	if m.cfg.packageJSONConfig != nil {
 		_, ok := m.cfg.packageJSONConfig.Dependencies["typescript"]
 		if !ok {
-			ctr = ctr.WithExec([]string{"npm", "pkg", "set", "dependencies.typescript=^5.5.4"})
+			ctr = ctr.WithExec([]string{"npm", "pkg", "set", "dependencies.typescript=5.9.3"})
 		}
 	}
 

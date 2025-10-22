@@ -61,36 +61,28 @@ func (t *TypescriptSdk) ModuleRuntime(
 		Container(), nil
 }
 
-func (t *TypescriptSdk) ModuleTypesExp(
+func (t *TypescriptSdk) ModuleTypes(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
 	outputFilePath string,
 ) (*dagger.Container, error) {
-	cfg, err := analyzeModuleConfig(ctx, modSource)
+	moduleName, err := modSource.ModuleOriginalName(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to analyze module config: %w", err)
+		return nil, fmt.Errorf("failed to get module name: %w", err)
 	}
 
-	runtime := runtimeBaseContainer(cfg, t.SDKSourceDir).
-		withConfiguredRuntimeEnvironment().
-		withGeneratedSDK(introspectionJSON).
-		withSetupPackageManager().
-		withInstalledDependencies().
-		withUserSourceCode()
-
-	if runtime, err = runtime.addInitTemplateIfNoUserFile(ctx); err != nil {
-		return nil, err
+	// TODO(TomChv): Update the TypeScript Codegen so it doesn't rely on moduleSourcePath anymore.
+	modulePath, err := modSource.SourceRootSubpath(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not load module config source root subpath: %w", err)
 	}
 
-	return runtime.
-			Container().
-			WithMountedFile(runtime.cfg.entrypointPath(), entrypointFile()).
-			WithEnvVariable("REGISTER_TYPEDEF", "true").
-			WithEnvVariable("TYPEDEF_OUTPUT_FILE", outputFilePath).
-			WithEnvVariable("MODULE_NAME", runtime.cfg.name).
-			WithEntrypoint(runtime.runtimeCmd()),
-		nil
+	clientBindings := NewLibGenerator(t.SDKSourceDir).
+		GenerateBindings(introspectionJSON, moduleName, modulePath, Bundle)
+
+	return NewIntrospector(t.SDKSourceDir).
+		AsEntrypoint(outputFilePath, moduleName, modSource.ContextDirectory(), clientBindings), nil
 }
 
 // Codegen implements the `Codegen` method from the SDK module interface.

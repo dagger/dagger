@@ -121,7 +121,7 @@ const daggerTelemetryFilename = {
   local: "./sdk/src/telemetry/index.ts",
 }
 
-const typescriptImport = `npm:typescript@^5.8.2`
+const typescriptImport = `npm:typescript@5.9.3`
 
 // Imports map to be added to the deno.json file.
 const daggerImports = {
