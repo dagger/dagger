@@ -135,7 +135,6 @@ func NewCache[K KeyType, V any](ctx context.Context, dbPath string) (Cache[K, V]
 
 				// for now, it's okay if we lose cache after a catastrophic crash
 				// (it's just a cache afterall), we'll take the better performance
-				// TODO: handle loading corrupt db on startup
 				"synchronous=OFF",
 
 				// other pragmas to possible worth consideration someday:

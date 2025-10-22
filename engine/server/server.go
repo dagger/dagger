@@ -554,7 +554,16 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	dagqlCacheDBPath := filepath.Join(srv.rootDir, "dagql-cache.db")
 	srv.baseDagqlCache, err = cache.NewCache[string, dagql.AnyResult](ctx, dagqlCacheDBPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create dagql cache: %w", err)
+		// Attempt to handle a corrupt db (which is possible since we currently run w/ synchronous=OFF) by removing any existing
+		// db and trying again.
+		slog.Error("failed to create dagql cache, attempting to recover by removing existing cache db", "error", err)
+		if err := os.Remove(dagqlCacheDBPath); err != nil && !os.IsNotExist(err) {
+			slog.Error("failed to remove existing dagql cache db", "error", err)
+		}
+		srv.baseDagqlCache, err = cache.NewCache[string, dagql.AnyResult](ctx, dagqlCacheDBPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create dagql cache after removing existing db: %w", err)
+		}
 	}
 	go srv.baseDagqlCache.GCLoop(ctx)
 
