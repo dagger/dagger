@@ -15,7 +15,7 @@ func TestVisitID(t *testing.T) {
 	}
 
 	id := call.New().
-		Append(pointT, "point", "", nil, 0, "",
+		Append(pointT, "point", call.WithArgs(
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
@@ -26,16 +26,16 @@ func TestVisitID(t *testing.T) {
 				call.NewLiteralInt(7),
 				false,
 			),
-		).
-		Append(pointT, "shiftLeft", "", nil, 0, "").
-		Append(pointT, "add", "", nil, 0, "",
+		)).
+		Append(pointT, "shiftLeft").
+		Append(pointT, "add", call.WithArgs(
 			call.NewArgument("other", call.NewLiteralID(call.New().
-				Append(pointT, "point", "", nil, 0, "",
+				Append(pointT, "point", call.WithArgs(
 					call.NewArgument("x", call.NewLiteralInt(1), false),
 					call.NewArgument("y", call.NewLiteralInt(2), false),
-				)), false),
-		).
-		Append(ast.NamedType("Int", nil), "length", "", nil, 0, "")
+				))), false),
+		)).
+		Append(ast.NamedType("Int", nil), "length")
 
 	t.Run("no-op", func(t *testing.T) {
 		rewrittenID, err := VisitID(id, func(id *call.ID) (*call.ID, error) {
@@ -49,10 +49,10 @@ func TestVisitID(t *testing.T) {
 		rewrittenID, err := VisitID(id, func(id *call.ID) (*call.ID, error) {
 			if id.Receiver() == nil && id.Field() == "point" {
 				newID := call.New().
-					Append(pointT, "pointRenamed", "", nil, 0, "",
+					Append(pointT, "pointRenamed", call.WithArgs(
 						call.NewArgument("x", id.Arg("x").Value(), false),
 						call.NewArgument("y", id.Arg("y").Value(), false),
-					)
+					))
 				return newID, nil
 			}
 			return nil, nil
@@ -60,19 +60,19 @@ func TestVisitID(t *testing.T) {
 		require.NoError(t, err)
 
 		expectedID := call.New().
-			Append(pointT, "pointRenamed", "", nil, 0, "",
+			Append(pointT, "pointRenamed", call.WithArgs(
 				call.NewArgument("x", call.NewLiteralInt(6), false),
 				call.NewArgument("y", call.NewLiteralInt(7), false),
-			).
-			Append(pointT, "shiftLeft", "", nil, 0, "").
-			Append(pointT, "add", "", nil, 0, "",
+			)).
+			Append(pointT, "shiftLeft").
+			Append(pointT, "add", call.WithArgs(
 				call.NewArgument("other", call.NewLiteralID(call.New().
-					Append(pointT, "pointRenamed", "", nil, 0, "",
+					Append(pointT, "pointRenamed", call.WithArgs(
 						call.NewArgument("x", call.NewLiteralInt(1), false),
 						call.NewArgument("y", call.NewLiteralInt(2), false),
-					)), false),
-			).
-			Append(ast.NamedType("Int", nil), "length", "", nil, 0, "")
+					))), false),
+			)).
+			Append(ast.NamedType("Int", nil), "length")
 
 		require.Equal(t, expectedID.Display(), rewrittenID.Display())
 
@@ -108,19 +108,19 @@ func TestVisitID(t *testing.T) {
 		require.NoError(t, err)
 
 		expectedID := call.New().
-			Append(pointT, "point", "", nil, 0, "",
+			Append(pointT, "point", call.WithArgs(
 				call.NewArgument("x", call.NewLiteralInt(106), false),
 				call.NewArgument("y", call.NewLiteralInt(207), false),
-			).
-			Append(pointT, "shiftLeft", "", nil, 0, "").
-			Append(pointT, "add", "", nil, 0, "",
+			)).
+			Append(pointT, "shiftLeft").
+			Append(pointT, "add", call.WithArgs(
 				call.NewArgument("other", call.NewLiteralID(call.New().
-					Append(pointT, "point", "", nil, 0, "",
+					Append(pointT, "point", call.WithArgs(
 						call.NewArgument("x", call.NewLiteralInt(101), false),
 						call.NewArgument("y", call.NewLiteralInt(202), false),
-					)), false),
-			).
-			Append(ast.NamedType("Int", nil), "length", "", nil, 0, "")
+					))), false),
+			)).
+			Append(ast.NamedType("Int", nil), "length")
 
 		require.Equal(t, expectedID.Display(), rewrittenID.Display())
 
