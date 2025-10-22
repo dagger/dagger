@@ -150,6 +150,7 @@ func (c *clientGenContainer) withUpdatedEnvironment(outputDir string) *clientGen
 				fmt.Sprintf("--sdk-lib-origin=%s", c.cfg.sdkLibOrigin),
 				"--standalone-client=true",
 				fmt.Sprintf("--client-dir=%s", outputDir),
+				fmt.Sprintf("--default-typescript-version=%s", tsdistconsts.DefaultTypeScriptVersion),
 			})
 	}
 
