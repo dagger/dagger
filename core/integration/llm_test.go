@@ -137,7 +137,7 @@ func (LLMSuite) TestAPILimit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	ctrFn := func(llmFlags string) dagger.WithContainerFunc {
-		return daggerShell(fmt.Sprintf(`llm %s | with-env $(.core | env | with-container-input "alpine" alpine "an alpine linux container") | with-prompt "tell me the value of PATH" | loop | with-prompt "now tell me the value of TERM" | historyJSON`, llmFlags))
+		return daggerShell(fmt.Sprintf(`llm %s | with-env $(.core | env | with-container-input "alpine" alpine "an alpine linux container") | with-prompt "tell me the value of PATH" | loop | with-prompt "now tell me the value of TERM" | loop --max-api-calls=1 | historyJSON`, llmFlags))
 	}
 
 	recording := "llmtest/api-limit.golden"
@@ -158,7 +158,7 @@ func (LLMSuite) TestAPILimit(ctx context.Context, t *testctx.T) {
 
 	replayData, err := os.ReadFile(recording)
 	require.NoError(t, err)
-	llmFlags := fmt.Sprintf("--max-api-calls=1 --model=\"replay/%s\"", base64.StdEncoding.EncodeToString(replayData))
+	llmFlags := fmt.Sprintf("--model=\"replay/%s\"", base64.StdEncoding.EncodeToString(replayData))
 
 	_, err = daggerCliBase(t, c).
 		With(ctrFn(llmFlags)).
