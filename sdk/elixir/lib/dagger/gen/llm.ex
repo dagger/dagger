@@ -344,6 +344,34 @@ defmodule Dagger.LLM do
       client: llm.client
     }
   end
+
+  @doc """
+  Clear the message history, leaving only the system prompts
+  """
+  @spec without_message_history(t()) :: Dagger.LLM.t()
+  def without_message_history(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("withoutMessageHistory")
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc """
+  Clear the system prompts, leaving only the default system prompt
+  """
+  @spec without_system_prompts(t()) :: Dagger.LLM.t()
+  def without_system_prompts(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("withoutSystemPrompts")
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.LLM do
