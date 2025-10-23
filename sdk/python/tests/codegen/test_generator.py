@@ -177,7 +177,6 @@ def test_input_field_param(cls, name: str, args, expected: str, ctx: Context):
 def test_input_field_arg(cls, name, args, expected, ctx: Context):
     assert _InputField(ctx, name, cls(*args)).as_arg() == expected
 
-
 def test_core_sync(ctx: Context):
     handler = _ObjectField(
         ctx,
@@ -235,13 +234,10 @@ def test_func_doc_deprecated_args(ctx: Context):
     field = Field(
         String,
         {
-            "path": Argument(
-                NonNull(String),
-                deprecation_reason="Use configDir instead.",
-            ),
-            "expand": Argument(
+            "path": Argument(NonNull(String)),
+            "configDir": Argument(
                 String,
-                deprecation_reason="Templates are expanded automatically.",
+                deprecation_reason="Use `configPath` instead.",
             ),
         },
         deprecation_reason="Use apply_config instead.",
@@ -253,10 +249,14 @@ def test_func_doc_deprecated_args(ctx: Context):
     docstring = handler.func_doc()
 
     assert "Parameters" in docstring
+    assert ".. deprecated::\n    Use apply_config instead." in docstring
     doc_lines = {line.strip() for line in docstring.splitlines()}
-    assert ".. deprecated:: Use configDir instead." in doc_lines
-    assert ".. deprecated:: Templates are expanded automatically." in doc_lines
+    assert "config_dir:" in doc_lines
+    assert ".. deprecated:: Use config_path instead." in doc_lines
 
+    body = handler.func_body()
+    normalized = body.replace('\\"', '"')
+    assert 'Method "apply" is deprecated: Use apply_config instead.' in normalized
 
 @pytest.mark.parametrize(
     ("type_", "expected"),
@@ -365,12 +365,12 @@ def test_scalar_render(type_, expected, ctx: Context):
                 },
             ),
             dedent(
-                """
+                '''
                 class Mode(Enum):
 
                     VALUE = 'VALUE'
                     """.. deprecated:: Use ModeV2 instead."""
-                """,
+                ''',
             ),
         ),
     ],
