@@ -47,7 +47,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{- end }}
 	// Default: {{ $arg.DefaultValue }}
 	{{- end }}
-	{{- if or $arg.IsDeprecated }}
+	{{- if $arg.IsDeprecated }}
 {{ $arg.DeprecationReason | FormatDeprecation }}
 	{{- end }}
 	{{- $formattedTypeRef := "" }}
