@@ -53,3 +53,39 @@ func TestObjectOptionalArgsDeprecatedNoDescription(t *testing.T) {
 
 	require.Equal(t, want, got)
 }
+
+func TestObjectMethodDeprecated(t *testing.T) {
+	schemaJSON := `
+    {
+      "description": "Container with deprecated method",
+      "fields": [
+        {
+          "args": [],
+          "deprecationReason": "Use ApplyV2 instead.",
+          "description": "Apply configuration to the container",
+          "isDeprecated": true,
+          "name": "apply",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Container"
+            }
+          }
+        }
+      ],
+      "kind": "OBJECT",
+      "name": "Container"
+    }
+`
+
+	schema, object := loadSchemaFromTypeJSON(t, schemaJSON)
+	tmpl := parseTemplateFiles(t, schema, "_types/object.go.tmpl")
+	require.NotNil(t, tmpl)
+
+	got := renderTemplate(t, tmpl, object)
+
+	want := updateAndGetFixture(t, "testdata/object_method_deprecated.golden", got)
+
+	require.Equal(t, want, got)
+}
