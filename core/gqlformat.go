@@ -26,11 +26,6 @@ func gqlObjectName(name string) string {
 	return strcase.ToCamel(name)
 }
 
-// GqlObjectName is the exported version of gqlObjectName
-func GqlObjectName(name string) string {
-	return gqlObjectName(name)
-}
-
 func namespaceObject(
 	objOriginalName string,
 	modFinalName string,
