@@ -4257,6 +4257,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\LLM::withoutMessageHistory",
+			"p": "Dagger/LLM.html#method_withoutMessageHistory",
+			"d": "<p>Clear the message history, leaving only the system prompts</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\LLM::withoutSystemPrompts",
+			"p": "Dagger/LLM.html#method_withoutSystemPrompts",
+			"d": "<p>Clear the system prompts, leaving only the default system prompt</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\LLMTokenUsage::cachedTokenReads",
 			"p": "Dagger/LLMTokenUsage.html#method_cachedTokenReads",
 			"d": null

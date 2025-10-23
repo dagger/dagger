@@ -8399,6 +8399,24 @@ func (r *LLM) WithoutDefaultSystemPrompt() *LLM {
 	}
 }
 
+// Clear the message history, leaving only the system prompts
+func (r *LLM) WithoutMessageHistory() *LLM {
+	q := r.query.Select("withoutMessageHistory")
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Clear the system prompts, leaving only the default system prompt
+func (r *LLM) WithoutSystemPrompts() *LLM {
+	q := r.query.Select("withoutSystemPrompts")
+
+	return &LLM{
+		query: q,
+	}
+}
+
 type LLMTokenUsage struct {
 	query *querybuilder.Selection
 

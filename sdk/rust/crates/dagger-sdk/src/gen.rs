@@ -9524,6 +9524,24 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Clear the message history, leaving only the system prompts
+    pub fn without_message_history(&self) -> Llm {
+        let query = self.selection.select("withoutMessageHistory");
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Clear the system prompts, leaving only the default system prompt
+    pub fn without_system_prompts(&self) -> Llm {
+        let query = self.selection.select("withoutSystemPrompts");
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
 }
 #[derive(Clone)]
 pub struct LlmTokenUsage {

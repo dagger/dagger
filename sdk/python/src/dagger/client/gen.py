@@ -8678,6 +8678,18 @@ class LLM(Type):
         _ctx = self._select("withoutDefaultSystemPrompt", _args)
         return LLM(_ctx)
 
+    def without_message_history(self) -> Self:
+        """Clear the message history, leaving only the system prompts"""
+        _args: list[Arg] = []
+        _ctx = self._select("withoutMessageHistory", _args)
+        return LLM(_ctx)
+
+    def without_system_prompts(self) -> Self:
+        """Clear the system prompts, leaving only the default system prompt"""
+        _args: list[Arg] = []
+        _ctx = self._select("withoutSystemPrompts", _args)
+        return LLM(_ctx)
+
     def with_(self, cb: Callable[["LLM"], "LLM"]) -> "LLM":
         """Call the provided callable with current LLM.
 

@@ -3562,6 +3562,12 @@ type LLM {
 
   """Disable the default system prompt"""
   withoutDefaultSystemPrompt: LLM!
+
+  """Clear the message history, leaving only the system prompts"""
+  withoutMessageHistory: LLM!
+
+  """Clear the system prompts, leaving only the default system prompt"""
+  withoutSystemPrompts: LLM!
 }
 
 """
