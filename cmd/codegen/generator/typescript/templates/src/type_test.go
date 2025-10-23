@@ -116,6 +116,53 @@ export type BuildArg = {
 		require.Equal(t, want, b.String())
 	})
 
+	t.Run("input deprecated field", func(t *testing.T) {
+		var expectedInputType = `
+export type DeprecatedInput = {
+  /**
+   * Field description.
+   *
+   * @deprecated Use otherField instead.
+   */
+  deprecatedField?: string
+}
+`
+
+		var deprecatedInputTypeJSON = `
+	{
+	  "kind": "INPUT_OBJECT",
+	  "name": "DeprecatedInput",
+	  "description": "foo",
+	  "inputFields": [
+	    {
+	      "name": "deprecatedField",
+	      "description": "Field description.",
+	      "isDeprecated": true,
+	      "deprecationReason": "Use otherField instead.",
+	      "defaultValue": null,
+	      "type": {
+	        "kind": "SCALAR",
+	        "name": "String",
+	        "ofType": null
+	      }
+	    }
+	  ]
+	}
+`
+
+		tmpl := templateHelper(t)
+
+		object := objectInit(t, deprecatedInputTypeJSON)
+
+		var b bytes.Buffer
+		err := tmpl.ExecuteTemplate(&b, "type", object)
+
+		want := expectedInputType
+
+		require.NoError(t, err)
+		require.Equal(t, want, b.String())
+	})
+
 	t.Run("args", func(t *testing.T) {
 		wantFile := "testdata/type_test_args_want.ts"
 
@@ -579,4 +626,38 @@ func TestTypeEnum(t *testing.T) {
 		want := updateAndGetFixtures(t, wantFile, b.String())
 		require.Equal(t, want, b.String())
 	})
+
+	t.Run("value deprecated", func(t *testing.T) {
+		wantFile := "testdata/type_test_enum_value_deprecated_want.ts"
+
+		var enumValueDeprecatedJSON = `{
+  "description": "",
+  "directives": [],
+  "enumValues": [
+    {
+      "deprecationReason": "Use ModeV2 instead.",
+      "description": "",
+      "directives": [],
+      "isDeprecated": true,
+      "name": "VALUE"
+    }
+  ],
+  "kind": "ENUM",
+  "name": "Mode"
+}
+`
+
+		tmpl := templateHelper(t)
+
+		object := objectInit(t, enumValueDeprecatedJSON)
+
+		var b bytes.Buffer
+		err := tmpl.ExecuteTemplate(&b, "type", object)
+
+		want := updateAndGetFixtures(t, wantFile, b.String())
+
+		require.NoError(t, err)
+		require.Equal(t, want, b.String())
+	})
+
 }
