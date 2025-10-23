@@ -187,7 +187,7 @@ type Callable interface {
 	CacheConfigForCall(context.Context, dagql.AnyResult, map[string]dagql.Input, call.View, dagql.CacheConfig) (*dagql.CacheConfig, error)
 }
 
-func (t *ModuleObjectType) GetCallable(ctx context.Context, name string, dag *dagql.Server) (Callable, error) {
+func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callable, error) {
 	mod := t.mod
 
 	if field, ok := t.typeDef.FieldByName(name); ok {
@@ -474,7 +474,6 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 // fields on their object types, with proper argument handling and caching.
 func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Function, dag *dagql.Server) (dagql.Field[*ModuleObject], error) {
 	var f dagql.Field[*ModuleObject]
-
 	modFun, err := NewModFunction(
 		ctx,
 		mod,

@@ -581,12 +581,15 @@ func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (runtime dagq
 		return runtime, fmt.Errorf("failed to load module: %w", err)
 	}
 
-	if err := srv.Select(ctx, modObj, &runtime,
+	err = srv.Select(ctx, modObj, &runtime,
 		dagql.Selector{
 			Field: "loadRuntime",
-		}, dagql.Selector{
+		},
+		dagql.Selector{
 			Field: "runtime",
-		}); err != nil {
+		},
+	)
+	if err != nil {
 		return runtime, fmt.Errorf("failed to load runtime: %w", err)
 	}
 
