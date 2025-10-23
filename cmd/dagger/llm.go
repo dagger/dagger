@@ -62,6 +62,8 @@ func (m interpreterMode) ContentType() string {
 }
 
 type LLMSession struct {
+	frontend idtui.Frontend
+
 	// undo       *LLMSession
 	dag        *dagger.Client
 	llm        *dagger.LLM
@@ -79,7 +81,13 @@ type LLMSession struct {
 	plumbingSpan trace.Span
 }
 
-func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, shellHandler *shellCallHandler) (*LLMSession, error) {
+func NewLLMSession(
+	ctx context.Context,
+	dag *dagger.Client,
+	llmModel string,
+	shellHandler *shellCallHandler,
+	frontend idtui.Frontend,
+) (*LLMSession, error) {
 	s := &LLMSession{
 		dag:        dag,
 		model:      llmModel,
@@ -94,12 +102,17 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, she
 			// the rest should be filtered out already by skipping the first batch
 			// (sourced from os.Environ)
 		},
-		shell: shellHandler,
+		shell:    shellHandler,
+		frontend: frontend,
 	}
 
 	// Allocate a span to tuck all the internal plumbing into, so it doesn't
 	// clutter the top-level prior to receiving the Revealed spans
 	s.plumbingCtx, s.plumbingSpan = Tracer().Start(ctx, "LLM plumbing", telemetry.Internal())
+	go func() {
+		<-ctx.Done()
+		telemetry.End(s.plumbingSpan, func() error { return nil })
+	}()
 
 	// TODO: cache this
 	models, err := openrouter.FetchModels(ctx)
@@ -113,7 +126,20 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, she
 		s.skipEnv[k] = true
 	}
 
-	s.reset()
+	// if $agent is set, respect it
+	if value, ok := s.shell.runner.Vars[agentVar]; ok {
+		if key := GetStateKey(value.String()); key != "" {
+			st, err := s.shell.state.Load(key)
+			if err != nil {
+				return nil, err
+			}
+			// NB: don't need to use updateLLMAndAgentVar here, since this is coming
+			// from the agent var
+			s.llm = s.dag.LLM().WithGraphQLQuery(st.QueryBuilder(s.dag))
+		}
+	} else {
+		s.reset()
+	}
 
 	return s, nil
 }
@@ -291,7 +317,7 @@ func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
 		}
 	}
 
-	Frontend.SetSidebarContent(idtui.SidebarSection{
+	s.frontend.SetSidebarContent(idtui.SidebarSection{
 		Title:   "LLM",
 		Content: strings.Join(lines, "\n"),
 	})
@@ -306,7 +332,7 @@ func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
 	}
 
 	if preview != nil {
-		Frontend.SetSidebarContent(idtui.SidebarSection{
+		s.frontend.SetSidebarContent(idtui.SidebarSection{
 			Title: "Changes",
 			ContentFunc: func(width int) string {
 				var buf strings.Builder
@@ -341,7 +367,7 @@ func (s *LLMSession) syncVarsToLLM() error {
 			}
 			// NB: don't need to use updateLLMAndAgentVar here, since this is coming
 			// from the agent var
-			s.llm = s.llm.WithGraphQLQuery(st.QueryBuilder(s.dag))
+			s.llm = s.dag.LLM().WithGraphQLQuery(st.QueryBuilder(s.dag))
 		}
 	}
 
@@ -729,27 +755,25 @@ func (s *LLMSession) SyncFromLocal(ctx context.Context) (rerr error) {
 		return err
 	}
 
-	var buf strings.Builder
-	out := termenv.NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
-	if err := preview.Summarize(out, 80); err != nil {
-		slog.Warn("failed to summarize uploaded changes", "error", err)
-	} else {
-		newLLM = newLLM.WithPrompt(
-			fmt.Sprintf("I have made the following changes:\n\n```\n%s\n```", buf.String()),
-		)
-	}
+	if preview != nil {
+		var buf strings.Builder
+		out := termenv.NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+		if err := preview.Summarize(out, 80); err != nil {
+			slog.Warn("failed to summarize uploaded changes", "error", err)
+		} else {
+			newLLM = newLLM.WithPrompt(
+				fmt.Sprintf("I have made the following changes:\n\n```\n%s\n```", buf.String()),
+			)
+		}
 
-	// Display a patch so the user can verify what changes got uploaded.
-	patch, err := dirDiff.AsPatch().Contents(ctx)
-	if err != nil {
-		return fmt.Errorf("get patch: %w", err)
-	}
-	tokens, err := lexers.Get("diff").Tokenise(nil, patch)
-	if err != nil {
-		return err
-	}
-	if err := formatters.TTY16.Format(stdio.Stdout, idtui.TTYStyle(), tokens); err != nil {
-		return err
+		// Display a patch so the user can verify what changes got uploaded.
+		tokens, err := lexers.Get("diff").Tokenise(nil, preview.Patch.Raw)
+		if err != nil {
+			return err
+		}
+		if err := formatters.TTY16.Format(stdio.Stdout, idtui.TTYStyle(), tokens); err != nil {
+			return err
+		}
 	}
 
 	s.updateLLMAndAgentVar(newLLM)
@@ -760,7 +784,7 @@ func (s *LLMSession) SyncFromLocal(ctx context.Context) (rerr error) {
 	s.afterFS = nil
 
 	// Update sidebar to show sync success
-	Frontend.SetSidebarContent(idtui.SidebarSection{
+	s.frontend.SetSidebarContent(idtui.SidebarSection{
 		Title:   "Changes",
 		Content: "", // empty content will hide it
 	})
@@ -785,7 +809,7 @@ func (s *LLMSession) SyncToLocal(ctx context.Context) error {
 	s.beforeFSTime = time.Now()
 
 	// Update sidebar to show sync success
-	Frontend.SetSidebarContent(idtui.SidebarSection{
+	s.frontend.SetSidebarContent(idtui.SidebarSection{
 		Title:   "Changes",
 		Content: "", // empty content will hide it
 	})
