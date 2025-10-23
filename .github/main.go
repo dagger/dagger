@@ -266,8 +266,12 @@ func Runner(
 }
 
 // Assemble an alternative 2 runner name for a workflow
+// Namespace runner with optional namespace-managed engine
 func Alt2Runner(
 	cpus int,
+	// If true: namespace will provision a managed dagger engine, and configure
+	// the CI runner to connect to that engine ("depot-style" architecture)
+	// As of 2025-oct-23, this is the default workhorse runner
 	cached bool,
 ) []string {
 	mem := cpus * 2
@@ -311,41 +315,9 @@ func BronzeRunner(
 	return Runner(3, daggerVersion, 4, false, dind)
 }
 
-// Silver runner: Multi-tenant instance, 8 cpu
-func SilverRunner(
-	// Enable docker-in-docker
-	// +optional
-	dind bool,
-) []string {
-	return Runner(3, daggerVersion, 8, false, dind)
-}
-
-// Gold runner: Single-tenant instance, 16 cpu
-func GoldRunner(
-	// Enable docker-in-docker
-	// +optional
-	dind bool,
-) []string {
-	return Runner(3, daggerVersion, 16, true, dind)
-}
-
-// Platinum runner: Single-tenant instance, 32 cpu
-func PlatinumRunner(
-	// Enable docker-in-docker
-	// +optional
-	dind bool,
-) []string {
-	return Runner(3, daggerVersion, 32, true, dind)
-}
-
 // Alternative Bronze runner with caching: Single-tenant, 4 cpu
 func AltBronzeRunnerWithCache() []string {
 	return Alt2Runner(4, true)
-}
-
-// Alternative Silver runner: Single-tenant with Docker, 8 cpu
-func AltSilverRunner() []string {
-	return Alt2Runner(8, false)
 }
 
 // Alternative Silver runner with caching: Single-tenant, 8 cpu
@@ -358,17 +330,7 @@ func AltGoldRunner() []string {
 	return Alt2Runner(16, false)
 }
 
-// Alternative Gold runner with caching: Single-tenant, 16 cpu
-func AltGoldRunnerWithCache() []string {
-	return Alt2Runner(16, true)
-}
-
 // Alternative Platinum runner: Single-tenant with Docker, 32 cpu
 func AltPlatinumRunner() []string {
 	return Alt2Runner(32, false)
-}
-
-// Alternative Platinum runner with caching: Single-tenant, 23 cpu
-func AltPlatinumRunnerWithCache() []string {
-	return Alt2Runner(32, true)
 }
