@@ -164,14 +164,13 @@ func (class Class[T]) TypeName() string {
 	return class.inner.Type().Name()
 }
 
-func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheCfgFunc GenericGetCacheConfigFunc) {
+func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
 	class.fieldsL.Lock()
 	f := &Field[T]{
 		Spec: &spec,
 		Func: func(ctx context.Context, self ObjectResult[T], args map[string]Input, view call.View) (AnyResult, error) {
 			return fun(ctx, self, args)
 		},
-		GetCacheConfig: cacheCfgFunc,
 	}
 	class.fields[spec.Name] = append(class.fields[spec.Name], f)
 	class.fieldsL.Unlock()
@@ -555,10 +554,10 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 	)
 
 	cacheKey := newCacheKey(ctx, newID, field.Spec)
-	if field.GetCacheConfig != nil {
+	if field.Spec.GetCacheConfig != nil {
 		cacheCfgCtx := idToContext(ctx, newID)
 		cacheCfgCtx = srvToContext(cacheCfgCtx, s)
-		cacheCfgResp, err := field.GetCacheConfig(cacheCfgCtx, r, inputArgs, view, GetCacheConfigRequest{
+		cacheCfgResp, err := field.Spec.GetCacheConfig(cacheCfgCtx, r, inputArgs, view, GetCacheConfigRequest{
 			CacheKey: cacheKey,
 		})
 		if err != nil {
@@ -911,7 +910,7 @@ func NodeFuncWithCacheKey[T Typed, A any, R any](
 	}
 
 	if cacheFn != nil {
-		field.GetCacheConfig = func(ctx context.Context, self AnyResult, argVals map[string]Input, view call.View, req GetCacheConfigRequest) (*GetCacheConfigResponse, error) {
+		field.Spec.GetCacheConfig = func(ctx context.Context, self AnyResult, argVals map[string]Input, view call.View, req GetCacheConfigRequest) (*GetCacheConfigResponse, error) {
 			if argsErr != nil {
 				// this error is deferred until runtime, since it's better (at least
 				// more testable) than panicking
@@ -964,6 +963,10 @@ type FieldSpec struct {
 
 	// If set, the result of this field will be cached for the given TTL (in seconds).
 	TTL int64
+
+	// If set, this GetCacheConfig will be called before ID evaluation to make
+	// any dynamic adjustments to the cache key or args
+	GetCacheConfig GenericGetCacheConfigFunc
 
 	// extend is used during installation to copy the spec of a previous field
 	// with the same name
@@ -1313,11 +1316,6 @@ type GetCacheConfigResponse struct {
 // Field defines a field of an Object type.
 type Field[T Typed] struct {
 	Spec *FieldSpec
-
-	// If set, this GetCacheConfig will be called before ID evaluation to make
-	// any dynamic adjustments to the cache key or args
-	GetCacheConfig GenericGetCacheConfigFunc
-
 	Func func(context.Context, ObjectResult[T], map[string]Input, call.View) (AnyResult, error)
 }
 

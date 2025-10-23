@@ -356,7 +356,6 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 
 			return dagql.NewResultForCurrentID(ctx, env.WithInput(name, obj, description))
 		},
-		nil,
 	)
 
 	envType.Extend(
@@ -384,7 +383,6 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 
 			return dagql.NewResultForCurrentID(ctx, env.WithOutput(name, targetType, desc))
 		},
-		nil,
 	)
 
 	// Install Binding.as<TargetType>()
@@ -416,7 +414,6 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 			}
 			return res, nil
 		},
-		nil,
 	)
 	return nil
 }

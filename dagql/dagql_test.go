@@ -2852,7 +2852,6 @@ func (hook *testInstallHook) InstallObject(class dagql.ObjectType) {
 		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
 			return dagql.NewResultForCurrentID(ctx, dagql.String("hello world!"))
 		},
-		nil,
 	)
 
 	// test adding a new type
@@ -2866,7 +2865,6 @@ func (hook *testInstallHook) InstallObject(class dagql.ObjectType) {
 		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
 			return dagql.NewResultForCurrentID(ctx, &points.Point{X: 100, Y: 200})
 		},
-		nil,
 	)
 }
 

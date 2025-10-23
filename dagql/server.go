@@ -353,7 +353,6 @@ func (s *Server) InstallObject(class ObjectType) ObjectType {
 				}
 				return res, nil
 			},
-			nil,
 		)
 	}
 	s.installLock.Unlock()

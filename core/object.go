@@ -326,9 +326,10 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	// if no constructor defined, install a basic one that initializes an empty object
 	if !objDef.Constructor.Valid {
 		spec := dagql.FieldSpec{
-			Name:   gqlFieldName(mod.Name()),
-			Type:   obj,
-			Module: obj.Module.IDModule(),
+			Name:           gqlFieldName(mod.Name()),
+			Type:           obj,
+			Module:         obj.Module.IDModule(),
+			GetCacheConfig: mod.CacheConfigForCall,
 		}
 
 		if objDef.SourceMap.Valid {
@@ -344,7 +345,6 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 					Fields:  map[string]any{},
 				})
 			},
-			mod.CacheConfigForCall,
 		)
 		return nil
 	}
@@ -371,6 +371,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	}
 	spec.Name = gqlFieldName(mod.Name())
 	spec.Module = obj.Module.IDModule()
+	spec.GetCacheConfig = fn.CacheConfigForCall
 
 	dag.Root().ObjectType().Extend(
 		spec,
@@ -389,7 +390,6 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 				Server:       dag,
 			})
 		},
-		fn.CacheConfigForCall,
 	)
 
 	return nil
@@ -416,10 +416,11 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fiel
 
 func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 	spec := &dagql.FieldSpec{
-		Name:        field.Name,
-		Description: field.Description,
-		Type:        field.TypeDef.ToTyped(),
-		Module:      mod.IDModule(),
+		Name:           field.Name,
+		Description:    field.Description,
+		Type:           field.TypeDef.ToTyped(),
+		Module:         mod.IDModule(),
+		GetCacheConfig: mod.CacheConfigForCall,
 	}
 	spec.Directives = append(spec.Directives, &ast.Directive{
 		Name: trivialFieldDirectiveName,
@@ -445,7 +446,6 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 			}
 			return modType.ConvertFromSDKResult(ctx, fieldVal)
 		},
-		GetCacheConfig: mod.CacheConfigForCall,
 	}
 }
 
@@ -486,6 +486,7 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 		return f, fmt.Errorf("failed to get field spec: %w", err)
 	}
 	spec.Module = mod.IDModule()
+	spec.GetCacheConfig = modFun.CacheConfigForCall
 
 	return dagql.Field[*ModuleObject]{
 		Spec: &spec,
@@ -508,7 +509,6 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 			})
 			return modFun.Call(ctx, opts)
 		},
-		GetCacheConfig: modFun.CacheConfigForCall,
 	}, nil
 }
 

@@ -270,6 +270,33 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			fieldDef.Args.Add(inputSpec)
 		}
 
+		fieldDef.GetCacheConfig = func(
+			ctx context.Context,
+			parentObj dagql.AnyResult,
+			args map[string]dagql.Input,
+			view call.View,
+			req dagql.GetCacheConfigRequest,
+		) (*dagql.GetCacheConfigResponse, error) {
+			parent, ok := parentObj.(dagql.ObjectResult[*InterfaceAnnotatedValue])
+			if !ok {
+				return nil, fmt.Errorf("unexpected parent object type %T", parentObj)
+			}
+			runtimeVal := parent.Self()
+
+			// TODO: support core types too
+			userModObj, ok := runtimeVal.UnderlyingType.(*ModuleObjectType)
+			if !ok {
+				return nil, fmt.Errorf("unexpected underlying type %T for interface resolver %s.%s", runtimeVal.UnderlyingType, ifaceName, fieldDef.Name)
+			}
+
+			callable, err := userModObj.GetCallable(ctx, fieldDef.Name)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get callable for %s.%s: %w", ifaceName, fieldDef.Name, err)
+			}
+
+			return callable.CacheConfigForCall(ctx, parentObj, args, view, req)
+		}
+
 		fields = append(fields, dagql.Field[*InterfaceAnnotatedValue]{
 			Spec: fieldDef,
 			Func: func(ctx context.Context, self dagql.ObjectResult[*InterfaceAnnotatedValue], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
@@ -335,32 +362,6 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				}
 				return wrapIface(dagql.CurrentID(ctx), ifaceReturnType, objReturnType, res, dag)
 			},
-			GetCacheConfig: func(
-				ctx context.Context,
-				parentObj dagql.AnyResult,
-				args map[string]dagql.Input,
-				view call.View,
-				req dagql.GetCacheConfigRequest,
-			) (*dagql.GetCacheConfigResponse, error) {
-				parent, ok := parentObj.(dagql.ObjectResult[*InterfaceAnnotatedValue])
-				if !ok {
-					return nil, fmt.Errorf("unexpected parent object type %T", parentObj)
-				}
-				runtimeVal := parent.Self()
-
-				// TODO: support core types too
-				userModObj, ok := runtimeVal.UnderlyingType.(*ModuleObjectType)
-				if !ok {
-					return nil, fmt.Errorf("unexpected underlying type %T for interface resolver %s.%s", runtimeVal.UnderlyingType, ifaceName, fieldDef.Name)
-				}
-
-				callable, err := userModObj.GetCallable(ctx, fieldDef.Name)
-				if err != nil {
-					return nil, fmt.Errorf("failed to get callable for %s.%s: %w", ifaceName, fieldDef.Name, err)
-				}
-
-				return callable.CacheConfigForCall(ctx, parentObj, args, view, req)
-			},
 		})
 	}
 
@@ -389,7 +390,6 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
 			return iface.ConvertFromSDKResult(ctx, args["id"])
 		},
-		nil,
 	)
 
 	return nil
