@@ -10026,20 +10026,14 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Add a toolchain to the module source.
+    /// Add toolchains to the module source.
     ///
     /// # Arguments
     ///
-    /// * `toolchain` - The toolchain module to add.
-    pub fn with_toolchain(&self, toolchain: impl IntoID<ModuleSourceId>) -> ModuleSource {
-        let mut query = self.selection.select("withToolchain");
-        query = query.arg_lazy(
-            "toolchain",
-            Box::new(move || {
-                let toolchain = toolchain.clone();
-                Box::pin(async move { toolchain.into_id().await.unwrap().quote() })
-            }),
-        );
+    /// * `toolchains` - The toolchain modules to add.
+    pub fn with_toolchains(&self, toolchains: Vec<ModuleSourceId>) -> ModuleSource {
+        let mut query = self.selection.select("withToolchains");
+        query = query.arg("toolchains", toolchains);
         ModuleSource {
             proc: self.proc.clone(),
             selection: query,

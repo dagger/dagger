@@ -790,7 +790,7 @@ var toolchainInstallCmd = &cobra.Command{
 				toolchainSrc = toolchainSrc.WithName(toolchainInstallName)
 			}
 
-			modSrc = modSrc.WithToolchain(toolchainSrc)
+			modSrc = modSrc.WithToolchains([]*dagger.ModuleSource{toolchainSrc})
 
 			if engineVersion := getCompatVersion(); engineVersion != "" {
 				modSrc = modSrc.WithEngineVersion(engineVersion)

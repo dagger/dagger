@@ -389,12 +389,12 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Add a toolchain to the module source.
+     * Add toolchains to the module source.
      */
-    public function withToolchain(ModuleSourceId|ModuleSource $toolchain): ModuleSource
+    public function withToolchains(array $toolchains): ModuleSource
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withToolchain');
-        $innerQueryBuilder->setArgument('toolchain', $toolchain);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withToolchains');
+        $innerQueryBuilder->setArgument('toolchains', $toolchains);
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

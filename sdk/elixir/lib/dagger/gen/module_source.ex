@@ -568,14 +568,14 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
-  Add a toolchain to the module source.
+  Add toolchains to the module source.
   """
-  @spec with_toolchain(t(), Dagger.ModuleSource.t()) :: Dagger.ModuleSource.t()
-  def with_toolchain(%__MODULE__{} = module_source, toolchain) do
+  @spec with_toolchains(t(), [Dagger.ModuleSourceID.t()]) :: Dagger.ModuleSource.t()
+  def with_toolchains(%__MODULE__{} = module_source, toolchains) do
     query_builder =
       module_source.query_builder
-      |> QB.select("withToolchain")
-      |> QB.put_arg("toolchain", Dagger.ID.id!(toolchain))
+      |> QB.select("withToolchains")
+      |> QB.put_arg("toolchains", toolchains)
 
     %Dagger.ModuleSource{
       query_builder: query_builder,

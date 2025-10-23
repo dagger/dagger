@@ -3860,10 +3860,10 @@ type ModuleSource {
     path: String!
   ): ModuleSource!
 
-  """Add a toolchain to the module source."""
-  withToolchain(
-    """The toolchain module to add."""
-    toolchain: ModuleSourceID!
+  """Add toolchains to the module source."""
+  withToolchains(
+    """The toolchain modules to add."""
+    toolchains: [ModuleSourceID!]!
   ): ModuleSource!
 
   """Update the blueprint module to the latest version."""

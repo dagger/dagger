@@ -4635,9 +4635,9 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\ModuleSource::withToolchain",
-			"p": "Dagger/ModuleSource.html#method_withToolchain",
-			"d": "<p>Add a toolchain to the module source.</p>"
+			"n": "Dagger\\ModuleSource::withToolchains",
+			"p": "Dagger/ModuleSource.html#method_withToolchains",
+			"d": "<p>Add toolchains to the module source.</p>"
 		},
 		{
 			"t": "M",

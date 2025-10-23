@@ -158,10 +158,10 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("blueprint").Doc(`The blueprint module to set.`),
 			),
 
-		dagql.Func("withToolchain", s.moduleSourceWithToolchain).
-			Doc(`Add a toolchain to the module source.`).
+		dagql.Func("withToolchains", s.moduleSourceWithToolchains).
+			Doc(`Add toolchains to the module source.`).
 			Args(
-				dagql.Arg("toolchain").Doc(`The toolchain module to add.`),
+				dagql.Arg("toolchains").Doc(`The toolchain modules to add.`),
 			),
 
 		dagql.NodeFunc("withUpdateToolchains", s.moduleSourceWithUpdateToolchains).
@@ -1531,33 +1531,144 @@ func (s *moduleSourceSchema) moduleSourceWithBlueprint(
 	return parentSrc, nil
 }
 
-func (s *moduleSourceSchema) moduleSourceWithToolchain(
+func (s *moduleSourceSchema) moduleSourceWithToolchains(
 	ctx context.Context,
 	parentSrc *core.ModuleSource,
 	args struct {
-		Toolchain core.ModuleSourceID
+		Toolchains []core.ModuleSourceID
 	},
 ) (*core.ModuleSource, error) {
-	// Load config for the toolchain
-	tmpArgs := struct{ Dependencies []core.ModuleSourceID }{
-		Dependencies: []core.ModuleSourceID{args.Toolchain},
-	}
-	tmpSrc := parentSrc.Clone()
-	tmpSrc.Dependencies = nil
-	tmpSrc, err := s.moduleSourceWithDependencies(ctx, tmpSrc, tmpArgs)
-	if err != nil {
-		return nil, err
-	}
-	tmpConfig, err := s.loadModuleSourceConfig(tmpSrc)
-	if err != nil {
-		return nil, err
-	}
-
 	parentSrc = parentSrc.Clone()
 
-	// Add to toolchains array
-	parentSrc.ConfigToolchains = append(parentSrc.ConfigToolchains, tmpConfig.Dependencies[0])
-	parentSrc.Toolchains = append(parentSrc.Toolchains, tmpSrc.Dependencies[0])
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	newToolchains, err := collectIDObjectResults(ctx, dag, args.Toolchains)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load module source toolchains from ids: %w", err)
+	}
+
+	// do some sanity checks on the provided toolchains
+	var allToolchains []dagql.ObjectResult[*core.ModuleSource]
+	for _, newToolchain := range newToolchains {
+		switch parentSrc.Kind {
+		case core.ModuleSourceKindLocal:
+			switch newToolchain.Self().Kind {
+			case core.ModuleSourceKindLocal:
+				// parent=local, toolchain=local
+
+				// local toolchains must be located in the same context as the parent, this enforces they are in the same local
+				// git repo checkout and a local toolchain doesn't exist in a different git repo (which is what git toolchains are for)
+				contextRelPath, err := pathutil.LexicalRelativePath(
+					parentSrc.Local.ContextDirectoryPath,
+					newToolchain.Self().Local.ContextDirectoryPath,
+				)
+				if err != nil {
+					return nil, fmt.Errorf("failed to get relative path from parent context to toolchain context: %w", err)
+				}
+				if !filepath.IsLocal(contextRelPath) {
+					return nil, fmt.Errorf("local module toolchain context directory %q is not in parent context directory %q",
+						newToolchain.Self().Local.ContextDirectoryPath, parentSrc.Local.ContextDirectoryPath)
+				}
+				allToolchains = append(allToolchains, newToolchain)
+
+			case core.ModuleSourceKindGit:
+				// parent=local, toolchain=git
+				allToolchains = append(allToolchains, newToolchain)
+
+			default:
+				return nil, fmt.Errorf("unhandled module source kind: %s", parentSrc.Kind)
+			}
+
+		case core.ModuleSourceKindGit:
+			switch newToolchain.Self().Kind {
+			case core.ModuleSourceKindLocal:
+				// parent=git, toolchain=local
+				// cannot add a module source that's local to the caller as a toolchain of a git module source
+				return nil, fmt.Errorf("cannot add local module source as toolchain of git module source")
+
+			case core.ModuleSourceKindGit:
+				// parent=git, toolchain=git
+				allToolchains = append(allToolchains, newToolchain)
+
+			default:
+				return nil, fmt.Errorf("unhandled module source kind: %s", parentSrc.Kind)
+			}
+
+		default:
+			return nil, fmt.Errorf("unhandled module source kind: %s", parentSrc.Kind)
+		}
+	}
+
+	// append the pre-existing toolchains to the slice too; they need to come later so we prefer new ones over existing ones below
+	allToolchains = append(allToolchains, parentSrc.Toolchains...)
+
+	// deduplicate equivalent toolchains at differing versions, preferring the new toolchain over the existing one
+	symbolicToolchains := make(map[string]dagql.ObjectResult[*core.ModuleSource], len(allToolchains))
+	toolchainNames := make(map[string]dagql.ObjectResult[*core.ModuleSource], len(allToolchains))
+	for _, toolchain := range allToolchains {
+		var symbolicToolchainStr string
+		switch toolchain.Self().Kind {
+		case core.ModuleSourceKindLocal:
+			symbolicToolchainStr = filepath.Join(toolchain.Self().Local.ContextDirectoryPath, toolchain.Self().SourceRootSubpath)
+		case core.ModuleSourceKindGit:
+			symbolicToolchainStr = toolchain.Self().Git.CloneRef
+			if toolchain.Self().SourceRootSubpath != "" {
+				symbolicToolchainStr += "/" + strings.TrimPrefix(toolchain.Self().SourceRootSubpath, "/")
+			}
+		}
+
+		_, isDuplicateSymbolic := symbolicToolchains[symbolicToolchainStr]
+		if isDuplicateSymbolic {
+			// prefer the new toolchain over the existing one (new toolchains were added to allToolchains first, so we will only hit this
+			// if a new toolchain overrides an existing one)
+			continue
+		}
+		symbolicToolchains[symbolicToolchainStr] = toolchain
+
+		// duplicate names are not allowed
+		_, isDuplicateName := toolchainNames[toolchain.Self().ModuleName]
+		if isDuplicateName {
+			return nil, fmt.Errorf("duplicate toolchain name %q", toolchain.Self().ModuleName)
+		}
+		toolchainNames[toolchain.Self().ModuleName] = toolchain
+	}
+
+	// get the final slice of toolchains, sorting by name for determinism
+	finalToolchains := make([]dagql.ObjectResult[*core.ModuleSource], 0, len(symbolicToolchains))
+	for _, toolchain := range symbolicToolchains {
+		finalToolchains = append(finalToolchains, toolchain)
+	}
+	sort.Slice(finalToolchains, func(i, j int) bool {
+		return finalToolchains[i].Self().ModuleName < finalToolchains[j].Self().ModuleName
+	})
+	parentSrc.Toolchains = finalToolchains
+
+	// Load the config for all toolchains to populate ConfigToolchains
+	// We need to convert each toolchain into a config entry by loading it as a dependency
+	configToolchains := make([]*modules.ModuleConfigDependency, len(finalToolchains))
+	for i, toolchain := range finalToolchains {
+		// Load as a dependency to get the proper config format
+		tmpArgs := struct{ Dependencies []core.ModuleSourceID }{
+			Dependencies: []core.ModuleSourceID{dagql.NewID[*core.ModuleSource](toolchain.ID())},
+		}
+		tmpSrc := parentSrc.Clone()
+		tmpSrc.Dependencies = nil
+		tmpSrc, err := s.moduleSourceWithDependencies(ctx, tmpSrc, tmpArgs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load toolchain config: %w", err)
+		}
+		tmpConfig, err := s.loadModuleSourceConfig(tmpSrc)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load toolchain config: %w", err)
+		}
+		if len(tmpConfig.Dependencies) > 0 {
+			configToolchains[i] = tmpConfig.Dependencies[0]
+		}
+	}
+	parentSrc.ConfigToolchains = configToolchains
 
 	parentSrc.Digest = parentSrc.CalcDigest(ctx).String()
 	return parentSrc, nil

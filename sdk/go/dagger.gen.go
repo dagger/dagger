@@ -9511,11 +9511,10 @@ func (r *ModuleSource) WithSourceSubpath(path string) *ModuleSource {
 	}
 }
 
-// Add a toolchain to the module source.
-func (r *ModuleSource) WithToolchain(toolchain *ModuleSource) *ModuleSource {
-	assertNotNil("toolchain", toolchain)
-	q := r.query.Select("withToolchain")
-	q = q.Arg("toolchain", toolchain)
+// Add toolchains to the module source.
+func (r *ModuleSource) WithToolchains(toolchains []*ModuleSource) *ModuleSource {
+	q := r.query.Select("withToolchains")
+	q = q.Arg("toolchains", toolchains)
 
 	return &ModuleSource{
 		query: q,

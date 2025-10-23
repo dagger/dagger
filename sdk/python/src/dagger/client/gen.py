@@ -9656,18 +9656,18 @@ class ModuleSource(Type):
         _ctx = self._select("withSourceSubpath", _args)
         return ModuleSource(_ctx)
 
-    def with_toolchain(self, toolchain: Self) -> Self:
-        """Add a toolchain to the module source.
+    def with_toolchains(self, toolchains: list["ModuleSource"]) -> Self:
+        """Add toolchains to the module source.
 
         Parameters
         ----------
-        toolchain:
-            The toolchain module to add.
+        toolchains:
+            The toolchain modules to add.
         """
         _args = [
-            Arg("toolchain", toolchain),
+            Arg("toolchains", toolchains),
         ]
-        _ctx = self._select("withToolchain", _args)
+        _ctx = self._select("withToolchains", _args)
         return ModuleSource(_ctx)
 
     def with_update_blueprint(self) -> Self:

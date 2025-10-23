@@ -9471,11 +9471,11 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * Add a toolchain to the module source.
-   * @param toolchain The toolchain module to add.
+   * Add toolchains to the module source.
+   * @param toolchains The toolchain modules to add.
    */
-  withToolchain = (toolchain: ModuleSource): ModuleSource => {
-    const ctx = this._ctx.select("withToolchain", { toolchain })
+  withToolchains = (toolchains: ModuleSource[]): ModuleSource => {
+    const ctx = this._ctx.select("withToolchains", { toolchains })
     return new ModuleSource(ctx)
   }
 
