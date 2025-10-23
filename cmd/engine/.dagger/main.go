@@ -194,7 +194,7 @@ func (e *DaggerEngine) Service(
 func (e *DaggerEngine) Generate(_ context.Context) (*dagger.Changeset, error) {
 	// There's Go code in the SDKs, don't include them in this.
 	src := e.Source.WithoutDirectory("sdk")
-	changes := dag.Go(src).Env().
+	withGoGenerate := dag.Go(src).Env().
 		WithExec([]string{"go", "install", "google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2"}).
 		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogo@v1.3.2"}).
 		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2"}).
@@ -204,9 +204,23 @@ func (e *DaggerEngine) Generate(_ context.Context) (*dagger.Changeset, error) {
 		WithMountedDirectory("./github.com/gogo/protobuf", dag.Git("https://github.com/gogo/protobuf.git").Tag("v1.3.2").Tree()).
 		WithMountedDirectory("./github.com/tonistiigi/fsutil", dag.Git("https://github.com/tonistiigi/fsutil.git").Commit("069baf6a66f5c63a82fb679ff2319ed2ee970fbd").Tree()).
 		WithExec([]string{"go", "generate", "-v", "./..."}).
-		Directory(".").
-		Changes(src)
+		Directory(".")
+	changes := changes(src, withGoGenerate, []string{"github.com"})
 	return changes, nil
+}
+
+// Return the changes between two directory, excluding the specified path patterns from the comparison
+// FIXME: had to copy-paste across modules
+func changes(before, after *dagger.Directory, exclude []string) *dagger.Changeset {
+	if exclude == nil {
+		return after.Changes(before)
+	}
+	return after.
+		// 1. Remove matching files from after
+		Filter(dagger.DirectoryFilterOpts{Exclude: exclude}).
+		// 2. Copy matching files from before
+		WithDirectory("", before.Filter(dagger.DirectoryFilterOpts{Include: exclude})).
+		Changes(before)
 }
 
 var targets = []struct {
