@@ -104,16 +104,33 @@ func (DaggerCMDSuite) TestLLMFileSyncing(ctx context.Context, t *testctx.T) {
 	require.NoError(t, os.Chtimes("fruit.txt", future, future))
 
 	// sync them up
-	require.Equal(t, idtui.UpdatePromptMsg{},
-		handler.ReactToInput(ctx, tea.KeyMsg{
-			Type: tea.KeyCtrlU,
-		})())
+	handler.ReactToInput(ctx, tea.KeyMsg{
+		Type: tea.KeyCtrlU,
+	})()
 
 	// check agent sees it
 	handler.Handle(ctx, "What do you see in fruit.txt?")
 	sess, err := handler.llm(ctx)
 	require.NoError(t, err)
 	reply, err := sess.llm.LastReply(ctx)
+	require.NoError(t, err)
+	require.Contains(t, reply, "potato")
+
+	handler.Handle(ctx, "Now write 'banana' to fruit.txt.")
+
+	// NB: we had to set mtime to the future, but for this test we want to ensure
+	// the file is considered even if it's stale, so chtimes it back to the past
+	past := time.Now().Add(-time.Minute)
+	require.NoError(t, os.Chtimes("fruit.txt", past, past))
+
+	// blow away their changes
+	handler.ReactToInput(ctx, tea.KeyMsg{
+		Type: tea.KeyCtrlU,
+	})()
+
+	// check agent sees it
+	handler.Handle(ctx, "What do you see in fruit.txt now?")
+	reply, err = sess.llm.LastReply(ctx)
 	require.NoError(t, err)
 	require.Contains(t, reply, "potato")
 }
