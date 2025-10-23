@@ -37,6 +37,19 @@ func (EnvFileSuite) TestNamespace(ctx context.Context, t *testctx.T) {
 			},
 		},
 		{
+			"simple with underscore suffix",
+			map[string]string{
+				"animal_name":    "daisy",
+				"animal_species": "dog",
+				"foo":            "bar",
+			},
+			"animal_",
+			map[string]string{
+				"name":    "daisy",
+				"species": "dog",
+			},
+		},
+		{
 			"case insensitive",
 			map[string]string{
 				"ANIMAL_name":    "daisy",
@@ -75,6 +88,19 @@ func (EnvFileSuite) TestNamespace(ctx context.Context, t *testctx.T) {
 				"token": "topsecret",
 				"name":  "petstore",
 				"URL":   "http://localhost",
+			},
+		},
+		{
+			"underscore in prefix + at the end of prefix",
+			map[string]string{
+				"my_app_token": "topsecret",
+				"my_app_name":  "petstore",
+				"foo":          "bar",
+			},
+			"my_app_",
+			map[string]string{
+				"token": "topsecret",
+				"name":  "petstore",
 			},
 		},
 	}
