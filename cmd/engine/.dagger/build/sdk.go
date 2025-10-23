@@ -142,7 +142,7 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 		},
 	})
 
-	bunBuilderCtr := dag.Container().
+	bunBuilderCtr := dag.Container(dagger.ContainerOpts{Platform: build.platform}).
 		From(tsdistconsts.DefaultBunImageRef).
 		// NodeJS is required to run tsc.
 		WithExec([]string{"apk", "add", "nodejs"}).
