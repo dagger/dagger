@@ -341,7 +341,7 @@ func (ci *CI) withLLMWorkflows() *CI {
 			},
 		})).WithJob(gha.Job(
 		"shell",
-		"--allow-llm all test --env-file env://.env specific --pkg ./cmd/dagger --run CMD/LLM",
+		"--allow-llm all test specific --env-file file://.env --pkg ./cmd/dagger --run CMD/LLM",
 		dagger.GhaJobOpts{
 			Runner: AltGoldRunner(),
 			// NOTE: avoid running for forks
