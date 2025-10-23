@@ -129,7 +129,7 @@ defmodule Dagger.Function do
   end
 
   @doc """
-  TODO doc
+  Returns the function updated to use the provided cache policy.
   """
   @spec with_cache_policy(t(), Dagger.FunctionCachePolicy.t(), [{:time_to_live, String.t() | nil}]) ::
           Dagger.Function.t()

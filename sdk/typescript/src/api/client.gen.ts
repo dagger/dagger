@@ -6951,7 +6951,7 @@ export class Function_ extends BaseClient {
   }
 
   /**
-   * TODO doc
+   * Returns the function updated to use the provided cache policy.
    * @param policy The cache policy to use.
    * @param opts.timeToLive The TTL for the cache policy, if applicable. Provided as a duration string, e.g. "5m", "1h30s".
    */

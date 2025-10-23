@@ -3749,7 +3749,7 @@
 			"t": "M",
 			"n": "Dagger\\Function_::withCachePolicy",
 			"p": "Dagger/Function_.html#method_withCachePolicy",
-			"d": "<p>TODO doc</p>"
+			"d": "<p>Returns the function updated to use the provided cache policy.</p>"
 		},
 		{
 			"t": "M",

@@ -6732,7 +6732,7 @@ class Function(Type):
         *,
         time_to_live: str | None = None,
     ) -> Self:
-        """TODO doc
+        """Returns the function updated to use the provided cache policy.
 
         Parameters
         ----------

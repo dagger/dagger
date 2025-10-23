@@ -103,7 +103,7 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO doc
+     * Returns the function updated to use the provided cache policy.
      */
     public function withCachePolicy(FunctionCachePolicy $policy, ?string $timeToLive = null): Function_
     {

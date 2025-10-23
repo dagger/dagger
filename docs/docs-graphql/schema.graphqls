@@ -2900,7 +2900,7 @@ type Function {
     sourceMap: SourceMapID
   ): Function!
 
-  """TODO doc"""
+  """Returns the function updated to use the provided cache policy."""
   withCachePolicy(
     """The cache policy to use."""
     policy: FunctionCachePolicy!

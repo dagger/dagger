@@ -8127,7 +8127,7 @@ impl Function {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// TODO doc
+    /// Returns the function updated to use the provided cache policy.
     ///
     /// # Arguments
     ///
@@ -8142,7 +8142,7 @@ impl Function {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// TODO doc
+    /// Returns the function updated to use the provided cache policy.
     ///
     /// # Arguments
     ///

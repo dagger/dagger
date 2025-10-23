@@ -6417,7 +6417,7 @@ type FunctionWithCachePolicyOpts struct {
 	TimeToLive string
 }
 
-// TODO doc
+// Returns the function updated to use the provided cache policy.
 func (r *Function) WithCachePolicy(policy FunctionCachePolicy, opts ...FunctionWithCachePolicyOpts) *Function {
 	q := r.query.Select("withCachePolicy")
 	for i := len(opts) - 1; i >= 0; i-- {
