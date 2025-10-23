@@ -343,7 +343,7 @@ func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
 				return buf.String()
 			},
 			KeyMap: []key.Binding{
-				key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "sync")),
+				key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "save")),
 			},
 		})
 	}
