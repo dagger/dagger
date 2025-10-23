@@ -589,6 +589,25 @@ func (llm *LLM) WithPromptFile(ctx context.Context, file *File) (*LLM, error) {
 	return llm.WithPrompt(string(contents)), nil
 }
 
+// WithoutMessageHistory removes all messages, leaving only the system prompts
+func (llm *LLM) WithoutMessageHistory() *LLM {
+	llm = llm.Clone()
+	llm.messages = slices.DeleteFunc(llm.messages, func(msg *ModelMessage) bool {
+		return msg.Role != "system"
+	})
+	return llm
+}
+
+// WithoutSystemPrompts removes all system prompts from the history, leaving
+// only the default system prompt
+func (llm *LLM) WithoutSystemPrompts() *LLM {
+	llm = llm.Clone()
+	llm.messages = slices.DeleteFunc(llm.messages, func(msg *ModelMessage) bool {
+		return msg.Role == "system"
+	})
+	return llm
+}
+
 // Append a system prompt message to the history
 func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
 	llm = llm.Clone()
