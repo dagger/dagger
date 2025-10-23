@@ -56,13 +56,22 @@ export enum {{ $enumName }} { {{- with .Directives.SourceMap }} // {{ .Module }}
 					{{- $fieldValue = $mainFieldName }}
 				{{- end }}
 
-			  {{- if .Description }}
+			  {{- if or .Description .IsDeprecated }}
 				  {{- /* Split comment string into a slice of one line per element. */ -}}
 				  {{- $desc := CommentToLines .Description }}
 
   /**
 				  {{- range $desc }}
    * {{ . }}
+				  {{- end }}
+				  {{- if and $desc .IsDeprecated }}
+   *
+				  {{- end }}
+				  {{- if .IsDeprecated }}
+					  {{- $deprecationLines := FormatDeprecation .DeprecationReason }}
+					  {{- range $deprecationLines }}
+   * {{ . }}
+					  {{- end }}
 				  {{- end }}
    */
 
