@@ -231,6 +231,33 @@ def test_user_sync_object(ctx: Context):
     )
 
 
+def test_func_doc_deprecated_args(ctx: Context):
+    field = Field(
+        String,
+        {
+            "path": Argument(
+                NonNull(String),
+                deprecation_reason="Use configDir instead.",
+            ),
+            "expand": Argument(
+                String,
+                deprecation_reason="Templates are expanded automatically.",
+            ),
+        },
+        deprecation_reason="Use apply_config instead.",
+    )
+
+    parent = Object("Container", lambda: {"apply": field})
+    handler = _ObjectField(ctx, "apply", field, parent)
+
+    docstring = handler.func_doc()
+
+    assert "Parameters" in docstring
+    doc_lines = {line.strip() for line in docstring.splitlines()}
+    assert ".. deprecated:: Use configDir instead." in doc_lines
+    assert ".. deprecated:: Templates are expanded automatically." in doc_lines
+
+
 @pytest.mark.parametrize(
     ("type_", "expected"),
     [
@@ -324,6 +351,25 @@ def test_scalar_render(type_, expected, ctx: Context):
                     THREE = 'THREE'
 
                     TWO = 'TWO'
+                """,
+            ),
+        ),
+        (
+            GraphQLEnumType(
+                "Mode",
+                {
+                    "VALUE": GraphQLEnumValue(
+                        "VALUE",
+                        deprecation_reason="Use ModeV2 instead.",
+                    ),
+                },
+            ),
+            dedent(
+                """
+                class Mode(Enum):
+
+                    VALUE = 'VALUE'
+                    """.. deprecated:: Use ModeV2 instead."""
                 """,
             ),
         ),
