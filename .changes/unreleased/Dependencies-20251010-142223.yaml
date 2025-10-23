@@ -1,6 +1,0 @@
-kind: Dependencies
-body: Upgrade to go 1.25.2
-time: 2025-10-10T14:22:23.419385027-07:00
-custom:
-    Author: jedevc
-    PR: "11220"

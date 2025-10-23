@@ -1,7 +1,0 @@
-kind: Fixed
-body: |
-    Avoid error when calling `Directory.diff` on identical directories
-time: 2025-10-22T14:59:32.925253828+01:00
-custom:
-    Author: jedevc
-    PR: "11268"

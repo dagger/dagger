@@ -1,9 +1,0 @@
-kind: Added
-body: |-
-    Allow to raise errors using withError.
-
-    This is for instance really useful from inside self-chainable blocks (using with) where an error can't be returned.
-time: 2025-10-15T07:55:38.141332-07:00
-custom:
-    Author: eunomie
-    PR: "11222"
