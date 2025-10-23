@@ -21,7 +21,7 @@ jobs:
     lint-go-packages:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.2' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.3' || 'ubuntu-24.04' }}
         name: Lint go packages
         steps:
             - name: Checkout
@@ -33,5 +33,5 @@ jobs:
                 call: --docker-cfg=file:$HOME/.docker/config.json check-lint-go
                 cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
-                version: v0.19.2
+                version: v0.19.3
         timeout-minutes: 20
