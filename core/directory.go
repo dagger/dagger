@@ -703,48 +703,6 @@ func (cf *CopyFilter) IsEmpty() bool {
 	return len(cf.Exclude) == 0 && len(cf.Include) == 0
 }
 
-func (dir *Directory) WithDirectoryLLB(
-	ctx context.Context,
-	destDir string,
-	src *Directory,
-	filter CopyFilter,
-	owner string,
-) (*Directory, error) {
-	dir = dir.Clone()
-
-	destSt, err := dir.State()
-	if err != nil {
-		return nil, err
-	}
-
-	srcSt, err := src.State()
-	if err != nil {
-		return nil, err
-	}
-
-	var ownership *Ownership
-	if owner != "" {
-		ownership, err = parseDirectoryOwner(owner)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse ownership %s: %w", owner, err)
-		}
-	}
-
-	if err := dir.SetState(ctx, mergeStates(mergeStateInput{
-		Dest:            destSt,
-		DestDir:         path.Join(dir.Dir, destDir),
-		Src:             srcSt,
-		SrcDir:          src.Dir,
-		IncludePatterns: filter.Include,
-		ExcludePatterns: filter.Exclude,
-		Owner:           ownership,
-	})); err != nil {
-		return nil, err
-	}
-
-	return dir, nil
-}
-
 //nolint:gocyclo
 func (dir *Directory) WithDirectory(
 	ctx context.Context,
@@ -1097,75 +1055,6 @@ func (dir *Directory) WithFiles(
 	return dir, nil
 }
 
-type mergeStateInput struct {
-	Dest         llb.State
-	DestDir      string
-	DestFileName string
-
-	Src         llb.State
-	SrcDir      string
-	SrcFileName string
-
-	IncludePatterns []string
-	ExcludePatterns []string
-
-	Permissions *int
-	Owner       *Ownership
-}
-
-func mergeStates(input mergeStateInput) llb.State {
-	input.DestDir = path.Join("/", input.DestDir)
-	input.SrcDir = path.Join("/", input.SrcDir)
-
-	copyInfo := &llb.CopyInfo{
-		CreateDestPath:      true,
-		CopyDirContentsOnly: true,
-		IncludePatterns:     input.IncludePatterns,
-		ExcludePatterns:     input.ExcludePatterns,
-	}
-	if input.DestFileName == "" && input.SrcFileName != "" {
-		input.DestFileName = input.SrcFileName
-	}
-	if input.Permissions != nil {
-		fm := fs.FileMode(*input.Permissions)
-		copyInfo.Mode = &fm
-	}
-	if input.Owner != nil {
-		input.Owner.Opt().SetCopyOption(copyInfo)
-	}
-
-	// MergeOp currently only supports merging the "/" of states together without any
-	// modifications or filtering
-	canDoDirectMerge := copyInfo.Mode == nil &&
-		copyInfo.ChownOpt == nil &&
-		len(copyInfo.ExcludePatterns) == 0 &&
-		len(copyInfo.IncludePatterns) == 0 &&
-		input.DestDir == "/" &&
-		input.SrcDir == "/" &&
-		// TODO:(sipsma) we could support direct merge-op with individual files if we can verify
-		// there are no other files in the dir, but doing so by just calling ReadDir would result
-		// in unlazying the inputs, which defeats some of the performance benefits of merge-op.
-		input.DestFileName == "" &&
-		input.SrcFileName == ""
-
-	mergeStates := []llb.State{input.Dest}
-	if canDoDirectMerge {
-		// Directly merge the states together, which is lazy, uses hardlinks instead of
-		// copies and caches inputs individually instead of invalidating the whole
-		// chain following any modified input.
-		mergeStates = append(mergeStates, input.Src)
-	} else {
-		// Even if we can't merge directly, we can still get some optimization by
-		// copying to scratch and then merging that. This still results in an on-disk
-		// copy but preserves the other caching benefits of MergeOp. This is the same
-		// behavior as "COPY --link" in Dockerfiles.
-		mergeStates = append(mergeStates, llb.Scratch().File(llb.Copy(
-			input.Src, path.Join(input.SrcDir, input.SrcFileName), path.Join(input.DestDir, input.DestFileName), copyInfo,
-		)))
-	}
-	return llb.Merge(mergeStates)
-}
-
 func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (*Directory, error) {
 	dir = dir.Clone()
 	return execInMount(ctx, dir, func(root string) error {
@@ -1358,14 +1247,24 @@ func (dir *Directory) FindUp(ctx context.Context, name string, start string) (st
 func (dir *Directory) WithChanges(ctx context.Context, changes *Changeset) (*Directory, error) {
 	dir = dir.Clone()
 
-	// First, get the diff directory from Changes.before.diff(Changes.after)
-	diffDir, err := changes.Before.Self().Diff(ctx, changes.After.Self())
+	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to compute diff between before and after directories: %w", err)
+		return nil, fmt.Errorf("failed to get dagql server: %w", err)
 	}
 
-	if dir.Dir != "" && dir.Dir != "/" {
-		panic(dir.Dir)
+	var diffDir dagql.ObjectResult[*Directory]
+	err = srv.Select(ctx, changes.Before, &diffDir,
+		dagql.Selector{Field: "diff", Args: []dagql.NamedInput{
+			{Name: "other", Value: dagql.NewID[*Directory](changes.After.ID())}, //dagql.NewID[*Directory](srcID)},
+		}},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if diffDir.Self().Dir != "/" {
+		// this should never happen
+		return nil, fmt.Errorf("unexpected Dir value: %s", diffDir.Self().Dir)
 	}
 
 	parentRef, err := getRefOrEvaluate(ctx, dir)
@@ -1373,9 +1272,31 @@ func (dir *Directory) WithChanges(ctx context.Context, changes *Changeset) (*Dir
 		return nil, err
 	}
 
-	diffDirRef, err := getRefOrEvaluate(ctx, diffDir)
-	if err != nil {
-		return nil, err
+	var diffDirRef bkcache.ImmutableRef
+
+	if dir.Dir != "" && dir.Dir != "/" {
+		fmt.Printf("ACB rebasing changes onto %s\n", dir.Dir)
+		var rebasedDir dagql.ObjectResult[*Directory]
+		err = srv.Select(ctx, srv.Root(), &rebasedDir,
+			dagql.Selector{Field: "directory"}, // scratch
+			dagql.Selector{Field: "withDirectory", Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(dir.Dir)},
+				{Name: "source", Value: dagql.NewID[*Directory](diffDir.ID())},
+			}},
+		)
+		if err != nil {
+			return nil, err
+		}
+		diffDirRef, err = getRefOrEvaluate(ctx, rebasedDir.Self())
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// no need to rebase
+		diffDirRef, err = getRefOrEvaluate(ctx, diffDir.Self())
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	query, err := CurrentQuery(ctx)
