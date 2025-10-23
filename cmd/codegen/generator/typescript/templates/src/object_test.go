@@ -40,6 +40,102 @@ func TestObjectCasingConsistency(t *testing.T) {
 	require.Equal(t, want, b.String())
 }
 
+func TestObjectFieldDeprecated(t *testing.T) {
+	tmpl := templateHelper(t)
+
+	var objectFieldDeprecatedJSON = `
+    {
+      "kind": "OBJECT",
+      "name": "Test",
+      "description": "",
+      "fields": [
+        {
+          "args": [],
+          "deprecationReason": "This field is deprecated and will be removed in future versions.",
+          "description": "",
+          "isDeprecated": true,
+          "name": "legacyField",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
+          }
+        }
+      ],
+      "inputFields": null,
+      "interfaces": [],
+      "enumValues": null,
+      "possibleTypes": null
+    }
+`
+
+	object := objectInit(t, objectFieldDeprecatedJSON)
+
+	var b bytes.Buffer
+	err := tmpl.ExecuteTemplate(&b, "object", object)
+	require.NoError(t, err)
+
+	want := updateAndGetFixtures(t, "testdata/object_field_deprecated_want.ts", b.String())
+
+	require.Equal(t, want, b.String())
+}
+
+func TestInterfaceMethodOptionalArgDeprecated(t *testing.T) {
+	tmpl := templateHelper(t)
+
+	var interfaceDeprecatedJSON = `
+    {
+      "kind": "INTERFACE",
+      "name": "TestFooer",
+      "description": "",
+      "fields": [
+        {
+          "args": [
+            {
+              "defaultValue": null,
+              "deprecationReason": "Not needed anymore.",
+              "description": "",
+              "isDeprecated": true,
+              "name": "bar",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int"
+              }
+            }
+          ],
+          "deprecationReason": "Use Bar instead.",
+          "description": "",
+          "isDeprecated": true,
+          "name": "foo",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
+          }
+        }
+      ],
+      "inputFields": null,
+      "interfaces": [],
+      "enumValues": null,
+      "possibleTypes": null
+    }
+`
+
+	object := objectInit(t, interfaceDeprecatedJSON)
+
+	var b bytes.Buffer
+	err := tmpl.ExecuteTemplate(&b, "object", object)
+	require.NoError(t, err)
+
+	want := updateAndGetFixtures(t, "testdata/interface_method_optional_arg_deprecated_want.ts", b.String())
+
+	require.Equal(t, want, b.String())
+}
+
 func objectInit(t *testing.T, jsonString string) *introspection.Type {
 	t.Helper()
 	var object introspection.Type
