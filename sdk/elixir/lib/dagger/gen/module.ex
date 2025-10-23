@@ -136,20 +136,6 @@ defmodule Dagger.Module do
   end
 
   @doc """
-  Load the runtime of this module
-  """
-  @spec load_runtime(t()) :: Dagger.Module.t()
-  def load_runtime(%__MODULE__{} = module) do
-    query_builder =
-      module.query_builder |> QB.select("loadRuntime")
-
-    %Dagger.Module{
-      query_builder: query_builder,
-      client: module.client
-    }
-  end
-
-  @doc """
   The name of the module
   """
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
@@ -185,7 +171,7 @@ defmodule Dagger.Module do
   @doc """
   The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
   """
-  @spec runtime(t()) :: Dagger.Container.t() | nil
+  @spec runtime(t()) :: Dagger.Container.t()
   def runtime(%__MODULE__{} = module) do
     query_builder =
       module.query_builder |> QB.select("runtime")

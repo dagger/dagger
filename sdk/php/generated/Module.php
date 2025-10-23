@@ -81,15 +81,6 @@ class Module extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Load the runtime of this module
-     */
-    public function loadRuntime(): Module
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadRuntime');
-        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * The name of the module
      */
     public function name(): string

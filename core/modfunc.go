@@ -583,9 +583,6 @@ func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (runtime dagq
 
 	err = srv.Select(ctx, modObj, &runtime,
 		dagql.Selector{
-			Field: "loadRuntime",
-		},
-		dagql.Selector{
 			Field: "runtime",
 		},
 	)

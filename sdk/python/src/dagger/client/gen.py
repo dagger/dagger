@@ -8825,12 +8825,6 @@ class Module(Type):
         _ctx = self._select("introspectionSchemaJSON", _args)
         return File(_ctx)
 
-    def load_runtime(self) -> Self:
-        """Load the runtime of this module"""
-        _args: list[Arg] = []
-        _ctx = self._select("loadRuntime", _args)
-        return Module(_ctx)
-
     async def name(self) -> str:
         """The name of the module
 
