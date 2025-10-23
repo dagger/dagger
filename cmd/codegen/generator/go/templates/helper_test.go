@@ -2,13 +2,12 @@ package templates
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"go/format"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"text/template"
 
@@ -35,14 +34,20 @@ func loadSchemaFromTypeJSON(t *testing.T, jsonString string) (*introspection.Sch
 
 func parseTemplateFiles(t *testing.T, schema *introspection.Schema, paths ...string) *template.Template {
 	t.Helper()
-	funcs := GoTemplateFuncs(context.Background(), schema, "v0.0.0", generator.Config{}, nil, nil, 0)
+	if len(paths) == 0 {
+		t.Fatalf("parseTemplateFiles requires at least one template path")
+	}
+	funcs := GoTemplateFuncs(t.Context(), schema, "v0.0.0", generator.Config{}, nil, nil, 0)
 	fullPaths := make([]string, len(paths))
 	for i, path := range paths {
 		fullPaths[i] = filepath.Join("src", path)
 	}
-	tmpl, err := template.New(filepath.Base(paths[0])).Funcs(funcs).ParseFiles(fullPaths...)
-	require.NoError(t, err)
-	return tmpl.Lookup(filepath.Base(paths[0]))
+	root := filepath.Base(paths[0])
+	tmpl, err := template.New(root).Funcs(funcs).ParseFiles(fullPaths...)
+	require.NoErrorf(t, err, "parse template %q", paths)
+	lookup := tmpl.Lookup(root)
+	require.NotNilf(t, lookup, "template %q not found after parsing %q", root, paths)
+	return lookup
 }
 
 func renderTemplate(t *testing.T, tmpl *template.Template, data any) string {
@@ -51,24 +56,26 @@ func renderTemplate(t *testing.T, tmpl *template.Template, data any) string {
 	require.NoError(t, tmpl.Execute(&buf, data))
 	source := "package main\n\n" + buf.String()
 	formatted, err := format.Source([]byte(source))
-	require.NoError(t, err)
-	return strings.TrimPrefix(string(formatted), "package main\n\n")
+	require.NoErrorf(t, err, "gofmt template %q failed:\n%s", tmpl.Name(), buf.String())
+	return string(bytes.TrimPrefix(formatted, []byte("package main\n\n")))
 }
 
 func updateAndGetFixture(t *testing.T, path string, got string) string {
 	t.Helper()
 	fullPath := resolveFixturePath(path)
 	if *updateFixtures {
-		require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0o755))
-		require.NoError(t, os.WriteFile(fullPath, []byte(got), 0o600))
+		require.NoErrorf(t, os.MkdirAll(filepath.Dir(fullPath), 0o755), "create fixture dir %q", filepath.Dir(fullPath))
+		require.NoErrorf(t, os.WriteFile(fullPath, []byte(got), 0o644), "write fixture %q", fullPath)
 	}
 	want, err := os.ReadFile(fullPath)
-	require.NoError(t, err)
+	require.NoErrorf(t, err, "read fixture %q", fullPath)
 	return string(want)
 }
 
 func resolveFixturePath(path string) string {
 	if _, err := os.Stat(path); err == nil {
+		return path
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return path
 	}
 	return filepath.Join("cmd/codegen/generator/go/templates", path)
