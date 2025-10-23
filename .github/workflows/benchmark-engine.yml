@@ -23,7 +23,7 @@ jobs:
   benchdev:
     if: ${{ github.repository == 'dagger/dagger' && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'benchmark')) }}
     runs-on:
-        - 'dagger-g3-v0-19-2-16c-st-benchmark'
+        - 'dagger-g3-v0-19-3-16c-st-benchmark'
     timeout-minutes: 10
     steps:
       - name: Checkout repo

@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-October%207,%202025-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-October%223,%202025-success?style=flat-square)
 
 This document describes the process for releasing Dagger.
 
@@ -14,9 +14,9 @@ cadence.
 To let the team know:
 
 - [ ] Create a new milestone in [GitHub](https://github.com/dagger/dagger/milestones),
-      e.g. [`v0.11.5 Milestone`](https://github.com/dagger/dagger/milestone/47)
-- [ ] Create a new post in [Discord #engine-dev](https://discord.com/channels/707636530424053791/1003718839739105300),
-      e.g. [`v0.11.5 release - 28th May 2024`](https://discord.com/channels/707636530424053791/1240714480275689574)
+      e.g. [`v0.19.2 Milestone`](https://github.com/dagger/dagger/milestone/47)
+- [ ] Create a new post in [Discord #team](https://discord.com/channels/707636530424053791/783828171153866782),
+      e.g. [`v0.19.2 release`](https://discord.com/channels/707636530424053791/1430934913984499876/1430934919403671583)
 
 This allows others to weigh in whether:
 
@@ -160,7 +160,6 @@ to dagger.
 - [ ] Generate release notes `.changes/**/v0.12.4.md` for all releases:
 
   ```console
-  export CHANGIE_MAINTAINERS=$(dagger call -m releaser get-maintainers --github-org-name dagger --github-token="cmd://gh auth token" --json)
   find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php sdk/rust helm/dagger -maxdepth 1 -name .changie.yaml -execdir changie batch $ENGINE_VERSION \;
   ```
 

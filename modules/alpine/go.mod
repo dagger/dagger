@@ -4,7 +4,7 @@ go 1.24.6
 
 require (
 	chainguard.dev/apko v0.30.11
-	github.com/99designs/gqlgen v0.17.80
+	github.com/99designs/gqlgen v0.17.81
 	github.com/Khan/genqlient v0.8.1
 	github.com/vektah/gqlparser/v2 v2.5.30
 	go.opentelemetry.io/otel v1.38.0
@@ -19,7 +19,7 @@ require (
 	go.opentelemetry.io/proto/otlp v1.8.0
 	golang.org/x/mod v0.28.0
 	golang.org/x/sync v0.17.0
-	google.golang.org/grpc v1.75.1
+	google.golang.org/grpc v1.76.0
 )
 
 require (
