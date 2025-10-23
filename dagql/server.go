@@ -24,7 +24,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/slog"
 )
 
 // Server represents a GraphQL server whose schema is dynamically modified at
@@ -888,14 +887,10 @@ func NewResultForID[T Typed](
 		return res, fmt.Errorf("cannot create Result for %T, it is already a Result", self)
 	}
 
-	foo := Result[T]{
+	return Result[T]{
 		constructor: id,
 		self:        self,
-	}
-
-	slog.Warn("!!! TYPE OF FOO", "t", fmt.Sprintf("%T", self), "foo", fmt.Sprintf("%T", foo))
-
-	return foo, nil
+	}, nil
 }
 
 func NewObjectResultForCurrentID[T Typed](
@@ -915,7 +910,6 @@ func NewObjectResultForID[T Typed](
 	if !ok {
 		return res, fmt.Errorf("unknown type %q", self.Type().Name())
 	}
-
 	class, ok := objType.(Class[T])
 	if !ok {
 		return res, fmt.Errorf("not a Class: %T", objType)
