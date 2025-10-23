@@ -321,6 +321,58 @@ export type BuildArg = {
 		require.NoError(t, err)
 		require.Equal(t, want, b.String())
 	})
+
+	t.Run("interface optional arg deprecated", func(t *testing.T) {
+		wantFile := "testdata/type_test_interface_optional_arg_deprecated_want.ts"
+
+		var interfaceOptionalArgDeprecatedJSON = `
+    {
+      "description": "Test interface with deprecated method",
+      "fields": [
+        {
+          "args": [
+            {
+              "defaultValue": null,
+              "description": "",
+              "isDeprecated": true,
+              "deprecationReason": "Not needed anymore.",
+              "name": "bar",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int"
+              }
+            }
+          ],
+          "deprecationReason": "Use Bar instead.",
+          "description": "",
+          "isDeprecated": true,
+          "name": "foo",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
+          }
+        }
+      ],
+      "kind": "INTERFACE",
+      "name": "TestFooer"
+    }
+`
+
+		tmpl := templateHelper(t)
+
+		object := objectInit(t, interfaceOptionalArgDeprecatedJSON)
+
+		var b bytes.Buffer
+		err := tmpl.ExecuteTemplate(&b, "type", object)
+
+		want := updateAndGetFixtures(t, wantFile, b.String())
+
+		require.NoError(t, err)
+		require.Equal(t, want, b.String())
+	})
 }
 
 func TestTypeEnum(t *testing.T) {
