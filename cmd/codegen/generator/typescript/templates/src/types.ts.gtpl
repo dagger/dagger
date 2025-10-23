@@ -138,17 +138,25 @@ export type {{ $.Name | FormatName }} = {
 			{{- $opt = "?" }}
 		{{- end }}
 
-		{{- /* Write description. */ -}}
-		{{- if $field.Description }}
-			{{- $desc := CommentToLines $field.Description }}
-
-			{{- /* Add extra break line if it's not the first param. */ -}}
+		{{- /* Write description and deprecated annotation. */ -}}
+		{{- if or $field.Description $field.IsDeprecated }}
 			{{- if ne $i 0 }}
 {{""}}
 			{{- end }}
   /**
-			{{- range $desc }}
+			{{- if $field.Description }}
+				{{- range CommentToLines $field.Description }}
    * {{ . }}
+				{{- end }}
+			{{- end }}
+			{{- if and $field.Description $field.IsDeprecated }}
+   *
+			{{- end }}
+			{{- if $field.IsDeprecated }}
+				{{- $deprecationLines := FormatDeprecation $field.DeprecationReason }}
+				{{- range $deprecationLines }}
+   * {{ . }}
+				{{- end }}
 			{{- end }}
    */
 		{{- end }}
