@@ -356,7 +356,7 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 
 			return dagql.NewResultForCurrentID(ctx, env.WithInput(name, obj, description))
 		},
-		dagql.CacheSpec{},
+		nil,
 	)
 
 	envType.Extend(
@@ -384,7 +384,7 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 
 			return dagql.NewResultForCurrentID(ctx, env.WithOutput(name, targetType, desc))
 		},
-		dagql.CacheSpec{},
+		nil,
 	)
 
 	// Install Binding.as<TargetType>()
@@ -394,6 +394,7 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 			Description: fmt.Sprintf("Retrieve the binding value, as type %s", typeName),
 			Type:        targetType.Typed(),
 			Args:        dagql.InputSpecs{},
+			DoNotCache:  "Bindings are mutable",
 		},
 		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
 			binding := self.(dagql.ObjectResult[*Binding]).Self()
@@ -415,9 +416,7 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 			}
 			return res, nil
 		},
-		dagql.CacheSpec{
-			DoNotCache: "Bindings are mutable",
-		},
+		nil,
 	)
 	return nil
 }

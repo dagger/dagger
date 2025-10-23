@@ -136,7 +136,36 @@ func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec
 
 		spec.Args.Add(argSpec)
 	}
+
+	cachePolicy := fn.derivedCachePolicy(mod)
+	switch cachePolicy {
+	case FunctionCachePolicyNever:
+		spec.DoNotCache = "function explicitly marked as never cache"
+
+	case FunctionCachePolicyDefault:
+		if fn.CacheTTLSeconds.Valid {
+			spec.TTL = fn.CacheTTLSeconds.Value.Int64()
+		} else {
+			// we still set a max TTL for now as a very primitive form of pruning
+			spec.TTL = MaxFunctionCacheTTLSeconds
+		}
+	}
+
 	return spec, nil
+}
+
+func (fn *Function) derivedCachePolicy(mod *Module) FunctionCachePolicy {
+	cachePolicy := fn.CachePolicy
+	if cachePolicy == "" {
+		cachePolicy = FunctionCachePolicyDefault
+	}
+	if cachePolicy == FunctionCachePolicyDefault && mod.DisableDefaultFunctionCaching {
+		// older modules that explicitly disable the new default function caching should
+		// fallback to the old caching behavior (per-session)
+		cachePolicy = FunctionCachePolicyPerSession
+	}
+
+	return cachePolicy
 }
 
 func (fn *Function) WithDescription(desc string) *Function {

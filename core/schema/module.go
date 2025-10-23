@@ -159,7 +159,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			),
 
 		dagql.Func("withCachePolicy", s.functionWithCachePolicy).
-			Doc(`TODO doc`).
+			Doc(`Returns the function updated to use the provided cache policy.`).
 			Args(
 				dagql.Arg("policy").Doc(`The cache policy to use.`),
 				dagql.Arg("timeToLive").Doc(`The TTL for the cache policy, if applicable. Provided as a duration string, e.g. "5m", "1h30s".`),
@@ -594,6 +594,7 @@ func (s *moduleSchema) functionWithCachePolicy(
 
 		switch {
 		case ttlDuration == 0:
+			// a TTL of 0 sounds an awful lot like "never cache", so we treat it that way.
 			fn.CachePolicy = core.FunctionCachePolicyNever
 
 		case ttlDuration < core.MinFunctionCacheTTLSeconds*time.Second:

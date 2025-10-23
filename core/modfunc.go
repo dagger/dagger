@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -103,16 +102,15 @@ type CallOpts struct {
 	SkipSelfSchema bool
 	Server         *dagql.Server
 
-	// If set, don't mix in the digest for the current dagql call into the cache key for
-	// the exec-op underlying the function call, instead mix in this string.
+	// If set, persistently cache the result of the function call using this
+	// key rather than the one provided to use through CurrentStorageKey(ctx)
+	// from the cache.
 	//
-	// We want the function call to be cached by the dagql digest in almost every case
-	// since the current dagql call is typically the actual function call. However, in
-	// some corner cases we may calling a function internally within a separate dagql
-	// call and don't want the current call digest mixed in, e.g. during the special
-	// function call that retrieves the module typedefs.
-	// TODO: UPDATE ABOVE DOC STRING
-	OverridePersistenceKey string
+	// This is currently only used for the special function call made directly
+	// that retrieves module typedefs.
+	// TODO:(sipsma) remove this nonsense once all SDKs have migrated to the new
+	// way of obtaining module typedefs that doesn't involve a function call.
+	OverrideStorageKey string
 }
 
 type CallInput struct {
@@ -468,14 +466,14 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	parent dagql.AnyResult,
 	args map[string]dagql.Input,
 	view call.View,
-	inputCfg dagql.CacheConfig,
-) (*dagql.CacheConfig, error) {
-	cacheCfg, err := fn.mod.CacheConfigForCall(ctx, parent, args, view, inputCfg)
+	req dagql.GetCacheConfigRequest,
+) (*dagql.GetCacheConfigResponse, error) {
+	cacheCfgResp, err := fn.mod.CacheConfigForCall(ctx, parent, args, view, req)
 	if err != nil {
 		return nil, err
 	}
 
-	dgstInputs := []string{cacheCfg.Digest.String()}
+	dgstInputs := []string{cacheCfgResp.CacheKey.CallKey}
 
 	var ctxArgs []*FunctionArg
 	var userDefaults []*UserDefault
@@ -511,7 +509,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	}
 
 	if len(ctxArgs) > 0 || len(userDefaults) > 0 {
-		cacheCfg.UpdatedArgs = make(map[string]dagql.Input)
+		cacheCfgResp.UpdatedArgs = make(map[string]dagql.Input)
 		var mu sync.Mutex
 		type argInput struct {
 			name string
@@ -535,7 +533,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 					val:  ctxVal,
 				}
 				mu.Lock()
-				cacheCfg.UpdatedArgs[arg.Name] = dagql.Opt(ctxVal)
+				cacheCfgResp.UpdatedArgs[arg.Name] = dagql.Opt(ctxVal)
 				mu.Unlock()
 
 				return nil
@@ -557,7 +555,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 					val:  id,
 				}
 				mu.Lock()
-				cacheCfg.UpdatedArgs[arg.Name] = dagql.Opt(id)
+				cacheCfgResp.UpdatedArgs[arg.Name] = dagql.Opt(id)
 				mu.Unlock()
 				return nil
 			})
@@ -577,44 +575,20 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		}
 	}
 
-	cachePolicy := fn.metadata.CachePolicy
-	if cachePolicy == "" {
-		cachePolicy = FunctionCachePolicyDefault
-	}
-	if cachePolicy == FunctionCachePolicyDefault && fn.mod.DisableDefaultFunctionCaching {
-		cachePolicy = FunctionCachePolicyPerSession
-	}
-
-	switch cachePolicy {
-	case FunctionCachePolicyNever:
-		dgstInputs = append(dgstInputs, rand.Text())
-
-	case FunctionCachePolicyPerSession:
+	if cachePolicy := fn.metadata.derivedCachePolicy(fn.mod); cachePolicy == FunctionCachePolicyPerSession {
 		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 		if err != nil {
 			return nil, err
 		}
 		dgstInputs = append(dgstInputs, clientMetadata.SessionID)
-
-	case FunctionCachePolicyDefault:
-		if fn.metadata.CacheTTLSeconds.Valid {
-			cacheCfg.TTL = fn.metadata.CacheTTLSeconds.Value.Int64()
-		} else {
-			cacheCfg.TTL = MaxFunctionCacheTTLSeconds
-		}
 	}
 
-	cacheCfg.Digest = hashutil.HashStrings(dgstInputs...)
-	return cacheCfg, nil
+	cacheCfgResp.CacheKey.CallKey = hashutil.HashStrings(dgstInputs...).String()
+	return cacheCfgResp, nil
 }
 
 func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.AnyResult, rerr error) { //nolint: gocyclo
 	mod := fn.mod
-
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
 
 	lg := bklog.G(ctx).WithField("module", mod.Name()).WithField("function", fn.metadata.Name)
 	if fn.objDef != nil {
@@ -642,8 +616,8 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	var cacheMixins []string
-	if opts.OverridePersistenceKey != "" {
-		cacheMixins = append(cacheMixins, opts.OverridePersistenceKey)
+	if opts.OverrideStorageKey != "" {
+		cacheMixins = append(cacheMixins, opts.OverrideStorageKey)
 	} else {
 		cacheMixins = append(cacheMixins, cache.CurrentStorageKey(ctx))
 	}
@@ -753,6 +727,10 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("exec function: %w", err)
 	}
 
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get buildkit client: %w", err)

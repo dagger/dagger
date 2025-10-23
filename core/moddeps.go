@@ -206,9 +206,7 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
 						IfaceType:      ifaceType,
 					})
 				},
-				dagql.CacheSpec{
-					GetCacheConfig: ifaceType.mod.CacheConfigForCall,
-				},
+				ifaceType.mod.CacheConfigForCall,
 			)
 		}
 	}

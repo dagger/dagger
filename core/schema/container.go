@@ -1030,16 +1030,23 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 	return dagql.NewObjectResultForCurrentID(ctx, srv, ctr)
 }
 
-func (s *containerSchema) withExecCacheKey(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerExecArgs, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
+func (s *containerSchema) withExecCacheKey(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Container],
+	args containerExecArgs,
+	req dagql.GetCacheConfigRequest,
+) (*dagql.GetCacheConfigResponse, error) {
 	argDigest, err := args.Digest()
 	if err != nil {
 		return nil, err
 	}
-	cacheCfg.Digest = hashutil.HashStrings(
+
+	resp := &dagql.GetCacheConfigResponse{CacheKey: req.CacheKey}
+	resp.CacheKey.CallKey = hashutil.HashStrings(
 		parent.ID().Digest().String(),
 		string(argDigest),
-	)
-	return &cacheCfg, nil
+	).String()
+	return resp, nil
 }
 
 func (s *containerSchema) stdout(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {

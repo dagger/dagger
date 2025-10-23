@@ -17,9 +17,9 @@ func CachePerClient[P Typed, A any](
 	ctx context.Context,
 	inst ObjectResult[P],
 	args A,
-	cacheCfg CacheConfig,
-) (*CacheConfig, error) {
-	return CachePerClientObject(ctx, inst, args, cacheCfg)
+	req GetCacheConfigRequest,
+) (*GetCacheConfigResponse, error) {
+	return CachePerClientObject(ctx, inst, args, req)
 }
 
 // CachePerClientObject is the same as CachePerClient but when you have a dagql.Object instead of a dagql.Result.
@@ -27,8 +27,8 @@ func CachePerClientObject[A any](
 	ctx context.Context,
 	_ AnyObjectResult,
 	_ A,
-	cacheCfg CacheConfig,
-) (*CacheConfig, error) {
+	req GetCacheConfigRequest,
+) (*GetCacheConfigResponse, error) {
 	clientMD, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client metadata: %w", err)
@@ -37,8 +37,11 @@ func CachePerClientObject[A any](
 		return nil, fmt.Errorf("client ID not found in context")
 	}
 
-	cacheCfg.Digest = hashutil.HashStrings(cacheCfg.Digest.String(), clientMD.ClientID)
-	return &cacheCfg, nil
+	resp := &GetCacheConfigResponse{
+		CacheKey: req.CacheKey,
+	}
+	resp.CacheKey.CallKey = hashutil.HashStrings(resp.CacheKey.CallKey, clientMD.ClientID).String()
+	return resp, nil
 }
 
 // CachePerSession is a CacheKeyFunc that scopes the cache key to the session by mixing in the session ID to the original digest of the operation.
@@ -47,9 +50,9 @@ func CachePerSession[P Typed, A any](
 	ctx context.Context,
 	inst ObjectResult[P],
 	args A,
-	cacheCfg CacheConfig,
-) (*CacheConfig, error) {
-	return CachePerSessionObject(ctx, inst, args, cacheCfg)
+	req GetCacheConfigRequest,
+) (*GetCacheConfigResponse, error) {
+	return CachePerSessionObject(ctx, inst, args, req)
 }
 
 // CachePerSessionObject is the same as CachePerSession but when you have a dagql.Object instead of a dagql.Result.
@@ -57,8 +60,8 @@ func CachePerSessionObject[A any](
 	ctx context.Context,
 	_ AnyObjectResult,
 	_ A,
-	cacheCfg CacheConfig,
-) (*CacheConfig, error) {
+	req GetCacheConfigRequest,
+) (*GetCacheConfigResponse, error) {
 	clientMD, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client metadata: %w", err)
@@ -67,8 +70,11 @@ func CachePerSessionObject[A any](
 		return nil, fmt.Errorf("session ID not found in context")
 	}
 
-	cacheCfg.Digest = hashutil.HashStrings(cacheCfg.Digest.String(), clientMD.SessionID)
-	return &cacheCfg, nil
+	resp := &GetCacheConfigResponse{
+		CacheKey: req.CacheKey,
+	}
+	resp.CacheKey.CallKey = hashutil.HashStrings(resp.CacheKey.CallKey, clientMD.SessionID).String()
+	return resp, nil
 }
 
 // this could all be un-generic'd and repeated per-API. might be cleaner at the end of the day.
@@ -84,14 +90,15 @@ const (
 	CacheTypePerCall
 )
 
-func CacheAsRequested[T Typed, A CacheControllableArgs](ctx context.Context, i ObjectResult[T], a A, cc CacheConfig) (*CacheConfig, error) {
+func CacheAsRequested[T Typed, A CacheControllableArgs](ctx context.Context, i ObjectResult[T], a A, req GetCacheConfigRequest) (*GetCacheConfigResponse, error) {
 	switch a.CacheType() {
 	case CacheTypePerClient:
-		return CachePerClient(ctx, i, a, cc)
+		return CachePerClient(ctx, i, a, req)
 	case CacheTypePerCall:
-		return CachePerCall(ctx, i, a, cc)
+		return CachePerCall(ctx, i, a, req)
 	default:
-		return &cc, nil
+		resp := &GetCacheConfigResponse{CacheKey: req.CacheKey}
+		return resp, nil
 	}
 }
 
@@ -103,11 +110,12 @@ func CachePerCall[P Typed, A any](
 	_ context.Context,
 	_ ObjectResult[P],
 	_ A,
-	cacheCfg CacheConfig,
-) (*CacheConfig, error) {
+	req GetCacheConfigRequest,
+) (*GetCacheConfigResponse, error) {
 	randID := identity.NewID()
-	cacheCfg.Digest = hashutil.HashStrings(randID)
-	return &cacheCfg, nil
+	resp := &GetCacheConfigResponse{CacheKey: req.CacheKey}
+	resp.CacheKey.CallKey = randID
+	return resp, nil
 }
 
 // CachePerSchema is a CacheKeyFunc that scopes the cache key to the schema of
@@ -115,18 +123,19 @@ func CachePerCall[P Typed, A any](
 //
 // This should be used only in scenarios where literally the schema is all that
 // determines the result, irrespective of what client is making the call.
-func CachePerSchema[P Typed, A any](srv *Server) func(context.Context, ObjectResult[P], A, CacheConfig) (*CacheConfig, error) {
+func CachePerSchema[P Typed, A any](srv *Server) func(context.Context, ObjectResult[P], A, GetCacheConfigRequest) (*GetCacheConfigResponse, error) {
 	return func(
 		ctx context.Context,
 		_ ObjectResult[P],
 		_ A,
-		cfg CacheConfig,
-	) (*CacheConfig, error) {
-		cfg.Digest = hashutil.HashStrings(
-			cfg.Digest.String(),
+		req GetCacheConfigRequest,
+	) (*GetCacheConfigResponse, error) {
+		resp := &GetCacheConfigResponse{CacheKey: req.CacheKey}
+		resp.CacheKey.CallKey = hashutil.HashStrings(
+			resp.CacheKey.CallKey,
 			srv.SchemaDigest().String(),
-		)
-		return &cfg, nil
+		).String()
+		return resp, nil
 	}
 }
 
@@ -135,13 +144,13 @@ func CachePerSchema[P Typed, A any](srv *Server) func(context.Context, ObjectRes
 //
 // This should be used by anything that should invalidate when the schema
 // changes, but also has an element of per-client dynamism.
-func CachePerClientSchema[P Typed, A any](srv *Server) func(context.Context, ObjectResult[P], A, CacheConfig) (*CacheConfig, error) {
+func CachePerClientSchema[P Typed, A any](srv *Server) func(context.Context, ObjectResult[P], A, GetCacheConfigRequest) (*GetCacheConfigResponse, error) {
 	return func(
 		ctx context.Context,
 		_ ObjectResult[P],
 		_ A,
-		cfg CacheConfig,
-	) (*CacheConfig, error) {
+		req GetCacheConfigRequest,
+	) (*GetCacheConfigResponse, error) {
 		clientMD, err := engine.ClientMetadataFromContext(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get client metadata: %w", err)
@@ -149,11 +158,13 @@ func CachePerClientSchema[P Typed, A any](srv *Server) func(context.Context, Obj
 		if clientMD.ClientID == "" {
 			return nil, fmt.Errorf("client ID not found in context")
 		}
-		cfg.Digest = hashutil.HashStrings(
-			cfg.Digest.String(),
+
+		resp := &GetCacheConfigResponse{CacheKey: req.CacheKey}
+		resp.CacheKey.CallKey = hashutil.HashStrings(
+			resp.CacheKey.CallKey,
 			srv.SchemaDigest().String(),
 			clientMD.ClientID,
-		)
-		return &cfg, nil
+		).String()
+		return resp, nil
 	}
 }

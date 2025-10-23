@@ -11,6 +11,8 @@ import (
 type CacheKeyType = string
 type CacheValueType = AnyResult
 
+type CacheKey = cache.CacheKey[CacheKeyType]
+
 type CacheResult = cache.Result[CacheKeyType, CacheValueType]
 
 type CacheValWithCallbacks = cache.ValueWithCallbacks[CacheValueType]
@@ -133,15 +135,12 @@ func (c *SessionCache) GetOrInitializeWithCallbacks(
 		opt.SetCacheCallOpt(&o)
 	}
 
-	var zeroKey CacheKeyType
-	isZero := key.CallKey == zeroKey
-
 	keys := telemetryKeys(ctx)
 	if keys == nil {
 		keys = &c.seenKeys
 	}
 	_, seen := keys.LoadOrStore(key.CallKey, struct{}{})
-	if o.Telemetry != nil && (!seen || isZero) {
+	if o.Telemetry != nil && (!seen || key.DoNotCache) {
 		// track keys globally in addition to any local key stores, otherwise we'll
 		// see dupes when e.g. IDs returned out of the "bubble" are loaded
 		c.seenKeys.Store(key.CallKey, struct{}{})
@@ -174,7 +173,7 @@ func (c *SessionCache) GetOrInitializeWithCallbacks(
 		return nil, err
 	}
 
-	if !isZero {
+	if !key.DoNotCache {
 		c.results = append(c.results, res)
 	}
 

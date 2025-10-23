@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -78,7 +79,8 @@ type CacheKey[K KeyType] struct {
 	ConcurrencyKey K
 
 	// TODO: doc
-	TTL int64
+	TTL        int64
+	DoNotCache bool
 }
 
 type PostCallFunc = func(context.Context) error
@@ -277,9 +279,13 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 	key CacheKey[K],
 	fn func(context.Context) (*ValueWithCallbacks[V], error),
 ) (Result[K, V], error) {
-	var zeroKey K
-	if key.CallKey == zeroKey {
+	if key.DoNotCache {
 		// don't cache, don't dedupe calls, just call it
+
+		// we currently still have to appease the buildkit cache key machinery underlying function calls,
+		// so make sure it gets a random storage key
+		ctx = ctxWithStorageKey(ctx, rand.Text())
+
 		valWithCallbacks, err := fn(ctx)
 		if err != nil {
 			return nil, err
@@ -388,6 +394,7 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 		}, nil
 	}
 
+	var zeroKey K
 	if key.ConcurrencyKey != zeroKey {
 		if res, ok := c.ongoingCalls[callConcKeys]; ok {
 			// already an ongoing call

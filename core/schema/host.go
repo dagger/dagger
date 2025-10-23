@@ -171,7 +171,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`name of the file or directory to search for`),
 			),
 
-		dagql.NodeFuncWithCacheKey("unixSocket", s.socket, s.socketCacheKey).
+		dagql.NodeFuncWithCacheKey("unixSocket", s.socket, dagql.CachePerClient).
 			Doc(`Accesses a Unix socket on the host.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the Unix socket (e.g., "/var/run/docker.sock").`),
@@ -333,19 +333,6 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 
 type hostSocketArgs struct {
 	Path string
-}
-
-func (s *hostSchema) socketCacheKey(
-	ctx context.Context,
-	host dagql.ObjectResult[*core.Host],
-	args hostSocketArgs,
-	cacheCfg dagql.CacheConfig,
-) (*dagql.CacheConfig, error) {
-	cc, err := dagql.CachePerClient(ctx, host, args, cacheCfg)
-	if err != nil {
-		return nil, err
-	}
-	return cc, nil
 }
 
 func (s *hostSchema) socket(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostSocketArgs) (inst dagql.Result[*core.Socket], err error) {

@@ -184,7 +184,7 @@ type Callable interface {
 	Call(context.Context, *CallOpts) (dagql.AnyResult, error)
 	ReturnType() (ModType, error)
 	ArgType(argName string) (ModType, error)
-	CacheConfigForCall(context.Context, dagql.AnyResult, map[string]dagql.Input, call.View, dagql.CacheConfig) (*dagql.CacheConfig, error)
+	CacheConfigForCall(context.Context, dagql.AnyResult, map[string]dagql.Input, call.View, dagql.GetCacheConfigRequest) (*dagql.GetCacheConfigResponse, error)
 }
 
 func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callable, error) {
@@ -344,9 +344,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 					Fields:  map[string]any{},
 				})
 			},
-			dagql.CacheSpec{
-				GetCacheConfig: mod.CacheConfigForCall,
-			},
+			mod.CacheConfigForCall,
 		)
 		return nil
 	}
@@ -391,9 +389,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 				Server:       dag,
 			})
 		},
-		dagql.CacheSpec{
-			GetCacheConfig: fn.CacheConfigForCall,
-		},
+		fn.CacheConfigForCall,
 	)
 
 	return nil
@@ -449,9 +445,7 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 			}
 			return modType.ConvertFromSDKResult(ctx, fieldVal)
 		},
-		CacheSpec: dagql.CacheSpec{
-			GetCacheConfig: mod.CacheConfigForCall,
-		},
+		GetCacheConfig: mod.CacheConfigForCall,
 	}
 }
 
@@ -514,9 +508,7 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 			})
 			return modFun.Call(ctx, opts)
 		},
-		CacheSpec: dagql.CacheSpec{
-			GetCacheConfig: modFun.CacheConfigForCall,
-		},
+		GetCacheConfig: modFun.CacheConfigForCall,
 	}, nil
 }
 
@@ -553,7 +545,7 @@ func (f *CallableField) CacheConfigForCall(
 	parent dagql.AnyResult,
 	args map[string]dagql.Input,
 	view call.View,
-	inputCfg dagql.CacheConfig,
-) (*dagql.CacheConfig, error) {
-	return f.Module.CacheConfigForCall(ctx, parent, args, view, inputCfg)
+	req dagql.GetCacheConfigRequest,
+) (*dagql.GetCacheConfigResponse, error) {
+	return f.Module.CacheConfigForCall(ctx, parent, args, view, req)
 }
