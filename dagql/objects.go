@@ -454,7 +454,22 @@ func (r ObjectResult[T]) Select(ctx context.Context, s *Server, sel Selector) (A
 	if err != nil {
 		return nil, err
 	}
+
 	return r.call(ctx, s, preselectResult.newID, preselectResult.inputArgs, preselectResult.doNotCache)
+}
+
+func (r ObjectResult[T]) SelectID(ctx context.Context, s *Server, sel Selector) (Typed, *call.ID, error) {
+	preselectResult, err := r.preselect(ctx, s, sel)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	returnType, err := r.returnType(preselectResult.newID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return returnType, preselectResult.newID, nil
 }
 
 type preselectResult struct {
@@ -747,6 +762,37 @@ func (r ObjectResult[T]) call(
 			}, val)
 			if err != nil {
 				return nil, err
+			}
+		}
+	}
+
+	return val, nil
+}
+
+func (r ObjectResult[T]) returnType(newID *call.ID) (Typed, error) {
+	field, ok := r.class.Field(newID.Field(), newID.View())
+	if !ok {
+		return nil, fmt.Errorf("ReturnType: %s has no such field: %q", r.class.inner.Type().Name(), newID.Field())
+	}
+	val := field.Spec.Type
+
+	if n, ok := val.(Derefable); ok {
+		val, ok = n.Deref()
+		if !ok {
+			return nil, nil
+		}
+	}
+	nth := int(newID.Nth())
+	if nth != 0 {
+		enum, ok := val.(Enumerable)
+		if !ok {
+			return nil, fmt.Errorf("cannot sub-select %dth item from %T", nth, val)
+		}
+		val = enum.Element()
+		if n, ok := val.(Derefable); ok {
+			val, ok = n.Deref()
+			if !ok {
+				return nil, nil
 			}
 		}
 	}

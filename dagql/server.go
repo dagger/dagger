@@ -685,6 +685,40 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 	return baseObj.Call(ctx, s, id)
 }
 
+func (s *Server) SelectID(ctx context.Context, self AnyObjectResult, sels ...Selector) (*call.ID, error) {
+	var res Typed
+	var id *call.ID
+
+	for i, sel := range sels {
+		var err error
+		res, id, err = self.SelectID(ctx, s, sel)
+		if err != nil {
+			return nil, fmt.Errorf("select %dth: %w", i, err)
+		}
+
+		if _, ok := s.ObjectType(res.Type().Name()); ok {
+			val, err := NewResultForID(res, id)
+			if err != nil {
+				return nil, err
+			}
+
+			// if the result is an Object, set it as the next selection target, and
+			// assign res to the "hydrated" Object
+			self, err = s.toSelectable(val)
+			if err != nil {
+				return nil, err
+			}
+
+			// res = self
+		} else if i+1 < len(sels) {
+			// if the result is not an object and there are further selections,
+			// that's a logic error.
+			return nil, fmt.Errorf("cannot sub-select %s", res.Type())
+		}
+	}
+	return id, nil
+}
+
 // Select evaluates a series of chained field selections starting from the
 // given object and assigns the final result value into dest.
 func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sels ...Selector) error {
