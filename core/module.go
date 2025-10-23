@@ -93,7 +93,7 @@ func (mod *Module) GetContextSource() *ModuleSource {
 	return mod.ContextSource.Value.Self()
 }
 
-// Return all local defaults for this module
+// Return all user defaults for this module
 func (mod *Module) UserDefaults(ctx context.Context) (*EnvFile, error) {
 	defaults := NewEnvFile(true)
 	src := mod.GetContextSource()

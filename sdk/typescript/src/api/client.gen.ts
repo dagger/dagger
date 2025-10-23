@@ -6164,6 +6164,15 @@ export class EnvFile extends BaseClient {
   }
 
   /**
+   * Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix "MY_APP_" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello
+   * @param prefix The prefix to filter by
+   */
+  namespace_ = (prefix: string): EnvFile => {
+    const ctx = this._ctx.select("namespace", { prefix })
+    return new EnvFile(ctx)
+  }
+
+  /**
    * Return all variables
    * @param opts.raw Return values exactly as written to the file. No quote removal or variable expansion
    */

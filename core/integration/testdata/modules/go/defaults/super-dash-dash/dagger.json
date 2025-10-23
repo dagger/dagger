@@ -1,0 +1,7 @@
+{
+  "name": "super-dash-dash",
+  "engineVersion": "v0.19.2",
+  "sdk": {
+    "source": "go"
+  }
+}

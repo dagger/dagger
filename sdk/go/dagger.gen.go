@@ -5387,6 +5387,16 @@ func (r *EnvFile) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix "MY_APP_" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello
+func (r *EnvFile) Namespace(prefix string) *EnvFile {
+	q := r.query.Select("namespace")
+	q = q.Arg("prefix", prefix)
+
+	return &EnvFile{
+		query: q,
+	}
+}
+
 // EnvFileVariablesOpts contains options for EnvFile.Variables
 type EnvFileVariablesOpts struct {
 	// Return values exactly as written to the file. No quote removal or variable expansion
