@@ -2462,16 +2462,6 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		mod.Deps = mod.Deps.Append(mod)
 	}
 
-	if !mod.Runtime.Valid {
-		// Before: FORCE loading runtime container
-//		runtimeID, err := runtimeImpl.LazyRuntime(ctx, mod.Deps, srcInstContentHashed)
-//		if err != nil {
-//			return nil, err
-//		}
-//
-//		mod.LazyRuntimeID = runtimeID
-	}
-
 	return mod, nil
 }
 
