@@ -6702,11 +6702,11 @@ func (m *Test) TestSetSecret() *dagger.Container {
 
 		out1a, err := modGen1.
 			WithEnvVariable("CACHE_BUST", rand.Text()).
-			With(daggerCall("test-set-secret")).Stdout(ctx)
+			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
 		require.NoError(t, err)
 		out1b, err := modGen1.
 			WithEnvVariable("CACHE_BUST", rand.Text()).
-			With(daggerCall("test-set-secret")).Stdout(ctx)
+			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, out1a, out1b)
 		require.NoError(t, c1.Close())
@@ -6716,11 +6716,11 @@ func (m *Test) TestSetSecret() *dagger.Container {
 
 		out2a, err := modGen2.
 			WithEnvVariable("CACHE_BUST", rand.Text()).
-			With(daggerCall("test-set-secret")).Stdout(ctx)
+			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
 		require.NoError(t, err)
 		out2b, err := modGen2.
 			WithEnvVariable("CACHE_BUST", rand.Text()).
-			With(daggerCall("test-set-secret")).Stdout(ctx)
+			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, out2a, out2b)
 
