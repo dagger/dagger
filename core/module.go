@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
@@ -38,7 +39,7 @@ type Module struct {
 	// Deps contains the module's dependency DAG.
 	Deps *ModDeps
 
-	LazyRuntimeID *call.ID
+	// LazyRuntimeID *call.ID
 
 	// Runtime is the container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
 	Runtime dagql.Nullable[dagql.ObjectResult[*Container]] `field:"true" name:"runtime" doc:"The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile."`
@@ -112,26 +113,34 @@ func (mod *Module) UserDefaults(ctx context.Context) (*EnvFile, error) {
 }
 
 func (mod *Module) LoadRuntime(ctx context.Context) (inst dagql.ObjectResult[*Container], err error) {
+	fmt.Printf("mod.Runtime.Valid: %t\n", mod.Runtime.Valid)
 	if mod.Runtime.Valid {
 		return mod.Runtime.Value, nil
 	}
 
-	dag, err := CurrentDagqlServer(ctx)
+	runtimeImpl, ok := mod.Source.Value.Self().SDKImpl.AsRuntime()
+	if !ok {
+		return inst, fmt.Errorf("no runtime implemented")
+	}
+
+	var src dagql.ObjectResult[*ModuleSource]
+	if !mod.Source.Valid {
+		return inst, fmt.Errorf("no source")
+	}
+
+	src = mod.Source.Value
+
+	srcInstContentHashed := src.WithObjectDigest(digest.Digest(src.Self().Digest))
+
+	fmt.Println("Call runtimeImpl")
+
+	runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get dag server: %w", err)
+		return inst, fmt.Errorf("failed to load runtime: %w", err)
 	}
 
-	if mod.LazyRuntimeID == nil {
-		return inst, fmt.Errorf("lazy runtime ID is not set")
-	}
-
-	runtimeRes, err := dag.Load(ctx, mod.LazyRuntimeID)
-	if err != nil {
-		return inst, fmt.Errorf("failed to lazy load runtime: %w", err)
-	}
-
-	runtime := runtimeRes.(dagql.ObjectResult[*Container])
 	mod.Runtime = dagql.NonNull(runtime)
+	fmt.Printf("mod.Runtime.Valid: %t\n", mod.Runtime.Valid)
 
 	return mod.Runtime.Value, nil
 }

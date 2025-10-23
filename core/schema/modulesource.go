@@ -2464,12 +2464,13 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 	}
 
 	if !mod.Runtime.Valid {
-		runtimeID, err := runtimeImpl.LazyRuntime(ctx, mod.Deps, srcInstContentHashed)
-		if err != nil {
-			return nil, err
-		}
-
-		mod.LazyRuntimeID = runtimeID
+		// Before: FORCE loading runtime container
+//		runtimeID, err := runtimeImpl.LazyRuntime(ctx, mod.Deps, srcInstContentHashed)
+//		if err != nil {
+//			return nil, err
+//		}
+//
+//		mod.LazyRuntimeID = runtimeID
 	}
 
 	return mod, nil
