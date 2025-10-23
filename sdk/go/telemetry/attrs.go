@@ -175,4 +175,7 @@ const (
 
 	// The function name of the current module in the format of "type.functionName"
 	ModuleCallerFunctionCallNameAttr = "dagger.io/module.caller.function.name"
+
+	// The function name of the current module in the format of "type.functionName"
+	FilesyncWrittenBytes = "dagger.io/filesync.written_bytes"
 )

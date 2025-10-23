@@ -191,6 +191,8 @@ type SpanSnapshot struct {
 	ChildCount int  `json:",omitempty"`
 	HasLogs    bool `json:",omitempty"`
 
+	FilesyncWrittenBytes int64 `json:",omitempty"`
+
 	ExtraAttributes map[string]json.RawMessage `json:",omitempty"`
 }
 
@@ -278,6 +280,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 
 	case telemetry.ContentTypeAttr:
 		snapshot.ContentType = val.(string)
+
+	case telemetry.FilesyncWrittenBytes:
+		snapshot.FilesyncWrittenBytes = val.(int64)
 
 	case "rpc.service":
 		// encapsulate these by default; we only maybe want to see these if their

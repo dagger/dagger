@@ -6,6 +6,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -440,6 +441,9 @@ func (r *renderer) renderSpan(
 				isEffect = true
 				break
 			}
+		}
+		if span != nil && span.FilesyncWrittenBytes > 0 {
+			label = out.String(name + " (" + strconv.FormatInt(span.FilesyncWrittenBytes/1024, 10) + "kb)")
 		}
 		if isEffect {
 			label = label.Italic()
