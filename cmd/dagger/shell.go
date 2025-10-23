@@ -48,11 +48,7 @@ var shellCmd = &cobra.Command{
 		cmd.SetContext(idtui.WithPrintTraceLink(cmd.Context(), true))
 		return withEngine(cmd.Context(), initModuleParams(args), func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
-			handler := &shellCallHandler{
-				dag:      dag,
-				llmModel: llmModel,
-				mode:     modeShell,
-			}
+			handler := newShellCallHandler(dag, Frontend)
 
 			err := handler.RunAll(ctx, args)
 
@@ -71,6 +67,14 @@ var shellCmd = &cobra.Command{
 type shellCallHandler struct {
 	dag    *dagger.Client
 	runner *interp.Runner
+
+	// don't detect + load a module, just stick to dagger core
+	noModule bool
+	// a module ref to load
+	moduleURL string
+
+	// frontend to integrate with
+	frontend idtui.Frontend
 
 	// tty is set to true when running the TUI (pretty frontend)
 	tty bool
@@ -127,6 +131,21 @@ type shellCallHandler struct {
 
 	// cancel interrupts the entire shell session
 	cancel func()
+}
+
+func newShellCallHandler(dag *dagger.Client, fe idtui.Frontend) *shellCallHandler {
+	ref, _ := getExplicitModuleSourceRef()
+	if ref == "" {
+		ref = moduleURLDefault
+	}
+	return &shellCallHandler{
+		dag:       dag,
+		llmModel:  llmModel,
+		mode:      modeShell,
+		noModule:  moduleNoURL,
+		moduleURL: ref,
+		frontend:  fe,
+	}
 }
 
 // Debug prints to stderr internal command handler state and workflow that
@@ -197,16 +216,11 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 	h.state = NewStateStore(h.runner)
 
 	// TODO: use `--workdir` and `--no-workdir` flags
-	ref, _ := getExplicitModuleSourceRef()
-	if ref == "" {
-		ref = moduleURLDefault
-	}
-
 	var def *moduleDef
 	var cfg *configuredModule
 
-	if !moduleNoURL {
-		def, cfg, err = h.maybeLoadModule(ctx, ref)
+	if !h.noModule {
+		def, cfg, err = h.maybeLoadModule(ctx, h.moduleURL)
 		if err != nil {
 			return err
 		}
@@ -221,7 +235,7 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 		h.modDefs.Store("", def)
 	}
 
-	subpath := ref
+	subpath := h.moduleURL
 	if cfg != nil {
 		subpath = cfg.Subpath
 	}
@@ -516,7 +530,7 @@ func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
 	}
 
 	// initialize without the lock held
-	s, err := NewLLMSession(ctx, h.dag, h.llmModel, h)
+	s, err := NewLLMSession(ctx, h.dag, h.llmModel, h, h.frontend)
 
 	h.llmL.Lock()
 	defer h.llmL.Unlock()
