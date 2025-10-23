@@ -8726,6 +8726,14 @@ export class Module_ extends BaseClient {
   }
 
   /**
+   * Load the runtime of this module
+   */
+  loadRuntime = (): Module_ => {
+    const ctx = this._ctx.select("loadRuntime")
+    return new Module_(ctx)
+  }
+
+  /**
    * The name of the module
    */
   name = async (): Promise<string> => {

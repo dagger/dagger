@@ -8706,6 +8706,15 @@ func (r *Module) IntrospectionSchemaJSON() *File {
 	}
 }
 
+// Load the runtime of this module
+func (r *Module) LoadRuntime() *Module {
+	q := r.query.Select("loadRuntime")
+
+	return &Module{
+		query: q,
+	}
+}
+
 // The name of the module
 func (r *Module) Name(ctx context.Context) (string, error) {
 	if r.name != nil {

@@ -3598,6 +3598,9 @@ type Module {
   """
   introspectionSchemaJSON: File!
 
+  """Load the runtime of this module"""
+  loadRuntime: Module!
+
   """The name of the module"""
   name: String!
 

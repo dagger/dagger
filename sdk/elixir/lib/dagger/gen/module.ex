@@ -136,6 +136,20 @@ defmodule Dagger.Module do
   end
 
   @doc """
+  Load the runtime of this module
+  """
+  @spec load_runtime(t()) :: Dagger.Module.t()
+  def load_runtime(%__MODULE__{} = module) do
+    query_builder =
+      module.query_builder |> QB.select("loadRuntime")
+
+    %Dagger.Module{
+      query_builder: query_builder,
+      client: module.client
+    }
+  end
+
+  @doc """
   The name of the module
   """
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}

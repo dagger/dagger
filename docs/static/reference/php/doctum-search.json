@@ -4323,6 +4323,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Module::loadRuntime",
+			"p": "Dagger/Module.html#method_loadRuntime",
+			"d": "<p>Load the runtime of this module</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Module::name",
 			"p": "Dagger/Module.html#method_name",
 			"d": "<p>The name of the module</p>"

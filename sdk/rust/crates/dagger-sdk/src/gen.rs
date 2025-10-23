@@ -9530,6 +9530,15 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Load the runtime of this module
+    pub fn load_runtime(&self) -> Module {
+        let query = self.selection.select("loadRuntime");
+        Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The name of the module
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
