@@ -89,69 +89,92 @@ func CurrentChecks(ctx context.Context, include []string) (*CheckGroup, error) {
 	// Collect all check functions from all modules
 	var report CheckGroup
 
-	// Iterate through all modules
-	for _, mod := range deps.Mods {
-		// Type assert to *Module to access ObjectDefs
-		module, ok := mod.(*Module)
-		if !ok {
-			// Skip non-user modules (e.g., core modules)
+	if len(deps.Mods) == 0 {
+		return nil, fmt.Errorf("failed to load checks: no module loaded")
+	}
+	mainModule, err := findMainModule(ctx, deps)
+	if err != nil {
+		return nil, err
+	}
+	allChecks, err := moduleChecks(ctx, mainModule)
+	if err != nil {
+		return nil, err
+	}
+	for _, check := range allChecks {
+		match, err := check.Match(include)
+		if err != nil {
+			return nil, err
+		}
+		if !match {
 			continue
 		}
-		// FIXME: skip non-local dependencies
-		_, modSpan := Tracer(ctx).Start(ctx, fmt.Sprintf("[checks] mod=%q", module.OriginalName))
-		modSpan.End()
-		// Find the main object for this module
-		// The main object is the one whose OriginalName matches the module's OriginalName
-		var mainObject *ObjectTypeDef
-		for _, objDef := range module.ObjectDefs {
-			if objDef.AsObject.Valid {
-				obj := objDef.AsObject.Value
+		report.Checks = append(report.Checks, check)
+	}
+	return &report, nil
+}
 
-				// Check if this is the main object by comparing normalized names
-				if gqlFieldName(obj.Name) == gqlFieldName(module.Name()) {
-					mainObject = obj
-					break
-				}
-			}
+func findMainModule(ctx context.Context, deps *ModDeps) (*Module, error) {
+	// FIXME: this is an undocumented assumption...
+	for _, mod := range deps.Mods {
+		_, span := Tracer(ctx).Start(ctx, "scanning for checks: checking for main module: "+mod.Name())
+		span.End()
+		if userMod, isUserMod := mod.(*Module); isUserMod {
+			// Return the first user module (skip core modules, of which there is only one today)
+			return userMod, nil
 		}
-		// If no main object found, skip this module
-		if mainObject == nil {
-			// FIXME: also support checks on non-main objects
-			// (if they are reachable)
-			// This is required to reach all checks in our CI monolith;
-			// and will be required for blueprint support
-			// NOTE: also remove support for dependencies? How?
-			continue
-		}
-		// Search for functions starting with "Check" in the main object
-		for _, fn := range mainObject.Functions {
-			checkName, isCheck, _ := functionIsCheck(fn)
-			if !isCheck {
-				continue
-			}
-			check := &Check{
-				Name:         checkName,
-				Description:  fn.Description,
-				ModuleName:   module.Name(),
-				FunctionName: fn.Name,
-			}
-			if module.Source.Valid {
-				src := module.Source.Value.Self()
-				switch src.Kind {
-				case ModuleSourceKindLocal:
-					check.Context = src.SourceRootSubpath
-				case ModuleSourceKindGit:
-					check.Context = src.SourceRootSubpath
-				}
-			}
-			if included, err := check.Match(include); err != nil {
-				return nil, err
-			} else if included {
-				report.Checks = append(report.Checks, check)
+	}
+	return nil, fmt.Errorf("failed to find main module: no user-defined module is loaded")
+}
+
+func moduleChecks(ctx context.Context, module *Module) ([]*Check, error) {
+	_, modSpan := Tracer(ctx).Start(ctx, fmt.Sprintf("[load checks] mod=%q", module.OriginalName))
+	defer modSpan.End()
+	// Find the main object for this module
+	var mainObject *ObjectTypeDef
+	for _, objDef := range module.ObjectDefs {
+		if objDef.AsObject.Valid {
+			obj := objDef.AsObject.Value
+
+			// Check if this is the main object by comparing normalized names
+			if gqlFieldName(obj.Name) == gqlFieldName(module.Name()) {
+				mainObject = obj
+				break
 			}
 		}
 	}
-	return &report, nil
+	// If no main object found, skip this module
+	if mainObject == nil {
+		// FIXME: also support checks on non-main objects
+		// (if they are reachable)
+		// This is required to reach all checks in our CI monolith;
+		// and will be required for toolchains support
+		return nil, nil
+	}
+	var checks []*Check
+	// Search for functions that qualify as checks
+	for _, fn := range mainObject.Functions {
+		checkName, isCheck, _ := functionIsCheck(ctx, fn)
+		if !isCheck {
+			continue
+		}
+		check := &Check{
+			Name:         checkName,
+			Description:  fn.Description,
+			ModuleName:   module.Name(),
+			FunctionName: fn.Name,
+		}
+		if module.Source.Valid {
+			src := module.Source.Value.Self()
+			switch src.Kind {
+			case ModuleSourceKindLocal:
+				check.Context = src.SourceRootSubpath
+			case ModuleSourceKindGit:
+				check.Context = src.SourceRootSubpath
+			}
+		}
+		checks = append(checks, check)
+	}
+	return checks, nil
 }
 
 func (c *Check) Match(include []string) (bool, error) {
@@ -244,12 +267,18 @@ func markdownTable(headers []string, rows ...[]string) string {
 	return sb.String()
 }
 
-func functionIsCheck(fn *Function) (string, bool, string) {
+func functionIsCheck(ctx context.Context, fn *Function) (string, bool, string) {
 	// For a function to be considered a check...
 	// 1. ...it must return a type named "CheckStatus"
 	// (As an escape hatch, we allow modules to define their own CheckStatus type)
+	_, span := Tracer(ctx).Start(ctx, fmt.Sprintf("functionIsCheck() name=%q returnType=%q expectedSuffix=%q",
+		fn.Name,
+		fn.ReturnType.ToType().Name(),
+		CheckStatus("").Type().Name(),
+	))
+	defer span.End()
 	if !strings.HasSuffix(fn.ReturnType.ToType().Name(), CheckStatus("").Type().Name()) {
-		return fn.Name, false, "function %q doesn't return a " + CheckStatus("").Type().Name()
+		return fn.Name, false, fmt.Sprintf("function doesn't return a " + CheckStatus("").Type().Name())
 	}
 	// 2. ...it must have no required arguments
 	for _, arg := range fn.Args {

@@ -101,6 +101,8 @@ func getCompatVersion() string {
 	return compatVersion
 }
 
+// moduleAddFlags adds common module-related flags to a command.
+// If optional is true, it also adds the --no-mod flag and marks --mod and --no-mod as mutually exclusive.
 func moduleAddFlags(cmd *cobra.Command, flags *pflag.FlagSet, optional bool) {
 	flags.StringVarP(&moduleURL, "mod", "m", "", "Module reference to load, either a local path or a remote git repo (defaults to current directory)")
 	if optional {
@@ -126,6 +128,7 @@ func init() {
 
 	moduleAddFlags(shellCmd, shellCmd.PersistentFlags(), true)
 	shellAddFlags(shellCmd)
+	moduleAddFlags(checksCmd, checksCmd.PersistentFlags(), false)
 	moduleAddFlags(rootCmd, rootCmd.Flags(), true)
 	shellAddFlags(rootCmd)
 
