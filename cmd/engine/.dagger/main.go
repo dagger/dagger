@@ -192,9 +192,7 @@ func (e *DaggerEngine) Service(
 // Generate any engine-related files
 // Note: this is codegen of the 'go generate' variety, not 'dagger develop'
 func (e *DaggerEngine) Generate(_ context.Context) (*dagger.Changeset, error) {
-	// There's Go code in the SDKs, don't include them in this.
-	src := e.Source.WithoutDirectory("sdk")
-	withGoGenerate := dag.Go(src).Env().
+	withGoGenerate := dag.Go(e.Source).Env().
 		WithExec([]string{"go", "install", "google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2"}).
 		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogo@v1.3.2"}).
 		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2"}).
@@ -205,7 +203,7 @@ func (e *DaggerEngine) Generate(_ context.Context) (*dagger.Changeset, error) {
 		WithMountedDirectory("./github.com/tonistiigi/fsutil", dag.Git("https://github.com/tonistiigi/fsutil.git").Commit("069baf6a66f5c63a82fb679ff2319ed2ee970fbd").Tree()).
 		WithExec([]string{"go", "generate", "-v", "./..."}).
 		Directory(".")
-	changes := changes(src, withGoGenerate, []string{"github.com"})
+	changes := changes(e.Source, withGoGenerate, []string{"github.com"})
 	return changes, nil
 }
 
