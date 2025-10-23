@@ -13,7 +13,6 @@ import { DaggerArgument, DaggerArguments } from "./argument.js"
 import { FUNCTION_DECORATOR } from "./decorator.js"
 import { Locatable } from "./locatable.js"
 import { References } from "./reference.js"
-import { func } from "../../decorators.js"
 
 export type DaggerFunctions = { [name: string]: DaggerFunction }
 
@@ -42,11 +41,7 @@ export class DaggerFunction extends Locatable {
 
     const functionArguments = this.ast.getDecoratorArgument<
       FunctionOptions | string
-    >(
-      this.node,
-      FUNCTION_DECORATOR,
-      "object",
-    )
+    >(this.node, FUNCTION_DECORATOR, "object")
     if (functionArguments) {
       if (typeof functionArguments === "string") {
         // previously only a single arg was accepted for alias, so if there's just

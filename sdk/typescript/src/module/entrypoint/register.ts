@@ -7,7 +7,7 @@ import {
   TypeDefKind,
   SourceMap,
   FunctionCachePolicy,
-  FunctionWithCachePolicyOpts
+  FunctionWithCachePolicyOpts,
 } from "../../api/client.gen.js"
 import {
   DaggerArguments as Arguments,
@@ -130,17 +130,21 @@ export class Register {
       .withSourceMap(addSourceMap(fct))
       .with(this.addArg(fct.arguments))
     switch (fct.cache) {
-    case "never":
-      fnDef = fnDef.withCachePolicy(FunctionCachePolicy.Never)
-      break
-    case "session":
-      fnDef = fnDef.withCachePolicy(FunctionCachePolicy.PerSession)
-      break
-    case "":
-      break
-    default:
-      const opts: FunctionWithCachePolicyOpts = {timeToLive: fct.cache}
-      fnDef = fnDef.withCachePolicy(FunctionCachePolicy.Default, opts)
+      case "never": {
+        fnDef = fnDef.withCachePolicy(FunctionCachePolicy.Never)
+        break
+      }
+      case "session": {
+        fnDef = fnDef.withCachePolicy(FunctionCachePolicy.PerSession)
+        break
+      }
+      case "": {
+        break
+      }
+      default: {
+        const opts: FunctionWithCachePolicyOpts = { timeToLive: fct.cache }
+        fnDef = fnDef.withCachePolicy(FunctionCachePolicy.Default, opts)
+      }
     }
 
     return fnDef
