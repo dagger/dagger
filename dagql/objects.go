@@ -962,7 +962,7 @@ type FieldSpec struct {
 	// calls deduped. The string value is a reason why the field should not be cached.
 	DoNotCache string
 
-	// TODO: doc
+	// If set, the result of this field will be cached for the given TTL (in seconds).
 	TTL int64
 
 	// extend is used during installation to copy the spec of a previous field

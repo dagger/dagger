@@ -44,7 +44,7 @@ type Cache[K KeyType, V any] interface {
 	// Returns the number of entries in the cache.
 	Size() int
 
-	// TODO: doc
+	// Run a blocking loop that periodically garbage collects expired entries from the cache db.
 	GCLoop(context.Context)
 }
 
@@ -60,12 +60,8 @@ type KeyType = interface {
 }
 
 type CacheKey[K KeyType] struct {
-	// CallKey is identifies the completed result of this call. If a call has already
-	// been completed with this CallKey, its cached result will be returned.
-	//
-	// If CallKey is the zero value for K, the call will not be cached and will always
-	// run.
-	// TODO: update docs
+	// CallKey is identifies the the call. If a call has already been completed with this
+	// CallKey and it is not expired, its cached result will be returned.
 	CallKey K
 
 	// ConcurrencyKey is used to determine whether *in-progress* calls should be deduplicated.
@@ -78,8 +74,10 @@ type CacheKey[K KeyType] struct {
 	// If ConcurrencyKey is the zero value for K, no deduplication of in-progress calls will be done.
 	ConcurrencyKey K
 
-	// TODO: doc
-	TTL        int64
+	// TTL is the time-to-live for the cached result of this call, in seconds.
+	TTL int64
+
+	// DoNotCache indicates that this call should not be cached at all, simply ran.
 	DoNotCache bool
 }
 
@@ -97,12 +95,16 @@ type ValueWithCallbacks[V any] struct {
 	// If set, this function will be called when a result is removed from the cache
 	OnRelease OnReleaseFunc
 
-	// TODO: doc
+	// If true, indicates that it is safe to persist this value in the cache db (i.e. does not have
+	// any in-memory only data).
 	SafeToPersistCache bool
 }
 
 type ctxStorageKey struct{}
 
+// Get the key that should be used (or mixed into) persistent cache storage
+// We smuggle this around in the context for now since we have to incorporate
+// it with buildkit's persistent cache for now.
 func CurrentStorageKey(ctx context.Context) string {
 	if v := ctx.Value(ctxStorageKey{}); v != nil {
 		if s, ok := v.(string); ok {
@@ -176,10 +178,10 @@ type cache[K KeyType, V any] struct {
 	// two calls with the same call+concurrency key will be "single-flighted" (only one will actually run)
 	ongoingCalls map[callConcurrencyKeys]*result[K, V]
 
-	// calls that have completed successfully and are cached, keyed just by the call key
+	// calls that have completed successfully and are cached, keyed by the storage key
 	completedCalls map[string]*result[K, V]
 
-	// TODO: doc
+	// db for persistence; currently only used for metadata supporting ttl-based expiration
 	db *cachedb.Queries
 }
 
@@ -193,9 +195,8 @@ var _ Cache[string, string] = &cache[string, string]{}
 type result[K KeyType, V any] struct {
 	cache *cache[K, V]
 
-	// TODO: doc, probably find some better names
-	storageKey          string
-	callConcurrencyKeys callConcurrencyKeys
+	storageKey          string              // key to cache.completedCalls
+	callConcurrencyKeys callConcurrencyKeys // key to cache.ongoingCalls
 
 	val                V
 	err                error
@@ -233,7 +234,14 @@ type cacheContextKey[K KeyType, V any] struct {
 }
 
 func (c *cache[K, V]) GCLoop(ctx context.Context) {
-	for range time.Tick(10 * time.Minute) {
+	ticker := time.NewTicker(10 * time.Minute)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+
 		now := time.Now().Unix()
 		if err := c.db.GCExpiredCalls(ctx, cachedb.GCExpiredCallsParams{
 			Now: now,
@@ -304,9 +312,14 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 		callKey:        callKey,
 		concurrencyKey: string(key.ConcurrencyKey),
 	}
+
+	// The storage key is the key for what's actually stored on disk.
+	// By default it's just the call key, but if we have a TTL then there
+	// can be different results stored on disk for a single call key, necessitating
+	// this separate storage key.
 	storageKey := callKey
 
-	var saveExpiration func(context.Context) error
+	var persistToDB func(context.Context) error
 	if key.TTL != 0 && c.db != nil {
 		call, err := c.db.SelectCall(ctx, callKey)
 		if err == nil || errors.Is(err, sql.ErrNoRows) {
@@ -331,7 +344,7 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 
 				// Nothing saved in the cache yet, use a new expiration. Don't save yet, that only happens
 				// once a call completes successfully and has been determined to be safe to cache.
-				saveExpiration = func(ctx context.Context) error {
+				persistToDB = func(ctx context.Context) error {
 					return c.db.SetExpiration(ctx, cachedb.SetExpirationParams{
 						CallKey:        string(key.CallKey),
 						StorageKey:     storageKey,
@@ -353,7 +366,7 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 				// We do have a cached entry, but it expired, so don't use it. Use a new expiration, but again
 				// don't store it yet until the call completes successfully and is determined to be safe
 				// to cache.
-				saveExpiration = func(ctx context.Context) error {
+				persistToDB = func(ctx context.Context) error {
 					return c.db.SetExpiration(ctx, cachedb.SetExpirationParams{
 						CallKey:        string(key.CallKey),
 						StorageKey:     storageKey,
@@ -413,7 +426,7 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 		storageKey:          storageKey,
 		callConcurrencyKeys: callConcKeys,
 
-		persistToDB: saveExpiration,
+		persistToDB: persistToDB,
 
 		waitCh:  make(chan struct{}),
 		cancel:  cancel,
