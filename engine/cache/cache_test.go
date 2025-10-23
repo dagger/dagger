@@ -309,6 +309,7 @@ func TestCacheResultRelease(t *testing.T) {
 		t.Parallel()
 		ctx := t.Context()
 		cacheIface, err := NewCache[string, int](ctx, "")
+		assert.NilError(t, err)
 		c, ok := cacheIface.(*cache[string, int])
 		assert.Assert(t, ok)
 

@@ -198,7 +198,7 @@ class Module:
                         )
                     elif func.cache_policy != "":
                         func_def = func_def.with_cache_policy(
-                            dagger.FunctionCachePolicy.Default, 
+                            dagger.FunctionCachePolicy.Default,
                             time_to_live=func.cache_policy,
                         )
 
