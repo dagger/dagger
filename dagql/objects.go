@@ -287,22 +287,6 @@ func (class Class[T]) New(val AnyResult) (AnyObjectResult, error) {
 	}, nil
 }
 
-func (class Class[T]) Wrap(val Typed, id *call.ID) (AnyObjectResult, error) {
-	self, ok := UnwrapAs[T](val)
-	if !ok {
-		// cannot instantiate dagql.Class[*Container] with dagql.Result[dagql.Typed]
-		return nil, fmt.Errorf("cannot instantiate %T with %T", class, val)
-	}
-
-	return ObjectResult[T]{
-		Result: Result[T]{
-			constructor: id,
-			self:        self,
-		},
-		class: class,
-	}, nil
-}
-
 // Call calls a field on the class against an instance.
 func (class Class[T]) Call(
 	ctx context.Context,

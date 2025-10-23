@@ -42,9 +42,6 @@ type ObjectType interface {
 	IDType() (IDType, bool)
 	// New creates a new instance of the type.
 	New(val AnyResult) (AnyObjectResult, error)
-	// Wrap wraps the given Typed value in an AnyObjectResult, assuming that the
-	// Typed is the correct object type.
-	Wrap(val Typed, id *call.ID) (AnyObjectResult, error)
 	// ParseField parses the given field and returns a Selector and an expected
 	// return type.
 	ParseField(ctx context.Context, view call.View, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error)

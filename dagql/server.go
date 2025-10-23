@@ -916,8 +916,6 @@ func NewObjectResultForID[T Typed](
 		return res, fmt.Errorf("unknown type %q", self.Type().Name())
 	}
 
-	fmt.Printf("NewObjectResultForID: objType: %T\n", objType)
-
 	class, ok := objType.(Class[T])
 	if !ok {
 		return res, fmt.Errorf("not a Class: %T", objType)
