@@ -1960,46 +1960,21 @@ func (s *moduleSourceSchema) moduleSourceWithUpdateToolchains(
 		return inst, err
 	}
 
-	// Use the existing withToolchains implementation by calling it via dagql
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	// Build a new module source with updated toolchains
-	tmpSrc := parentSrc.Self().Clone()
-	tmpSrc.Toolchains = nil
-	tmpSrc.ConfigToolchains = nil
-
-	for _, toolchainID := range newUpdatedArgs {
-		var toolchainSrc dagql.ObjectResult[*core.ModuleSource]
-		err := dag.Select(ctx, dag.Root(), &toolchainSrc,
-			dagql.Selector{
-				Field: "loadID",
-				Args: []dagql.NamedInput{
-					{Name: "id", Value: toolchainID},
-				},
-			},
-		)
-		if err != nil {
-			return inst, fmt.Errorf("failed to load toolchain from ID: %w", err)
-		}
-
-		tmpSrc.Toolchains = append(tmpSrc.Toolchains, toolchainSrc)
-	}
-
-	// Load config for the updated toolchains
-	tmpConfig, err := s.loadModuleSourceConfig(tmpSrc)
-	if err != nil {
-		return inst, fmt.Errorf("failed to load module source config: %w", err)
-	}
-
-	resultSrc := parentSrc.Self().Clone()
-	resultSrc.ConfigToolchains = tmpConfig.Toolchains
-	resultSrc.Toolchains = tmpSrc.Toolchains
-	resultSrc.Digest = resultSrc.CalcDigest(ctx).String()
-
-	return dagql.NewResultForCurrentID(ctx, resultSrc)
+	err = dag.Select(ctx, parentSrc, &inst,
+		dagql.Selector{
+			Field: "withToolchains",
+			Args: []dagql.NamedInput{{
+				Name:  "toolchains",
+				Value: dagql.ArrayInput[core.ModuleSourceID](newUpdatedArgs),
+			}},
+		},
+	)
+	return inst, err
 }
 
 func (s *moduleSourceSchema) moduleSourceWithoutToolchains(
