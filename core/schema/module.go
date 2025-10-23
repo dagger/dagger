@@ -102,6 +102,9 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("withEnum", s.moduleWithEnum).
 			Doc(`This module plus the given Enum type and associated values`),
 
+		dagql.Func("runtime", s.moduleRuntime).
+			Doc(`The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.`),
+
 		dagql.Func("serve", s.moduleServe).
 			DoNotCache(`Mutates the calling session's global schema.`).
 			Doc(`Serve a module's API in the current session.`,
@@ -631,6 +634,14 @@ func (s *moduleSchema) currentModule(
 
 func (s *moduleSchema) currentFunctionCall(ctx context.Context, self *core.Query, _ struct{}) (*core.FunctionCall, error) {
 	return self.CurrentFunctionCall(ctx)
+}
+
+func (s *moduleSchema) moduleRuntime(ctx context.Context, mod *core.Module, _ struct{}) (dagql.ObjectResult[*core.Container], error) {
+	if mod.Runtime.Valid {
+		return mod.Runtime.Value, nil
+	}
+
+	return mod.LoadRuntime(ctx)
 }
 
 func (s *moduleSchema) moduleServe(ctx context.Context, modMeta *core.Module, args struct {

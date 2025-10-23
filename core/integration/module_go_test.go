@@ -1482,7 +1482,7 @@ func New() *Minimal {
 	require.JSONEq(t, `{"minimal":{"config":"{\"a\":1}"}}`, out)
 }
 
-// this is no longer allowed, but verify the SDK errors out
+// this is no longer allowed, but verify the Engine errors out
 func (GoSuite) TestExtendCore(ctx context.Context, t *testctx.T) {
 	moreContents := `package dagger
 
@@ -1509,7 +1509,10 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 		require.Error(t, err)
 		require.NoError(t, c.Close())
 		t.Log(logs.String())
-		require.Regexp(t, "cannot define methods on objects from outside this module", logs.String())
+
+		// With lazy module loading, the error is no longer thrown by the SDK but directly by the engine
+		// when evaluating the query against the engine GQL schema.
+		require.Contains(t, logs.String(), `Cannot query field \"echo\" on type \"Container\"`)
 	})
 
 	t.Run("in same mod name", func(ctx context.Context, t *testctx.T) {
@@ -1526,7 +1529,9 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 		require.Error(t, err)
 		require.NoError(t, c.Close())
 		t.Log(logs.String())
-		require.Regexp(t, "cannot define methods on objects from outside this module", logs.String())
+		// With lazy module loading, the error is no longer thrown by the SDK but directly by the engine
+		// when evaluating the query against the engine GQL schema.
+		require.Contains(t, logs.String(), `type "Container" is already defined by module "daggercore"`)
 	})
 }
 

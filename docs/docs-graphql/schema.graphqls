@@ -3625,7 +3625,7 @@ type Module {
   """
   The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
   """
-  runtime: Container
+  runtime: Container!
 
   """The SDK config used by this module."""
   sdk: SDKConfig

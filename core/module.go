@@ -11,6 +11,7 @@ import (
 
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/util/hashutil"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
@@ -40,7 +41,7 @@ type Module struct {
 	Deps *ModDeps
 
 	// Runtime is the container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
-	Runtime dagql.Nullable[dagql.ObjectResult[*Container]] `field:"true" name:"runtime" doc:"The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile."`
+	Runtime dagql.Nullable[dagql.ObjectResult[*Container]]
 
 	// The following are populated while initializing the module
 
@@ -730,6 +731,27 @@ func (mod *Module) Patch() error {
 		}
 	}
 	return nil
+}
+
+func (mod *Module) LoadRuntime(ctx context.Context) (runtime dagql.ObjectResult[*Container], err error) {
+	runtimeImpl, ok := mod.Source.Value.Self().SDKImpl.AsRuntime()
+	if !ok {
+		return runtime, fmt.Errorf("no runtime implemented")
+	}
+
+	var src dagql.ObjectResult[*ModuleSource]
+	if !mod.Source.Valid {
+		return runtime, fmt.Errorf("no source")
+	}
+
+	src = mod.Source.Value
+	srcInstContentHashed := src.WithObjectDigest(digest.Digest(src.Self().Digest))
+	runtime, err = runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
+	if err != nil {
+		return runtime, fmt.Errorf("failed to load runtime: %w", err)
+	}
+
+	return runtime, nil
 }
 
 /*
