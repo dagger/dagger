@@ -97,7 +97,7 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 
 	switch m.Distro {
 	case DistroAlpine:
-		releases, err := alpineReleases()
+		releases, err := alpineReleases(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get alpine releases: %w", err)
 		}
@@ -134,7 +134,7 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 		return nil, fmt.Errorf("unknown distro %q", m.Distro)
 	}
 
-	keys, err := fetchKeys(*branch, m.Arch)
+	keys, err := fetchKeys(ctx, *branch, m.Arch)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get keys: %w", err)
 	}
@@ -272,11 +272,15 @@ func (m *Alpine) withPkgs(
 	return ctr, nil
 }
 
-func fetchKeys(branch goapk.ReleaseBranch, arch string) (map[string][]byte, error) {
+func fetchKeys(ctx context.Context, branch goapk.ReleaseBranch, arch string) (map[string][]byte, error) {
 	urls := branch.KeysFor(arch, time.Now())
 	keys := make(map[string][]byte)
 	for _, u := range urls {
-		res, err := http.Get(u)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request for alpine key at %s: %w", u, err)
+		}
+		res, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get alpine key at %s: %w", u, err)
 		}

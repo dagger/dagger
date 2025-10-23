@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,12 +15,18 @@ const (
 	alpineReleasesURL = "https://alpinelinux.org/releases.json"
 )
 
-func alpineReleases() (*goapk.Releases, error) {
-	res, err := http.Get(alpineReleasesURL)
+func alpineReleases(ctx context.Context) (*goapk.Releases, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, alpineReleasesURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request for alpine releases: %w", err)
+	}
+
+	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get alpine releases: %w", err)
 	}
 	defer res.Body.Close()
+
 	if res.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unable to get alpine releases at %s: %v", alpineReleasesURL, res.Status)
 	}
