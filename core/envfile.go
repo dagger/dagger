@@ -160,7 +160,13 @@ func cutFlexPrefix(s, flexPrefix string) (after string, found bool) {
 		// lower camel case + underscore. Example: "myApp_"
 		func(s string) string { return strcase.ToLowerCamel(s) + "_" },
 		// snake case + underscore. Example: "my_app_"
-		func(s string) string { return strcase.ToSnake(s) + "_" },
+		func(s string) string {
+			ts := strcase.ToSnake(s)
+			if !strings.HasSuffix(ts, "_") {
+				ts += "_"
+			}
+			return ts
+		},
 	} {
 		prefix := toPrefix(flexPrefix)
 		if len(s) < len(prefix) {
