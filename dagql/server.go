@@ -24,6 +24,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 // Server represents a GraphQL server whose schema is dynamically modified at
@@ -701,7 +702,7 @@ func (s *Server) SelectID(ctx context.Context, self AnyObjectResult, sels ...Sel
 		fmt.Printf("SelectID res: %T\n", res)
 
 		if obj, ok := s.ObjectType(res.Type().Name()); ok {
-			val, err := NewResultForID(res, id)
+			val, err := obj.Wrap(res, id)
 			if err != nil {
 				return nil, err
 			}
@@ -931,6 +932,8 @@ func NewResultForID[T Typed](
 		constructor: id,
 		self:        self,
 	}
+
+	slog.Warn("!!! TYPE OF FOO", "t", fmt.Sprintf("%T", self), "foo", fmt.Sprintf("%T", foo))
 
 	return foo, nil
 }
