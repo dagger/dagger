@@ -696,17 +696,23 @@ func (s *Server) SelectID(ctx context.Context, self AnyObjectResult, sels ...Sel
 			return nil, fmt.Errorf("select %dth: %w", i, err)
 		}
 
-		if _, ok := s.ObjectType(res.Type().Name()); ok {
+		fmt.Printf("SelectID ObjectType(res.Type().Name()): %s\n", res.Type().Name())
+		fmt.Printf("SelectID ObjectType(res.Type().String()): %s\n", res.Type().String())
+		fmt.Printf("SelectID res: %T\n", res)
+
+		if obj, ok := s.ObjectType(res.Type().Name()); ok {
 			val, err := NewResultForID(res, id)
 			if err != nil {
 				return nil, err
 			}
 
-			// if the result is an Object, set it as the next selection target, and
-			// assign res to the "hydrated" Object
+			fmt.Printf("val.Type().Name(): %s\n", val.Type().Name())
+			fmt.Printf("val: %T\n", val)
+			fmt.Printf("obj: %T\n", obj)
+
 			self, err = s.toSelectable(val)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("SelectID s.toSelectable(val): %w", err)
 			}
 
 			// res = self
@@ -921,10 +927,12 @@ func NewResultForID[T Typed](
 		return res, fmt.Errorf("cannot create Result for %T, it is already a Result", self)
 	}
 
-	return Result[T]{
+	foo := Result[T]{
 		constructor: id,
 		self:        self,
-	}, nil
+	}
+
+	return foo, nil
 }
 
 func NewObjectResultForCurrentID[T Typed](
@@ -944,6 +952,9 @@ func NewObjectResultForID[T Typed](
 	if !ok {
 		return res, fmt.Errorf("unknown type %q", self.Type().Name())
 	}
+
+	fmt.Printf("NewObjectResultForID: objType: %T\n", objType)
+
 	class, ok := objType.(Class[T])
 	if !ok {
 		return res, fmt.Errorf("not a Class: %T", objType)

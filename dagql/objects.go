@@ -274,6 +274,7 @@ func (class Class[T]) New(val AnyResult) (AnyObjectResult, error) {
 
 	self, ok := UnwrapAs[T](val)
 	if !ok {
+		// cannot instantiate dagql.Class[*Container] with dagql.Result[dagql.Typed] 
 		return nil, fmt.Errorf("cannot instantiate %T with %T", class, val)
 	}
 

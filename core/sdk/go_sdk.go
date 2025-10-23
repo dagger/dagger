@@ -456,6 +456,19 @@ func (sdk *goSDK) Runtime(
 	return ctr, nil
 }
 
+func (sdk *goSDK) LazyRuntime(
+	ctx context.Context,
+	deps *core.ModDeps,
+	source dagql.ObjectResult[*core.ModuleSource],
+) (*call.ID, error) {
+	r, err := sdk.Runtime(ctx, deps, source)
+	if err != nil {
+		return nil, err
+	}
+
+	return r.ID(), nil
+}
+
 func (sdk *goSDK) baseWithCodegen(
 	ctx context.Context,
 	deps *core.ModDeps,

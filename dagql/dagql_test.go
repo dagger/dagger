@@ -147,32 +147,65 @@ func TestBasic(t *testing.T) {
 func TestSelectID(t *testing.T) {
 	ctx := context.Background()
 	srv := dagql.NewServer(Query{}, newCache())
+
 	points.Install[Query](srv)
 
-	id, err := srv.SelectID(ctx, srv.Root(),
-		dagql.Selector{
+	t.Run("directly select ID", func(t *testing.T) {
+		id, err := srv.SelectID(ctx, srv.Root(),
+			dagql.Selector{
+				Field: "point",
+				Args: []dagql.NamedInput{
+					{
+						Name:  "x",
+						Value: dagql.NewInt(6),
+					},
+					{
+						Name:  "y",
+						Value: dagql.NewInt(7),
+					},
+				},
+			},
+			dagql.Selector{
+				Field: "shiftLeft",
+			})
+		require.NoError(t, err)
+
+		loaded, err := srv.Load(ctx, id)
+		require.NoError(t, err)
+		point := loaded.(dagql.ObjectResult[*points.Point])
+		assert.Equal(t, point.Self().X, 5)
+		assert.Equal(t, point.Self().Y, 7)
+	})
+
+	t.Run("selectID after a select", func(t *testing.T) {
+		var res dagql.ObjectResult[*points.Point]
+		err := srv.Select(ctx, srv.Root(), &res, dagql.Selector{
 			Field: "point",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "x",
-					Value: dagql.NewInt(6),
+					Value: dagql.NewInt(4),
 				},
 				{
 					Name:  "y",
-					Value: dagql.NewInt(7),
+					Value: dagql.NewInt(5),
 				},
 			},
-		},
-		dagql.Selector{
-			Field: "shiftLeft",
 		})
-	require.NoError(t, err)
+		require.NoError(t, err)
 
-	loaded, err := srv.Load(ctx, id)
-	require.NoError(t, err)
-	point := loaded.(dagql.ObjectResult[*points.Point])
-	assert.Equal(t, point.Self().X, 5)
-	assert.Equal(t, point.Self().Y, 7)
+		id, err := srv.SelectID(ctx, res,
+			dagql.Selector{
+				Field: "shiftLeft",
+			})
+		require.NoError(t, err)
+
+		loaded, err := srv.Load(ctx, id)
+		require.NoError(t, err)
+		point := loaded.(dagql.ObjectResult[*points.Point])
+		assert.Equal(t, point.Self().X, 3)
+		assert.Equal(t, point.Self().Y, 5)
+	})
 }
 
 func TestSelectArray(t *testing.T) {

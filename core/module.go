@@ -38,6 +38,8 @@ type Module struct {
 	// Deps contains the module's dependency DAG.
 	Deps *ModDeps
 
+	LazyRuntimeID *call.ID
+
 	// Runtime is the container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
 	Runtime dagql.Nullable[dagql.ObjectResult[*Container]] `field:"true" name:"runtime" doc:"The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile."`
 
@@ -107,6 +109,31 @@ func (mod *Module) UserDefaults(ctx context.Context) (*EnvFile, error) {
 		defaults = defaults.WithEnvFiles(bp.UserDefaults)
 	}
 	return defaults, nil
+}
+
+func (mod *Module) LoadRuntime(ctx context.Context) (inst dagql.ObjectResult[*Container], err error) {
+	if mod.Runtime.Valid {
+		return mod.Runtime.Value, nil
+	}
+
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	if mod.LazyRuntimeID == nil {
+		return inst, fmt.Errorf("lazy runtime ID is not set")
+	}
+
+	runtimeRes, err := dag.Load(ctx, mod.LazyRuntimeID)
+	if err != nil {
+		return inst, fmt.Errorf("failed to lazy load runtime: %w", err)
+	}
+
+	runtime := runtimeRes.(dagql.ObjectResult[*Container])
+	mod.Runtime = dagql.NonNull(runtime)
+
+	return mod.Runtime.Value, nil
 }
 
 // Return local defaults for the specified object

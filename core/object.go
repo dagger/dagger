@@ -187,8 +187,9 @@ type Callable interface {
 	CacheConfigForCall(context.Context, dagql.AnyResult, map[string]dagql.Input, call.View, dagql.CacheConfig) (*dagql.CacheConfig, error)
 }
 
-func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callable, error) {
+func (t *ModuleObjectType) GetCallable(ctx context.Context, name string, dag *dagql.Server) (Callable, error) {
 	mod := t.mod
+
 	if field, ok := t.typeDef.FieldByName(name); ok {
 		fieldType, ok, err := mod.ModTypeFor(ctx, field.TypeDef, true)
 		if err != nil {
@@ -203,12 +204,18 @@ func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callab
 			Return: fieldType,
 		}, nil
 	}
+
+	runtime, err := mod.LoadRuntime(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load runtime: %w", err)
+	}
+
 	if fun, ok := t.typeDef.FunctionByName(name); ok {
 		return NewModFunction(
 			ctx,
 			mod,
 			t.typeDef,
-			mod.Runtime.Value,
+			runtime,
 			fun,
 		)
 	}
@@ -360,7 +367,12 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		return fmt.Errorf("constructor function for object %s must return that object", objDef.OriginalName)
 	}
 
-	fn, err := NewModFunction(ctx, mod, objDef, mod.Runtime.Value, fnTypeDef)
+	runtime, err := mod.LoadRuntime(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load runtime: %w", err)
+	}
+
+	fn, err := NewModFunction(ctx, mod, objDef, runtime, fnTypeDef)
 	if err != nil {
 		return fmt.Errorf("failed to create function: %w", err)
 	}
@@ -473,11 +485,17 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 // fields on their object types, with proper argument handling and caching.
 func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Function, dag *dagql.Server) (dagql.Field[*ModuleObject], error) {
 	var f dagql.Field[*ModuleObject]
+
+	runtime, err := mod.LoadRuntime(ctx)
+	if err != nil {
+		return f, fmt.Errorf("failed to load runtime: %w", err)
+	}
+
 	modFun, err := NewModFunction(
 		ctx,
 		mod,
 		objDef,
-		mod.Runtime.Value,
+		runtime,
 		fun,
 	)
 	if err != nil {

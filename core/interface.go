@@ -281,7 +281,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 					return nil, fmt.Errorf("unexpected underlying type %T for interface resolver %s.%s", runtimeVal.UnderlyingType, ifaceName, fieldDef.Name)
 				}
 
-				callable, err := userModObj.GetCallable(ctx, fieldDef.Name)
+				callable, err := userModObj.GetCallable(ctx, fieldDef.Name, dag)
 				if err != nil {
 					return nil, fmt.Errorf("failed to get callable for %s.%s: %w", ifaceName, fieldDef.Name, err)
 				}
@@ -355,7 +355,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 						return nil, fmt.Errorf("unexpected underlying type %T for interface resolver %s.%s", runtimeVal.UnderlyingType, ifaceName, fieldDef.Name)
 					}
 
-					callable, err := userModObj.GetCallable(ctx, fieldDef.Name)
+					callable, err := userModObj.GetCallable(ctx, fieldDef.Name, dag)
 					if err != nil {
 						return nil, fmt.Errorf("failed to get callable for %s.%s: %w", ifaceName, fieldDef.Name, err)
 					}
