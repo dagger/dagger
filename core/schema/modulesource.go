@@ -3244,8 +3244,24 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		src = src.Self().Blueprint
 		tcCtx.src = src
 		// Copy toolchains from original source to blueprint source
-		// A blueprint having toolchains is currently not supported
-		tcCtx.src.Self().Toolchains = tcCtx.originalSrc.Self().Toolchains
+		var sourceIDs []core.ModuleSourceID
+		for _, src := range tcCtx.originalSrc.Self().Toolchains {
+			sourceIDs = append(sourceIDs, dagql.NewID[*core.ModuleSource](src.ID()))
+		}
+		err := dag.Select(ctx, tcCtx.src, &tcCtx.src, dagql.Selector{
+			Field: "withToolchains",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "toolchains",
+					Value: dagql.ArrayInput[core.ModuleSourceID](sourceIDs),
+				},
+			},
+		})
+		if err != nil {
+			return inst, fmt.Errorf("unable to set toolchains with blueprint: %w", err)
+		}
+		// Update src to use the modified blueprint with toolchains
+		src = tcCtx.src
 	}
 
 	// Create base module with dependencies
