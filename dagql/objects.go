@@ -475,20 +475,6 @@ func (r ObjectResult[T]) Select(ctx context.Context, s *Server, sel Selector) (A
 	return r.call(ctx, s, preselectResult.newID, preselectResult.inputArgs, preselectResult.doNotCache)
 }
 
-func (r ObjectResult[T]) SelectID(ctx context.Context, s *Server, sel Selector) (Typed, *call.ID, error) {
-	preselectResult, err := r.preselect(ctx, s, sel)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	returnType, err := r.returnType(preselectResult.newID)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return returnType, preselectResult.newID, nil
-}
-
 type preselectResult struct {
 	inputArgs  map[string]Input
 	newID      *call.ID

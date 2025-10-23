@@ -7,7 +7,6 @@ import (
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 )
 
 // A SDK module that implements the `Runtime` interface
@@ -61,52 +60,4 @@ func (sdk *runtimeModule) Runtime(
 		return inst, fmt.Errorf("failed to call sdk moduleRuntime: %w", err)
 	}
 	return inst, nil
-}
-
-func (sdk *runtimeModule) LazyRuntime(
-	ctx context.Context,
-	deps *core.ModDeps,
-	source dagql.ObjectResult[*core.ModuleSource],
-) (id *call.ID, rerr error) {
-	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: lazy load runtime")
-	defer telemetry.End(span, func() error { return rerr })
-
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
-	if err != nil {
-		return id, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.mod.Self().Name(), err)
-	}
-
-	dag, err := sdk.mod.dag(ctx)
-	if err != nil {
-		return id, fmt.Errorf("failed to get dag for sdk module %s: %w", sdk.mod.mod.Self().Name(), err)
-	}
-
-	id, err = dag.SelectID(ctx, sdk.mod.sdk,
-		dagql.Selector{
-			Field: "moduleRuntime",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "modSource",
-					Value: dagql.NewID[*core.ModuleSource](source.ID()),
-				},
-				{
-					Name:  "introspectionJson",
-					Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
-				},
-			},
-		},
-		dagql.Selector{
-			Field: "withWorkdir",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "path",
-					Value: dagql.NewString(RuntimeWorkdirPath),
-				},
-			},
-		},
-	)
-	if err != nil {
-		return id, fmt.Errorf("failed to lazy call sdk moduleRuntime: %w", err)
-	}
-	return id, nil
 }

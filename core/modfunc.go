@@ -34,9 +34,8 @@ import (
 )
 
 type ModuleFunction struct {
-	mod     *Module
-	objDef  *ObjectTypeDef // may be nil for special functions like the module definition function call
-	runtime dagql.ObjectResult[*Container]
+	mod    *Module
+	objDef *ObjectTypeDef // may be nil for special functions like the module definition function call
 
 	metadata   *Function
 	returnType ModType
@@ -54,7 +53,6 @@ func NewModFunction(
 	ctx context.Context,
 	mod *Module,
 	objDef *ObjectTypeDef,
-	runtime dagql.ObjectResult[*Container],
 	metadata *Function,
 ) (*ModuleFunction, error) {
 	returnType, ok, err := mod.ModTypeFor(ctx, metadata.ReturnType, true)
@@ -83,7 +81,6 @@ func NewModFunction(
 	return &ModuleFunction{
 		mod:        mod,
 		objDef:     objDef,
-		runtime:    runtime,
 		metadata:   metadata,
 		returnType: returnType,
 		args:       argTypes,
@@ -575,6 +572,27 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	return cacheCfg, nil
 }
 
+func (fn *ModuleFunction) loadFunctionRuntime(ctx context.Context) (runtime dagql.ObjectResult[*Container], err error) {
+	mod := fn.mod
+	srv := dagql.CurrentDagqlServer(ctx)
+
+	modObj, err := dagql.NewObjectResultForID(mod, srv, mod.ResultID)
+	if err != nil {
+		return runtime, fmt.Errorf("failed to load module: %w", err)
+	}
+
+	if err := srv.Select(ctx, modObj, &runtime,
+		dagql.Selector{
+			Field: "loadRuntime",
+		}, dagql.Selector{
+			Field: "runtime",
+		}); err != nil {
+		return runtime, fmt.Errorf("failed to load runtime: %w", err)
+	}
+
+	return runtime, nil
+}
+
 func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.AnyResult, rerr error) { //nolint: gocyclo
 	mod := fn.mod
 
@@ -680,6 +698,11 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 
 	srv := dagql.CurrentDagqlServer(ctx)
 
+	runtime, err := fn.loadFunctionRuntime(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load runtime: %w", err)
+	}
+
 	var metaDir dagql.ObjectResult[*Directory]
 	err = srv.Select(ctx, srv.Root(), &metaDir,
 		dagql.Selector{
@@ -691,7 +714,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	var ctr dagql.ObjectResult[*Container]
-	err = srv.Select(ctx, fn.runtime, &ctr,
+	err = srv.Select(ctx, runtime, &ctr,
 		dagql.Selector{
 			Field: "withMountedDirectory",
 			Args: []dagql.NamedInput{

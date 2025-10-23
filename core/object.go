@@ -205,17 +205,11 @@ func (t *ModuleObjectType) GetCallable(ctx context.Context, name string, dag *da
 		}, nil
 	}
 
-	runtime, err := mod.LoadRuntime(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load runtime: %w", err)
-	}
-
 	if fun, ok := t.typeDef.FunctionByName(name); ok {
 		return NewModFunction(
 			ctx,
 			mod,
 			t.typeDef,
-			runtime,
 			fun,
 		)
 	}
@@ -367,12 +361,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		return fmt.Errorf("constructor function for object %s must return that object", objDef.OriginalName)
 	}
 
-	runtime, err := mod.LoadRuntime(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to load runtime: %w", err)
-	}
-
-	fn, err := NewModFunction(ctx, mod, objDef, runtime, fnTypeDef)
+	fn, err := NewModFunction(ctx, mod, objDef, fnTypeDef)
 	if err != nil {
 		return fmt.Errorf("failed to create function: %w", err)
 	}
@@ -486,16 +475,10 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Function, dag *dagql.Server) (dagql.Field[*ModuleObject], error) {
 	var f dagql.Field[*ModuleObject]
 
-	runtime, err := mod.LoadRuntime(ctx)
-	if err != nil {
-		return f, fmt.Errorf("failed to load runtime: %w", err)
-	}
-
 	modFun, err := NewModFunction(
 		ctx,
 		mod,
 		objDef,
-		runtime,
 		fun,
 	)
 	if err != nil {

@@ -2392,7 +2392,6 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 				ctx,
 				mod,
 				nil,
-				mod.Runtime.Value,
 				core.NewFunction("", &core.TypeDef{
 					Kind:     core.TypeDefKindObject,
 					AsObject: dagql.NonNull(core.NewObjectTypeDef("Module", "")),

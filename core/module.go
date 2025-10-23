@@ -39,8 +39,6 @@ type Module struct {
 	// Deps contains the module's dependency DAG.
 	Deps *ModDeps
 
-	// LazyRuntimeID *call.ID
-
 	// Runtime is the container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
 	Runtime dagql.Nullable[dagql.ObjectResult[*Container]] `field:"true" name:"runtime" doc:"The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile."`
 
@@ -110,39 +108,6 @@ func (mod *Module) UserDefaults(ctx context.Context) (*EnvFile, error) {
 		defaults = defaults.WithEnvFiles(bp.UserDefaults)
 	}
 	return defaults, nil
-}
-
-func (mod *Module) LoadRuntime(ctx context.Context) (inst dagql.ObjectResult[*Container], err error) {
-	fmt.Printf("mod.Runtime.Valid: %t\n", mod.Runtime.Valid)
-	if mod.Runtime.Valid {
-		return mod.Runtime.Value, nil
-	}
-
-	runtimeImpl, ok := mod.Source.Value.Self().SDKImpl.AsRuntime()
-	if !ok {
-		return inst, fmt.Errorf("no runtime implemented")
-	}
-
-	var src dagql.ObjectResult[*ModuleSource]
-	if !mod.Source.Valid {
-		return inst, fmt.Errorf("no source")
-	}
-
-	src = mod.Source.Value
-
-	srcInstContentHashed := src.WithObjectDigest(digest.Digest(src.Self().Digest))
-
-	fmt.Println("Call runtimeImpl")
-
-	runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
-	if err != nil {
-		return inst, fmt.Errorf("failed to load runtime: %w", err)
-	}
-
-	mod.Runtime = dagql.NonNull(runtime)
-	fmt.Printf("mod.Runtime.Valid: %t\n", mod.Runtime.Valid)
-
-	return mod.Runtime.Value, nil
 }
 
 // Return local defaults for the specified object
@@ -757,6 +722,29 @@ func (mod *Module) Patch() error {
 		}
 	}
 	return nil
+}
+
+func (mod *Module) LoadRuntime(ctx context.Context) (*Module, error) {
+	runtimeImpl, ok := mod.Source.Value.Self().SDKImpl.AsRuntime()
+	if !ok {
+		return nil, fmt.Errorf("no runtime implemented")
+	}
+
+	var src dagql.ObjectResult[*ModuleSource]
+	if !mod.Source.Valid {
+		return nil, fmt.Errorf("no source")
+	}
+
+	src = mod.Source.Value
+	srcInstContentHashed := src.WithObjectDigest(digest.Digest(src.Self().Digest))
+	runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load runtime: %w", err)
+	}
+
+	mod.Runtime = dagql.NonNull(runtime)
+
+	return mod, nil
 }
 
 /*

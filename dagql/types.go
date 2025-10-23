@@ -118,15 +118,6 @@ type AnyObjectResult interface {
 	//
 	// Any Nullable values are automatically unwrapped.
 	Select(context.Context, *Server, Selector) (AnyResult, error)
-
-	// ReturnType gets the return type of the field selected by the given
-	// selector.
-	//
-	// The returned value is the raw Typed value returned from the field; it must
-	// be instantiated with a class for further selection.
-	//
-	// Any Nullable values are automatically unwrapped.
-	SelectID(context.Context, *Server, Selector) (Typed, *call.ID, error)
 }
 
 // InterfaceValue is a value that wraps some underlying object with a interface to that object's API. This type exists to support unwrapping it and getting the underlying object.

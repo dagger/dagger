@@ -143,12 +143,6 @@ This interface MUST be implemented to support callable SDKs
 (`dagger call`).
 */
 type Runtime interface {
-	LazyRuntime(
-		context.Context,
-		*ModDeps,
-		dagql.ObjectResult[*ModuleSource],
-	) (*call.ID, error)
-
 	/*
 		Runtime returns a container that is used to execute module code at runtime
 		in the Dagger engine.
