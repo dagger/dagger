@@ -3,6 +3,7 @@ package dagql_test
 import (
 	"bytes"
 	"context"
+	cryptorand "crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -2390,9 +2391,10 @@ func TestCustomDigest(t *testing.T) {
 				}
 				return inst.WithDigest(digest.Digest(strconv.Itoa(args.Val % 2))), nil
 			},
-			func(ctx context.Context, _ dagql.ObjectResult[Query], _ argsType, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
-				cacheCfg.Digest = digest.Digest(identity.NewID())
-				return &cacheCfg, nil
+			func(ctx context.Context, _ dagql.ObjectResult[Query], _ argsType, req dagql.GetCacheConfigRequest) (*dagql.GetCacheConfigResponse, error) {
+				resp := &dagql.GetCacheConfigResponse{CacheKey: req.CacheKey}
+				resp.CacheKey.CallKey = cryptorand.Text()
+				return resp, nil
 			}),
 
 		dagql.NodeFunc("returnTheArg", func(ctx context.Context, self dagql.ObjectResult[Query], args struct {
@@ -2850,7 +2852,7 @@ func (hook *testInstallHook) InstallObject(class dagql.ObjectType) {
 		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
 			return dagql.NewResultForCurrentID(ctx, dagql.String("hello world!"))
 		},
-		dagql.CacheSpec{},
+		nil,
 	)
 
 	// test adding a new type
@@ -2864,7 +2866,7 @@ func (hook *testInstallHook) InstallObject(class dagql.ObjectType) {
 		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
 			return dagql.NewResultForCurrentID(ctx, &points.Point{X: 100, Y: 200})
 		},
-		dagql.CacheSpec{},
+		nil,
 	)
 }
 
