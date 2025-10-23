@@ -11,6 +11,11 @@ import (
 	"golang.org/x/mod/semver"
 )
 
+// Run Dagger scripts
+func (dev *DaggerDev) Scripts() *Scripts {
+	return &Scripts{Dagger: dev}
+}
+
 type Scripts struct {
 	Dagger *DaggerDev // +private
 }

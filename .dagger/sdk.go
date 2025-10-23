@@ -13,6 +13,21 @@ import (
 	"github.com/dagger/dagger/util/parallel"
 )
 
+// Develop Dagger SDKs
+func (dev *DaggerDev) SDK() *SDK {
+	return &SDK{
+		Dagger:     dev, // for generating changesets on generate. Remove once Changesets can be merged
+		Go:         &GoSDK{Dagger: dev},
+		Python:     &PythonSDK{Dagger: dev},
+		Typescript: &TypescriptSDK{Dagger: dev},
+		Elixir:     &ElixirSDK{Dagger: dev},
+		Rust:       &RustSDK{Dagger: dev},
+		PHP:        &PHPSDK{Dagger: dev},
+		Java:       &JavaSDK{Dagger: dev},
+		Dotnet:     &DotnetSDK{Dagger: dev},
+	}
+}
+
 // Run all checks for all SDKs
 func (dev *DaggerDev) TestSDKs(ctx context.Context) (CheckStatus, error) {
 	type tester interface {

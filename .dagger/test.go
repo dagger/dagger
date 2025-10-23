@@ -15,6 +15,11 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 )
 
+// Find test suites to run
+func (dev *DaggerDev) Test() *Test {
+	return &Test{Dagger: dev}
+}
+
 type Test struct {
 	Dagger *DaggerDev // +private
 }
