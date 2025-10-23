@@ -1,0 +1,71 @@
+// Modes available for the test
+type Mode string
+
+func (Mode) IsEnum() {}
+
+func (v Mode) Name() string {
+	switch v {
+	case ModeAlpha:
+		return "ALPHA"
+	case ModeBeta:
+		return "BETA"
+	case ModeZeta:
+		return "ZETA"
+	default:
+		return ""
+	}
+}
+
+func (v Mode) Value() string {
+	return string(v)
+}
+
+func (v *Mode) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *Mode) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "ALPHA":
+		*v = ModeAlpha
+	case "BETA":
+		*v = ModeBeta
+	case "ZETA":
+		*v = ModeZeta
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// Deprecated: alpha is deprecated; use zeta instead
+	ModeAlpha Mode = "ALPHA"
+
+	// Deprecated: alpha is deprecated; use zeta instead
+	Alpha Mode = ModeAlpha
+
+	// Deprecated: beta is deprecated; use zeta instead
+	ModeBeta Mode = "BETA"
+
+	// Deprecated: beta is deprecated; use zeta instead
+	Beta Mode = ModeBeta
+
+	ModeZeta Mode = "ZETA"
+
+	// Deprecated: use ModeZeta instead
+	Zeta Mode = ModeZeta
+)
