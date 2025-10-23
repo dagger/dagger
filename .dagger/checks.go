@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 
+	"github.com/dagger/dagger/.dagger/internal/dagger"
 	"github.com/dagger/dagger/util/parallel"
 )
 
@@ -47,7 +48,7 @@ func (dev *DaggerDev) CiInCi(ctx context.Context) (CheckStatus, error) {
 		WithMountedDirectory(".git/", dev.Git.Head().Tree().Directory(".git/"))
 
 	_, err = ctr.
-		WithExec([]string{"dagger", "call", "test-sdks"}).
+		WithExec([]string{"dagger", "call", "--docker-cfg=file:$HOME/.docker/config.json", "test-sdks"}, dagger.ContainerWithExecOpts{Expand: true}).
 		Sync(ctx)
 	return CheckCompleted, err
 }
