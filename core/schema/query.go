@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"io/fs"
 
+	"dagger.io/dagger/telemetry"
 	codegenintrospection "github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/sources/blob"
+	"go.opentelemetry.io/otel/codes"
 )
 
 type querySchema struct {
@@ -70,7 +72,34 @@ func (s *querySchema) Install(srv *dagql.Server) {
 
 		dagql.Func("version", s.version).
 			Doc(`Get the current Dagger Engine version.`),
-	}.Install(srv)
+
+		dagql.Func("status", s.status).
+			Doc(`Create a new status indicator.`).
+			Experimental(
+				"The statuses API is experimental and subject to change.",
+				"The current capabilities are limited. Please open an issue to request new UI controls.",
+			).
+			Args(
+				dagql.Arg("name").Doc("A display name for the status."),
+			),
+	}.Install(s.srv)
+
+	dagql.Fields[*core.Status]{
+		dagql.NodeFuncWithCacheKey("start", s.statusStart, dagql.CachePerCall).
+			Doc(`Start a new instance of the status.`),
+
+		dagql.NodeFuncWithCacheKey("display", s.statusDisplay, dagql.CachePerCall).
+			Doc(`Start and immediately finish the status, so that it just gets displayed to the user.`),
+
+		dagql.Func("end", s.statusEnd).
+			Doc(`Mark the status as complete, with an optional error.`),
+
+		dagql.Func("internalId", s.statusInternalID).
+			Doc(
+				`Returns the internal OpenTelemetry span ID of the status.`,
+				`(You probably don't need to use this, unless you're implementing OpenTelemetry integration for a Dagger SDK.)`,
+			),
+	}.Install(s.srv)
 }
 
 type pipelineArgs struct {
@@ -157,6 +186,81 @@ func (s *querySchema) schemaJSONFile(
 	return fileInst.WithDigest(dgst), nil
 }
 
+func (s *querySchema) status(ctx context.Context, parent *core.Query, args struct {
+	Name string
+	Key  string `default:""`
+}) (*core.Status, error) {
+	query := parent
+	if args.Key != "" {
+		status, found, err := query.LookupStatus(ctx, args.Key)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			return nil, fmt.Errorf("status not found: %s", args.Key)
+		}
+		return status, nil
+	}
+	return &core.Status{
+		Name: args.Name,
+	}, nil
+}
+
+func (s *querySchema) statusStart(ctx context.Context, parent dagql.ObjectResult[*core.Status], args struct{}) (dagql.ID[*core.Status], error) {
+	st, err := parent.Self().Start(ctx)
+	if err != nil {
+		return dagql.ID[*core.Status]{}, err
+	}
+	return s.selectStatus(ctx, st)
+}
+
+func (s *querySchema) statusDisplay(ctx context.Context, parent dagql.ObjectResult[*core.Status], args struct{}) (dagql.ID[*core.Status], error) {
+	st, err := parent.Self().Display(ctx)
+	if err != nil {
+		return dagql.ID[*core.Status]{}, err
+	}
+	return s.selectStatus(ctx, st)
+}
+
+func (s *querySchema) selectStatus(ctx context.Context, started *core.Status) (dagql.ID[*core.Status], error) {
+	var inst dagql.ObjectResult[*core.Status]
+	err := s.srv.Select(ctx, s.srv.Root(), &inst, dagql.Selector{
+		Field: "status",
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.NewString(started.Name)},
+			{Name: "key", Value: dagql.NewString(started.InternalID())},
+		},
+	})
+	if err != nil {
+		return dagql.ID[*core.Status]{}, err
+	}
+	return dagql.NewID[*core.Status](inst.ID()), nil
+}
+
+func (s *querySchema) statusEnd(ctx context.Context, parent *core.Status, args struct {
+	Error dagql.Optional[dagql.ID[*core.Error]]
+}) (dagql.Nullable[core.Void], error) {
+	if parent.Span == nil {
+		return dagql.Null[core.Void](), fmt.Errorf("status not started")
+	}
+	if args.Error.Valid {
+		dagErr, err := args.Error.Value.Load(ctx, s.srv)
+		if err != nil {
+			parent.Span.SetStatus(codes.Error, fmt.Sprintf("failed to load error: %v", err))
+		} else {
+			// use telemetry.End which also provides origin tracking
+			telemetry.End(parent.Span, func() error { return dagErr.Self() })
+		}
+	} else {
+		// use telemetry.End so the status gets set to OK
+		telemetry.End(parent.Span, func() error { return nil })
+	}
+	return dagql.Null[core.Void](), nil
+}
+
+func (s *querySchema) statusInternalID(ctx context.Context, parent *core.Status, args struct{}) (string, error) {
+	return parent.Span.SpanContext().SpanID().String(), nil
+}
 func dagqlToCodegenType(dagqlType *introspection.Type) *codegenintrospection.Type {
 	t := &codegenintrospection.Type{}
 
