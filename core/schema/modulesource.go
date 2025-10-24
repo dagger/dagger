@@ -2559,7 +2559,13 @@ func (s *moduleSourceSchema) moduleSourceIntrospectionSchemaJSON(
 func (s *moduleSourceSchema) moduleSourceAsModule(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
-	args struct{},
+	args struct {
+		// This internal-only flag allows us to force SDK modules to enable default function
+		// caching even when they are on older modules, which ensures they don't see a regression
+		// right after function caching is enabled. It can be removed after SDKs have been updated
+		// to latest engine versions.
+		ForceDefaultFunctionCaching bool `internal:"true" default:"false"`
+	},
 ) (inst dagql.Result[*core.Module], err error) {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -2603,6 +2609,9 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		SDKConfig: sdk,
 
 		DisableDefaultFunctionCaching: src.Self().DisableDefaultFunctionCaching,
+	}
+	if args.ForceDefaultFunctionCaching {
+		mod.DisableDefaultFunctionCaching = false
 	}
 
 	// load the deps as actual Modules
