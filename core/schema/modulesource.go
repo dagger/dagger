@@ -903,7 +903,7 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	src.EngineVersion = engineVersion
 
 	canDefaultFuncCaching := engine.CheckVersionCompatibility(
-		src.EngineVersion,
+		engine.BaseVersion(src.EngineVersion),
 		engine.MinimumDefaultFunctionCachingModuleVersion,
 	)
 	switch {
