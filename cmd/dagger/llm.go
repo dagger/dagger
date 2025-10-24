@@ -12,8 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alecthomas/chroma/v2/formatters"
-	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
@@ -766,14 +764,8 @@ func (s *LLMSession) SyncFromLocal(ctx context.Context) (rerr error) {
 			)
 		}
 
-		// Display a patch so the user can verify what changes got uploaded.
-		tokens, err := lexers.Get("diff").Tokenise(nil, preview.Patch.Raw)
-		if err != nil {
-			return err
-		}
-		if err := formatters.TTY16.Format(stdio.Stdout, idtui.TTYStyle(), tokens); err != nil {
-			return err
-		}
+		// Show colorized summary to user.
+		_ = preview.Summarize(idtui.NewOutput(stdio.Stdout), 80)
 	}
 
 	s.updateLLMAndAgentVar(newLLM)
