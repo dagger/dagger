@@ -5,7 +5,7 @@ export class DeprecationArgs {
 	@func()
 	legacy(
 		/** @deprecated Use `other` instead. */
-		input: string,
+		input?: string,
 		other: string,
 	): string {
 		return input ?? other

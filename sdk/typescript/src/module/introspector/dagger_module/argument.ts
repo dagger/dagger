@@ -42,15 +42,21 @@ export class DaggerArgument extends Locatable {
     const { description, deprecated } = this.ast.getSymbolDoc(this.symbol)
     this.description = description
     this.deprecated = deprecated
+    const hasInitializer = this.node.initializer !== undefined
     this.defaultValue = this.getDefaultValue()
     this.isVariadic = this.node.dotDotDotToken !== undefined
     this.isNullable = this.getIsNullable()
     this.isOptional =
-      this.isVariadic || // if arguments has ...
-      (this.defaultValue === undefined && // if argument has a default value that couldn't be resolved.
-        this.node.initializer !== undefined) ||
+      this.isVariadic || // if argument has ...
+      hasInitializer || // default value makes parameter optional
       this.isNullable || // if argument is nullable
       this.node.questionToken !== undefined // if argument has ?
+
+    if (this.deprecated !== undefined && !this.isOptional) {
+      throw new IntrospectionError(
+        `argument ${this.name} is required and cannot be deprecated at ${AST.getNodePosition(this.node)}.`,
+      )
+    }
 
     const decoratorArguments = this.ast.getDecoratorArgument<ArgumentOptions>(
       this.node,
