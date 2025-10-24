@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
+	"io"
 	"maps"
 	"os"
 	"path"
@@ -27,7 +27,6 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/mod/semver"
 
-	"github.com/dagger/dagger/core/reffs"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
@@ -144,59 +143,7 @@ func defToState(def *pb.Definition) (llb.State, error) {
 	return llb.NewState(defop), nil
 }
 
-func resolveUIDGID(ctx context.Context, fsSt llb.State, bk *buildkit.Client, platform Platform, owner string) (*Ownership, error) {
-	uidOrName, gidOrName, hasGroup := strings.Cut(owner, ":")
-
-	var uid, gid int
-	var uname, gname string
-
-	uid, err := parseUID(uidOrName)
-	if err != nil {
-		uname = uidOrName
-	}
-
-	if hasGroup {
-		gid, err = parseUID(gidOrName)
-		if err != nil {
-			gname = gidOrName
-		}
-	}
-
-	var fs fs.FS
-	if uname != "" || gname != "" {
-		fs, err = reffs.OpenState(ctx, bk, fsSt, llb.Platform(platform.Spec()))
-		if err != nil {
-			return nil, fmt.Errorf("open fs state for name->id: %w", err)
-		}
-	}
-
-	if uname != "" {
-		uid, err = findUID(fs, uname)
-		if err != nil {
-			return nil, fmt.Errorf("find uid: %w", err)
-		}
-	}
-
-	if gname != "" {
-		gid, err = findGID(fs, gname)
-		if err != nil {
-			return nil, fmt.Errorf("find gid: %w", err)
-		}
-	}
-
-	if !hasGroup {
-		gid = uid
-	}
-
-	return &Ownership{uid, gid}, nil
-}
-
-func findUID(fs fs.FS, uname string) (int, error) {
-	f, err := fs.Open("/etc/passwd")
-	if err != nil {
-		return -1, fmt.Errorf("open /etc/passwd: %w", err)
-	}
-
+func findUID(f io.Reader, uname string) (int, error) {
 	users, err := user.ParsePasswdFilter(f, func(u user.User) bool {
 		return u.Name == uname
 	})
@@ -211,12 +158,7 @@ func findUID(fs fs.FS, uname string) (int, error) {
 	return users[0].Uid, nil
 }
 
-func findGID(fs fs.FS, gname string) (int, error) {
-	f, err := fs.Open("/etc/group")
-	if err != nil {
-		return -1, fmt.Errorf("open /etc/passwd: %w", err)
-	}
-
+func findGID(f io.Reader, gname string) (int, error) {
 	groups, err := user.ParseGroupFilter(f, func(g user.Group) bool {
 		return g.Name == gname
 	})
