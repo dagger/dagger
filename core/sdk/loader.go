@@ -85,7 +85,9 @@ func (l *Loader) externalSDKForModule(
 
 	var sdkMod dagql.ObjectResult[*core.Module]
 	err = dag.Select(ctx, sdkModSrc, &sdkMod,
-		dagql.Selector{Field: "asModule"},
+		dagql.Selector{Field: "asModule", Args: []dagql.NamedInput{
+			{Name: "forceDefaultFunctionCaching", Value: dagql.Opt(dagql.Boolean(true))},
+		}},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load sdk module %q: %w", sdk.Source, err)
@@ -170,6 +172,9 @@ func (l *Loader) loadBuiltinSDK(
 		},
 		dagql.Selector{
 			Field: "asModule",
+			Args: []dagql.NamedInput{
+				{Name: "forceDefaultFunctionCaching", Value: dagql.Opt(dagql.Boolean(true))},
+			},
 		},
 	)
 	if err != nil {

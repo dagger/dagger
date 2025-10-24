@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
@@ -57,6 +58,10 @@ type Module struct {
 
 	// ResultID is the ID of the initialized module.
 	ResultID *call.ID
+
+	// If true, disable the new default function caching behavior for this module. Functions will
+	// instead default to the old behavior of per-session caching.
+	DisableDefaultFunctionCaching bool
 }
 
 func (*Module) Type() *ast.Type {
@@ -274,8 +279,8 @@ func (mod *Module) CacheConfigForCall(
 	_ dagql.AnyResult,
 	_ map[string]dagql.Input,
 	_ call.View,
-	cacheCfg dagql.CacheConfig,
-) (*dagql.CacheConfig, error) {
+	req dagql.GetCacheConfigRequest,
+) (*dagql.GetCacheConfigResponse, error) {
 	// Function calls on a module should be cached based on the module's content hash, not
 	// the module ID digest (which has a per-client cache key in order to deal with
 	// local dir and git repo loading)
@@ -284,12 +289,16 @@ func (mod *Module) CacheConfigForCall(
 		call.WithModule(nil),
 		call.WithCustomDigest(""),
 	)
-	cacheCfg.Digest = dagql.HashFrom(
+
+	resp := &dagql.GetCacheConfigResponse{
+		CacheKey: req.CacheKey,
+	}
+	resp.CacheKey.CallKey = hashutil.HashStrings(
 		curIDNoMod.Digest().String(),
 		mod.Source.Value.Self().Digest,
 		mod.NameField, // the module source content digest only includes the original name
-	)
-	return &cacheCfg, nil
+	).String()
+	return resp, nil
 }
 
 func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (modType ModType, ok bool, err error) {

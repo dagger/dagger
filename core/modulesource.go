@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 	fsutiltypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -104,12 +105,13 @@ func (sdk *SDKConfig) ExperimentalFeatureEnabled(feature ModuleSourceExperimenta
 }
 
 type ModuleSource struct {
-	ConfigExists           bool   `field:"true" name:"configExists" doc:"Whether an existing dagger.json for the module was found."`
-	ModuleName             string `field:"true" name:"moduleName" doc:"The name of the module, including any setting via the withName API."`
-	ModuleOriginalName     string `field:"true" name:"moduleOriginalName" doc:"The original name of the module as read from the module's dagger.json (or set for the first time with the withName API)."`
-	EngineVersion          string `field:"true" name:"engineVersion" doc:"The engine version of the module."`
-	CodegenConfig          *modules.ModuleCodegenConfig
-	ModuleConfigUserFields modules.ModuleConfigUserFields
+	ConfigExists                  bool   `field:"true" name:"configExists" doc:"Whether an existing dagger.json for the module was found."`
+	ModuleName                    string `field:"true" name:"moduleName" doc:"The name of the module, including any setting via the withName API."`
+	ModuleOriginalName            string `field:"true" name:"moduleOriginalName" doc:"The original name of the module as read from the module's dagger.json (or set for the first time with the withName API)."`
+	EngineVersion                 string `field:"true" name:"engineVersion" doc:"The engine version of the module."`
+	CodegenConfig                 *modules.ModuleCodegenConfig
+	ModuleConfigUserFields        modules.ModuleConfigUserFields
+	DisableDefaultFunctionCaching bool
 
 	// The SDK configuration of the module as read from the module's dagger.json or set by withSDK
 	SDK *SDKConfig `field:"true" name:"sdk" doc:"The SDK configuration of the module."`
@@ -465,7 +467,7 @@ func (src *ModuleSource) CalcDigest(ctx context.Context) digest.Digest {
 		inputs = append(inputs, client.Generator, client.Directory)
 	}
 
-	return dagql.HashFrom(inputs...)
+	return hashutil.HashStrings(inputs...)
 }
 
 // LoadContextDir loads addition files+directories from the module source's context, including those that

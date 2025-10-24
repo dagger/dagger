@@ -22,10 +22,12 @@ export class DaggerInterfaceFunction extends Locatable {
   private _returnTypeRef?: string
   public returnType?: TypeDef<TypeDefKind>
   public arguments: DaggerArguments = {}
-  // Just a placeholder to be compatible with `Method` during registration
-  public alias: undefined
   private symbol: ts.Symbol
   private signature?: ts.Signature
+
+  // Just placeholders to be compatible with `Method` during registration
+  public alias: undefined
+  public cache: undefined
 
   constructor(
     private readonly node: ts.PropertySignature | ts.MethodSignature,

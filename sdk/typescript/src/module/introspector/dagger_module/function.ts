@@ -2,6 +2,7 @@ import ts from "typescript"
 
 import { TypeDefKind } from "../../../api/client.gen.js"
 import { IntrospectionError } from "../../../common/errors/index.js"
+import { FunctionOptions } from "../../registry.js"
 import { TypeDef } from "../typedef.js"
 import {
   AST,
@@ -20,8 +21,9 @@ export class DaggerFunction extends Locatable {
   public description: string
   private _returnTypeRef?: string
   public returnType?: TypeDef<TypeDefKind>
-  public alias: string | undefined
   public arguments: DaggerArguments = {}
+  public alias: string | undefined
+  public cache: string | undefined
 
   private signature: ts.Signature
   private symbol: ts.Symbol
@@ -37,6 +39,20 @@ export class DaggerFunction extends Locatable {
     this.name = this.node.name.getText()
     this.description = this.ast.getDocFromSymbol(this.symbol)
 
+    const functionArguments = this.ast.getDecoratorArgument<
+      FunctionOptions | string
+    >(this.node, FUNCTION_DECORATOR, "object")
+    if (functionArguments) {
+      if (typeof functionArguments === "string") {
+        // previously only a single arg was accepted for alias, so if there's just
+        // a string we intrepret it that way for backward compatibility
+        this.alias = functionArguments
+      } else {
+        this.alias = functionArguments.alias
+        this.cache = functionArguments.cache
+      }
+    }
+
     for (const parameter of this.node.parameters) {
       this.arguments[parameter.name.getText()] = new DaggerArgument(
         parameter,
@@ -44,7 +60,6 @@ export class DaggerFunction extends Locatable {
       )
     }
     this.returnType = this.getReturnType()
-    this.alias = this.getAlias()
   }
 
   private getReturnType(): TypeDef<TypeDefKind> | undefined {
@@ -56,19 +71,6 @@ export class DaggerFunction extends Locatable {
     }
 
     return typedef
-  }
-
-  private getAlias(): string | undefined {
-    const alias = this.ast.getDecoratorArgument<string>(
-      this.node,
-      FUNCTION_DECORATOR,
-      "string",
-    )
-    if (!alias) {
-      return
-    }
-
-    return JSON.parse(alias.replace(/'/g, '"'))
   }
 
   public getArgsOrder(): string[] {

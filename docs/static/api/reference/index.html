@@ -162,6 +162,7 @@
               <li><a href="#definition-Function">Function</a></li>
               <li><a href="#definition-FunctionArg">FunctionArg</a></li>
               <li><a href="#definition-FunctionArgID">FunctionArgID</a></li>
+              <li><a href="#definition-FunctionCachePolicy">FunctionCachePolicy</a></li>
               <li><a href="#definition-FunctionCall">FunctionCall</a></li>
               <li><a href="#definition-FunctionCallArgValue">FunctionCallArgValue</a></li>
               <li><a href="#definition-FunctionCallArgValueID">FunctionCallArgValueID</a></li>
@@ -9708,6 +9709,27 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Function-withCachePolicy" href="#Function-withCachePolicy"><code>withCachePolicy</code></a> - <span class="property-type"><a href="#definition-Function"><code>Function!</code></a></span> </td>
+                        <td> Returns the function updated to use the provided cache policy. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>policy</code></span> - <span class="property-type"><a href="#definition-FunctionCachePolicy"><code>FunctionCachePolicy!</code></a></span></h6>
+                                <p>The cache policy to use.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>timeToLive</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>The TTL for the cache policy, if applicable. Provided as a duration string, e.g. &quot;5m&quot;, &quot;1h30s&quot;.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Function-withDescription" href="#Function-withDescription"><code>withDescription</code></a> - <span class="property-type"><a href="#definition-Function"><code>Function!</code></a></span> </td>
                         <td> Returns the function with the given doc string. </td>
                       </tr>
@@ -9817,6 +9839,61 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>FunctionArgID</code> scalar type represents an identifier for an object of type FunctionArg.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-FunctionCachePolicy" class="definition definition-enum" data-traverse-target="definition-FunctionCachePolicy">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">FunctionCachePolicy</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The behavior configured for function result caching.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Values</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Enum Value</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <p><code>Default</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>PerSession</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>Never</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="doc-examples">
+                <div class="example-section example-section-is-code">
+                  <h5>Example</h5>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"Default"</span>
+</code></pre>
                 </div>
               </div>
             </div>

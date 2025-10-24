@@ -10,6 +10,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 var _ SchemaResolvers = &httpSchema{}
@@ -148,7 +149,7 @@ func (s *httpSchema) http(ctx context.Context, parent dagql.ObjectResult[*core.Q
 			call.NewLiteralString(snap.ID()),
 			false,
 		)).
-		WithDigest(dagql.HashFrom(
+		WithDigest(hashutil.HashStrings(
 			filename,
 			fmt.Sprint(permissions),
 			dgst.String(),

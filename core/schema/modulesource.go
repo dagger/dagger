@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/hashutil"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
@@ -900,6 +901,22 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	}
 	engineVersion = engine.NormalizeVersion(engineVersion)
 	src.EngineVersion = engineVersion
+
+	canDefaultFuncCaching := engine.CheckVersionCompatibility(
+		engine.BaseVersion(src.EngineVersion),
+		engine.MinimumDefaultFunctionCachingModuleVersion,
+	)
+	switch {
+	case modCfg.DisableDefaultFunctionCaching != nil:
+		// explicit setting in dagger.json, use it
+		src.DisableDefaultFunctionCaching = *modCfg.DisableDefaultFunctionCaching
+	case canDefaultFuncCaching:
+		// no explicit setting in dagger.json but module engine version supports it, enable function caching
+		src.DisableDefaultFunctionCaching = false
+	default:
+		// no explicit setting in dagger.json and module engine version doesn't support it, disable function caching
+		src.DisableDefaultFunctionCaching = true
+	}
 
 	if modCfg.SDK != nil {
 		src.SDK = &core.SDKConfig{
@@ -1896,6 +1913,10 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 		},
 	}
 
+	if src.DisableDefaultFunctionCaching {
+		modCfg.DisableDefaultFunctionCaching = ptr(true)
+	}
+
 	if src.SDK != nil {
 		modCfg.SDK = &modules.SDK{
 			Source:       src.SDK.Source,
@@ -2053,7 +2074,7 @@ func (s *moduleSourceSchema) runCodegen(
 	// this scopes the cache key of codegen calls to an exact content hash detached
 	// from irrelevant details like specific host paths, specific git repos+commits, etc.
 	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-		ResultKey: srcInst.Self().Digest,
+		CallKey: srcInst.Self().Digest,
 	}
 	_, err = dag.Cache.GetOrInitializeValue(ctx, cacheKey, srcInst)
 	if err != nil {
@@ -2380,7 +2401,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 	// temporary instance ID to support CurrentModule calls made during the function, it will
 	// be finalized at the end of `asModule`
 	tmpModInst, err := dagql.NewResultForID(mod, dagql.CurrentID(ctx).WithDigest(
-		dagql.HashFrom(
+		hashutil.HashStrings(
 			srcInstContentHashed.ID().Digest().String(),
 			"modInit",
 		),
@@ -2389,7 +2410,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		return nil, fmt.Errorf("failed to create temporary module instance: %w", err)
 	}
 	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-		ResultKey: string(tmpModInst.ID().Digest()),
+		CallKey: string(tmpModInst.ID().Digest()),
 	}
 	_, err = dag.Cache.GetOrInitializeValue(ctx, cacheKey, tmpModInst)
 	if err != nil {
@@ -2434,14 +2455,13 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 				return fmt.Errorf("failed to create module definition function for module %q: %w", modName, err)
 			}
 			result, err := getModDefFn.Call(ctx, &core.CallOpts{
-				Cache:          true,
 				SkipSelfSchema: true,
 				Server:         dag,
-				// Don't include the digest for the current call (which is a bunch of module source stuff, including
+				// Don't use the digest for the current call (which is a bunch of module source stuff, including
 				// APIs that are cached per-client when local sources are involved) in the cache key of this
 				// function call. That would needlessly invalidate the cache more than is needed, similar to how
 				// we want to scope the codegen cache keys by the content digested source instance above.
-				SkipCallDigestCacheKey: true,
+				OverrideStorageKey: tmpModInst.ID().Digest().String(),
 			})
 			if err != nil {
 				return fmt.Errorf("failed to call module %q to get functions: %w", modName, err)
@@ -2539,7 +2559,13 @@ func (s *moduleSourceSchema) moduleSourceIntrospectionSchemaJSON(
 func (s *moduleSourceSchema) moduleSourceAsModule(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
-	args struct{},
+	args struct {
+		// This internal-only flag allows us to force SDK modules to enable default function
+		// caching even when they are on older modules, which ensures they don't see a regression
+		// right after function caching is enabled. It can be removed after SDKs have been updated
+		// to latest engine versions.
+		ForceDefaultFunctionCaching bool `internal:"true" default:"false"`
+	},
 ) (inst dagql.Result[*core.Module], err error) {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -2581,6 +2607,11 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		OriginalName: src.Self().ModuleOriginalName,
 
 		SDKConfig: sdk,
+
+		DisableDefaultFunctionCaching: src.Self().DisableDefaultFunctionCaching,
+	}
+	if args.ForceDefaultFunctionCaching {
+		mod.DisableDefaultFunctionCaching = false
 	}
 
 	// load the deps as actual Modules
@@ -2594,7 +2625,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	// this scopes the cache key of codegen calls to an exact content hash detached
 	// from irrelevant details like specific host paths, specific git repos+commits, etc.
 	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-		ResultKey: src.Self().Digest,
+		CallKey: src.Self().Digest,
 	}
 	_, err = dag.Cache.GetOrInitializeValue(ctx, cacheKey, src)
 	if err != nil {

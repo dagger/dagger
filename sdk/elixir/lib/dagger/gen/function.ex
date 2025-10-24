@@ -129,6 +129,24 @@ defmodule Dagger.Function do
   end
 
   @doc """
+  Returns the function updated to use the provided cache policy.
+  """
+  @spec with_cache_policy(t(), Dagger.FunctionCachePolicy.t(), [{:time_to_live, String.t() | nil}]) ::
+          Dagger.Function.t()
+  def with_cache_policy(%__MODULE__{} = function, policy, optional_args \\ []) do
+    query_builder =
+      function.query_builder
+      |> QB.select("withCachePolicy")
+      |> QB.put_arg("policy", policy)
+      |> QB.maybe_put_arg("timeToLive", optional_args[:time_to_live])
+
+    %Dagger.Function{
+      query_builder: query_builder,
+      client: function.client
+    }
+  end
+
+  @doc """
   Returns the function with the given doc string.
   """
   @spec with_description(t(), String.t()) :: Dagger.Function.t()

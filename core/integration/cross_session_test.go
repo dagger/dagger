@@ -57,10 +57,10 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 	})
 
 	t.Run("args", func(ctx context.Context, t *testctx.T) {
-		callMod := func(c *dagger.Client, b bool, i *int, s *string) (string, error) {
+		callMod := func(c *dagger.Client, parentArg *string, i *int, s *string) (string, error) {
 			args := []string{"fn"}
-			if b {
-				args = append([]string{"--b"}, args...)
+			if parentArg != nil {
+				args = append([]string{"--parentArg", *parentArg}, args...)
 			}
 			if i != nil {
 				args = append(args, "--i", strconv.Itoa(*i))
@@ -78,14 +78,14 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 	)
 
 	type Test struct {
-		ArbitraryBool bool
+		ArbitraryString string
 	}
 
 	func New(
 		// +optional
-		b bool,
+		parentArg string,
 	) Test {
-		return Test{ArbitraryBool: b}
+		return Test{ArbitraryString: parentArg}
 	}
 
 	func (*Test) Fn(
@@ -105,64 +105,67 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 
 		for _, tc := range []struct {
 			name           string
-			b1             bool
-			b2             bool
+			parentArg1     *string
+			parentArg2     *string
 			i1             *int
 			i2             *int
 			s1             *string
 			s2             *string
 			expectCacheHit bool
 		}{
+			// NOTE: be careful to not make the same function call in different test cases,
+			// it can result in timing of cache hits that interferes with the isolated test
 			{
 				name:           "unset",
 				expectCacheHit: true,
 			},
 			{
 				name:           "unset but diff parent",
-				b2:             true,
+				parentArg1:     ptr("p2"),
+				parentArg2:     ptr("p3"),
 				expectCacheHit: false,
 			},
 			{
 				name:           "same",
 				i1:             ptr(1),
 				i2:             ptr(1),
-				s1:             ptr("foo"),
-				s2:             ptr("foo"),
+				s1:             ptr("1"),
+				s2:             ptr("1"),
 				expectCacheHit: true,
 			},
 			{
 				name:           "same but diff parent",
-				b1:             true,
-				i1:             ptr(1),
-				i2:             ptr(1),
-				s1:             ptr("foo"),
-				s2:             ptr("foo"),
+				parentArg1:     ptr("p4"),
+				i1:             ptr(2),
+				i2:             ptr(2),
+				s1:             ptr("2"),
+				s2:             ptr("2"),
 				expectCacheHit: false,
 			},
 			{
 				name:           "all different",
-				i1:             ptr(1),
-				i2:             ptr(2),
-				s1:             ptr("foo"),
-				s2:             ptr("bar"),
+				i1:             ptr(3),
+				i2:             ptr(4),
+				s1:             ptr("3"),
+				s2:             ptr("4"),
 				expectCacheHit: false,
 			},
 			{
 				name:           "some different",
-				i1:             ptr(1),
-				i2:             ptr(1),
-				s1:             ptr("foo"),
-				s2:             ptr("bar"),
+				i1:             ptr(5),
+				i2:             ptr(5),
+				s1:             ptr("5"),
+				s2:             ptr("6"),
 				expectCacheHit: false,
 			},
 		} {
 			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 				c1 := connect(ctx, t)
-				out1, err := callMod(c1, tc.b1, tc.i1, tc.s1)
+				out1, err := callMod(c1, tc.parentArg1, tc.i1, tc.s1)
 				require.NoError(t, err)
 
 				c2 := connect(ctx, t)
-				out2, err := callMod(c2, tc.b2, tc.i2, tc.s2)
+				out2, err := callMod(c2, tc.parentArg2, tc.i2, tc.s2)
 				require.NoError(t, err)
 
 				if tc.expectCacheHit {

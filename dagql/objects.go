@@ -164,7 +164,7 @@ func (class Class[T]) TypeName() string {
 	return class.inner.Type().Name()
 }
 
-func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec) {
+func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
 	class.fieldsL.Lock()
 	f := &Field[T]{
 		Spec: &spec,
@@ -172,7 +172,6 @@ func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec)
 			return fun(ctx, self, args)
 		},
 	}
-	f.CacheSpec = cacheSpec
 	class.fields[spec.Name] = append(class.fields[spec.Name], f)
 	class.fieldsL.Unlock()
 
@@ -306,10 +305,13 @@ func (class Class[T]) Call(
 	}
 
 	// field implementations can optionally return a wrapped Typed val that has
-	// a callback that should always run after the field is called
+	// a callback that should always run after the field is called and additional
+	// caching metadata
 	var postCall cache.PostCallFunc
+	var safeToPersistCache bool
 	if val != nil {
 		postCall = val.GetPostCall()
+		safeToPersistCache = val.IsSafeToPersistCache()
 	}
 
 	// they can also return types that need to run a callback when they are
@@ -320,16 +322,18 @@ func (class Class[T]) Call(
 	}
 
 	return &CacheValWithCallbacks{
-		Value:     val,
-		PostCall:  postCall,
-		OnRelease: onRelease,
+		Value:              val,
+		PostCall:           postCall,
+		OnRelease:          onRelease,
+		SafeToPersistCache: safeToPersistCache,
 	}, nil
 }
 
 type Result[T Typed] struct {
-	constructor *call.ID
-	self        T
-	postCall    cache.PostCallFunc
+	constructor        *call.ID
+	self               T
+	postCall           cache.PostCallFunc
+	safeToPersistCache bool
 }
 
 var _ AnyResult = Result[Typed]{}
@@ -380,6 +384,15 @@ func (r Result[T]) WithPostCall(fn cache.PostCallFunc) AnyResult {
 func (r Result[T]) ResultWithPostCall(fn cache.PostCallFunc) Result[T] {
 	r.postCall = fn
 	return r
+}
+
+func (r Result[T]) WithSafeToPersistCache(safe bool) AnyResult {
+	r.safeToPersistCache = safe
+	return r
+}
+
+func (r Result[T]) IsSafeToPersistCache() bool {
+	return r.safeToPersistCache
 }
 
 // WithDigest returns an updated instance with the given metadata set.
@@ -454,13 +467,17 @@ func (r ObjectResult[T]) Select(ctx context.Context, s *Server, sel Selector) (A
 	if err != nil {
 		return nil, err
 	}
-	return r.call(ctx, s, preselectResult.newID, preselectResult.inputArgs, preselectResult.doNotCache)
+	return r.call(ctx, s,
+		preselectResult.newID,
+		preselectResult.inputArgs,
+		preselectResult.cacheKey,
+	)
 }
 
 type preselectResult struct {
-	inputArgs  map[string]Input
-	newID      *call.ID
-	doNotCache bool
+	inputArgs map[string]Input
+	newID     *call.ID
+	cacheKey  CacheKey
 }
 
 // sortArgsToSchema sorts the arguments to match the schema definition order.
@@ -536,22 +553,20 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 		call.WithArgs(idArgs...),
 	)
 
-	doNotCache := field.CacheSpec.DoNotCache != ""
-	if field.CacheSpec.GetCacheConfig != nil {
-		origDgst := newID.Digest()
-
+	cacheKey := newCacheKey(ctx, newID, field.Spec)
+	if field.Spec.GetCacheConfig != nil {
 		cacheCfgCtx := idToContext(ctx, newID)
 		cacheCfgCtx = srvToContext(cacheCfgCtx, s)
-		cacheCfg, err := field.CacheSpec.GetCacheConfig(cacheCfgCtx, r, inputArgs, view, CacheConfig{
-			Digest: origDgst,
+		cacheCfgResp, err := field.Spec.GetCacheConfig(cacheCfgCtx, r, inputArgs, view, GetCacheConfigRequest{
+			CacheKey: cacheKey,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute cache key for %s.%s: %w", r.self.Type().Name(), sel.Field, err)
 		}
 
-		if len(cacheCfg.UpdatedArgs) > 0 {
-			maps.Copy(inputArgs, cacheCfg.UpdatedArgs)
-			for argName, argInput := range cacheCfg.UpdatedArgs {
+		if len(cacheCfgResp.UpdatedArgs) > 0 {
+			maps.Copy(inputArgs, cacheCfgResp.UpdatedArgs)
+			for argName, argInput := range cacheCfgResp.UpdatedArgs {
 				var found bool
 				for i, idArg := range idArgs {
 					if idArg.Name() == argName {
@@ -579,16 +594,42 @@ func (r ObjectResult[T]) preselect(ctx context.Context, s *Server, sel Selector)
 			)
 		}
 
-		if cacheCfg.Digest != origDgst {
-			newID = newID.WithDigest(cacheCfg.Digest)
+		if cacheCfgResp.CacheKey.CallKey != cacheKey.CallKey {
+			cacheKey.CallKey = cacheCfgResp.CacheKey.CallKey
+			newID = newID.WithDigest(digest.Digest(cacheKey.CallKey))
 		}
+
+		cacheKey.TTL = cacheCfgResp.CacheKey.TTL
+		cacheKey.DoNotCache = cacheCfgResp.CacheKey.DoNotCache
 	}
 
 	return &preselectResult{
-		inputArgs:  inputArgs,
-		newID:      newID,
-		doNotCache: doNotCache,
+		inputArgs: inputArgs,
+		newID:     newID,
+		cacheKey:  cacheKey,
 	}, nil
+}
+
+func newCacheKey(ctx context.Context, id *call.ID, fieldSpec *FieldSpec) CacheKey {
+	cacheKey := CacheKey{
+		CallKey:    string(id.Digest()),
+		TTL:        fieldSpec.TTL,
+		DoNotCache: fieldSpec.DoNotCache != "",
+	}
+
+	// dedupe concurrent calls only if the ID digest is the same and if the two calls are from the same client
+	// we don't want to dedupe across clients since:
+	// 1. it creates problems when one clients closes and others were waiting on the result
+	// 2. it makes it easy to accidentally leak clients specific information that isn't yet precisely scoped in the ID
+	clientMD, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		// not expected to happen, fallback behavior is just that there's no deduping of concurrent calls
+		slog.Warn("failed to get client metadata from context for call", "err", err)
+	} else {
+		cacheKey.ConcurrencyKey = clientMD.ClientID
+	}
+
+	return cacheKey
 }
 
 // Call calls the field on the instance specified by the ID.
@@ -605,8 +646,8 @@ func (r ObjectResult[T]) Call(ctx context.Context, s *Server, newID *call.ID) (A
 		return nil, err
 	}
 
-	doNotCache := field.CacheSpec.DoNotCache != ""
-	return r.call(ctx, s, newID, inputArgs, doNotCache)
+	cacheKey := newCacheKey(ctx, newID, field.Spec)
+	return r.call(ctx, s, newID, inputArgs, cacheKey)
 }
 
 func ExtractIDArgs(specs InputSpecs, id *call.ID) (map[string]Input, error) {
@@ -650,7 +691,7 @@ func (r ObjectResult[T]) call(
 	s *Server,
 	newID *call.ID,
 	inputArgs map[string]Input,
-	doNotCache bool,
+	cacheKey CacheKey,
 ) (AnyResult, error) {
 	ctx = idToContext(ctx, newID)
 	ctx = srvToContext(ctx, s)
@@ -659,24 +700,6 @@ func (r ObjectResult[T]) call(
 		opts = append(opts, WithTelemetry(func(ctx context.Context) (context.Context, func(AnyResult, bool, error)) {
 			return s.telemetry(ctx, r, newID)
 		}))
-	}
-
-	cacheKey := cache.CacheKey[CacheKeyType]{
-		ResultKey: string(newID.Digest()),
-	}
-	if doNotCache {
-		cacheKey.ResultKey = ""
-	}
-	// dedupe concurrent calls only if the ID digest is the same and if the two calls are from the same client
-	// we don't want to dedupe across clients since:
-	// 1. it creates problems when one clients closes and others were waiting on the result
-	// 2. it makes it easy to accidentally leak clients specific information that isn't yet precisely scoped in the ID
-	clientMD, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		// not expected to happen, fallback behavior is just that there's no deduping of concurrent calls
-		slog.Warn("failed to get client metadata from context for call", "err", err)
-	} else {
-		cacheKey.ConcurrencyKey = clientMD.ClientID
 	}
 
 	res, err := s.Cache.GetOrInitializeWithCallbacks(ctx, cacheKey, func(ctx context.Context) (*CacheValWithCallbacks, error) {
@@ -707,9 +730,10 @@ func (r ObjectResult[T]) call(
 		}
 
 		return &CacheValWithCallbacks{
-			Value:     val,
-			PostCall:  valWithCallbacks.PostCall,
-			OnRelease: valWithCallbacks.OnRelease,
+			Value:              val,
+			PostCall:           valWithCallbacks.PostCall,
+			OnRelease:          valWithCallbacks.OnRelease,
+			SafeToPersistCache: valWithCallbacks.SafeToPersistCache,
 		}, nil
 	}, opts...)
 
@@ -725,7 +749,7 @@ func (r ObjectResult[T]) call(
 	// add that different digest as a cache key for this val.
 	// This enables APIs to return new object instances with overridden purity and/or digests, e.g. returning
 	// values that have a pure content-based cache key different from the call-chain ID digest.
-	if idable, ok := val.(IDable); ok && idable != nil && !doNotCache {
+	if idable, ok := val.(IDable); ok && idable != nil && !cacheKey.DoNotCache {
 		valID := idable.ID()
 		if valID == nil {
 			return nil, fmt.Errorf("impossible: nil ID returned for value: %+v (%T)", val, val)
@@ -743,7 +767,7 @@ func (r ObjectResult[T]) call(
 		if digestChanged && matchesType {
 			newID = valID
 			_, err := s.Cache.GetOrInitializeValue(ctx, cache.CacheKey[CacheKeyType]{
-				ResultKey: string(valID.Digest()),
+				CallKey: string(valID.Digest()),
 			}, val)
 			if err != nil {
 				return nil, err
@@ -886,7 +910,7 @@ func NodeFuncWithCacheKey[T Typed, A any, R any](
 	}
 
 	if cacheFn != nil {
-		field.CacheSpec.GetCacheConfig = func(ctx context.Context, self AnyResult, argVals map[string]Input, view call.View, baseCfg CacheConfig) (*CacheConfig, error) {
+		field.Spec.GetCacheConfig = func(ctx context.Context, self AnyResult, argVals map[string]Input, view call.View, req GetCacheConfigRequest) (*GetCacheConfigResponse, error) {
 			if argsErr != nil {
 				// this error is deferred until runtime, since it's better (at least
 				// more testable) than panicking
@@ -900,7 +924,7 @@ func NodeFuncWithCacheKey[T Typed, A any, R any](
 			if !ok {
 				return nil, fmt.Errorf("expected instance of %T, got %T", field, self)
 			}
-			return cacheFn(ctx, inst, args, baseCfg)
+			return cacheFn(ctx, inst, args, req)
 		}
 	}
 
@@ -932,6 +956,17 @@ type FieldSpec struct {
 	// ViewFilter is filter that specifies under which views this field is
 	// accessible. If not view is present, the default is the "global" view.
 	ViewFilter ViewFilter
+
+	// If set, the result of this field will never be cached and not have concurrent equal
+	// calls deduped. The string value is a reason why the field should not be cached.
+	DoNotCache string
+
+	// If set, the result of this field will be cached for the given TTL (in seconds).
+	TTL int64
+
+	// If set, this GetCacheConfig will be called before ID evaluation to make
+	// any dynamic adjustments to the cache key or args
+	GetCacheConfig GenericGetCacheConfigFunc
 
 	// extend is used during installation to copy the spec of a previous field
 	// with the same name
@@ -1254,32 +1289,34 @@ func (fields Fields[T]) Install(server *Server) {
 	class.Install(fields...)
 }
 
-type CacheSpec struct {
-	// If set, this GetCacheConfig will be called before ID evaluation to determine the
-	// ID's digest. Otherwise the ID defaults to the digest of the call chain.
-	GetCacheConfig GenericGetCacheConfigFunc
+type GenericGetCacheConfigFunc func(
+	context.Context,
+	AnyResult,
+	map[string]Input,
+	call.View,
+	GetCacheConfigRequest,
+) (*GetCacheConfigResponse, error)
 
-	// If set, the result of this field will never be cached and not have concurrent equal
-	// calls deduped. The string value is a reason why the field should not be cached.
-	DoNotCache string
+type GetCacheConfigFunc[T Typed, A any] func(
+	context.Context,
+	ObjectResult[T],
+	A,
+	GetCacheConfigRequest,
+) (*GetCacheConfigResponse, error)
+
+type GetCacheConfigRequest struct {
+	CacheKey CacheKey
 }
 
-type GenericGetCacheConfigFunc func(context.Context, AnyResult, map[string]Input, call.View, CacheConfig) (*CacheConfig, error)
-
-type GetCacheConfigFunc[T Typed, A any] func(context.Context, ObjectResult[T], A, CacheConfig) (*CacheConfig, error)
-
-// CacheConfig is the configuration for caching a field. Currently just custom digest
-// but intended to support more in time (TTL, etc).
-type CacheConfig struct {
-	Digest      digest.Digest
+type GetCacheConfigResponse struct {
+	CacheKey    CacheKey
 	UpdatedArgs map[string]Input
 }
 
 // Field defines a field of an Object type.
 type Field[T Typed] struct {
-	Spec      *FieldSpec
-	CacheSpec CacheSpec
-	Func      func(context.Context, ObjectResult[T], map[string]Input, call.View) (AnyResult, error)
+	Spec *FieldSpec
+	Func func(context.Context, ObjectResult[T], map[string]Input, call.View) (AnyResult, error)
 }
 
 func (field Field[T]) Extend() Field[T] {
@@ -1303,7 +1340,7 @@ func (field Field[T]) DoNotCache(reason string, paras ...string) Field[T] {
 	if field.Spec.extend {
 		panic("cannot call on extended field")
 	}
-	field.CacheSpec.DoNotCache = FormatDescription(append([]string{reason}, paras...)...)
+	field.Spec.DoNotCache = FormatDescription(append([]string{reason}, paras...)...)
 	return field
 }
 

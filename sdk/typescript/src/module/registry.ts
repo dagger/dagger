@@ -39,6 +39,22 @@ export type ArgumentOptions = {
   ignore?: string[]
 }
 
+export type FunctionOptions = {
+  /**
+   * The caching behavior of this function.
+   * "never" means no caching.
+   * "session" means caching only for the duration of the current client's session.
+   * A duration string (e.g., "5m", "1h") means persistent caching for that duration.
+   * By default, caching is enabled with a long default set by the engine.
+   */
+  cache?: string
+
+  /**
+   * An optional alias to use for the function when exposed on the API.
+   */
+  alias?: string
+}
+
 /**
  * Registry stores class and method that have the @object decorator.
  *

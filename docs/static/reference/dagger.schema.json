@@ -110,6 +110,10 @@
           },
           "type": "array",
           "description": "The clients generated for this module."
+        },
+        "disableDefaultFunctionCaching": {
+          "type": "boolean",
+          "description": "If true, disable the new default function caching behavior for this module. Functions will instead default to the old behavior of per-session caching."
         }
       },
       "additionalProperties": false,

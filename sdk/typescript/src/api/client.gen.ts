@@ -1227,11 +1227,60 @@ export type FunctionWithArgOpts = {
   sourceMap?: SourceMap
 }
 
+export type FunctionWithCachePolicyOpts = {
+  /**
+   * The TTL for the cache policy, if applicable. Provided as a duration string, e.g. "5m", "1h30s".
+   */
+  timeToLive?: string
+}
+
 /**
  * The `FunctionArgID` scalar type represents an identifier for an object of type FunctionArg.
  */
 export type FunctionArgID = string & { __FunctionArgID: never }
 
+/**
+ * The behavior configured for function result caching.
+ */
+export enum FunctionCachePolicy {
+  Default = "Default",
+  Never = "Never",
+  PerSession = "PerSession",
+}
+
+/**
+ * Utility function to convert a FunctionCachePolicy value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function FunctionCachePolicyValueToName(value: FunctionCachePolicy): string {
+  switch (value) {
+    case FunctionCachePolicy.Default:
+      return "Default"
+    case FunctionCachePolicy.Never:
+      return "Never"
+    case FunctionCachePolicy.PerSession:
+      return "PerSession"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a FunctionCachePolicy name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function FunctionCachePolicyNameToValue(name: string): FunctionCachePolicy {
+  switch (name) {
+    case "Default":
+      return FunctionCachePolicy.Default
+    case "Never":
+      return FunctionCachePolicy.Never
+    case "PerSession":
+      return FunctionCachePolicy.PerSession
+    default:
+      return name as FunctionCachePolicy
+  }
+}
 /**
  * The `FunctionCallArgValueID` scalar type represents an identifier for an object of type FunctionCallArgValue.
  */
@@ -6898,6 +6947,27 @@ export class Function_ extends BaseClient {
     opts?: FunctionWithArgOpts,
   ): Function_ => {
     const ctx = this._ctx.select("withArg", { name, typeDef, ...opts })
+    return new Function_(ctx)
+  }
+
+  /**
+   * Returns the function updated to use the provided cache policy.
+   * @param policy The cache policy to use.
+   * @param opts.timeToLive The TTL for the cache policy, if applicable. Provided as a duration string, e.g. "5m", "1h30s".
+   */
+  withCachePolicy = (
+    policy: FunctionCachePolicy,
+    opts?: FunctionWithCachePolicyOpts,
+  ): Function_ => {
+    const metadata = {
+      policy: { is_enum: true, value_to_name: FunctionCachePolicyValueToName },
+    }
+
+    const ctx = this._ctx.select("withCachePolicy", {
+      policy,
+      ...opts,
+      __metadata: metadata,
+    })
     return new Function_(ctx)
   }
 

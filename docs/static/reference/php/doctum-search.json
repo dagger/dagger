@@ -3747,6 +3747,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Function_::withCachePolicy",
+			"p": "Dagger/Function_.html#method_withCachePolicy",
+			"d": "<p>Returns the function updated to use the provided cache policy.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Function_::withDescription",
 			"p": "Dagger/Function_.html#method_withDescription",
 			"d": "<p>Returns the function with the given doc string.</p>"

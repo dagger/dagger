@@ -1,6 +1,6 @@
 {
   "name": "evals",
-  "engineVersion": "v0.18.19",
+  "engineVersion": "v0.19.2",
   "sdk": {
     "source": "go"
   },

@@ -1,6 +1,6 @@
 {
   "name": "java-sdk",
-  "engineVersion": "v0.15.1",
+  "engineVersion": "v0.19.2",
   "sdk": {
     "source": "go"
   },

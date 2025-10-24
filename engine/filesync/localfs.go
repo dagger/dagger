@@ -19,6 +19,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/util/fsxutil"
+	"github.com/dagger/dagger/util/hashutil"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/fsutil"
 	"github.com/tonistiigi/fsutil/types"
@@ -489,7 +490,7 @@ func (local *localFS) toRootPath(path string) string {
 // the cache key to use for an operation on a given path (where path is relative to local.subdir)
 func (local *localFS) cacheKey(path string) cache.CacheKey[string] {
 	return cache.CacheKey[string]{
-		ResultKey:      local.toRootPath(path),
+		CallKey:        local.toRootPath(path),
 		ConcurrencyKey: cacheConcurrencyKey,
 	}
 }
@@ -527,7 +528,7 @@ func (local *localFS) GetPreviousChange(ctx context.Context, path string, stat *
 			kind: ChangeKindNone,
 			stat: &HashedStatInfo{
 				StatInfo: StatInfo{stat},
-				dgst:     digest.NewDigest(XXH3, newHashFromStat(stat)),
+				dgst:     digest.NewDigest(hashutil.XXH3, newHashFromStat(stat)),
 			},
 		}, nil
 	})
@@ -584,7 +585,7 @@ func (local *localFS) Mkdir(ctx context.Context, expectedChangeKind ChangeKind, 
 			kind: expectedChangeKind,
 			stat: &HashedStatInfo{
 				StatInfo: StatInfo{upperStat},
-				dgst:     digest.NewDigest(XXH3, newHashFromStat(upperStat)),
+				dgst:     digest.NewDigest(hashutil.XXH3, newHashFromStat(upperStat)),
 			},
 		}, nil
 	})
@@ -624,7 +625,7 @@ func (local *localFS) Symlink(ctx context.Context, expectedChangeKind ChangeKind
 			kind: expectedChangeKind,
 			stat: &HashedStatInfo{
 				StatInfo: StatInfo{upperStat},
-				dgst:     digest.NewDigest(XXH3, newHashFromStat(upperStat)),
+				dgst:     digest.NewDigest(hashutil.XXH3, newHashFromStat(upperStat)),
 			},
 		}, nil
 	})
@@ -664,7 +665,7 @@ func (local *localFS) Hardlink(ctx context.Context, expectedChangeKind ChangeKin
 			kind: expectedChangeKind,
 			stat: &HashedStatInfo{
 				StatInfo: StatInfo{upperStat},
-				dgst:     digest.NewDigest(XXH3, newHashFromStat(upperStat)),
+				dgst:     digest.NewDigest(hashutil.XXH3, newHashFromStat(upperStat)),
 			},
 		}, nil
 	})
@@ -732,7 +733,7 @@ func (local *localFS) WriteFile(ctx context.Context, expectedChangeKind ChangeKi
 		}
 
 		// store the hash in an xattr so GetPreviousChange above can use that instead of re-hashing the file
-		dgst := digest.NewDigest(XXH3, h)
+		dgst := digest.NewDigest(hashutil.XXH3, h)
 		if err := sysx.Setxattr(fullPath, hashXattrKey, []byte(dgst.String()), 0); err != nil {
 			return nil, fmt.Errorf("failed to set content hash xattr: %w", err)
 		}

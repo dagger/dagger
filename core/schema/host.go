@@ -30,6 +30,7 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/ctrns"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 type hostSchema struct{}
@@ -170,7 +171,7 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`name of the file or directory to search for`),
 			),
 
-		dagql.NodeFuncWithCacheKey("unixSocket", s.socket, s.socketCacheKey).
+		dagql.NodeFuncWithCacheKey("unixSocket", s.socket, dagql.CachePerClient).
 			Doc(`Accesses a Unix socket on the host.`).
 			Args(
 				dagql.Arg("path").Doc(`Location of the Unix socket (e.g., "/var/run/docker.sock").`),
@@ -334,19 +335,6 @@ type hostSocketArgs struct {
 	Path string
 }
 
-func (s *hostSchema) socketCacheKey(
-	ctx context.Context,
-	host dagql.ObjectResult[*core.Host],
-	args hostSocketArgs,
-	cacheCfg dagql.CacheConfig,
-) (*dagql.CacheConfig, error) {
-	cc, err := dagql.CachePerClient(ctx, host, args, cacheCfg)
-	if err != nil {
-		return nil, err
-	}
-	return cc, nil
-}
-
 func (s *hostSchema) socket(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostSocketArgs) (inst dagql.Result[*core.Socket], err error) {
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
@@ -366,7 +354,7 @@ func (s *hostSchema) socket(ctx context.Context, host dagql.ObjectResult[*core.H
 	if err != nil {
 		return inst, fmt.Errorf("failed to get client resource name: %w", err)
 	}
-	dgst := dagql.HashFrom(accessor)
+	dgst := hashutil.HashStrings(accessor)
 
 	sock := &core.Socket{IDDigest: dgst}
 	inst, err = dagql.NewResultForCurrentID(ctx, sock)

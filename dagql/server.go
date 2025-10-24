@@ -24,6 +24,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 // Server represents a GraphQL server whose schema is dynamically modified at
@@ -335,6 +336,7 @@ func (s *Server) InstallObject(class ObjectType) ObjectType {
 						Type: idType,
 					},
 				),
+				DoNotCache: "There's no point caching the loading call of an ID vs. letting the ID's calls cache on their own.",
 			},
 			func(ctx context.Context, _ AnyResult, args map[string]Input) (AnyResult, error) {
 				idable, ok := args["id"].(IDable)
@@ -350,9 +352,6 @@ func (s *Server) InstallObject(class ObjectType) ObjectType {
 					return nil, fmt.Errorf("load: %w", err)
 				}
 				return res, nil
-			},
-			CacheSpec{
-				DoNotCache: "There's no point caching the loading call of an ID vs. letting the ID's calls cache on their own.",
 			},
 		)
 	}
@@ -476,7 +475,7 @@ func (s *Server) Schema() *ast.Schema {
 		h := xxh3.New()
 		json.NewEncoder(h).Encode(schema)
 		s.schemas[view] = schema
-		s.schemaDigests[view] = digest.NewDigest(XXH3, h)
+		s.schemaDigests[view] = digest.NewDigest(hashutil.XXH3, h)
 	})
 
 	return s.schemas[view]
