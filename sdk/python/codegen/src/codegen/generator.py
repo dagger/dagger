@@ -487,9 +487,17 @@ class _InputField:
         """Output for an InputObject field."""
         yield ""
         yield self.ctx.render_types(self.as_param())
-
+        doc_parts: list[str] = []
         if self.description:
-            yield doc(self.description)
+            doc_parts.append(self.description)
+        if self.deprecated is not None:
+            directive = ".. deprecated::"
+            if self.deprecated:
+                directive = f"{directive} {self.deprecated}"
+            doc_parts.append(directive)
+
+        if doc_parts:
+            yield doc("\n\n".join(doc_parts))
 
     def as_param(self) -> str:
         """As a parameter in a function signature."""

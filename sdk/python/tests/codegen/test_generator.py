@@ -27,6 +27,7 @@ from codegen.generator import (
     format_output_type,
 )
 from codegen.generator import Enum as EnumHandler
+from codegen.generator import Input as InputHandler
 from codegen.generator import Scalar as ScalarHandler
 
 
@@ -178,6 +179,28 @@ def test_input_field_param(cls, name: str, args, expected: str, ctx: Context):
 @pytest.mark.parametrize("cls", [Argument, Input])
 def test_input_field_arg(cls, name, args, expected, ctx: Context):
     assert _InputField(ctx, name, cls(*args)).as_arg() == expected
+
+def test_input_object_field_deprecated():
+    local_ctx = Context()
+    input_type = InputObject(
+        "LegacyInput",
+        lambda: {
+            "legacyField": InputField(
+                String,
+                description="Legacy config path.",
+                deprecation_reason="Use `configPath` instead.",
+            ),
+            "active": InputField(Boolean),
+        },
+        description="Configuration options.",
+    )
+
+    rendered = InputHandler(local_ctx).render(input_type)
+
+    assert "class LegacyInput(Input):" in rendered
+    assert "legacy_field: str | None = None" in rendered
+    assert ".. deprecated:: Use config_path instead." in rendered
+
 
 def test_core_sync(ctx: Context):
     handler = _ObjectField(
