@@ -105,6 +105,15 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Returns the changeset of uncommitted changes in the git repository.
+     */
+    public function uncommitted(): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('uncommitted');
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The URL of the git repository.
      */
     public function url(): string

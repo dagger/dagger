@@ -1094,27 +1094,10 @@ func (s *directorySchema) asGit(
 		return inst, err
 	}
 
-	dgstInputs := []string{
-		string(repo.Remote.Digest()),
-	}
-
-	shallowFile, err := backend.File(ctx, "shallow")
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return inst, err
-	}
-	if shallowFile != nil {
-		dt, err := shallowFile.Contents(ctx, nil, nil)
-		if err != nil {
-			return inst, err
-		}
-		dgstInputs = append(dgstInputs, string(dt))
-	}
-
 	inst, err = dagql.NewResultForCurrentID(ctx, repo)
 	if err != nil {
 		return inst, err
 	}
-	inst = inst.WithDigest(dagql.HashFrom(dgstInputs...))
 	return inst, nil
 }
 

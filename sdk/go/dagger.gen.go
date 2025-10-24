@@ -7200,6 +7200,15 @@ func (r *GitRepository) Tags(ctx context.Context, opts ...GitRepositoryTagsOpts)
 	return response, q.Execute(ctx)
 }
 
+// Returns the changeset of uncommitted changes in the git repository.
+func (r *GitRepository) Uncommitted() *Changeset {
+	q := r.query.Select("uncommitted")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // The URL of the git repository.
 func (r *GitRepository) URL(ctx context.Context) (string, error) {
 	if r.url != nil {

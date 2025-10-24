@@ -8586,6 +8586,15 @@ impl GitRepository {
         }
         query.execute(self.graphql_client.clone()).await
     }
+    /// Returns the changeset of uncommitted changes in the git repository.
+    pub fn uncommitted(&self) -> Changeset {
+        let query = self.selection.select("uncommitted");
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The URL of the git repository.
     pub async fn url(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("url");
