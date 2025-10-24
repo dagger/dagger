@@ -744,7 +744,7 @@ func (GitSuite) TestAuthProviders(ctx context.Context, t *testctx.T) {
 
 	t.Run("GitLab auth", func(ctx context.Context, t *testctx.T) {
 		// Base64-encoded read-only PAT for test repo
-		pat := "Z2xwYXQtQXlHQU4zR0xOeEhfM3VSckNzck0K"
+		pat := "Z2xwYXQtMGF2bWZBbHBxWENwOXpuazZfZ2JmbTg2TVFwMU9tTjRhV3BqQ3cuMDEuMTIxbWF0b2Rx"
 		token, err := decodeAndTrimPAT(pat)
 		require.NoError(t, err)
 

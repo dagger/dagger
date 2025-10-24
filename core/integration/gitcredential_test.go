@@ -111,7 +111,7 @@ func (GitCredentialSuite) TestGitCredentialErrors(ctx context.Context, t *testct
 	t.Run("gitlab private module", func(ctx context.Context, t *testctx.T) {
 		workDir := t.TempDir()
 
-		pat := "Z2xwYXQtQXlHQU4zR0xOeEhfM3VSckNzck0K"
+		pat := "Z2xwYXQtMGF2bWZBbHBxWENwOXpuazZfZ2JmbTg2TVFwMU9tTjRhV3BqQ3cuMDEuMTIxbWF0b2Rx"
 		token, err := decodeAndTrimPAT(pat)
 		require.NoError(t, err)
 
