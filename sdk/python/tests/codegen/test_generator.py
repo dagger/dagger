@@ -3,6 +3,7 @@ from textwrap import dedent
 import graphql
 import pytest
 from graphql import GraphQLArgument as Argument
+from graphql import GraphQLBoolean as Boolean
 from graphql import GraphQLEnumType, GraphQLEnumValue, GraphQLID
 from graphql import GraphQLField as Field
 from graphql import GraphQLInputField as Input
@@ -11,6 +12,7 @@ from graphql import GraphQLInputObjectType as InputObject
 from graphql import GraphQLInt as Int
 from graphql import GraphQLList as List
 from graphql import GraphQLNonNull as NonNull
+from graphql import GraphQLInterfaceType as Interface
 from graphql import GraphQLObjectType as Object
 from graphql import GraphQLScalarType as Scalar
 from graphql import GraphQLString as String
@@ -257,6 +259,39 @@ def test_func_doc_deprecated_args(ctx: Context):
     body = handler.func_body()
     normalized = body.replace('\\"', '"')
     assert 'Method "apply" is deprecated: Use apply_config instead.' in normalized
+
+
+def test_interface_method_deprecated(ctx: Context):
+    iface = Interface(
+        "Component",
+        {
+            "deploy": Field(
+                Boolean,
+                {
+                    "force": Argument(
+                        Boolean,
+                        deprecation_reason="Prefer `forceDeploy` flag.",
+                    )
+                },
+                deprecation_reason="Call `deployNew` instead.",
+            )
+        },
+    )
+
+    handler = _ObjectField(ctx, "deploy", iface.fields["deploy"], iface)
+
+    docstring = handler.func_doc()
+    assert ".. deprecated::\n    Call :py:meth:`deploy_new` instead." in docstring
+
+    doc_lines = {line.strip() for line in docstring.splitlines()}
+    assert ".. deprecated:: Prefer force_deploy flag." in doc_lines
+
+    body = handler.func_body()
+    normalized = body.replace('\\"', '"')
+    assert (
+        'Method "deploy" is deprecated: Call "deploy_new" instead.' in normalized
+    )
+
 
 @pytest.mark.parametrize(
     ("type_", "expected"),
