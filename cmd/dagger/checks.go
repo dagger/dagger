@@ -8,9 +8,9 @@ import (
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel/codes"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/client"
 )
 
@@ -45,15 +45,22 @@ Examples:
 			} else {
 				checks = mod.Checks()
 			}
-			//Create an "internal" span to tuck away the noise under the default verbosity level
-			internalCtx, internalSpan := Tracer().Start(ctx, "load checks", telemetry.Internal())
-			defer internalSpan.End()
 			if checksListMode {
-				return listChecks(internalCtx, checks, cmd)
+				return listChecks(ctx, checks, cmd)
 			}
-			return runChecks(internalCtx, checks, cmd)
+			return runChecks(ctx, checks, cmd)
 		})
 	},
+}
+
+func withInternalSpan(ctx context.Context, name string, fn func(ctx context.Context) error) error {
+	ctx, span := Tracer().Start(ctx, name)
+	err := fn(ctx)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+	}
+	span.End()
+	return err
 }
 
 func loadModule(ctx context.Context, dag *dagger.Client) (*dagger.Module, error) {
@@ -66,46 +73,81 @@ func loadModule(ctx context.Context, dag *dagger.Client) (*dagger.Module, error)
 	return dag.ModuleSource(modRef).AsModule().Sync(ctx)
 }
 
-// 'dagger checks -l'
-func listChecks(ctx context.Context, checksGroup *dagger.CheckGroup, cmd *cobra.Command) error {
-	checks, err := checksGroup.List(ctx)
+func loadCheckGroupInfo(ctx context.Context, checks *dagger.CheckGroup) (*CheckGroupInfo, error) {
+	info := &CheckGroupInfo{}
+	err := withInternalSpan(ctx, "fetch check information", func(ctx context.Context) error {
+		checks, err := checks.List(ctx)
+		if err != nil {
+			return err
+		}
+		for _, check := range checks {
+			checkInfo := &CheckInfo{}
+
+			name, err := check.Name(ctx)
+			if err != nil {
+				return err
+			}
+			checkInfo.Name = name
+
+			description, err := check.Description(ctx)
+			if err != nil {
+				return err
+			}
+			checkInfo.Description = description
+
+			info.Checks = append(info.Checks, checkInfo)
+		}
+		return nil
+	})
 	if err != nil {
-		return fmt.Errorf("failed to list checks: %w", err)
+		return nil, err
+	}
+	return info, nil
+}
+
+type CheckGroupInfo struct {
+	Checks []*CheckInfo
+}
+
+type CheckInfo struct {
+	Name        string
+	Description string
+	Emoji       string
+	Message     string
+}
+
+// 'dagger checks -l'
+func listChecks(ctx context.Context, checks *dagger.CheckGroup, cmd *cobra.Command) error {
+	info, err := loadCheckGroupInfo(ctx, checks)
+	if err != nil {
+		return err
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
 	fmt.Fprintf(tw, "%s\t%s\n",
 		termenv.String("Name").Bold(),
 		termenv.String("Description").Bold(),
 	)
-	for _, check := range checks {
-		name, err := check.Name(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get check full name: %w", err)
+	for _, check := range info.Checks {
+		firstLine := check.Description
+		if idx := strings.Index(check.Description, "\n"); idx != -1 {
+			firstLine = check.Description[:idx]
 		}
-		cliName := cliName(name)
-		description, err := check.Description(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get check description: %w", err)
-		}
-		// Extract only the first line of the description
-		firstLine := description
-		if idx := strings.Index(description, "\n"); idx != -1 {
-			firstLine = description[:idx]
-		}
-		fmt.Fprintf(tw, "%s\t%s\n",
-			cliName,
-			firstLine,
-		)
+		fmt.Fprintf(tw, "%s\t%s\n", cliName(check.Name), firstLine)
 	}
 	return tw.Flush()
 }
 
 // 'dagger checks' (runs by default)
-func runChecks(ctx context.Context, checksGroup *dagger.CheckGroup, cmd *cobra.Command) error {
-	// Get the results
-	checks, err := checksGroup.Run().List(ctx)
+func runChecks(ctx context.Context, checks *dagger.CheckGroup, cmd *cobra.Command) error {
+	checks = checks.Run()
+	// FIXME: add `CheckGroup.Sync()`
+	_, err := checks.Report().Sync(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to run checks: %w", err)
+		return err
+	}
+	info, err := loadCheckGroupInfo(ctx, checks)
+	if err != nil {
+		return err
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
 	fmt.Fprintf(tw, "%s\t%s\t%s\n",
@@ -113,30 +155,10 @@ func runChecks(ctx context.Context, checksGroup *dagger.CheckGroup, cmd *cobra.C
 		termenv.String("Result").Bold(),
 		termenv.String("Message").Bold(),
 	)
-	for _, check := range checks {
-		name, err := check.Name(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get check full name: %w", err)
-		}
-
-		emoji, err := check.ResultEmoji(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get check result emoji: %w", err)
-		}
-
-		message, err := check.Message(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get check message: %w", err)
-		}
-		fmt.Fprintf(tw, "%s\t%s\\n",
-			name,
-			emoji,
-			message,
-		)
-		fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\n", name, emoji, message)
+	for _, check := range info.Checks {
+		fmt.Fprintf(tw, "%s\t%s\t%s\n", check.Name, check.Emoji, check.Message)
 	}
-
-	return nil
+	return tw.Flush()
 }
 
 func init() {

@@ -9,6 +9,7 @@ import (
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -105,19 +106,37 @@ func findMainModule(ctx context.Context, deps *ModDeps) (*Module, error) {
 	return nil, fmt.Errorf("failed to find main module: no user-defined module is loaded")
 }
 
+// Return the check name matching CLI case
+func (c *Check) CliName() string {
+	path := c.Path
+	for i := range path {
+		path[i] = strcase.ToKebab(path[i])
+	}
+	return strings.Join(path, "/")
+}
+
+func (c *Check) GqlName() string {
+	path := c.Path
+	for i := range path {
+		path[i] = gqlFieldName(path[i])
+	}
+	return strings.Join(path, "/")
+}
+
 func (c *Check) Match(include []string) (bool, error) {
 	if len(include) == 0 {
 		return true, nil
 	}
-	name := c.Name()
-	for _, pattern := range include {
-		// FIXME: match against both gqlFieldCase and cliCase
-		matched, err := doublestar.PathMatch(pattern, name)
-		if err != nil {
-			return false, err
-		}
-		if matched {
-			return true, nil
+	for _, name := range []string{c.CliName(), c.GqlName()} {
+		for _, pattern := range include {
+			// FIXME: match against both gqlFieldCase and cliCase
+			matched, err := doublestar.PathMatch(pattern, name)
+			if err != nil {
+				return false, err
+			}
+			if matched {
+				return true, nil
+			}
 		}
 	}
 	return false, nil
@@ -143,9 +162,20 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 	}
 	dag := dagql.NewServer(q, dagqlCache)
 	dag.Around(AroundFunc)
+	// Install default dependencies (ie the core)
+	defaultDeps, err := q.DefaultDeps(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("run checks for module %q: load core schema: %w", r.Module.Name(), err)
+	}
+	for _, defaultDep := range defaultDeps.Mods {
+		if err := defaultDep.Install(ctx, dag); err != nil {
+			return nil, fmt.Errorf("run checks for module %q: serve core schema: %w", r.Module.Name(), err)
+		}
+	}
 	if err := r.Module.Install(ctx, dag); err != nil {
 		return nil, fmt.Errorf("run checks for module %q: serve module: %w", r.Module.Name(), err)
 	}
+
 	// FIXNE: use parallel
 	eg := errgroup.Group{}
 	for _, check := range r.Checks {
@@ -225,39 +255,6 @@ func markdownTable(headers []string, rows ...[]string) string {
 		sb.WriteString("|" + strings.Join(row, " | ") + " |\n")
 	}
 	return sb.String()
-}
-
-func functionIsCheck(ctx context.Context, fn *Function) (string, bool, string) {
-	// For a function to be considered a check...
-	// 1. ...it must return a type named "CheckStatus"
-	// (As an escape hatch, we allow modules to define their own CheckStatus type)
-	_, span := Tracer(ctx).Start(ctx, fmt.Sprintf("functionIsCheck() name=%q returnType=%q expectedSuffix=%q",
-		fn.Name,
-		fn.ReturnType.ToType().Name(),
-		CheckStatus("").Type().Name(),
-	))
-	defer span.End()
-	if !strings.HasSuffix(fn.ReturnType.ToType().Name(), CheckStatus("").Type().Name()) {
-		return fn.Name, false, fmt.Sprintf("function doesn't return a " + CheckStatus("").Type().Name())
-	}
-	// 2. ...it must have no required arguments
-	for _, arg := range fn.Args {
-		// NOTE: we count on user defaults already merged in the schema at this point
-		// "regular optional" -> ok
-		if arg.TypeDef.Optional {
-			continue
-		}
-		// "contextual optional" -> ok
-		if arg.DefaultPath != "" {
-			continue
-		}
-		// default value -> ok
-		if arg.DefaultValue != nil {
-			continue
-		}
-		return "", false, fmt.Sprintf("function %q has a non-optional argument %q", fn.Name, arg.Name)
-	}
-	return fn.Name, true, ""
 }
 
 func (r *CheckGroup) Clone() *CheckGroup {
