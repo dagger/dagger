@@ -287,14 +287,17 @@ func (row *TraceTree) IsExpanded(opts FrontendOpts) bool {
 	}
 
 	autoExpand := row.Depth() < 1 &&
-		(row.RevealedChildren || row.IsRunningOrChildRunning) &&
-		row.Span.LLMTool == "" // never expand tool calls by default
+		(row.RevealedChildren || row.IsRunningOrChildRunning)
 
 	alwaysExpand := row.Span.IsFailedOrCausedFailure() ||
 		row.Span.IsCanceled() ||
 		opts.Verbosity >= ExpandCompletedVerbosity
 
-	return autoExpand || alwaysExpand
+	// never expand tool calls by default, tends to show a bunch of guts that
+	// distracts from the overall history
+	neverExpand := row.Span.LLMTool != ""
+
+	return (autoExpand || alwaysExpand) && !neverExpand
 }
 
 func (row *TraceTree) Depth() int {
