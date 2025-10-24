@@ -76,6 +76,25 @@ func (mod *Module) Name() string {
 	return mod.NameField
 }
 
+func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, error) {
+	allChecks, err := moduleChecks(ctx, mod)
+	if err != nil {
+		return nil, err
+	}
+	var group CheckGroup
+	for _, check := range allChecks {
+		match, err := check.Match(include)
+		if err != nil {
+			return nil, err
+		}
+		if !match {
+			continue
+		}
+		group.Checks = append(group.Checks, check)
+	}
+	return &group, nil
+}
+
 func (mod *Module) GetSource() *ModuleSource {
 	if !mod.Source.Valid {
 		return nil

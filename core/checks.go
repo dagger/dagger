@@ -65,7 +65,7 @@ func (*Check) Type() *ast.Type {
 }
 
 type CheckGroup struct {
-	// FIXME: filtering
+	Module *Module  `json:"modules"`
 	Checks []*Check `json:"checks"`
 }
 
@@ -96,21 +96,7 @@ func CurrentChecks(ctx context.Context, include []string) (*CheckGroup, error) {
 	if err != nil {
 		return nil, err
 	}
-	allChecks, err := moduleChecks(ctx, mainModule)
-	if err != nil {
-		return nil, err
-	}
-	for _, check := range allChecks {
-		match, err := check.Match(include)
-		if err != nil {
-			return nil, err
-		}
-		if !match {
-			continue
-		}
-		report.Checks = append(report.Checks, check)
-	}
-	return &report, nil
+	return mainModule.Checks(ctx, include)
 }
 
 func findMainModule(ctx context.Context, deps *ModDeps) (*Module, error) {
