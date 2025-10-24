@@ -1,27 +1,26 @@
-
-import { field, func, object } from "../../../../decorators.js"
+import { func, object } from "../../../../decorators.js"
 
 /**
  * Module exposing deprecated fields.
  */
 @object()
 export class DeprecatedFields {
-	/** @deprecated Inline note that this field is going away. */
-	@field()
-	legacyField = "legacy"
+  /** @deprecated Inline note that this field is going away. */
+  @func()
+  legacyField = "legacy"
 
-	@field()
-	latestField = "latest"
+  @func()
+  latestField = "latest"
 
-	@func()
-	record(): LegacyRecord {
-		return { note: "legacy", message: "latest" }
-	}
+  @func()
+  record(): LegacyRecord {
+    return { note: "legacy", message: "latest" }
+  }
 }
 
 /** @deprecated Alias maintained only for compatibility. */
 export type LegacyRecord = {
-	/** @deprecated Prefer `message`. */
-	note: string
-	message: string
+  /** @deprecated Prefer `message`. */
+  note: string
+  message: string
 }

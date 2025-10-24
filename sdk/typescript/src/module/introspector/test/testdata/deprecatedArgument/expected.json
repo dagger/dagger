@@ -18,7 +18,7 @@
               },
               "isVariadic": false,
               "isNullable": false,
-              "isOptional": false
+              "isOptional": true
             },
             "other": {
               "name": "other",

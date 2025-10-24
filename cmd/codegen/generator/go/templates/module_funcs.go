@@ -57,6 +57,20 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 		return nil, err
 	}
 
+	for _, argSpec := range spec.argSpecs {
+		if argSpec.deprecated != nil && !argSpec.isOptional() {
+			argName := argSpec.name
+			if argName == "" && argSpec.parent != nil {
+				argName = argSpec.parent.name
+			}
+			owner := fn.Name()
+			if parentType != nil {
+				owner = fmt.Sprintf("%s.%s", parentType.Obj().Name(), fn.Name())
+			}
+			return nil, fmt.Errorf("argument %q on %s is required and cannot be deprecated", argName, owner)
+		}
+	}
+
 	if parentType != nil {
 		if _, ok := parentType.Underlying().(*types.Struct); ok {
 			// stash away the method signature so we can remember details on how it's
@@ -451,4 +465,11 @@ type paramSpec struct {
 	// The ignore patterns are applied to the input directory, and
 	// matching entries are filtered out, in a cache-efficient manner.
 	ignore []string
+}
+
+func (spec paramSpec) isOptional() bool {
+	if spec.optional || spec.hasDefaultValue || spec.variadic {
+		return true
+	}
+	return isOptionalGoType(spec.paramType)
 }

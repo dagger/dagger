@@ -8,6 +8,7 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -6219,10 +6220,13 @@ type LegacyRecord struct {
 
 func (m *Test) EchoString(
 	ctx context.Context,
-	input string, // +deprecated="Use 'other' instead of 'input'."
+	input *string, // +deprecated="Use 'other' instead of 'input'."
 	other string,
 ) (string, error) {
-	return input, nil
+	if input != nil {
+		return *input, nil
+	}
+	return other, nil
 }
 
 // +deprecated="Prefer EchoString instead."
@@ -6263,15 +6267,15 @@ func (m *Test) CallFoo(ctx context.Context, foo Fooer, value int) (string, error
   export class Test {
     /** @deprecated This field is deprecated and will be removed in future versions. */
     @field()
-    legacyField = ""
+    legacyField = "legacy"
 
     @func()
     async echoString(
       /** @deprecated Use 'other' instead of 'input'. */
-      input: string,
+      input?: string,
       other: string,
     ): Promise<string> {
-      return input
+      return input ?? other
     }
 
     /** @deprecated Prefer EchoString instead. */
@@ -6315,7 +6319,7 @@ func (m *Test) CallFoo(ctx context.Context, foo Fooer, value int) (string, error
 
 	const pySrc = `import enum
 import typing
-from typing import Annotated
+from typing import Annotated, Optional
 
 import dagger
 
@@ -6325,7 +6329,6 @@ import dagger
 class Test:
     legacy_field: str = dagger.field(
         name="legacyField",
-        default="",
         deprecated="This field is deprecated and will be removed in future versions.",
     )
 
@@ -6333,11 +6336,11 @@ class Test:
     def echo_string(
         self,
         input: Annotated[
-            str, dagger.Deprecated("Use 'other' instead of 'input'.")
+            Optional[str], dagger.Deprecated("Use 'other' instead of 'input'.")
         ],
         other: str,
     ) -> str:
-        return input
+        return input if input is not None else other
 
     @dagger.function(name="legacySummarize", deprecated="Prefer EchoString instead.")
     def legacy_summarize(self, note: str) -> "LegacyRecord":
@@ -6419,31 +6422,6 @@ class Fooer(typing.Protocol):
 		},
 	}
 
-	const introspect = `
-query ModuleIntrospection($path: String!) {
-  host {
-    directory(path: $path) {
-      asModule {
-        objects {
-          asObject {
-            name
-            deprecated
-            functions { name deprecated args { name deprecated } }
-            fields { name deprecated }
-          }
-        }
-        enums { asEnum { name members { value deprecated } } }
-        interfaces {
-          asInterface {
-            name
-            functions { name deprecated args { name } }
-          }
-        }
-      }
-    }
-  }
-}`
-
 	type Arg struct {
 		Name       string
 		Deprecated string
@@ -6486,6 +6464,31 @@ query ModuleIntrospection($path: String!) {
 			}
 		}
 	}
+
+	const introspect = `
+query ModuleIntrospection($path: String!) {
+  host {
+    directory(path: $path) {
+      asModule {
+        objects {
+          asObject {
+            name
+            deprecated
+            functions { name deprecated args { name deprecated } }
+            fields { name deprecated }
+          }
+        }
+        enums { asEnum { name members { value deprecated } } }
+        interfaces {
+          asInterface {
+            name
+            functions { name deprecated args { name } }
+          }
+        }
+      }
+    }
+  }
+}`
 
 	for _, tc := range cases {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
@@ -6610,6 +6613,293 @@ query ModuleIntrospection($path: String!) {
 				}
 			}
 			require.NotNil(t, valueArg, "TestFooer.foo must have arg 'value'")
+		})
+	}
+}
+
+func (ModuleSuite) TestModuleDeprecationValidationErrors(ctx context.Context, t *testctx.T) {
+	const introspect = `
+query ModuleIntrospection($path: String!) {
+  host {
+    directory(path: $path) {
+      asModule {
+        objects {
+          asObject {
+            name
+            deprecated
+            functions { name deprecated args { name deprecated } }
+            fields { name deprecated }
+          }
+        }
+        enums { asEnum { name members { value deprecated } } }
+        interfaces {
+          asInterface {
+            name
+            functions { name deprecated args { name } }
+          }
+        }
+      }
+    }
+  }
+}`
+
+	invalidCases := []struct {
+		sdk        string
+		contents   string
+		errorMatch string
+	}{
+		{
+			sdk: "go",
+			contents: `package main
+
+import "context"
+
+type Test struct{}
+
+func (m *Test) Legacy(
+	ctx context.Context,
+	input string, // +deprecated="Use other instead"
+	other string,
+) (string, error) {
+	return input, nil
+}
+`,
+			errorMatch: "argument \"input\" on Test.Legacy is required and cannot be deprecated",
+		},
+		{
+			sdk: "typescript",
+			contents: `import { func, object } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+  @func()
+  async legacy(
+    /** @deprecated Use 'other' instead. */
+    input: string,
+    other: string,
+  ): Promise<string> {
+    return input
+  }
+}
+`,
+			errorMatch: "argument input is required and cannot be deprecated",
+		},
+		{
+			sdk: "python",
+			contents: `import dagger
+from typing import Annotated
+
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    def legacy(
+        self,
+        input: Annotated[str, dagger.Deprecated("Use other instead")],
+        other: str,
+    ) -> str:
+        return input
+`,
+			errorMatch: "Can't deprecate required parameter 'input'",
+		},
+	}
+
+	type Arg struct {
+		Name       string
+		Deprecated string
+	}
+	type Fn struct {
+		Name       string
+		Deprecated string
+		Args       []Arg
+	}
+	type Field struct {
+		Name       string
+		Deprecated string
+	}
+	type Obj struct {
+		Name       string
+		Deprecated string
+		Functions  []Fn
+		Fields     []Field
+	}
+	type EnumMember struct {
+		Value      string
+		Deprecated string
+	}
+	type Enum struct {
+		Name    string
+		Members []EnumMember
+	}
+	type Iface struct {
+		Name      string
+		Functions []Fn
+	}
+	type Resp struct {
+		Host struct {
+			Directory struct {
+				AsModule struct {
+					Objects    []struct{ AsObject Obj }
+					Enums      []struct{ AsEnum Enum }
+					Interfaces []struct{ AsInterface Iface }
+				}
+			}
+		}
+	}
+
+	for _, tc := range invalidCases {
+		t.Run(fmt.Sprintf("%s rejects deprecated required arguments", tc.sdk), func(ctx context.Context, t *testctx.T) {
+			modDir := t.TempDir()
+
+			_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk="+tc.sdk)
+			require.NoError(t, err)
+
+			target := filepath.Join(modDir, sdkSourceFile(tc.sdk))
+			require.NoError(t, os.MkdirAll(filepath.Dir(target), 0o755))
+			require.NoError(t, os.WriteFile(target, []byte(tc.contents), 0o644))
+
+			c := connect(ctx, t)
+
+			_, err = testutil.QueryWithClient[Resp](c, t, introspect, &testutil.QueryOptions{
+				Variables: map[string]any{"path": modDir},
+			})
+			require.Error(t, err)
+
+			errMsg := err.Error()
+			var execErr *dagger.ExecError
+			if errors.As(err, &execErr) {
+				errMsg = fmt.Sprintf("%s\nStdout: %s\nStderr: %s", err, execErr.Stdout, execErr.Stderr)
+			}
+
+			if strings.Contains(errMsg, "failed to run command [docker info]") ||
+				strings.Contains(errMsg, "socket: operation not permitted") ||
+				strings.Contains(errMsg, "permission denied while trying to connect to the Docker daemon") {
+				t.Skipf("engine unavailable: %s", errMsg)
+				return
+			}
+
+			require.Containsf(t, errMsg, tc.errorMatch, "unexpected error message: %s", errMsg)
+		})
+	}
+
+	validCases := []struct {
+		sdk      string
+		contents string
+	}{
+		{
+			sdk: "go",
+			contents: `package main
+
+import "context"
+
+type Test struct{}
+
+func (m *Test) Legacy(
+	ctx context.Context,
+	input string, // +default="\"legacy\"" +deprecated="Use other instead"
+	other string,
+) (string, error) {
+	return input, nil
+}
+`,
+		},
+		{
+			sdk: "go",
+			contents: `package main
+
+import "context"
+
+type Test struct{}
+
+func (m *Test) Legacy(
+	ctx context.Context,
+	input ...string, // +deprecated="Use other instead"
+) (string, error) {
+	if len(input) > 0 {
+		return input[0], nil
+	}
+	return "", nil
+}
+`,
+		},
+		{
+			sdk: "typescript",
+			contents: `import { func, object } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+  @func()
+  async legacy(
+    /** @deprecated Use 'other' instead. */
+    input: string = "legacy",
+    other: string,
+  ): Promise<string> {
+    return input
+  }
+}
+`,
+		},
+		{
+			sdk: "typescript",
+			contents: `import { func, object } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+  @func()
+  async legacy(
+    /** @deprecated Prefer providing inputs via 'other'. */
+    ...input: string[]
+  ): Promise<string> {
+    return input[0] ?? ""
+  }
+}
+`,
+		},
+		{
+			sdk: "python",
+			contents: `import dagger
+from typing import Annotated
+
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    def legacy(
+        self,
+        input: Annotated[str, dagger.Deprecated("Use other instead")] = "legacy",
+        other: str = "other",
+    ) -> str:
+        return input
+`,
+		},
+	}
+
+	for _, tc := range validCases {
+		t.Run(fmt.Sprintf("%s allows deprecated optional arguments", tc.sdk), func(ctx context.Context, t *testctx.T) {
+			modDir := t.TempDir()
+
+			_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk="+tc.sdk)
+			require.NoError(t, err)
+
+			target := filepath.Join(modDir, sdkSourceFile(tc.sdk))
+			require.NoError(t, os.MkdirAll(filepath.Dir(target), 0o755))
+			require.NoError(t, os.WriteFile(target, []byte(tc.contents), 0o644))
+
+			c := connect(ctx, t)
+
+			_, err = testutil.QueryWithClient[Resp](c, t, introspect, &testutil.QueryOptions{
+				Variables: map[string]any{"path": modDir},
+			})
+			if err != nil {
+				errMsg := err.Error()
+				if strings.Contains(errMsg, "failed to run command [docker info]") ||
+					strings.Contains(errMsg, "socket: operation not permitted") ||
+					strings.Contains(errMsg, "permission denied while trying to connect to the Docker daemon") {
+					t.Skipf("engine unavailable: %s", errMsg)
+					return
+				}
+			}
+			require.NoError(t, err)
 		})
 	}
 }

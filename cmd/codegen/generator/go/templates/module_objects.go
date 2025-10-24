@@ -121,11 +121,13 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 		// end up asking for a name that we won't unmarshal correctly
 		tag := reflect.StructTag(t.Tag(i))
 		if dt := tag.Get("json"); dt != "" {
-			dt, _, _ = strings.Cut(dt, ",")
-			if dt == "-" {
+			namePart, _, _ := strings.Cut(dt, ",")
+			if namePart == "-" {
 				continue
 			}
-			fieldSpec.name = dt
+			if namePart != "" {
+				fieldSpec.name = namePart
+			}
 		}
 
 		docPragmas, docComment := parsePragmaComment(astFields[i].Doc.Text())

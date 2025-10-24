@@ -183,3 +183,10 @@ class Parameter:
                     f"parameter '{self.signature.name}'"
                 )
                 raise BadUsageError(msg, extra=extra)
+
+        if self.deprecated and not self.is_optional:
+            msg = (
+                f"Can't deprecate required parameter '{self.signature.name}'. "
+                "Mark it optional or provide a default value."
+            )
+            raise BadUsageError(msg, extra=extra)
