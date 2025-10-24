@@ -106,12 +106,17 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 	}
 }
 
-func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.AnyResult, ids map[digest.Digest]*resource.ID) error {
+func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
 	if value == nil {
 		return nil
 	}
+
+	if result, ok := value.(dagql.AnyResult); ok {
+		value = result.Unwrap()
+	}
+
 	var objFields map[string]any
-	switch value := value.Unwrap().(type) {
+	switch value := value.(type) {
 	case nil:
 		return nil
 	case *ModuleObject:
@@ -137,15 +142,7 @@ func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.AnyRe
 			return fmt.Errorf("could not find mod type for field %q", k)
 		}
 
-		curID := value.ID()
-		fieldID := curID.Append(
-			fieldTypeDef.TypeDef.ToType(),
-			fieldTypeDef.Name,
-			call.WithView(curID.View()),
-			call.WithModule(curID.Module()),
-		)
-
-		_, typed, err := modType.ConvertFromSDKResult(ctx, fieldID, v)
+		typed, _, err := modType.ConvertFromSDKResult(ctx, nil, v)
 		if err != nil {
 			return fmt.Errorf("failed to convert field %q: %w", k, err)
 		}
@@ -402,6 +399,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 				})
 			}
 			_, result, err := fn.Call(ctx, &CallOpts{
+				CallID:       dagql.CurrentID(ctx),
 				Inputs:       callInput,
 				ParentTyped:  nil,
 				ParentFields: nil,
@@ -517,6 +515,7 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 		Spec: &spec,
 		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
 			opts := &CallOpts{
+				CallID:       dagql.CurrentID(ctx),
 				ParentTyped:  obj,
 				ParentFields: obj.Self().Fields,
 				ParentModType: &ModuleObjectType{

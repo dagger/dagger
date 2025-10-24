@@ -13,6 +13,8 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/server/resource"
+	"github.com/opencontainers/go-digest"
 )
 
 type moduleSchema struct{}
@@ -113,7 +115,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			),
 
 		dagql.Func("call", s.moduleCall).
-			DoNotCache(`What even should the caching look like for this`). // XXX:
+			DoNotCache(`What even should the caching look like for this`). // XXX: dunno
 			Doc(`Call a function defined in this module, returning a JSON-encoded representation of the resulting state.`).
 			Args(
 				dagql.Arg("object").Doc(`The name of the object the function is defined on.`),
@@ -637,8 +639,21 @@ func (s *moduleSchema) moduleCall(ctx context.Context, modMeta *core.Module, arg
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal parent JSON: %w", err)
 	}
+	receiver, _, err := modType.ConvertFromSDKResult(ctx, nil, fields)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode parent object: %w", err)
+	}
+
+	// HACK: need this so Host.directory IDs get loaded now and put in the cache,
+	// otherwise ones that haven't already been loaded in this engine won't
+	// be cached here and thus will result in the module function trying to
+	// load the dir from its own host in the container.
+	if err := loadIDsInServer(ctx, dag, modType, receiver); err != nil {
+		return nil, err
+	}
 
 	opts := &core.CallOpts{
+		CacheMixin:     dagql.CurrentID(ctx).Digest().String(),
 		ParentTyped:    nil,
 		ParentFields:   fields,
 		ParentModType:  modObj,
@@ -669,16 +684,9 @@ func (s *moduleSchema) moduleCall(ctx context.Context, modMeta *core.Module, arg
 			return nil, fmt.Errorf("failed to decode input %q: %w", name, err)
 		}
 
-		// HACK: need this so Host.directory IDs get loaded now and put in the cache,
-		// otherwise ones that haven't already been loaded in this engine won't
-		// be cached here and thus will result in the module function trying to
-		// load the dir from its own host in the container.
-		// XXX: doesn't work with lists
-		if id, ok := dagql.UnwrapAs[dagql.IDable](decodedValue); ok {
-			_, err := dag.Load(ctx, id.ID())
-			if err != nil {
-				return nil, fmt.Errorf("failed to load ID for input %q: %w", name, err)
-			}
+		// HACK: same as above
+		if err := loadIDsInServer(ctx, dag, argType, decodedValue); err != nil {
+			return nil, err
 		}
 
 		opts.Inputs = append(opts.Inputs, core.CallInput{
@@ -711,6 +719,23 @@ func (s *moduleSchema) moduleCall(ctx context.Context, modMeta *core.Module, arg
 		return nil, fmt.Errorf("failed to marshal result to JSON: %w", err)
 	}
 	return core.JSON(dt), nil
+}
+
+func loadIDsInServer(ctx context.Context, dag *dagql.Server, modType core.ModType, value dagql.Typed) error {
+	coreIDs := make(map[digest.Digest]*resource.ID)
+	err := modType.CollectCoreIDs(ctx, value, coreIDs)
+	if err != nil {
+		return fmt.Errorf("failed to collect core IDs from parent object: %w", err)
+	}
+	for _, id := range coreIDs {
+		fmt.Println("loading core ID:", id.Display())
+		_, err := dag.Load(ctx, &id.ID)
+		if err != nil && !id.Optional {
+			return fmt.Errorf("failed to load ID for parent object: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ struct{}) (dagql.Array[*core.TypeDef], error) {

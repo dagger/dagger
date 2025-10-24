@@ -91,6 +91,11 @@ func NewModFunction(
 }
 
 type CallOpts struct {
+	CallID *call.ID
+
+	// XXX: big hack
+	CacheMixin string
+
 	Inputs []CallInput
 
 	ParentTyped   dagql.AnyResult
@@ -596,10 +601,9 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (_ dagql.Typ
 		return nil, nil, err
 	}
 
-	callID := dagql.CurrentID(ctx)
 	execMD := buildkit.ExecutionMetadata{
 		ClientID:          identity.NewID(),
-		CallID:            callID,
+		CallID:            opts.CallID,
 		ExecID:            identity.NewID(),
 		Internal:          true,
 		ParentIDs:         map[digest.Digest]*resource.ID{},
@@ -607,6 +611,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (_ dagql.Typ
 	}
 
 	var cacheMixins []string
+	cacheMixins = append(cacheMixins, opts.CacheMixin)
 	if !opts.Cache {
 		// Scope the exec cache key to the current session ID. It will be
 		// cached in the context of the session but invalidated across
@@ -617,7 +622,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (_ dagql.Typ
 		// If true, scope the exec cache key to the current dagql call digest. This is needed currently
 		// for module function calls specifically so that their cache key is based on their arguments and
 		// receiver object.
-		cacheMixins = append(cacheMixins, dagql.CurrentID(ctx).Digest().String())
+		cacheMixins = append(cacheMixins, opts.CallID.Digest().String())
 	}
 	execMD.CacheMixin = dagql.HashFrom(cacheMixins...)
 
@@ -667,7 +672,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (_ dagql.Typ
 	fnCall := &FunctionCall{
 		Name:      fn.metadata.OriginalName,
 		Parent:    parentJSON,
-		ParentID:  callID.Receiver(),
+		ParentID:  opts.CallID.Receiver(),
 		InputArgs: callInputs,
 	}
 	if envID, ok := EnvIDFromContext(ctx); ok {
@@ -807,7 +812,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (_ dagql.Typ
 		return nil, nil, fmt.Errorf("unmarshal result: %w", err)
 	}
 
-	returnValue, returnResult, err := fn.returnType.ConvertFromSDKResult(ctx, dagql.CurrentID(ctx), returnValueAny)
+	returnValue, returnResult, err := fn.returnType.ConvertFromSDKResult(ctx, opts.CallID, returnValueAny)
 	if err != nil {
 		return nil, nil, fmt.Errorf("convert return value: %w", err)
 	}

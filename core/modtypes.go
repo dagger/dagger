@@ -28,7 +28,7 @@ type ModType interface {
 
 	// CollectCoreIDs collects all the call IDs from core objects in the given value, whether
 	// it's idable itself or is a list/object containing idable values (recursively)
-	CollectCoreIDs(ctx context.Context, value dagql.AnyResult, ids map[digest.Digest]*resource.ID) error
+	CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error
 
 	// SourceMod is the module in which this type was originally defined
 	SourceMod() Mod
@@ -68,7 +68,7 @@ func (t *PrimitiveType) ConvertToSDKInput(ctx context.Context, value dagql.Typed
 	return value, nil
 }
 
-func (t *PrimitiveType) CollectCoreIDs(context.Context, dagql.AnyResult, map[digest.Digest]*resource.ID) error {
+func (t *PrimitiveType) CollectCoreIDs(context.Context, dagql.Typed, map[digest.Digest]*resource.ID) error {
 	return nil
 }
 
@@ -106,6 +106,9 @@ func (t *ListType) ConvertFromSDKResult(ctx context.Context, id *call.ID, value 
 
 			var itemID *call.ID
 			if id != nil {
+				fmt.Println(id.Type().ToAST().NamedType)
+				fmt.Println(id.Type().ToAST().Elem)
+				fmt.Println(id.Type().ToAST().Elem.NamedType)
 				itemID = id.SelectNth(i + 1)
 			}
 			itemTyped, itemResult, err := t.Underlying.ConvertFromSDKResult(ctx, itemID, item)
@@ -117,7 +120,6 @@ func (t *ListType) ConvertFromSDKResult(ctx context.Context, id *call.ID, value 
 				results.Values = append(results.Values, itemResult)
 			}
 		}
-
 	}
 
 	if id != nil {
@@ -151,23 +153,25 @@ func (t *ListType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (an
 	return resultList, nil
 }
 
-func (t *ListType) CollectCoreIDs(ctx context.Context, value dagql.AnyResult, ids map[digest.Digest]*resource.ID) error {
+func (t *ListType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
 	if value == nil {
 		return nil
 	}
-	list, ok := value.Unwrap().(dagql.Enumerable)
+
+	if result, ok := value.(dagql.Wrapper); ok {
+		value = result.Unwrap()
+	}
+
+	list, ok := value.(dagql.Enumerable)
 	if !ok {
 		return fmt.Errorf("%T.CollectCoreIDs: expected Enumerable, got %T: %#v", t, value, value)
 	}
 
 	for i := 1; i <= list.Len(); i++ {
-		item, err := value.NthValue(i)
+		item, err := list.Nth(i)
 		if err != nil {
 			return err
 		}
-
-		ctx := dagql.ContextWithID(ctx, item.ID())
-
 		if err := t.Underlying.CollectCoreIDs(ctx, item, ids); err != nil {
 			return err
 		}
@@ -237,11 +241,21 @@ func (t *NullableType) ConvertToSDKInput(ctx context.Context, value dagql.Typed)
 	return result, nil
 }
 
-func (t *NullableType) CollectCoreIDs(ctx context.Context, value dagql.AnyResult, ids map[digest.Digest]*resource.ID) error {
+func (t *NullableType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
 	if value == nil {
 		return nil
 	}
-	val, present := value.DerefValue()
+
+	if result, ok := value.(dagql.Wrapper); ok {
+		value = result.Unwrap()
+	}
+
+	derefable, ok := value.(dagql.Derefable)
+	if !ok {
+		return fmt.Errorf("%T.CollectCoreIDs: expected Derefable, got %T: %#v", t, value, value)
+	}
+
+	val, present := derefable.Deref()
 	if !present {
 		return nil
 	}

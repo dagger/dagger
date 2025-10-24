@@ -44,7 +44,7 @@ func (m *ModuleEnumType) ConvertFromSDKResult(ctx context.Context, id *call.ID, 
 	}
 
 	if _, ok := value.(string); !ok {
-		return nil, nil, fmt.Errorf("%T.ConvertFromSDKResult: unexpected result value type %T for enum %q", value, m.typeDef.Name)
+		return nil, nil, fmt.Errorf("%T.ConvertFromSDKResult: unexpected result value type %T", m, value)
 	}
 
 	enum, err := m.getEnum(ctx)
@@ -92,7 +92,7 @@ func (m *ModuleEnumType) ConvertToSDKInput(ctx context.Context, value dagql.Type
 	return enum.memberTypedef().Name, nil
 }
 
-func (m *ModuleEnumType) CollectCoreIDs(ctx context.Context, value dagql.AnyResult, ids map[digest.Digest]*resource.ID) error {
+func (m *ModuleEnumType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
 	return nil
 }
 

@@ -130,12 +130,17 @@ func (iface *InterfaceType) loadImpl(ctx context.Context, id *call.ID) (*loadedI
 	return loadedImpl, nil
 }
 
-func (iface *InterfaceType) CollectCoreIDs(ctx context.Context, value dagql.AnyResult, ids map[digest.Digest]*resource.ID) error {
+func (iface *InterfaceType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
 	if value == nil {
 		return nil
 	}
 
-	switch innerVal := value.Unwrap().(type) {
+	result, ok := value.(dagql.AnyResult)
+	if !ok {
+		return fmt.Errorf("unexpected interface value type for collecting IDs %T", value)
+	}
+
+	switch innerVal := result.Unwrap().(type) {
 	case *InterfaceAnnotatedValue:
 		mod, ok := innerVal.UnderlyingType.SourceMod().(*Module)
 		if !ok {
@@ -146,7 +151,7 @@ func (iface *InterfaceType) CollectCoreIDs(ctx context.Context, value dagql.AnyR
 			Module:  mod,
 			TypeDef: innerVal.UnderlyingType.TypeDef().AsObject.Value,
 			Fields:  innerVal.Fields,
-		}, value.ID())
+		}, result.ID())
 		if err != nil {
 			return fmt.Errorf("create module object from interface value: %w", err)
 		}
@@ -154,7 +159,7 @@ func (iface *InterfaceType) CollectCoreIDs(ctx context.Context, value dagql.AnyR
 		return innerVal.UnderlyingType.CollectCoreIDs(ctx, obj, ids)
 
 	case *ModuleObject:
-		loadedImpl, err := iface.loadImpl(ctx, value.ID())
+		loadedImpl, err := iface.loadImpl(ctx, result.ID())
 		if err != nil {
 			return fmt.Errorf("load interface implementation: %w", err)
 		}
@@ -303,6 +308,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				}
 
 				_, res, err := callable.Call(ctx, &CallOpts{
+					CallID:        dagql.CurrentID(ctx),
 					Inputs:        callInputs,
 					ParentTyped:   self,
 					ParentFields:  runtimeVal.Fields,
