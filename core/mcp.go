@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
 	"regexp"
 	"slices"
 	"sort"
@@ -25,6 +26,7 @@ import (
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/iancoleman/strcase"
+	"github.com/koron-go/prefixw"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
@@ -83,62 +85,56 @@ type MCP struct {
 	blockedMethods map[string][]string
 	// The last value returned by a function.
 	lastResult dagql.Typed
-	// Indicates that the model has returned
-	returned bool
-	// History of spans that have logs that we can read
-	loggedSpans []trace.SpanID
 	// Saved objects by ID (Foo#123)
-	objsByID map[string]contextualBinding
+	objsByID map[string]*call.ID
 	// Auto incrementing number per-type
-	typeCounts map[string]int
+	objsByType map[string]map[digest.Digest]*call.ID
 	// The LLM-friendly ID ("Container#123") for each object
 	idByHash map[digest.Digest]string
 	// Configured MCP servers.
 	mcpServers map[string]*MCPServerConfig
-	// Persistent MCP sessions.
-	mcpSessions map[string]*mcp.ClientSession
 	// Synchronize any concurrent tool call results.
 	mu *sync.Mutex
 }
-
-// MCPServerConfig represents configuration for an external MCP server
-type MCPServerConfig struct {
-	// Name of the MCP server
-	Name string
-
-	// Command to run the MCP server
-	Service dagql.ObjectResult[*Service]
-}
-
-func (srv *MCPServerConfig) Dial(ctx context.Context) (_ *mcp.ClientSession, rerr error) {
-	ctx, span := Tracer(ctx).Start(ctx, "start mcp server: "+srv.Name, telemetry.Reveal())
-	defer telemetry.End(span, func() error { return rerr })
-	return mcp.NewClient(&mcp.Implementation{
-		Title:   "Dagger",
-		Version: engine.Version,
-	}, nil).Connect(ctx, &ServiceMCPTransport{
-		Service: srv.Service,
-	}, nil)
-}
-
-type contextualBinding func(context.Context, dagql.ObjectResult[*Env]) (*Binding, error)
 
 func newMCP(env dagql.ObjectResult[*Env]) *MCP {
 	blocked := maps.Clone(defaultBlockedMethods)
 	for typeName, methods := range blocked {
 		blocked[typeName] = slices.Clone(methods)
 	}
-	return &MCP{
-		env:             env,
+	m := &MCP{
 		selectedMethods: map[string]bool{},
 		blockedMethods:  blocked,
-		objsByID:        map[string]contextualBinding{},
-		typeCounts:      map[string]int{},
+		objsByID:        map[string]*call.ID{},
+		objsByType:      map[string]map[digest.Digest]*call.ID{},
 		idByHash:        map[digest.Digest]string{},
 		mcpServers:      make(map[string]*MCPServerConfig),
-		mcpSessions:     map[string]*mcp.ClientSession{},
 		mu:              &sync.Mutex{},
 	}
+	m.setEnv(env)
+	return m
+}
+
+func (m *MCP) trackObject(id *call.ID) int {
+	typeName := id.Type().NamedType()
+	objs, ok := m.objsByType[typeName]
+	if !ok {
+		objs = map[digest.Digest]*call.ID{}
+		m.objsByType[typeName] = objs
+	}
+	objs[id.Digest()] = id
+	return len(objs)
+}
+
+func (m *MCP) WithObject(llmID string, id ID) *MCP {
+	m = m.Clone()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	hash := id.Inner.Digest()
+	m.trackObject(id.Inner)
+	m.idByHash[hash] = llmID
+	m.objsByID[llmID] = id.Inner
+	return m
 }
 
 func (m *MCP) DefaultSystemPrompt() string {
@@ -191,32 +187,48 @@ func (m *MCP) Clone() *MCP {
 		cp.blockedMethods[typeName] = slices.Clone(methods)
 	}
 	cp.objsByID = maps.Clone(cp.objsByID)
-	cp.typeCounts = maps.Clone(cp.typeCounts)
+	cp.objsByType = maps.Clone(cp.objsByType)
+	for t, objs := range cp.objsByType {
+		cp.objsByType[t] = maps.Clone(objs)
+	}
 	cp.idByHash = maps.Clone(cp.idByHash)
 	cp.mcpServers = maps.Clone(cp.mcpServers)
-	cp.mcpSessions = maps.Clone(cp.mcpSessions)
-	cp.returned = false
 	cp.mu = &sync.Mutex{}
 	return &cp
+}
+
+func (m *MCP) setEnv(env dagql.ObjectResult[*Env]) {
+	m.env = env
+	// internalize input object IDs ASAP
+	for _, input := range m.env.Self().Inputs() {
+		if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](input.Value); ok {
+			m.Ingest(obj, input.Description)
+		}
+	}
 }
 
 // Lookup an input binding
 func (m *MCP) Input(ctx context.Context, key string) (*Binding, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if val, exists := m.objsByID[key]; exists {
-		bnd, err := val(ctx, m.env)
+	if id, exists := m.objsByID[key]; exists {
+		srv, err := m.Server(ctx)
 		if err != nil {
 			return nil, false, err
 		}
-		return bnd, true, nil
+		res, err := srv.Load(EnvIDToContext(ctx, m.env.ID()), id)
+		if err != nil {
+			return nil, false, err
+		}
+		return &Binding{
+			Key:          key,
+			Value:        res,
+			Description:  m.describeLocked(id),
+			ExpectedType: res.Type().Name(),
+		}, true, nil
 	}
 	bnd, found := m.env.Self().Input(key)
 	return bnd, found, nil
-}
-
-func (m *MCP) Returned() bool {
-	return m.returned
 }
 
 // Get an object saved at a given key
@@ -285,40 +297,32 @@ func (m *MCP) Tools(ctx context.Context) ([]LLMTool, error) {
 	return allTools.Order, nil
 }
 
-func (m *MCP) syncMCPSessions(ctx context.Context) error {
-	stop := maps.Clone(m.mcpSessions)
-	for _, mcpSrv := range m.mcpServers {
-		delete(stop, mcpSrv.Name)
-		if _, ok := m.mcpSessions[mcpSrv.Name]; ok {
-			continue
-		}
-		sess, err := mcpSrv.Dial(ctx)
-		if err != nil {
-			return fmt.Errorf("dial mcp %q: %w", mcpSrv.Name, err)
-		}
-		m.mcpSessions[mcpSrv.Name] = sess
-	}
-	for name, srv := range stop {
-		if err := srv.Close(); err != nil {
-			return err
-		}
-		delete(m.mcpSessions, name)
-	}
-	return nil
-}
-
 func (m *MCP) loadMCPTools(ctx context.Context, allTools *LLMToolSet) error {
-	if err := m.syncMCPSessions(ctx); err != nil {
-		return err
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return fmt.Errorf("get current query: %w", err)
 	}
-	for serverName, sess := range m.mcpSessions {
+	mcps, err := query.MCPClients(ctx)
+	if err != nil {
+		return fmt.Errorf("get mcp clients: %w", err)
+	}
+	for serverName, cfg := range m.mcpServers {
+		sess, err := mcps.Dial(ctx, cfg)
+		if err != nil {
+			return fmt.Errorf("dial mcp server %q: %w", serverName, err)
+		}
 		for tool, err := range sess.Tools(ctx, nil) {
 			if err != nil {
 				return err
 			}
-			anied, err := toAny(tool.InputSchema)
+			schema, err := toAny(tool.InputSchema)
 			if err != nil {
 				return err
+			}
+			if schema["properties"] == nil {
+				// OpenAI is very particular; it wants there to always define
+				// properties, even if empty.
+				schema["properties"] = map[string]any{}
 			}
 
 			// Check if the tool is read-only from MCP annotations
@@ -328,7 +332,7 @@ func (m *MCP) loadMCPTools(ctx context.Context, allTools *LLMToolSet) error {
 				Name:        tool.Name,
 				Server:      serverName,
 				Description: tool.Description,
-				Schema:      anied,
+				Schema:      schema,
 				ReadOnly:    isReadOnly,
 				Call: func(ctx context.Context, args any) (any, error) {
 					res, err := sess.CallTool(ctx, &mcp.CallToolParams{
@@ -385,6 +389,8 @@ func (m *MCP) updateEnvWorkspace(ctx context.Context, workspace dagql.ObjectResu
 	}); err != nil {
 		return err
 	}
+	// This Env update will be propagated back to the LLM through the withEnv
+	// selector in Step().
 	m.env = newEnv
 	return nil
 }
@@ -411,7 +417,7 @@ func (m *MCP) loadModuleTools(srv *dagql.Server, allTools *LLMToolSet) error {
 			var hasRequiredArgs bool
 			if def.Constructor.Valid {
 				for _, arg := range def.Constructor.Value.Args {
-					if !arg.TypeDef.Optional && arg.DefaultPath == "" {
+					if !arg.TypeDef.Optional && arg.DefaultPath == "" && arg.DefaultValue == nil {
 						hasRequiredArgs = true
 						break
 					}
@@ -497,10 +503,24 @@ func (m *MCP) typeTools(allTools *LLMToolSet, srv *dagql.Server, schema *ast.Sch
 		if slices.Contains(m.blockedMethods[typeDef.Name], field.Name) {
 			continue
 		}
-		if field.Directives.ForName(trivialFieldDirectiveName) != nil {
-			// skip trivial fields on objects, only expose "real" functions
-			// with implementations
-			continue
+		// Check if this is a trivial field (field accessor with no logic)
+		isTrivial := field.Directives.ForName(trivialFieldDirectiveName) != nil
+
+		// Skip trivial fields that return scalars/non-objects since they're shown in toolObjectResponse
+		if isTrivial {
+			// But DO expose trivial fields that return objects, as these are field accessors
+			// like sdk().rust() that the LLM needs to navigate the object graph
+			fieldType := field.Type
+			if fieldType.Elem != nil {
+				// Skip arrays for now (too complex)
+				continue
+			}
+			typeDef, isObject := schema.Types[fieldType.NamedType]
+			if !isObject || typeDef.Kind != ast.Object {
+				// Not an object type - skip it (scalars shown in toolObjectResponse)
+				continue
+			}
+			// Fall through - this is an object-returning field accessor, expose it as a tool
 		}
 		if field.Directives.ForName(deprecatedDirectiveName) != nil {
 			// don't expose deprecated APIs
@@ -602,15 +622,12 @@ func (m *MCP) call(ctx context.Context,
 	defer func() {
 		// Capture logs produced by the tool call and prepend them to the response
 		spanID := trace.SpanContextFromContext(ctx).SpanID()
-		logs, err := m.captureLogs(ctx, spanID)
+		logs, err := m.captureLogs(ctx, spanID.String())
 		if err != nil {
 			slog.Error("failed to capture logs", "error", err)
 		} else if len(logs) > 0 {
-			// Keep track of this span's logs so we can read more of it later
-			m.loggedSpans = append(m.loggedSpans, spanID)
-
 			// Show only the last 10 lines by default
-			logs = limitLines(logs, llmLogsLastLines, llmLogsMaxLineLen)
+			logs = limitLines(spanID.String(), logs, llmLogsLastLines, llmLogsMaxLineLen)
 
 			// Avoid any extra surrounding whitespace (i.e. blank logs somehow)
 			res = strings.Trim(strings.Join(logs, "\n")+"\n\n"+res, "\n")
@@ -643,7 +660,7 @@ func (m *MCP) call(ctx context.Context,
 		return "", fmt.Errorf("no object of type %s found", selfType)
 	}
 
-	doSelect := func(ctx context.Context, env dagql.ObjectResult[*Env]) (dagql.AnyResult, error) {
+	doSelect := func(ctx context.Context) (dagql.AnyResult, error) {
 		sels, err := m.toolCallToSelections(ctx, srv, schema, target.ObjectType(), fieldDef, args, autoConstruct)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert call inputs: %w", err)
@@ -670,7 +687,7 @@ func (m *MCP) call(ctx context.Context,
 		return val, nil
 	}
 
-	val, err := doSelect(ctx, m.env)
+	val, err := doSelect(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -679,7 +696,8 @@ func (m *MCP) call(ctx context.Context,
 	// everything else; no object is actually returned, instead it directly
 	// updates the MCP environment.
 	if newEnv, ok := dagql.UnwrapAs[dagql.ObjectResult[*Env]](val); ok {
-		// Swap out the Env for the updated one
+		// Swap out the Env for the updated one. This will be propagated back to
+		// the LLM through the withEnv selector in Step().
 		m.env = newEnv
 		// No particular message needed here. At one point we diffed the Env.workspace
 		// and printed which files were modified, but it's not really necessary to
@@ -716,23 +734,60 @@ func (m *MCP) call(ctx context.Context,
 
 	if autoConstruct != nil {
 		if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](val); ok {
-			argsPayload, err := json.Marshal(args)
+			// If this object came from an auto-constructed path, we store it in
+			// "contextual" form by stripping out contextual args, thereby
+			// "un-pinning" the object from the context used for this individual call,
+			// such that future references to the object will be initialized with the
+			// freshest context.
+			unpinned, err := dagql.VisitID(obj.ID(), func(id *call.ID) (*call.ID, error) {
+				var recvType string
+				if id.Receiver() == nil {
+					recvType = "Query"
+				} else {
+					recvType = id.Receiver().Type().NamedType()
+				}
+				objType, ok := srv.ObjectType(recvType)
+				if !ok {
+					return nil, fmt.Errorf("unknown receiver type %q", recvType)
+				}
+				fieldSpec, ok := objType.FieldSpec(id.Field(), id.View())
+				if !ok {
+					return nil, fmt.Errorf("unknown field %q on type %q", id.Field(), recvType)
+				}
+				inputSpecs := fieldSpec.Args.Inputs(srv.View)
+				var updatedArgs []*call.Argument
+				var updated bool
+				for _, arg := range id.Args() {
+					var isContextual bool
+					for _, spec := range inputSpecs {
+						if spec.Name == arg.Name() {
+							for _, dir := range spec.Directives {
+								if dir.Name == dagql.DefaultPathDirective.Name {
+									isContextual = true
+								}
+							}
+							break
+						}
+					}
+					if isContextual {
+						// simply drop the arg and let it be filled in via Env in LoadContextDir
+						updated = true
+					} else {
+						updatedArgs = append(updatedArgs, arg)
+					}
+				}
+				if !updated {
+					return nil, nil
+				}
+				return id.With(
+					call.WithArgs(updatedArgs...),
+					call.WithReload(true),
+				), nil
+			})
 			if err != nil {
 				return "", err
 			}
-
-			hash := dagql.HashFrom(
-				target.ObjectType().TypeName(),
-				fieldDef.Name,
-				string(argsPayload),
-			)
-
-			return m.toolObjectResponse(ctx, srv, obj, m.IngestContextual(
-				hash,
-				fmt.Sprintf("%s.%s %s", target.ObjectType().TypeName(), fieldDef.Name, string(argsPayload)),
-				obj.ObjectType().TypeName(),
-				doSelect,
-			))
+			return m.toolObjectResponse(ctx, srv, obj, m.IngestBy(unpinned, "", unpinned.Digest()))
 		}
 	}
 
@@ -954,13 +1009,16 @@ func (m *MCP) LookupTool(name string, tools []LLMTool) (*LLMTool, error) {
 	return tool, nil
 }
 
-func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (res string, failed bool) {
-	tool, err := m.LookupTool(toolCall.Function.Name, tools)
+func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall *LLMToolCall) (res string, failed bool) {
+	tool, err := m.LookupTool(toolCall.Name, tools)
 	if err != nil {
 		return err.Error(), true
 	}
 
-	args := toolCall.Function.Arguments
+	var args map[string]any
+	if err := json.Unmarshal(toolCall.Arguments, &args); err != nil {
+		return fmt.Sprintf("failed to parse tool arguments: %s", err), true
+	}
 
 	var toolArgNames []string
 	var toolArgValues []string
@@ -1015,7 +1073,7 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 		fmt.Fprintln(stdio.Stdout, res)
 	}()
 
-	result, err := tool.Call(EnvIDToContext(ctx, m.env.ID()), toolCall.Function.Arguments)
+	result, err := tool.Call(EnvIDToContext(ctx, m.env.ID()), args)
 	if err != nil {
 		return toolErrorMessage(err), true
 	}
@@ -1034,15 +1092,15 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 
 // CallBatch executes a batch of tool calls, handling MCP server syncing efficiently by
 // grouping calls by destructiveness and server to avoid workspace conflicts
-func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToolCall) []*ModelMessage {
+func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall) []*LLMMessage {
 	// Group tool calls by their characteristics
-	readOnlyMCPCalls := make(map[string][]LLMToolCall)    // server -> read-only calls
-	destructiveMCPCalls := make(map[string][]LLMToolCall) // server -> destructive calls
-	regularCalls := make([]LLMToolCall, 0)
-	destructiveCalls := make([]LLMToolCall, 0)
+	readOnlyMCPCalls := make(map[string][]*LLMToolCall)    // server -> read-only calls
+	destructiveMCPCalls := make(map[string][]*LLMToolCall) // server -> destructive calls
+	regularCalls := make([]*LLMToolCall, 0)
+	destructiveCalls := make([]*LLMToolCall, 0)
 
 	for _, toolCall := range toolCalls {
-		tool, err := m.LookupTool(toolCall.Function.Name, tools)
+		tool, err := m.LookupTool(toolCall.Name, tools)
 		if err != nil {
 			// Couldn't find the tool, just call it regularly and let it fail with the
 			// tool not found (or ambiguous) error
@@ -1069,7 +1127,7 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToo
 		}
 	}
 
-	var allResults []*ModelMessage
+	var allResults []*LLMMessage
 
 	// 1. Execute all regular read-only (non-MCP) calls in parallel
 	if len(regularCalls) > 0 {
@@ -1077,7 +1135,7 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToo
 	}
 
 	// 2. Execute all read-only MCP calls in parallel (safe across servers)
-	var readOnlyToolCalls []LLMToolCall
+	var readOnlyToolCalls []*LLMToolCall
 	for _, calls := range readOnlyMCPCalls {
 		readOnlyToolCalls = append(readOnlyToolCalls, calls...)
 	}
@@ -1088,10 +1146,10 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToo
 	// 3. Execute destructive non-MCP calls sequentially (they modify Env/Changeset state)
 	for _, call := range destructiveCalls {
 		result, isError := m.Call(ctx, tools, call)
-		allResults = append(allResults, &ModelMessage{
-			Role:        "user",
+		allResults = append(allResults, &LLMMessage{
+			Role:        LLMMessageRoleUser,
 			Content:     result,
-			ToolCallID:  call.ID,
+			ToolCallID:  call.CallID,
 			ToolErrored: isError,
 		})
 	}
@@ -1106,28 +1164,35 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToo
 }
 
 // callBatchMCPServer executes a batch of calls for a single MCP server with proper workspace syncing
-func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls []LLMToolCall, serverName string) []*ModelMessage {
-	mcpSrv, ok := m.mcpServers[serverName]
+func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall, serverName string) []*LLMMessage {
+	mcpCfg, ok := m.mcpServers[serverName]
 	if !ok {
 		// Fall back to individual calls if server not found
 		return m.callBatchRegular(ctx, tools, toolCalls)
 	}
 
-	sess, ok := m.mcpSessions[serverName]
-	if !ok {
-		// Fall back to individual calls if session not found
-		return m.callBatchRegular(ctx, tools, toolCalls)
-	}
-
-	ctr := mcpSrv.Service.Self().Container
+	ctr := mcpCfg.Service.Self().Container
 	if ctr.Config.WorkingDir == "" || ctr.Config.WorkingDir == "/" {
 		// No workspace syncing needed - execute normally
 		return m.callBatchRegular(ctx, tools, toolCalls)
 	}
 
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return m.callBatchRegular(ctx, tools, toolCalls)
+	}
+	mcps, err := query.MCPClients(ctx)
+	if err != nil {
+		return m.callBatchRegular(ctx, tools, toolCalls)
+	}
+	sess, err := mcps.Dial(ctx, mcpCfg)
+	if err != nil {
+		return m.callBatchRegular(ctx, tools, toolCalls)
+	}
+
 	// Use runAndSnapshotChanges to sync workspace and execute all tool calls atomically
-	var results []*ModelMessage
-	snapshot, hasChanges, err := mcpSrv.Service.Self().runAndSnapshotChanges(
+	var results []*LLMMessage
+	snapshot, hasChanges, err := mcpCfg.Service.Self().runAndSnapshotChanges(
 		ctx,
 		sess.ID(),
 		ctr.Config.WorkingDir,
@@ -1154,16 +1219,16 @@ func (m *MCP) callBatchMCPServer(ctx context.Context, tools []LLMTool, toolCalls
 }
 
 // callBatchRegular is the original parallel execution logic without MCP-specific syncing
-func (m *MCP) callBatchRegular(ctx context.Context, tools []LLMTool, toolCalls []LLMToolCall) []*ModelMessage {
+func (m *MCP) callBatchRegular(ctx context.Context, tools []LLMTool, toolCalls []*LLMToolCall) []*LLMMessage {
 	// Run tool calls in parallel using the existing pool logic
-	toolCallsPool := pool.NewWithResults[*ModelMessage]()
+	toolCallsPool := pool.NewWithResults[*LLMMessage]()
 	for _, toolCall := range toolCalls {
-		toolCallsPool.Go(func() *ModelMessage {
+		toolCallsPool.Go(func() *LLMMessage {
 			content, isError := m.Call(ctx, tools, toolCall)
-			return &ModelMessage{
-				Role:        "user", // Anthropic only allows tool call results in user messages
+			return &LLMMessage{
+				Role:        LLMMessageRoleUser,
 				Content:     content,
-				ToolCallID:  toolCall.ID,
+				ToolCallID:  toolCall.CallID,
 				ToolErrored: isError,
 			}
 		})
@@ -1179,7 +1244,7 @@ const llmLogsBatchSize = 1000
 
 // captureLogs returns nicely Heroku-formatted lines of all logs seen since the
 // last capture.
-func (m *MCP) captureLogs(ctx context.Context, spanID trace.SpanID) ([]string, error) {
+func (m *MCP) captureLogs(ctx context.Context, spanID string) ([]string, error) {
 	root, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -1201,7 +1266,7 @@ func (m *MCP) captureLogs(ctx context.Context, spanID trace.SpanID) ([]string, e
 	for {
 		logs, err := q.SelectLogsBeneathSpan(ctx, clientdb.SelectLogsBeneathSpanParams{
 			ID:     lastLogID,
-			SpanID: sql.NullString{Valid: true, String: spanID.String()},
+			SpanID: sql.NullString{Valid: true, String: spanID},
 			Limit:  llmLogsBatchSize,
 		})
 		if err != nil {
@@ -1397,17 +1462,6 @@ func (m *MCP) saveTool(srv *dagql.Server) LLMTool {
 				output.Value = obj
 			}
 
-			// If all outputs have been saved, we can flag the MCP as having completed
-			// its task.
-			var anyNotSaved bool
-			for _, output := range m.env.Self().outputsByName {
-				if output.Value == nil {
-					anyNotSaved = true
-					break
-				}
-			}
-			m.returned = !anyNotSaved
-
 			return checklist(), nil
 		}),
 	}
@@ -1486,6 +1540,8 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSe
 				if err != nil {
 					return nil, err
 				}
+				// This Env update will be propagated back to the LLM through the
+				// withEnv selector in Step().
 				m.env = dest
 				return toolStructuredResponse(map[string]any{
 					"output": args.Name,
@@ -1547,6 +1603,10 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSe
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
+				"span": map[string]any{
+					"type":        "string",
+					"description": "Span ID to query logs beneath, recursively",
+				},
 				"limit": map[string]any{
 					"type":        "integer",
 					"description": "Number of lines to read from the end.",
@@ -1563,6 +1623,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSe
 					"description": "Grep pattern to filter logs. If specified, only lines matching this pattern will be returned.",
 				},
 			},
+			"required":             []string{"span"},
 			"additionalProperties": false,
 		},
 		Strict: false,
@@ -1601,15 +1662,12 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSe
 
 func (m *MCP) readLogsTool(srv *dagql.Server) LLMToolFunc {
 	return ToolFunc(srv, func(ctx context.Context, args struct {
+		Span   string
 		Offset int    `default:"0"`
 		Limit  int    `default:"100"`
 		Grep   string `default:""`
 	}) (any, error) {
-		if len(m.loggedSpans) == 0 {
-			return nil, fmt.Errorf("no logs captured")
-		}
-
-		logs, err := m.captureLogs(ctx, m.loggedSpans[len(m.loggedSpans)-1])
+		logs, err := m.captureLogs(ctx, args.Span)
 		if err != nil {
 			return nil, fmt.Errorf("failed to capture logs: %w", err)
 		}
@@ -1640,7 +1698,7 @@ func (m *MCP) readLogsTool(srv *dagql.Server) LLMToolFunc {
 		}
 
 		// Apply line limit if specified
-		logs = limitLines(logs, args.Limit, llmLogsMaxLineLen)
+		logs = limitLines(args.Span, logs, args.Limit, llmLogsMaxLineLen)
 
 		return strings.Join(logs, "\n"), nil
 	})
@@ -2020,10 +2078,6 @@ func (m *MCP) userProvidedValues() (string, error) {
 	return toolStructuredResponse(values)
 }
 
-func (m *MCP) IsDone() bool {
-	return len(m.env.Self().outputsByName) == 0 || m.returned
-}
-
 var idRegex = regexp.MustCompile(`^(?P<type>[A-Z]\w*)#(?P<nth>\d+)$`)
 
 func (m *MCP) fieldArgsToJSONSchema(schema *ast.Schema, typeDef *ast.Definition, field *ast.FieldDefinition, autoConstruct *ObjectTypeDef) (map[string]any, error) {
@@ -2153,14 +2207,18 @@ const jsonSchemaIDAttr = "x-id-type"
 func (m *MCP) TypeCounts() map[string]int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return maps.Clone(m.typeCounts)
+	counts := make(map[string]int, len(m.objsByType))
+	for k, v := range m.objsByType {
+		counts[k] = len(v)
+	}
+	return counts
 }
 
 func (m *MCP) toolObjectResponse(ctx context.Context, srv *dagql.Server, target dagql.AnyObjectResult, objID string) (string, error) {
 	schema := srv.Schema()
 	typeName := target.Type().Name()
 	m.mu.Lock()
-	_, known := m.typeCounts[typeName]
+	_, known := m.objsByType[typeName]
 	m.mu.Unlock()
 	res := map[string]any{
 		"result": objID,
@@ -2177,6 +2235,11 @@ func (m *MCP) toolObjectResponse(ctx context.Context, srv *dagql.Server, target 
 		})
 		if err != nil {
 			return "", err
+		}
+		if _, isObj := srv.ObjectType(val.Type().Name()); isObj {
+			// skip any fields that reference objects, to avoid dumping entire
+			// ModuleObjects
+			continue
 		}
 		datum, err := m.sanitizeResult(val)
 		if err != nil {
@@ -2199,62 +2262,26 @@ func (m *MCP) Ingest(obj dagql.AnyObjectResult, desc string) string {
 		return ""
 	}
 	hash := id.Digest()
-	return m.IngestBy(obj, desc, hash)
+	return m.IngestBy(id, desc, hash)
 }
 
-func (m *MCP) IngestBy(obj dagql.AnyObjectResult, desc string, hash digest.Digest) string {
-	id := obj.ID()
-	if id == nil {
-		return ""
-	}
+// IngestBy adds an object to the MCP's object registry. This mutates the MCP's
+// internal maps (objsByID, idByHash, typeCounts), but since the MCP is cloned
+// at the start of each Step(), these mutations are isolated and propagated when
+// the stepped LLM is returned.
+func (m *MCP) IngestBy(id *call.ID, desc string, hash digest.Digest) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	typeName := id.Type().NamedType()
 	llmID, ok := m.idByHash[hash]
 	if !ok {
-		m.typeCounts[typeName]++
-		llmID = fmt.Sprintf("%s#%d", typeName, m.typeCounts[typeName])
+		num := m.trackObject(id)
+		llmID = fmt.Sprintf("%s#%d", typeName, num)
 		if desc == "" {
 			desc = m.describeLocked(id)
 		}
 		m.idByHash[hash] = llmID
-		m.objsByID[llmID] = func(context.Context, dagql.ObjectResult[*Env]) (*Binding, error) {
-			return &Binding{
-				Key:          llmID,
-				Value:        obj,
-				Description:  desc,
-				ExpectedType: obj.ObjectType().TypeName(),
-			}, nil
-		}
-	}
-	return llmID
-}
-
-func (m *MCP) IngestContextual(
-	hash digest.Digest,
-	desc string,
-	typeName string,
-	create func(ctx context.Context, env dagql.ObjectResult[*Env]) (dagql.AnyResult, error),
-) string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	llmID, ok := m.idByHash[hash]
-	if !ok {
-		m.typeCounts[typeName]++
-		llmID = fmt.Sprintf("%s#%d", typeName, m.typeCounts[typeName])
-		m.idByHash[hash] = llmID
-		m.objsByID[llmID] = func(ctx context.Context, env dagql.ObjectResult[*Env]) (*Binding, error) {
-			obj, err := create(ctx, env)
-			if err != nil {
-				return nil, err
-			}
-			return &Binding{
-				Key:          llmID,
-				Value:        obj,
-				Description:  desc,
-				ExpectedType: typeName,
-			}, nil
-		}
+		m.objsByID[llmID] = id
 	}
 	return llmID
 }
@@ -2322,13 +2349,21 @@ func (m *MCP) displayLitLocked(lit call.Literal) string {
 }
 
 func (m *MCP) Types() []string {
-	// Make sure we count env inputs
-	for _, input := range m.env.Self().Inputs() {
-		if obj, ok := dagql.UnwrapAs[dagql.AnyObjectResult](input.Value); ok {
-			m.Ingest(obj, input.Description)
-		}
-	}
 	return slices.Collect(maps.Keys(m.TypeCounts()))
+}
+
+// break glass when needed
+func (m *MCP) dumpState(tag string) {
+	objs := map[string]string{}
+	for id, obj := range m.objsByID {
+		objs[id] = obj.DisplayShort()
+	}
+	enc := json.NewEncoder(prefixw.New(os.Stderr, "!!! "+tag))
+	enc.SetIndent("", "  ")
+	enc.Encode(map[string]any{
+		"self":  fmt.Sprintf("%p", m),
+		"by-id": objs,
+	})
 }
 
 func toolStructuredResponse(val any) (string, error) {
@@ -2342,9 +2377,9 @@ func toolStructuredResponse(val any) (string, error) {
 	return str.String(), nil
 }
 
-func limitLines(logs []string, limit, maxLineLen int) []string {
+func limitLines(spanID string, logs []string, limit, maxLineLen int) []string {
 	if limit > 0 && len(logs) > limit {
-		snipped := fmt.Sprintf("... %d lines omitted (use ReadLogs to read more) ...", len(logs)-limit)
+		snipped := fmt.Sprintf("... %d lines omitted (use ReadLogs(span: %s) to read more) ...", len(logs)-limit, spanID)
 		logs = append([]string{snipped}, logs[len(logs)-limit:]...)
 	}
 	for i, line := range logs {

@@ -65,7 +65,7 @@ message Call {
   // A unique digest of this Call. Note that this must not be set when
   // calculating the Call's digest.
   string digest = 9;
-  
+
   // The view that this call was made in. Since a graphql server may present
   // slightly different views depending on the specified view, to be able to
   // evaluate calls wherever, we need to track which view the call was actually
@@ -75,6 +75,14 @@ message Call {
   // Whether the digest was set to a custom value, as opposed to the default
   // "recipe-based" digest
   bool isCustomDigest = 11;
+
+  // Whether to re-fetch the value and update its cache key, rather than seek a
+  // cache hit.
+  //
+  // This flag allows IDs to be re-written in "live" form, allowing the ID to
+  // encode how the data is fetched, what the current cache key is, and whether
+  // to fetch a new version.
+  bool reload = 12;
 }
 
 // Module represents a self-contained logical module that can be dynamically

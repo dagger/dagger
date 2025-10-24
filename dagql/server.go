@@ -274,19 +274,7 @@ var coreDirectives = []DirectiveSpec{
 			DirectiveLocationEnumValue,
 		},
 	},
-	{
-		Name:        "defaultPath",
-		Description: FormatDescription(`Indicates that the argument defaults to a contextual path.`),
-		Args: NewInputSpecs(
-			InputSpec{
-				Name: "path",
-				Type: String(""),
-			},
-		),
-		Locations: []DirectiveLocation{
-			DirectiveLocationArgumentDefinition,
-		},
-	},
+	DefaultPathDirective,
 	{
 		Name:        "ignorePatterns",
 		Description: FormatDescription(`Filter directory contents using .gitignore-style glob patterns.`),
@@ -299,6 +287,20 @@ var coreDirectives = []DirectiveSpec{
 		Locations: []DirectiveLocation{
 			DirectiveLocationArgumentDefinition,
 		},
+	},
+}
+
+var DefaultPathDirective = DirectiveSpec{
+	Name:        "defaultPath",
+	Description: FormatDescription(`Indicates that the argument defaults to a contextual path.`),
+	Args: NewInputSpecs(
+		InputSpec{
+			Name: "path",
+			Type: String(""),
+		},
+	),
+	Locations: []DirectiveLocation{
+		DirectiveLocationArgumentDefinition,
 	},
 }
 
@@ -680,6 +682,11 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (AnyResult, error) {
 	baseObj, err := s.toSelectable(base)
 	if err != nil {
 		return nil, fmt.Errorf("toSelectable: %w", err)
+	}
+
+	if id.Receiver().WantsReload() && baseObj.ID().Digest() != id.Receiver().Digest() {
+		// If we're based on an ID that needed to be reloaded, rebase on it.
+		id = id.With(call.WithReceiver(baseObj.ID()))
 	}
 
 	return baseObj.Call(ctx, s, id)

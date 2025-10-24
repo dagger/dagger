@@ -5,8 +5,17 @@ import (
 	"github.com/alecthomas/chroma/v2/styles"
 )
 
+var lightStyle, darkStyle *chroma.Style
+
 func init() {
 	registerANSIStyles()
+}
+
+func TTYStyle() *chroma.Style {
+	if HasDarkBackground() {
+		return darkStyle
+	}
+	return lightStyle
 }
 
 // taken from chroma's TTY formatter
@@ -59,12 +68,12 @@ func registerANSIStyles() {
 	ansi16dark := base
 	ansi16dark[chroma.Name] = ttyMap["97m"]
 	ansi16dark[chroma.Text] = ttyMap["97m"]
-	styles.Register(chroma.MustNewStyle("ansi16", ansi16dark))
+	darkStyle = styles.Register(chroma.MustNewStyle("ansi16", ansi16dark))
 
 	ansi16light := base
 	ansi16light[chroma.Name] = ttyMap["30m"]
 	ansi16light[chroma.Text] = ttyMap["30m"]
-	styles.Register(chroma.MustNewStyle("ansi16light", ansi16light))
+	lightStyle = styles.Register(chroma.MustNewStyle("ansi16light", ansi16light))
 }
 
 func highlightStyle() string {

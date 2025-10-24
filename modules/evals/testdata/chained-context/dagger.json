@@ -1,5 +1,5 @@
 {
-  "name": "workspace",
+  "name": "chained-context",
   "engineVersion": "v0.19.2",
   "sdk": {
     "source": "go"

@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,6 +27,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/secretprovider"
 )
@@ -61,11 +64,13 @@ func resolveModelAlias(maybeAlias string) string {
 
 // An instance of a LLM (large language model), with its state and tool calling environment
 type LLM struct {
+	// TODO: document default behavior
+	SystemPrompt string `field:"true" doc:"A system prompt to send."`
+
+	Messages []*LLMMessage `field:"true" doc:"The full message history."`
+
 	// The environment accessible to the LLM, exposed over MCP
 	mcp *MCP
-
-	maxAPICalls int
-	apiCalls    int
 
 	model string
 
@@ -73,11 +78,6 @@ type LLM struct {
 	endpointMtx *sync.Mutex
 
 	syncOneStep bool
-	once        *sync.Once
-	err         error
-
-	// History of messages
-	messages []*ModelMessage
 
 	// Whether to disable the default system prompt
 	disableDefaultSystemPrompt bool
@@ -95,13 +95,13 @@ type LLMProvider string
 
 // LLMClient interface defines the methods that each provider must implement
 type LLMClient interface {
-	SendQuery(ctx context.Context, history []*ModelMessage, tools []LLMTool) (*LLMResponse, error)
+	SendQuery(ctx context.Context, history []*LLMMessage, tools []LLMTool) (*LLMResponse, error)
 	IsRetryable(err error) bool
 }
 
 type LLMResponse struct {
 	Content    string
-	ToolCalls  []LLMToolCall
+	ToolCalls  []*LLMToolCall
 	TokenUsage LLMTokenUsage
 }
 
@@ -120,25 +120,71 @@ func (*LLMTokenUsage) Type() *ast.Type {
 	}
 }
 
-// ModelMessage represents a generic message in the LLM conversation
-type ModelMessage struct {
-	Role        string        `json:"role"`
-	Content     string        `json:"content"`
-	ToolCalls   []LLMToolCall `json:"tool_calls,omitempty"`
-	ToolCallID  string        `json:"tool_call_id,omitempty"`
-	ToolErrored bool          `json:"tool_errored,omitempty"`
-	TokenUsage  LLMTokenUsage `json:"token_usage,omitzero"`
+// LLMMessage represents a generic message in the LLM conversation
+type LLMMessage struct {
+	Role        LLMMessageRole `field:"true" json:"role"`
+	Content     string         `field:"true" json:"content"`
+	ToolCalls   []*LLMToolCall `field:"true" json:"tool_calls,omitempty"`
+	ToolCallID  string         `field:"true" json:"tool_call_id,omitempty"`
+	ToolErrored bool           `field:"true" json:"tool_errored,omitempty"`
+
+	// NB: this isn't exposed as a field, since it will only be present on
+	// response messages, but shamefully initially because it's annoying to make
+	// it a pointer
+	TokenUsage LLMTokenUsage `json:"token_usage,omitzero"`
+}
+
+func (*LLMMessage) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "LLMMessage",
+		NonNull:   true,
+	}
+}
+
+type LLMMessageRole string
+
+var LLMMessageRoles = dagql.NewEnum[LLMMessageRole]()
+
+var (
+	LLMMessageRoleUser      = LLMMessageRoles.Register("USER", "A user prompt or tool response.")
+	LLMMessageRoleAssistant = LLMMessageRoles.Register("ASSISTANT", "A reply from the model.")
+	LLMMessageRoleSystem    = LLMMessageRoles.Register("SYSTEM", "A system prompt.")
+)
+
+func (LLMMessageRole) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "LLMMessageRole",
+		NonNull:   true,
+	}
+}
+
+func (mode LLMMessageRole) TypeDescription() string {
+	return "The role that generated a message."
+}
+
+func (mode LLMMessageRole) Decoder() dagql.InputDecoder {
+	return LLMMessageRoles
+}
+
+func (mode LLMMessageRole) ToLiteral() call.Literal {
+	return LLMMessageRoles.Literal(mode)
+}
+
+func (role LLMMessageRole) String() string {
+	return string(role)
 }
 
 type LLMToolCall struct {
-	ID       string   `json:"id"`
-	Function FuncCall `json:"function"`
-	Type     string   `json:"type"`
+	CallID    string `field:"true" json:"id"`
+	Name      string `field:"true" json:"name"`
+	Arguments JSON   `field:"true" json:"arguments"`
 }
 
-type FuncCall struct {
-	Name      string         `json:"name"`
-	Arguments map[string]any `json:"arguments"`
+func (*LLMToolCall) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "LLMToolCall",
+		NonNull:   true,
+	}
 }
 
 const (
@@ -188,7 +234,7 @@ func (r *LLMRouter) isReplay(model string) bool {
 	return strings.HasPrefix(model, "replay-") || strings.HasPrefix(model, "replay/")
 }
 
-func (r *LLMRouter) getReplay(model string) (messages []*ModelMessage, _ error) {
+func (r *LLMRouter) getReplay(model string) (messages []*LLMMessage, _ error) {
 	model, ok := strings.CutPrefix(model, "replay-")
 	if !ok {
 		model, ok = strings.CutPrefix(model, "replay/")
@@ -445,7 +491,7 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 	return router, err
 }
 
-func (q *Query) NewLLM(ctx context.Context, model string, maxAPICalls int) (*LLM, error) {
+func (q *Query) NewLLM(ctx context.Context, model string) (*LLM, error) {
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return nil, err
@@ -458,9 +504,7 @@ func (q *Query) NewLLM(ctx context.Context, model string, maxAPICalls int) (*LLM
 	}
 	return &LLM{
 		model:       model,
-		maxAPICalls: maxAPICalls,
 		mcp:         newMCP(env),
-		once:        &sync.Once{},
 		endpointMtx: &sync.Mutex{},
 	}, nil
 }
@@ -494,12 +538,10 @@ func (*LLM) Type() *ast.Type {
 
 func (llm *LLM) Clone() *LLM {
 	cp := *llm
-	cp.messages = slices.Clone(cp.messages)
+	cp.Messages = slices.Clone(cp.Messages)
 	cp.mcp = cp.mcp.Clone()
 	cp.endpoint = llm.endpoint
 	cp.endpointMtx = &sync.Mutex{}
-	cp.once = &sync.Once{}
-	cp.err = nil
 	return &cp
 }
 
@@ -549,6 +591,15 @@ func (llm *LLM) ToolsDoc(ctx context.Context) (string, error) {
 	return result, nil
 }
 
+func (llm *LLM) HasMissingOutputs() bool {
+	for _, out := range llm.Env().Self().outputsByName {
+		if out.Value == nil {
+			return false
+		}
+	}
+	return true
+}
+
 func (llm *LLM) WithModel(model string) *LLM {
 	llm = llm.Clone()
 	llm.model = model
@@ -573,8 +624,8 @@ func (llm *LLM) WithPrompt(
 		return fmt.Sprintf("$%s", key)
 	})
 	llm = llm.Clone()
-	llm.messages = append(llm.messages, &ModelMessage{
-		Role:    "user",
+	llm.Messages = append(llm.Messages, &LLMMessage{
+		Role:    LLMMessageRoleUser,
 		Content: prompt,
 	})
 	return llm
@@ -592,10 +643,57 @@ func (llm *LLM) WithPromptFile(ctx context.Context, file *File) (*LLM, error) {
 // Append a system prompt message to the history
 func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
 	llm = llm.Clone()
-	llm.messages = append(llm.messages, &ModelMessage{
-		Role:    "system",
+	llm.Messages = append(llm.Messages, &LLMMessage{
+		Role:    LLMMessageRoleSystem,
 		Content: prompt,
 	})
+	return llm
+}
+
+// Append an assistant response message to the history
+func (llm *LLM) WithResponse(content string, tokenUsage LLMTokenUsage) *LLM {
+	llm = llm.Clone()
+	llm.Messages = append(llm.Messages, &LLMMessage{
+		Role:       LLMMessageRoleAssistant,
+		Content:    content,
+		TokenUsage: tokenUsage,
+	})
+	return llm
+}
+
+// Append a tool call to the last assistant message in the history
+func (llm *LLM) WithToolCall(callID, tool string, arguments JSON) *LLM {
+	llm = llm.Clone()
+	// Find the last assistant message and append the tool call to it
+	for i := len(llm.Messages) - 1; i >= 0; i-- {
+		if llm.Messages[i].Role == LLMMessageRoleAssistant {
+			llm.Messages[i].ToolCalls = append(llm.Messages[i].ToolCalls, &LLMToolCall{
+				CallID:    callID,
+				Name:      tool,
+				Arguments: arguments,
+			})
+			break
+		}
+	}
+	return llm
+}
+
+// Append a tool response (user) message to the history
+func (llm *LLM) WithToolResponse(callID, content string, errored bool) *LLM {
+	llm = llm.Clone()
+	llm.Messages = append(llm.Messages, &LLMMessage{
+		Role:        LLMMessageRoleUser,
+		Content:     content,
+		ToolCallID:  callID,
+		ToolErrored: errored,
+	})
+	return llm
+}
+
+// Append a tool response (user) message to the history
+func (llm *LLM) WithObject(objectID string, id ID) *LLM {
+	llm = llm.Clone()
+	llm.mcp = llm.mcp.WithObject(objectID, id)
 	return llm
 }
 
@@ -626,36 +724,35 @@ func (llm *LLM) WithMCPServer(name string, svc dagql.ObjectResult[*Service]) *LL
 }
 
 // Return the last message sent by the agent
-func (llm *LLM) LastReply(ctx context.Context) (string, error) {
-	if err := llm.Sync(ctx); err != nil {
-		return "", err
-	}
-	reply := "(no reply)"
-	for _, msg := range llm.messages {
-		if msg.Role != "assistant" {
+func (llm *LLM) LastReply() (string, bool) {
+	var reply string = "(no reply)"
+	var foundReply bool
+	for _, msg := range llm.Messages {
+		if msg.Role != LLMMessageRoleAssistant {
 			continue
 		}
 		txt := msg.Content
 		if len(txt) == 0 {
 			continue
 		}
+		foundReply = true
 		reply = txt
 	}
-	return reply, nil
+	return reply, foundReply
 }
 
-func (llm *LLM) messagesWithSystemPrompt() []*ModelMessage {
+func (llm *LLM) messagesWithSystemPrompt() []*LLMMessage {
 	var systemPrompt string
 	if !llm.disableDefaultSystemPrompt {
 		systemPrompt = llm.mcp.DefaultSystemPrompt()
 	}
 	if systemPrompt != "" {
-		return append([]*ModelMessage{{
-			Role:    "system",
+		return append([]*LLMMessage{{
+			Role:    LLMMessageRoleSystem,
 			Content: systemPrompt,
-		}}, llm.messages...)
+		}}, llm.Messages...)
 	}
-	return llm.messages
+	return llm.Messages
 }
 
 type ModelFinishedError struct {
@@ -667,42 +764,306 @@ func (err *ModelFinishedError) Error() string {
 }
 
 // Send configures the LLM to only evaluate one step when syncing.
-func (llm *LLM) Step() *LLM {
-	llm = llm.Clone()
-	llm.syncOneStep = true
-	return llm
+func (llm *LLM) Step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
+	if err := llm.allowed(ctx); err != nil {
+		return inst, err
+	}
+	return llm.step(ctx, inst)
 }
 
-// send the context to the LLM endpoint, process replies and tool calls; continue in a loop
+func (llm *LLM) step(ctx context.Context, inst dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], error) {
+	origEnv := llm.Env()
+
+	llm = llm.Clone()
+
+	b := backoff.NewExponentialBackOff()
+	// Sane defaults (ideally not worth extra knobs)
+	b.InitialInterval = 1 * time.Second
+	b.MaxInterval = 30 * time.Second
+	b.MaxElapsedTime = 2 * time.Minute
+
+	tools, err := llm.mcp.Tools(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	messagesToSend := llm.messagesWithSystemPrompt()
+
+	var newMessages []*LLMMessage
+	for _, msg := range slices.Backward(messagesToSend) {
+		if msg.Role == LLMMessageRoleAssistant || msg.ToolCallID != "" {
+			// only display messages appended since the last response
+			break
+		}
+		newMessages = append(newMessages, msg)
+	}
+	slices.Reverse(newMessages)
+	for _, msg := range newMessages {
+		func() {
+			var emoji string
+			switch msg.Role {
+			case LLMMessageRoleUser:
+				emoji = "🧑"
+			case LLMMessageRoleSystem:
+				emoji = "⚙️"
+			}
+			ctx, span := Tracer(ctx).Start(ctx, "LLM prompt",
+				telemetry.Reveal(),
+				trace.WithAttributes(
+					attribute.String(telemetry.UIActorEmojiAttr, emoji),
+					attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageSent),
+					attribute.String(telemetry.LLMRoleAttr, msg.Role.String()),
+					attribute.Bool(telemetry.UIInternalAttr, msg.Role == LLMMessageRoleSystem),
+				))
+			defer span.End()
+			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+				log.String(telemetry.ContentTypeAttr, "text/markdown"))
+			defer stdio.Close()
+			fmt.Fprint(stdio.Stdout, msg.Content)
+		}()
+	}
+
+	var res *LLMResponse
+
+	ep, err := llm.Endpoint(ctx)
+	if err != nil {
+		return inst, err
+	}
+	client := ep.Client
+	err = backoff.Retry(func() error {
+		var sendErr error
+		ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
+			attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+			attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
+			attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
+		))
+		res, sendErr = client.SendQuery(ctx, messagesToSend, tools)
+		telemetry.End(span, func() error { return sendErr })
+		if sendErr != nil {
+			var finished *ModelFinishedError
+			if errors.As(sendErr, &finished) {
+				// Don't retry if the model finished explicitly, treat as permanent.
+				return backoff.Permanent(sendErr)
+			}
+			if !client.IsRetryable(sendErr) {
+				// Maybe an invalid request - give up.
+				return backoff.Permanent(sendErr)
+			}
+			// Log retry attempts? Maybe with increasing severity?
+			// For now, just return the error to signal backoff to retry.
+			return sendErr
+		}
+		// Success, stop retrying
+		return nil
+	}, backoff.WithContext(b, ctx))
+	if err != nil {
+		return inst, err
+	}
+
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	var sels []dagql.Selector
+	{
+		args := []dagql.NamedInput{
+			{
+				Name:  "content",
+				Value: dagql.NewString(res.Content),
+			},
+		}
+		if res.TokenUsage.InputTokens != 0 {
+			args = append(args, dagql.NamedInput{
+				Name:  "inputTokens",
+				Value: dagql.NewInt(res.TokenUsage.InputTokens),
+			})
+		}
+		if res.TokenUsage.OutputTokens != 0 {
+			args = append(args, dagql.NamedInput{
+				Name:  "outputTokens",
+				Value: dagql.NewInt(res.TokenUsage.OutputTokens),
+			})
+		}
+		if res.TokenUsage.CachedTokenReads != 0 {
+			args = append(args, dagql.NamedInput{
+				Name:  "cachedTokenReads",
+				Value: dagql.NewInt(res.TokenUsage.CachedTokenReads),
+			})
+		}
+		if res.TokenUsage.CachedTokenWrites != 0 {
+			args = append(args, dagql.NamedInput{
+				Name:  "cachedTokenWrites",
+				Value: dagql.NewInt(res.TokenUsage.CachedTokenWrites),
+			})
+		}
+		if res.TokenUsage.TotalTokens != 0 {
+			args = append(args, dagql.NamedInput{
+				Name:  "totalTokens",
+				Value: dagql.NewInt(res.TokenUsage.TotalTokens),
+			})
+		}
+		sels = append(sels, dagql.Selector{
+			Field: "withResponse",
+			Args:  args,
+		})
+	}
+	for _, call := range res.ToolCalls {
+		sels = append(sels, dagql.Selector{
+			Field: "withToolCall",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "call",
+					Value: dagql.NewString(call.CallID),
+				},
+				{
+					Name:  "tool",
+					Value: dagql.NewString(call.Name),
+				},
+				{
+					Name:  "arguments",
+					Value: call.Arguments,
+				},
+			},
+		})
+	}
+	beforeObjs := maps.Clone(llm.mcp.objsByID)
+	for _, msg := range llm.mcp.CallBatch(ctx, tools, res.ToolCalls) {
+		sels = append(sels, dagql.Selector{
+			Field: "withToolResponse",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "call",
+					Value: dagql.NewString(msg.ToolCallID),
+				},
+				{
+					Name:  "content",
+					Value: dagql.NewString(msg.Content),
+				},
+				{
+					Name:  "errored",
+					Value: dagql.NewBoolean(msg.ToolErrored),
+				},
+			},
+		})
+	}
+	var newObjs []string
+	for obj := range llm.mcp.objsByID {
+		if _, exists := beforeObjs[obj]; exists {
+			continue
+		}
+		newObjs = append(newObjs, obj)
+	}
+	sort.Strings(newObjs)
+	for _, objID := range newObjs {
+		id := llm.mcp.objsByID[objID]
+		sels = append(sels, dagql.Selector{
+			Field: "__withObject",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "tag",
+					Value: dagql.NewString(objID),
+				},
+				{
+					Name:  "object",
+					Value: ID{Inner: id},
+				},
+			},
+		})
+	}
+
+	// Persist any env changes
+	if llm.Env().ID().Digest() != origEnv.ID().Digest() {
+		sels = append(sels, dagql.Selector{
+			Field: "withEnv",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "env",
+					Value: dagql.NewID[*Env](llm.Env().ID()),
+				},
+			},
+		})
+	}
+
+	var stepped dagql.ObjectResult[*LLM]
+	err = srv.Select(ctx, inst, &stepped, sels...)
+	if err != nil {
+		return inst, err
+	}
+
+	return stepped, nil
+}
+
+// Loop sends the context to the LLM endpoint, processes replies and tool calls; continues in a loop
 // Synchronize LLM state:
 // 1. Send context to LLM endpoint
 // 2. Process replies and tool calls
 // 3. Continue in a loop until no tool calls, or caps are reached
-func (llm *LLM) Sync(ctx context.Context) error {
+func (llm *LLM) Loop(ctx context.Context, inst dagql.ObjectResult[*LLM], maxAPICalls int) (dagql.ObjectResult[*LLM], error) {
 	if err := llm.allowed(ctx); err != nil {
-		return err
+		return inst, err
 	}
-	llm.once.Do(func() {
-		err := llm.loop(ctx)
-		if err != nil && ctx.Err() == nil {
-			// Consider an interrupt to be successful, so we can still use the result
-			// of a partially completed sequence (e.g. accessing its Env). The user
-			// must append another prompt to interject and continue. (This matches the
-			// behavior of Claude Code and presumably other chat agents.)
-			llm.err = err
+
+	var apiCalls int
+	for {
+		llm := inst.Self()
+
+		if !llm.HasPrompt() {
+			if llm.HasMissingOutputs() {
+				// There's no prompt, and yet there are outputs unfulfilled. This means
+				// future calls to Env.Output may fail, so we should interject to help
+				// the LLM along.
+
+				if newLLM, interjected, interjectErr := llm.Interject(ctx, inst); interjectErr != nil {
+					// interjecting failed or was interrupted
+					return inst, interjectErr
+				} else if interjected {
+					inst = newLLM
+					// interjected - continue
+					continue
+				} else {
+					// no interjection - user gave up?
+					break
+				}
+			}
+
+			// nothing to do - either never prompted, or naturally reached the end of
+			// the loop (e.g. LLM reply with no additional tool calls)
+			return inst, nil
 		}
-	})
-	return llm.err
+
+		if maxAPICalls > 0 && apiCalls >= maxAPICalls {
+			return inst, fmt.Errorf("reached API call limit: %d", apiCalls)
+		}
+
+		apiCalls++
+
+		var err error
+		inst, err = inst.Self().Step(ctx, inst)
+		if err != nil {
+			// Handle persistent error after all retries failed.
+			return inst, err
+		}
+	}
+
+	return inst, nil
 }
 
-func (llm *LLM) Interject(ctx context.Context) error {
+func (llm *LLM) Interject(ctx context.Context, self dagql.ObjectResult[*LLM]) (dagql.ObjectResult[*LLM], bool, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return err
+		return self, false, err
 	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
-		return err
+		return self, false, err
+	}
+	if !bk.Opts.Interactive {
+		return self, false, nil
+	}
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return self, false, err
 	}
 	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", telemetry.Reveal(), trace.WithAttributes(
 		attribute.String(telemetry.UIActorEmojiAttr, "🧑"),
@@ -713,29 +1074,32 @@ func (llm *LLM) Interject(ctx context.Context) error {
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
 		log.String(telemetry.ContentTypeAttr, "text/markdown"))
 	defer stdio.Close()
-	var lastAssistantMessage string
-	for i := len(llm.messages) - 1; i >= 0; i-- {
-		if llm.messages[i].Role == "assistant" {
-			lastAssistantMessage = llm.messages[i].Content
-			break
-		}
-	}
-	if lastAssistantMessage == "" {
-		return fmt.Errorf("no message from assistant")
+	lastAssistantMessage, foundReply := llm.LastReply()
+	if !foundReply {
+		return self, false, fmt.Errorf("no message from assistant")
 	}
 	msg, err := bk.PromptHumanHelp(ctx, "LLM needs help!", fmt.Sprintf("The LLM was unable to complete its task and needs a prompt to continue. Here is its last message:\n%s", mdQuote(lastAssistantMessage)))
 	if err != nil {
-		return err
+		return self, false, err
 	}
 	if msg == "" {
-		return errors.New("no interjection provided; giving up")
+		return self, false, nil
 	}
 	fmt.Fprint(stdio.Stdout, msg)
-	llm.messages = append(llm.messages, &ModelMessage{
-		Role:    "user",
-		Content: msg,
-	})
-	return nil
+
+	var inst dagql.ObjectResult[*LLM]
+	if err := srv.Select(ctx, self, &inst, dagql.Selector{
+		Field: "withPrompt",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "prompt",
+				Value: dagql.NewString(msg),
+			},
+		},
+	}); err != nil {
+		return self, false, err
+	}
+	return inst, true, nil
 }
 
 func mdQuote(msg string) string {
@@ -746,189 +1110,8 @@ func mdQuote(msg string) string {
 	return strings.Join(lines, "\n")
 }
 
-// autoInterject keeps the loop going if necessary, by prompting for a new
-// input, adding it to the message history, and returning true
-func (llm *LLM) autoInterject(ctx context.Context) (bool, error) {
-	if llm.mcp.IsDone() {
-		// we either didn't expect a return value, or got one - done!
-		return false, nil
-	}
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return false, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return false, err
-	}
-	if !bk.Opts.Interactive {
-		return false, nil
-	}
-	if err := llm.Interject(ctx); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-func (llm *LLM) loop(ctx context.Context) error {
-	var hasUserMessage bool
-	for _, message := range llm.messages {
-		if message.Role == "user" {
-			hasUserMessage = true
-			break
-		}
-	}
-	if !hasUserMessage {
-		// dirty but no messages, possibly just a state change, nothing to do
-		// until a prompt is given
-		return nil
-	}
-
-	b := backoff.NewExponentialBackOff()
-	// Sane defaults (ideally not worth extra knobs)
-	b.InitialInterval = 1 * time.Second
-	b.MaxInterval = 30 * time.Second
-	b.MaxElapsedTime = 2 * time.Minute
-
-	for {
-		if llm.maxAPICalls > 0 && llm.apiCalls >= llm.maxAPICalls {
-			return fmt.Errorf("reached API call limit: %d", llm.apiCalls)
-		}
-		llm.apiCalls++
-
-		tools, err := llm.mcp.Tools(ctx)
-		if err != nil {
-			return err
-		}
-
-		messagesToSend := llm.messagesWithSystemPrompt()
-
-		var newMessages []*ModelMessage
-		for _, msg := range slices.Backward(messagesToSend) {
-			if msg.Role == "assistant" || msg.ToolCallID != "" {
-				// only display messages appended since the last response
-				break
-			}
-			newMessages = append(newMessages, msg)
-		}
-		slices.Reverse(newMessages)
-		for _, msg := range newMessages {
-			func() {
-				var emoji string
-				switch msg.Role {
-				case "user":
-					emoji = "🧑"
-				case "system":
-					emoji = "⚙️"
-				}
-				ctx, span := Tracer(ctx).Start(ctx, "LLM prompt",
-					telemetry.Reveal(),
-					trace.WithAttributes(
-						attribute.String(telemetry.UIActorEmojiAttr, emoji),
-						attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageSent),
-						attribute.String(telemetry.LLMRoleAttr, msg.Role),
-						attribute.Bool(telemetry.UIInternalAttr, msg.Role == "system"),
-					))
-				defer span.End()
-				stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-					log.String(telemetry.ContentTypeAttr, "text/markdown"))
-				defer stdio.Close()
-				fmt.Fprint(stdio.Stdout, msg.Content)
-			}()
-		}
-
-		var res *LLMResponse
-
-		// Retry operation
-		ep, err := llm.Endpoint(ctx)
-		if err != nil {
-			return err
-		}
-		client := ep.Client
-		err = backoff.Retry(func() error {
-			var sendErr error
-			ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
-				attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-				attribute.String(telemetry.UIMessageAttr, telemetry.UIMessageReceived),
-				attribute.String(telemetry.LLMRoleAttr, telemetry.LLMRoleAssistant),
-			))
-			res, sendErr = client.SendQuery(ctx, messagesToSend, tools)
-			telemetry.End(span, func() error { return sendErr })
-			if sendErr != nil {
-				var finished *ModelFinishedError
-				if errors.As(sendErr, &finished) {
-					// Don't retry if the model finished explicitly, treat as permanent.
-					return backoff.Permanent(sendErr)
-				}
-				if !client.IsRetryable(sendErr) {
-					// Maybe an invalid request - give up.
-					return backoff.Permanent(sendErr)
-				}
-				// Log retry attempts? Maybe with increasing severity?
-				// For now, just return the error to signal backoff to retry.
-				return sendErr
-			}
-			// Success, stop retrying
-			return nil
-		}, backoff.WithContext(b, ctx))
-
-		// Check the final error after retries (if any)
-		if err != nil {
-			var finished *ModelFinishedError
-			if errors.As(err, &finished) {
-				if interjected, interjectErr := llm.autoInterject(ctx); interjectErr != nil {
-					// interjecting failed or was interrupted
-					return errors.Join(err, interjectErr)
-				} else if interjected {
-					// interjected - continue
-					continue
-				} else {
-					// no interjection and none needed - we're just done
-					break
-				}
-			}
-			// Handle persistent error after all retries failed.
-			return fmt.Errorf("not retrying: %w", err)
-		}
-
-		// Add the model reply to the history
-		llm.messages = append(llm.messages, &ModelMessage{
-			Role:       "assistant",
-			Content:    res.Content,
-			ToolCalls:  res.ToolCalls,
-			TokenUsage: res.TokenUsage,
-		})
-
-		// Handle tool calls
-		if len(res.ToolCalls) == 0 {
-			if interjected, interjectErr := llm.autoInterject(ctx); interjectErr != nil {
-				// interjecting failed or was interrupted
-				return interjectErr
-			} else if interjected {
-				// interjected - continue
-				continue
-			}
-			// no interjection and none needed - we're just done
-			break
-		}
-
-		// Run tool calls in batch with efficient MCP syncing
-		llm.messages = append(llm.messages, llm.mcp.CallBatch(ctx, tools, res.ToolCalls)...)
-
-		if llm.mcp.Returned() {
-			// we returned; exit the loop, since some models just keep going
-			break
-		}
-		if llm.syncOneStep {
-			// we're configured to only do one step; return early
-			return nil
-		}
-	}
-	return nil
-}
-
 func (llm *LLM) HasPrompt() bool {
-	return len(llm.messages) > 0 && llm.messages[len(llm.messages)-1].Role == "user"
+	return len(llm.Messages) > 0 && llm.Messages[len(llm.Messages)-1].Role == LLMMessageRoleUser
 }
 
 func (llm *LLM) allowed(ctx context.Context) error {
@@ -975,12 +1158,9 @@ func squash(str string) string {
 }
 
 func (llm *LLM) History(ctx context.Context) ([]string, error) {
-	if err := llm.Sync(ctx); err != nil {
-		return nil, err
-	}
 	var history []string
-	var lastRole string
-	for _, msg := range llm.messages {
+	var lastRole LLMMessageRole
+	for _, msg := range llm.Messages {
 		if len(history) > 0 && lastRole != msg.Role {
 			// add a blank line when roles change
 			history = append(history, "")
@@ -988,7 +1168,7 @@ func (llm *LLM) History(ctx context.Context) ([]string, error) {
 		}
 		content := squash(msg.Content)
 		switch msg.Role {
-		case "user":
+		case LLMMessageRoleUser:
 			var item string
 			if msg.ToolCallID != "" {
 				item += "🛠️ 💬 "
@@ -1000,16 +1180,12 @@ func (llm *LLM) History(ctx context.Context) ([]string, error) {
 			}
 			item += content
 			history = append(history, item)
-		case "assistant":
+		case LLMMessageRoleAssistant:
 			if len(content) > 0 {
 				history = append(history, "🤖 💬 "+content)
 			}
 			for _, call := range msg.ToolCalls {
-				args, err := json.Marshal(call.Function.Arguments)
-				if err != nil {
-					return nil, err
-				}
-				item := fmt.Sprintf("🤖 🛠️ %s %s", call.Function.Name, args)
+				item := fmt.Sprintf("🤖 🛠️ %s %s", call.Name, call.Arguments)
 				history = append(history, item)
 			}
 		}
@@ -1024,10 +1200,7 @@ func (llm *LLM) History(ctx context.Context) ([]string, error) {
 }
 
 func (llm *LLM) HistoryJSON(ctx context.Context) (JSON, error) {
-	if err := llm.Sync(ctx); err != nil {
-		return nil, err
-	}
-	result, err := json.MarshalIndent(llm.messages, "", "  ")
+	result, err := json.MarshalIndent(llm.Messages, "", "  ")
 	if err != nil {
 		return nil, err
 	}
@@ -1036,7 +1209,7 @@ func (llm *LLM) HistoryJSON(ctx context.Context) (JSON, error) {
 
 func (llm *LLM) WithEnv(env dagql.ObjectResult[*Env]) *LLM {
 	llm = llm.Clone()
-	llm.mcp.env = env
+	llm.mcp.setEnv(env)
 	return llm
 }
 
@@ -1044,30 +1217,8 @@ func (llm *LLM) Env() dagql.ObjectResult[*Env] {
 	return llm.mcp.env
 }
 
-// A variable in the LLM environment
-type LLMVariable struct {
-	// The name of the variable
-	Name string `field:"true"`
-	// The type name of the variable's value
-	TypeName string `field:"true"`
-	// A hash of the variable's value, used to detect changes
-	Hash string `field:"true"`
-}
-
-var _ dagql.Typed = (*LLMVariable)(nil)
-
-func (v *LLMVariable) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: "LLMVariable",
-		NonNull:   true,
-	}
-}
-
 func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) (dagql.Nullable[*Binding], error) {
 	var res dagql.Nullable[*Binding]
-	if err := llm.Sync(ctx); err != nil {
-		return res, err
-	}
 	if llm.mcp.LastResult() == nil {
 		return res, nil
 	}
@@ -1081,11 +1232,8 @@ func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) 
 }
 
 func (llm *LLM) TokenUsage(ctx context.Context, dag *dagql.Server) (*LLMTokenUsage, error) {
-	if err := llm.Sync(ctx); err != nil {
-		return nil, err
-	}
 	var res LLMTokenUsage
-	for _, msg := range llm.messages {
+	for _, msg := range llm.Messages {
 		res.InputTokens += msg.TokenUsage.InputTokens
 		res.OutputTokens += msg.TokenUsage.OutputTokens
 		res.CachedTokenReads += msg.TokenUsage.CachedTokenReads

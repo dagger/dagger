@@ -3,13 +3,18 @@ package main
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"maps"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/alecthomas/chroma/v2/formatters"
+	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
@@ -66,8 +71,10 @@ type LLMSession struct {
 	skipEnv    map[string]bool
 	syncedVars map[string]digest.Digest
 	shell      *shellCallHandler
-	beforeFS   *dagger.Directory
-	afterFS    *dagger.Directory
+
+	beforeFS     *dagger.Directory
+	beforeFSTime time.Time
+	afterFS      *dagger.Directory
 
 	plumbingCtx  context.Context
 	plumbingSpan trace.Span
@@ -158,32 +165,6 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 
 		if err := s.updateSidebar(prompted); err != nil {
 			return s, err
-		}
-
-		s.afterFS = prompted.Env().Workspace()
-
-		dirDiff := s.afterFS.Changes(s.beforeFS)
-
-		preview, err := idtui.PreviewPatch(ctx, dirDiff)
-		if err != nil {
-			return s, err
-		}
-
-		if preview != nil {
-			Frontend.SetSidebarContent(idtui.SidebarSection{
-				Title: "Changes",
-				ContentFunc: func(width int) string {
-					var buf strings.Builder
-					out := idtui.NewOutput(&buf)
-					if err := preview.Summarize(out, width); err != nil {
-						return "ERROR: " + err.Error()
-					}
-					return buf.String()
-				},
-				KeyMap: []key.Binding{
-					key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "sync")),
-				},
-			})
 		}
 
 		hasMore, err := prompted.HasPrompt(s.plumbingCtx)
@@ -316,6 +297,37 @@ func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
 		Content: strings.Join(lines, "\n"),
 	})
 
+	if s.beforeFS == nil {
+		s.beforeFS = s.llm.Env().Workspace()
+		s.beforeFSTime = time.Now()
+	}
+
+	s.afterFS = llm.Env().Workspace()
+
+	dirDiff := s.afterFS.Changes(s.beforeFS)
+
+	preview, err := idtui.PreviewPatch(s.plumbingCtx, dirDiff)
+	if err != nil {
+		return err
+	}
+
+	if preview != nil {
+		Frontend.SetSidebarContent(idtui.SidebarSection{
+			Title: "Changes",
+			ContentFunc: func(width int) string {
+				var buf strings.Builder
+				out := idtui.NewOutput(&buf)
+				if err := preview.Summarize(out, width); err != nil {
+					return "ERROR: " + err.Error()
+				}
+				return buf.String()
+			},
+			KeyMap: []key.Binding{
+				key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "sync")),
+			},
+		})
+	}
+
 	return err
 }
 
@@ -337,10 +349,6 @@ func (s *LLMSession) syncVarsToLLM() error {
 			// from the agent var
 			s.llm = s.llm.WithGraphQLQuery(st.QueryBuilder(s.dag))
 		}
-	}
-
-	if s.beforeFS == nil {
-		s.beforeFS = s.llm.Env().Workspace()
 	}
 
 	syncedEnvQ := s.dag.QueryBuilder().
@@ -620,6 +628,147 @@ func (s *LLMSession) Model(model string) (*LLMSession, error) {
 	return s, nil
 }
 
+func (s *LLMSession) SyncFromLocal(ctx context.Context) (rerr error) {
+	if s.llm == nil {
+		return fmt.Errorf("no LLM session active")
+	}
+
+	if s.beforeFSTime.IsZero() {
+		return nil
+	}
+
+	ctx, span := Tracer().Start(ctx, "syncing local changes",
+		telemetry.Reveal())
+	defer telemetry.End(span, func() error { return rerr })
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+
+	var pathsToUpload []string
+
+	// Look for paths modified since the last sync, and only upload those.
+	if err := filepath.WalkDir(".", func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			// ignore errors
+			return err
+		}
+		if d.IsDir() {
+			// nothing to do for directories
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if info.ModTime().After(s.beforeFSTime) {
+			slog.Info(
+				"file changed since last sync",
+				"path", path,
+				"syncTime", s.beforeFSTime,
+				"mtime", info.ModTime(),
+			)
+			pathsToUpload = append(pathsToUpload, path)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("walk looking for modifications: %w", err)
+	}
+
+	// The model's workspace has its own changes since last sync, so if we're
+	// syncing from local, we need to revert them
+	if s.afterFS != nil && s.beforeFS != nil {
+		changes := s.afterFS.Changes(s.beforeFS)
+		modified, err := changes.ModifiedPaths(ctx)
+		if err != nil {
+			return err
+		}
+		removed, err := changes.RemovedPaths(ctx)
+		if err != nil {
+			return err
+		}
+		if len(modified) > 0 {
+			slog.Info("reverting LLM-modified files", "modified", modified)
+			pathsToUpload = append(pathsToUpload, modified...)
+		}
+		if len(removed) > 0 {
+			slog.Info("restoring LLM-removed files", "removed", removed)
+			pathsToUpload = append(pathsToUpload, removed...)
+		}
+	}
+
+	if len(pathsToUpload) == 0 {
+		slog.Warn("no changes detected")
+		return nil
+	}
+
+	slog.Info("syncing changed files", "paths", pathsToUpload)
+
+	localChanges, err := s.dag.Host().Directory(".", dagger.HostDirectoryOpts{
+		Include:   pathsToUpload,
+		NoCache:   true,
+		Gitignore: true,
+	}).Sync(ctx)
+	if err != nil {
+		return nil
+	}
+
+	currentFS := s.afterFS
+	if currentFS == nil {
+		currentFS = s.beforeFS
+	}
+
+	withChanges := currentFS.WithDirectory(".", localChanges)
+
+	newLLM := s.llm.WithEnv(
+		s.llm.Env().WithWorkspace(withChanges),
+	)
+
+	dirDiff := withChanges.Changes(currentFS)
+
+	// Add an LLM prompt as a cue to the model so it knows what files changed.
+	preview, err := idtui.PreviewPatch(s.plumbingCtx, dirDiff)
+	if err != nil {
+		return err
+	}
+
+	var buf strings.Builder
+	out := termenv.NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+	if err := preview.Summarize(out, 80); err != nil {
+		slog.Warn("failed to summarize uploaded changes", "error", err)
+	} else {
+		newLLM = newLLM.WithPrompt(
+			fmt.Sprintf("I have made the following changes:\n\n```\n%s\n```", buf.String()),
+		)
+	}
+
+	// Display a patch so the user can verify what changes got uploaded.
+	patch, err := dirDiff.AsPatch().Contents(ctx)
+	if err != nil {
+		return fmt.Errorf("get patch: %w", err)
+	}
+	tokens, err := lexers.Get("diff").Tokenise(nil, patch)
+	if err != nil {
+		return err
+	}
+	if err := formatters.TTY16.Format(stdio.Stdout, idtui.TTYStyle(), tokens); err != nil {
+		return err
+	}
+
+	s.updateLLMAndAgentVar(newLLM)
+
+	// reset before/after state
+	s.beforeFS = withChanges
+	s.beforeFSTime = time.Now()
+	s.afterFS = nil
+
+	// Update sidebar to show sync success
+	Frontend.SetSidebarContent(idtui.SidebarSection{
+		Title:   "Changes",
+		Content: "", // empty content will hide it
+	})
+
+	return nil
+}
+
 func (s *LLMSession) SyncToLocal(ctx context.Context) error {
 	if s.llm == nil {
 		return fmt.Errorf("no LLM session active")
@@ -634,6 +783,7 @@ func (s *LLMSession) SyncToLocal(ctx context.Context) error {
 	}
 
 	s.beforeFS = s.afterFS
+	s.beforeFSTime = time.Now()
 
 	// Update sidebar to show sync success
 	Frontend.SetSidebarContent(idtui.SidebarSection{
@@ -642,4 +792,268 @@ func (s *LLMSession) SyncToLocal(ctx context.Context) error {
 	})
 
 	return nil
+}
+
+// sessionMetadata stores metadata about a saved LLM session
+type sessionMetadata struct {
+	Name      string `json:"name"`
+	Model     string `json:"model"`
+	Timestamp string `json:"timestamp"`
+}
+
+// getSessionDir returns the directory where LLM sessions are stored, creating it if necessary
+func getSessionDir() (string, error) {
+	// Use XDG_STATE_HOME if set, otherwise fall back to ~/.local/state
+	stateHome := os.Getenv("XDG_STATE_HOME")
+	if stateHome == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get home directory: %w", err)
+		}
+		stateHome = filepath.Join(homeDir, ".local", "state")
+	}
+
+	sessionDir := filepath.Join(stateHome, "dagger", "llm-sessions")
+	if err := os.MkdirAll(sessionDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create session directory: %w", err)
+	}
+
+	return sessionDir, nil
+}
+
+// SaveSession saves the current LLM session to disk
+func (s *LLMSession) SaveSession(ctx context.Context, name string) error {
+	if s.llm == nil {
+		return fmt.Errorf("no LLM session to save")
+	}
+
+	sessionDir, err := getSessionDir()
+	if err != nil {
+		return err
+	}
+
+	// Get the LLM ID
+	llmID, err := s.llm.ID(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get LLM ID: %w", err)
+	}
+
+	// Create session metadata
+	metadata := sessionMetadata{
+		Name:      name,
+		Model:     s.model,
+		Timestamp: fmt.Sprintf("%d", time.Now().Unix()),
+	}
+
+	// Save the session ID
+	sessionFile := filepath.Join(sessionDir, name+".json")
+	data := map[string]interface{}{
+		"id":       string(llmID),
+		"metadata": metadata,
+	}
+
+	jsonData, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal session data: %w", err)
+	}
+
+	if err := os.WriteFile(sessionFile, jsonData, 0644); err != nil {
+		return fmt.Errorf("failed to write session file: %w", err)
+	}
+
+	slog.Debug("saved LLM session", "name", name, "file", sessionFile)
+	return nil
+}
+
+// AutoSaveSession automatically saves the session with an LLM-generated name
+func (s *LLMSession) AutoSaveSession(ctx context.Context) error {
+	if s.llm == nil {
+		return fmt.Errorf("no LLM session to save")
+	}
+
+	// Generate a session name using a lightweight LLM
+	name, err := s.generateSessionName(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to generate session name: %w", err)
+	}
+
+	return s.SaveSession(ctx, name)
+}
+
+// generateSessionName uses a lightweight LLM to generate a session name based on conversation history
+func (s *LLMSession) generateSessionName(ctx context.Context) (string, error) {
+	// Get conversation history
+	history, err := s.llm.History(s.plumbingCtx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get conversation history: %w", err)
+	}
+
+	if len(history) == 0 {
+		return "empty-session", nil
+	}
+
+	// Get the current provider to select an appropriate lightweight model
+	provider, err := s.llm.Provider(s.plumbingCtx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get LLM provider: %w", err)
+	}
+
+	// Select a lightweight model based on the provider
+	var lightweightModel string
+	switch provider {
+	case "anthropic":
+		lightweightModel = "claude-3-5-haiku-20241022"
+	case "openai":
+		lightweightModel = "gpt-4o-mini"
+	case "google":
+		lightweightModel = "gemini-2.0-flash-thinking-exp-1219"
+	case "meta":
+		lightweightModel = "llama-3.2-3b-instruct"
+	case "mistral":
+		lightweightModel = "mistral-small-latest"
+	case "deepseek":
+		lightweightModel = "deepseek-chat"
+	default:
+		return "", fmt.Errorf("unsupported provider: %s", provider)
+	}
+
+	slog.Debug("using lightweight model for session naming", "provider", provider, "model", lightweightModel)
+
+	// Use a small, fast model for name generation
+	namingLLM := s.dag.LLM(dagger.LLMOpts{
+		Model: lightweightModel,
+	})
+
+	// Build a compact summary of the conversation for the naming prompt
+	// Take the first few and last few messages to keep context small
+	var historySnippet strings.Builder
+	maxMessages := 6 // First 3 and last 3 messages
+	if len(history) <= maxMessages {
+		for _, msg := range history {
+			historySnippet.WriteString(msg)
+			historySnippet.WriteString("\n\n")
+		}
+	} else {
+		// First 3 messages
+		for i := 0; i < 3; i++ {
+			historySnippet.WriteString(history[i])
+			historySnippet.WriteString("\n\n")
+		}
+		historySnippet.WriteString("...\n\n")
+		// Last 3 messages
+		for i := len(history) - 3; i < len(history); i++ {
+			historySnippet.WriteString(history[i])
+			historySnippet.WriteString("\n\n")
+		}
+	}
+
+	prompt := fmt.Sprintf(`Based on this conversation history, generate a short, descriptive session name (2-5 words, lowercase with hyphens, no special characters except hyphens).
+The name should capture the main topic or task being discussed.
+
+Example good names:
+- "fix-docker-build-error"
+- "add-user-authentication"
+- "debug-memory-leak"
+- "implement-caching-layer"
+
+Conversation history:
+%s
+
+Respond with ONLY the session name, nothing else.`, historySnippet.String())
+
+	// Generate the name
+	nameReply, err := namingLLM.WithPrompt(prompt).LastReply(s.plumbingCtx)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate name: %w", err)
+	}
+
+	// Clean up the name
+	name := strings.TrimSpace(nameReply)
+	name = strings.ToLower(name)
+	// Remove any quotes or extra characters
+	name = strings.Trim(name, "\"'`\n\r ")
+	// Replace spaces with hyphens
+	name = strings.ReplaceAll(name, " ", "-")
+	// Remove any non-alphanumeric characters except hyphens
+	var cleaned strings.Builder
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			cleaned.WriteRune(r)
+		}
+	}
+	name = cleaned.String()
+
+	// Ensure the name isn't too long
+	if len(name) > 50 {
+		name = name[:50]
+	}
+
+	// Ensure the name isn't empty
+	if name == "" {
+		name = fmt.Sprintf("session-%d", time.Now().Unix())
+	}
+
+	slog.Debug("generated session name", "name", name)
+	return name, nil
+}
+
+// LoadSession loads an LLM session from disk
+func (s *LLMSession) LoadSession(ctx context.Context, name string) error {
+	sessionDir, err := getSessionDir()
+	if err != nil {
+		return err
+	}
+
+	sessionFile := filepath.Join(sessionDir, name+".json")
+	data, err := os.ReadFile(sessionFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("session %q not found", name)
+		}
+		return fmt.Errorf("failed to read session file: %w", err)
+	}
+
+	var sessionData map[string]any
+	if err := json.Unmarshal(data, &sessionData); err != nil {
+		return fmt.Errorf("failed to unmarshal session data: %w", err)
+	}
+
+	llmID, ok := sessionData["id"].(string)
+	if !ok || llmID == "" {
+		return fmt.Errorf("invalid session data: missing or invalid id")
+	}
+
+	// Load the LLM from its ID
+	loadedLLM := s.dag.LoadLLMFromID(dagger.LLMID(llmID))
+	s.updateLLMAndAgentVar(loadedLLM)
+	s.updateSidebar(loadedLLM)
+
+	slog.Debug("loaded LLM session", "name", name, "file", sessionFile)
+	return nil
+}
+
+// ListSessions returns a list of saved session names
+func ListSessions() ([]string, error) {
+	sessionDir, err := getSessionDir()
+	if err != nil {
+		return nil, err
+	}
+
+	entries, err := os.ReadDir(sessionDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []string{}, nil
+		}
+		return nil, fmt.Errorf("failed to read session directory: %w", err)
+	}
+
+	var sessions []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".json") {
+			name := strings.TrimSuffix(entry.Name(), ".json")
+			sessions = append(sessions, name)
+		}
+	}
+
+	return sessions, nil
 }

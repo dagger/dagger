@@ -77,6 +77,13 @@ func (id *ID) Receiver() *ID {
 	return id.receiver
 }
 
+func (id *ID) String() string {
+	if id == nil {
+		return "<nil>"
+	}
+	return id.Call().String()
+}
+
 // The root Call of the ID, with its Digest set. Exposed so that Calls can be
 // streamed over the wire one-by-one, rather than emitting full DAGs, which
 // would involve a ton of duplication.
@@ -188,6 +195,15 @@ func (id *ID) Path() string {
 		fmt.Fprintf(buf, "%s.", id.receiver.Path())
 	}
 	fmt.Fprint(buf, id.DisplaySelf())
+	return buf.String()
+}
+
+func (id *ID) DisplayShort() string {
+	buf := new(strings.Builder)
+	if id.Receiver() != nil {
+		fmt.Fprintf(buf, "%s@%s.", id.Receiver().Type().NamedType(), id.Receiver().Digest())
+	}
+	buf.WriteString(id.DisplaySelf())
 	return buf.String()
 }
 
@@ -314,6 +330,12 @@ func WithReceiver(recv *ID) IDOpt {
 	}
 }
 
+func WithReload(reload bool) IDOpt {
+	return func(id *ID) {
+		id.pb.Reload = reload
+	}
+}
+
 func (id *ID) With(opts ...IDOpt) *ID {
 	return id.shallowClone().apply(opts...)
 }
@@ -344,6 +366,13 @@ func (id *ID) HasCustomDigest() bool {
 		return false
 	}
 	return id.pb.IsCustomDigest
+}
+
+func (id *ID) WantsReload() bool {
+	if id == nil {
+		return false
+	}
+	return id.pb.Reload
 }
 
 // WithArgument returns a new ID that's the same as before except with the
