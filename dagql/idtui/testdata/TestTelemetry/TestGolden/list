@@ -6,6 +6,7 @@ debug.go
 demos/
 frontend.go
 frontend_dots.go
+frontend_mock.go
 frontend_plain.go
 frontend_pretty.go
 golden_test.go
@@ -48,6 +49,7 @@ Expected stderr:
 ┃ demos/
 ┃ frontend.go
 ┃ frontend_dots.go
+┃ frontend_mock.go
 ┃ frontend_plain.go
 ┃ frontend_pretty.go
 ┃ golden_test.go

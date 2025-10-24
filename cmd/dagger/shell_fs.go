@@ -433,7 +433,7 @@ func (h *shellCallHandler) newWorkdir(ctx context.Context, def *moduleDef, subpa
 			return nil, fmt.Errorf("%q is not a directory", root)
 		}
 
-		if !moduleNoURL {
+		if !h.noModule {
 			// ask API where the context dir is (.git)
 			ctx, span := Tracer().Start(ctx, "looking for context directory", telemetry.Internal())
 			defer telemetry.End(span, func() error { return rerr })
