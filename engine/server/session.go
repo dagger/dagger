@@ -837,6 +837,13 @@ func (srv *Server) getOrInitClient(
 		if token != client.secretToken {
 			return nil, nil, fmt.Errorf("client %q already exists with different secret token", clientID)
 		}
+
+		// for nested clients running the dagger cli, the session attachable
+		// connection may not have all of the client metadata yet, so we
+		// fill in some missing fields here that may be set later by the cli
+		if client.clientMetadata.AllowedLLMModules == nil {
+			client.clientMetadata.AllowedLLMModules = opts.AllowedLLMModules
+		}
 	}
 
 	// increment the number of active connections from this client
@@ -899,6 +906,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 	if clientVersion == "" {
 		clientVersion = engine.Version
 	}
+
 	allowedLLMModules := execMD.AllowedLLMModules
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
 		clientVersion = md.ClientVersion
