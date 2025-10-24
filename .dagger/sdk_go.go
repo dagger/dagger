@@ -103,7 +103,7 @@ func (t GoSDK) Publish(
 		sdk:          "go",
 		sourceTag:    tag,
 		sourcePath:   "sdk/go/",
-		sourceFilter: "if [ -f go.mod ]; then go mod edit -dropreplace github.com/dagger/dagger; fi",
+		sourceFilter: "if [ -d sdk/go ]; then rm -rf .changes; fi; if [ -f go.mod ]; then go mod edit -dropreplace github.com/dagger/dagger; fi",
 		sourceEnv:    t.BaseContainer(), // Just need git and go installed
 		dest:         gitRepo,
 		destTag:      version,
