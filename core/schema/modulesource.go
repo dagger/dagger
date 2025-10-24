@@ -1721,7 +1721,7 @@ func (s *moduleSourceSchema) moduleSourceRemoveItems(
 
 			if existingVersion == "" {
 				return nil, fmt.Errorf(
-					"version %q was requested to be removed but the %s %q was installed without a specific version. Try re-running without specifying the version number",
+					"version %q was requested to be uninstalled but the %s %q was installed without a specific version. Try re-running without specifying the version number",
 					argVersion,
 					accessor.typ,
 					existingSymbolic,
@@ -1741,7 +1741,7 @@ func (s *moduleSourceSchema) moduleSourceRemoveItems(
 					existingVersion, _ = strings.CutPrefix(existingVersion, existingItem.Self().SourceRootSubpath+"/")
 				}
 				return nil, fmt.Errorf(
-					"version %q was requested to be removed but the %s %q was installed with %q. Try re-running without specifying the version number",
+					"version %q was requested to be uninstalled but the %s %q was installed with %q. Try re-running without specifying the version number",
 					reqModVersion,
 					accessor.typ,
 					existingSymbolic,
