@@ -1,0 +1,29 @@
+import jetbrains.buildServer.configs.kotlin.*
+
+version = "2025.07"
+
+project {
+    buildType(Greeter)
+}
+
+object Greeter : BuildType({
+    name = "say hi!"
+
+    // to select agents with Docker
+    requirements {
+        exists("docker.server.version")
+    }
+
+    steps {
+        step {
+            id = "hello from dagger"
+
+            // type consists of the "tc:recipe:" prefix followed by the recipe id
+            type = "tc:recipe:jetbrains/dagger@1.0.0"
+
+            // recipe inputs
+            param("env.input_version", "0.19.2")
+            param("env.input_command", """dagger call -m github.com/shykes/hello hello --greeting "bonjour"""")
+        }
+    }
+})
