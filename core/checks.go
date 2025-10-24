@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
-	"slices"
 	"strings"
 
 	doublestar "github.com/bmatcuk/doublestar/v4"
@@ -149,8 +148,8 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 	}
 	// FIXNE: use parallel
 	eg := errgroup.Group{}
-	for i, check := range r.Checks {
-		i := i
+	for _, check := range r.Checks {
+		check := check
 		eg.Go(func() (rerr error) {
 			// FIXME: use parallel
 			ctx, span := Tracer(ctx).Start(ctx, check.Name(), trace.WithAttributes(attr...))
@@ -160,9 +159,25 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 				}
 				span.End()
 			}()
-			var err error
-			r.Checks[i], err = check.Run(ctx, dag)
-			return err
+			// Reset output fields, in case we're re-running
+			check.Completed = false
+			check.Passed = false
+			check.Message = ""
+			var status CheckStatus
+			selectPath := []dagql.Selector{dagql.Selector{Field: gqlFieldName(r.Module.Name())}}
+			for _, field := range check.Path {
+				selectPath = append(selectPath, dagql.Selector{Field: field})
+			}
+			checkErr := dag.Select(ctx, dag.Root(), &status, selectPath...)
+			if checkErr != nil {
+				// Can't differentiate real errors from failed checks
+				check.Passed = false // redundant but let's be explicit
+				check.Message = checkErr.Error()
+			}
+			if status == CheckCompleted {
+				check.Completed = true
+			}
+			return nil
 		})
 	}
 	err = eg.Wait()
@@ -247,7 +262,9 @@ func functionIsCheck(ctx context.Context, fn *Function) (string, bool, string) {
 
 func (r *CheckGroup) Clone() *CheckGroup {
 	cp := *r
-	cp.Checks = slices.Clone(cp.Checks)
+	for i := range cp.Checks {
+		cp.Checks[i] = cp.Checks[i].Clone()
+	}
 	return &cp
 }
 
@@ -266,24 +283,4 @@ func (c *Check) Query() []dagql.Selector {
 		q = append(q, dagql.Selector{Field: gqlFieldName(field)})
 	}
 	return q
-}
-
-// Run executes the check and returns the result
-func (c *Check) Run(ctx context.Context, dag *dagql.Server) (*Check, error) {
-	c = c.Clone()
-	// Reset output fields, in case we're re-running
-	c.Completed = false
-	c.Passed = false
-	c.Message = ""
-	var status CheckStatus
-	checkErr := dag.Select(ctx, dag.Root(), &status, c.Query()...)
-	if checkErr != nil {
-		// FIXME: can't differentiate real errors from failed checks
-		c.Passed = false // redundant but let's be explicit
-		c.Message = checkErr.Error()
-	}
-	if status == CheckCompleted {
-		c.Completed = true
-	}
-	return c, nil //nolint:nilerr
 }

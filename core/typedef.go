@@ -12,6 +12,7 @@ import (
 
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/codes"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -846,7 +847,9 @@ func (obj *ObjectTypeDef) IsSubtypeOf(iface *InterfaceTypeDef) bool {
 	return true
 }
 
-func (obj *ObjectTypeDef) Checks(ctx context.Context) []*Check {
+func (obj *ObjectTypeDef) Checks(ctx context.Context, getObj func(string) *ObjectTypeDef) []*Check {
+	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("Checking %d functions in object %q for checks", len(obj.Functions), obj.Name))
+	defer span.End()
 	var checks []*Check
 	// Search for functions that qualify as checks
 	for _, fn := range obj.Functions {
@@ -860,8 +863,13 @@ func (obj *ObjectTypeDef) Checks(ctx context.Context) []*Check {
 			continue
 		}
 		if subObj := fn.ReturnType.AsObject.Value; subObj != nil {
-			ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("Check scan: function %q returns object %q. Recursively scanning that for checks", fn.Name, subObj.Name))
-			subChecks := subObj.Checks(ctx)
+			subCtx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("Check scan: function %q returns object %q. Recursively scanning that for checks", fn.Name, subObj.Name))
+			subObj = getObj(subObj.Name) // FIXME, workaround
+			if subObj == nil {
+				span.SetStatus(codes.Error, "failed to getobj")
+				continue
+			}
+			subChecks := subObj.Checks(subCtx, getObj)
 			span.End()
 			for i := range subChecks {
 				subChecks[i].Path = append(checkPath, subChecks[i].Path...)
