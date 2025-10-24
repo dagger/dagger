@@ -1413,31 +1413,14 @@ func (a itemAccessor) setItems(src *core.ModuleSource, items []dagql.ObjectResul
 	}
 }
 
-func (a itemAccessor) getConfigItems(src *core.ModuleSource) []*modules.ModuleConfigDependency {
-	if a.typ == itemTypeDependency {
-		// Dependencies don't have a separate ConfigDependencies field; they're stored in the config
-		return nil
-	}
-	return src.ConfigToolchains
-}
-
-func (a itemAccessor) setConfigItems(src *core.ModuleSource, items []*modules.ModuleConfigDependency) {
-	if a.typ == itemTypeDependency {
-		// Dependencies don't have a separate ConfigDependencies field
-	} else {
-		src.ConfigToolchains = items
-	}
-}
-
 // validateAndCollectItems validates new items and returns all items (new + existing)
 func (s *moduleSourceSchema) validateAndCollectItems(
-	ctx context.Context,
 	parentSrc *core.ModuleSource,
 	newItems []dagql.ObjectResult[*core.ModuleSource],
 	accessor itemAccessor,
 ) ([]dagql.ObjectResult[*core.ModuleSource], error) {
 	var allItems []dagql.ObjectResult[*core.ModuleSource]
-	
+
 	// Validate and collect new items
 	for _, newItem := range newItems {
 		switch parentSrc.Kind {
@@ -1489,7 +1472,7 @@ func (s *moduleSourceSchema) validateAndCollectItems(
 
 	// Append pre-existing items; they need to come later so we prefer new ones over existing ones
 	allItems = append(allItems, accessor.getItems(parentSrc)...)
-	
+
 	return allItems, nil
 }
 
@@ -1501,7 +1484,7 @@ func (s *moduleSourceSchema) deduplicateAndSortItems(
 	// Deduplicate equivalent items at differing versions, preferring the new item over the existing one
 	symbolicItems := make(map[string]dagql.ObjectResult[*core.ModuleSource], len(items))
 	itemNames := make(map[string]dagql.ObjectResult[*core.ModuleSource], len(items))
-	
+
 	for _, item := range items {
 		var symbolicItemStr string
 		switch item.Self().Kind {
@@ -1538,41 +1521,8 @@ func (s *moduleSourceSchema) deduplicateAndSortItems(
 	sort.Slice(finalItems, func(i, j int) bool {
 		return finalItems[i].Self().ModuleName < finalItems[j].Self().ModuleName
 	})
-	
-	return finalItems, nil
-}
 
-// getSymbolicName extracts the symbolic name for an item based on its type and parent context
-func (s *moduleSourceSchema) getSymbolicName(
-	ctx context.Context,
-	item dagql.ObjectResult[*core.ModuleSource],
-	parentSrc *core.ModuleSource,
-) (symbolic, version string, err error) {
-	switch item.Self().Kind {
-	case core.ModuleSourceKindLocal:
-		if parentSrc.Kind != core.ModuleSourceKindLocal {
-			return "", "", fmt.Errorf("cannot get symbolic name for local item from non-local parent")
-		}
-		parentSrcRoot := filepath.Join(parentSrc.Local.ContextDirectoryPath, parentSrc.SourceRootSubpath)
-		itemSrcRoot := filepath.Join(parentSrc.Local.ContextDirectoryPath, item.Self().SourceRootSubpath)
-		symbolic, err = pathutil.LexicalRelativePath(parentSrcRoot, itemSrcRoot)
-		if err != nil {
-			return "", "", fmt.Errorf("failed to get relative path: %w", err)
-		}
-		version = ""
-		
-	case core.ModuleSourceKindGit:
-		symbolic = item.Self().Git.CloneRef
-		if item.Self().SourceRootSubpath != "" {
-			symbolic += "/" + strings.TrimPrefix(item.Self().SourceRootSubpath, "/")
-		}
-		version = item.Self().Git.Version
-		
-	default:
-		return "", "", fmt.Errorf("unhandled module source kind: %s", item.Self().Kind)
-	}
-	
-	return symbolic, version, nil
+	return finalItems, nil
 }
 
 // moduleSourceUpdateItems processes update requests for items (dependencies or toolchains)
@@ -1712,10 +1662,10 @@ func (s *moduleSourceSchema) moduleSourceRemoveItems(
 	accessor itemAccessor,
 ) (*core.ModuleSource, error) {
 	parentSrc = parentSrc.Clone()
-	
+
 	var filteredItems []dagql.ObjectResult[*core.ModuleSource]
 	var filteredConfigItems []*modules.ModuleConfigDependency
-	
+
 	for i, existingItem := range accessor.getItems(parentSrc) {
 		existingName := existingItem.Self().ModuleName
 		var existingSymbolic, existingVersion string
@@ -1790,7 +1740,7 @@ func (s *moduleSourceSchema) moduleSourceRemoveItems(
 
 			break
 		}
-		
+
 		if keep {
 			filteredItems = append(filteredItems, existingItem)
 			// Keep config items for toolchains
@@ -1828,9 +1778,9 @@ func (s *moduleSourceSchema) moduleSourceWithDependencies(
 	}
 
 	accessor := itemAccessor{typ: itemTypeDependency}
-	
+
 	// Validate and collect all items (new + existing)
-	allDeps, err := s.validateAndCollectItems(ctx, parentSrc, newDeps, accessor)
+	allDeps, err := s.validateAndCollectItems(parentSrc, newDeps, accessor)
 	if err != nil {
 		return nil, err
 	}
@@ -1840,7 +1790,7 @@ func (s *moduleSourceSchema) moduleSourceWithDependencies(
 	if err != nil {
 		return nil, err
 	}
-	
+
 	accessor.setItems(parentSrc, finalDeps)
 	parentSrc.Digest = parentSrc.CalcDigest(ctx).String()
 	return parentSrc, nil
@@ -1904,9 +1854,9 @@ func (s *moduleSourceSchema) moduleSourceWithToolchains(
 	}
 
 	accessor := itemAccessor{typ: itemTypeToolchain}
-	
+
 	// Validate and collect all items (new + existing)
-	allToolchains, err := s.validateAndCollectItems(ctx, parentSrc, newToolchains, accessor)
+	allToolchains, err := s.validateAndCollectItems(parentSrc, newToolchains, accessor)
 	if err != nil {
 		return nil, err
 	}
@@ -1916,7 +1866,7 @@ func (s *moduleSourceSchema) moduleSourceWithToolchains(
 	if err != nil {
 		return nil, err
 	}
-	
+
 	accessor.setItems(parentSrc, finalToolchains)
 
 	// Load the config for all toolchains to populate ConfigToolchains
