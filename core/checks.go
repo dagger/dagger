@@ -47,14 +47,11 @@ func (r CheckStatus) ToLiteral() call.Literal {
 
 // Check represents a validation check with its result
 type Check struct {
-	Name         string `field:"true" doc:"The name of the check"`
-	Context      string `field:"true" doc:"The context of the check. Can be a remote git address, or a local path"`
-	Description  string `field:"true" doc:"The description of the check"`
-	Completed    bool   `field:"true" doc:"Whether the check completed"`
-	Passed       bool   `field:"true" doc:"Whether the check passed"`
-	Message      string `field:"true" doc:"A message emitted when running the check"`
-	ModuleName   string `field:"true"`
-	FunctionName string `field:"true"`
+	Path        []string `field:"true" doc:"The path of the check within its module"`
+	Description string   `field:"true" doc:"The description of the check"`
+	Completed   bool     `field:"true" doc:"Whether the check completed"`
+	Passed      bool     `field:"true" doc:"Whether the check passed"`
+	Message     string   `field:"true" doc:"A message emitted when running the check"`
 }
 
 func (*Check) Type() *ast.Type {
@@ -86,9 +83,6 @@ func CurrentChecks(ctx context.Context, include []string) (*CheckGroup, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get served dependencies: %w", err)
 	}
-	// Collect all check functions from all modules
-	var report CheckGroup
-
 	if len(deps.Mods) == 0 {
 		return nil, fmt.Errorf("failed to load checks: no module loaded")
 	}
@@ -112,64 +106,14 @@ func findMainModule(ctx context.Context, deps *ModDeps) (*Module, error) {
 	return nil, fmt.Errorf("failed to find main module: no user-defined module is loaded")
 }
 
-func moduleChecks(ctx context.Context, module *Module) ([]*Check, error) {
-	_, modSpan := Tracer(ctx).Start(ctx, fmt.Sprintf("[load checks] mod=%q", module.OriginalName))
-	defer modSpan.End()
-	// Find the main object for this module
-	var mainObject *ObjectTypeDef
-	for _, objDef := range module.ObjectDefs {
-		if objDef.AsObject.Valid {
-			obj := objDef.AsObject.Value
-
-			// Check if this is the main object by comparing normalized names
-			if gqlFieldName(obj.Name) == gqlFieldName(module.Name()) {
-				mainObject = obj
-				break
-			}
-		}
-	}
-	// If no main object found, skip this module
-	if mainObject == nil {
-		// FIXME: also support checks on non-main objects
-		// (if they are reachable)
-		// This is required to reach all checks in our CI monolith;
-		// and will be required for toolchains support
-		return nil, nil
-	}
-	var checks []*Check
-	// Search for functions that qualify as checks
-	for _, fn := range mainObject.Functions {
-		checkName, isCheck, _ := functionIsCheck(ctx, fn)
-		if !isCheck {
-			continue
-		}
-		check := &Check{
-			Name:         checkName,
-			Description:  fn.Description,
-			ModuleName:   module.Name(),
-			FunctionName: fn.Name,
-		}
-		if module.Source.Valid {
-			src := module.Source.Value.Self()
-			switch src.Kind {
-			case ModuleSourceKindLocal:
-				check.Context = src.SourceRootSubpath
-			case ModuleSourceKindGit:
-				check.Context = src.SourceRootSubpath
-			}
-		}
-		checks = append(checks, check)
-	}
-	return checks, nil
-}
-
 func (c *Check) Match(include []string) (bool, error) {
 	if len(include) == 0 {
 		return true, nil
 	}
-	fullName := c.FullName()
+	name := c.Name()
 	for _, pattern := range include {
-		matched, err := doublestar.PathMatch(pattern, fullName)
+		// FIXME: match against both gqlFieldCase and cliCase
+		matched, err := doublestar.PathMatch(pattern, name)
 		if err != nil {
 			return false, err
 		}
@@ -190,12 +134,26 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 		attribute.Bool("dagger.io/ui.reveal", true),
 	}
 	r = r.Clone()
+	q, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dagqlCache, err := q.Cache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("run checks for module %q: get dagql cache: %w", r.Module.Name(), err)
+	}
+	dag := dagql.NewServer(q, dagqlCache)
+	dag.Around(AroundFunc)
+	if err := r.Module.Install(ctx, dag); err != nil {
+		return nil, fmt.Errorf("run checks for module %q: serve module: %w", r.Module.Name(), err)
+	}
+	// FIXNE: use parallel
 	eg := errgroup.Group{}
 	for i, check := range r.Checks {
 		i := i
 		eg.Go(func() (rerr error) {
 			// FIXME: use parallel
-			ctx, span := Tracer(ctx).Start(ctx, check.FullName(), trace.WithAttributes(attr...))
+			ctx, span := Tracer(ctx).Start(ctx, check.Name(), trace.WithAttributes(attr...))
 			defer func() {
 				if rerr != nil {
 					span.SetStatus(codes.Error, rerr.Error())
@@ -203,11 +161,11 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 				span.End()
 			}()
 			var err error
-			r.Checks[i], err = check.Run(ctx)
+			r.Checks[i], err = check.Run(ctx, dag)
 			return err
 		})
 	}
-	err := eg.Wait()
+	err = eg.Wait()
 	return r, err
 }
 
@@ -218,6 +176,7 @@ func (c *Check) ResultEmoji() string {
 		}
 		return "🔴"
 	}
+	// FIXME: allow state "pending", "started"...
 	return ""
 }
 
@@ -226,7 +185,7 @@ func (r *CheckGroup) Report(ctx context.Context) (*File, error) {
 	rows := [][]string{}
 	for _, check := range r.Checks {
 		rows = append(rows, []string{
-			check.FullName(),
+			check.Name(),
 			check.Description,
 			check.ResultEmoji(),
 			check.Message,
@@ -292,14 +251,8 @@ func (r *CheckGroup) Clone() *CheckGroup {
 	return &cp
 }
 
-func (c *Check) FullName() string {
-	if c.Name == "" {
-		return c.Context
-	}
-	if slices.Contains([]string{"", ".", "/"}, c.Context) {
-		return c.Name
-	}
-	return c.Context + "/" + c.Name
+func (c *Check) Name() string {
+	return strings.Join(c.Path, "/")
 }
 
 func (c *Check) Clone() *Check {
@@ -307,30 +260,23 @@ func (c *Check) Clone() *Check {
 	return &cp
 }
 
+func (c *Check) Query() []dagql.Selector {
+	var q []dagql.Selector
+	for _, field := range c.Path {
+		q = append(q, dagql.Selector{Field: gqlFieldName(field)})
+	}
+	return q
+}
+
 // Run executes the check and returns the result
-func (c *Check) Run(ctx context.Context) (*Check, error) {
+func (c *Check) Run(ctx context.Context, dag *dagql.Server) (*Check, error) {
 	c = c.Clone()
 	// Reset output fields, in case we're re-running
 	c.Completed = false
 	c.Passed = false
 	c.Message = ""
-	q, err := CurrentQuery(ctx)
-	if err != nil {
-		return c, err
-	}
-	deps, err := q.CurrentServedDeps(ctx)
-	if err != nil {
-		return c, err
-	}
-	srv, err := deps.Schema(ctx)
-	if err != nil {
-		return c, err
-	}
 	var status CheckStatus
-	checkErr := srv.Select(ctx, srv.Root(), &status,
-		dagql.Selector{Field: gqlFieldName(c.ModuleName)},
-		dagql.Selector{Field: gqlFieldName(c.FunctionName)},
-	)
+	checkErr := dag.Select(ctx, dag.Root(), &status, c.Query()...)
 	if checkErr != nil {
 		// FIXME: can't differentiate real errors from failed checks
 		c.Passed = false // redundant but let's be explicit

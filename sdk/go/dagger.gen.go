@@ -1053,17 +1053,13 @@ func (r *Changeset) Sync(ctx context.Context) (*Changeset, error) {
 type Check struct {
 	query *querybuilder.Selection
 
-	completed    *bool
-	context      *string
-	description  *string
-	fullName     *string
-	functionName *string
-	id           *CheckID
-	message      *string
-	moduleName   *string
-	name         *string
-	passed       *bool
-	resultEmoji  *string
+	completed   *bool
+	description *string
+	id          *CheckID
+	message     *string
+	name        *string
+	passed      *bool
+	resultEmoji *string
 }
 
 func (r *Check) WithGraphQLQuery(q *querybuilder.Selection) *Check {
@@ -1085,50 +1081,12 @@ func (r *Check) Completed(ctx context.Context) (bool, error) {
 	return response, q.Execute(ctx)
 }
 
-// The context of the check. Can be a remote git address, or a local path
-func (r *Check) Context(ctx context.Context) (string, error) {
-	if r.context != nil {
-		return *r.context, nil
-	}
-	q := r.query.Select("context")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
 // The description of the check
 func (r *Check) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
 	}
 	q := r.query.Select("description")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Return the fully qualified name of the check
-func (r *Check) FullName(ctx context.Context) (string, error) {
-	if r.fullName != nil {
-		return *r.fullName, nil
-	}
-	q := r.query.Select("fullName")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-func (r *Check) FunctionName(ctx context.Context) (string, error) {
-	if r.functionName != nil {
-		return *r.functionName, nil
-	}
-	q := r.query.Select("functionName")
 
 	var response string
 
@@ -1189,19 +1147,7 @@ func (r *Check) Message(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-func (r *Check) ModuleName(ctx context.Context) (string, error) {
-	if r.moduleName != nil {
-		return *r.moduleName, nil
-	}
-	q := r.query.Select("moduleName")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The name of the check
+// Return the fully qualified name of the check
 func (r *Check) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -1222,6 +1168,16 @@ func (r *Check) Passed(ctx context.Context) (bool, error) {
 	q := r.query.Select("passed")
 
 	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The path of the check within its module
+func (r *Check) Path(ctx context.Context) ([]string, error) {
+	q := r.query.Select("path")
+
+	var response []string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -8872,6 +8828,27 @@ func (r *Module) WithGraphQLQuery(q *querybuilder.Selection) *Module {
 	}
 }
 
+// ModuleChecksOpts contains options for Module.Checks
+type ModuleChecksOpts struct {
+	// Only include checks matching the specified patterns
+	Include []string
+}
+
+// Return all checks defined by the module
+func (r *Module) Checks(opts ...ModuleChecksOpts) *CheckGroup {
+	q := r.query.Select("checks")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &CheckGroup{
+		query: q,
+	}
+}
+
 // The dependencies of the module.
 func (r *Module) Dependencies(ctx context.Context) ([]Module, error) {
 	q := r.query.Select("dependencies")
@@ -10230,27 +10207,6 @@ func (r *Client) CacheVolume(key string) *CacheVolume {
 	q = q.Arg("key", key)
 
 	return &CacheVolume{
-		query: q,
-	}
-}
-
-// ChecksOpts contains options for Client.Checks
-type ChecksOpts struct {
-	// Only include checks matching the specified patterns
-	Include []string
-}
-
-// Return available checks
-func (r *Client) Checks(opts ...ChecksOpts) *CheckGroup {
-	q := r.query.Select("checks")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-	}
-
-	return &CheckGroup{
 		query: q,
 	}
 }

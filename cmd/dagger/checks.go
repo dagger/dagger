@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/client"
 )
 
@@ -34,28 +35,35 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
-			_, err := initializeDefaultModule(ctx, engineClient.Dagger())
+			mod, err := loadModule(ctx, dag)
 			if err != nil {
 				return err
 			}
-			// Build include patterns from args
-			var includePatterns []string
+			var checks *dagger.CheckGroup
 			if len(args) > 0 {
-				includePatterns = args
-			}
-			// Get checks with include patterns
-			var checksGroup *dagger.CheckGroup
-			if len(includePatterns) > 0 {
-				checksGroup = dag.Checks(dagger.ChecksOpts{Include: includePatterns})
+				checks = mod.Checks(dagger.ModuleChecksOpts{Include: args})
 			} else {
-				checksGroup = dag.Checks()
+				checks = mod.Checks()
 			}
+			//Create an "internal" span to tuck away the noise under the default verbosity level
+			internalCtx, internalSpan := Tracer().Start(ctx, "load checks", telemetry.Internal())
+			defer internalSpan.End()
 			if checksListMode {
-				return listChecks(ctx, checksGroup, cmd)
+				return listChecks(internalCtx, checks, cmd)
 			}
-			return runChecks(ctx, checksGroup, cmd)
+			return runChecks(internalCtx, checks, cmd)
 		})
 	},
+}
+
+func loadModule(ctx context.Context, dag *dagger.Client) (*dagger.Module, error) {
+	modRef, _ := getExplicitModuleSourceRef()
+	if modRef == "" {
+		modRef = moduleURLDefault
+	}
+	ctx, span := Tracer().Start(ctx, "load "+modRef)
+	defer span.End()
+	return dag.ModuleSource(modRef).AsModule().Sync(ctx)
 }
 
 // 'dagger checks -l'
@@ -64,18 +72,17 @@ func listChecks(ctx context.Context, checksGroup *dagger.CheckGroup, cmd *cobra.
 	if err != nil {
 		return fmt.Errorf("failed to list checks: %w", err)
 	}
-
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
 	fmt.Fprintf(tw, "%s\t%s\n",
 		termenv.String("Name").Bold(),
 		termenv.String("Description").Bold(),
 	)
 	for _, check := range checks {
-		fullName, err := check.FullName(ctx)
+		name, err := check.Name(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get check full name: %w", err)
 		}
-		cliName := cliName(fullName)
+		cliName := cliName(name)
 		description, err := check.Description(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get check description: %w", err)
@@ -107,7 +114,7 @@ func runChecks(ctx context.Context, checksGroup *dagger.CheckGroup, cmd *cobra.C
 		termenv.String("Message").Bold(),
 	)
 	for _, check := range checks {
-		fullName, err := check.FullName(ctx)
+		name, err := check.Name(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get check full name: %w", err)
 		}
@@ -122,11 +129,11 @@ func runChecks(ctx context.Context, checksGroup *dagger.CheckGroup, cmd *cobra.C
 			return fmt.Errorf("failed to get check message: %w", err)
 		}
 		fmt.Fprintf(tw, "%s\t%s\\n",
-			fullName,
+			name,
 			emoji,
 			message,
 		)
-		fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\n", fullName, emoji, message)
+		fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\n", name, emoji, message)
 	}
 
 	return nil

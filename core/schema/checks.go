@@ -13,13 +13,7 @@ var _ SchemaResolvers = &checksSchema{}
 
 func (s checksSchema) Install(srv *dagql.Server) {
 	// Top-level constructor: checks (returns array of Check)
-	dagql.Fields[*core.Query]{
-		dagql.Func("checks", s.checks).
-			Doc("Return available checks").
-			Args(
-				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
-			),
-	}.Install(srv)
+	dagql.Fields[*core.Query]{}.Install(srv)
 
 	dagql.Fields[*core.CheckGroup]{
 		dagql.Func("list", s.list).
@@ -34,7 +28,7 @@ func (s checksSchema) Install(srv *dagql.Server) {
 
 	// Check methods
 	dagql.Fields[*core.Check]{
-		dagql.Func("fullName", s.fullName).
+		dagql.Func("name", s.name).
 			Doc("Return the fully qualified name of the check"),
 		dagql.Func("resultEmoji", s.resultEmoji).
 			Doc("An emoji representing the result of the check"),
@@ -53,8 +47,8 @@ func (s checksSchema) checks(ctx context.Context, q *core.Query, args struct {
 	return core.CurrentChecks(ctx, include)
 }
 
-func (s checksSchema) fullName(_ context.Context, parent *core.Check, args struct{}) (string, error) {
-	return parent.FullName(), nil
+func (s checksSchema) name(_ context.Context, parent *core.Check, args struct{}) (string, error) {
+	return parent.Name(), nil
 }
 
 func (s checksSchema) resultEmoji(_ context.Context, parent *core.Check, args struct{}) (string, error) {

@@ -77,22 +77,37 @@ func (mod *Module) Name() string {
 }
 
 func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, error) {
-	allChecks, err := moduleChecks(ctx, mod)
-	if err != nil {
-		return nil, err
+	// FIXME: remove debug traces before merging
+	_, modSpan := Tracer(ctx).Start(ctx, fmt.Sprintf("[load checks] mod=%q", mod.OriginalName))
+	defer modSpan.End()
+	var mainObject *ObjectTypeDef
+	for _, objDef := range mod.ObjectDefs {
+		if objDef.AsObject.Valid {
+			obj := objDef.AsObject.Value
+
+			// Check if this is the main object by comparing normalized names
+			if gqlFieldName(obj.Name) == gqlFieldName(mod.Name()) {
+				mainObject = obj
+				break
+			}
+		}
 	}
-	var group CheckGroup
-	for _, check := range allChecks {
+	if mainObject == nil {
+		return nil, nil
+	}
+	group := &CheckGroup{
+		Module: mod,
+	}
+	for _, check := range mainObject.Checks(ctx) {
 		match, err := check.Match(include)
 		if err != nil {
 			return nil, err
 		}
-		if !match {
-			continue
+		if match {
+			group.Checks = append(group.Checks, check)
 		}
-		group.Checks = append(group.Checks, check)
 	}
-	return &group, nil
+	return group, nil
 }
 
 func (mod *Module) GetSource() *ModuleSource {

@@ -846,6 +846,32 @@ func (obj *ObjectTypeDef) IsSubtypeOf(iface *InterfaceTypeDef) bool {
 	return true
 }
 
+func (obj *ObjectTypeDef) Checks(ctx context.Context) []*Check {
+	var checks []*Check
+	// Search for functions that qualify as checks
+	for _, fn := range obj.Functions {
+		checkPath := []string{fn.Name}
+		if _, isCheck, _ := functionIsCheck(ctx, fn); isCheck {
+			check := &Check{
+				Path:        checkPath,
+				Description: fn.Description,
+			}
+			checks = append(checks, check)
+			continue
+		}
+		if subObj := fn.ReturnType.AsObject.Value; subObj != nil {
+			ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("Check scan: function %q returns object %q. Recursively scanning that for checks", fn.Name, subObj.Name))
+			subChecks := subObj.Checks(ctx)
+			span.End()
+			for i := range subChecks {
+				subChecks[i].Path = append(checkPath, subChecks[i].Path...)
+			}
+			checks = append(checks, subChecks...)
+		}
+	}
+	return checks
+}
+
 type FieldTypeDef struct {
 	Name        string   `field:"true" doc:"The name of the field in lowerCamelCase format."`
 	Description string   `field:"true" doc:"A doc string for the field, if any."`
