@@ -454,6 +454,43 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		// Verify root.txt is NOT included (unchanged)
 		require.NotContains(t, entries, "root.txt")
 	})
+
+	t.Run("test withChanges on subdir", func(ctx context.Context, t *testctx.T) {
+		// Create a directory with files
+		c := connect(ctx, t)
+
+		// Create initial directory with multiple files
+		oldDir := c.Directory().
+			WithNewFile("file1.txt", "content1")
+
+		// Create new directory without one of the files
+		newDir := c.Directory().
+			WithNewFile("file1.txt", "content1").
+			WithNewFile("file2.txt", "content2")
+
+		changes := newDir.Changes(oldDir)
+
+		addedFiles, err := changes.AddedPaths(ctx)
+		require.NoError(t, err)
+
+		require.Contains(t, addedFiles, "file2.txt")
+
+		d := c.Directory().WithNewDirectory("new-dir").Directory("/new-dir").WithChanges(changes)
+
+		entries, err := d.Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"file2.txt"}, entries)
+
+		topLevelDir := d.Directory("..")
+
+		entries, err = topLevelDir.Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"new-dir/"}, entries)
+
+		s, err := topLevelDir.File("new-dir/file2.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, s, "content2")
+	})
 }
 
 func (s ChangesetSuite) TestExport(ctx context.Context, t *testctx.T) {
