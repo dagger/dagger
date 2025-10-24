@@ -744,7 +744,7 @@ func (GitSuite) TestAuthProviders(ctx context.Context, t *testctx.T) {
 
 	t.Run("GitLab auth", func(ctx context.Context, t *testctx.T) {
 		// Base64-encoded read-only PAT for test repo
-		pat := "Z2xwYXQtQXlHQU4zR0xOeEhfM3VSckNzck0K"
+		pat := "Z2xwYXQtMGF2bWZBbHBxWENwOXpuazZfZ2JmbTg2TVFwMU9tTjRhV3BqQ3cuMDEuMTIxbWF0b2Rx"
 		token, err := decodeAndTrimPAT(pat)
 		require.NoError(t, err)
 
@@ -994,9 +994,7 @@ func (GitSuite) TestSubmoduleAuth(ctx context.Context, t *testctx.T) {
 	gitReposCtr := c.Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
-		WithExec([]string{"git", "config", "--global", "user.email", "test@dagger.io"}).
-		WithExec([]string{"git", "config", "--global", "user.name", "Test User"}).
-		WithExec([]string{"git", "config", "--global", "init.defaultBranch", "main"}).
+		With(gitUserConfig).
 		WithExec([]string{"sh", "-lc", "mkdir -p /srv && git init --bare /srv/submodule.git && git init --bare /srv/parent.git"}).
 		WithDirectory("/tmp/sub", submoduleContent).
 		WithExec([]string{"sh", "-lc", `
@@ -1105,8 +1103,7 @@ func (GitSuite) TestRemoteUpdates(ctx context.Context, t *testctx.T) {
 	ctr := c.Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
-		WithExec([]string{"git", "config", "--global", "user.name", "tester"}).
-		WithExec([]string{"git", "config", "--global", "user.email", "test@dagger.io"}).
+		With(gitUserConfig).
 		WithWorkdir("/src").
 		WithExec([]string{"git", "clone", url, "."}).
 		WithExec([]string{"sh", "-c", `touch xyz && git add xyz && git commit -m "xyz" && git tag v1.0 && git push origin main && git push origin v1.0`})
@@ -1150,8 +1147,7 @@ func (GitSuite) TestRemoteUpdatesFrozenTag(ctx context.Context, t *testctx.T) {
 	ctr := c.Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
-		WithExec([]string{"git", "config", "--global", "user.name", "tester"}).
-		WithExec([]string{"git", "config", "--global", "user.email", "test@dagger.io"}).
+		With(gitUserConfig).
 		WithWorkdir("/src").
 		WithExec([]string{"git", "clone", url, "."}).
 		WithExec([]string{"sh", "-c", `touch xyz && git add xyz && git commit -m "xyz" && git tag v1.0 && git push origin main && git push origin v1.0`})
@@ -1209,8 +1205,7 @@ func (GitSuite) TestGitLatestVersion(ctx context.Context, t *testctx.T) {
 	ctr := c.Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
-		WithExec([]string{"git", "config", "--global", "user.name", "tester"}).
-		WithExec([]string{"git", "config", "--global", "user.email", "test@dagger.io"}).
+		With(gitUserConfig).
 		WithWorkdir("/src").
 		WithExec([]string{"git", "init"}).
 		WithExec([]string{"sh", "-c", `touch xyz && git add xyz && git commit -m "xyz" && git tag v2.0 && touch abc && git add abc && git commit -m "abc" && git tag v1.0`})
@@ -1235,8 +1230,7 @@ func (GitSuite) TestGitCommonAncestor(ctx context.Context, t *testctx.T) {
 		WithExec([]string{"apk", "add", "git"}).
 		WithWorkdir("/src").
 		WithExec([]string{"git", "init"}).
-		WithExec([]string{"git", "config", "--global", "user.name", "tester"}).
-		WithExec([]string{"git", "config", "--global", "user.email", "test@dagger.io"}).
+		With(gitUserConfig).
 		WithExec([]string{"sh", "-c", `echo "A" > file.txt && git add file.txt && git commit -m "A"`}).
 		WithExec([]string{"git", "checkout", "-b", "branch1"}).
 		WithExec([]string{"sh", "-c", `echo "B" >> file.txt && git add file.txt && git commit -m "B"`}).
@@ -1371,4 +1365,101 @@ func (GitSuite) TestIsRemotePublic(ctx context.Context, t *testctx.T) {
 			require.Equalf(t, !v.isPrivateRepo, isRemotePublic, "Expected public=%v for repo %q", !v.isPrivateRepo, v.name)
 		})
 	}
+}
+
+func (GitSuite) TestGitUncommittedRemote(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	git := c.Git("https://github.com/dagger/dagger")
+	changes := git.Uncommitted()
+	empty, err := changes.IsEmpty(ctx)
+	require.NoError(t, err)
+	require.True(t, empty)
+}
+
+func (GitSuite) TestGitUncommittedLocal(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(gitUserConfig).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "init"}).
+		WithExec([]string{"sh", "-c", `echo "Initial content" > mod.txt && cp mod.txt rem.txt && git add mod.txt rem.txt && git commit -m "Initial commit"`})
+
+	// No changes yet
+	git := ctr.Directory(".").AsGit()
+	changes := git.Uncommitted()
+	empty, err := changes.IsEmpty(ctx)
+	require.NoError(t, err)
+	require.True(t, empty)
+
+	// No changes if we just select the git directory
+	git = ctr.Directory(".git").AsGit()
+	changes = git.Uncommitted()
+	empty, err = changes.IsEmpty(ctx)
+	require.NoError(t, err)
+	require.True(t, empty)
+
+	// Make some changes
+	ctr = ctr.WithExec([]string{"sh", "-c", `echo "Modified content" >> mod.txt && echo "New file content" > new.txt && rm rem.txt`})
+	git = ctr.Directory(".").AsGit()
+	changes = git.Uncommitted()
+	empty, err = changes.IsEmpty(ctx)
+	require.NoError(t, err)
+	require.False(t, empty)
+
+	added, err := changes.AddedPaths(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"new.txt"}, added)
+
+	modified, err := changes.ModifiedPaths(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"mod.txt"}, modified)
+
+	removed, err := changes.RemovedPaths(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"rem.txt"}, removed)
+
+	// Still no changes if we just select the .git directory
+	git = ctr.Directory(".git").AsGit()
+	changes = git.Uncommitted()
+	empty, err = changes.IsEmpty(ctx)
+	require.NoError(t, err)
+	require.True(t, empty)
+
+	// Stage all changes (we should still see changes)
+	ctr = ctr.WithExec([]string{"git", "add", "."})
+	git = ctr.Directory(".").AsGit()
+	changes = git.Uncommitted()
+	empty, err = changes.IsEmpty(ctx)
+	require.NoError(t, err)
+	require.False(t, empty)
+
+	added, err = changes.AddedPaths(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"new.txt"}, added)
+
+	modified, err = changes.ModifiedPaths(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"mod.txt"}, modified)
+
+	removed, err = changes.RemovedPaths(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"rem.txt"}, removed)
+
+	// Again, no changes if we just select the .git directory
+	git = ctr.Directory(".git").AsGit()
+	changes = git.Uncommitted()
+	empty, err = changes.IsEmpty(ctx)
+	require.NoError(t, err)
+	require.True(t, empty)
+}
+
+func gitUserConfig(ctr *dagger.Container) *dagger.Container {
+	return ctr.
+		WithExec([]string{"git", "config", "--global", "user.email", "test@dagger.io"}).
+		WithExec([]string{"git", "config", "--global", "user.name", "Test User"}).
+		WithExec([]string{"git", "config", "--global", "init.defaultBranch", "main"})
 }

@@ -5,9 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"go.opentelemetry.io/otel/codes"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/dagger/dagger/.dagger/internal/dagger"
 )
 
@@ -15,45 +12,28 @@ type GoSDK struct {
 	Dagger *DaggerDev // +private
 }
 
-// Lint the Go SDK
-func (t GoSDK) Lint(ctx context.Context) (rerr error) {
-	eg := errgroup.Group{}
-	eg.Go(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "lint the go source")
-		defer func() {
-			if rerr != nil {
-				span.SetStatus(codes.Error, rerr.Error())
-			}
-			span.End()
-		}()
-		return dag.
-			Go(t.Dagger.Source).
-			Lint(ctx, dagger.GoLintOpts{Packages: []string{"sdk/go"}})
+func (t GoSDK) Name() string {
+	return "go"
+}
+
+func (t GoSDK) Source() *dagger.Directory {
+	// FIXME: use pre-call filtering when this module is spun out
+	// (or when we get self-calls)
+	return t.Dagger.Source.Filter(dagger.DirectoryFilterOpts{
+		Include: []string{
+			"sdk/go",
+			// FIXME: narrow this down for better cache hit rate
+			"**/go.mod",
+			"**/go.sum",
+			"cmd/codegen",
+			"engine/slog",
+		},
 	})
-	eg.Go(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "check that the generated client library is up-to-date")
-		defer func() {
-			if rerr != nil {
-				span.SetStatus(codes.Error, rerr.Error())
-			}
-			span.End()
-		}()
-		before := t.Dagger.Source
-		after, err := t.Generate(ctx)
-		if err != nil {
-			return err
-		}
-		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{"sdk/go"})
-	})
-	return eg.Wait()
 }
 
 // Test the Go SDK
 func (t GoSDK) Test(ctx context.Context) (rerr error) {
-	installer := t.Dagger.installer("sdk")
-	output, err := t.Dagger.Go().Env().
-		With(installer).
-		WithWorkdir("sdk/go").
+	output, err := t.DevContainer().
 		WithExec([]string{"go", "test", "-v", "-skip=TestProvision", "./..."}).
 		Stdout(ctx)
 	if err != nil {
@@ -62,26 +42,34 @@ func (t GoSDK) Test(ctx context.Context) (rerr error) {
 	return err
 }
 
-// Regenerate the Go SDK API
-func (t GoSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	installer := t.Dagger.installer("sdk")
-	generated := t.Dagger.Go().Env().
-		With(installer).
-		WithWorkdir("sdk/go").
-		WithExec([]string{"go", "generate", "-v", "./..."}).
-		WithExec([]string{"go", "mod", "tidy"}).
-		Directory(".")
-	return dag.Directory().WithDirectory("sdk/go", generated), nil
+func (t GoSDK) BaseContainer() *dagger.Container {
+	return dag.Go(dag.Directory()).Base()
 }
 
-// Test the publishing process
-func (t GoSDK) TestPublish(ctx context.Context, tag string) error {
+func (t GoSDK) DevContainer() *dagger.Container {
+	return dag.Go(t.Source()).
+		Env().
+		With(t.Dagger.devEngineSidecar()).
+		WithWorkdir("sdk/go")
+}
+
+// Regenerate the Go SDK API
+func (t GoSDK) Generate(ctx context.Context) (*dagger.Changeset, error) {
+	return t.DevContainer().
+		WithExec([]string{"go", "generate", "-v", "./..."}).
+		WithExec([]string{"go", "mod", "tidy"}).
+		Directory("../.."). // pop back to repo root
+		Changes(t.Source()).
+		Sync(ctx)
+}
+
+// Test the release
+func (t GoSDK) CheckReleaseDryRun(ctx context.Context) error {
 	return t.Publish(
 		ctx,
-		tag,
+		"HEAD",
 		true,
 		"https://github.com/dagger/dagger-go-sdk.git",
-		"https://github.com/dagger/dagger.git",
 		"dagger-ci",
 		"hello@dagger.io",
 		nil,
@@ -100,9 +88,6 @@ func (t GoSDK) Publish(
 	// +default="https://github.com/dagger/dagger-go-sdk.git"
 	gitRepo string,
 	// +optional
-	// +default="https://github.com/dagger/dagger.git"
-	gitRepoSource string,
-	// +optional
 	// +default="dagger-ci"
 	gitUserName string,
 	// +optional
@@ -116,11 +101,10 @@ func (t GoSDK) Publish(
 
 	if err := gitPublish(ctx, t.Dagger.Git, gitPublishOpts{
 		sdk:          "go",
-		source:       gitRepoSource,
 		sourceTag:    tag,
 		sourcePath:   "sdk/go/",
 		sourceFilter: "if [ -f go.mod ]; then go mod edit -dropreplace github.com/dagger/dagger; fi",
-		sourceEnv:    t.Dagger.Go().Env(),
+		sourceEnv:    t.BaseContainer(), // Just need git and go installed
 		dest:         gitRepo,
 		destTag:      version,
 		username:     gitUserName,
@@ -135,7 +119,7 @@ func (t GoSDK) Publish(
 }
 
 // Bump the Go SDK's Engine dependency
-func (t GoSDK) Bump(ctx context.Context, version string) (*dagger.Directory, error) {
+func (t GoSDK) Bump(_ context.Context, version string) (*dagger.Changeset, error) {
 	// trim leading v from version
 	version = strings.TrimPrefix(version, "v")
 
@@ -146,6 +130,6 @@ package engineconn
 const CLIVersion = %q
 `, version)
 
-	dir := dag.Directory().WithNewFile("sdk/go/engineconn/version.gen.go", versionFile)
-	return dir, nil
+	layer := t.Dagger.Source.WithNewFile("sdk/go/engineconn/version.gen.go", versionFile)
+	return layer.Changes(t.Dagger.Source), nil
 }

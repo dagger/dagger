@@ -14,6 +14,7 @@ import (
 
 // A dev environment for the official Dagger SDKs
 type SDK struct {
+	Dagger *DaggerDev // +private
 	// Develop the Dagger Go SDK
 	Go *GoSDK
 	// Develop the Dagger Python SDK
@@ -33,36 +34,12 @@ type SDK struct {
 	Dotnet *DotnetSDK
 }
 
-func (sdk *SDK) All() *AllSDK {
-	return &AllSDK{
-		SDK: sdk,
-	}
-}
-
-type sdkBase interface {
-	Lint(ctx context.Context) error
-	Test(ctx context.Context) error
-	TestPublish(ctx context.Context, tag string) error
-	Generate(ctx context.Context) (*dagger.Directory, error)
-	Bump(ctx context.Context, version string) (*dagger.Directory, error)
-}
-
-func (sdk *SDK) allSDKs() []sdkBase {
-	return []sdkBase{
-		sdk.Go,
-		sdk.Python,
-		sdk.Typescript,
-		sdk.Elixir,
-		sdk.Rust,
-		sdk.PHP,
-		sdk.Java,
-		sdk.Dotnet,
-	}
-}
-
-//nolint:unparam
-func (dev *DaggerDev) installer(name string) func(*dagger.Container) *dagger.Container {
-	engineSvc := dag.DaggerEngine().Service(name)
+// Return an "installer" function which, given a container, will attach
+// a dev engine and CLI
+func (dev *DaggerDev) devEngineSidecar() func(*dagger.Container) *dagger.Container {
+	// The name "sdk" is an arbitrary key for engine state reuse across builds
+	instanceName := "sdk"
+	engineSvc := dag.DaggerEngine().Service(instanceName)
 	cliBinary := dag.DaggerCli().Binary()
 	cliBinaryPath := "/.dagger-cli"
 
@@ -78,20 +55,41 @@ func (dev *DaggerDev) installer(name string) func(*dagger.Container) *dagger.Con
 	}
 }
 
+// Return a list of all SDKs implementing the given interface
+func allSDKs[T any](dev *DaggerDev) []T {
+	var result []T
+	for _, sdk := range []any{
+		&GoSDK{Dagger: dev},
+		&PythonSDK{Dagger: dev},
+		&TypescriptSDK{Dagger: dev},
+		&ElixirSDK{Dagger: dev},
+		&RustSDK{Dagger: dev},
+		&PHPSDK{Dagger: dev},
+		&JavaSDK{Dagger: dev},
+		&DotnetSDK{Dagger: dev},
+	} {
+		if casted, ok := sdk.(T); ok {
+			result = append(result, casted)
+		}
+	}
+	return result
+}
+
 func (dev *DaggerDev) codegenBinary() *dagger.File {
-	return dev.Go().Binary("./cmd/codegen", dagger.GoBinaryOpts{
+	return dev.godev().Binary("./cmd/codegen", dagger.GoBinaryOpts{
 		NoSymbols: true,
 		NoDwarf:   true,
 	})
 }
 
-func (dev *DaggerDev) introspection(installer func(*dagger.Container) *dagger.Container) *dagger.File {
+// Return the introspection.json from the current dev engine
+func (dev *DaggerDev) introspectionJSON() *dagger.File {
 	return dag.
 		Alpine(dagger.AlpineOpts{
 			Branch: distconsts.AlpineVersion,
 		}).
 		Container().
-		With(installer).
+		With(dev.devEngineSidecar()).
 		WithFile("/usr/local/bin/codegen", dev.codegenBinary()).
 		WithExec([]string{"codegen", "introspect", "-o", "/schema.json"}).
 		File("/schema.json")
@@ -100,7 +98,7 @@ func (dev *DaggerDev) introspection(installer func(*dagger.Container) *dagger.Co
 type gitPublishOpts struct {
 	sdk string
 
-	source, dest       string
+	dest               string
 	sourceTag, destTag string
 	sourcePath         string
 	sourceFilter       string
@@ -144,6 +142,7 @@ func gitPublish(ctx context.Context, git *dagger.GitRepository, opts gitPublishO
 		WithWorkdir("/src/dagger").
 		WithDirectory(".", git.Ref(opts.sourceTag).Tree(dagger.GitRefTreeOpts{Depth: -1})).
 		WithEnvVariable("FILTER_BRANCH_SQUELCH_WARNING", "1").
+		WithExec([]string{"git", "status"}).
 		WithExec([]string{
 			"git", "filter-branch", "-f", "--prune-empty",
 			"--subdirectory-filter", opts.sourcePath,

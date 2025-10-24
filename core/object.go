@@ -130,10 +130,8 @@ func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.AnyRe
 		fieldID := curID.Append(
 			fieldTypeDef.TypeDef.ToType(),
 			fieldTypeDef.Name,
-			curID.View(),
-			curID.Module(),
-			0,
-			"",
+			call.WithView(curID.View()),
+			call.WithModule(curID.Module()),
 		)
 		ctx := dagql.ContextWithID(ctx, fieldID)
 
@@ -256,10 +254,8 @@ func (obj *ModuleObject) PBDefinitions(ctx context.Context) ([]*pb.Definition, e
 		fieldID := curID.Append(
 			field.TypeDef.ToType(),
 			field.Name,
-			curID.View(),
-			curID.Module(),
-			0,
-			"",
+			call.WithView(curID.View()),
+			call.WithModule(curID.Module()),
 		)
 		ctx := dagql.ContextWithID(ctx, fieldID)
 
@@ -330,8 +326,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	// if no constructor defined, install a basic one that initializes an empty object
 	if !objDef.Constructor.Valid {
 		spec := dagql.FieldSpec{
-			Name: gqlFieldName(mod.Name()),
-			// Description: "TODO", // XXX(vito)
+			Name:   gqlFieldName(mod.Name()),
 			Type:   obj,
 			Module: obj.Module.IDModule(),
 		}

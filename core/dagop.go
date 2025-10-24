@@ -340,12 +340,14 @@ func NewContainerDagOp(
 	ctx context.Context,
 	id *call.ID,
 	argDigest digest.Digest,
+	inputs []llb.State,
 	ctr *Container,
 ) (*Container, error) {
-	mounts, inputs, dgsts, _, outputCount, err := getAllContainerMounts(ctx, ctr)
+	mounts, ctrInputs, dgsts, _, outputCount, err := getAllContainerMounts(ctx, ctr)
 	if err != nil {
 		return nil, err
 	}
+	inputs = append(inputs, ctrInputs...)
 
 	dagop := &ContainerDagOp{
 		ID: id,

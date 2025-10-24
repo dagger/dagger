@@ -97,6 +97,16 @@ func (repo *RemoteGitRepository) Get(ctx context.Context, target *gitutil.Ref) (
 	}, nil
 }
 
+func (repo *RemoteGitRepository) Dirty(ctx context.Context) (inst dagql.ObjectResult[*Directory], _ error) {
+	// git remotes are always clean
+	return inst, nil
+}
+
+func (repo *RemoteGitRepository) Cleaned(ctx context.Context) (inst dagql.ObjectResult[*Directory], _ error) {
+	// git remotes are always clean
+	return inst, nil
+}
+
 func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, _ func() error, rerr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {

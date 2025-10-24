@@ -5956,6 +5956,11 @@ impl Engine {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// The name of the engine instance.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
 }
 #[derive(Clone)]
 pub struct EngineCache {
@@ -7414,6 +7419,20 @@ impl EnvFile {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix "MY_APP_" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello
+    ///
+    /// # Arguments
+    ///
+    /// * `prefix` - The prefix to filter by
+    pub fn namespace(&self, prefix: impl Into<String>) -> EnvFile {
+        let mut query = self.selection.select("namespace");
+        query = query.arg("prefix", prefix.into());
+        EnvFile {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return all variables
     ///
     /// # Arguments
@@ -8566,6 +8585,15 @@ impl GitRepository {
             query = query.arg("patterns", patterns);
         }
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Returns the changeset of uncommitted changes in the git repository.
+    pub fn uncommitted(&self) -> Changeset {
+        let query = self.selection.select("uncommitted");
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// The URL of the git repository.
     pub async fn url(&self) -> Result<String, DaggerError> {

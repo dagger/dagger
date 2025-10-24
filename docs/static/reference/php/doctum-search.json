@@ -2889,6 +2889,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Engine::name",
+			"p": "Dagger/Engine.html#method_name",
+			"d": "<p>The name of the engine instance.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\EngineCache::entrySet",
 			"p": "Dagger/EngineCache.html#method_entrySet",
 			"d": "<p>The current set of entries in the cache</p>"
@@ -3399,6 +3405,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\EnvFile::namespace",
+			"p": "Dagger/EnvFile.html#method_namespace",
+			"d": "<p>Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix &quot;MY<em>APP</em>&quot; and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\EnvFile::variables",
 			"p": "Dagger/EnvFile.html#method_variables",
 			"d": "<p>Return all variables</p>"
@@ -3864,6 +3876,12 @@
 			"n": "Dagger\\GitRepository::tags",
 			"p": "Dagger/GitRepository.html#method_tags",
 			"d": "<p>tags that match any of the given glob patterns.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitRepository::uncommitted",
+			"p": "Dagger/GitRepository.html#method_uncommitted",
+			"d": "<p>Returns the changeset of uncommitted changes in the git repository.</p>"
 		},
 		{
 			"t": "M",

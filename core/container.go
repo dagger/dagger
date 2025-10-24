@@ -2605,7 +2605,10 @@ func UpdatedRootFS(
 		return nil, fmt.Errorf("field spec for rootfs not found in object type Container")
 	}
 	astType := fieldSpec.Type.Type()
-	rootfsID := curID.Append(astType, "rootfs", view, fieldSpec.Module, 0, "")
+	rootfsID := curID.Append(
+		astType, "rootfs",
+		call.WithView(view),
+		call.WithModule(fieldSpec.Module))
 	updatedRootfs, err := dagql.NewObjectResultForID(dir, curSrv, rootfsID)
 	if err != nil {
 		return nil, err
@@ -2642,7 +2645,11 @@ func updatedDirMount(
 	}
 	astType := fieldSpec.Type.Type()
 	dirIDPathArg := call.NewArgument("path", call.NewLiteralString(mntTarget), false)
-	dirID := curID.Append(astType, "directory", view, fieldSpec.Module, 0, "", dirIDPathArg)
+	dirID := curID.Append(
+		astType, "directory",
+		call.WithView(view),
+		call.WithModule(fieldSpec.Module),
+		call.WithArgs(dirIDPathArg))
 	updatedDirMnt, err := dagql.NewObjectResultForID(dir, curSrv, dirID)
 	if err != nil {
 		return nil, err
@@ -2679,7 +2686,11 @@ func updatedFileMount(
 	}
 	astType := fieldSpec.Type.Type()
 	fileIDPathArg := call.NewArgument("path", call.NewLiteralString(mntTarget), false)
-	fileID := curID.Append(astType, "file", view, fieldSpec.Module, 0, "", fileIDPathArg)
+	fileID := curID.Append(
+		astType, "file",
+		call.WithView(view),
+		call.WithModule(fieldSpec.Module),
+		call.WithArgs(fileIDPathArg))
 	updatedFileMnt, err := dagql.NewObjectResultForID(file, curSrv, fileID)
 	if err != nil {
 		return nil, err

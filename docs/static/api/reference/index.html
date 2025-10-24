@@ -7424,6 +7424,10 @@
                         <td data-property-name=""><a class="property-name" id="Engine-localCache" href="#Engine-localCache"><code>localCache</code></a> - <span class="property-type"><a href="#definition-EngineCache"><code>EngineCache!</code></a></span> </td>
                         <td> The local (on-disk) cache for the Dagger engine </td>
                       </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Engine-name" href="#Engine-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The name of the engine instance. </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -8945,6 +8949,23 @@
                         <td> A unique identifier for this EnvFile. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="EnvFile-namespace" href="#EnvFile-namespace"><code>namespace</code></a> - <span class="property-type"><a href="#definition-EnvFile"><code>EnvFile!</code></a></span> </td>
+                        <td> Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix "MY_APP_" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>prefix</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The prefix to filter by</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="EnvFile-variables" href="#EnvFile-variables"><code>variables</code></a> - <span class="property-type"><a href="#definition-EnvVariable"><code>[EnvVariable!]!</code></a></span> </td>
                         <td> Return all variables </td>
                       </tr>
@@ -10276,6 +10297,10 @@
                             </div>
                           </div>
                         </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GitRepository-uncommitted" href="#GitRepository-uncommitted"><code>uncommitted</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
+                        <td> Returns the changeset of uncommitted changes in the git repository. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="GitRepository-url" href="#GitRepository-url"><code>url</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>

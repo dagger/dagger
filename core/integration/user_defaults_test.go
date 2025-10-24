@@ -116,22 +116,23 @@ DEFAULTS_MESSAGE_NAME=planete-outer
 			"salutations-outer, planete-outer!",
 		},
 	} {
-		tc := tc
-		stdout, err := ctr.
-			WithNewFile(tc.dotEnvPath, tc.dotEnvContents).
-			With(func(c *dagger.Container) *dagger.Container {
-				if tc.workdir != "" {
-					return c.WithWorkdir(tc.workdir)
-				}
-				return c
-			}).
-			WithExec(tc.command, dagger.ContainerWithExecOpts{
-				Expect:                        tc.expect,
-				ExperimentalPrivilegedNesting: true,
-			}).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, tc.stdout, stdout)
+		t.Run(tc.description, func(ctx context.Context, t *testctx.T) {
+			stdout, err := ctr.
+				WithNewFile(tc.dotEnvPath, tc.dotEnvContents).
+				With(func(c *dagger.Container) *dagger.Container {
+					if tc.workdir != "" {
+						return c.WithWorkdir(tc.workdir)
+					}
+					return c
+				}).
+				WithExec(tc.command, dagger.ContainerWithExecOpts{
+					Expect:                        tc.expect,
+					ExperimentalPrivilegedNesting: true,
+				}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.stdout, stdout)
+		})
 	}
 }
 
@@ -145,7 +146,7 @@ func (UserDefaultsSuite) TestOuterEnvFile(ctx context.Context, t *testctx.T) {
 	src := c.Host().
 		Directory(testModule(t, "go", "defaults")).
 		AsModuleSource()
-	t.Run("ModuleSource LocalDefaults", func(ctx context.Context, t *testctx.T) {
+	t.Run("ModuleSource UserDefaults", func(ctx context.Context, t *testctx.T) {
 		greeting, err := src.UserDefaults().Get(ctx, "GREETING")
 		require.NoError(t, err)
 		require.Equal(t, "salutations", greeting)
@@ -157,7 +158,7 @@ func (UserDefaultsSuite) TestOuterEnvFile(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "", unrelated)
 	})
 
-	t.Run("Module LocalDefaults", func(ctx context.Context, t *testctx.T) {
+	t.Run("Module UserDefaults", func(ctx context.Context, t *testctx.T) {
 		mod := src.AsModule()
 		greeting, err := mod.UserDefaults().Get(ctx, "GREETING")
 		require.NoError(t, err)
@@ -262,6 +263,59 @@ func (UserDefaultsSuite) TestRequiredDirectoryWithIgnore(ctx context.Context, t 
 
 var nestedExec = dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}
 
+// Test that it all works with a module that has a dash ("-") in its name
+func (UserDefaultsSuite) TestModuleWithDash(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	base := nestedDaggerContainer(t, c, "go", "defaults/super-dash-dash")
+	outerEnv := c.EnvFile().
+		WithVariable("SUPERDASHDASH_GREETING", "yay").
+		WithVariable("SUPERDASHDASH_MESSAGE_NAME", "bob").
+		AsFile()
+	innerEnv := c.EnvFile().
+		WithVariable("GREETING", "yay").
+		WithVariable("MESSAGE_NAME", "bob").
+		AsFile()
+	for _, tc := range []struct {
+		name string
+		ctr  *dagger.Container
+	}{
+		{
+			"inner .env",
+			base.WithWorkdir("defaults/super-dash-dash").WithFile(".env", innerEnv),
+		},
+		{
+			"outer .env inner workdir",
+			base.WithFile(".env", outerEnv).WithWorkdir("defaults/super-dash-dash"),
+		},
+		{
+			"outer .env outer workdir",
+			base.WithFile(".env", outerEnv).WithEnvVariable("DAGGER_MODULE", "./defaults/super-dash-dash"),
+		},
+		{
+			"inner .env with prefix",
+			// Use the outer env (which has prefix) as inner env. It should work.
+			base.WithWorkdir("defaults/super-dash-dash").WithFile(".env", outerEnv),
+		},
+	} {
+		tc := tc
+		t.Run(tc.name+" introspect", func(ctx context.Context, t *testctx.T) {
+			out, err := tc.ctr.
+				WithExec([]string{"dagger", "call", "--help"}, nestedExec).
+				Stdout(ctx)
+			out = trimDaggerFunctionUsageText(out)
+			require.NoError(t, err)
+			require.Regexp(t, `(?m)--greeting string\s+\(default "yay"\)$`, out)
+		})
+		t.Run(tc.name+" call", func(ctx context.Context, t *testctx.T) {
+			out, err := tc.ctr.
+				WithExec([]string{"dagger", "call", "message"}, nestedExec).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "yay, bob!", out)
+		})
+	}
+}
+
 func (UserDefaultsSuite) TestConstructorOptional(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	base := nestedDaggerContainer(t, c, "go", "defaults").
@@ -294,6 +348,11 @@ func (UserDefaultsSuite) TestConstructorOptional(ctx context.Context, t *testctx
 		{
 			"outer .env outer workdir",
 			base.WithFile(".env", outerEnv).WithEnvVariable("DAGGER_MODULE", "./defaults"),
+		},
+		{
+			"inner .env with prefix",
+			// Use the outer env (which has prefix) as inner env. It should work.
+			base.WithWorkdir("defaults").WithFile(".env", outerEnv),
 		},
 	} {
 		tc := tc

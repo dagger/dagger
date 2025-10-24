@@ -39,6 +39,6 @@ func setupDebugHandlers(addr string) error {
 		return err
 	}
 	slog.Info("debug handlers listening", "debugAddr", addr)
-	go http.Serve(l, m) //nolint:gosec
+	go http.Serve(l, m)
 	return nil
 }

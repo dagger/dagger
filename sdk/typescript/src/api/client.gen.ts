@@ -4754,14 +4754,16 @@ export class Directory extends BaseClient {
  */
 export class Engine extends BaseClient {
   private readonly _id?: EngineID = undefined
+  private readonly _name?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: EngineID) {
+  constructor(ctx?: Context, _id?: EngineID, _name?: string) {
     super(ctx)
 
     this._id = _id
+    this._name = _name
   }
 
   /**
@@ -4785,6 +4787,21 @@ export class Engine extends BaseClient {
   localCache = (): EngineCache => {
     const ctx = this._ctx.select("localCache")
     return new EngineCache(ctx)
+  }
+
+  /**
+   * The name of the engine instance.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 
@@ -6144,6 +6161,15 @@ export class EnvFile extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix "MY_APP_" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello
+   * @param prefix The prefix to filter by
+   */
+  namespace_ = (prefix: string): EnvFile => {
+    const ctx = this._ctx.select("namespace", { prefix })
+    return new EnvFile(ctx)
   }
 
   /**
@@ -7532,6 +7558,14 @@ export class GitRepository extends BaseClient {
     const response: Awaited<string[]> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Returns the changeset of uncommitted changes in the git repository.
+   */
+  uncommitted = (): Changeset => {
+    const ctx = this._ctx.select("uncommitted")
+    return new Changeset(ctx)
   }
 
   /**

@@ -111,7 +111,7 @@ func TestBasic(t *testing.T) {
 
 	pointT := (&points.Point{}).Type()
 	expectedID := call.New().
-		Append(pointT, "point", "", nil, 0, "",
+		Append(pointT, "point", call.WithArgs(
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
@@ -122,8 +122,8 @@ func TestBasic(t *testing.T) {
 				call.NewLiteralInt(7),
 				false,
 			),
-		).
-		Append(pointT, "shiftLeft", "", nil, 0, "")
+		)).
+		Append(pointT, "shiftLeft")
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	assert.Equal(t, 6, res.Point.X)
@@ -880,7 +880,7 @@ func TestIDsReflectQuery(t *testing.T) {
 
 	pointT := (&points.Point{}).Type()
 	expectedID := call.New().
-		Append(pointT, "point", "", nil, 0, "",
+		Append(pointT, "point", call.WithArgs(
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
@@ -891,8 +891,8 @@ func TestIDsReflectQuery(t *testing.T) {
 				call.NewLiteralInt(7),
 				false,
 			),
-		).
-		Append(pointT, "shiftLeft", "", nil, 0, "")
+		)).
+		Append(pointT, "shiftLeft")
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.ShiftLeft.ID, expectedEnc)
@@ -982,7 +982,7 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 
 	pointT := (&points.Point{}).Type()
 	expectedID := call.New().
-		Append(pointT, "point", "", nil, 0, "",
+		Append(pointT, "point", call.WithArgs(
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
@@ -993,15 +993,15 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 				call.NewLiteralInt(7),
 				false,
 			),
-		).
-		Append(pointT, "loginTag", "", nil, 0, "")
+		)).
+		Append(pointT, "loginTag")
 
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.LoginTag.ID, expectedEnc)
 
 	expectedID = call.New().
-		Append(pointT, "point", "", nil, 0, "",
+		Append(pointT, "point", call.WithArgs(
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
@@ -1012,15 +1012,15 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 				call.NewLiteralInt(7),
 				false,
 			),
-		).
-		Append(pointT, "loginChain", "", nil, 0, "")
+		)).
+		Append(pointT, "loginChain")
 
 	expectedEnc, err = dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.LoginChain.ID, expectedEnc)
 
 	expectedID = call.New().
-		Append(pointT, "point", "", nil, 0, "",
+		Append(pointT, "point", call.WithArgs(
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
@@ -1031,14 +1031,14 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 				call.NewLiteralInt(7),
 				false,
 			),
-		).
-		Append(pointT, "loginTagFalse", "", nil, 0, "",
+		)).
+		Append(pointT, "loginTagFalse", call.WithArgs(
 			call.NewArgument(
 				"password",
 				call.NewLiteralString("hunter2"),
 				false,
 			),
-		)
+		))
 	expectedEnc, err = dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.LoginTagFalse.ID, expectedEnc)
@@ -2517,9 +2517,8 @@ func TestServerSelect(t *testing.T) {
 
 	t.Run("basic selection", func(t *testing.T) {
 		// Create a test object and wrap it as a dagql.Object
-		testObj, err := dagql.NewResultForID(&TestObject{Value: 42, Text: "hello"}, call.New().Append(
-			(TestObject{}).Type(), "fake", "", nil, 0, "",
-		))
+		testObj, err := dagql.NewResultForID(&TestObject{Value: 42, Text: "hello"},
+			call.New().Append((TestObject{}).Type(), "fake"))
 		require.NoError(t, err)
 
 		// Get the installed class from the server
@@ -2549,7 +2548,7 @@ func TestServerSelect(t *testing.T) {
 		nestedObj, err := dagql.NewResultForID(&NestedObject{
 			Name:  "nested",
 			Inner: innerObj,
-		}, call.New().Append((TestObject{}).Type(), "fake", "", nil, 0, ""))
+		}, call.New().Append((TestObject{}).Type(), "fake"))
 		require.NoError(t, err)
 
 		// Get the installed class from the server
@@ -2572,7 +2571,7 @@ func TestServerSelect(t *testing.T) {
 	t.Run("null result", func(t *testing.T) {
 		// Create an object with a null field
 		testObj, err := dagql.NewResultForID(&TestObject{Value: 42, Text: "hello", NullableField: nil},
-			call.New().Append((TestObject{}).Type(), "fake", "", nil, 0, ""),
+			call.New().Append((TestObject{}).Type(), "fake"),
 		)
 		require.NoError(t, err)
 
@@ -2675,7 +2674,7 @@ func TestServerSelect(t *testing.T) {
 	t.Run("error cases", func(t *testing.T) {
 		// Create a test object
 		testObj, err := dagql.NewResultForID(&TestObject{Value: 42, Text: "hello"},
-			call.New().Append((TestObject{}).Type(), "fake", "", nil, 0, ""),
+			call.New().Append((TestObject{}).Type(), "fake"),
 		)
 		require.NoError(t, err)
 

@@ -16,6 +16,123 @@ func TestEnvFile(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(EnvFileSuite{})
 }
 
+func (EnvFileSuite) TestNamespace(ctx context.Context, t *testctx.T) {
+	tests := []struct {
+		name      string
+		input     map[string]string
+		namespace string
+		output    map[string]string
+	}{
+		{
+			"simple",
+			map[string]string{
+				"animal_name":    "daisy",
+				"animal_species": "dog",
+				"foo":            "bar",
+			},
+			"animal",
+			map[string]string{
+				"name":    "daisy",
+				"species": "dog",
+			},
+		},
+		{
+			"simple with underscore suffix",
+			map[string]string{
+				"animal_name":    "daisy",
+				"animal_species": "dog",
+				"foo":            "bar",
+			},
+			"animal_",
+			map[string]string{
+				"name":    "daisy",
+				"species": "dog",
+			},
+		},
+		{
+			"case insensitive",
+			map[string]string{
+				"ANIMAL_name":    "daisy",
+				"Animal_species": "dog",
+				"foo":            "bar",
+			},
+			"animal",
+			map[string]string{
+				"name":    "daisy",
+				"species": "dog",
+			},
+		},
+		{
+			"underscores",
+			map[string]string{
+				"my_app_token": "topsecret",
+				"my_app_name":  "petstore",
+				"foo":          "bar",
+			},
+			"my_app",
+			map[string]string{
+				"token": "topsecret",
+				"name":  "petstore",
+			},
+		},
+		{
+			"dashes + underscores",
+			map[string]string{
+				"my_app_token": "topsecret",
+				"myApp_name":   "petstore",
+				"foo":          "bar",
+				"MY_aPp_URL":   "http://localhost",
+			},
+			"my-app",
+			map[string]string{
+				"token": "topsecret",
+				"name":  "petstore",
+				"URL":   "http://localhost",
+			},
+		},
+		{
+			"underscore in prefix + at the end of prefix",
+			map[string]string{
+				"my_app_token": "topsecret",
+				"my_app_name":  "petstore",
+				"foo":          "bar",
+			},
+			"my_app_",
+			map[string]string{
+				"token": "topsecret",
+				"name":  "petstore",
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			input := c.EnvFile()
+			for k, v := range tc.input {
+				input = input.WithVariable(k, v)
+			}
+			output := input.Namespace(tc.namespace)
+			outputMap := envFileMap(t, output)
+			require.Equal(t, tc.output, outputMap)
+		})
+	}
+}
+
+func envFileMap(t *testctx.T, env *dagger.EnvFile) map[string]string {
+	ctx := t.Context()
+	result := map[string]string{}
+	vars, err := env.Variables(ctx)
+	require.NoError(t, err)
+	for _, v := range vars {
+		name, err := v.Name(ctx)
+		require.NoError(t, err)
+		value, err := v.Value(ctx)
+		require.NoError(t, err)
+		result[name] = value
+	}
+	return result
+}
+
 // Test that the Dagger type matches the behavior of the underlying dotenv library,
 // when evaluating values.
 // This covers variable expansion, quotes and escape handling, etc.

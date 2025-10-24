@@ -4,7 +4,6 @@ import ts from "typescript"
 import { TypeDefKind } from "../../../api/client.gen.js"
 import { IntrospectionError } from "../../../common/errors/index.js"
 import {
-  findModuleByExportedName,
   AST,
   CLIENT_GEN_FILE,
   ResolvedNodeWithSymbol,
@@ -92,13 +91,6 @@ export class DaggerModule {
     private userModule: Module[],
     private ast: AST,
   ) {
-    const mainModule = findModuleByExportedName(this.name, this.userModule)
-    if (!mainModule) {
-      console.warn(
-        `could not find module entrypoint: class ${this.name} from import. Class should be exported to benefit from all features.`,
-      )
-    }
-
     const classObjects = this.findClasses()
     for (const classObject of classObjects) {
       // This only applies to cloud. If this is the true main object, it is correct

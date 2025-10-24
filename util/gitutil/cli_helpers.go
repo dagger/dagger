@@ -1,10 +1,9 @@
 package gitutil
 
 import (
+	"bytes"
 	"context"
-	"strings"
-
-	"github.com/pkg/errors"
+	"slices"
 )
 
 func (cli *GitCLI) Dir() string {
@@ -18,14 +17,27 @@ func (cli *GitCLI) WorkTree(ctx context.Context) (string, error) {
 	if cli.workTree != "" {
 		return cli.workTree, nil
 	}
-	return cli.clean(cli.Run(ctx, "rev-parse", "--show-toplevel"))
+	out, err := cli.Run(ctx, "rev-parse", "--is-inside-work-tree", "--show-toplevel")
+	out = bytes.TrimSpace(out)
+	if err != nil {
+		if string(out) == "false" {
+			return "", nil
+		}
+		return "", err
+	}
+	lines := slices.Collect(bytes.Lines(out))
+	return string(lines[len(lines)-1]), nil
 }
 
 func (cli *GitCLI) GitDir(ctx context.Context) (string, error) {
 	if cli.gitDir != "" {
 		return cli.gitDir, nil
 	}
-	return cli.clean(cli.Run(ctx, "rev-parse", "--absolute-git-dir"))
+	out, err := cli.Run(ctx, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return "", err
+	}
+	return string(bytes.TrimSpace(out)), err
 }
 
 func (cli *GitCLI) URL(ctx context.Context) (string, error) {
@@ -34,13 +46,4 @@ func (cli *GitCLI) URL(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return "file://" + gitDir, nil
-}
-
-func (cli *GitCLI) clean(dt []byte, err error) (string, error) {
-	out := string(dt)
-	out = strings.ReplaceAll(strings.Split(out, "\n")[0], "'", "")
-	if err != nil {
-		err = errors.New(strings.TrimSuffix(err.Error(), "\n"))
-	}
-	return out, err
 }

@@ -1,7 +1,0 @@
-kind: Added
-body: |
-    New `Changeset.isEmpty` API
-time: 2025-10-15T09:56:33.082981011-07:00
-custom:
-    Author: jedevc
-    PR: "11237"

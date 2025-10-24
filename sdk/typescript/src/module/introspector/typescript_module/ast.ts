@@ -8,7 +8,6 @@ import { IntrospectionError } from "../../../common/errors/index.js"
 import { DaggerDecorators } from "../dagger_module/index.js"
 import { TypeDef } from "../typedef.js"
 import { DeclarationsMap, isDeclarationOf } from "./declarations.js"
-import { getValueByExportedName } from "./explorer.js"
 import { Location } from "./location.js"
 
 export const CLIENT_GEN_FILE = "client.gen.ts"
@@ -29,6 +28,7 @@ export class AST {
     public readonly files: string[],
     private readonly userModule: Module[],
   ) {
+    this.files = files.map((f) => path.resolve(f))
     const program = ts.createProgram(files, {
       experimentalDecorators: true,
       moduleResolution: ts.ModuleResolutionKind.Node10,
@@ -58,7 +58,7 @@ export class AST {
         // Skip if it's not from the client gen nor the user module
         if (
           !sourceFile.fileName.endsWith(CLIENT_GEN_FILE) &&
-          !this.files.includes(sourceFile.fileName)
+          !this.files.includes(path.resolve(sourceFile.fileName))
         ) {
           return
         }
@@ -103,7 +103,7 @@ export class AST {
         // Skip if it's not from the client gen nor the user module
         if (
           !sourceFile.fileName.endsWith(CLIENT_GEN_FILE) &&
-          !this.files.includes(sourceFile.fileName)
+          !this.files.includes(path.resolve(sourceFile.fileName))
         ) {
           return
         }
@@ -182,7 +182,7 @@ export class AST {
     // from the module path so we exclude the module path from the given path.
     // But since root will always start with `/src`, we want to catch the second `src`
     // inside the module.
-    const pathParts = sourceFile.fileName.split(path.sep)
+    const pathParts = path.resolve(sourceFile.fileName).split(path.sep)
     const srcIndex = pathParts.indexOf("src", 2)
 
     return {
@@ -407,6 +407,13 @@ export class AST {
     }
   }
 
+  private warnUnresolvedDefaultValue(expression: ts.Expression): void {
+    console.warn(
+      `default value '${expression.getText()}' at ${AST.getNodePosition(expression)} cannot be resolved, dagger does not support object or function as default value. 
+          The value will be ignored by the introspection and resolve at the runtime.`,
+    )
+  }
+
   public resolveParameterDefaultValue(expression: ts.Expression): any {
     const kind = expression.kind
 
@@ -424,36 +431,96 @@ export class AST {
       case ts.SyntaxKind.ArrayLiteralExpression:
         return eval(expression.getText())
       case ts.SyntaxKind.Identifier: {
-        // If the parameter is a reference to a variable, we try to resolve it using
-        // exported modules value.
-        const value = getValueByExportedName(
-          expression.getText(),
-          this.userModule,
-        )
-
-        if (value === undefined) {
+        const symbol = this.checker.getSymbolAtLocation(expression)
+        if (!symbol) {
           throw new IntrospectionError(
             `could not resolve default value reference to the variable: '${expression.getText()}' from ${AST.getNodePosition(expression)}. Is it exported by the module?`,
           )
         }
 
-        return this.resolveParameterDefaultValueTypeReference(expression, value)
-      }
-      case ts.SyntaxKind.PropertyAccessExpression: {
-        const accessors = expression.getText().split(".")
+        // Parse the default value from the variable declaration
+        // ```
+        // export const foo = "A"
+        //
+        // function bar(baz: string = foo) {}
+        // ```
+        const decl = symbol.valueDeclaration ?? symbol.declarations?.[0]
+        if (!decl) {
+          this.warnUnresolvedDefaultValue(expression)
 
-        let value = getValueByExportedName(accessors[0], this.userModule)
-        for (let i = 1; i < accessors.length; i++) {
-          value = value[accessors[i]]
+          return undefined
         }
 
-        return this.resolveParameterDefaultValueTypeReference(expression, value)
+        if (ts.isVariableDeclaration(decl) && decl.initializer) {
+          return this.resolveParameterDefaultValue(decl.initializer)
+        }
+
+        // Parse the default value from the enum member
+        // ```
+        // enum Foo {
+        //   A = "a"
+        // }
+        //
+        // function bar(baz: string = Foo.A) {}
+        // ```
+        if (ts.isEnumMember(decl)) {
+          const val = this.checker.getConstantValue(decl)
+          if (val !== undefined) return val
+          if (decl.initializer)
+            return this.resolveParameterDefaultValue(decl.initializer)
+        }
+
+        // Parse the default value from the import specifier
+        // ```
+        // import { foo } from "bar"
+        //
+        // function bar(baz: string = foo) {}
+        // ```
+        if (ts.isImportSpecifier(decl)) {
+          const aliased = this.checker.getAliasedSymbol(symbol)
+          const aliasedDecl =
+            aliased?.valueDeclaration ?? aliased?.declarations?.[0]
+          if (
+            aliasedDecl &&
+            ts.isVariableDeclaration(aliasedDecl) &&
+            aliasedDecl.initializer
+          ) {
+            return this.resolveParameterDefaultValue(aliasedDecl.initializer)
+          }
+        }
+
+        // Warn the user if the default value cannot be resolved
+        this.warnUnresolvedDefaultValue(expression)
+
+        return undefined
+      }
+      case ts.SyntaxKind.PropertyAccessExpression: {
+        const symbol = this.checker.getSymbolAtLocation(expression)
+        if (!symbol) return undefined
+
+        const decl = symbol.valueDeclaration
+        if (!decl) {
+          this.warnUnresolvedDefaultValue(expression)
+
+          return undefined
+        }
+
+        if (ts.isEnumMember(decl)) {
+          const val = this.checker.getConstantValue(decl)
+          if (val !== undefined) return val
+
+          if (decl.initializer)
+            return this.resolveParameterDefaultValue(decl.initializer)
+        }
+
+        // Warn the user if the default value cannot be resolved
+        this.warnUnresolvedDefaultValue(expression)
+
+        return undefined
       }
       default: {
-        console.warn(
-          `default value '${expression.getText()}' at ${AST.getNodePosition(expression)} cannot be resolved, dagger does not support object or function as default value. 
-          The value will be ignored by the introspection and resolve at the runtime.`,
-        )
+        // Warn the user if the default value cannot be resolved
+        this.warnUnresolvedDefaultValue(expression)
       }
     }
   }

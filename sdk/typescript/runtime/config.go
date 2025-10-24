@@ -32,7 +32,10 @@ const (
 const (
 	PnpmDefaultVersion = "8.15.4"
 	YarnDefaultVersion = "1.22.22"
-	NpmDefaultVersion  = "10.7.0"
+
+	// NOTE: when changing this version, check if the `DefaultNodeVersion` var in sdk/typescript/runtime/tsdistconsts/consts.go
+	// should be updated to an image that has the same version of npm pre-installed in the container
+	NpmDefaultVersion = "10.9.0"
 )
 
 type SDKLibOrigin string

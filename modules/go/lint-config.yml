@@ -1,0 +1,143 @@
+version: "2"
+
+run:
+  relative-path-mode: wd
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - dogsled
+    - dupl
+    - errorlint
+    - gocritic
+    - gocyclo
+    - gomodguard
+    - goprintffuncname
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - nakedret
+    - nilerr
+    - nolintlint
+    - revive
+    - rowserrcheck
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+    - whitespace
+  settings:
+    errorlint:
+      errorf: true
+      errorf-multi: true
+      asserts: false
+      comparison: false
+    gocritic:
+      disabled-checks:
+        - ifElseChain
+    gosec:
+      excludes:
+        # All these excludes have been added on a case-by-cases basis, after reviewing the specific code that triggered them.
+        # PLEASE DO NOT BLINDLY DISABLE CHECKS TO MAKE YOUR LINTING ERRORS GO AWAY!
+        #
+        # G115: Potential integer overflow when converting between integer types
+        - G115
+        # G114: Use of net/http serve function that has no support for setting timeouts
+        - G114
+        # G112: Potential slowloris attack
+        - G112
+        # G204: Subprocess launched with variable
+        - G204
+        # G306: Expect WriteFile permissions to be 0600 or less
+        - G306
+        # G107: Url provided to HTTP request as taint input
+        - G107
+
+    govet:
+      disable:
+        - lostcancel
+    staticcheck:
+      checks:
+        - "all"
+        - "-QF1006" # could lift into loop condition
+        - "-QF1008" # could remove embedded field from selector
+    revive:
+      rules:
+        - name: unused-parameter
+          severity: warning
+          disabled: true
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          # tests are very repetitive
+          - dupl
+          # tests are allowed to do silly things
+          - gosec
+        path: _test\.go
+      - linters:
+          # example dagger module code might use extra ctx/err in signatures for clarity
+          - unparam
+        path: docs/
+      - linters:
+          # this is sometimes done for clarity
+          - unparam
+        text: .* always receives .*
+        path: _test\.go
+
+      - linters:
+          - staticcheck
+        text: "idtools.IdentityMapping"
+
+      - linters:
+          - gocyclo
+          - dupl
+          - unconvert
+          - dogsled
+          - gofmt
+          - nakedret
+          - gosec
+        path: internal/buildkit/
+      - linters:
+          - unparam
+          - nolintlint
+          - goimports
+        path: internal/buildkit/
+      - text: "singleCaseSwitch"
+        linters:
+          - gocritic
+        path: internal/buildkit/
+      - text: "SA1019"
+        linters:
+          - staticcheck
+        path: internal/buildkit/
+
+      - text: "ST.*"
+        linters:
+          - staticcheck
+        path: internal/buildkit/
+      - text: "QF.*"
+        linters:
+          - staticcheck
+        path: internal/buildkit/
+    paths:
+      # these files are already linted in sdk/go
+      - internal/telemetry
+      - internal/querybuilder
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - internal/telemetry
+      - internal/querybuilder

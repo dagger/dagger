@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"typescript-sdk/internal/dagger"
 	"typescript-sdk/tsdistconsts"
@@ -100,7 +101,11 @@ func (m *moduleRuntimeContainer) withConfiguredRuntimeEnvironment() *moduleRunti
 					dagger.ContainerWithDirectoryOpts{Include: []string{"*.json"}},
 				)
 
-			break
+			// TODO: disappear once `dagger init` is split
+			// We need to initialize the packageJSONConfig because it was set from the template.
+			m.cfg.packageJSONConfig = &packageJSONConfig{
+				Dependencies: make(map[string]string),
+			}
 		}
 
 		m.ctr = m.ctr.
@@ -115,7 +120,11 @@ func (m *moduleRuntimeContainer) withConfiguredRuntimeEnvironment() *moduleRunti
 					dagger.ContainerWithDirectoryOpts{Include: []string{"*.json"}},
 				)
 
-			break
+			// TODO: disappear once `dagger init` is split
+			// We need to initialize the packageJSONConfig because it was set from the template.
+			m.cfg.packageJSONConfig = &packageJSONConfig{
+				Dependencies: make(map[string]string),
+			}
 		}
 
 		m.ctr = m.ctr.
@@ -125,7 +134,10 @@ func (m *moduleRuntimeContainer) withConfiguredRuntimeEnvironment() *moduleRunti
 	case Deno:
 		m.ctr = m.ctr.
 			WithMountedFile("/opt/module/bin/__deno_config_updator.ts", denoConfigUpdatorFile()).
-			WithExec([]string{"deno", "run", "-A", "/opt/module/bin/__deno_config_updator.ts", fmt.Sprintf("--sdk-lib-origin=%s", m.cfg.sdkLibOrigin)})
+			WithExec([]string{"deno", "run", "-A", "/opt/module/bin/__deno_config_updator.ts",
+				fmt.Sprintf("--sdk-lib-origin=%s", m.cfg.sdkLibOrigin),
+				fmt.Sprintf("--default-typescript-version=%s", tsdistconsts.DefaultTypeScriptVersion),
+			})
 	}
 
 	return m
@@ -148,7 +160,7 @@ func (m *moduleRuntimeContainer) configurePackageJSON(file *dagger.File) *dagger
 	if m.cfg.packageJSONConfig != nil {
 		_, ok := m.cfg.packageJSONConfig.Dependencies["typescript"]
 		if !ok {
-			ctr = ctr.WithExec([]string{"npm", "pkg", "set", "dependencies.typescript=^5.5.4"})
+			ctr = ctr.WithExec([]string{"npm", "pkg", "set", fmt.Sprintf("dependencies.typescript=%s", tsdistconsts.DefaultTypeScriptVersion)})
 		}
 	}
 
@@ -188,7 +200,7 @@ func (m *moduleRuntimeContainer) withSetupPackageManager() *moduleRuntimeContain
 		}
 	case Npm:
 		m.ctr = m.ctr.
-			WithExec([]string{"npm", "install", "-g", fmt.Sprintf("npm@%s", version)})
+			WithExec([]string{"sh", "-c", "npm -v | grep -qx " + strings.ReplaceAll(version, ".", `\.`) + " || npm install -g npm@" + version})
 	}
 
 	return m
@@ -231,17 +243,17 @@ func (m *moduleRuntimeContainer) withInstalledDependencies() *moduleRuntimeConta
 	case Yarn:
 		if semver.Compare(fmt.Sprintf("v%s", m.cfg.packageManagerVersion), "v3.0.0") <= 0 {
 			m.ctr = m.ctr.
-				WithExec([]string{"yarn", "install", "--frozen-lockfile", "--prod"})
+				WithExec([]string{"yarn", "install", "--prod"})
 			break
 		}
 
-		m.ctr = m.ctr.WithExec([]string{"yarn", "install", "--immutable"})
+		m.ctr = m.ctr.WithExec([]string{"yarn", "install"})
 	case Pnpm:
 		m.ctr = m.ctr.
-			WithExec([]string{"pnpm", "install", "--frozen-lockfile", "--shamefully-hoist=true", "--prod"})
+			WithExec([]string{"pnpm", "install", "--shamefully-hoist=true", "--prod"})
 	case Npm:
 		m.ctr = m.ctr.
-			WithExec([]string{"npm", "ci", "--omit=dev"})
+			WithExec([]string{"npm", "install", "--omit=dev"})
 	case BunManager:
 		m.ctr = m.ctr.
 			WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--omit=dev", "--omit=peer", "--omit=optional"})

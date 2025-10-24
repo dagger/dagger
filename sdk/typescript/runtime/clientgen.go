@@ -115,15 +115,19 @@ func (c *clientGenContainer) withUpdatedEnvironment(outputDir string) *clientGen
 		if c.cfg.packageJSONConfig == nil {
 			c.ctr = c.ctr.
 				WithFile("package.json", templateDirectory().File("package.json"))
-		} else {
-			c.ctr = c.ctr.
-				WithExec([]string{"npm", "pkg", "set", "type=module"})
 
-			_, ok := c.cfg.packageJSONConfig.Dependencies["typescript"]
-			if !ok {
-				c.ctr = c.ctr.
-					WithExec([]string{"npm", "pkg", "set", "dependencies.typescript=^5.5.4"})
+			c.cfg.packageJSONConfig = &packageJSONConfig{
+				Dependencies: make(map[string]string),
 			}
+		}
+
+		c.ctr = c.ctr.
+			WithExec([]string{"npm", "pkg", "set", "type=module"})
+
+		_, ok := c.cfg.packageJSONConfig.Dependencies["typescript"]
+		if !ok {
+			c.ctr = c.ctr.
+				WithExec([]string{"npm", "pkg", "set", fmt.Sprintf("dependencies.typescript=%s", tsdistconsts.DefaultTypeScriptVersion)})
 		}
 
 		c.ctr = c.ctr.
@@ -150,6 +154,7 @@ func (c *clientGenContainer) withUpdatedEnvironment(outputDir string) *clientGen
 				fmt.Sprintf("--sdk-lib-origin=%s", c.cfg.sdkLibOrigin),
 				"--standalone-client=true",
 				fmt.Sprintf("--client-dir=%s", outputDir),
+				fmt.Sprintf("--default-typescript-version=%s", tsdistconsts.DefaultTypeScriptVersion),
 			})
 	}
 

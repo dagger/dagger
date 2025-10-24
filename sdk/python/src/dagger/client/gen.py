@@ -4146,6 +4146,27 @@ class Engine(Type):
         _ctx = self._select("localCache", _args)
         return EngineCache(_ctx)
 
+    async def name(self) -> str:
+        """The name of the engine instance.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
 
 @typecheck
 class EngineCache(Type):
@@ -5823,6 +5844,24 @@ class EnvFile(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(EnvFileID)
 
+    def namespace(self, prefix: str) -> Self:
+        """Filters variables by prefix and removes the pref from keys. Variables
+        without the prefix are excluded. For example, with the prefix
+        "MY_APP_" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello
+        FOO=bar the resulting environment will contain: TOKEN=topsecret
+        NAME=hello
+
+        Parameters
+        ----------
+        prefix:
+            The prefix to filter by
+        """
+        _args = [
+            Arg("prefix", prefix),
+        ]
+        _ctx = self._select("namespace", _args)
+        return EnvFile(_ctx)
+
     async def variables(self, *, raw: bool | None = None) -> list["EnvVariable"]:
         """Return all variables
 
@@ -7462,6 +7501,12 @@ class GitRepository(Type):
         ]
         _ctx = self._select("tags", _args)
         return await _ctx.execute(list[str])
+
+    def uncommitted(self) -> Changeset:
+        """Returns the changeset of uncommitted changes in the git repository."""
+        _args: list[Arg] = []
+        _ctx = self._select("uncommitted", _args)
+        return Changeset(_ctx)
 
     async def url(self) -> str | None:
         """The URL of the git repository.

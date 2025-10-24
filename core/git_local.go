@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/util/gitutil"
 )
@@ -76,6 +78,136 @@ func (repo *LocalGitRepository) File(ctx context.Context, filename string) (*Fil
 	}
 
 	return repo.Directory.Self().File(ctx, filepath.Join(gitDir, filename))
+}
+
+func (repo *LocalGitRepository) Dirty(ctx context.Context) (inst dagql.ObjectResult[*Directory], rerr error) {
+	return repo.Directory, nil
+}
+
+func (repo *LocalGitRepository) Cleaned(ctx context.Context) (inst dagql.ObjectResult[*Directory], rerr error) {
+	srv := dagql.CurrentDagqlServer(ctx)
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return inst, err
+	}
+	cache := query.BuildkitCache()
+
+	bkSessionGroup, ok := buildkit.CurrentBuildkitSessionGroup(ctx)
+	if !ok {
+		return inst, fmt.Errorf("no buildkit session group in context")
+	}
+
+	llb := repo.Directory.Self().LLB
+	res, err := bk.Solve(ctx, bkgw.SolveRequest{Definition: llb})
+	if err != nil {
+		return inst, err
+	}
+	ref, err := res.SingleRef()
+	if err != nil {
+		return inst, err
+	}
+	parent, err := ref.CacheRef(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	bkref, err := cache.New(ctx, parent, bkSessionGroup,
+		bkcache.CachePolicyRetain,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription("git cleaned worktree"))
+
+	if err != nil {
+		return inst, err
+	}
+	defer func() {
+		if rerr != nil && bkref != nil {
+			bkref.Release(context.WithoutCancel(ctx))
+		}
+	}()
+	skip := false
+	err = MountRef(ctx, bkref, bkSessionGroup, func(parentRoot string) error {
+		src, err := fs.RootPath(parentRoot, repo.Directory.Self().Dir)
+		if err != nil {
+			return err
+		}
+
+		git := gitutil.NewGitCLI(gitutil.WithDir(src))
+		worktree, err := git.WorkTree(ctx)
+		if err != nil {
+			return err
+		}
+		if worktree == "" {
+			skip = true // no worktree, no changes
+			return nil
+		}
+		gitDir, err := git.GitDir(ctx)
+		if err != nil {
+			return err
+		}
+
+		idx, err := os.Open(filepath.Join(gitDir, "index"))
+		if err != nil {
+			return err
+		}
+		defer idx.Close()
+
+		// NOTE: apply the index to a temp file because "git restore --staged"
+		// re-writes the index which we don't want to show up as a changed file
+		// in the final result
+		tmp, err := os.CreateTemp("", "dagger-git-index-")
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(tmp, idx)
+		if err != nil {
+			tmp.Close()
+			return err
+		}
+		if err := tmp.Close(); err != nil {
+			return err
+		}
+		defer os.Remove(tmp.Name())
+
+		git = git.New(gitutil.WithIndexFile(tmp.Name()))
+
+		// reset index to HEAD
+		// NOTE: we cannot use "git reset --hard" because it writes every file,
+		// which *kills* performance on overlayfs
+		_, err = git.Run(ctx, "restore", "--staged", ".")
+		if err != nil {
+			return err
+		}
+		_, err = git.Run(ctx, "restore", ".")
+		if err != nil {
+			return err
+		}
+		_, err = git.Run(ctx, "clean", "-fd")
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		return inst, err
+	}
+	if skip {
+		return repo.Directory, nil
+	}
+
+	dir := NewDirectory(nil, repo.Directory.Self().Dir, query.Platform(), nil)
+	snap, err := bkref.Commit(ctx)
+	if err != nil {
+		return inst, err
+	}
+	bkref = nil
+	dir.Result = snap
+
+	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
 func (repo *LocalGitRepository) mount(ctx context.Context, depth int, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error {

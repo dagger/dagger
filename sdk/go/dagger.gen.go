@@ -3839,7 +3839,8 @@ func (r *Directory) WithoutFiles(paths []string) *Directory {
 type Engine struct {
 	query *querybuilder.Selection
 
-	id *EngineID
+	id   *EngineID
+	name *string
 }
 
 func (r *Engine) WithGraphQLQuery(q *querybuilder.Selection) *Engine {
@@ -3895,6 +3896,19 @@ func (r *Engine) LocalCache() *EngineCache {
 	return &EngineCache{
 		query: q,
 	}
+}
+
+// The name of the engine instance.
+func (r *Engine) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A cache storage for the Dagger engine
@@ -5371,6 +5385,16 @@ func (r *EnvFile) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix "MY_APP_" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello
+func (r *EnvFile) Namespace(prefix string) *EnvFile {
+	q := r.query.Select("namespace")
+	q = q.Arg("prefix", prefix)
+
+	return &EnvFile{
+		query: q,
+	}
 }
 
 // EnvFileVariablesOpts contains options for EnvFile.Variables
@@ -7174,6 +7198,15 @@ func (r *GitRepository) Tags(ctx context.Context, opts ...GitRepositoryTagsOpts)
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Returns the changeset of uncommitted changes in the git repository.
+func (r *GitRepository) Uncommitted() *Changeset {
+	q := r.query.Select("uncommitted")
+
+	return &Changeset{
+		query: q,
+	}
 }
 
 // The URL of the git repository.

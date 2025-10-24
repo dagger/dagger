@@ -1,9 +1,14 @@
 {
   "name": "dagger-cli",
-  "engineVersion": "v0.19.2",
+  "engineVersion": "v0.19.3",
   "sdk": {
     "source": "go"
   },
+  "include": [
+    "../../go.mod",
+    "../../go.sum",
+    "../../util/parallel"
+  ],
   "dependencies": [
     {
       "name": "alpine",

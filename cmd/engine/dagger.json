@@ -1,12 +1,15 @@
 {
   "name": "dagger-engine",
-  "engineVersion": "v0.19.2",
+  "engineVersion": "v0.19.3",
   "sdk": {
     "source": "go"
   },
   "include": [
     "../../engine/distconsts/**/*",
-    "../../sdk/typescript/runtime/**/*"
+    "../../sdk/typescript/runtime/**/*",
+    "../../go.mod",
+    "../../go.sum",
+    "../../util/parallel"
   ],
   "dependencies": [
     {
@@ -16,10 +19,6 @@
     {
       "name": "dagger-cli",
       "source": "../dagger"
-    },
-    {
-      "name": "dirdiff",
-      "source": "../../modules/dirdiff"
     },
     {
       "name": "go",
