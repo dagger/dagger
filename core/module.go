@@ -22,7 +22,7 @@ type Module struct {
 	// The source of the module
 	Source dagql.Nullable[dagql.ObjectResult[*ModuleSource]] `field:"true" name:"source" doc:"The source for the module."`
 
-	// The source to load contextual dirs/files from, which may be different than Source for toolchains
+	// The source to load contextual dirs/files from, which may be different than Source for blueprints or toolchains
 	ContextSource dagql.Nullable[dagql.ObjectResult[*ModuleSource]]
 
 	// The name of the module
@@ -56,7 +56,7 @@ type Module struct {
 	EnumDefs []*TypeDef `field:"true" name:"enums" doc:"Enumerations served by this module."`
 
 	// IsToolchain indicates this module was loaded as a toolchain dependency.
-	// Blueprint modules are allowed to share types with the modules that depend on them.
+	// Toolchain modules are allowed to share types with the modules that depend on them.
 	IsToolchain bool
 
 	// ToolchainModules stores references to toolchain module instances by their field name
@@ -92,8 +92,9 @@ func (mod *Module) GetSource() *ModuleSource {
 }
 
 // The "context source" is the module used as the execution context for the module.
-// Usually it's simply the module source itself. But when using toolchains, it will
-// point to the downstream module applying the toolchain, not the toolchain itself.
+// Usually it's simply the module source itself. But when using blueprints or
+// toolchains, it will point to the downstream module applying the toolchain,
+// not the toolchain itself.
 func (mod *Module) GetContextSource() *ModuleSource {
 	if !mod.ContextSource.Valid {
 		return nil
