@@ -1393,6 +1393,17 @@ func (t itemType) String() string {
 	}
 }
 
+func (t itemType) Plural() string {
+	switch t {
+	case itemTypeDependency:
+		return "dependencies"
+	case itemTypeToolchain:
+		return "toolchains"
+	default:
+		return "unknowns"
+	}
+}
+
 // itemAccessor provides unified access to dependencies or toolchains in a ModuleSource
 type itemAccessor struct {
 	typ itemType
@@ -1577,7 +1588,7 @@ func (s *moduleSourceSchema) moduleSourceUpdateItems(
 		if existingItem.Self().Kind == core.ModuleSourceKindLocal {
 			for updateReq := range updateReqs {
 				if updateReq.symbolic == existingItem.Self().ModuleName {
-					return nil, fmt.Errorf("updating local %ss is not supported", accessor.typ)
+					return nil, fmt.Errorf("updating local %s is not supported", accessor.typ.Plural())
 				}
 
 				var contextRoot string
@@ -1598,7 +1609,7 @@ func (s *moduleSourceSchema) moduleSourceUpdateItems(
 				}
 
 				if updateReq.symbolic == existingSymbolic {
-					return nil, fmt.Errorf("updating local %ss is not supported", accessor.typ)
+					return nil, fmt.Errorf("updating local %s is not supported", accessor.typ.Plural())
 				}
 			}
 			continue
@@ -1648,7 +1659,7 @@ func (s *moduleSourceSchema) moduleSourceUpdateItems(
 		for updateReq := range updateReqs {
 			items = append(items, updateReq.symbolic)
 		}
-		return nil, fmt.Errorf("%s %q was requested to be updated, but it is not found in the %ss list", accessor.typ, strings.Join(items, ","), accessor.typ)
+		return nil, fmt.Errorf("%s %q was requested to be updated, but it is not found in the %s list", accessor.typ, strings.Join(items, ","), accessor.typ.Plural())
 	}
 
 	return newUpdatedArgs, nil
