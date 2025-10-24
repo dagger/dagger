@@ -284,36 +284,45 @@ def test_func_doc_deprecated_args(ctx: Context):
     assert 'Method "apply" is deprecated: Use apply_config instead.' in normalized
 
 
-def test_interface_method_deprecated(ctx: Context):
+def test_interface_methods_deprecated(ctx: Context):
     iface = Interface(
-        "Component",
-        {
-            "deploy": Field(
-                Boolean,
+        "Fooer",
+        lambda: {
+            "foo": Field(
+                String,
                 {
-                    "force": Argument(
-                        Boolean,
-                        deprecation_reason="Prefer `forceDeploy` flag.",
+                    "value": Argument(
+                        Int,
+                        deprecation_reason="Use `other` instead.",
                     )
                 },
-                deprecation_reason="Call `deployNew` instead.",
-            )
+                deprecation_reason="Call `bar` instead.",
+            ),
+            "bar": Field(
+                String,
+                {"note": Argument(String, description="Caller note.")},
+            ),
         },
     )
 
-    handler = _ObjectField(ctx, "deploy", iface.fields["deploy"], iface)
+    foo_handler = _ObjectField(ctx, "foo", iface.fields["foo"], iface)
+    foo_doc = foo_handler.func_doc()
+    assert ".. deprecated::\n    Call :py:meth:`bar` instead." in foo_doc
 
-    docstring = handler.func_doc()
-    assert ".. deprecated::\n    Call :py:meth:`deploy_new` instead." in docstring
+    foo_doc_lines = {line.strip() for line in foo_doc.splitlines()}
+    assert ".. deprecated:: Use other instead." in foo_doc_lines
 
-    doc_lines = {line.strip() for line in docstring.splitlines()}
-    assert ".. deprecated:: Prefer force_deploy flag." in doc_lines
+    foo_body = foo_handler.func_body()
+    foo_normalized = foo_body.replace('\\"', '"')
+    assert 'Method "foo" is deprecated: Call "bar" instead.' in foo_normalized
 
-    body = handler.func_body()
-    normalized = body.replace('\\"', '"')
-    assert (
-        'Method "deploy" is deprecated: Call "deploy_new" instead.' in normalized
-    )
+    bar_handler = _ObjectField(ctx, "bar", iface.fields["bar"], iface)
+    bar_doc = bar_handler.func_doc()
+    assert ".. deprecated::" not in bar_doc
+    assert "Parameters" in bar_doc
+
+    bar_body = bar_handler.func_body()
+    assert "warnings.warn" not in bar_body
 
 
 @pytest.mark.parametrize(
