@@ -675,6 +675,10 @@ func (s *LLMSession) SyncFromLocal(ctx context.Context) (rerr error) {
 			return err
 		}
 		if d.IsDir() {
+			if d.Name() == ".git" {
+				// don't recurse into .git
+				return filepath.SkipDir
+			}
 			// nothing to do for directories
 			return nil
 		}
