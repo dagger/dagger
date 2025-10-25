@@ -31,9 +31,9 @@ func (r RustSDK) Name() string {
 
 // Lint the Rust SDK
 // Note: technically this is a code format check, not a lint check
-func (r RustSDK) CheckLint(ctx context.Context) error {
+func (r RustSDK) Lint(ctx context.Context) (CheckStatus, error) {
 	ctr := r.DevContainer()
-	return parallel.New().
+	return CheckCompleted, parallel.New().
 		WithJob("check rust format", func(ctx context.Context) error {
 			_, err := ctr.
 				WithExec([]string{"cargo", "fmt", "--check"}).
@@ -50,13 +50,13 @@ func (r RustSDK) CheckLint(ctx context.Context) error {
 }
 
 // Test the Rust SDK
-func (r RustSDK) Test(ctx context.Context) error {
+func (r RustSDK) Test(ctx context.Context) (CheckStatus, error) {
 	_, err := r.DevContainer().
 		With(r.Dagger.devEngineSidecar()).
 		WithExec([]string{"rustc", "--version"}).
 		WithExec([]string{"cargo", "test", "--release", "--all"}).
 		Sync(ctx)
-	return err
+	return CheckCompleted, err
 }
 
 func (r RustSDK) Source() *dagger.Directory {
@@ -83,8 +83,8 @@ func (r RustSDK) Generate(_ context.Context) (*dagger.Changeset, error) {
 }
 
 // Test the publishing process
-func (r RustSDK) CheckReleaseDryRun(ctx context.Context) error {
-	return r.Publish(ctx, "HEAD", true, nil)
+func (r RustSDK) ReleaseDryRun(ctx context.Context) (CheckStatus, error) {
+	return CheckCompleted, r.Publish(ctx, "HEAD", true, nil)
 }
 
 // Publish the Rust SDK

@@ -29,24 +29,15 @@ func (t TypescriptSDK) Name() string {
 	return "typescript"
 }
 
-// Lint the Typescript SDK
-func (t TypescriptSDK) CheckLint(ctx context.Context) (rerr error) {
-	return parallel.New().
-		WithJob("check typescript format", t.CheckLintTypescript).
-		WithJob("check docs snippets format", t.CheckLintSnippets).
-		WithJob("lint the typescript runtime, which is written in Go", t.CheckGoLint).
-		Run(ctx)
-}
-
 // CheckTypescriptFormat checks the formatting of the Typescript SDK code
-func (t TypescriptSDK) CheckLintTypescript(ctx context.Context) error {
+func (t TypescriptSDK) LintTypescript(ctx context.Context) (CheckStatus, error) {
 	base := t.nodeJsBase()
 	_, err := base.WithExec([]string{"yarn", "lint"}).Sync(ctx)
-	return err
+	return CheckCompleted, err
 }
 
 // CheckDocsSnippetsFormat checks the formatting of Typescript snippets in the docs
-func (t TypescriptSDK) CheckLintSnippets(ctx context.Context) error {
+func (t TypescriptSDK) LintDocsSnippets(ctx context.Context) (CheckStatus, error) {
 	base := t.nodeJsBase()
 	path := "docs/current_docs"
 	_, err := base.
@@ -66,12 +57,13 @@ func (t TypescriptSDK) CheckLintSnippets(ctx context.Context) error {
 		).
 		WithExec([]string{"yarn", "docs:lint"}).
 		Sync(ctx)
-	return err
+	return CheckCompleted, err
 }
 
 // CheckGoFormat checks the formatting of the typescript runtime, which is written in Go
-func (t TypescriptSDK) CheckGoLint(ctx context.Context) (rerr error) {
-	return t.godev().CheckLint(ctx)
+func (t TypescriptSDK) LintGo(ctx context.Context) (CheckStatus, error) {
+	status, err := t.godev().Lint(ctx)
+	return CheckStatus(status), err
 }
 
 func (t TypescriptSDK) godev() *dagger.Go {
@@ -85,7 +77,7 @@ func (t TypescriptSDK) RuntimeSource() *dagger.Directory {
 }
 
 // Test the Typescript SDK
-func (t TypescriptSDK) Test(ctx context.Context) (rerr error) {
+func (t TypescriptSDK) Test(ctx context.Context) (CheckStatus, error) {
 	jobs := parallel.New()
 	// Loop over the LTS and Maintenance versions and test them
 	for _, version := range []string{nodeCurrentLTS, nodePreviousLTS} {
@@ -112,7 +104,7 @@ func (t TypescriptSDK) Test(ctx context.Context) (rerr error) {
 			return err
 		},
 	)
-	return jobs.Run(ctx)
+	return CheckCompleted, jobs.Run(ctx)
 }
 
 // Regenerate the Typescript client bindings
@@ -136,8 +128,8 @@ func (t TypescriptSDK) Generate(ctx context.Context) (*dagger.Changeset, error) 
 }
 
 // Test the publishing process
-func (t TypescriptSDK) CheckReleaseDryRun(ctx context.Context) error {
-	return t.Publish(ctx, "HEAD", true, nil)
+func (t TypescriptSDK) ReleaseDryRun(ctx context.Context) (CheckStatus, error) {
+	return CheckCompleted, t.Publish(ctx, "HEAD", true, nil)
 }
 
 // Publish the Typescript SDK

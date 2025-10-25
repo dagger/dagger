@@ -11,13 +11,18 @@ import (
 	"golang.org/x/mod/semver"
 )
 
+// Run Dagger scripts
+func (dev *DaggerDev) Scripts() *Scripts {
+	return &Scripts{Dagger: dev}
+}
+
 type Scripts struct {
 	Dagger *DaggerDev // +private
 }
 
 // Lint scripts files
-func (s Scripts) CheckLint(ctx context.Context) error {
-	return parallel.New().
+func (s Scripts) Lint(ctx context.Context) (CheckStatus, error) {
+	return CheckCompleted, parallel.New().
 		WithJob("lint install.sh", func(ctx context.Context) error {
 			return dag.Shellcheck().
 				Check(s.Dagger.Source.File("install.sh")).
@@ -37,7 +42,7 @@ func (s Scripts) CheckLint(ctx context.Context) error {
 }
 
 // Test install scripts
-func (s Scripts) Test(ctx context.Context) error {
+func (s Scripts) Test(ctx context.Context) (CheckStatus, error) {
 	ctr := dag.Alpine(
 		dagger.AlpineOpts{
 			Packages: []string{"curl"},
@@ -47,7 +52,7 @@ func (s Scripts) Test(ctx context.Context) error {
 		WithFile("/usr/local/bin/install.sh", s.Dagger.Source.File("install.sh"), dagger.ContainerWithFileOpts{
 			Permissions: 0755,
 		})
-	return parallel.New().
+	return CheckCompleted, parallel.New().
 		WithJob("default install", func(ctx context.Context) error {
 			ctr := ctr.
 				WithExec([]string{"install.sh"})
