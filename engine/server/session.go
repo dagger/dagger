@@ -163,6 +163,10 @@ type daggerClient struct {
 	tracerProvider *sdktrace.TracerProvider
 	loggerProvider *sdklog.LoggerProvider
 	meterProvider  *sdkmetric.MeterProvider
+
+	// user-created spans (exposed as "statuses")
+	spans  map[string]*core.Status
+	spansL *sync.Mutex
 }
 
 type daggerClientState string
@@ -800,6 +804,8 @@ func (srv *Server) getOrInitClient(
 			secretToken:    token,
 			shutdownCh:     make(chan struct{}),
 			clientMetadata: opts.ClientMetadata,
+			spans:          make(map[string]*core.Status),
+			spansL:         &sync.Mutex{},
 		}
 		sess.clients[clientID] = client
 
@@ -924,8 +930,6 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 		ParentIDs:           execMD.ParentIDs,
 	}).ServeHTTP(w, r)
 }
-
-const InstrumentationLibrary = "dagger.io/engine.server"
 
 func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opts *ClientInitOpts) (rerr error) {
 	ctx := r.Context()
@@ -1506,6 +1510,33 @@ func (srv *Server) ClientTelemetry(ctx context.Context, sessID, clientID string)
 		return nil, nil, err
 	}
 	return clientdb.New(db), db.Close, nil
+}
+
+// Start a status and return a status tied to its internal span ID.
+func (srv *Server) StartStatus(ctx context.Context, s *core.Status) (*core.Status, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	started := s.Clone()
+	tracer := trace.SpanFromContext(ctx).TracerProvider().Tracer(InstrumentationLibrary)
+	_, started.Span = tracer.Start(ctx, s.Name, s.Opts()...)
+	client.spansL.Lock()
+	client.spans[started.InternalID()] = started
+	client.spansL.Unlock()
+	return started, nil
+}
+
+// Look up a started status by its internal span ID.
+func (srv *Server) LookupStatus(ctx context.Context, spanID string) (*core.Status, bool, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	client.spansL.Lock()
+	span, found := client.spans[spanID]
+	client.spansL.Unlock()
+	return span, found, nil
 }
 
 type httpError struct {

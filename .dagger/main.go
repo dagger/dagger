@@ -38,7 +38,7 @@ func (dev *DaggerDev) godev() *dagger.Go {
 		Exclude: []string{
 			"docs/**",
 			"core/integration/**",
-			"dagql/idtui/viztest/broken/**",
+			"dagql/idtui/viztest/**",
 			"modules/evals/**",
 			"**/broken*/**",
 		},
