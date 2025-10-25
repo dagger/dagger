@@ -785,11 +785,9 @@ func startInteractivePromptMode(ctx context.Context, dag *dagger.Client, respons
 		return fmt.Errorf("startInteractivePromptMode: unexpected response type for LLM: %T", v)
 	}
 
-	// Start the shell handler with prompt mode
-	handler := &shellCallHandler{
-		dag:  dag,
-		mode: modePrompt, // Set mode to prompt
-	}
+	// Set up the shell handler with prompt mode
+	handler := newShellCallHandler(dag, Frontend)
+	handler.mode = modePrompt
 
 	// Initialize the handler
 	if err := handler.Initialize(ctx); err != nil {

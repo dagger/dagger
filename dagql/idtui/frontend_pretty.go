@@ -1497,7 +1497,7 @@ func (fe *frontendPretty) handleEditlineKey(msg tea.KeyMsg) (cmd tea.Cmd) {
 		return nil
 	default:
 		if fe.shell != nil && fe.editline.AtStart() {
-			cmd := fe.shell.ReactToInput(fe.runCtx, msg)
+			cmd := fe.shell.ReactToInput(fe.shellCtx, msg)
 			if cmd != nil {
 				return cmd
 			}
@@ -1607,7 +1607,7 @@ func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	default:
 		if fe.shell != nil {
-			cmd := fe.shell.ReactToInput(fe.runCtx, msg)
+			cmd := fe.shell.ReactToInput(fe.shellCtx, msg)
 			if cmd != nil {
 				return cmd
 			}

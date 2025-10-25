@@ -1,5 +1,5 @@
 # This file was generated. See https://daggerverse.dev/mod/github.com/dagger/dagger/modules/gha
-name: evals
+name: llm
 "on":
     push:
         paths:
@@ -14,11 +14,11 @@ name: evals
             - modules/evals/**
     workflow_dispatch: {}
 jobs:
-    testdev:
+    evals:
         if: ${{ (github.repository == 'dagger/dagger') && (github.actor != 'dependabot[bot]') }}
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
-        name: testdev
+        name: evals
         steps:
             - name: Checkout
               uses: actions/checkout@v4
@@ -29,6 +29,25 @@ jobs:
                 call: --allow-llm all check
                 cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}/modules/evals@${{ github.sha }}
+                version: v0.19.3
+              env:
+                OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        timeout-minutes: 20
+    shell:
+        if: ${{ (github.repository == 'dagger/dagger') && (github.actor != 'dependabot[bot]') }}
+        runs-on:
+            - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
+        name: shell
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+            - name: exec
+              id: exec
+              uses: dagger/dagger-for-github@v8.2.0
+              with:
+                call: --allow-llm all test specific --env-file file://.env --pkg ./cmd/dagger --run CMD/LLM
+                cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                module: github.com/${{ github.repository }}@${{ github.sha }}
                 version: v0.19.3
               env:
                 OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}

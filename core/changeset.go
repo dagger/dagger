@@ -40,6 +40,11 @@ func NewChangeset(ctx context.Context, before, after dagql.ObjectResult[*Directo
 
 // computeChanges calculates added, changed, and removed files/paths
 func (ch *Changeset) computeChanges(ctx context.Context) error {
+	if ch.Before.ID().Digest() == ch.After.ID().Digest() {
+		// No changes if the directories are identical
+		return nil
+	}
+
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return err

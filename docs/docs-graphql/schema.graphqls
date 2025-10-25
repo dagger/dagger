@@ -3132,6 +3132,9 @@ type GitRepository {
     patterns: [String!]
   ): [String!]!
 
+  """Returns the changeset of uncommitted changes in the git repository."""
+  uncommitted: Changeset!
+
   """The URL of the git repository."""
   url: String
 }

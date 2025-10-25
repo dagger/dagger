@@ -137,6 +137,20 @@ defmodule Dagger.GitRepository do
   end
 
   @doc """
+  Returns the changeset of uncommitted changes in the git repository.
+  """
+  @spec uncommitted(t()) :: Dagger.Changeset.t()
+  def uncommitted(%__MODULE__{} = git_repository) do
+    query_builder =
+      git_repository.query_builder |> QB.select("uncommitted")
+
+    %Dagger.Changeset{
+      query_builder: query_builder,
+      client: git_repository.client
+    }
+  end
+
+  @doc """
   The URL of the git repository.
   """
   @spec url(t()) :: {:ok, String.t() | nil} | {:error, term()}

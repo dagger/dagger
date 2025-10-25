@@ -9,26 +9,10 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/testutil"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/testctx"
-	"github.com/dagger/testctx/oteltest"
 	"github.com/stretchr/testify/require"
 )
-
-func TestMain(m *testing.M) {
-	os.Exit(oteltest.Main(m))
-}
-
-func Middleware() []testctx.Middleware[*testing.T] {
-	return []testctx.Middleware[*testing.T]{
-		oteltest.WithTracing[*testing.T](
-			oteltest.TraceConfig[*testing.T]{
-				StartOptions: testutil.SpanOpts[*testing.T],
-			},
-		),
-		oteltest.WithLogging[*testing.T](),
-	}
-}
 
 type DaggerCMDSuite struct{}
 
@@ -127,10 +111,9 @@ func (DaggerCMDSuite) TestShellAutocomplete(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { client.Close() })
 
-	handler := &shellCallHandler{
-		dag:   client,
-		debug: debugFlag,
-	}
+	handler := newShellCallHandler(client, &idtui.FrontendMock{})
+	handler.debug = debugFlag
+
 	require.NoError(t, handler.RunAll(ctx, nil))
 	autoComplete := shellAutoComplete{handler}
 
