@@ -59,6 +59,9 @@ type ModuleConfig struct {
 	// An optional blueprint module
 	Blueprint *ModuleConfigDependency `json:"blueprint,omitempty"`
 
+	// Toolchain modules
+	Toolchains []*ModuleConfigDependency `json:"toolchains,omitempty"`
+
 	// Paths to explicitly include from the module, relative to the configuration file.
 	Include []string `json:"include,omitempty"`
 

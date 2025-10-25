@@ -32,10 +32,10 @@ func (BlueprintSuite) TestBlueprintUseLocal(ctx context.Context, t *testctx.T) {
 	t.Run("use local blueprint", func(ctx context.Context, t *testctx.T) {
 		modGen := blueprintTestEnv(t, c).
 			WithWorkdir("app").
-			With(daggerExec("init", "--blueprint=../myblueprint"))
+			With(daggerExec("init", "--blueprint=../hello"))
 		// Verify blueprint was installed by calling function
 		out, err := modGen.
-			With(daggerExec("call", "hello")).
+			With(daggerExec("call", "message")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "hello from blueprint")

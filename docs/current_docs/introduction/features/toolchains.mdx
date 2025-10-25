@@ -1,0 +1,216 @@
+---
+title: "Toolchains"
+slug: /features/toolchains
+description: "Install multiple reusable modules as toolchains to extend your workflows"
+toc_max_heading_level: 2
+---
+
+Dagger toolchains allow you to install and use multiple Dagger modules as composable extensions to your own module. Unlike dependencies or blueprints, toolchains provide a flexible way to combine functionality from multiple modules, making them available as namespaced functions within your module's API.
+
+## Key Concepts
+
+### What are Toolchains?
+
+Toolchains are Dagger modules that are installed into your module to provide additional functionality without needing to integrate with your module's SDK or blueprint. When you install a toolchain:
+
+- The toolchain's functions become available in your module's API as a namespaced field
+- Multiple toolchains can be installed simultaneously
+- Toolchains work with modules that have an SDK, use a blueprint, or neither
+- Each toolchain maintains its own context and can access files from your module's directory
+
+## Use Cases
+
+### Platform Engineering
+
+Toolchains are ideal for platform teams providing standardized tools to application teams:
+
+```shell
+# Platform team publishes toolchains
+github.com/platform/linter
+github.com/platform/security-scanner
+github.com/platform/deployer
+
+# App teams install them
+dagger toolchain install github.com/platform/linter
+dagger toolchain install github.com/platform/security-scanner
+dagger toolchain install github.com/platform/deployer
+
+dagger call linter lint
+```
+
+### CI/CD Composition
+
+Build a complete CI/CD pipeline by composing toolchains:
+
+```shell
+dagger toolchain install github.com/example/tester
+dagger toolchain install github.com/example/builder
+dagger toolchain install github.com/example/publisher
+dagger toolchain install github.com/example/notifier
+```
+
+Run your entire pipeline:
+
+```shell
+dagger call tester test && \
+dagger call builder build && \
+dagger call publisher publish && \
+dagger call notifier notify --status success
+```
+
+### Polyglot Projects
+
+Use toolchains written in different languages without worrying about compatibility:
+
+```shell
+# Go toolchain
+dagger toolchain install github.com/example/go-linter
+
+# Python toolchain
+dagger toolchain install github.com/example/python-tester
+
+# TypeScript toolchain
+dagger toolchain install github.com/example/ts-bundler
+```
+
+All toolchains work together seamlessly regardless of their implementation language.
+
+
+## Installing Toolchains
+
+### Install a Toolchain
+
+To install a toolchain in your module, use the `dagger toolchain install` command:
+
+```shell
+dagger toolchain install github.com/example/toolchain
+```
+
+You can install toolchains from:
+- **GitHub repositories**: `github.com/user/repo/path`
+- **Local paths**: `./path/to/toolchain` or `/absolute/path`
+- **Git URLs**: Any valid Git URL with optional version tags
+
+### Install with a Custom Name
+
+By default, the toolchain is accessible using its module name. If the module name is not suitable or conflicts with a function in your module, you can specify a custom name:
+
+```shell
+dagger toolchain install github.com/example/toolchain --name mytool
+```
+
+### Install Multiple Toolchains
+
+You can install as many toolchains as you need:
+
+```shell
+dagger toolchain install github.com/example/hello
+dagger toolchain install github.com/example/builder
+dagger toolchain install github.com/example/tester
+```
+
+Each toolchain becomes available under its own namespace in your module's API.
+
+## Using Toolchains
+
+### Calling Toolchain Functions
+
+Once installed, toolchain functions are available through the toolchain's namespace. For example, if you installed a toolchain named `hello`:
+
+```shell
+dagger call hello message
+```
+
+If the toolchain has a constructor that accepts parameters, you can provide them:
+
+```shell
+dagger call hello --config myconfig.txt field-config
+```
+
+### Accessing Module Files from Toolchains
+
+Toolchains have access to your module's context directory. This means a toolchain can reference files in your module using default path parameters or explicit file arguments:
+
+```go
+// In a toolchain module
+func (m *Hello) AppConfig(
+    ctx context.Context,
+    // +defaultPath="./app-config.txt"
+    config *dagger.File,
+) (string, error) {
+    return config.Contents(ctx)
+}
+```
+
+When called from your module, `app-config.txt` will be resolved from your module's directory, not the toolchain's repository.
+
+## Toolchains with SDKs
+
+Toolchains work seamlessly with modules that have an SDK. Your module can implement its own functions while also exposing toolchain functions:
+
+### Example: Go Module with Toolchain
+
+Initialize a Go module and install a toolchain:
+
+```shell
+dagger init --sdk=go
+dagger toolchain install github.com/example/hello
+```
+
+Now you can call both your module's functions and the toolchain's functions:
+
+```shell
+# Call your module's function
+dagger call container-echo --string-arg "hello" stdout
+
+# Call the toolchain's function
+dagger call hello message
+```
+
+## Toolchains with Blueprints
+
+Toolchains can be combined with blueprints, giving you the best of both worlds: a blueprint provides the core template for your module, while toolchains add supplementary functionality.
+
+```shell
+dagger init --blueprint=github.com/example/app-blueprint
+dagger toolchain install github.com/example/linter
+dagger toolchain install github.com/example/deployer
+```
+
+This configuration allows you to:
+- Use the blueprint's functions as your module's primary API
+- Access additional toolchain functions for auxiliary tasks
+- Keep your module focused while still having access to extended functionality
+
+## Toolchains without an SDK
+
+Even if your module doesn't use an SDK or blueprint, toolchains are valuable. They let you compose functionality from multiple modules without writing any code:
+
+```shell
+dagger init
+dagger toolchain install github.com/example/hello
+dagger toolchain install github.com/example/builder
+dagger toolchain install github.com/example/tester
+```
+
+Your module becomes a collection point for these toolchains, making their combined functionality available through a single interface:
+
+```shell
+dagger call hello message
+dagger call builder build --source ./app
+dagger call tester test --source ./app
+```
+
+## Best Practices
+
+### Keep Toolchains Focused
+
+Each toolchain should provide a cohesive set of related functions. Instead of creating a monolithic "everything" toolchain, create smaller, focused toolchains that teams can mix and match.
+
+### Namespace Considerations
+
+When naming toolchains (especially with `--name`), choose clear, descriptive names that won't conflict with your module's own functions or other toolchains.
+
+## Conclusion
+
+Toolchains provide a powerful way to compose and extend Dagger modules. Whether you're building a platform, assembling a CI/CD pipeline, or creating a collection of useful utilities, toolchains give you the flexibility to combine functionality from multiple sources while maintaining clean, organized APIs.

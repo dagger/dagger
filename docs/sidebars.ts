@@ -17,6 +17,7 @@ module.exports = {
         "introduction/features/secrets",
         "introduction/features/llm",
         "introduction/features/shell",
+        "introduction/features/toolchains",
       ],
     },
     "introduction/faq",

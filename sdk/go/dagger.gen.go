@@ -9397,6 +9397,39 @@ func (r *ModuleSource) Sync(ctx context.Context) (*ModuleSource, error) {
 	}, nil
 }
 
+// The toolchains referenced by the module source.
+func (r *ModuleSource) Toolchains(ctx context.Context) ([]ModuleSource, error) {
+	q := r.query.Select("toolchains")
+
+	q = q.Select("id")
+
+	type toolchains struct {
+		Id ModuleSourceID
+	}
+
+	convert := func(fields []toolchains) []ModuleSource {
+		out := []ModuleSource{}
+
+		for i := range fields {
+			val := ModuleSource{id: &fields[i].Id}
+			val.query = q.Root().Select("loadModuleSourceFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []toolchains
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // User-defined defaults read from local .env files
 func (r *ModuleSource) UserDefaults() *EnvFile {
 	q := r.query.Select("userDefaults")
@@ -9511,6 +9544,16 @@ func (r *ModuleSource) WithSourceSubpath(path string) *ModuleSource {
 	}
 }
 
+// Add toolchains to the module source.
+func (r *ModuleSource) WithToolchains(toolchains []*ModuleSource) *ModuleSource {
+	q := r.query.Select("withToolchains")
+	q = q.Arg("toolchains", toolchains)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
 // Update the blueprint module to the latest version.
 func (r *ModuleSource) WithUpdateBlueprint() *ModuleSource {
 	q := r.query.Select("withUpdateBlueprint")
@@ -9524,6 +9567,16 @@ func (r *ModuleSource) WithUpdateBlueprint() *ModuleSource {
 func (r *ModuleSource) WithUpdateDependencies(dependencies []string) *ModuleSource {
 	q := r.query.Select("withUpdateDependencies")
 	q = q.Arg("dependencies", dependencies)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
+// Update one or more toolchains.
+func (r *ModuleSource) WithUpdateToolchains(toolchains []string) *ModuleSource {
+	q := r.query.Select("withUpdateToolchains")
+	q = q.Arg("toolchains", toolchains)
 
 	return &ModuleSource{
 		query: q,
@@ -9573,6 +9626,16 @@ func (r *ModuleSource) WithoutDependencies(dependencies []string) *ModuleSource 
 func (r *ModuleSource) WithoutExperimentalFeatures(features []ModuleSourceExperimentalFeature) *ModuleSource {
 	q := r.query.Select("withoutExperimentalFeatures")
 	q = q.Arg("features", features)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
+// Remove the provided toolchains from the module source.
+func (r *ModuleSource) WithoutToolchains(toolchains []string) *ModuleSource {
+	q := r.query.Select("withoutToolchains")
+	q = q.Arg("toolchains", toolchains)
 
 	return &ModuleSource{
 		query: q,

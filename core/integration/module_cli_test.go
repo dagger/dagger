@@ -1617,7 +1617,7 @@ func (CLISuite) TestDaggerUpdate(ctx context.Context, t *testctx.T) {
 			name:          "cannot update a local dependency",
 			daggerjson:    depIsLocal,
 			updateCmd:     []string{"update", "bar"},
-			expectedError: `updating local deps is not supported`,
+			expectedError: `updating local dependencies is not supported`,
 		},
 	}
 

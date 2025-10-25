@@ -383,6 +383,28 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
+  The toolchains referenced by the module source.
+  """
+  @spec toolchains(t()) :: {:ok, [Dagger.ModuleSource.t()]} | {:error, term()}
+  def toolchains(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("toolchains") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(module_source.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.ModuleSource{
+           query_builder:
+             QB.query()
+             |> QB.select("loadModuleSourceFromID")
+             |> QB.put_arg("id", id),
+           client: module_source.client
+         }
+       end}
+    end
+  end
+
+  @doc """
   User-defined defaults read from local .env files
   """
   @spec user_defaults(t()) :: Dagger.EnvFile.t()
@@ -546,6 +568,22 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
+  Add toolchains to the module source.
+  """
+  @spec with_toolchains(t(), [Dagger.ModuleSourceID.t()]) :: Dagger.ModuleSource.t()
+  def with_toolchains(%__MODULE__{} = module_source, toolchains) do
+    query_builder =
+      module_source.query_builder
+      |> QB.select("withToolchains")
+      |> QB.put_arg("toolchains", toolchains)
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
   Update the blueprint module to the latest version.
   """
   @spec with_update_blueprint(t()) :: Dagger.ModuleSource.t()
@@ -568,6 +606,22 @@ defmodule Dagger.ModuleSource do
       module_source.query_builder
       |> QB.select("withUpdateDependencies")
       |> QB.put_arg("dependencies", dependencies)
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
+  Update one or more toolchains.
+  """
+  @spec with_update_toolchains(t(), [String.t()]) :: Dagger.ModuleSource.t()
+  def with_update_toolchains(%__MODULE__{} = module_source, toolchains) do
+    query_builder =
+      module_source.query_builder
+      |> QB.select("withUpdateToolchains")
+      |> QB.put_arg("toolchains", toolchains)
 
     %Dagger.ModuleSource{
       query_builder: query_builder,
@@ -645,6 +699,22 @@ defmodule Dagger.ModuleSource do
       module_source.query_builder
       |> QB.select("withoutExperimentalFeatures")
       |> QB.put_arg("features", features)
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc """
+  Remove the provided toolchains from the module source.
+  """
+  @spec without_toolchains(t(), [String.t()]) :: Dagger.ModuleSource.t()
+  def without_toolchains(%__MODULE__{} = module_source, toolchains) do
+    query_builder =
+      module_source.query_builder
+      |> QB.select("withoutToolchains")
+      |> QB.put_arg("toolchains", toolchains)
 
     %Dagger.ModuleSource{
       query_builder: query_builder,
