@@ -16,6 +16,23 @@ defmodule Dagger.Module do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Call a function defined in this module, returning a JSON-encoded representation of the resulting state.
+  """
+  @spec call(t(), String.t(), String.t(), Dagger.JSON.t(), Dagger.JSON.t()) ::
+          {:ok, Dagger.JSON.t()} | {:error, term()}
+  def call(%__MODULE__{} = module, object, function, parent, inputs) do
+    query_builder =
+      module.query_builder
+      |> QB.select("call")
+      |> QB.put_arg("object", object)
+      |> QB.put_arg("function", function)
+      |> QB.put_arg("parent", parent)
+      |> QB.put_arg("inputs", inputs)
+
+    Client.execute(module.client, query_builder)
+  end
+
+  @doc """
   The dependencies of the module.
   """
   @spec dependencies(t()) :: {:ok, [Dagger.Module.t()]} | {:error, term()}

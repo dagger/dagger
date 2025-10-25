@@ -34,30 +34,35 @@ func (m *ModuleEnumType) TypeDef() *TypeDef {
 	}
 }
 
-func (m *ModuleEnumType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.AnyResult, error) {
+func (m *ModuleEnumType) ConvertFromSDKResult(ctx context.Context, id *call.ID, value any) (typed dagql.Typed, result dagql.AnyResult, err error) {
 	if value == nil {
 		slog.Warn("%T.ConvertFromSDKResult: got nil value", m)
-		return nil, nil
+		return nil, nil, nil
 	}
 	if enum, ok := value.(*ModuleEnum); ok {
 		value = enum.Name
 	}
 
-	switch value := value.(type) {
-	case string:
-		enum, err := m.getEnum(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("%T.ConvertFromSDKResult: failed to get enum: %w", m, err)
-		}
-		val, err := enum.DecodeInput(value)
-		if err != nil {
-			return nil, fmt.Errorf("%T.ConvertFromSDKResult: invalid enum value %q for %q: %w", m, value, m.typeDef.Name, err)
-		}
-
-		return dagql.NewResultForCurrentID(ctx, val)
-	default:
-		return nil, fmt.Errorf("unexpected result value type %T for enum %q", value, m.typeDef.Name)
+	if _, ok := value.(string); !ok {
+		return nil, nil, fmt.Errorf("%T.ConvertFromSDKResult: unexpected result value type %T", m, value)
 	}
+
+	enum, err := m.getEnum(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%T.ConvertFromSDKResult: failed to get enum: %w", m, err)
+	}
+	val, err := enum.DecodeInput(value)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%T.ConvertFromSDKResult: invalid enum value %q for %q: %w", m, value, m.typeDef.Name, err)
+	}
+
+	if id != nil {
+		result, err = dagql.NewResultForID(val, id)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	return val, result, nil
 }
 
 func (m *ModuleEnumType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
@@ -87,7 +92,7 @@ func (m *ModuleEnumType) ConvertToSDKInput(ctx context.Context, value dagql.Type
 	return enum.memberTypedef().Name, nil
 }
 
-func (m *ModuleEnumType) CollectCoreIDs(ctx context.Context, value dagql.AnyResult, ids map[digest.Digest]*resource.ID) error {
+func (m *ModuleEnumType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
 	return nil
 }
 
