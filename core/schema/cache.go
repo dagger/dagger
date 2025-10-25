@@ -6,6 +6,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 type cacheSchema struct{}
@@ -37,9 +38,15 @@ type cacheArgs struct {
 	Namespace string `internal:"true" default:""`
 }
 
-func (s *cacheSchema) cacheVolumeCacheKey(ctx context.Context, parent dagql.ObjectResult[*core.Query], args cacheArgs, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
+func (s *cacheSchema) cacheVolumeCacheKey(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Query],
+	args cacheArgs,
+	req dagql.GetCacheConfigRequest,
+) (*dagql.GetCacheConfigResponse, error) {
+	resp := &dagql.GetCacheConfigResponse{CacheKey: req.CacheKey}
 	if args.Namespace != "" {
-		return &cacheCfg, nil
+		return resp, nil
 	}
 
 	m, err := parent.Self().CurrentModule(ctx)
@@ -47,8 +54,8 @@ func (s *cacheSchema) cacheVolumeCacheKey(ctx context.Context, parent dagql.Obje
 		return nil, err
 	}
 	namespaceKey := namespaceFromModule(m)
-	cacheCfg.Digest = dagql.HashFrom(cacheCfg.Digest.String(), namespaceKey)
-	return &cacheCfg, nil
+	resp.CacheKey.CallKey = hashutil.HashStrings(resp.CacheKey.CallKey, namespaceKey).String()
+	return resp, nil
 }
 
 func (s *cacheSchema) cacheVolume(ctx context.Context, parent dagql.ObjectResult[*core.Query], args cacheArgs) (dagql.Result[*core.CacheVolume], error) {

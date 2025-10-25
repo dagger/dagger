@@ -6,6 +6,8 @@ import {
   TypeDef,
   TypeDefKind,
   SourceMap,
+  FunctionCachePolicy,
+  FunctionWithCachePolicyOpts,
 } from "../../api/client.gen.js"
 import {
   DaggerArguments as Arguments,
@@ -122,11 +124,30 @@ export class Register {
    * Create a function in the Dagger API.
    */
   addFunction(fct: Method | DaggerInterfaceFunction): Function_ {
-    return dag
+    let fnDef = dag
       .function_(fct.alias ?? fct.name, addTypeDef(fct.returnType!))
       .withDescription(fct.description)
       .withSourceMap(addSourceMap(fct))
       .with(this.addArg(fct.arguments))
+    switch (fct.cache) {
+      case "never": {
+        fnDef = fnDef.withCachePolicy(FunctionCachePolicy.Never)
+        break
+      }
+      case "session": {
+        fnDef = fnDef.withCachePolicy(FunctionCachePolicy.PerSession)
+        break
+      }
+      case "": {
+        break
+      }
+      default: {
+        const opts: FunctionWithCachePolicyOpts = { timeToLive: fct.cache }
+        fnDef = fnDef.withCachePolicy(FunctionCachePolicy.Default, opts)
+      }
+    }
+
+    return fnDef
   }
 
   /**

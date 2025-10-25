@@ -216,9 +216,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			SearchDomains: bkcfg.DNS.SearchDomains,
 		},
 
-		baseDagqlCache: cache.NewCache[string, dagql.AnyResult](),
 		daggerSessions: make(map[string]*daggerSession),
-		locker:         locker.New(),
+
+		locker: locker.New(),
 	}
 
 	// start the global namespace worker pool, which is used for running Go funcs
@@ -547,6 +547,25 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	defer func() {
 		time.AfterFunc(time.Second, srv.throttledGC)
 	}()
+
+	//
+	// setup dagql caching
+	//
+	dagqlCacheDBPath := filepath.Join(srv.rootDir, "dagql-cache.db")
+	srv.baseDagqlCache, err = cache.NewCache[string, dagql.AnyResult](ctx, dagqlCacheDBPath)
+	if err != nil {
+		// Attempt to handle a corrupt db (which is possible since we currently run w/ synchronous=OFF) by removing any existing
+		// db and trying again.
+		slog.Error("failed to create dagql cache, attempting to recover by removing existing cache db", "error", err)
+		if err := os.Remove(dagqlCacheDBPath); err != nil && !os.IsNotExist(err) {
+			slog.Error("failed to remove existing dagql cache db", "error", err)
+		}
+		srv.baseDagqlCache, err = cache.NewCache[string, dagql.AnyResult](ctx, dagqlCacheDBPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create dagql cache after removing existing db: %w", err)
+		}
+	}
+	go srv.baseDagqlCache.GCLoop(ctx)
 
 	// garbage collect client DBs
 	go srv.gcClientDBs()

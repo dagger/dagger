@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"crypto/rand"
 	_ "embed"
 	"encoding/base64"
 	"encoding/json"
@@ -6450,6 +6451,281 @@ func (m *Test) Nothing() (*dagger.Directory, error) {
 
 	_, err := modGen.With(daggerQuery(`{test{nothing{id}}}`)).Stdout(ctx)
 	require.NoError(t, err)
+}
+
+func (ModuleSuite) TestFunctionCacheControl(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		sdk    string
+		source string
+	}{
+		{
+			// TODO: add test that function doc strings still get parsed correctly, don't include //+ etc.
+			sdk: "go",
+			source: `package main
+
+import (
+	"crypto/rand"
+)
+
+type Test struct{}
+
+// My cool doc on TestTtl
+// +cache="40s"
+func (m *Test) TestTtl() string {
+	return rand.Text()
+}
+
+// My dope doc on TestCachePerSession
+// +cache="session"
+func (m *Test) TestCachePerSession() string {
+	return rand.Text()
+}
+
+// My darling doc on TestNeverCache
+// +cache="never"
+func (m *Test) TestNeverCache() string {
+	return rand.Text()
+}
+
+// My rad doc on TestAlwaysCache
+func (m *Test) TestAlwaysCache() string {
+	return rand.Text()
+}
+`,
+		},
+		{
+			sdk: "python",
+			source: `import dagger
+import random
+import string
+
+@dagger.object_type
+class Test:
+		@dagger.function(cache="40s")
+		def test_ttl(self) -> str:
+				return ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
+
+		@dagger.function(cache="session")
+		def test_cache_per_session(self) -> str:
+				return ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
+
+		@dagger.function(cache="never")
+		def test_never_cache(self) -> str:
+				return ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
+
+		@dagger.function
+		def test_always_cache(self) -> str:
+				return ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
+`,
+		},
+
+		{
+			sdk: "typescript",
+			source: `
+import crypto from "crypto"
+
+import {  object, func } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+	@func({ cache: "40s"})
+	testTtl(): string {
+		return crypto.randomBytes(16).toString("hex")
+	}
+
+	@func({ cache: "session" })
+	testCachePerSession(): string {
+		return crypto.randomBytes(16).toString("hex")
+	}
+
+	@func({ cache: "never" })
+	testNeverCache(): string {
+		return crypto.randomBytes(16).toString("hex")
+	}
+
+	@func()
+	testAlwaysCache(): string {
+		return crypto.randomBytes(16).toString("hex")
+	}
+}
+
+`,
+		},
+	} {
+		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+			t.Run("always cache", func(ctx context.Context, t *testctx.T) {
+				c1 := connect(ctx, t)
+				modGen1 := modInit(t, c1, tc.sdk, tc.source)
+
+				// TODO: this is gonna be flaky to cache prunes, might need an isolated engine
+
+				out1, err := modGen1.
+					WithEnvVariable("CACHE_BUST", rand.Text()). // don't cache the nested execs themselves
+					With(daggerCall("test-always-cache")).Stdout(ctx)
+				require.NoError(t, err)
+				require.NoError(t, c1.Close())
+
+				c2 := connect(ctx, t)
+				modGen2 := modInit(t, c2, tc.sdk, tc.source)
+
+				out2, err := modGen2.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-always-cache")).Stdout(ctx)
+				require.NoError(t, err)
+
+				require.Equal(t, out1, out2, "outputs should be equal since the result is always cached")
+			})
+
+			t.Run("cache per session", func(ctx context.Context, t *testctx.T) {
+				c1 := connect(ctx, t)
+				modGen1 := modInit(t, c1, tc.sdk, tc.source)
+
+				out1a, err := modGen1.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-cache-per-session")).Stdout(ctx)
+				require.NoError(t, err)
+				out1b, err := modGen1.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-cache-per-session")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, out1a, out1b, "outputs should be equal since they are from the same session")
+				require.NoError(t, c1.Close())
+
+				c2 := connect(ctx, t)
+				modGen2 := modInit(t, c2, tc.sdk, tc.source)
+
+				out2a, err := modGen2.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-cache-per-session")).Stdout(ctx)
+				require.NoError(t, err)
+				out2b, err := modGen2.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-cache-per-session")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, out2a, out2b, "outputs should be equal since they are from the same session")
+
+				require.NotEqual(t, out1a, out2a, "outputs should not be equal since they are from different sessions")
+			})
+
+			t.Run("never cache", func(ctx context.Context, t *testctx.T) {
+				c1 := connect(ctx, t)
+				modGen1 := modInit(t, c1, tc.sdk, tc.source)
+
+				out1a, err := modGen1.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-never-cache")).Stdout(ctx)
+				require.NoError(t, err)
+				out1b, err := modGen1.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-never-cache")).Stdout(ctx)
+				require.NoError(t, err)
+				require.NotEqual(t, out1a, out1b, "outputs should not be equal since they are never cached")
+				require.NoError(t, c1.Close())
+
+				c2 := connect(ctx, t)
+				modGen2 := modInit(t, c2, tc.sdk, tc.source)
+
+				out2a, err := modGen2.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-never-cache")).Stdout(ctx)
+				require.NoError(t, err)
+				out2b, err := modGen2.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-never-cache")).Stdout(ctx)
+				require.NoError(t, err)
+				require.NotEqual(t, out2a, out2b, "outputs should not be equal since they are never cached")
+
+				require.NotEqual(t, out1a, out2a, "outputs should not be equal since they are never cached")
+			})
+
+			// TODO: this is gonna be hella flaky probably, need isolated engine to combat pruning and probably more generous times...
+			t.Run("cache ttl", func(ctx context.Context, t *testctx.T) {
+				c1 := connect(ctx, t)
+				modGen1 := modInit(t, c1, tc.sdk, tc.source)
+
+				out1, err := modGen1.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-ttl")).Stdout(ctx)
+				require.NoError(t, err)
+				require.NoError(t, c1.Close())
+
+				c2 := connect(ctx, t)
+				modGen2 := modInit(t, c2, tc.sdk, tc.source)
+
+				out2, err := modGen2.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-ttl")).Stdout(ctx)
+				require.NoError(t, err)
+				require.NoError(t, c2.Close())
+
+				require.Equal(t, out1, out2, "outputs should be equal since the cache ttl has not expired")
+				time.Sleep(41 * time.Second)
+
+				c3 := connect(ctx, t)
+				modGen3 := modInit(t, c3, tc.sdk, tc.source)
+
+				out3, err := modGen3.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-ttl")).Stdout(ctx)
+				require.NoError(t, err)
+				require.NotEqual(t, out1, out3, "outputs should not be equal since the cache ttl has expired")
+			})
+		})
+	}
+
+	// rest of tests are SDK agnostic so just test w/ go
+	t.Run("setSecret invalidates cache", func(ctx context.Context, t *testctx.T) {
+		const modSDK = "go"
+		const modSrc = `package main
+
+import (
+	"crypto/rand"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) TestSetSecret() *dagger.Container {
+	r := rand.Text()
+	s := dag.SetSecret(r, r)
+	return dag.Container().
+		From("` + alpineImage + `").
+		WithSecretVariable("TOP_SECRET", s)
+}
+`
+
+		// in memory cache should be hit within a session, but
+		// no cache hits across sessions should happen
+
+		c1 := connect(ctx, t)
+		modGen1 := modInit(t, c1, modSDK, modSrc)
+
+		out1a, err := modGen1.
+			WithEnvVariable("CACHE_BUST", rand.Text()).
+			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
+		require.NoError(t, err)
+		out1b, err := modGen1.
+			WithEnvVariable("CACHE_BUST", rand.Text()).
+			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, out1a, out1b)
+		require.NoError(t, c1.Close())
+
+		c2 := connect(ctx, t)
+		modGen2 := modInit(t, c2, modSDK, modSrc)
+
+		out2a, err := modGen2.
+			WithEnvVariable("CACHE_BUST", rand.Text()).
+			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
+		require.NoError(t, err)
+		out2b, err := modGen2.
+			WithEnvVariable("CACHE_BUST", rand.Text()).
+			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, out2a, out2b)
+
+		require.NotEqual(t, out1a, out2a)
+	})
 }
 
 func daggerExec(args ...string) dagger.WithContainerFunc {

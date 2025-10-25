@@ -21,10 +21,10 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core/openrouter"
-	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 type interpreterMode int
@@ -392,7 +392,7 @@ func (s *LLMSession) syncVarsToLLM() error {
 			continue
 		}
 
-		if s.syncedVars[name] == dagql.HashFrom(value.String()) {
+		if s.syncedVars[name] == hashutil.HashStrings(value.String()) {
 			continue
 		}
 
@@ -429,7 +429,7 @@ func (s *LLMSession) syncVarsToLLM() error {
 				s.syncedVars[name] = digest
 			}
 		} else {
-			s.syncedVars[name] = dagql.HashFrom(value.String())
+			s.syncedVars[name] = hashutil.HashStrings(value.String())
 			syncedEnvQ = syncedEnvQ.
 				Select("withStringInput").
 				Arg("name", name).

@@ -15,10 +15,11 @@ import (
 
 func TestCacheConcurrent(t *testing.T) {
 	t.Parallel()
-	c := NewCache[int, int]()
-	ctx := context.Background()
+	ctx := t.Context()
+	c, err := NewCache[string, int](ctx, "")
+	assert.NilError(t, err)
 
-	commonKey := 42
+	commonKey := "42"
 	initialized := map[int]bool{}
 
 	wg := new(sync.WaitGroup)
@@ -26,7 +27,7 @@ func TestCacheConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			res, err := c.GetOrInitialize(ctx, CacheKey[int]{ResultKey: commonKey, ConcurrencyKey: commonKey}, func(_ context.Context) (int, error) {
+			res, err := c.GetOrInitialize(ctx, CacheKey[string]{CallKey: commonKey, ConcurrencyKey: commonKey}, func(_ context.Context) (int, error) {
 				initialized[i] = true
 				return i, nil
 			})
@@ -43,30 +44,31 @@ func TestCacheConcurrent(t *testing.T) {
 
 func TestCacheErrors(t *testing.T) {
 	t.Parallel()
-	c := NewCache[int, int]()
-	ctx := context.Background()
+	ctx := t.Context()
+	c, err := NewCache[string, int](ctx, "")
+	assert.NilError(t, err)
 
-	commonKey := 42
+	commonKey := "42"
 
 	myErr := errors.New("nope")
-	_, err := c.GetOrInitialize(ctx, CacheKey[int]{ResultKey: commonKey}, func(_ context.Context) (int, error) {
+	_, err = c.GetOrInitialize(ctx, CacheKey[string]{CallKey: commonKey}, func(_ context.Context) (int, error) {
 		return 0, myErr
 	})
 	assert.Assert(t, is.ErrorIs(err, myErr))
 
 	otherErr := errors.New("nope 2")
-	_, err = c.GetOrInitialize(ctx, CacheKey[int]{ResultKey: commonKey}, func(_ context.Context) (int, error) {
+	_, err = c.GetOrInitialize(ctx, CacheKey[string]{CallKey: commonKey}, func(_ context.Context) (int, error) {
 		return 0, otherErr
 	})
 	assert.Assert(t, is.ErrorIs(err, otherErr))
 
-	res, err := c.GetOrInitialize(ctx, CacheKey[int]{ResultKey: commonKey}, func(_ context.Context) (int, error) {
+	res, err := c.GetOrInitialize(ctx, CacheKey[string]{CallKey: commonKey}, func(_ context.Context) (int, error) {
 		return 1, nil
 	})
 	assert.NilError(t, err)
 	assert.Equal(t, 1, res.Result())
 
-	res, err = c.GetOrInitialize(ctx, CacheKey[int]{ResultKey: commonKey}, func(_ context.Context) (int, error) {
+	res, err = c.GetOrInitialize(ctx, CacheKey[string]{CallKey: commonKey}, func(_ context.Context) (int, error) {
 		return 0, errors.New("ignored")
 	})
 	assert.NilError(t, err)
@@ -75,12 +77,13 @@ func TestCacheErrors(t *testing.T) {
 
 func TestCacheRecursiveCall(t *testing.T) {
 	t.Parallel()
-	c := NewCache[int, int]()
-	ctx := context.Background()
+	ctx := t.Context()
+	c, err := NewCache[string, int](ctx, "")
+	assert.NilError(t, err)
 
 	// recursive calls that are guaranteed to result in deadlock should error out
-	_, err := c.GetOrInitialize(ctx, CacheKey[int]{ResultKey: 1}, func(ctx context.Context) (int, error) {
-		_, err := c.GetOrInitialize(ctx, CacheKey[int]{ResultKey: 1}, func(ctx context.Context) (int, error) {
+	_, err = c.GetOrInitialize(ctx, CacheKey[string]{CallKey: "1"}, func(ctx context.Context) (int, error) {
+		_, err := c.GetOrInitialize(ctx, CacheKey[string]{CallKey: "1"}, func(ctx context.Context) (int, error) {
 			return 2, nil
 		})
 		return 0, err
@@ -88,8 +91,8 @@ func TestCacheRecursiveCall(t *testing.T) {
 	assert.Assert(t, is.ErrorIs(err, ErrCacheRecursiveCall))
 
 	// verify same cachemap can be called recursively w/ different keys
-	v, err := c.GetOrInitialize(ctx, CacheKey[int]{ResultKey: 10}, func(ctx context.Context) (int, error) {
-		res, err := c.GetOrInitialize(ctx, CacheKey[int]{ResultKey: 11}, func(ctx context.Context) (int, error) {
+	v, err := c.GetOrInitialize(ctx, CacheKey[string]{CallKey: "10"}, func(ctx context.Context) (int, error) {
+		res, err := c.GetOrInitialize(ctx, CacheKey[string]{CallKey: "11"}, func(ctx context.Context) (int, error) {
 			return 12, nil
 		})
 		return res.Result(), err
@@ -98,9 +101,10 @@ func TestCacheRecursiveCall(t *testing.T) {
 	assert.Equal(t, 12, v.Result())
 
 	// verify other cachemaps can be called w/ same keys
-	c2 := NewCache[int, int]()
-	v, err = c.GetOrInitialize(ctx, CacheKey[int]{ResultKey: 100}, func(ctx context.Context) (int, error) {
-		res, err := c2.GetOrInitialize(ctx, CacheKey[int]{ResultKey: 100}, func(ctx context.Context) (int, error) {
+	c2, err := NewCache[string, int](ctx, "")
+	assert.NilError(t, err)
+	v, err = c.GetOrInitialize(ctx, CacheKey[string]{CallKey: "100"}, func(ctx context.Context) (int, error) {
+		res, err := c2.GetOrInitialize(ctx, CacheKey[string]{CallKey: "100"}, func(ctx context.Context) (int, error) {
 			return 101, nil
 		})
 		return res.Result(), err
@@ -112,17 +116,19 @@ func TestCacheRecursiveCall(t *testing.T) {
 func TestCacheContextCancel(t *testing.T) {
 	t.Run("cancels after all are canceled", func(t *testing.T) {
 		t.Parallel()
-		c := NewCache[int, int]()
+		ctx := t.Context()
+		c, err := NewCache[string, int](ctx, "")
+		assert.NilError(t, err)
 
-		ctx1, cancel1 := context.WithCancel(context.Background())
-		ctx2, cancel2 := context.WithCancel(context.Background())
-		ctx3, cancel3 := context.WithCancel(context.Background())
+		ctx1, cancel1 := context.WithCancel(ctx)
+		ctx2, cancel2 := context.WithCancel(ctx)
+		ctx3, cancel3 := context.WithCancel(ctx)
 
 		errCh1 := make(chan error, 1)
 		started1 := make(chan struct{})
 		go func() {
 			defer close(errCh1)
-			_, err := c.GetOrInitialize(ctx1, CacheKey[int]{ResultKey: 1, ConcurrencyKey: 1}, func(ctx context.Context) (int, error) {
+			_, err := c.GetOrInitialize(ctx1, CacheKey[string]{CallKey: "1", ConcurrencyKey: "1"}, func(ctx context.Context) (int, error) {
 				close(started1)
 				<-ctx.Done()
 				return 0, fmt.Errorf("oh no 1")
@@ -138,7 +144,7 @@ func TestCacheContextCancel(t *testing.T) {
 		errCh2 := make(chan error, 1)
 		go func() {
 			defer close(errCh2)
-			_, err := c.GetOrInitialize(ctx2, CacheKey[int]{ResultKey: 1, ConcurrencyKey: 1}, func(ctx context.Context) (int, error) {
+			_, err := c.GetOrInitialize(ctx2, CacheKey[string]{CallKey: "1", ConcurrencyKey: "1"}, func(ctx context.Context) (int, error) {
 				<-ctx.Done()
 				return 1, fmt.Errorf("oh no 2")
 			})
@@ -148,7 +154,7 @@ func TestCacheContextCancel(t *testing.T) {
 		errCh3 := make(chan error, 1)
 		go func() {
 			defer close(errCh3)
-			_, err := c.GetOrInitialize(ctx3, CacheKey[int]{ResultKey: 1, ConcurrencyKey: 1}, func(ctx context.Context) (int, error) {
+			_, err := c.GetOrInitialize(ctx3, CacheKey[string]{CallKey: "1", ConcurrencyKey: "1"}, func(ctx context.Context) (int, error) {
 				return 2, fmt.Errorf("oh no 3")
 			})
 			errCh3 <- err
@@ -193,20 +199,22 @@ func TestCacheContextCancel(t *testing.T) {
 
 	t.Run("succeeds if others are canceled", func(t *testing.T) {
 		t.Parallel()
-		c := NewCache[int, int]()
+		ctx := t.Context()
+		c, err := NewCache[string, int](ctx, "")
+		assert.NilError(t, err)
 
-		ctx1, cancel1 := context.WithCancel(context.Background())
+		ctx1, cancel1 := context.WithCancel(ctx)
 		t.Cleanup(cancel1)
-		ctx2, cancel2 := context.WithCancel(context.Background())
+		ctx2, cancel2 := context.WithCancel(ctx)
 
-		resCh1 := make(chan Result[int, int], 1)
+		resCh1 := make(chan Result[string, int], 1)
 		errCh1 := make(chan error, 1)
 		started1 := make(chan struct{})
 		stop1 := make(chan struct{})
 		go func() {
 			defer close(resCh1)
 			defer close(errCh1)
-			res, err := c.GetOrInitialize(ctx1, CacheKey[int]{ResultKey: 1}, func(ctx context.Context) (int, error) {
+			res, err := c.GetOrInitialize(ctx1, CacheKey[string]{CallKey: "1"}, func(ctx context.Context) (int, error) {
 				close(started1)
 				<-stop1
 				return 0, nil
@@ -223,7 +231,7 @@ func TestCacheContextCancel(t *testing.T) {
 		errCh2 := make(chan error, 1)
 		go func() {
 			defer close(errCh2)
-			_, err := c.GetOrInitialize(ctx2, CacheKey[int]{ResultKey: 1}, func(ctx context.Context) (int, error) {
+			_, err := c.GetOrInitialize(ctx2, CacheKey[string]{CallKey: "1"}, func(ctx context.Context) (int, error) {
 				<-ctx.Done()
 				return 1, fmt.Errorf("oh no")
 			})
@@ -258,21 +266,22 @@ func TestCacheResultRelease(t *testing.T) {
 	t.Parallel()
 	t.Run("basic", func(t *testing.T) {
 		t.Parallel()
-		cacheIface := NewCache[int, int]()
-		c, ok := cacheIface.(*cache[int, int])
+		ctx := t.Context()
+		cacheIface, err := NewCache[string, int](ctx, "")
+		assert.NilError(t, err)
+		c, ok := cacheIface.(*cache[string, int])
 		assert.Assert(t, ok)
-		ctx := context.Background()
 
-		res1A, err := c.GetOrInitialize(ctx, CacheKey[int]{ResultKey: 1}, func(_ context.Context) (int, error) {
+		res1A, err := c.GetOrInitialize(ctx, CacheKey[string]{CallKey: "1"}, func(_ context.Context) (int, error) {
 			return 1, nil
 		})
 		assert.NilError(t, err)
-		res1B, err := c.GetOrInitialize(ctx, CacheKey[int]{ResultKey: 1}, func(_ context.Context) (int, error) {
+		res1B, err := c.GetOrInitialize(ctx, CacheKey[string]{CallKey: "1"}, func(_ context.Context) (int, error) {
 			return 1, nil
 		})
 		assert.NilError(t, err)
 
-		res2, err := c.GetOrInitialize(ctx, CacheKey[int]{ResultKey: 2}, func(_ context.Context) (int, error) {
+		res2, err := c.GetOrInitialize(ctx, CacheKey[string]{CallKey: "2"}, func(_ context.Context) (int, error) {
 			return 2, nil
 		})
 		assert.NilError(t, err)
@@ -298,20 +307,21 @@ func TestCacheResultRelease(t *testing.T) {
 
 	t.Run("onRelease", func(t *testing.T) {
 		t.Parallel()
-		cacheIface := NewCache[int, int]()
-		c, ok := cacheIface.(*cache[int, int])
+		ctx := t.Context()
+		cacheIface, err := NewCache[string, int](ctx, "")
+		assert.NilError(t, err)
+		c, ok := cacheIface.(*cache[string, int])
 		assert.Assert(t, ok)
-		ctx := context.Background()
 
 		releaseCalledCh := make(chan struct{})
-		res1A, err := c.GetOrInitializeWithCallbacks(ctx, CacheKey[int]{ResultKey: 1, ConcurrencyKey: 1}, func(_ context.Context) (*ValueWithCallbacks[int], error) {
+		res1A, err := c.GetOrInitializeWithCallbacks(ctx, CacheKey[string]{CallKey: "1", ConcurrencyKey: "1"}, func(_ context.Context) (*ValueWithCallbacks[int], error) {
 			return &ValueWithCallbacks[int]{Value: 1, OnRelease: func(ctx context.Context) error {
 				close(releaseCalledCh)
 				return nil
 			}}, nil
 		})
 		assert.NilError(t, err)
-		res1B, err := c.GetOrInitialize(ctx, CacheKey[int]{ResultKey: 1}, func(_ context.Context) (int, error) {
+		res1B, err := c.GetOrInitialize(ctx, CacheKey[string]{CallKey: "1"}, func(_ context.Context) (int, error) {
 			return 1, nil
 		})
 		assert.NilError(t, err)
@@ -335,7 +345,7 @@ func TestCacheResultRelease(t *testing.T) {
 		}
 
 		// test error in onRelease
-		res2, err := c.GetOrInitializeWithCallbacks(ctx, CacheKey[int]{ResultKey: 2, ConcurrencyKey: 1}, func(_ context.Context) (*ValueWithCallbacks[int], error) {
+		res2, err := c.GetOrInitializeWithCallbacks(ctx, CacheKey[string]{CallKey: "2", ConcurrencyKey: "1"}, func(_ context.Context) (*ValueWithCallbacks[int], error) {
 			return &ValueWithCallbacks[int]{Value: 2, OnRelease: func(ctx context.Context) error {
 				return fmt.Errorf("oh no")
 			}}, nil
@@ -350,8 +360,9 @@ func TestCacheResultRelease(t *testing.T) {
 func TestSkipDedupe(t *testing.T) {
 	t.Parallel()
 
-	c := NewCache[int, int]()
-	ctx := context.Background()
+	ctx := t.Context()
+	c, err := NewCache[string, int](ctx, "")
+	assert.NilError(t, err)
 
 	var eg errgroup.Group
 
@@ -359,7 +370,7 @@ func TestSkipDedupe(t *testing.T) {
 	started1 := make(chan struct{})
 	stop1 := make(chan struct{})
 	eg.Go(func() error {
-		_, err := c.GetOrInitializeWithCallbacks(ctx, CacheKey[int]{ResultKey: 1}, func(_ context.Context) (*ValueWithCallbacks[int], error) {
+		_, err := c.GetOrInitializeWithCallbacks(ctx, CacheKey[string]{CallKey: "1"}, func(_ context.Context) (*ValueWithCallbacks[int], error) {
 			defer close(valCh1)
 			close(started1)
 			valCh1 <- 1
@@ -376,7 +387,7 @@ func TestSkipDedupe(t *testing.T) {
 	started2 := make(chan struct{})
 	stop2 := make(chan struct{})
 	eg.Go(func() error {
-		_, err := c.GetOrInitializeWithCallbacks(ctx, CacheKey[int]{ResultKey: 1}, func(_ context.Context) (*ValueWithCallbacks[int], error) {
+		_, err := c.GetOrInitializeWithCallbacks(ctx, CacheKey[string]{CallKey: "1"}, func(_ context.Context) (*ValueWithCallbacks[int], error) {
 			defer close(valCh2)
 			close(started2)
 			valCh2 <- 2

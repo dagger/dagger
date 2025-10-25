@@ -49,8 +49,8 @@ type ObjectType interface {
 	//
 	// Unlike natively added fields, the extended func is limited to the external
 	// Object interface.
-	// cacheKeyFun is optional, if not set the default dagql ID cache key will be used.
-	Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec)
+	// cacheConfigFunc is optional, if not set the default dagql ID cache key will be used.
+	Extend(spec FieldSpec, fun FieldFunc)
 	// FieldSpec looks up a field spec by name.
 	FieldSpec(name string, view call.View) (FieldSpec, bool)
 }
@@ -91,6 +91,12 @@ type AnyResult interface {
 
 	// WithPostCall returns a new AnyResult with the given post-call function attached to it.
 	WithPostCall(fn cache.PostCallFunc) AnyResult
+
+	// IsSafeToPersistCache returns whether it's safe to persist this result in the cache.
+	IsSafeToPersistCache() bool
+
+	// WithSafeToPersistCache returns a new AnyResult with the given safe-to-persist-cache flag.
+	WithSafeToPersistCache(safe bool) AnyResult
 }
 
 // AnyObjectResult is an AnyResult that wraps a selectable value (i.e. a graph object)

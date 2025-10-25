@@ -19,6 +19,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	bkworker "github.com/dagger/dagger/internal/buildkit/worker"
 	"github.com/dagger/dagger/util/gitutil"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
@@ -29,9 +30,13 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 )
+
+const MaxFunctionCacheTTLSeconds = 7 * 24 * 60 * 60 // 1 week
+const MinFunctionCacheTTLSeconds = 1
 
 type ModuleFunction struct {
 	mod     *Module
@@ -94,19 +99,18 @@ type CallOpts struct {
 	Inputs         []CallInput
 	ParentTyped    dagql.AnyResult
 	ParentFields   map[string]any
-	Cache          bool
 	SkipSelfSchema bool
 	Server         *dagql.Server
 
-	// If true, don't mix in the digest for the current dagql call into the cache key for
-	// the exec-op underlying the function call.
+	// If set, persistently cache the result of the function call using this
+	// key rather than the one provided to use through CurrentStorageKey(ctx)
+	// from the cache.
 	//
-	// We want the function call to be cached by the dagql digest in almost every case
-	// since the current dagql call is typically the actual function call. However, in
-	// some corner cases we may calling a function internally within a separate dagql
-	// call and don't want the current call digest mixed in, e.g. during the special
-	// function call that retrieves the module typedefs.
-	SkipCallDigestCacheKey bool
+	// This is currently only used for the special function call made directly
+	// that retrieves module typedefs.
+	// TODO:(sipsma) remove this nonsense once all SDKs have migrated to the new
+	// way of obtaining module typedefs that doesn't involve a function call.
+	OverrideStorageKey string
 }
 
 type CallInput struct {
@@ -462,14 +466,14 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	parent dagql.AnyResult,
 	args map[string]dagql.Input,
 	view call.View,
-	inputCfg dagql.CacheConfig,
-) (*dagql.CacheConfig, error) {
-	cacheCfg, err := fn.mod.CacheConfigForCall(ctx, parent, args, view, inputCfg)
+	req dagql.GetCacheConfigRequest,
+) (*dagql.GetCacheConfigResponse, error) {
+	cacheCfgResp, err := fn.mod.CacheConfigForCall(ctx, parent, args, view, req)
 	if err != nil {
 		return nil, err
 	}
 
-	dgstInputs := []string{cacheCfg.Digest.String()}
+	dgstInputs := []string{cacheCfgResp.CacheKey.CallKey}
 
 	var ctxArgs []*FunctionArg
 	var userDefaults []*UserDefault
@@ -505,7 +509,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 	}
 
 	if len(ctxArgs) > 0 || len(userDefaults) > 0 {
-		cacheCfg.UpdatedArgs = make(map[string]dagql.Input)
+		cacheCfgResp.UpdatedArgs = make(map[string]dagql.Input)
 		var mu sync.Mutex
 		type argInput struct {
 			name string
@@ -529,7 +533,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 					val:  ctxVal,
 				}
 				mu.Lock()
-				cacheCfg.UpdatedArgs[arg.Name] = dagql.Opt(ctxVal)
+				cacheCfgResp.UpdatedArgs[arg.Name] = dagql.Opt(ctxVal)
 				mu.Unlock()
 
 				return nil
@@ -551,7 +555,7 @@ func (fn *ModuleFunction) CacheConfigForCall(
 					val:  id,
 				}
 				mu.Lock()
-				cacheCfg.UpdatedArgs[arg.Name] = dagql.Opt(id)
+				cacheCfgResp.UpdatedArgs[arg.Name] = dagql.Opt(id)
 				mu.Unlock()
 				return nil
 			})
@@ -571,8 +575,16 @@ func (fn *ModuleFunction) CacheConfigForCall(
 		}
 	}
 
-	cacheCfg.Digest = dagql.HashFrom(dgstInputs...)
-	return cacheCfg, nil
+	if cachePolicy := fn.metadata.derivedCachePolicy(fn.mod); cachePolicy == FunctionCachePolicyPerSession {
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		dgstInputs = append(dgstInputs, clientMetadata.SessionID)
+	}
+
+	cacheCfgResp.CacheKey.CallKey = hashutil.HashStrings(dgstInputs...).String()
+	return cacheCfgResp, nil
 }
 
 func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.AnyResult, rerr error) { //nolint: gocyclo
@@ -604,19 +616,13 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	var cacheMixins []string
-	if !opts.Cache {
-		// Scope the exec cache key to the current session ID. It will be
-		// cached in the context of the session but invalidated across
-		// different sessions.
-		cacheMixins = append(cacheMixins, clientMetadata.SessionID)
+	if opts.OverrideStorageKey != "" {
+		cacheMixins = append(cacheMixins, opts.OverrideStorageKey)
+	} else {
+		cacheMixins = append(cacheMixins, cache.CurrentStorageKey(ctx))
 	}
-	if !opts.SkipCallDigestCacheKey {
-		// If true, scope the exec cache key to the current dagql call digest. This is needed currently
-		// for module function calls specifically so that their cache key is based on their arguments and
-		// receiver object.
-		cacheMixins = append(cacheMixins, dagql.CurrentID(ctx).Digest().String())
-	}
-	execMD.CacheMixin = dagql.HashFrom(cacheMixins...)
+
+	execMD.CacheMixin = hashutil.HashStrings(cacheMixins...)
 
 	callInputs, err := fn.setCallInputs(ctx, opts)
 	if err != nil {
@@ -809,6 +815,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("convert return value: %w", err)
 	}
 
+	safeToPersistCache := true
 	if returnValue != nil {
 		// Get the client ID actually used during the function call - this might not
 		// be the same as execMD.ClientID if the function call was cached at the
@@ -825,11 +832,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 			return nil, fmt.Errorf("collect IDs: %w", err)
 		}
 
-		// NOTE: once generalized function caching is enabled we need to ensure that any non-reproducible
-		// cache entries are linked to the result of this call.
-		// See the previous implementation of this for a reference:
-		// https://github.com/dagger/dagger/blob/7c31db76e07c9a17fcdb3f3c4513c915344c1da8/core/modfunc.go#L483
-
 		// Function calls are cached per-session, but every client caller needs to add
 		// secret/socket/etc. resources from the result to their store.
 		returnedIDsList := make([]*resource.ID, 0, len(returnedIDs))
@@ -840,8 +842,17 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		if err != nil {
 			return nil, fmt.Errorf("create secret transfer post call: %w", err)
 		}
+		if secretTransferPostCall != nil {
+			// this being non-nil indicates there were secrets created by direct SetSecret calls in the
+			// returned value. This means we cannot use a persistently cached result, so invalidate the
+			// cache for this call in the future.
+			safeToPersistCache = false
+		}
 
 		returnValue = returnValue.WithPostCall(secretTransferPostCall)
+	}
+	if returnValue != nil {
+		returnValue = returnValue.WithSafeToPersistCache(safeToPersistCache)
 	}
 
 	return returnValue, nil

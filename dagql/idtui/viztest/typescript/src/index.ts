@@ -21,7 +21,7 @@ export class Typescript {
     })
   }
 
-  @func()
+  @func({ cache: "session" })
   async pending(): Promise<void> {
     await dag
       .container()
