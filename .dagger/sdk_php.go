@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/dagger/dagger/.dagger/internal/dagger"
 )
 
@@ -32,10 +34,20 @@ func (t PHPSDK) Source() *dagger.Directory {
 
 // Lint the PHP SDK
 func (t PHPSDK) CheckLint(ctx context.Context) error {
-	_, err := dag.PhpSDKDev(dagger.PhpSDKDevOpts{Source: t.Source()}).
-		Lint().
-		Sync(ctx)
-	return err
+	dev := dag.PhpSDKDev(dagger.PhpSDKDevOpts{Source: t.Source()})
+
+	eg := errgroup.Group{}
+	eg.Go(func() (rerr error) {
+		_, err := dev.Lint().Sync(ctx)
+		return err
+	})
+
+	eg.Go(func() (rerr error) {
+		_, err := dev.Analyze().Sync(ctx)
+		return err
+	})
+
+	return eg.Wait()
 }
 
 // Test the PHP SDK
