@@ -184,6 +184,7 @@ type Server struct {
 	locker *locker.Locker
 
 	secretSalt []byte
+	sshfsMgr   *sshfsManager
 }
 
 type NewServerOpts struct {
@@ -219,6 +220,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		baseDagqlCache: cache.NewCache[string, dagql.AnyResult](),
 		daggerSessions: make(map[string]*daggerSession),
 		locker:         locker.New(),
+		sshfsMgr:       newSSHFSManager(bkcfg.Root),
 	}
 
 	// start the global namespace worker pool, which is used for running Go funcs
