@@ -105,7 +105,7 @@ func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, e
 	}
 	objChecksCache := map[string][]*Check{}
 	group := &CheckGroup{Module: mod}
-	for _, check := range mod.walkObjectChecks(mainObj, objChecksCache) {
+	for _, check := range mod.walkObjectChecks(ctx, mainObj, objChecksCache) {
 		match, err := check.Match(include)
 		if err != nil {
 			return nil, err
@@ -133,38 +133,64 @@ func (mod *Module) ObjectByName(name string) (*ObjectTypeDef, bool) {
 	return nil, false
 }
 
-func (mod *Module) walkObjectChecks(obj *ObjectTypeDef, objChecksCache map[string][]*Check) []*Check {
+func (mod *Module) walkObjectChecks(ctx context.Context, obj *ObjectTypeDef, objChecksCache map[string][]*Check) []*Check {
+	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("walk object for checks: mod=%q obj=%q nFunctions=%d", mod.Name(), obj.Name, len(obj.Functions)))
+	defer span.End()
 	if cached, ok := objChecksCache[obj.Name]; ok {
 		return cached
 	}
 	var checks []*Check
 	// To be a valid check, a function must return a type ending with this suffix
 	checkReturnTypeSuffix := CheckStatus("").Type().Name()
+	subObjects := map[string]*ObjectTypeDef{}
 	for _, fn := range obj.Functions {
-		if functionRequiresArgs(fn) {
-			continue
-		}
-		// 1. Scan object for checks
-		returnType := fn.ReturnType.ToType().Name()
-		if strings.HasSuffix(returnType, checkReturnTypeSuffix) {
-			checks = append(checks, &Check{
-				Path:        []string{gqlFieldName(fn.Name)},
-				Description: fn.Description,
-			})
-			continue
-		}
-		// 2. Recursively scan reachable children objects
-		if returnsObject := fn.ReturnType.AsObject.Valid; returnsObject {
-			subObj, ok := mod.ObjectByName(fn.ReturnType.ToType().Name())
-			if !ok {
-				continue
+		func() {
+			_, span := Tracer(ctx).Start(ctx, fmt.Sprintf("%s() returnType=%s returnsObject=%v", fn.Name, fn.ReturnType.ToType().Name(), fn.ReturnType.AsObject.Valid))
+			defer span.End()
+
+			if functionRequiresArgs(fn) {
+				return
 			}
-			subChecks := mod.walkObjectChecks(subObj, objChecksCache)
-			for _, subCheck := range subChecks {
-				subCheck.Path = append([]string{gqlFieldName(fn.Name)}, subCheck.Path...)
+			// 1. Scan object for checks
+			returnType := fn.ReturnType.ToType().Name()
+			if strings.HasSuffix(returnType, checkReturnTypeSuffix) {
+				checks = append(checks, &Check{
+					Path:        []string{gqlFieldName(fn.Name)},
+					Description: fn.Description,
+				})
+				return
 			}
-			checks = append(checks, subChecks...)
+			// 2. Recursively scan reachable children objects
+			if returnsObject := fn.ReturnType.AsObject.Valid; returnsObject {
+				subObj, ok := mod.ObjectByName(fn.ReturnType.ToType().Name())
+				if ok {
+					subObjects[fn.Name] = subObj
+				}
+
+			}
+			return
+		}()
+	}
+	// Also walk fields for sub-checks
+	for _, field := range obj.Fields {
+		func() {
+			_, span := Tracer(ctx).Start(ctx, fmt.Sprintf("%s() returnsObject=%v", field.TypeDef.AsObject.Valid))
+			defer span.End()
+			if returnsObject := field.TypeDef.AsObject.Valid; returnsObject {
+				subObj, ok := mod.ObjectByName(field.TypeDef.ToType().Name())
+				if ok {
+					subObjects[field.Name] = subObj
+
+				}
+			}
+		}()
+	}
+	for key, subObj := range subObjects {
+		subChecks := mod.walkObjectChecks(ctx, subObj, objChecksCache)
+		for _, subCheck := range subChecks {
+			subCheck.Path = append([]string{gqlFieldName(key)}, subCheck.Path...)
 		}
+		checks = append(checks, subChecks...)
 	}
 	objChecksCache[obj.Name] = checks
 	return checks

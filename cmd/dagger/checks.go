@@ -87,7 +87,7 @@ func loadCheckGroupInfo(ctx context.Context, checks *dagger.CheckGroup) (*CheckG
 			if err != nil {
 				return err
 			}
-			checkInfo.Name = name
+			checkInfo.Name = cliName(name)
 
 			description, err := check.Description(ctx)
 			if err != nil {
@@ -132,7 +132,7 @@ func listChecks(ctx context.Context, checks *dagger.CheckGroup, cmd *cobra.Comma
 		if idx := strings.Index(check.Description, "\n"); idx != -1 {
 			firstLine = check.Description[:idx]
 		}
-		fmt.Fprintf(tw, "%s\t%s\n", cliName(check.Name), firstLine)
+		fmt.Fprintf(tw, "%s\t%s\n", check.Name, firstLine)
 	}
 	return tw.Flush()
 }
