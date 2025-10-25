@@ -453,6 +453,14 @@ func (sdk *goSDK) Runtime(
 		return inst, fmt.Errorf("failed to build go runtime binary: %w", err)
 	}
 
+	// sync to ensure it's loaded
+	//var runtimeRes dagql.ID[*core.Container]
+	//if err = dag.Select(ctx, ctr, &runtimeRes, dagql.Selector{
+	//	Field: "sync",
+	//}); err != nil {
+	//	return ctr, err
+	//}
+
 	return ctr, nil
 }
 
