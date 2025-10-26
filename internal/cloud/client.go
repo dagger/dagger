@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"time"
 
 	"github.com/shurcooL/graphql"
 	"golang.org/x/oauth2"
@@ -99,27 +98,22 @@ type SerializableCertificate struct {
 }
 
 type EngineRequest struct {
-	Module   string   `json:"module,omitempty"`
-	Function string   ` json:"function,omitempty"`
-	ExecCmd  []string `json:"exec_cmd,omitempty"`
+	Module               string   `json:"module,omitempty"`
+	Function             string   ` json:"function,omitempty"`
+	ExecCmd              []string `json:"exec_cmd,omitempty"`
+	ClientID             string   `json:"client_id,omitempty"`
+	MinimumEngineVersion string   `json:"minimum_engine_version,omitempty"`
 }
 
 type EngineSpec struct {
-	Architecture   string                   `json:"architecture,omitempty"`
-	CacheSizeGb    int                      `json:"cache_size_gb,omitempty"`
-	Continent      string                   `json:"continent,omitempty"`
+	EngineRequest
+
 	Image          string                   `json:"image,omitempty"`
 	Location       string                   `json:"location,omitempty"`
 	OrgID          string                   `json:"org_id,omitempty"`
 	UserID         string                   `json:"user_id,omitempty"`
-	Size           string                   `json:"size,omitempty"`
-	TTL            string                   `json:"ttl,omitempty"`
-	TTLDuration    time.Duration            `json:"ttl_duration,omitempty"`
 	URL            string                   `json:"url,omitempty"`
 	CertSerialized *SerializableCertificate `json:"cert,omitempty"`
-	Module         string                   `json:"module,omitempty"`
-	Function       string                   `json:"function,omitempty"`
-	ExecCmd        []string                 `json:"exec_cmd,omitempty"`
 }
 
 func (es *EngineSpec) TLSCertificate() (*tls.Certificate, error) {
@@ -166,13 +160,14 @@ func (c *Client) Engine(ctx context.Context, req EngineRequest) (*EngineSpec, er
 		tag = "main"
 	}
 
-	// The only property that we can set is the Image tag.
-	// The rest will be handled by engine configs (follow-up).
+	if req.ClientID == "" {
+		return nil, errors.New("EngineRequest.ClientID must be set to the value that identifies this client")
+	}
+
+	req.MinimumEngineVersion = engine.MinimumEngineVersion
 	engineSpec := &EngineSpec{
-		Image:    "registry.dagger.io/engine:" + tag,
-		Module:   req.Module,
-		Function: req.Function,
-		ExecCmd:  req.ExecCmd,
+		Image:         "registry.dagger.io/engine:" + tag,
+		EngineRequest: req,
 	}
 	b, err := json.Marshal(engineSpec)
 	if err != nil {

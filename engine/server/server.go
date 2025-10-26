@@ -602,9 +602,7 @@ func (srv *Server) Clients() []string {
 
 	clients := map[string]struct{}{}
 	for _, sess := range srv.daggerSessions {
-		for id := range sess.clients {
-			clients[id] = struct{}{}
-		}
+		clients[sess.mainClientCallerID] = struct{}{}
 	}
 
 	return slices.Collect(maps.Keys(clients))

@@ -91,7 +91,7 @@ func (d *daggerCloudDriver) Provision(ctx context.Context, _ *url.URL, opts *Dri
 		execCmd = opts.ExecCmd
 	}
 
-	engineSpec, err := client.Engine(ctx, cloud.EngineRequest{Module: module, Function: function, ExecCmd: execCmd})
+	engineSpec, err := client.Engine(ctx, cloud.EngineRequest{Module: module, Function: function, ExecCmd: execCmd, ClientID: opts.ClientID})
 	if err != nil {
 		if errors.Is(err, cloud.ErrNoOrg) {
 			return nil, errors.New("please associate this Engine with an org by running `dagger login <org>")
