@@ -20,6 +20,11 @@ func (s *engineSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.Engine]{
+		dagql.Func("clients", s.clients).
+			Doc("The list of connected client IDs"),
+	}.Install(srv)
+
+	dagql.Fields[*core.Engine]{
 		dagql.Func("localCache", s.localCache).
 			Doc("The local (on-disk) cache for the Dagger engine"),
 	}.Install(srv)
@@ -71,6 +76,14 @@ func (s *engineSchema) localCache(ctx context.Context, parent *core.Engine, args
 		MaxUsedSpace:  int(policy.MaxUsedSpace),
 		MinFreeSpace:  int(policy.MinFreeSpace),
 	}, nil
+}
+
+func (s *engineSchema) clients(ctx context.Context, parent *core.Engine, args struct{}) ([]string, error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return query.Clients(), nil
 }
 
 func (s *engineSchema) cacheEntrySet(ctx context.Context, parent dagql.ObjectResult[*core.EngineCache], args struct {

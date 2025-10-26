@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
 	"syscall"
@@ -593,6 +594,20 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 func (srv *Server) EngineName() string {
 	return srv.engineName
+}
+
+func (srv *Server) Clients() []string {
+	srv.daggerSessionsMu.RLock()
+	defer srv.daggerSessionsMu.RUnlock()
+
+	clients := map[string]struct{}{}
+	for _, sess := range srv.daggerSessions {
+		for id := range sess.clients {
+			clients[id] = struct{}{}
+		}
+	}
+
+	return slices.Collect(maps.Keys(clients))
 }
 
 func (srv *Server) Close() error {
