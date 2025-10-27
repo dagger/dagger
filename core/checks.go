@@ -145,10 +145,6 @@ func (r *CheckGroup) List(ctx context.Context) ([]*Check, error) {
 
 // Run all the checks in the group
 func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
-	// FIXME: use again, or delete
-	//attr := []attribute.KeyValue{
-	//	attribute.Bool(telemetry.UIRevealAttr, true),
-	//}
 	r = r.Clone()
 	q, err := CurrentQuery(ctx)
 	if err != nil {
