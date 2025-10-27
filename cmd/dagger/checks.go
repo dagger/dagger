@@ -73,13 +73,9 @@ func loadModule(ctx context.Context, dag *dagger.Client) (*dagger.Module, error)
 	return dag.ModuleSource(modRef).AsModule().Sync(ctx)
 }
 
-func loadCheckGroupInfo(ctx context.Context, checks *dagger.CheckGroup) (*CheckGroupInfo, error) {
+func loadCheckGroupInfo(ctx context.Context, checks []dagger.Check) (*CheckGroupInfo, error) {
 	info := &CheckGroupInfo{}
 	err := withInternalSpan(ctx, "fetch check information", func(ctx context.Context) error {
-		checks, err := checks.List(ctx)
-		if err != nil {
-			return err
-		}
 		for _, check := range checks {
 			checkInfo := &CheckInfo{}
 
@@ -117,7 +113,11 @@ type CheckInfo struct {
 }
 
 // 'dagger checks -l'
-func listChecks(ctx context.Context, checks *dagger.CheckGroup, cmd *cobra.Command) error {
+func listChecks(ctx context.Context, checkgroup *dagger.CheckGroup, cmd *cobra.Command) error {
+	checks, err := checkgroup.List(ctx)
+	if err != nil {
+		return err
+	}
 	info, err := loadCheckGroupInfo(ctx, checks)
 	if err != nil {
 		return err
@@ -138,10 +138,8 @@ func listChecks(ctx context.Context, checks *dagger.CheckGroup, cmd *cobra.Comma
 }
 
 // 'dagger checks' (runs by default)
-func runChecks(ctx context.Context, checks *dagger.CheckGroup, cmd *cobra.Command) error {
-	checks = checks.Run()
-	// FIXME: add `CheckGroup.Sync()`
-	_, err := checks.Report().Sync(ctx)
+func runChecks(ctx context.Context, checkgroup *dagger.CheckGroup, cmd *cobra.Command) error {
+	checks, err := checkgroup.Run().List(ctx)
 	if err != nil {
 		return err
 	}
