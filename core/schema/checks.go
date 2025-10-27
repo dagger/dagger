@@ -35,12 +35,6 @@ func (s checksSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 }
 
-func (s checksSchema) checks(ctx context.Context, q *core.Query, args struct {
-	Include []string `default"[]"`
-}) (*core.CheckGroup, error) {
-	return core.CurrentChecks(ctx, args.Include)
-}
-
 func (s checksSchema) name(_ context.Context, parent *core.Check, args struct{}) (string, error) {
 	return parent.Name(), nil
 }

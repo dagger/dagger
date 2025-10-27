@@ -90,28 +90,6 @@ func (mod *Module) Name() string {
 	return mod.NameField
 }
 
-type cacheMap[T any] struct {
-	cache  map[string]T
-	lookup func(string) (T, bool)
-}
-
-func newCacheMap[T any](lookup func(string) (T, bool)) *cacheMap[T] {
-	return &cacheMap[T]{
-		cache:  map[string]T{},
-		lookup: lookup,
-	}
-}
-func (cp *cacheMap[T]) Get(key string) (T, bool) {
-	if val, ok := cp.cache[key]; ok {
-		return val, true
-	}
-	val, ok := cp.lookup(key)
-	if ok {
-		cp.cache[key] = val
-	}
-	return val, ok
-}
-
 func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, error) {
 	mainObj, ok := mod.MainObject()
 	if !ok {
@@ -147,9 +125,7 @@ func (mod *Module) ObjectByName(name string) (*ObjectTypeDef, bool) {
 	return nil, false
 }
 
-func (mod *Module) walkObjectChecks(ctx context.Context, obj *ObjectTypeDef, objChecksCache map[string][]*Check) []*Check {
-	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("walk object for checks: mod=%q obj=%q nFunctions=%d", mod.Name(), obj.Name, len(obj.Functions)))
-	defer span.End()
+func (mod *Module) walkObjectChecks(ctx context.Context, obj *ObjectTypeDef, objChecksCache map[string][]*Check) []*Check { // nolint:unparam
 	if cached, ok := objChecksCache[obj.Name]; ok {
 		return cached
 	}
@@ -159,9 +135,6 @@ func (mod *Module) walkObjectChecks(ctx context.Context, obj *ObjectTypeDef, obj
 	subObjects := map[string]*ObjectTypeDef{}
 	for _, fn := range obj.Functions {
 		func() {
-			_, span := Tracer(ctx).Start(ctx, fmt.Sprintf("%s() returnType=%s returnsObject=%v", fn.Name, fn.ReturnType.ToType().Name(), fn.ReturnType.AsObject.Valid))
-			defer span.End()
-
 			if functionRequiresArgs(fn) {
 				return
 			}
@@ -180,24 +153,17 @@ func (mod *Module) walkObjectChecks(ctx context.Context, obj *ObjectTypeDef, obj
 				if ok {
 					subObjects[fn.Name] = subObj
 				}
-
 			}
-			return
 		}()
 	}
 	// Also walk fields for sub-checks
 	for _, field := range obj.Fields {
-		func() {
-			_, span := Tracer(ctx).Start(ctx, fmt.Sprintf("%s() returnsObject=%v", field.TypeDef.AsObject.Valid))
-			defer span.End()
-			if returnsObject := field.TypeDef.AsObject.Valid; returnsObject {
-				subObj, ok := mod.ObjectByName(field.TypeDef.ToType().Name())
-				if ok {
-					subObjects[field.Name] = subObj
-
-				}
+		if returnsObject := field.TypeDef.AsObject.Valid; returnsObject {
+			subObj, ok := mod.ObjectByName(field.TypeDef.ToType().Name())
+			if ok {
+				subObjects[field.Name] = subObj
 			}
-		}()
+		}
 	}
 	for key, subObj := range subObjects {
 		subChecks := mod.walkObjectChecks(ctx, subObj, objChecksCache)

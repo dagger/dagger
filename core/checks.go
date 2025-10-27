@@ -179,7 +179,7 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 			check.Passed = false
 			check.Message = ""
 			var status CheckStatus
-			selectPath := []dagql.Selector{dagql.Selector{Field: gqlFieldName(r.Module.Name())}}
+			selectPath := []dagql.Selector{{Field: gqlFieldName(r.Module.Name())}}
 			for _, field := range check.Path {
 				selectPath = append(selectPath, dagql.Selector{Field: field})
 			}
