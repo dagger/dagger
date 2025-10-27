@@ -509,6 +509,10 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 
 		require.Contains(t, addedFiles, "file2.txt")
 
+		modifiedFiles, err := changes.ModifiedPaths(ctx)
+		require.NoError(t, err)
+		require.Empty(t, modifiedFiles)
+
 		d := c.Directory().WithChanges(changes)
 
 		entries, err := d.Entries(ctx)
