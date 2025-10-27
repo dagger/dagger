@@ -2827,7 +2827,7 @@ func (s *moduleSourceSchema) initializeSDKModule(
 ) (*core.Module, error) {
 	// Cache the source instance by digest
 	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-		ResultKey: src.Self().Digest,
+		CallKey: src.Self().Digest,
 	}
 	_, err := dag.Cache.GetOrInitializeValue(ctx, cacheKey, src)
 	if err != nil {

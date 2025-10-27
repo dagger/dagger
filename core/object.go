@@ -494,6 +494,7 @@ func toolchainProxyFunction(ctx context.Context, mod *Module, fun *Function, tcM
 			return dagql.Field[*ModuleObject]{}, fmt.Errorf("failed to get field spec for toolchain: %w", err)
 		}
 		spec.Module = mod.IDModule()
+		spec.GetCacheConfig = mod.CacheConfigForCall
 
 		return dagql.Field[*ModuleObject]{
 			Spec: &spec,
@@ -506,9 +507,6 @@ func toolchainProxyFunction(ctx context.Context, mod *Module, fun *Function, tcM
 					Fields:  map[string]any{}, // empty fields, functions will be called on the toolchain's runtime
 				})
 			},
-			CacheSpec: dagql.CacheSpec{
-				GetCacheConfig: mod.CacheConfigForCall,
-			},
 		}, nil
 	}
 
@@ -519,7 +517,6 @@ func toolchainProxyFunction(ctx context.Context, mod *Module, fun *Function, tcM
 		ctx,
 		tcMod,
 		mainObjDef,
-		tcMod.Runtime.Value,
 		constructor,
 	)
 	if err != nil {
@@ -539,6 +536,7 @@ func toolchainProxyFunction(ctx context.Context, mod *Module, fun *Function, tcM
 	// But use the toolchain name from the parent module
 	spec.Name = fun.Name
 	spec.Module = mod.IDModule()
+	spec.GetCacheConfig = modFun.CacheConfigForCall
 
 	//nolint:dupl
 	return dagql.Field[*ModuleObject]{
@@ -547,7 +545,6 @@ func toolchainProxyFunction(ctx context.Context, mod *Module, fun *Function, tcM
 			opts := &CallOpts{
 				ParentTyped:    obj,
 				ParentFields:   obj.Self().Fields,
-				Cache:          dagql.IsInternal(ctx),
 				SkipSelfSchema: false,
 				Server:         dag,
 			}
@@ -562,9 +559,6 @@ func toolchainProxyFunction(ctx context.Context, mod *Module, fun *Function, tcM
 				return opts.Inputs[i].Name < opts.Inputs[j].Name
 			})
 			return modFun.Call(ctx, opts)
-		},
-		CacheSpec: dagql.CacheSpec{
-			GetCacheConfig: modFun.CacheConfigForCall,
 		},
 	}, nil
 }
