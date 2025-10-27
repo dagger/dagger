@@ -42,10 +42,6 @@ func (t GoSDK) Test(ctx context.Context) (rerr error) {
 	return err
 }
 
-func (t GoSDK) BaseContainer() *dagger.Container {
-	return dag.Go(dag.Directory()).Base()
-}
-
 func (t GoSDK) DevContainer() *dagger.Container {
 	return dag.Go(t.Source()).
 		Env().
@@ -70,8 +66,6 @@ func (t GoSDK) CheckReleaseDryRun(ctx context.Context) error {
 		"HEAD",
 		true,
 		"https://github.com/dagger/dagger-go-sdk.git",
-		"dagger-ci",
-		"hello@dagger.io",
 		nil,
 	)
 }
@@ -88,29 +82,34 @@ func (t GoSDK) Publish(
 	// +default="https://github.com/dagger/dagger-go-sdk.git"
 	gitRepo string,
 	// +optional
-	// +default="dagger-ci"
-	gitUserName string,
-	// +optional
-	// +default="hello@dagger.io"
-	gitUserEmail string,
-
-	// +optional
 	githubToken *dagger.Secret,
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/go/")
 
 	if err := gitPublish(ctx, t.Dagger.Git, gitPublishOpts{
-		sdk:          "go",
-		sourceTag:    tag,
-		sourcePath:   "sdk/go/",
-		sourceFilter: "if [ -f go.mod ]; then go mod edit -dropreplace github.com/dagger/dagger; fi",
-		sourceEnv:    t.BaseContainer(), // Just need git and go installed
-		dest:         gitRepo,
-		destTag:      version,
-		username:     gitUserName,
-		email:        gitUserEmail,
-		githubToken:  githubToken,
-		dryRun:       dryRun,
+		sdk:        "go",
+		sourceTag:  tag,
+		sourcePath: "sdk/go/",
+		// see https://github.com/newren/git-filter-repo/blob/main/Documentation/converting-from-filter-branch.md#cheat-sheet-additional-conversion-examples
+		callback: `
+tmpfile = os.path.basename(filename)
+if tmpfile != b"go.mod":
+  return (filename, mode, blob_id)  # no changes
+
+contents = value.get_contents_by_identifier(blob_id)
+with open(tmpfile, "wb") as f:
+  f.write(contents)
+subprocess.check_call(["go", "mod", "edit", "-dropreplace", "github.com/dagger/dagger", tmpfile])
+with open(tmpfile, "rb") as f:
+  contents = f.read()
+new_blob_id = value.insert_file_with_contents(contents)
+
+return (filename, mode, new_blob_id)
+`,
+		dest:        gitRepo,
+		destTag:     version,
+		githubToken: githubToken,
+		dryRun:      dryRun,
 	}); err != nil {
 		return err
 	}

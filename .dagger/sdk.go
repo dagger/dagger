@@ -101,30 +101,30 @@ type gitPublishOpts struct {
 	dest               string
 	sourceTag, destTag string
 	sourcePath         string
-	sourceFilter       string
-	sourceEnv          *dagger.Container
 
-	username    string
-	email       string
+	callback string
+
 	githubToken *dagger.Secret
 
 	dryRun bool
 }
 
 func gitPublish(ctx context.Context, git *dagger.GitRepository, opts gitPublishOpts) error {
-	base := opts.sourceEnv
-	if base == nil {
-		base = dag.
-			Alpine(dagger.AlpineOpts{
-				Branch:   distconsts.AlpineVersion,
-				Packages: []string{"git", "go", "python3"},
-			}).
-			Container()
-	}
+	base := dag.
+		Alpine(dagger.AlpineOpts{
+			Branch:   distconsts.AlpineVersion,
+			Packages: []string{"git", "go", "python3"},
+		}).
+		Container()
 
-	base = base.
-		WithExec([]string{"git", "config", "--global", "user.name", opts.username}).
-		WithExec([]string{"git", "config", "--global", "user.email", opts.email})
+	// git-filter-repo is a better alternative to git-filter-branch
+	gitFilterRepoVersion := "v2.47.0"
+	base = base.WithFile(
+		"/usr/local/bin/git-filter-repo",
+		dag.HTTP(fmt.Sprintf("https://raw.githubusercontent.com/newren/git-filter-repo/%s/git-filter-repo", gitFilterRepoVersion)),
+		dagger.ContainerWithFileOpts{Permissions: 0755},
+	)
+
 	if !opts.dryRun {
 		githubTokenRaw, err := opts.githubToken.Plaintext(ctx)
 		if err != nil {
@@ -137,18 +137,39 @@ func gitPublish(ctx context.Context, git *dagger.GitRepository, opts gitPublishO
 			WithSecretVariable("GIT_CONFIG_VALUE_0", dag.SetSecret("GITHUB_HEADER", fmt.Sprintf("AUTHORIZATION: Basic %s", encodedPAT)))
 	}
 
+	filterRepoArgs := []string{
+		"git", "filter-repo",
+		// this repo doesn't *look* like a fresh clone, so disable the safety check
+		"--force",
+	}
+
+	// NOTE: these are required for compatibility with git-filter-branch
+	// without these, we would end up rewriting the dagger-go-sdk history,
+	// which would be very sad for out integration with the go ecosystem
+	filterRepoArgs = append(filterRepoArgs,
+		// prune all commits that have no effect on the history
+		"--prune-empty=always", "--prune-degenerate=always",
+		// keep commit hashes in commit messages as-is :(
+		"--preserve-commit-hashes",
+	)
+	if opts.sourcePath != "" {
+		filterRepoArgs = append(filterRepoArgs,
+			// only extract the source path
+			"--subdirectory-filter", opts.sourcePath,
+		)
+	}
+	if opts.callback != "" {
+		filterRepoArgs = append(filterRepoArgs,
+			// apply a callback
+			"--file-info-callback", opts.callback,
+		)
+	}
+
 	result := base.
 		WithEnvVariable("CACHEBUSTER", rand.Text()).
 		WithWorkdir("/src/dagger").
 		WithDirectory(".", git.Ref(opts.sourceTag).Tree(dagger.GitRefTreeOpts{Depth: -1})).
-		WithEnvVariable("FILTER_BRANCH_SQUELCH_WARNING", "1").
-		WithExec([]string{"git", "status"}).
-		WithExec([]string{
-			"git", "filter-branch", "-f", "--prune-empty",
-			"--subdirectory-filter", opts.sourcePath,
-			"--tree-filter", opts.sourceFilter,
-			"--", opts.sourceTag,
-		})
+		WithExec(filterRepoArgs)
 	if !opts.dryRun {
 		result = result.WithExec([]string{
 			"git",
