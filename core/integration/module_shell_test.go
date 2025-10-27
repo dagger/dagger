@@ -1285,7 +1285,7 @@ func (ShellSuite) TestNamedArguments(ctx context.Context, t *testctx.T) {
 	t.Run("mixed positional and named arguments", func(ctx context.Context, t *testctx.T) {
 		// Test mixing positional and named arguments (positional first)
 		out, err := daggerCliBase(t, c).
-			With(daggerShell(`directory | with-file /test --contents="hello world" | file /test | contents`)).
+			With(daggerShell(`directory | with-new-file /test --contents="hello world" | file /test | contents`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hello world", out)
@@ -1315,13 +1315,13 @@ func (ShellSuite) TestNamedArguments(ctx context.Context, t *testctx.T) {
 			With(daggerShell(`container | from alpine | with-exec echo --args=hello | stdout`)).
 			Sync(ctx)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "requires 0 positional argument(s), received 1")
+		requireErrOut(t, err, "requires 0 positional argument(s), received 1")
 	})
 
 	t.Run("all required args as named", func(ctx context.Context, t *testctx.T) {
 		// Test providing all required arguments as named arguments
 		out, err := daggerCliBase(t, c).
-			With(daggerShell(`directory | with-file --path=/greeting --contents="Hello Named Args!" | file --path=/greeting | contents`)).
+			With(daggerShell(`directory | with-new-file --path=/greeting --contents="Hello Named Args!" | file --path=/greeting | contents`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "Hello Named Args!", out)
@@ -1340,7 +1340,7 @@ func (ShellSuite) TestNamedArguments(ctx context.Context, t *testctx.T) {
 		// Test that positional order is preserved when mixing args
 		// This should be equivalent to: with-directory /src .
 		out, err := daggerCliBase(t, c).
-			With(daggerShell(`directory | with-new-file test.txt "content" | with-directory --path=/src | entries`)).
+			With(daggerShell(`directory | with-new-file test.txt "content" | with-directory --path=/src $(directory) | entries`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "test.txt")
