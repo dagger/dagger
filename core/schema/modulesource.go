@@ -2446,7 +2446,6 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 				ctx,
 				mod,
 				nil,
-				mod.Runtime.Value,
 				core.NewFunction("", &core.TypeDef{
 					Kind:     core.TypeDefKindObject,
 					AsObject: dagql.NonNull(core.NewObjectTypeDef("Module", "")),
@@ -2514,27 +2513,6 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 	if typeDefsEnabled && isSelfCallsEnabled(srcInstContentHashed) {
 		// append module types to the module itself so self calls are possible
 		mod.Deps = mod.Deps.Append(mod)
-	}
-
-	if !mod.Runtime.Valid {
-		// mod.Runtime is required for the module to be correctly loaded and usable.
-		// So set it if it doesn't yet exist (because moduleTypes does not create it)
-		runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
-		if err != nil {
-			return nil, err
-		}
-		mod.Runtime = dagql.NonNull(runtime)
-		var runtimeRes dagql.ID[*core.Container]
-		// But mod.Runtime itself is not enough, it needs to be fully resolved now. It's expected not only
-		// mod.Runtime exists, but it's expected the cache has been filled.
-		// If the SDK is not defining moduleTypes, then a function will be called against the module and creates all
-		// the required objects. Here we don't want that, so just sync it so it exists and will be available later to be
-		// invoked.
-		if err = dag.Select(ctx, mod.Runtime.Value, &runtimeRes, dagql.Selector{
-			Field: "sync",
-		}); err != nil {
-			return nil, err
-		}
 	}
 
 	return mod, nil

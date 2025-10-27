@@ -189,6 +189,7 @@ type Callable interface {
 
 func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callable, error) {
 	mod := t.mod
+
 	if field, ok := t.typeDef.FieldByName(name); ok {
 		fieldType, ok, err := mod.ModTypeFor(ctx, field.TypeDef, true)
 		if err != nil {
@@ -203,12 +204,12 @@ func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callab
 			Return: fieldType,
 		}, nil
 	}
+
 	if fun, ok := t.typeDef.FunctionByName(name); ok {
 		return NewModFunction(
 			ctx,
 			mod,
 			t.typeDef,
-			mod.Runtime.Value,
 			fun,
 		)
 	}
@@ -358,7 +359,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		return fmt.Errorf("constructor function for object %s must return that object", objDef.OriginalName)
 	}
 
-	fn, err := NewModFunction(ctx, mod, objDef, mod.Runtime.Value, fnTypeDef)
+	fn, err := NewModFunction(ctx, mod, objDef, fnTypeDef)
 	if err != nil {
 		return fmt.Errorf("failed to create function: %w", err)
 	}
@@ -470,7 +471,6 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 		ctx,
 		mod,
 		objDef,
-		mod.Runtime.Value,
 		fun,
 	)
 	if err != nil {

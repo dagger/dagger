@@ -6,7 +6,16 @@ Expected stderr:
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
 ╰╴✔ starting session X.Xs
  
-▼ load module: ./viztest/broken-dep/broken X.Xs ERROR
+▼ load module: ./viztest/broken-dep/broken X.Xs
+├╴✔ finding module configuration X.Xs
+├╴✔ initializing module X.Xs
+├╴✔ inspecting module metadata X.Xs
+╰╴✔ loading type definitions X.Xs
+ 
+✔ parsing command line arguments X.Xs
+
+✔ broken: Broken! X.Xs
+▼ .broken: Void X.Xs ERROR
   ▼ Container.withExec(args: ["go", "build", "-ldflags", "-s -w", "-o", "/runtime", "."]): Container! X.Xs ERROR
   ┃ # dagger/broken
   ┃ ./main.go:6:6: undefined: ctx

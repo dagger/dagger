@@ -385,6 +385,9 @@ func (sdk *goSDK) Runtime(
 	deps *core.ModDeps,
 	source dagql.ObjectResult[*core.ModuleSource],
 ) (inst dagql.ObjectResult[*core.Container], rerr error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: load runtime")
+	defer telemetry.End(span, func() error { return rerr })
+
 	dag, err := sdk.root.Server.Server(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag for go module sdk runtime: %w", err)
