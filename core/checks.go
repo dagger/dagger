@@ -9,12 +9,9 @@ import (
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/util/parallel"
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sync/errgroup"
 )
 
 type CheckStatus string
@@ -148,9 +145,10 @@ func (r *CheckGroup) List(ctx context.Context) ([]*Check, error) {
 
 // Run all the checks in the group
 func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
-	attr := []attribute.KeyValue{
-		attribute.Bool("dagger.io/ui.reveal", true),
-	}
+	// FIXME: use again, or delete
+	//attr := []attribute.KeyValue{
+	//	attribute.Bool(telemetry.UIRevealAttr, true),
+	//}
 	r = r.Clone()
 	q, err := CurrentQuery(ctx)
 	if err != nil {
@@ -176,19 +174,10 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 		return nil, fmt.Errorf("run checks for module %q: serve module: %w", r.Module.Name(), err)
 	}
 
-	// FIXNE: use parallel
-	eg := errgroup.Group{}
+	jobs := parallel.New()
 	for _, check := range r.Checks {
-		check := check
-		eg.Go(func() (rerr error) {
-			// FIXME: use parallel
-			ctx, span := Tracer(ctx).Start(ctx, check.Name(), trace.WithAttributes(attr...))
-			defer func() {
-				if rerr != nil {
-					span.SetStatus(codes.Error, rerr.Error())
-				}
-				span.End()
-			}()
+		// FIXME: how to set custom span attr? Do we still need to?
+		jobs = jobs.WithJob(check.Name(), func(ctx context.Context) error {
 			// Reset output fields, in case we're re-running
 			check.Completed = false
 			check.Passed = false
@@ -199,19 +188,20 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 				selectPath = append(selectPath, dagql.Selector{Field: field})
 			}
 			checkErr := dag.Select(ctx, dag.Root(), &status, selectPath...)
+			// FIXME: handle skipped
+			check.Completed = true
 			if checkErr != nil {
-				// Can't differentiate real errors from failed checks
 				check.Passed = false // redundant but let's be explicit
 				check.Message = checkErr.Error()
-			}
-			if status == CheckCompleted {
-				check.Completed = true
+				return err // Show some red in telemetry
 			}
 			return nil
 		})
 	}
-	err = eg.Wait()
-	return r, err
+	// We can't distinguish legitimate errors from failed checks, so we just discard.
+	// Bubbling them up to here makes telemetry more useful (no green when a check failed)
+	_ = jobs.Run(ctx)
+	return r, nil
 }
 
 func (c *Check) ResultEmoji() string {

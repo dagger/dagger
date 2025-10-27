@@ -36,15 +36,9 @@ func (s checksSchema) Install(srv *dagql.Server) {
 }
 
 func (s checksSchema) checks(ctx context.Context, q *core.Query, args struct {
-	Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+	Include []string `default"[]"`
 }) (*core.CheckGroup, error) {
-	var include []string
-	if args.Include.Valid {
-		for _, pattern := range args.Include.Value {
-			include = append(include, pattern.String())
-		}
-	}
-	return core.CurrentChecks(ctx, include)
+	return core.CurrentChecks(ctx, args.Include)
 }
 
 func (s checksSchema) name(_ context.Context, parent *core.Check, args struct{}) (string, error) {
