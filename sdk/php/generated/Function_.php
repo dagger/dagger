@@ -103,6 +103,19 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Returns the function updated to use the provided cache policy.
+     */
+    public function withCachePolicy(FunctionCachePolicy $policy, ?string $timeToLive = null): Function_
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCachePolicy');
+        $innerQueryBuilder->setArgument('policy', $policy);
+        if (null !== $timeToLive) {
+        $innerQueryBuilder->setArgument('timeToLive', $timeToLive);
+        }
+        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Returns the function with the given doc string.
      */
     public function withDescription(string $description): Function_

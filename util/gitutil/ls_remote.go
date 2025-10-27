@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -45,7 +45,7 @@ func (r *Ref) ShortName() string {
 }
 
 func (r *Ref) Digest() digest.Digest {
-	return dagql.HashFrom(r.Name, r.SHA)
+	return hashutil.HashStrings(r.Name, r.SHA)
 }
 
 func (cli *GitCLI) LsRemote(ctx context.Context, remote string) (*Remote, error) {
@@ -91,7 +91,7 @@ func (remote *Remote) Digest() digest.Digest {
 	if remote.Head != nil {
 		inputs = append(inputs, "head", remote.Head.Digest().String(), "\x00")
 	}
-	return dagql.HashFrom(inputs...)
+	return hashutil.HashStrings(inputs...)
 }
 
 func (remote *Remote) withRefs(refs []*Ref) *Remote {

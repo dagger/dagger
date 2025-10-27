@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -33,7 +33,7 @@ func DoHTTPRequest(
 	// potentially reuse ETags even if filename/permissions change: then
 	// creating a new snapshot, copying only the data from the old one
 	url := req.URL.String()
-	urlDigest := dagql.HashFrom(url, filename, fmt.Sprint(permissions))
+	urlDigest := hashutil.HashStrings(url, filename, fmt.Sprint(permissions))
 
 	mds, err := searchHTTPByDigest(ctx, cache, urlDigest)
 	if err != nil {

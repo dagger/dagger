@@ -8,7 +8,9 @@ import (
 	"log"
 	"maps"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/muesli/termenv"
@@ -19,10 +21,10 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core/openrouter"
-	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 type interpreterMode int
@@ -58,6 +60,8 @@ func (m interpreterMode) ContentType() string {
 }
 
 type LLMSession struct {
+	frontend idtui.Frontend
+
 	// undo       *LLMSession
 	dag        *dagger.Client
 	llm        *dagger.LLM
@@ -66,14 +70,22 @@ type LLMSession struct {
 	skipEnv    map[string]bool
 	syncedVars map[string]digest.Digest
 	shell      *shellCallHandler
-	beforeFS   *dagger.Directory
-	afterFS    *dagger.Directory
+
+	beforeFS     *dagger.Directory
+	beforeFSTime time.Time
+	afterFS      *dagger.Directory
 
 	plumbingCtx  context.Context
 	plumbingSpan trace.Span
 }
 
-func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, shellHandler *shellCallHandler) (*LLMSession, error) {
+func NewLLMSession(
+	ctx context.Context,
+	dag *dagger.Client,
+	llmModel string,
+	shellHandler *shellCallHandler,
+	frontend idtui.Frontend,
+) (*LLMSession, error) {
 	s := &LLMSession{
 		dag:        dag,
 		model:      llmModel,
@@ -88,12 +100,17 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, she
 			// the rest should be filtered out already by skipping the first batch
 			// (sourced from os.Environ)
 		},
-		shell: shellHandler,
+		shell:    shellHandler,
+		frontend: frontend,
 	}
 
 	// Allocate a span to tuck all the internal plumbing into, so it doesn't
 	// clutter the top-level prior to receiving the Revealed spans
 	s.plumbingCtx, s.plumbingSpan = Tracer().Start(ctx, "LLM plumbing", telemetry.Internal())
+	go func() {
+		<-ctx.Done()
+		telemetry.End(s.plumbingSpan, func() error { return nil })
+	}()
 
 	// TODO: cache this
 	models, err := openrouter.FetchModels(ctx)
@@ -107,7 +124,20 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, she
 		s.skipEnv[k] = true
 	}
 
-	s.reset()
+	// if $agent is set, respect it
+	if value, ok := s.shell.runner.Vars[agentVar]; ok {
+		if key := GetStateKey(value.String()); key != "" {
+			st, err := s.shell.state.Load(key)
+			if err != nil {
+				return nil, err
+			}
+			// NB: don't need to use updateLLMAndAgentVar here, since this is coming
+			// from the agent var
+			s.llm = s.dag.LLM().WithGraphQLQuery(st.QueryBuilder(s.dag))
+		}
+	} else {
+		s.reset()
+	}
 
 	return s, nil
 }
@@ -158,32 +188,6 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 
 		if err := s.updateSidebar(prompted); err != nil {
 			return s, err
-		}
-
-		s.afterFS = prompted.Env().Workspace()
-
-		dirDiff := s.afterFS.Changes(s.beforeFS)
-
-		preview, err := idtui.PreviewPatch(ctx, dirDiff)
-		if err != nil {
-			return s, err
-		}
-
-		if preview != nil {
-			Frontend.SetSidebarContent(idtui.SidebarSection{
-				Title: "Changes",
-				ContentFunc: func(width int) string {
-					var buf strings.Builder
-					out := idtui.NewOutput(&buf)
-					if err := preview.Summarize(out, width); err != nil {
-						return "ERROR: " + err.Error()
-					}
-					return buf.String()
-				},
-				KeyMap: []key.Binding{
-					key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "sync")),
-				},
-			})
 		}
 
 		hasMore, err := prompted.HasPrompt(s.plumbingCtx)
@@ -311,10 +315,36 @@ func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
 		}
 	}
 
-	Frontend.SetSidebarContent(idtui.SidebarSection{
+	s.frontend.SetSidebarContent(idtui.SidebarSection{
 		Title:   "LLM",
 		Content: strings.Join(lines, "\n"),
 	})
+
+	s.afterFS = llm.Env().Workspace()
+
+	dirDiff := s.afterFS.Changes(s.beforeFS)
+
+	preview, err := idtui.PreviewPatch(s.plumbingCtx, dirDiff)
+	if err != nil {
+		return err
+	}
+
+	if preview != nil {
+		s.frontend.SetSidebarContent(idtui.SidebarSection{
+			Title: "Changes",
+			ContentFunc: func(width int) string {
+				var buf strings.Builder
+				out := idtui.NewOutput(&buf)
+				if err := preview.Summarize(out, width); err != nil {
+					return "ERROR: " + err.Error()
+				}
+				return buf.String()
+			},
+			KeyMap: []key.Binding{
+				key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "save")),
+			},
+		})
+	}
 
 	return err
 }
@@ -335,12 +365,13 @@ func (s *LLMSession) syncVarsToLLM() error {
 			}
 			// NB: don't need to use updateLLMAndAgentVar here, since this is coming
 			// from the agent var
-			s.llm = s.llm.WithGraphQLQuery(st.QueryBuilder(s.dag))
+			s.llm = s.dag.LLM().WithGraphQLQuery(st.QueryBuilder(s.dag))
 		}
 	}
 
 	if s.beforeFS == nil {
 		s.beforeFS = s.llm.Env().Workspace()
+		s.beforeFSTime = time.Now()
 	}
 
 	syncedEnvQ := s.dag.QueryBuilder().
@@ -361,7 +392,7 @@ func (s *LLMSession) syncVarsToLLM() error {
 			continue
 		}
 
-		if s.syncedVars[name] == dagql.HashFrom(value.String()) {
+		if s.syncedVars[name] == hashutil.HashStrings(value.String()) {
 			continue
 		}
 
@@ -398,7 +429,7 @@ func (s *LLMSession) syncVarsToLLM() error {
 				s.syncedVars[name] = digest
 			}
 		} else {
-			s.syncedVars[name] = dagql.HashFrom(value.String())
+			s.syncedVars[name] = hashutil.HashStrings(value.String())
 			syncedEnvQ = syncedEnvQ.
 				Select("withStringInput").
 				Arg("name", name).
@@ -620,6 +651,143 @@ func (s *LLMSession) Model(model string) (*LLMSession, error) {
 	return s, nil
 }
 
+func (s *LLMSession) SyncFromLocal(ctx context.Context) (rerr error) {
+	if s.llm == nil {
+		return fmt.Errorf("no LLM session active")
+	}
+
+	if s.beforeFSTime.IsZero() {
+		return nil
+	}
+
+	ctx, span := Tracer().Start(ctx, "syncing local changes",
+		telemetry.Reveal())
+	defer telemetry.End(span, func() error { return rerr })
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+
+	var pathsToUpload []string
+
+	// Look for paths modified since the last sync, and only upload those.
+	if err := filepath.WalkDir(".", func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			// ignore errors
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				// don't recurse into .git
+				return filepath.SkipDir
+			}
+			// nothing to do for directories
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if info.ModTime().After(s.beforeFSTime) {
+			slog.Info(
+				"file changed since last sync",
+				"path", path,
+				"syncTime", s.beforeFSTime,
+				"mtime", info.ModTime(),
+			)
+			pathsToUpload = append(pathsToUpload, path)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("walk looking for modifications: %w", err)
+	}
+
+	// The model's workspace has its own changes since last sync, so if we're
+	// syncing from local, we need to revert them
+	if s.afterFS != nil && s.beforeFS != nil {
+		changes := s.afterFS.Changes(s.beforeFS)
+		modified, err := changes.ModifiedPaths(ctx)
+		if err != nil {
+			return err
+		}
+		removed, err := changes.RemovedPaths(ctx)
+		if err != nil {
+			return err
+		}
+		if len(modified) > 0 {
+			slog.Info("reverting LLM-modified files", "modified", modified)
+			pathsToUpload = append(pathsToUpload, modified...)
+		}
+		if len(removed) > 0 {
+			slog.Info("restoring LLM-removed files", "removed", removed)
+			pathsToUpload = append(pathsToUpload, removed...)
+		}
+	}
+
+	if len(pathsToUpload) == 0 {
+		slog.Warn("no changes detected")
+		return nil
+	}
+
+	slog.Info("syncing changed files", "paths", pathsToUpload)
+
+	localChanges, err := s.dag.Host().Directory(".", dagger.HostDirectoryOpts{
+		Include:   pathsToUpload,
+		NoCache:   true,
+		Gitignore: true,
+	}).Sync(ctx)
+	if err != nil {
+		return nil
+	}
+
+	currentFS := s.afterFS
+	if currentFS == nil {
+		currentFS = s.beforeFS
+	}
+
+	withChanges := currentFS.WithDirectory(".", localChanges)
+
+	newLLM := s.llm.WithEnv(
+		s.llm.Env().WithWorkspace(withChanges),
+	)
+
+	dirDiff := withChanges.Changes(currentFS)
+
+	// Add an LLM prompt as a cue to the model so it knows what files changed.
+	preview, err := idtui.PreviewPatch(s.plumbingCtx, dirDiff)
+	if err != nil {
+		return err
+	}
+
+	if preview != nil {
+		var buf strings.Builder
+		out := termenv.NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+		if err := preview.Summarize(out, 80); err != nil {
+			slog.Warn("failed to summarize uploaded changes", "error", err)
+		} else {
+			newLLM = newLLM.WithPrompt(
+				fmt.Sprintf("I have made the following changes:\n\n```\n%s\n```", buf.String()),
+			)
+		}
+
+		// Show colorized summary to user.
+		_ = preview.Summarize(idtui.NewOutput(stdio.Stdout), 80)
+	}
+
+	s.updateLLMAndAgentVar(newLLM)
+
+	// reset before/after state
+	s.beforeFS = withChanges
+	s.beforeFSTime = time.Now()
+	s.afterFS = nil
+
+	// Update sidebar to show sync success
+	s.frontend.SetSidebarContent(idtui.SidebarSection{
+		Title:   "Changes",
+		Content: "", // empty content will hide it
+	})
+
+	return nil
+}
+
 func (s *LLMSession) SyncToLocal(ctx context.Context) error {
 	if s.llm == nil {
 		return fmt.Errorf("no LLM session active")
@@ -634,9 +802,10 @@ func (s *LLMSession) SyncToLocal(ctx context.Context) error {
 	}
 
 	s.beforeFS = s.afterFS
+	s.beforeFSTime = time.Now()
 
 	// Update sidebar to show sync success
-	Frontend.SetSidebarContent(idtui.SidebarSection{
+	s.frontend.SetSidebarContent(idtui.SidebarSection{
 		Title:   "Changes",
 		Content: "", // empty content will hide it
 	})

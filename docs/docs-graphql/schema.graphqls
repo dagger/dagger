@@ -2900,6 +2900,17 @@ type Function {
     sourceMap: SourceMapID
   ): Function!
 
+  """Returns the function updated to use the provided cache policy."""
+  withCachePolicy(
+    """The cache policy to use."""
+    policy: FunctionCachePolicy!
+
+    """
+    The TTL for the cache policy, if applicable. Provided as a duration string, e.g. "5m", "1h30s".
+    """
+    timeToLive: String
+  ): Function!
+
   """Returns the function with the given doc string."""
   withDescription(
     """The doc string to set."""
@@ -2957,6 +2968,13 @@ type FunctionArg {
 The `FunctionArgID` scalar type represents an identifier for an object of type FunctionArg.
 """
 scalar FunctionArgID
+
+"""The behavior configured for function result caching."""
+enum FunctionCachePolicy {
+  Default
+  PerSession
+  Never
+}
 
 """An active function call."""
 type FunctionCall {
@@ -3607,7 +3625,7 @@ type Module {
   """
   The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
   """
-  runtime: Container
+  runtime: Container!
 
   """The SDK config used by this module."""
   sdk: SDKConfig

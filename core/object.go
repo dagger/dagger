@@ -184,11 +184,12 @@ type Callable interface {
 	Call(context.Context, *CallOpts) (dagql.AnyResult, error)
 	ReturnType() (ModType, error)
 	ArgType(argName string) (ModType, error)
-	CacheConfigForCall(context.Context, dagql.AnyResult, map[string]dagql.Input, call.View, dagql.CacheConfig) (*dagql.CacheConfig, error)
+	CacheConfigForCall(context.Context, dagql.AnyResult, map[string]dagql.Input, call.View, dagql.GetCacheConfigRequest) (*dagql.GetCacheConfigResponse, error)
 }
 
 func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callable, error) {
 	mod := t.mod
+
 	if field, ok := t.typeDef.FieldByName(name); ok {
 		fieldType, ok, err := mod.ModTypeFor(ctx, field.TypeDef, true)
 		if err != nil {
@@ -203,12 +204,12 @@ func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callab
 			Return: fieldType,
 		}, nil
 	}
+
 	if fun, ok := t.typeDef.FunctionByName(name); ok {
 		return NewModFunction(
 			ctx,
 			mod,
 			t.typeDef,
-			mod.Runtime.Value,
 			fun,
 		)
 	}
@@ -326,9 +327,10 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	// if no constructor defined, install a basic one that initializes an empty object
 	if !objDef.Constructor.Valid {
 		spec := dagql.FieldSpec{
-			Name:   gqlFieldName(mod.Name()),
-			Type:   obj,
-			Module: obj.Module.IDModule(),
+			Name:           gqlFieldName(mod.Name()),
+			Type:           obj,
+			Module:         obj.Module.IDModule(),
+			GetCacheConfig: mod.CacheConfigForCall,
 		}
 
 		if objDef.SourceMap.Valid {
@@ -344,9 +346,6 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 					Fields:  map[string]any{},
 				})
 			},
-			dagql.CacheSpec{
-				GetCacheConfig: mod.CacheConfigForCall,
-			},
 		)
 		return nil
 	}
@@ -360,7 +359,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		return fmt.Errorf("constructor function for object %s must return that object", objDef.OriginalName)
 	}
 
-	fn, err := NewModFunction(ctx, mod, objDef, mod.Runtime.Value, fnTypeDef)
+	fn, err := NewModFunction(ctx, mod, objDef, fnTypeDef)
 	if err != nil {
 		return fmt.Errorf("failed to create function: %w", err)
 	}
@@ -373,6 +372,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	}
 	spec.Name = gqlFieldName(mod.Name())
 	spec.Module = obj.Module.IDModule()
+	spec.GetCacheConfig = fn.CacheConfigForCall
 
 	dag.Root().ObjectType().Extend(
 		spec,
@@ -388,12 +388,8 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 				Inputs:       callInput,
 				ParentTyped:  nil,
 				ParentFields: nil,
-				Cache:        dagql.IsInternal(ctx),
 				Server:       dag,
 			})
-		},
-		dagql.CacheSpec{
-			GetCacheConfig: fn.CacheConfigForCall,
 		},
 	)
 
@@ -433,10 +429,11 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fiel
 
 func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 	spec := &dagql.FieldSpec{
-		Name:        field.Name,
-		Description: field.Description,
-		Type:        field.TypeDef.ToTyped(),
-		Module:      mod.IDModule(),
+		Name:           field.Name,
+		Description:    field.Description,
+		Type:           field.TypeDef.ToTyped(),
+		Module:         mod.IDModule(),
+		GetCacheConfig: mod.CacheConfigForCall,
 	}
 	spec.Directives = append(spec.Directives, &ast.Directive{
 		Name: trivialFieldDirectiveName,
@@ -461,9 +458,6 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 				fieldVal = nil
 			}
 			return modType.ConvertFromSDKResult(ctx, fieldVal)
-		},
-		CacheSpec: dagql.CacheSpec{
-			GetCacheConfig: mod.CacheConfigForCall,
 		},
 	}
 }
@@ -596,7 +590,6 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 		ctx,
 		mod,
 		objDef,
-		mod.Runtime.Value,
 		fun,
 	)
 	if err != nil {
@@ -612,18 +605,15 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 		return f, fmt.Errorf("failed to get field spec: %w", err)
 	}
 	spec.Module = mod.IDModule()
+	spec.GetCacheConfig = modFun.CacheConfigForCall
 
 	//nolint:dupl
 	return dagql.Field[*ModuleObject]{
 		Spec: &spec,
 		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
 			opts := &CallOpts{
-				ParentTyped:  obj,
-				ParentFields: obj.Self().Fields,
-				// TODO: there may be a more elegant way to do this, but the desired
-				// effect is to cache SDK module calls, which we used to do pre-DagQL.
-				// We should figure out how user modules can opt in to caching, too.
-				Cache:          dagql.IsInternal(ctx),
+				ParentTyped:    obj,
+				ParentFields:   obj.Self().Fields,
 				SkipSelfSchema: false,
 				Server:         dag,
 			}
@@ -638,9 +628,6 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 				return opts.Inputs[i].Name < opts.Inputs[j].Name
 			})
 			return modFun.Call(ctx, opts)
-		},
-		CacheSpec: dagql.CacheSpec{
-			GetCacheConfig: modFun.CacheConfigForCall,
 		},
 	}, nil
 }
@@ -678,7 +665,7 @@ func (f *CallableField) CacheConfigForCall(
 	parent dagql.AnyResult,
 	args map[string]dagql.Input,
 	view call.View,
-	inputCfg dagql.CacheConfig,
-) (*dagql.CacheConfig, error) {
-	return f.Module.CacheConfigForCall(ctx, parent, args, view, inputCfg)
+	req dagql.GetCacheConfigRequest,
+) (*dagql.GetCacheConfigResponse, error) {
+	return f.Module.CacheConfigForCall(ctx, parent, args, view, req)
 }

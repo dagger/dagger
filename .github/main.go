@@ -188,7 +188,7 @@ func New() *CI {
 			"check-test-sdks",
 		).
 		withPrepareReleaseWorkflow().
-		withEvalsWorkflow()
+		withLLMWorkflows()
 }
 
 // Generate Github Actions workflows to call our Dagger workflows
@@ -304,7 +304,7 @@ func (ci *CI) withPrepareReleaseWorkflow() *CI {
 	return ci
 }
 
-func (ci *CI) withEvalsWorkflow() *CI {
+func (ci *CI) withLLMWorkflows() *CI {
 	gha := dag.Gha(dagger.GhaOpts{
 		JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
 			Runner:         AltBronzeRunnerWithCache(),
@@ -312,7 +312,7 @@ func (ci *CI) withEvalsWorkflow() *CI {
 			TimeoutMinutes: timeoutMinutes,
 		}),
 	})
-	w := gha.Workflow("evals", dagger.GhaWorkflowOpts{
+	w := gha.Workflow("llm", dagger.GhaWorkflowOpts{
 		// Only run when LLM-related files are changed
 		OnPushPaths: []string{
 			"core/llm.go",
@@ -326,10 +326,23 @@ func (ci *CI) withEvalsWorkflow() *CI {
 			"modules/evals/**",
 		},
 	}).WithJob(gha.Job(
-		"testdev",
+		"evals",
 		"--allow-llm all check",
 		dagger.GhaJobOpts{
 			Module: module("modules/evals"),
+			Runner: AltGoldRunner(),
+			// NOTE: avoid running for forks
+			Condition: fmt.Sprintf(`${{ (github.repository == '%s') && (github.actor != 'dependabot[bot]') }}`, upstreamRepository),
+			Secrets:   []string{"OP_SERVICE_ACCOUNT_TOKEN"},
+			Env: []string{
+				"ANTHROPIC_API_KEY=op://RelEng/ANTHROPIC/API_KEY",
+				"GEMINI_API_KEY=op://RelEng/GEMINI/API_KEY",
+				"OPENAI_API_KEY=op://RelEng/OPEN_AI/API_KEY",
+			},
+		})).WithJob(gha.Job(
+		"shell",
+		"--allow-llm all test specific --env-file file://.env --pkg ./cmd/dagger --run CMD/LLM",
+		dagger.GhaJobOpts{
 			Runner: AltGoldRunner(),
 			// NOTE: avoid running for forks
 			Condition: fmt.Sprintf(`${{ (github.repository == '%s') && (github.actor != 'dependabot[bot]') }}`, upstreamRepository),

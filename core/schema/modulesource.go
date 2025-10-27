@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/hashutil"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
@@ -509,7 +510,7 @@ func (s *moduleSourceSchema) localModuleSource(
 		// load this module source's context directory, ignore patterns, sdk and deps in parallel
 		var eg errgroup.Group
 		eg.Go(func() error {
-			if err := s.loadModuleSourceContext(ctx, localSrc); err != nil {
+			if err := s.loadModuleSourceContext(ctx, bk, localSrc); err != nil {
 				return fmt.Errorf("failed to load local module source context: %w", err)
 			}
 
@@ -667,7 +668,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 	// load this module source's context directory and deps in parallel
 	var eg errgroup.Group
 	eg.Go(func() error {
-		if err := s.loadModuleSourceContext(ctx, gitSrc); err != nil {
+		if err := s.loadModuleSourceContext(ctx, bk, gitSrc); err != nil {
 			return fmt.Errorf("failed to load git module source context: %w", err)
 		}
 
@@ -704,6 +705,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 	if err := gitSrc.LoadUserDefaults(ctx); err != nil {
 		return inst, fmt.Errorf("load user defaults: %w", err)
 	}
+
 	gitSrc.Digest = gitSrc.CalcDigest(ctx).String()
 
 	inst, err = dagql.NewResultForCurrentID(ctx, gitSrc)
@@ -844,7 +846,7 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 
 	if dirSrc.SDK != nil {
 		eg.Go(func() error {
-			if err := s.loadModuleSourceContext(ctx, dirSrc); err != nil {
+			if err := s.loadModuleSourceContext(ctx, bk, dirSrc); err != nil {
 				return err
 			}
 
@@ -932,6 +934,22 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	engineVersion = engine.NormalizeVersion(engineVersion)
 	src.EngineVersion = engineVersion
 
+	canDefaultFuncCaching := engine.CheckVersionCompatibility(
+		engine.BaseVersion(src.EngineVersion),
+		engine.MinimumDefaultFunctionCachingModuleVersion,
+	)
+	switch {
+	case modCfg.DisableDefaultFunctionCaching != nil:
+		// explicit setting in dagger.json, use it
+		src.DisableDefaultFunctionCaching = *modCfg.DisableDefaultFunctionCaching
+	case canDefaultFuncCaching:
+		// no explicit setting in dagger.json but module engine version supports it, enable function caching
+		src.DisableDefaultFunctionCaching = false
+	default:
+		// no explicit setting in dagger.json and module engine version doesn't support it, disable function caching
+		src.DisableDefaultFunctionCaching = true
+	}
+
 	if modCfg.SDK != nil {
 		src.SDK = &core.SDKConfig{
 			Source:       modCfg.SDK.Source,
@@ -977,6 +995,7 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 // load (or re-load) the context directory for the given module source
 func (s *moduleSourceSchema) loadModuleSourceContext(
 	ctx context.Context,
+	bk *buildkit.Client,
 	src *core.ModuleSource,
 ) error {
 	dag, err := core.CurrentDagqlServer(ctx)
@@ -1019,6 +1038,8 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 			return err
 		}
 
+		// host.directory already content hashes, no need to here
+
 	case core.ModuleSourceKindGit:
 		fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
 
@@ -1035,6 +1056,19 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		)
 		if err != nil {
 			return err
+		}
+
+		// content hash the context dir so that different git commits with the same module source code can all share cache
+		src.ContextDirectory, err = core.MakeDirectoryContentHashed(ctx, bk, src.ContextDirectory)
+		if err != nil {
+			return fmt.Errorf("failed to content hash git module source context dir: %w", err)
+		}
+
+	case core.ModuleSourceKindDir:
+		// content hash the context dir so that different dirs with the same module source code can all share cache
+		src.ContextDirectory, err = core.MakeDirectoryContentHashed(ctx, bk, src.ContextDirectory)
+		if err != nil {
+			return fmt.Errorf("failed to content hash dir module source context dir: %w", err)
 		}
 	}
 
@@ -1084,7 +1118,15 @@ func (s *moduleSourceSchema) moduleSourceWithSourceSubpath(
 	}
 
 	// reload context since the subpath impacts what we implicitly include in the load
-	err = s.loadModuleSourceContext(ctx, src)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	err = s.loadModuleSourceContext(ctx, bk, src)
 	switch {
 	case err == nil:
 	case codes.NotFound == status.Code(err) && src.Kind == core.ModuleSourceKindLocal:
@@ -1160,7 +1202,15 @@ func (s *moduleSourceSchema) moduleSourceWithIncludes(
 	src.RebasedIncludePaths = append(src.RebasedIncludePaths, rebasedIncludes...)
 
 	// reload context in case includes have changed it
-	err = s.loadModuleSourceContext(ctx, src)
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	err = s.loadModuleSourceContext(ctx, bk, src)
 	switch {
 	case err == nil:
 	case codes.NotFound == status.Code(err) && src.Kind == core.ModuleSourceKindLocal:
@@ -2110,6 +2160,10 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 		},
 	}
 
+	if src.DisableDefaultFunctionCaching {
+		modCfg.DisableDefaultFunctionCaching = ptr(true)
+	}
+
 	if src.SDK != nil {
 		modCfg.SDK = &modules.SDK{
 			Source:       src.SDK.Source,
@@ -2268,7 +2322,7 @@ func (s *moduleSourceSchema) runCodegen(
 	// this scopes the cache key of codegen calls to an exact content hash detached
 	// from irrelevant details like specific host paths, specific git repos+commits, etc.
 	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-		ResultKey: srcInst.Self().Digest,
+		CallKey: srcInst.Self().Digest,
 	}
 	_, err = dag.Cache.GetOrInitializeValue(ctx, cacheKey, srcInst)
 	if err != nil {
@@ -2595,7 +2649,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 	// temporary instance ID to support CurrentModule calls made during the function, it will
 	// be finalized at the end of `asModule`
 	tmpModInst, err := dagql.NewResultForID(mod, dagql.CurrentID(ctx).WithDigest(
-		dagql.HashFrom(
+		hashutil.HashStrings(
 			srcInstContentHashed.ID().Digest().String(),
 			"modInit",
 		),
@@ -2604,7 +2658,7 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		return nil, fmt.Errorf("failed to create temporary module instance: %w", err)
 	}
 	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-		ResultKey: string(tmpModInst.ID().Digest()),
+		CallKey: string(tmpModInst.ID().Digest()),
 	}
 	_, err = dag.Cache.GetOrInitializeValue(ctx, cacheKey, tmpModInst)
 	if err != nil {
@@ -2640,7 +2694,6 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 				ctx,
 				mod,
 				nil,
-				mod.Runtime.Value,
 				core.NewFunction("", &core.TypeDef{
 					Kind:     core.TypeDefKindObject,
 					AsObject: dagql.NonNull(core.NewObjectTypeDef("Module", "")),
@@ -2649,14 +2702,13 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 				return fmt.Errorf("failed to create module definition function for module %q: %w", modName, err)
 			}
 			result, err := getModDefFn.Call(ctx, &core.CallOpts{
-				Cache:          true,
 				SkipSelfSchema: true,
 				Server:         dag,
-				// Don't include the digest for the current call (which is a bunch of module source stuff, including
+				// Don't use the digest for the current call (which is a bunch of module source stuff, including
 				// APIs that are cached per-client when local sources are involved) in the cache key of this
 				// function call. That would needlessly invalidate the cache more than is needed, similar to how
 				// we want to scope the codegen cache keys by the content digested source instance above.
-				SkipCallDigestCacheKey: true,
+				OverrideStorageKey: tmpModInst.ID().Digest().String(),
 			})
 			if err != nil {
 				return fmt.Errorf("failed to call module %q to get functions: %w", modName, err)
@@ -2711,27 +2763,6 @@ func (s *moduleSourceSchema) runModuleDefInSDK(ctx context.Context, src, srcInst
 		mod.Deps = mod.Deps.Append(mod)
 	}
 
-	if !mod.Runtime.Valid {
-		// mod.Runtime is required for the module to be correctly loaded and usable.
-		// So set it if it doesn't yet exist (because moduleTypes does not create it)
-		runtime, err := runtimeImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
-		if err != nil {
-			return nil, err
-		}
-		mod.Runtime = dagql.NonNull(runtime)
-		var runtimeRes dagql.ID[*core.Container]
-		// But mod.Runtime itself is not enough, it needs to be fully resolved now. It's expected not only
-		// mod.Runtime exists, but it's expected the cache has been filled.
-		// If the SDK is not defining moduleTypes, then a function will be called against the module and creates all
-		// the required objects. Here we don't want that, so just sync it so it exists and will be available later to be
-		// invoked.
-		if err = dag.Select(ctx, mod.Runtime.Value, &runtimeRes, dagql.Selector{
-			Field: "sync",
-		}); err != nil {
-			return nil, err
-		}
-	}
-
 	return mod, nil
 }
 
@@ -2769,11 +2800,12 @@ func (s *moduleSourceSchema) createBaseModule(
 	}
 
 	mod := &core.Module{
-		Source:        dagql.NonNull(src),
-		ContextSource: dagql.NonNull(tcCtx.originalSrc),
-		NameField:     tcCtx.originalSrc.Self().ModuleName,
-		OriginalName:  src.Self().ModuleOriginalName,
-		SDKConfig:     sdk,
+		Source:                        dagql.NonNull(src),
+		ContextSource:                 dagql.NonNull(tcCtx.originalSrc),
+		NameField:                     tcCtx.originalSrc.Self().ModuleName,
+		OriginalName:                  src.Self().ModuleOriginalName,
+		SDKConfig:                     sdk,
+		DisableDefaultFunctionCaching: src.Self().DisableDefaultFunctionCaching,
 	}
 
 	// Load dependencies as modules
@@ -3013,7 +3045,13 @@ func (s *moduleSourceSchema) integrateToolchains(
 func (s *moduleSourceSchema) moduleSourceAsModule(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
-	args struct{},
+	args struct {
+		// This internal-only flag allows us to force SDK modules to enable default function
+		// caching even when they are on older modules, which ensures they don't see a regression
+		// right after function caching is enabled. It can be removed after SDKs have been updated
+		// to latest engine versions.
+		ForceDefaultFunctionCaching bool `internal:"true" default:"false"`
+	},
 ) (inst dagql.Result[*core.Module], err error) {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -3073,6 +3111,11 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	mod, err := s.createBaseModule(ctx, src, tcCtx)
 	if err != nil {
 		return inst, err
+	}
+
+	// Apply ForceDefaultFunctionCaching if requested
+	if args.ForceDefaultFunctionCaching {
+		mod.DisableDefaultFunctionCaching = false
 	}
 
 	// Initialize module based on SDK presence

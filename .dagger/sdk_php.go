@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/dagger/dagger/.dagger/internal/dagger"
 )
 
@@ -32,10 +34,20 @@ func (t PHPSDK) Source() *dagger.Directory {
 
 // Lint the PHP SDK
 func (t PHPSDK) CheckLint(ctx context.Context) error {
-	_, err := dag.PhpSDKDev(dagger.PhpSDKDevOpts{Source: t.Source()}).
-		Lint().
-		Sync(ctx)
-	return err
+	dev := dag.PhpSDKDev(dagger.PhpSDKDevOpts{Source: t.Source()})
+
+	eg := errgroup.Group{}
+	eg.Go(func() (rerr error) {
+		_, err := dev.Lint().Sync(ctx)
+		return err
+	})
+
+	eg.Go(func() (rerr error) {
+		_, err := dev.Analyze().Sync(ctx)
+		return err
+	})
+
+	return eg.Wait()
 }
 
 // Test the PHP SDK
@@ -127,8 +139,6 @@ func (t PHPSDK) CheckReleaseDryRun(ctx context.Context) error {
 		"HEAD",
 		true,
 		"https://github.com/dagger/dagger-php-sdk.git",
-		"dagger-ci",
-		"hello@dagger.io",
 		nil,
 	)
 }
@@ -145,13 +155,6 @@ func (t PHPSDK) Publish(
 	// +default="https://github.com/dagger/dagger-php-sdk.git"
 	gitRepo string,
 	// +optional
-	// +default="dagger-ci"
-	gitUserName string,
-	// +optional
-	// +default="hello@dagger.io"
-	gitUserEmail string,
-
-	// +optional
 	githubToken *dagger.Secret,
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/php/")
@@ -162,8 +165,6 @@ func (t PHPSDK) Publish(
 		sourceTag:   tag,
 		dest:        gitRepo,
 		destTag:     version,
-		username:    gitUserName,
-		email:       gitUserEmail,
 		githubToken: githubToken,
 		dryRun:      dryRun,
 	}); err != nil {

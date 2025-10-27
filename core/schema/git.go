@@ -24,6 +24,7 @@ import (
 	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/util/gitutil"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
@@ -527,13 +528,12 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		dgstInputs = append(dgstInputs, "authHeader", strconv.FormatBool(httpAuthHeader.Self() != nil))
 		resourceIDs = append(resourceIDs, &resource.ID{ID: *httpAuthHeader.ID()})
 	}
-	inst = inst.WithDigest(dagql.HashFrom(dgstInputs...))
+	inst = inst.WithDigest(hashutil.HashStrings(dgstInputs...))
 	if len(resourceIDs) > 0 {
 		postCall, err := core.ResourceTransferPostCall(ctx, parent.Self(), clientMetadata.ClientID, resourceIDs...)
 		if err != nil {
 			return inst, fmt.Errorf("failed to create post call: %w", err)
 		}
-
 		inst = inst.ResultWithPostCall(postCall)
 	}
 	return inst, nil
@@ -610,7 +610,7 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 			dgstInputs = append(dgstInputs, "authHeader", strconv.FormatBool(remoteRepo.AuthHeader.Self() != nil))
 		}
 	}
-	inst = inst.WithDigest(dagql.HashFrom(dgstInputs...))
+	inst = inst.WithDigest(hashutil.HashStrings(dgstInputs...))
 	return inst, nil
 }
 
@@ -873,7 +873,7 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 			if err != nil {
 				return inst, fmt.Errorf("failed to get content hash: %w", err)
 			}
-			inst = inst.WithObjectDigest(dagql.HashFrom(dagql.CurrentID(ctx).Digest().String(), dgst.String()))
+			inst = inst.WithObjectDigest(hashutil.HashStrings(dagql.CurrentID(ctx).Digest().String(), dgst.String()))
 		}
 	}
 

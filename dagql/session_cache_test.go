@@ -14,22 +14,23 @@ func TestSessionCacheReleaseAndClose(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		ctx := t.Context()
 
-		c := cache.NewCache[string, AnyResult]()
+		c, err := cache.NewCache[string, AnyResult](ctx, "")
+		require.NoError(t, err)
 		sc1 := NewSessionCache(c)
 		sc2 := NewSessionCache(c)
 
-		_, err := sc1.GetOrInitializeValue(ctx, cache.CacheKey[string]{ResultKey: "1"}, nil)
+		_, err = sc1.GetOrInitializeValue(ctx, cache.CacheKey[string]{CallKey: "1"}, nil)
 		require.NoError(t, err)
 
-		_, err = sc1.GetOrInitializeValue(ctx, cache.CacheKey[string]{ResultKey: "2"}, nil)
+		_, err = sc1.GetOrInitializeValue(ctx, cache.CacheKey[string]{CallKey: "2"}, nil)
 		require.NoError(t, err)
 
 		require.Equal(t, 2, c.Size())
 
-		_, err = sc2.GetOrInitializeValue(ctx, cache.CacheKey[string]{ResultKey: "2"}, nil)
+		_, err = sc2.GetOrInitializeValue(ctx, cache.CacheKey[string]{CallKey: "2"}, nil)
 		require.NoError(t, err)
 
-		_, err = sc2.GetOrInitializeValue(ctx, cache.CacheKey[string]{ResultKey: "3"}, nil)
+		_, err = sc2.GetOrInitializeValue(ctx, cache.CacheKey[string]{CallKey: "3"}, nil)
 		require.NoError(t, err)
 
 		require.Equal(t, 3, c.Size())
@@ -39,7 +40,7 @@ func TestSessionCacheReleaseAndClose(t *testing.T) {
 
 		require.Equal(t, 2, c.Size())
 
-		_, err = sc1.GetOrInitializeValue(ctx, cache.CacheKey[string]{ResultKey: "x"}, nil)
+		_, err = sc1.GetOrInitializeValue(ctx, cache.CacheKey[string]{CallKey: "x"}, nil)
 		require.Error(t, err)
 
 		require.Equal(t, 2, c.Size())
@@ -53,10 +54,11 @@ func TestSessionCacheReleaseAndClose(t *testing.T) {
 	t.Run("close while running", func(t *testing.T) {
 		ctx := t.Context()
 
-		c := cache.NewCache[string, AnyResult]()
+		c, err := cache.NewCache[string, AnyResult](ctx, "")
+		require.NoError(t, err)
 		sc := NewSessionCache(c)
 
-		_, err := sc.GetOrInitializeValue(ctx, cache.CacheKey[string]{ResultKey: "1"}, nil)
+		_, err = sc.GetOrInitializeValue(ctx, cache.CacheKey[string]{CallKey: "1"}, nil)
 		require.NoError(t, err)
 		require.Equal(t, 1, c.Size())
 
@@ -64,7 +66,7 @@ func TestSessionCacheReleaseAndClose(t *testing.T) {
 		startCh := make(chan struct{})
 		stopCh := make(chan struct{})
 		eg.Go(func() error {
-			_, err := sc.GetOrInitialize(ctx, cache.CacheKey[string]{ResultKey: "2"}, func(ctx context.Context) (AnyResult, error) {
+			_, err := sc.GetOrInitialize(ctx, cache.CacheKey[string]{CallKey: "2"}, func(ctx context.Context) (AnyResult, error) {
 				close(startCh)
 				<-stopCh
 				return nil, nil

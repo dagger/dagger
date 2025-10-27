@@ -1227,7 +1227,7 @@ import { object, func } from "@dagger.io/dagger"
 
 @object()
 export class SubSub {
-  @func("zoo")
+	@func({ alias: "zoo" })
   subSubHello(): string {
     return "hello world"
   }
@@ -1235,7 +1235,7 @@ export class SubSub {
 
 @object()
 export class Sub {
-  @func("hello")
+	@func({ alias: "hello" })
   subHello(): SubSub {
     return new SubSub()
   }
@@ -1243,7 +1243,7 @@ export class Sub {
 
 @object()
 export class Alias {
-  @func("bar")
+	@func({ alias: "bar" })
   foo(): Sub {
   return new Sub()
   }

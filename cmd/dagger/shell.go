@@ -48,11 +48,7 @@ var shellCmd = &cobra.Command{
 		cmd.SetContext(idtui.WithPrintTraceLink(cmd.Context(), true))
 		return withEngine(cmd.Context(), initModuleParams(args), func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
-			handler := &shellCallHandler{
-				dag:      dag,
-				llmModel: llmModel,
-				mode:     modeShell,
-			}
+			handler := newShellCallHandler(dag, Frontend)
 
 			err := handler.RunAll(ctx, args)
 
@@ -71,6 +67,14 @@ var shellCmd = &cobra.Command{
 type shellCallHandler struct {
 	dag    *dagger.Client
 	runner *interp.Runner
+
+	// don't detect + load a module, just stick to dagger core
+	noModule bool
+	// a module ref to load
+	moduleURL string
+
+	// frontend to integrate with
+	frontend idtui.Frontend
 
 	// tty is set to true when running the TUI (pretty frontend)
 	tty bool
@@ -127,6 +131,21 @@ type shellCallHandler struct {
 
 	// cancel interrupts the entire shell session
 	cancel func()
+}
+
+func newShellCallHandler(dag *dagger.Client, fe idtui.Frontend) *shellCallHandler {
+	ref, _ := getExplicitModuleSourceRef()
+	if ref == "" {
+		ref = moduleURLDefault
+	}
+	return &shellCallHandler{
+		dag:       dag,
+		llmModel:  llmModel,
+		mode:      modeShell,
+		noModule:  moduleNoURL,
+		moduleURL: ref,
+		frontend:  fe,
+	}
 }
 
 // Debug prints to stderr internal command handler state and workflow that
@@ -197,16 +216,11 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 	h.state = NewStateStore(h.runner)
 
 	// TODO: use `--workdir` and `--no-workdir` flags
-	ref, _ := getExplicitModuleSourceRef()
-	if ref == "" {
-		ref = moduleURLDefault
-	}
-
 	var def *moduleDef
 	var cfg *configuredModule
 
-	if !moduleNoURL {
-		def, cfg, err = h.maybeLoadModule(ctx, ref)
+	if !h.noModule {
+		def, cfg, err = h.maybeLoadModule(ctx, h.moduleURL)
 		if err != nil {
 			return err
 		}
@@ -221,7 +235,7 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 		h.modDefs.Store("", def)
 	}
 
-	subpath := ref
+	subpath := h.moduleURL
 	if cfg != nil {
 		subpath = cfg.Subpath
 	}
@@ -516,7 +530,7 @@ func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
 	}
 
 	// initialize without the lock held
-	s, err := NewLLMSession(ctx, h.dag, h.llmModel, h)
+	s, err := NewLLMSession(ctx, h.dag, h.llmModel, h, h.frontend)
 
 	h.llmL.Lock()
 	defer h.llmL.Unlock()
@@ -529,6 +543,26 @@ func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
 	h.llmSession = s
 	h.llmModel = s.model
 	return h.llmSession, h.llmErr
+}
+
+func (h *shellCallHandler) KeyBindings() []key.Binding {
+	return []key.Binding{
+		key.NewBinding(
+			key.WithKeys("!"),
+			key.WithHelp("!", "run shell"),
+			idtui.KeyEnabled(h.mode == modePrompt),
+		),
+		key.NewBinding(
+			key.WithKeys(">"),
+			key.WithHelp(">", "run prompt"),
+			idtui.KeyEnabled(h.mode == modeShell),
+		),
+		key.NewBinding(
+			key.WithKeys("ctrl+u"),
+			key.WithHelp("ctrl+u", "upload changes"),
+			idtui.KeyEnabled(h.mode == modePrompt),
+		),
+	}
 }
 
 func (h *shellCallHandler) ReactToInput(ctx context.Context, msg tea.KeyMsg) tea.Cmd {
@@ -552,7 +586,21 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, msg tea.KeyMsg) tea
 					// Show error in sidebar
 					Frontend.SetSidebarContent(idtui.SidebarSection{
 						Title:   "Changes",
-						Content: termenv.String("SYNC ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
+						Content: termenv.String("SAVE ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
+					})
+				}
+				return idtui.UpdatePromptMsg{}
+			}
+		}
+	case "ctrl+u":
+		if h.llmSession != nil {
+			return func() tea.Msg {
+				if err := h.llmSession.SyncFromLocal(ctx); err != nil {
+					slog.Error("failed to load current working directory into agent workspace", "error", err.Error())
+					// Show error in sidebar
+					Frontend.SetSidebarContent(idtui.SidebarSection{
+						Title:   "Changes",
+						Content: termenv.String("UPLOAD ERROR: " + err.Error()).Foreground(termenv.ANSIRed).String(),
 					})
 				}
 				return idtui.UpdatePromptMsg{}
@@ -599,21 +647,6 @@ func (h *shellCallHandler) SaveBeforeHistory() {
 func (h *shellCallHandler) RestoreAfterHistory() {
 	h.mode = h.savedMode
 	h.savedMode = modeUnset
-}
-
-func (h *shellCallHandler) KeyBindings() []key.Binding {
-	return []key.Binding{
-		key.NewBinding(
-			key.WithKeys("!"),
-			key.WithHelp("!", "run shell"),
-			idtui.KeyEnabled(h.mode == modePrompt),
-		),
-		key.NewBinding(
-			key.WithKeys(">"),
-			key.WithHelp(">", "run prompt"),
-			idtui.KeyEnabled(h.mode == modeShell),
-		),
-	}
 }
 
 func newTerminalWriter(fn func([]byte) (int, error)) *terminalWriter {

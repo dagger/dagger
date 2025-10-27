@@ -64,6 +64,8 @@ var SkipLoggedOutTraceMsgEnvs = []string{
 // NOTE: keep this to one line, and 80 characters max
 var loggedOutTraceMsg = fmt.Sprintf("Setup tracing at %%s. To hide set %s=1", SkipLoggedOutTraceMsgEnvs[0])
 
+//go:generate go run github.com/matryer/moq -out frontend_mock.go . Frontend
+
 type Frontend interface {
 	// Run starts a frontend, and runs the target function.
 	Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) (cleanups.CleanupF, error)) error
@@ -112,6 +114,16 @@ type SidebarSection struct {
 	ContentFunc func(int) string
 	// Keymap associated with this section
 	KeyMap []key.Binding
+}
+
+func (sec SidebarSection) Body(width int) string {
+	if sec.Content != "" {
+		return sec.Content
+	}
+	if sec.ContentFunc != nil {
+		return sec.ContentFunc(width)
+	}
+	return ""
 }
 
 // ShellHandler defines the interface for handling shell interactions

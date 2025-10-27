@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"time"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/sdk"
@@ -101,6 +102,9 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 		dagql.Func("withEnum", s.moduleWithEnum).
 			Doc(`This module plus the given Enum type and associated values`),
 
+		dagql.Func("runtime", s.moduleRuntime).
+			Doc(`The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.`),
+
 		dagql.Func("serve", s.moduleServe).
 			DoNotCache(`Mutates the calling session's global schema.`).
 			Doc(`Serve a module's API in the current session.`,
@@ -155,6 +159,13 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("defaultPath").Doc(`If the argument is a Directory or File type, default to load path from context directory, relative to root directory.`),
 				dagql.Arg("ignore").Doc(`Patterns to ignore when loading the contextual argument value.`),
 				dagql.Arg("sourceMap").Doc(`The source map for the argument definition.`),
+			),
+
+		dagql.Func("withCachePolicy", s.functionWithCachePolicy).
+			Doc(`Returns the function updated to use the provided cache policy.`).
+			Args(
+				dagql.Arg("policy").Doc(`The cache policy to use.`),
+				dagql.Arg("timeToLive").Doc(`The TTL for the cache policy, if applicable. Provided as a duration string, e.g. "5m", "1h30s".`),
 			),
 	}.Install(dag)
 
@@ -560,6 +571,55 @@ func (s *moduleSchema) functionWithSourceMap(ctx context.Context, fn *core.Funct
 	return fn.WithSourceMap(sourceMap.Self()), nil
 }
 
+func (s *moduleSchema) functionWithCachePolicy(
+	ctx context.Context,
+	fn *core.Function,
+	args struct {
+		Policy     core.FunctionCachePolicy
+		TimeToLive dagql.Optional[dagql.String]
+	},
+) (*core.Function, error) {
+	fn = fn.Clone()
+
+	fn.CachePolicy = args.Policy
+
+	if args.TimeToLive.Valid {
+		// For now, restrict TTLs to the default policy. We could support it
+		// for PerSession in the future if desired.
+		if fn.CachePolicy != core.FunctionCachePolicyDefault {
+			return nil, errors.New("time to live can only be set with default cache policy")
+		}
+
+		ttlDuration, err := time.ParseDuration(string(args.TimeToLive.Value))
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse time to live duration %q: %w", args.TimeToLive.Value, err)
+		}
+
+		switch {
+		case ttlDuration == 0:
+			// a TTL of 0 sounds an awful lot like "never cache", so we treat it that way.
+			fn.CachePolicy = core.FunctionCachePolicyNever
+
+		case ttlDuration < core.MinFunctionCacheTTLSeconds*time.Second:
+			return nil, fmt.Errorf("time to live duration must be at least %q, got %q",
+				(core.MinFunctionCacheTTLSeconds * time.Second).String(),
+				args.TimeToLive.Value,
+			)
+
+		case ttlDuration > core.MaxFunctionCacheTTLSeconds*time.Second:
+			return nil, fmt.Errorf("time to live duration must be at most %q, got %q",
+				(core.MaxFunctionCacheTTLSeconds * time.Second).String(),
+				args.TimeToLive.Value,
+			)
+
+		default:
+			fn.CacheTTLSeconds = dagql.NonNull(dagql.Int(int(ttlDuration.Seconds())))
+		}
+	}
+
+	return fn, nil
+}
+
 func (s *moduleSchema) currentModule(
 	ctx context.Context,
 	self *core.Query,
@@ -574,6 +634,14 @@ func (s *moduleSchema) currentModule(
 
 func (s *moduleSchema) currentFunctionCall(ctx context.Context, self *core.Query, _ struct{}) (*core.FunctionCall, error) {
 	return self.CurrentFunctionCall(ctx)
+}
+
+func (s *moduleSchema) moduleRuntime(ctx context.Context, mod *core.Module, _ struct{}) (dagql.ObjectResult[*core.Container], error) {
+	if mod.Runtime.Valid {
+		return mod.Runtime.Value, nil
+	}
+
+	return mod.LoadRuntime(ctx)
 }
 
 func (s *moduleSchema) moduleServe(ctx context.Context, modMeta *core.Module, args struct {

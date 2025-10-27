@@ -3,12 +3,12 @@ package schema
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -362,7 +362,8 @@ func currentIDForRawDagOp(
 	// we want to honor any custom digest on the currentID, but also need to modify it to
 	// indicate this is a dagOp.
 	newID := dagql.CurrentID(ctx)
-	dgstInputs := []string{newID.Digest().String()}
+	h := hashutil.NewHasher()
+	h = h.WithString(newID.Digest().String())
 
 	args := []*call.Argument{
 		call.NewArgument(
@@ -377,18 +378,20 @@ func currentIDForRawDagOp(
 		),
 	}
 
+	var err error
 	for _, arg := range args {
 		newID = newID.WithArgument(arg)
-		argBytes, err := call.AppendArgumentBytes(arg.PB(), nil)
+		h, err = call.AppendArgumentBytes(arg.PB(), h)
 		if err != nil {
+			h.Close()
 			return nil, err
 		}
-		dgstInputs = append(dgstInputs, string(argBytes))
+		h = h.WithDelim()
 	}
 
-	dgst := dagql.HashFrom(strings.Join(dgstInputs, "\x00"))
+	dgst := h.DigestAndClose()
 
-	return newID.WithDigest(dgst), nil
+	return newID.WithDigest(digest.Digest(dgst)), nil
 }
 
 const (
@@ -408,7 +411,8 @@ func currentIDForFSDagOp(
 	// we want to honor any custom digest on the currentID, but also need to modify it to
 	// indicate this is a dagOp.
 	newID := dagql.CurrentID(ctx)
-	dgstInputs := []string{newID.Digest().String()}
+	h := hashutil.NewHasher()
+	h = h.WithString(newID.Digest().String())
 
 	args := []*call.Argument{
 		call.NewArgument(
@@ -423,18 +427,19 @@ func currentIDForFSDagOp(
 		),
 	}
 
+	var err error
 	for _, arg := range args {
 		newID = newID.WithArgument(arg)
-		argBytes, err := call.AppendArgumentBytes(arg.PB(), nil)
+		h, err = call.AppendArgumentBytes(arg.PB(), h)
 		if err != nil {
+			h.Close()
 			return nil, err
 		}
-		dgstInputs = append(dgstInputs, string(argBytes))
+		h = h.WithDelim()
 	}
 
-	dgst := dagql.HashFrom(strings.Join(dgstInputs, "\x00"))
-
-	return newID.WithDigest(dgst), nil
+	dgst := h.DigestAndClose()
+	return newID.WithDigest(digest.Digest(dgst)), nil
 }
 
 type ContainerDagOpInternalArgs struct {
@@ -447,7 +452,8 @@ func currentIDForContainerDagOp(
 	// we want to honor any custom digest on the currentID, but also need to modify it to
 	// indicate this is a dagOp.
 	newID := dagql.CurrentID(ctx)
-	dgstInputs := []string{newID.Digest().String()}
+	h := hashutil.NewHasher()
+	h = h.WithString(newID.Digest().String())
 
 	args := []*call.Argument{
 		call.NewArgument(
@@ -457,18 +463,19 @@ func currentIDForContainerDagOp(
 		),
 	}
 
+	var err error
 	for _, arg := range args {
 		newID = newID.WithArgument(arg)
-		argBytes, err := call.AppendArgumentBytes(arg.PB(), nil)
+		h, err = call.AppendArgumentBytes(arg.PB(), h)
 		if err != nil {
+			h.Close()
 			return nil, err
 		}
-		dgstInputs = append(dgstInputs, string(argBytes))
+		h = h.WithDelim()
 	}
 
-	dgst := dagql.HashFrom(strings.Join(dgstInputs, "\x00"))
-
-	return newID.WithDigest(dgst), nil
+	dgst := h.DigestAndClose()
+	return newID.WithDigest(digest.Digest(dgst)), nil
 }
 
 func extractLLBDependencies(ctx context.Context, val any) ([]llb.State, error) {
