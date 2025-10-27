@@ -467,6 +467,12 @@ func (dir *Directory) WithNewFileDagOp(ctx context.Context, dest string, content
 			}
 		}
 
+		// TODO allow SOURCE_DATE_EPOCH
+		mTime := time.Unix(0, 0)
+		if err := os.Chtimes(resolvedDest, mTime, mTime); err != nil {
+			return err
+		}
+
 		return nil
 	}, withSavedSnapshot("withNewFile %s (%s)", dest, humanize.Bytes(uint64(len(content)))))
 }
