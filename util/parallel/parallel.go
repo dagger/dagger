@@ -4,7 +4,6 @@ import (
 	"context"
 	"slices"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -47,7 +46,7 @@ func startSpan(ctx context.Context, name string) (context.Context, trace.Span) {
 	attr := []attribute.KeyValue{
 		attribute.Bool("dagger.io/ui.reveal", true),
 	}
-	return otel.
+	return trace.SpanFromContext(ctx).TracerProvider().
 		Tracer("dagger.io/util/parallel").
 		Start(ctx, name, trace.WithAttributes(attr...))
 }
