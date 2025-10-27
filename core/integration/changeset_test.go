@@ -454,6 +454,67 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 		// Verify root.txt is NOT included (unchanged)
 		require.NotContains(t, entries, "root.txt")
 	})
+
+	t.Run("test changes restricted to subdir", func(ctx context.Context, t *testctx.T) {
+		// Create a directory with files
+		c := connect(ctx, t)
+
+		// Create initial directory with multiple files
+		oldDir := c.Directory().
+			WithNewFile("ignored.txt", ""). // this breaks the test, without this entry it works, when it exists the results end up with both file1 and file2
+			WithNewDirectory("new-dir").
+			Directory("/new-dir").
+			WithNewFile("file1.txt", "content1")
+
+		// Create new directory without one of the files
+		newDir := c.Directory().
+			WithNewDirectory("new-dir").
+			Directory("/new-dir").
+			WithNewFile("file1.txt", "content1").
+			WithNewFile("file2.txt", "content2")
+
+		changes := newDir.Changes(oldDir)
+
+		addedFiles, err := changes.AddedPaths(ctx)
+		require.NoError(t, err)
+
+		require.Contains(t, addedFiles, "file2.txt")
+
+		d := c.Directory().WithChanges(changes)
+
+		entries, err := d.Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"file2.txt"}, entries)
+	})
+
+	t.Run("test common files dont get added", func(ctx context.Context, t *testctx.T) {
+		// Create a directory with files
+		c := connect(ctx, t)
+
+		// Create initial directory with multiple files
+		oldDir := c.Directory().
+			WithNewFile("file1.txt", "content1").
+			WithNewFile("file3.txt", "content3")
+
+		// Create new directory without one of the files
+		newDir := c.Directory().
+			WithNewFile("file1.txt", "content1").
+			WithNewFile("file2.txt", "content2").
+			WithNewFile("file3.txt", "content3")
+
+		changes := newDir.Changes(oldDir)
+
+		addedFiles, err := changes.AddedPaths(ctx)
+		require.NoError(t, err)
+
+		require.Contains(t, addedFiles, "file2.txt")
+
+		d := c.Directory().WithChanges(changes)
+
+		entries, err := d.Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"file2.txt"}, entries)
+	})
 }
 
 func (s ChangesetSuite) TestExport(ctx context.Context, t *testctx.T) {
