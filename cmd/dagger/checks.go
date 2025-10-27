@@ -91,6 +91,18 @@ func loadCheckGroupInfo(ctx context.Context, checks []dagger.Check) (*CheckGroup
 			}
 			checkInfo.Description = description
 
+			emoji, err := check.ResultEmoji(ctx)
+			if err != nil {
+				return err
+			}
+			checkInfo.Emoji = emoji
+
+			message, err := check.Message(ctx)
+			if err != nil {
+				return err
+			}
+			checkInfo.Message = message
+
 			info.Checks = append(info.Checks, checkInfo)
 		}
 		return nil
