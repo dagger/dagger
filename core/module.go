@@ -148,7 +148,7 @@ func (mod *Module) walkObjectChecks(ctx context.Context, obj *ObjectTypeDef, obj
 				return
 			}
 			// 2. Recursively scan reachable children objects
-			if returnsObject := fn.ReturnType.AsObject.Valid; returnsObject {
+			if returnsObject := fn.ReturnType.AsObject.Valid; returnsObject && returnType != obj.Name {
 				subObj, ok := mod.ObjectByName(fn.ReturnType.ToType().Name())
 				if ok {
 					subObjects[fn.Name] = subObj
