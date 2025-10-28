@@ -809,7 +809,6 @@ var toolchainInstallCmd = &cobra.Command{
 	},
 }
 
-//nolint:dupl
 var toolchainUpdateCmd = &cobra.Command{
 	Use:     "update [options] [<toolchain>...]",
 	Short:   "Update toolchains",
@@ -860,7 +859,6 @@ var toolchainUpdateCmd = &cobra.Command{
 	},
 }
 
-//nolint:dupl
 var toolchainUninstallCmd = &cobra.Command{
 	Use:     "uninstall [options] <toolchain>",
 	Short:   "Uninstall a toolchain",
