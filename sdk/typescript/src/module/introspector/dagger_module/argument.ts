@@ -25,7 +25,6 @@ export class DaggerArgument extends Locatable {
   public isVariadic: boolean
   public isNullable: boolean
   public isOptional: boolean
-  public isOptionalDueToDefault: boolean
   public defaultPath?: string
   public ignore?: string[]
   public defaultValue?: any
@@ -43,22 +42,15 @@ export class DaggerArgument extends Locatable {
     const { description, deprecated } = this.ast.getSymbolDoc(this.symbol)
     this.description = description
     this.deprecated = deprecated
-    const hasInitializer = this.node.initializer !== undefined
     this.defaultValue = this.getDefaultValue()
     this.isVariadic = this.node.dotDotDotToken !== undefined
     this.isNullable = this.getIsNullable()
     this.isOptional =
       this.isVariadic || // if argument has ...
+      (this.defaultValue === undefined && // if argument has a default value that couldn't be resolved.
+        this.node.initializer !== undefined) ||
       this.isNullable || // if argument is nullable
       this.node.questionToken !== undefined // if argument has ?
-    if (hasInitializer) {
-      this.isOptional = true
-    }
-    this.isOptionalDueToDefault =
-      hasInitializer &&
-      !this.isVariadic &&
-      !this.isNullable &&
-      this.node.questionToken === undefined
 
     if (this.deprecated !== undefined && !this.isOptional) {
       throw new IntrospectionError(
@@ -104,7 +96,7 @@ export class DaggerArgument extends Locatable {
 
     if (ts.isUnionTypeNode(this.node.type)) {
       for (const _type of this.node.type.types) {
-        if (_type.getText() === "null" || _type.getText() === "undefined") {
+        if (_type.getText() === "null") {
           return true
         }
       }

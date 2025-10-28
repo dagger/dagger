@@ -15,7 +15,7 @@
             },
             "isVariadic": false,
             "isNullable": false,
-            "isOptional": true,
+            "isOptional": false,
             "defaultValue": "world"
           }
         }

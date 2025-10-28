@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -17,6 +18,40 @@ type TypeSuite struct{}
 
 func TestType(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(TypeSuite{})
+}
+
+func logExecError(t *testctx.T, err error) {
+	if err == nil {
+		return
+	}
+	var execErr *dagger.ExecError
+	if errors.As(err, &execErr) {
+		t.Logf("dagger command failed: %v", err)
+		if execErr.Stdout != "" {
+			t.Logf("stdout:\n%s", execErr.Stdout)
+		}
+		if execErr.Stderr != "" {
+			t.Logf("stderr:\n%s", execErr.Stderr)
+		}
+		return
+	}
+	t.Logf("dagger command failed: %v", err)
+}
+
+func containerStdout(ctx context.Context, t *testctx.T, ctr *dagger.Container) (string, error) {
+	out, err := ctr.Stdout(ctx)
+	if err != nil {
+		logExecError(t, err)
+	}
+	return out, err
+}
+
+func containerSync(ctx context.Context, t *testctx.T, ctr *dagger.Container) error {
+	_, err := ctr.Sync(ctx)
+	if err != nil {
+		logExecError(t, err)
+	}
+	return err
 }
 
 func (TypeSuite) TestCustomTypes(ctx context.Context, t *testctx.T) {
@@ -1088,23 +1123,36 @@ export class Test {
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 				modGen := modInit(t, c, tc.sdk, tc.source)
+				if tc.sdk == "typescript" {
+					schema := inspectModule(ctx, t, modGen)
+					t.Logf("schema for typescript: %s", schema.Raw)
+				}
 
-				out, err := modGen.With(daggerQuery(`{test{fromProto(proto: "TCP")}}`)).Stdout(ctx)
+				out, err := containerStdout(ctx, t, modGen.With(daggerQuery(`{test{fromProto(proto: "TCP")}}`)))
 				require.NoError(t, err)
+				t.Logf("🎃: |%s|", gjson.Get(out, "test.fromProto").String())
 				require.Equal(t, "TCP", gjson.Get(out, "test.fromProto").String())
 
-				_, err = modGen.With(daggerQuery(`{test{fromProto(proto: "INVALID")}}`)).Stdout(ctx)
+				_, err = containerStdout(ctx, t, modGen.With(daggerQuery(`{test{fromProto(proto: "INVALID")}}`)))
+				if err != nil {
+					t.Logf("🎃🎃: |%v|", err)
+				}
 				requireErrOut(t, err, "invalid enum")
 
-				out, err = modGen.With(daggerQuery(`{test{toProto(proto: "TCP")}}`)).Stdout(ctx)
+				out, err = containerStdout(ctx, t, modGen.With(daggerQuery(`{test{toProto(proto: "TCP")}}`)))
 				require.NoError(t, err)
+				t.Logf("🎃🎃🎃: |%s|", gjson.Get(out, "test.toProto").String())
 				require.Equal(t, "TCP", gjson.Get(out, "test.toProto").String())
 
-				_, err = modGen.With(daggerQuery(`{test{toProto(proto: "INVALID")}}`)).Sync(ctx)
+				err = containerSync(ctx, t, modGen.With(daggerQuery(`{test{toProto(proto: "INVALID")}}`)))
+				if err != nil {
+					t.Logf("🎃🎃🎃🎃: |%v|", err)
+				}
 				requireErrOut(t, err, "invalid enum")
 
-				out, err = modGen.With(daggerQuery(`{test{fromProtoDefault}}`)).Stdout(ctx)
+				out, err = containerStdout(ctx, t, modGen.With(daggerQuery(`{test{fromProtoDefault}}`)))
 				require.NoError(t, err)
+				t.Logf("🎃🎃🎃🎃🎃: |%s|", gjson.Get(out, "test.fromProtoDefault").String())
 				require.Equal(t, "UDP", gjson.Get(out, "test.fromProtoDefault").String())
 			})
 		}
