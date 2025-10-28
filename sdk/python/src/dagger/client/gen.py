@@ -4126,6 +4126,27 @@ class Directory(Type):
 class Engine(Type):
     """The Dagger engine configuration and state"""
 
+    async def clients(self) -> list[str]:
+        """The list of connected client IDs
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("clients", _args)
+        return await _ctx.execute(list[str])
+
     async def id(self) -> EngineID:
         """A unique identifier for this Engine.
 

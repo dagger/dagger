@@ -4831,6 +4831,17 @@ export class Engine extends BaseClient {
   }
 
   /**
+   * The list of connected client IDs
+   */
+  clients = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("clients")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * The local (on-disk) cache for the Dagger engine
    */
   localCache = (): EngineCache => {
