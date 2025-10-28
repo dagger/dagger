@@ -13,12 +13,6 @@ parameters:
 			path: src/Client/AbstractInputObject.php
 
 		-
-			message: '#^Unsafe usage of new static\(\)\.$#'
-			identifier: new.static
-			count: 1
-			path: src/Client/AbstractScalar.php
-
-		-
 			message: '#^Instanceof between array\<bool\|float\|int\|string\>\|bool\|float\|int\|string\|null and Dagger\\Client\\IdAble will always evaluate to false\.$#'
 			identifier: instanceof.alwaysFalse
 			count: 1
