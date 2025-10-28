@@ -1,4 +1,5 @@
-import { func, object, NetworkProtocol } from "@dagger.io/dagger"
+import { NetworkProtocol } from "../../../../../api/client.gen.js"
+import { func, object } from "../../../../decorators.js"
 
 @object()
 export class CoreEnumDefault {
