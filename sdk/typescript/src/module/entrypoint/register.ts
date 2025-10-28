@@ -142,7 +142,7 @@ export class Register {
       .withSourceMap(addSourceMap(fct))
       .with(this.addArg(fct.arguments))
 
-      switch (fct.cache) {
+    switch (fct.cache) {
       case "never": {
         fnDef = fnDef.withCachePolicy(FunctionCachePolicy.Never)
         break
@@ -165,7 +165,7 @@ export class Register {
     }
 
     return fnDef
-}
+  }
 
   /**
    * Register all arguments in the function.

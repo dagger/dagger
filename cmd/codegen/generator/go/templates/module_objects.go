@@ -13,7 +13,7 @@ import (
 	. "github.com/dave/jennifer/jen" //nolint:staticcheck
 )
 
-func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parsedObjectType, error) {
+func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parsedObjectType, error) { //nolint:gocyclo // parsing struct metadata is inherently branchy
 	spec := &parsedObjectType{
 		goType:     t,
 		moduleName: ps.moduleName,

@@ -659,5 +659,4 @@ func TestTypeEnum(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, want, b.String())
 	})
-
 }

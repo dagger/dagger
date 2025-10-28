@@ -668,7 +668,12 @@ class Module:
             # TODO: Use beartype to validate
             assert callable(func), f"Expected a callable, got {type(func)}."
 
-            meta = FunctionDefinition(name=name, doc=doc, cache=cache, deprecated=deprecated)
+            meta = FunctionDefinition(
+                name=name,
+                doc=doc,
+                cache=cache,
+                deprecated=deprecated,
+            )
 
             if inspect.isclass(func):
                 return Constructor(func, meta)
