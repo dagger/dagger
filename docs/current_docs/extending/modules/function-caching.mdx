@@ -1,0 +1,267 @@
+---
+slug: /extending/function-caching
+title: Function Caching
+description: Control how Dagger caches module function results between runs.
+---
+
+# Function Caching
+
+Dagger can persist the results of your module functions so repeated calls skip work when the inputs have not changed. This page explains how to tune that behavior, opt out when needed, and understand the trade-offs of each caching mode.
+
+## Configure caching per function
+
+### Default behavior
+
+Functions without a `cache` attribute default to being cached with the maximum TTL, which is currently 7 days. This means that subsequent calls to the same function with the same inputs will return the same cached value, without executing, for up to 7 days.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go
+package main
+
+import "crypto/rand"
+
+type Tokens struct{}
+
+func (Tokens) AlwaysCached() string {
+    // No cache attribute -> defaults to the seven-day TTL.
+    return rand.Text()
+}
+```
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python
+import dagger
+import secrets
+
+@dagger.object_type
+class Tokens:
+    @dagger.function
+    def always_cached(self) -> str:
+        """No cache keyword -> defaults to the seven-day TTL."""
+        return secrets.token_hex(8)
+```
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+import crypto from "crypto";
+import { object, func } from "@dagger.io/dagger";
+
+@object()
+export class Tokens {
+  @func()
+  async alwaysCached(): Promise<string> {
+    // No cache option -> defaults to the seven-day TTL.
+    return crypto.randomBytes(8).toString("hex");
+  }
+}
+```
+</TabItem>
+</Tabs>
+
+### TTL caching
+
+Use a duration string to cache a function's result for a fixed window. Subsequent calls to the same function with the same inputs will return the same cached value, without executing, for up to the configured TTL. The TTL countdown starts when the function begins executing. When the TTL expires, the next call recomputes the function and refreshes the cached value.
+
+Duration string are in the form of an integer plus a time unit of "s" (for seconds), "m" (for minutes) or "h" (for hours). For example, "10s" is 10 seconds and "42m" is 42 minutes.
+
+Currently, the maximum value for a TTL is 7 days and the minimum value is 1s.
+
+A common use case for TTL based caching is with data from external network sources. A function that retrieves data from the network can use the TTL to configure how often that data is refreshed, while still being able to save the work of the lookup for the duration of the TTL.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go
+package main
+
+import "crypto/rand"
+
+type Tokens struct{}
+
+// +cache="10s"
+func (Tokens) ShortLived() string {
+    return rand.Text()
+}
+```
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python
+import dagger
+import secrets
+
+@dagger.object_type
+class Tokens:
+    @dagger.function(cache="10s")
+    def short_lived(self) -> str:
+        return secrets.token_hex(8)
+```
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+import crypto from "crypto";
+import { object, func } from "@dagger.io/dagger";
+
+@object()
+export class Tokens {
+  @func({ cache: "10s" })
+  async shortLived(): Promise<string> {
+    return crypto.randomBytes(8).toString("hex");
+  }
+}
+```
+</TabItem>
+</Tabs>
+
+### Session caching
+
+`cache="session"` keeps results only for the lifetime of the current engine session. An engine session starts when a client connects to the engine and ends when that client disconnects. The client may be the CLI (e.g. `dagger call` or `dagger -c`) or any of the Dagger SDKs running as a custom application on your host.
+
+Session caching is useful in situations where one function call may be repeated throughout the session (e.g. one function call repeatedly made by other functions). In those cases, if the result of the function call should be shared by all callers in the session, but not leak to other separate clients concurrently connected, session-based caching should be used.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go
+package main
+
+import "crypto/rand"
+
+type Tokens struct{}
+
+// +cache="session"
+func (Tokens) PerSession() string {
+    return rand.Text()
+}
+```
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python
+import dagger
+import secrets
+
+@dagger.object_type
+class Tokens:
+    @dagger.function(cache="session")
+    def per_session(self) -> str:
+        return secrets.token_hex(8)
+```
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+import crypto from "crypto";
+import { object, func } from "@dagger.io/dagger";
+
+@object()
+export class Tokens {
+  @func({ cache: "session" })
+  async perSession(): Promise<string> {
+    return crypto.randomBytes(8).toString("hex");
+  }
+}
+```
+</TabItem>
+</Tabs>
+
+### Never cache
+
+`cache="never"` opts the function out of both persistent and per-session caching, ensuring the function runs on every call.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go
+package main
+
+import "crypto/rand"
+
+type Tokens struct{}
+
+// +cache="never"
+func (Tokens) NoCache() string {
+    return rand.Text()
+}
+```
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python
+import dagger
+import secrets
+
+@dagger.object_type
+class Tokens:
+    @dagger.function(cache="never")
+    def no_cache(self) -> str:
+        return secrets.token_hex(8)
+```
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+import crypto from "crypto";
+import { object, func } from "@dagger.io/dagger";
+
+@object()
+export class Tokens {
+  @func({ cache: "never" })
+  async noCache(): Promise<string> {
+    return crypto.randomBytes(8).toString("hex");
+  }
+}
+```
+</TabItem>
+</Tabs>
+
+## How cache hits work
+
+This section details mechanics important to understanding when and why a function call may be either cached or uncached.
+
+### Function inputs as cache keys
+
+When the Dagger engine checks for a cached result of a function call, it looks at all the inputs to the call:
+1. The source code of the module the function is in
+2. The values of the arguments being provided to the function call
+3. The values of the parent object of the function call
+
+If a previous function call has been made with all of those inputs at the same value, then there is potential for a cache hit. In other words, all those inputs serve as the "cache key".
+
+This also means that if any of those inputs change from what has been called previously, you will get a cache miss. For example, changing the source code of a module will invalidate all the cache for its functions.
+
+### Secrets and caching
+
+[Secrets](../../getting-started/types/secret.mdx) are never cached on disk by Dagger. Function calls that return Secrets or values that reference Secrets (e.g. a Container that has a secret set as an environment variable) *may* be cached provided that the Secret in question was sourced using a secret provider (e.g. `env://MY_SECRET`). In these cases, Dagger is able to cache the source of the secret without having to write the plaintext to disk, [instead using a securely derived hash of the secret plaintext](secrets.mdx#caching).
+
+Secrets that were created via `SetSecret` calls by a function are incompatible with persistent function caching. Any function that returns a value that references such a Secret will not be cached with a TTL even if the function call was configured as such. Instead, the function call will behave as though it was configured as "session" caching (unless it was configured with "never" caching, in which case that setting will be honored).
+
+### TTLs do not guarantee retention
+
+When a function call is cached with a TTL (or has the default behavior of a 7 day TTL), that means that the cache may last for *up to* that TTL. It does not guarantee that the cached result will stay in the engine for that long. It only guarantees that the cache entry will expire after the TTL has passed.
+
+This is because the engine may need to [prune data when disk space runs low](../../reference/configuration/cache.mdx), which can include cached function call results.
+
+## Backwards compatibility
+
+:::note
+This section is relevant to users of Dagger prior to engine version v0.19.4 only.
+:::
+
+Prior to engine version v0.19.4, function calls all implicitly had the behavior of the "session" cache policy, with no configurability available.
+
+Users of modules that were created prior to v0.19.4 will initially retain that default of "session" caching when they upgrade. After running `dagger develop`, a new setting in dagger.json will appear:
+```json title="dagger.json"
+{
+  "disableDefaultFunctionCaching": true
+}
+```
+
+Once the author has annotated functions with the desired cache configuration (or has determined that the default cache policy is appropriate for each function), they can delete that line from `dagger.json` to opt-in to the new function caching features.
+
+The reason for this is that some functions may require a specific TTL, "session" or "never" caching in order to behave as expected. For example, if a function pulls data from an external network service, it may not be desireable for it to have the default TTL of 7 days in the case where that data changes more frequently than once a week.
