@@ -136,6 +136,9 @@ type Server interface {
 
 	// The name of the engine
 	EngineName() string
+
+	// The list of connected client IDs
+	Clients() []string
 }
 
 type queryKey struct{}

@@ -14,6 +14,15 @@ namespace Dagger;
 class Engine extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * The list of connected client IDs
+     */
+    public function clients(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('clients');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'clients');
+    }
+
+    /**
      * A unique identifier for this Engine.
      */
     public function id(): EngineId
