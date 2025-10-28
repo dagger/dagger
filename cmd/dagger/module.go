@@ -752,7 +752,7 @@ var toolchainInstallCmd = &cobra.Command{
 	Use:     "install [options] <module>",
 	Short:   "Install a toolchain to the current module",
 	Long:    "Install another module as a toolchain to the current module.",
-	Example: "dagger toolchain install github.com/example/toolchain",
+	Example: "dagger toolchain install github.com/dagger/dagger/toolchains/go",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
@@ -894,7 +894,9 @@ var toolchainUninstallCmd = &cobra.Command{
 				return fmt.Errorf("failed to get local context directory path: %w", err)
 			}
 
-			modSrc = modSrc.WithoutBlueprint()
+			toolchainRefStr := extraArgs[0]
+
+			modSrc = modSrc.WithoutToolchains(([]string{toolchainRefStr}))
 			if engineVersion := getCompatVersion(); engineVersion != "" {
 				modSrc = modSrc.WithEngineVersion(engineVersion)
 			}
