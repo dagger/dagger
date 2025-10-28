@@ -18,7 +18,7 @@ use Symfony\Component\Process\InputStream;
  */
 class ProcessSessionConnection extends Connection implements LoggerAwareInterface
 {
-    private ?Process $sessionProcess;
+    private ?Process $sessionProcess = null;
     private LoggerInterface $logger;
 
     public function __construct(

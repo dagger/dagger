@@ -25,12 +25,6 @@ parameters:
 			path: src/Command/SchemaGeneratorCommand.php
 
 		-
-			message: '#^Property Dagger\\Connection\\ProcessSessionConnection\:\:\$sessionProcess \(Symfony\\Component\\Process\\Process\|null\) is never assigned null so it can be removed from the property type\.$#'
-			identifier: property.unusedType
-			count: 1
-			path: src/Connection/ProcessSessionConnection.php
-
-		-
 			message: '#^Instanceof between array\<bool\|float\|int\|string\>\|bool\|float\|int\|string\|null and Dagger\\Client\\IdAble will always evaluate to false\.$#'
 			identifier: instanceof.alwaysFalse
 			count: 1
