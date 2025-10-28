@@ -1131,6 +1131,8 @@ export type FieldTypeDefID = string & { __FieldTypeDefID: never }
 export type FileAsEnvFileOpts = {
   /**
    * Replace "${VAR}" or "$VAR" with the value of other vars
+   *
+   * @deprecated Variable expansion is now enabled by default
    */
   expand?: boolean
 }
@@ -1790,6 +1792,8 @@ export type ClientEnvOpts = {
 export type ClientEnvFileOpts = {
   /**
    * Replace "${VAR}" or "$VAR" with the value of other vars
+   *
+   * @deprecated Variable expansion is now enabled by default
    */
   expand?: boolean
 }
@@ -1804,6 +1808,8 @@ export type ClientFileOpts = {
 export type ClientGitOpts = {
   /**
    * DEPRECATED: Set to true to keep .git directory.
+   *
+   * @deprecated Set to true to keep .git directory.
    */
   keepGitDir?: boolean
 
