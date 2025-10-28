@@ -9,8 +9,8 @@ use Dagger\Attribute;
 final readonly class DaggerObject
 {
     /**
-     *@var array<string,DaggerFunction[]
-     * name => DaggerFunction pairs
+     * @var array<string, DaggerFunction>
+     *            name => DaggerFunction
      */
     public array $daggerFunctions;
 
@@ -41,7 +41,7 @@ final readonly class DaggerObject
         $description = (current($class
             ->getAttributes(Attribute\Doc::class)) ?: null)
             ?->newInstance()
-            ?->description
+            ->description
             ?? '';
 
         $methodReflections = array_filter(

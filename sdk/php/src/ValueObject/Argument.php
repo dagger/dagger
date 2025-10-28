@@ -92,13 +92,7 @@ final readonly class Argument
     private static function getDefault(ReflectionParameter $parameter): ?Json
     {
         if ($parameter->isDefaultValueAvailable()) {
-            $betterReflection = BetterReflectionParameter
-                ::createFromClassNameAndMethod(
-                    $parameter->getDeclaringClass()->getName(),
-                    $parameter->getDeclaringFunction()->getName(),
-                    $parameter->getName(),
-                );
-            $default = $betterReflection->getDefaultValue();
+            $default = $parameter->getDefaultValue();
             return new Json(json_encode(
                 $default instanceof IdAble ? (string) $default->id() : $default
             ));
