@@ -838,9 +838,26 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		a := c.Git("github.com/dagger/dagger").Ref("main").Tree().Directory("engine")
 		b := c.Directory().WithDirectory("engine", a).Directory("engine")
+		_, err := a.Diff(b).Sync(ctx)
+		require.NoError(t, err)
 		ents, err := a.Diff(b).Entries(ctx)
 		require.NoError(t, err)
 		require.Len(t, ents, 0)
+	})
+
+	t.Run("different subdirs", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		d := c.Directory().
+			WithNewDirectory("sub").
+			WithNewDirectory("submarine").
+			WithNewFile("sub/file1", "data1").
+			WithNewFile("submarine/file1", "data1").
+			WithNewFile("submarine/file2", "data2").
+			WithTimestamps(0)
+
+		ents, err := d.Directory("sub").Diff(d.Directory("submarine")).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, ents, []string{"file2"})
 	})
 
 	/*

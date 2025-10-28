@@ -343,7 +343,7 @@ func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
 		return fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	dir, err := ch.Before.Self().Diff(ctx, ch.After.Self())
+	dir, err := ch.Before.Self().DiffLLB(ctx, ch.After.Self())
 	if err != nil {
 		return err
 	}
