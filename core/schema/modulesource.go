@@ -1599,8 +1599,8 @@ func (s *moduleSourceSchema) moduleSourceUpdateItems(
 	}
 
 	type updateReq struct {
-		symbolic string
-		version  string
+		symbolic string // either 1) a name of a dep or 2) the source minus any @version
+		version  string // the version to update to, if any specified
 	}
 	updateReqs := make(map[updateReq]struct{}, len(updateArgs))
 	for _, updateArg := range updateArgs {
@@ -1609,11 +1609,15 @@ func (s *moduleSourceSchema) moduleSourceUpdateItems(
 		updateReqs[req] = struct{}{}
 	}
 
+	// loop over the existing deps, checking each one for whether they should be updated based on the args
+	// this is technically O(n^2) but not expected to matter for the relatively low values of n we deal
+	// with here
 	var newUpdatedArgs []core.ModuleSourceID
 	for _, existingItem := range accessor.getItems(parentSrc.Self()) {
 		// If no update requests, implicitly update all items
 		if len(updateReqs) == 0 {
 			if existingItem.Self().Kind == core.ModuleSourceKindLocal {
+				// local dep, skip update
 				continue
 			}
 
@@ -1634,7 +1638,7 @@ func (s *moduleSourceSchema) moduleSourceUpdateItems(
 			continue
 		}
 
-		// If the existing item is local and requested to be updated, return error
+		// if the existingDep is local and requested to be updated, return error, otherwise skip it
 		if existingItem.Self().Kind == core.ModuleSourceKindLocal {
 			for updateReq := range updateReqs {
 				if updateReq.symbolic == existingItem.Self().ModuleName {
