@@ -180,7 +180,7 @@ export class Register {
         }
 
         let typeDef = addTypeDef(arg.type!)
-        if (arg.isOptional) {
+        if (arg.isOptional && !arg.isOptionalDueToDefault) {
           typeDef = typeDef.withOptional(true)
         }
 

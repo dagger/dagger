@@ -9,6 +9,16 @@
           "name": "legacy",
           "description": "",
           "arguments": {
+            "other": {
+              "name": "other",
+              "description": "",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            },
             "input": {
               "name": "input",
               "description": "",
@@ -19,16 +29,6 @@
               "isVariadic": false,
               "isNullable": false,
               "isOptional": true
-            },
-            "other": {
-              "name": "other",
-              "description": "",
-              "type": {
-                "kind": "STRING_KIND"
-              },
-              "isVariadic": false,
-              "isNullable": false,
-              "isOptional": false
             }
           },
           "returnType": {
