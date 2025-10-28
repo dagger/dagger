@@ -3135,25 +3135,22 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 			)
 		})
 	}
-	if err := eg.Wait(); err != nil {
-		return nil, fmt.Errorf("failed to load module dependencies: %w", err)
-	}
 
 	// Load all toolchains as dependencies
 	tcMods := make([]dagql.Result[*core.Module], len(src.Self().Toolchains))
 	if len(src.Self().Toolchains) > 0 {
-		var tceg errgroup.Group
 		for i, tcSrc := range src.Self().Toolchains {
-			tceg.Go(func() error {
+			eg.Go(func() error {
 				err := dag.Select(ctx, tcSrc, &tcMods[i],
 					dagql.Selector{Field: "asModule"},
 				)
 				return err
 			})
 		}
-		if err := tceg.Wait(); err != nil {
-			return nil, fmt.Errorf("failed to load module dependencies: %w", err)
-		}
+	}
+
+	if err := eg.Wait(); err != nil {
+		return nil, fmt.Errorf("failed to load module dependencies: %w", err)
 	}
 
 	defaultDeps, err := query.DefaultDeps(ctx)
