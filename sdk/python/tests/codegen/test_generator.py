@@ -216,6 +216,7 @@ def test_input_field_param(cls, name: str, args, expected: str, ctx: Context):
 def test_input_field_arg(cls, name, args, expected, ctx: Context):
     assert _InputField(ctx, name, cls(*args)).as_arg() == expected
 
+
 def test_input_object_field_deprecated():
     local_ctx = Context()
     input_type = InputObject(
