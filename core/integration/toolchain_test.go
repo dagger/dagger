@@ -127,6 +127,22 @@ func (ToolchainSuite) TestToolchainsWithSDK(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (ToolchainSuite) TestToolchainsWithMultipleObjects(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	t.Run("use toolchain with multiple objects", func(ctx context.Context, t *testctx.T) {
+		modGen := toolchainTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init")).
+			With(daggerExec("toolchain", "install", "../hello-with-objects"))
+		// verify we can call a function from our blueprint
+		out, err := modGen.
+			With(daggerExec("call", "hello-with-objects", "say-greeting", "hello")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "Hello!")
+	})
+}
+
 func (ToolchainSuite) TestToolchainsWithBlueprint(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	t.Run("use toolchains with blueprint", func(ctx context.Context, t *testctx.T) {
