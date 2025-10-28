@@ -54,6 +54,7 @@ class DeprecatedExample(enum.Enum):
         Remove no later than 2.0.
     """
 
+
 def test_extract_enum_member_doc_with_deprecated_directive():
     docs = extract_enum_member_doc(DeprecatedExample)
 
