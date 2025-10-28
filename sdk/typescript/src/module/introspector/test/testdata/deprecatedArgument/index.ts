@@ -4,9 +4,9 @@ import { func, object } from "../../../../decorators.js"
 export class DeprecationArgs {
 	@func()
 	legacy(
+		other: string,
 		/** @deprecated Use `other` instead. */
 		input?: string,
-		other: string,
 	): string {
 		return input ?? other
 	}
