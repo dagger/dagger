@@ -1,12 +1,15 @@
 import itertools
 from typing import Annotated
+
 import pytest
 from typing_extensions import Doc, Self
+
 import dagger
 from dagger import dag
 from dagger.mod import Module
 from dagger.mod._converter import to_typedef
 from dagger.mod._exceptions import BadUsageError
+
 
 def test_object_type_resolvers():
     mod = Module()
@@ -71,7 +74,7 @@ def test_function_argument_deprecated_metadata():
         BadUsageError,
         match="Can't deprecate required parameter 'value'",
     ):
-        mod.get_object("Foo").functions["legacy"].parameters
+        _ = mod.get_object("Foo").functions["legacy"].parameters
 
 def test_field_deprecated_metadata():
     mod = Module()
@@ -94,6 +97,7 @@ def test_external_constructor_doc():
     @mod.object_type
     class External:
         """external docstring"""
+
         foo: Annotated[str, Doc("a foo walks into a bar")] = "bar"
         @mod.function
         def bar(self) -> str:
@@ -117,6 +121,7 @@ def test_external_alt_constructor_doc():
     @mod.object_type
     class External:
         """An object"""
+
         @classmethod
         def create(cls) -> "External":
             """Factory constructor."""

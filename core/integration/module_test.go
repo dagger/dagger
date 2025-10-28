@@ -6518,7 +6518,7 @@ query ModuleIntrospection($path: String!) {
 			require.NotNil(t, testObj, "Test object must be present")
 			require.Equal(t, "This module is deprecated and will be removed in future versions.", testObj.Deprecated, "Test object must be marked deprecated")
 
-			var legacyField *Field = &testObj.Fields[0]
+			legacyField := &testObj.Fields[0]
 			require.NotNil(t, legacyField, "Test.LegacyField must be present")
 			require.Equal(t, "This field is deprecated and will be removed in future versions.", legacyField.Deprecated, "Test.LegacyField must be marked deprecated")
 
@@ -6563,7 +6563,7 @@ query ModuleIntrospection($path: String!) {
 			require.NotNil(t, noteField, "LegacyRecord should have field 'note'")
 			require.Equal(t, "This field is deprecated and will be removed in future versions.", noteField.Deprecated, "LegacyRecord.note must be marked deprecated")
 
-			var mode *struct{ AsEnum Enum } = &res.Host.Directory.AsModule.Enums[0]
+			mode := &res.Host.Directory.AsModule.Enums[0]
 			require.NotNil(t, mode)
 
 			m := mode.AsEnum

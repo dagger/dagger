@@ -2,20 +2,50 @@ from textwrap import dedent
 
 import graphql
 import pytest
-from graphql import GraphQLArgument as Argument
-from graphql import GraphQLBoolean as Boolean
-from graphql import GraphQLEnumType, GraphQLEnumValue, GraphQLID
-from graphql import GraphQLField as Field
-from graphql import GraphQLInputField as Input
-from graphql import GraphQLInputField as InputField
-from graphql import GraphQLInputObjectType as InputObject
-from graphql import GraphQLInt as Int
-from graphql import GraphQLList as List
-from graphql import GraphQLNonNull as NonNull
-from graphql import GraphQLInterfaceType as Interface
-from graphql import GraphQLObjectType as Object
-from graphql import GraphQLScalarType as Scalar
-from graphql import GraphQLString as String
+from graphql import (
+    GraphQLArgument as Argument,
+)
+from graphql import (
+    GraphQLBoolean as Boolean,
+)
+from graphql import (
+    GraphQLEnumType,
+    GraphQLEnumValue,
+    GraphQLID,
+)
+from graphql import (
+    GraphQLField as Field,
+)
+from graphql import (
+    GraphQLInputField as Input,
+)
+from graphql import (
+    GraphQLInputField as InputField,
+)
+from graphql import (
+    GraphQLInputObjectType as InputObject,
+)
+from graphql import (
+    GraphQLInt as Int,
+)
+from graphql import (
+    GraphQLInterfaceType as Interface,
+)
+from graphql import (
+    GraphQLList as List,
+)
+from graphql import (
+    GraphQLNonNull as NonNull,
+)
+from graphql import (
+    GraphQLObjectType as Object,
+)
+from graphql import (
+    GraphQLScalarType as Scalar,
+)
+from graphql import (
+    GraphQLString as String,
+)
 
 from codegen.generator import (
     Context,
@@ -26,9 +56,15 @@ from codegen.generator import (
     format_name,
     format_output_type,
 )
-from codegen.generator import Enum as EnumHandler
-from codegen.generator import Input as InputHandler
-from codegen.generator import Scalar as ScalarHandler
+from codegen.generator import (
+    Enum as EnumHandler,
+)
+from codegen.generator import (
+    Input as InputHandler,
+)
+from codegen.generator import (
+    Scalar as ScalarHandler,
+)
 
 
 @pytest.fixture
