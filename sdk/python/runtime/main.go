@@ -184,13 +184,14 @@ func (m *PythonSdk) ModuleRuntime(
 }
 
 // Container for executing the Python module runtime
-func (m *PythonSdk) ModuleTypesExp(
+func (m *PythonSdk) ModuleTypes(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
 	outputFilePath string,
 ) (*dagger.Container, error) {
-	ctr, err := m.ModuleRuntime(ctx, modSource, introspectionJSON)
+	_ = introspectionJSON
+	ctr, err := m.ModuleRuntime(ctx, modSource, nil)
 	if err != nil {
 		return nil, err
 	}
