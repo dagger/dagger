@@ -19,15 +19,6 @@ parameters:
 			path: src/ValueObject/Argument.php
 
 		-
-			message: '''
-				#^PHPDoc tag @var has invalid value \(array\<string,DaggerFunction\[\]
-				name \=\> DaggerFunction pairs\)\: Unexpected token "name", expected '\>' at offset 52 on line 3$#
-			'''
-			identifier: phpDoc.parseError
-			count: 1
-			path: src/ValueObject/DaggerObject.php
-
-		-
 			message: '#^Using nullsafe property access "\?\-\>description" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
 			identifier: nullsafe.neverNull
 			count: 1
