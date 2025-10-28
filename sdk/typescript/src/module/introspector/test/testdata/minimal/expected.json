@@ -54,7 +54,7 @@
               },
               "isVariadic": false,
               "isNullable": false,
-              "isOptional": true,
+              "isOptional": false,
               "defaultValue": ""
             },
             "times": {
@@ -65,7 +65,7 @@
               },
               "isVariadic": false,
               "isNullable": false,
-              "isOptional": true,
+              "isOptional": false,
               "defaultValue": 1
             }
           },
@@ -95,7 +95,7 @@
               },
               "isVariadic": false,
               "isNullable": false,
-              "isOptional": true,
+              "isOptional": false,
               "defaultValue": false
             }
           },
@@ -115,7 +115,7 @@
               },
               "isVariadic": false,
               "isNullable": false,
-              "isOptional": true,
+              "isOptional": false,
               "defaultValue": "default"
             }
           },
@@ -138,7 +138,7 @@
               },
               "isVariadic": false,
               "isNullable": false,
-              "isOptional": true,
+              "isOptional": false,
               "defaultValue": [
                 "foobar"
               ]
