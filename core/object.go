@@ -538,7 +538,6 @@ func toolchainProxyFunction(ctx context.Context, mod *Module, fun *Function, tcM
 	spec.Module = mod.IDModule()
 	spec.GetCacheConfig = modFun.CacheConfigForCall
 
-	//nolint:dupl
 	return dagql.Field[*ModuleObject]{
 		Spec: &spec,
 		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
@@ -601,7 +600,6 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 	spec.Module = mod.IDModule()
 	spec.GetCacheConfig = modFun.CacheConfigForCall
 
-	//nolint:dupl
 	return dagql.Field[*ModuleObject]{
 		Spec: &spec,
 		Func: func(ctx context.Context, obj dagql.ObjectResult[*ModuleObject], args map[string]dagql.Input, view call.View) (dagql.AnyResult, error) {
