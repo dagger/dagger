@@ -18,7 +18,7 @@
             },
             "isVariadic": false,
             "isNullable": false,
-            "isOptional": false,
+            "isOptional": true,
             "defaultValue": []
           }
         }
@@ -74,7 +74,7 @@
               },
               "isVariadic": false,
               "isNullable": false,
-              "isOptional": false,
+              "isOptional": true,
               "defaultValue": "b"
             }
           },
@@ -96,7 +96,7 @@
               },
               "isVariadic": false,
               "isNullable": false,
-              "isOptional": false,
+              "isOptional": true,
               "defaultValue": "a"
             }
           },
@@ -117,7 +117,7 @@
               },
               "isVariadic": false,
               "isNullable": false,
-              "isOptional": false,
+              "isOptional": true,
               "defaultValue": "a"
             }
           },

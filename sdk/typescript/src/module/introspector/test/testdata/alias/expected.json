@@ -146,7 +146,7 @@
             },
             "isVariadic": false,
             "isNullable": false,
-            "isOptional": false,
+            "isOptional": true,
             "defaultValue": "baz"
           },
           "foo": {
@@ -157,7 +157,7 @@
             },
             "isVariadic": false,
             "isNullable": false,
-            "isOptional": false,
+            "isOptional": true,
             "defaultValue": 4
           }
         }
