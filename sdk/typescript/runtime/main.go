@@ -51,14 +51,21 @@ func (t *TypescriptSdk) ModuleRuntime(
 		return nil, fmt.Errorf("failed to analyze module config: %w", err)
 	}
 
-	return runtimeBaseContainer(cfg, t.SDKSourceDir).
-		withConfiguredRuntimeEnvironment().
-		withGeneratedSDK(introspectionJSON).
-		withSetupPackageManager().
-		withInstalledDependencies().
-		withUserSourceCode().
-		withEntrypoint().
-		Container(), nil
+	switch cfg.runtime {
+	case Bun:
+		return NewBunRuntime(cfg, t.SDKSourceDir, introspectionJSON).Setup(ctx)
+	case Node, Deno:
+		return runtimeBaseContainer(cfg, t.SDKSourceDir).
+			withConfiguredRuntimeEnvironment().
+			withGeneratedSDK(introspectionJSON).
+			withSetupPackageManager().
+			withInstalledDependencies().
+			withUserSourceCode().
+			withEntrypoint().
+			Container(), nil
+	default:
+		return nil, fmt.Errorf("unknown runtime %s", cfg.runtime)
+	}
 }
 
 func (t *TypescriptSdk) ModuleTypes(
