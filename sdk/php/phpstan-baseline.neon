@@ -11,9 +11,3 @@ parameters:
 			identifier: foreach.nonIterable
 			count: 1
 			path: src/Client/AbstractInputObject.php
-
-		-
-			message: '#^Instanceof between array\<bool\|float\|int\|string\>\|bool\|float\|int\|string\|null and Dagger\\Client\\IdAble will always evaluate to false\.$#'
-			identifier: instanceof.alwaysFalse
-			count: 1
-			path: src/ValueObject/Argument.php
