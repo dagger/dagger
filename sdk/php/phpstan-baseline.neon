@@ -19,12 +19,6 @@ parameters:
 			path: src/Client/AbstractScalar.php
 
 		-
-			message: '#^Constant Dagger\\Command\\SchemaGeneratorCommand\:\:WRITE_DIR is unused\.$#'
-			identifier: classConstant.unused
-			count: 1
-			path: src/Command/SchemaGeneratorCommand.php
-
-		-
 			message: '#^Instanceof between array\<bool\|float\|int\|string\>\|bool\|float\|int\|string\|null and Dagger\\Client\\IdAble will always evaluate to false\.$#'
 			identifier: instanceof.alwaysFalse
 			count: 1
