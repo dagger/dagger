@@ -5947,6 +5947,7 @@ func (r *File) WithGraphQLQuery(q *querybuilder.Selection) *File {
 // FileAsEnvFileOpts contains options for File.AsEnvFile
 type FileAsEnvFileOpts struct {
 	// Replace "${VAR}" or "$VAR" with the value of other vars
+	// Deprecated: Variable expansion is now enabled by default
 	Expand bool
 }
 
@@ -10282,6 +10283,7 @@ func (r *Client) Env(opts ...EnvOpts) *Env {
 // EnvFileOpts contains options for Client.EnvFile
 type EnvFileOpts struct {
 	// Replace "${VAR}" or "$VAR" with the value of other vars
+	// Deprecated: Variable expansion is now enabled by default
 	Expand bool
 }
 
@@ -10363,6 +10365,7 @@ type GitOpts struct {
 	// DEPRECATED: Set to true to keep .git directory.
 	//
 	// Default: true
+	// Deprecated: Set to true to keep .git directory.
 	KeepGitDir bool
 	// Set SSH known hosts
 	SSHKnownHosts string
