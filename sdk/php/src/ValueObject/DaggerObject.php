@@ -41,7 +41,7 @@ final readonly class DaggerObject
         $description = (current($class
             ->getAttributes(Attribute\Doc::class)) ?: null)
             ?->newInstance()
-            ?->description
+            ->description
             ?? '';
 
         $methodReflections = array_filter(

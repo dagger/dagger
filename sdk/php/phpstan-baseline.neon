@@ -17,9 +17,3 @@ parameters:
 			identifier: instanceof.alwaysFalse
 			count: 1
 			path: src/ValueObject/Argument.php
-
-		-
-			message: '#^Using nullsafe property access "\?\-\>description" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
-			identifier: nullsafe.neverNull
-			count: 1
-			path: src/ValueObject/DaggerObject.php
