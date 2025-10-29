@@ -241,7 +241,7 @@ func (cw *limitedWriter) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-func (file *File) Search(ctx context.Context, opts SearchOpts) ([]*SearchResult, error) {
+func (file *File) Search(ctx context.Context, opts SearchOpts, verbose bool) ([]*SearchResult, error) {
 	ref, err := getRefOrEvaluate(ctx, file)
 	if err != nil {
 		return nil, err
@@ -273,7 +273,7 @@ func (file *File) Search(ctx context.Context, opts SearchOpts) ([]*SearchResult,
 		rgArgs = append(rgArgs, "--", filepath.Base(file.File))
 		rg := exec.Command("rg", rgArgs...)
 		rg.Dir = resolvedDir
-		results, err = opts.RunRipgrep(ctx, rg)
+		results, err = opts.RunRipgrep(ctx, rg, verbose)
 		return err
 	})
 	if err != nil {
@@ -312,7 +312,7 @@ func (file *File) WithReplaced(ctx context.Context, searchStr, replacementStr st
 		Pattern:   searchStr,
 		Literal:   true,
 		Multiline: strings.ContainsRune(searchStr, '\n'),
-	})
+	}, false)
 	if err != nil {
 		return nil, err
 	}

@@ -535,7 +535,7 @@ func (dir *Directory) WithPatch(ctx context.Context, patch string) (*Directory, 
 	return dir, nil
 }
 
-func (dir *Directory) Search(ctx context.Context, opts SearchOpts, paths []string, globs []string) ([]*SearchResult, error) {
+func (dir *Directory) Search(ctx context.Context, opts SearchOpts, verbose bool, paths []string, globs []string) ([]*SearchResult, error) {
 	// Validate and normalize paths to prevent directory traversal attacks
 	for i, p := range paths {
 		// If absolute, make it relative to the directory
@@ -599,7 +599,7 @@ func (dir *Directory) Search(ctx context.Context, opts SearchOpts, paths []strin
 		}
 		rg := exec.Command("rg", rgArgs...)
 		rg.Dir = resolvedDir
-		results, err = opts.RunRipgrep(ctx, rg)
+		results, err = opts.RunRipgrep(ctx, rg, verbose)
 		return err
 	})
 	if err != nil {
