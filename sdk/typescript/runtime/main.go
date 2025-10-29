@@ -5,6 +5,9 @@ import (
 	"fmt"
 
 	"typescript-sdk/internal/dagger"
+	"typescript-sdk/tsutils"
+
+	"github.com/iancoleman/strcase"
 )
 
 func New(
@@ -53,8 +56,10 @@ func (t *TypescriptSdk) ModuleRuntime(
 
 	switch cfg.runtime {
 	case Bun:
-		return NewBunRuntime(cfg, t.SDKSourceDir, introspectionJSON).Setup(ctx)
-	case Node, Deno:
+		return NewBunRuntime(cfg, t.SDKSourceDir, introspectionJSON).SetupContainer(ctx)
+	case Deno:
+		return NewDenoRuntime(cfg, t.SDKSourceDir, introspectionJSON).SetupContainer(ctx)
+	case Node:
 		return runtimeBaseContainer(cfg, t.SDKSourceDir).
 			withConfiguredRuntimeEnvironment().
 			withGeneratedSDK(introspectionJSON).
@@ -105,25 +110,67 @@ func (t *TypescriptSdk) Codegen(
 		return nil, fmt.Errorf("failed to analyze module config: %w", err)
 	}
 
-	runtimeBaseCtr := runtimeBaseContainer(cfg, t.SDKSourceDir).
-		withConfiguredRuntimeEnvironment().
-		withGeneratedSDK(introspectionJSON).
-		withSetupPackageManager().
-		withGeneratedLockFile().
-		withUserSourceCode()
+	var codegen *dagger.Directory
+	switch cfg.runtime {
+	case Bun:
+		codegen, err = NewBunRuntime(cfg, t.SDKSourceDir, introspectionJSON).GenerateDir(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate runtime dir: %w", err)
+		}
 
-	if runtimeBaseCtr, err = runtimeBaseCtr.addInitTemplateIfNoUserFile(ctx); err != nil {
-		return nil, err
+		// Add default template if no source files exist
+		sourceFiles, err := cfg.source.Glob(ctx, "src/**/*.ts")
+		if err != nil {
+			return nil, fmt.Errorf("failed to list source files: %w", err)
+		}
+
+		if len(sourceFiles) == 0 {
+			codegen = codegen.WithFile(
+				"src/index.ts",
+				dag.File("index.ts", tsutils.TemplateIndexTS(strcase.ToCamel(cfg.name))))
+		}
+
+		codegen = dag.Directory().WithDirectory(cfg.subPath, codegen)
+	case Deno:
+		codegen, err = NewDenoRuntime(cfg, t.SDKSourceDir, introspectionJSON).GenerateDir(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate runtime dir: %w", err)
+		}
+
+		// Add default template if no source files exist
+		sourceFiles, err := cfg.source.Glob(ctx, "src/**/*.ts")
+		if err != nil {
+			return nil, fmt.Errorf("failed to list source files: %w", err)
+		}
+
+		if len(sourceFiles) == 0 {
+			codegen = codegen.WithFile(
+				"src/index.ts",
+				dag.File("index.ts", tsutils.TemplateIndexTS(strcase.ToCamel(cfg.name))))
+		}
+
+		codegen = dag.Directory().WithDirectory(cfg.subPath, codegen)
+	default:
+		runtimeBaseCtr := runtimeBaseContainer(cfg, t.SDKSourceDir).
+			withConfiguredRuntimeEnvironment().
+			withGeneratedSDK(introspectionJSON).
+			withSetupPackageManager().
+			withGeneratedLockFile().
+			withUserSourceCode()
+
+		if runtimeBaseCtr, err = runtimeBaseCtr.addInitTemplateIfNoUserFile(ctx); err != nil {
+			return nil, err
+		}
+
+		// Extract codegen directory
+		codegen = dag.
+			Directory().
+			WithDirectory(
+				"/",
+				runtimeBaseCtr.ModuleDirectory(),
+				dagger.DirectoryWithDirectoryOpts{Exclude: []string{"**/node_modules", "**/.pnpm-store"}},
+			)
 	}
-
-	// Extract codegen directory
-	codegen := dag.
-		Directory().
-		WithDirectory(
-			"/",
-			runtimeBaseCtr.ModuleDirectory(),
-			dagger.DirectoryWithDirectoryOpts{Exclude: []string{"**/node_modules", "**/.pnpm-store"}},
-		)
 
 	return dag.GeneratedCode(
 		codegen,

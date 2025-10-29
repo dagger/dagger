@@ -1,86 +1,79 @@
 package tsutils
 
-import "fmt"
+import (
+	_ "embed"
+	"fmt"
+)
 
 // This file directly embeds the static files content in the SDK so we don't have to
 // fetch them from current module source.
 // This is done to avoid having to fetch the SDK module's filesystem which can take up
 // to 1s to load.
-// We can afford to embed them since they're very unlikely to change.
+
+//go:embed template/tsconfig.json
+var DefaultTSConfigJSON string
 
 // StaticBundleTelemetryTS is the content of the sdk/index.ts file.
-const StaticBundleIndexTS = `export {
-  connection,
-  connect,
-  Context,
-  func,
-  argument,
-  object,
-  field,
-  enumType,
-  entrypoint,
-} from "./core.js"
-
-export type { ConnectOpts, CallbackFct } from "./core.js"
-
-export * from "./client.gen.js"
-`
+//
+//go:embed module/index.ts
+var StaticBundleIndexTS string
 
 // StaticBundleTelemetryTS is the content of the sdk/telemetry.ts file.
-const StaticBundleTelemetryTS = `import { getTracer } from "./core.js"
-
-export { getTracer }
-`
+//
+//go:embed module/telemetry.ts
+var StaticBundleTelemetryTS string
 
 // StaticDefaultPackageJSON is the default content of the package.json file.
-var StaticDefaultPackageJSON = `{
-  "type": "module"
-}`
+//
+//go:embed template/package.json
+var StaticDefaultPackageJSON string
 
 // StaticEntrypoint is the content of the __dagger.entrypoint.ts file.
-var StaticEntrypointTS = fmt.Sprintf(`// THIS FILE IS AUTO GENERATED. PLEASE DO NOT EDIT.
-import { entrypoint } from "@dagger.io/dagger"
-import * as fs from "fs"
-import * as path from "path"
+//
+//go:embed bin/__dagger.entrypoint.ts
+var StaticEntrypointTS string
 
-const allowedExtensions = [".ts", ".mts"]
+var TemplateIndexTS = func(name string) string {
+	return fmt.Sprintf(`/**
+ * A generated module for QuickStart functions
+ *
+ * This module has been generated via dagger init and serves as a reference to
+ * basic module structure as you get started with Dagger.
+ *
+ * Two functions have been pre-created. You can modify, delete, or add to them,
+ * as needed. They demonstrate usage of arguments and return types using simple
+ * echo and grep commands. The functions can be called from the dagger CLI or
+ * from one of the SDKs.
+ *
+ * The first line in this comment block is a short description line and the
+ * rest is a long description with more detail on the module's purpose or usage,
+ * if appropriate. All modules should have a short description.
+ */
+import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
 
-function listTsFilesInModule(dir = import.meta.dirname): string[] {
-  let bundle = true
-
-  // For background compatibility, if there's a package.json in the sdk directory
-  // We should set the right path to the client.
-  if (fs.existsSync(%s)) {
-    bundle = false
+@object()
+export class %s {
+  /**
+   * Returns a container that echoes whatever string argument is provided
+   */
+  @func()
+  containerEcho(stringArg: string): Container {
+    return dag.container().from("alpine:latest").withExec(["echo", stringArg])
   }
 
-  const res = fs.readdirSync(dir).map((file) => {
-    const filepath = path.join(dir, file)
-
-    const stat = fs.statSync(filepath)
-
-    if (stat.isDirectory()) {
-      return listTsFilesInModule(filepath)
-    }
-
-    const ext = path.extname(filepath)
-    if (allowedExtensions.find((allowedExt) => allowedExt === ext)) {
-      return [path.join(dir, file)]
-    }
-
-    return []
-  })
-
-  return res.reduce(
-    (p, c) => [...c, ...p],
-    [%s],
-  )
+  /**
+   * Returns lines that match a pattern in the files of the provided Directory
+   */
+  @func()
+  async grepDir(directoryArg: Directory, pattern: string): Promise<string> {
+    return dag
+      .container()
+      .from("alpine:latest")
+      .withMountedDirectory("/mnt", directoryArg)
+      .withWorkdir("/mnt")
+      .withExec(["grep", "-R", pattern, "."])
+      .stdout()
+  }
 }
-
-const files = listTsFilesInModule()
-
-entrypoint(files)
-`,
-	"`${import.meta.dirname}/../sdk/package.json`",
-	"`${import.meta.dirname}/../sdk/${bundle ? \"\" : \"src/api/\"}client.gen.ts`",
-)
+`, name)
+}

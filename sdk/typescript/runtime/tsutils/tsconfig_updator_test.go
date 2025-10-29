@@ -25,9 +25,7 @@ func TestDefaultTsConfigForModule(t *testing.T) {
   }
 }`)
 
-	res, err := DefaultTSConfigForModule()
-	require.NoError(t, err)
-
+	res := DefaultTSConfigForModule()
 	require.JSONEq(t, string(defaultTsConfig), res)
 }
 
@@ -219,6 +217,7 @@ func TestUpdateTSConfigForClient(t *testing.T) {
 		name      string
 		clientDir string
 		tsConfig  string
+		isRemote  bool
 		expected  string
 	}
 
@@ -227,6 +226,7 @@ func TestUpdateTSConfigForClient(t *testing.T) {
 			name:      "empty tsconfig",
 			clientDir: "./dagger",
 			tsConfig:  `{}`,
+			isRemote:  false,
 			expected: `{
   "compilerOptions": {
     "paths": {
@@ -244,8 +244,24 @@ func TestUpdateTSConfigForClient(t *testing.T) {
 }`,
 		},
 		{
+			name:      "tsconfig with remote dagger library",
+			clientDir: "example/foo",
+			isRemote:  true,
+			tsConfig:  `{}`,
+			expected: `{
+  "compilerOptions": {
+    "paths": {
+      "@dagger.io/client": [
+        "./example/foo/client.gen.ts"
+      ]
+    }
+  }
+}`,
+		},
+		{
 			name:      "tsconfig with paths already set",
 			clientDir: "example/foo",
+			isRemote:  false,
 			tsConfig: `{
   "compilerOptions": {
     "paths": {
@@ -280,6 +296,7 @@ func TestUpdateTSConfigForClient(t *testing.T) {
 		{
 			name:      "tsconfig with comments",
 			clientDir: ".",
+			isRemote:  false,
 			tsConfig: `{
   "compilerOptions": {
     // Environment setup & latest features
@@ -348,7 +365,7 @@ func TestUpdateTSConfigForClient(t *testing.T) {
 
 			tc := tc
 
-			res, err := UpdateTSConfigForClient(tc.tsConfig, tc.clientDir)
+			res, err := UpdateTSConfigForClient(tc.tsConfig, tc.clientDir, tc.isRemote)
 			require.NoError(t, err)
 			require.JSONEq(t, tc.expected, res)
 		})

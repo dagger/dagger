@@ -1,19 +1,12 @@
 package tsutils
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
-
-type TSConfig map[string]any
-type CompilerOptions = map[string]any
-type CompilerOptionsPath = map[string][]string
 
 const (
 	daggerLibPathAlias       = "@dagger.io/dagger"
@@ -24,39 +17,13 @@ const (
 	daggerTelemetryLibPath = "./sdk/telemetry.ts"
 )
 
-var defaultTSConfig = TSConfig{
-	"compilerOptions": CompilerOptions{
-		"target":                 "ES2022",
-		"moduleResolution":       "Node",
-		"experimentalDecorators": true,
-		"strict":                 true,
-		"skipLibCheck":           true,
-		"paths": CompilerOptionsPath{
-			daggerLibPathAlias: {
-				daggerLibPath,
-			},
-			daggerTelemetryPathAlias: {
-				daggerTelemetryLibPath,
-			},
-		},
-	},
-}
-
 // Generate a default tsconfig.json file for a module
-func DefaultTSConfigForModule() (string, error) {
-	res, err := json.MarshalIndent(defaultTSConfig, "", "  ")
-	if err != nil {
-		return "", err
-	}
-
-	return string(res), nil
+func DefaultTSConfigForModule() string {
+	return DefaultTSConfigJSON
 }
 
 func DefaultTSConfigForClient(clientDir string) (string, error) {
-	defaultConfig, err := json.MarshalIndent(defaultTSConfig, "", "  ")
-	if err != nil {
-		return "", err
-	}
+	defaultConfig := DefaultTSConfigJSON
 
 	// Add path."@dagger.io/client"=[<path to client dir>]
 	tsConfig, err := sjson.Set(string(defaultConfig),
@@ -69,19 +36,6 @@ func DefaultTSConfigForClient(clientDir string) (string, error) {
 	}
 
 	return tsConfig, nil
-}
-
-func removeJSONComments(input string) string {
-	var out bytes.Buffer
-	lines := strings.Split(input, "\n")
-	for _, line := range lines {
-		// remove everything after // (simple approach)
-		if idx := strings.Index(strings.TrimSpace(line), "//"); idx >= 0 {
-			line = line[:idx]
-		}
-		out.WriteString(line + "\n")
-	}
-	return out.String()
 }
 
 // Update the tsconfig.json file for a module
@@ -115,16 +69,23 @@ func UpdateTSConfigForModule(tsConfig string) (string, error) {
 	return tsConfig, nil
 }
 
-func UpdateTSConfigForClient(tsConfig string, clientDir string) (string, error) {
+func UpdateTSConfigForClient(tsConfig string, clientDir string, isRemote bool) (string, error) {
 	tsConfig = removeJSONComments(tsConfig)
 
-	// Add path."@dagger.io/dagger"=["./sdk/index.ts"]
+	// Add path."@dagger.io/client"=[<path to client dir>]
 	tsConfig, err := sjson.Set(tsConfig,
-		"compilerOptions.paths."+gjson.Escape(daggerLibPathAlias),
-		[]string{daggerLibPath},
+		"compilerOptions.paths."+gjson.Escape(daggerClientPathAlias),
+		// We explicitely add `./` so tsx can correctly interpret the path.
+		[]string{"./" + filepath.Join(clientDir, "client.gen.ts")},
 	)
 	if err != nil {
-		return "", fmt.Errorf("failed to update tsconfig paths: %w", err)
+		return "", fmt.Errorf("failed to update tsconfig paths %s: %w", daggerClientPathAlias, err)
+	}
+
+	// If the dagger library is remote, we don't need to override @dagger.io/dagger
+	// and @dagger.io/dagger/telemetry
+	if isRemote {
+		return tsConfig, nil
 	}
 
 	// Add path."@dagger.io/dagger/telemetry"=["./sdk/telemetry.ts"]
@@ -136,14 +97,13 @@ func UpdateTSConfigForClient(tsConfig string, clientDir string) (string, error) 
 		return "", fmt.Errorf("failed to update tsconfig paths %s: %w", daggerTelemetryPathAlias, err)
 	}
 
-	// Add path."@dagger.io/client"=[<path to client dir>]
+	// Add path."@dagger.io/dagger"=["./sdk/index.ts"]
 	tsConfig, err = sjson.Set(tsConfig,
-		"compilerOptions.paths."+gjson.Escape(daggerClientPathAlias),
-		// We explicitely add `./` so tsx can correctly interpret the path.
-		[]string{"./" + filepath.Join(clientDir, "client.gen.ts")},
+		"compilerOptions.paths."+gjson.Escape(daggerLibPathAlias),
+		[]string{daggerLibPath},
 	)
 	if err != nil {
-		return "", fmt.Errorf("failed to update tsconfig paths %s: %w", daggerClientPathAlias, err)
+		return "", fmt.Errorf("failed to update tsconfig paths: %w", err)
 	}
 
 	return tsConfig, nil
