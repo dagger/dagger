@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en" id="top-of-site">
+	<head>
+		<meta name="viewport" content="width=device-width,initial-scale=1">
+		<meta charset="utf-8"/>
+		<title>
+							Dagger PHP SDK
+					</title>
+		<meta name="author" content=""/>
+		<meta name="description" content=""/>
+		<base href="../">
+
+		<link href="resources/css/bootstrap.min.css" rel="stylesheet" media="all"/>
+		<link href="resources/css/bootstrap-responsive.min.css" rel="stylesheet" media="all"/>
+		<link href="resources/css/style.css" rel="stylesheet" media="all"/>
+		<link href="resources/css/prism.min.css" rel="stylesheet" media="all"/>
+		<link href="resources/font/css/all.min.css" rel="stylesheet" media="all"/>
+		
+		<link rel="shortcut icon" href="resources/images/favicon.ico"/>
+		<link rel="apple-touch-icon" href="resources/images/apple-touch-icon.png"/>
+		<link rel="apple-touch-icon" sizes="72x72" href="resources/images/apple-touch-icon-72x72.png"/>
+		<link rel="apple-touch-icon" sizes="114x114" href="resources/images/apple-touch-icon-114x114.png"/>
+	</head>
+	<body>
+
+		<nav class="navbar navbar-fixed-top navbar-inverse">
+			<div class="navbar-inner">
+				<div class="container">
+					<a class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
+						<i class="fa-solid fa-bars"></i>
+					</a>
+					<a class="brand" href="index.html">Dagger PHP SDK</a>
+
+					<div class="nav-collapse navbar-responsive-collapse collapse">
+						<ul class="nav pull-right">
+															<li class="dropdown" id="api-menu">
+									<a href="#" class="dropdown-toggle" data-toggle="dropdown" aria-labelledby="api-menu">
+										API Documentation
+										<b class="caret"></b>
+									</a>
+									<ul class="dropdown-menu" role="menu" aria-labelledby="api-menu">
+																					<li><a href="namespaces/dagger.html"><abbr title="\Dagger">Dagger</abbr></a></li>
+																			</ul>
+								</li>
+																					<li class="dropdown">
+								<a href="#" class="dropdown-toggle" data-toggle="dropdown">
+									Reports
+									<b class="caret"></b>
+								</a>
+								<ul class="dropdown-menu" role="menu" aria-labelledby="dropdownMenu">
+									<li>
+										<a href="reports/errors.html">
+																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																												<i class="fa-solid fa-bug"></i>&#160;Errors
+											<span class="label label-important pull-right">0</span>
+										</a>
+									</li>
+									<li>
+										<a href="reports/markers.html">
+																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																												<i class="fa-solid fa-location-dot"></i>&#160;&#160;Markers
+											<span class="label label-warning pull-right">0</span>
+										</a>
+									</li>
+									<li>
+										<a href="reports/deprecated.html">
+																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																							<i class="fa-solid fa-file-circle-xmark"></i>&#160;Deprecated
+											<span class="label label-info pull-right">0</span>
+										</a>
+									</li>
+								</ul>
+							</li>
+						</ul>
+					</div>
+				</div>
+			</div>
+			<div class="go_to_top">
+				<a href="#top-of-site" style="color: inherit">Back To Top&#160;&#160;<i class="fa-solid fa-chevron-up"></i></a>
+			</div>
+		</nav>
+
+		<div id="___" class="container-fluid"> 	<section class="row-fluid">
+		<div class="span2 sidebar">
+								<div class="accordion" style="margin-bottom: 0">
+		<div class="accordion-group">
+			<div class="accordion-heading">
+									<a class="accordion-toggle " data-toggle="collapse" data-target="#namespace-1792556043"></a>
+								<a href="namespaces/default.html" style="margin-left: 30px; padding-left: 0">\</a>
+			</div>
+			<div id="namespace-1792556043" class="accordion-body collapse in">
+				<div class="accordion-inner">
+
+													<div class="accordion" style="margin-bottom: 0">
+		<div class="accordion-group">
+			<div class="accordion-heading">
+									<a class="accordion-toggle collapsed" data-toggle="collapse" data-target="#namespace-681102751"></a>
+								<a href="namespaces/dagger.html" style="margin-left: 30px; padding-left: 0">Dagger</a>
+			</div>
+			<div id="namespace-681102751" class="accordion-body collapse ">
+				<div class="accordion-inner">
+
+													<div class="accordion" style="margin-bottom: 0">
+		<div class="accordion-group">
+			<div class="accordion-heading">
+									<a class="accordion-toggle collapsed" data-toggle="collapse" data-target="#namespace-728673015"></a>
+								<a href="namespaces/dagger-attribute.html" style="margin-left: 30px; padding-left: 0">Attribute</a>
+			</div>
+			<div id="namespace-728673015" class="accordion-body collapse ">
+				<div class="accordion-inner">
+
+					
+					<ul>
+																									<li class="class"><a href="classes/Dagger-Attribute-DaggerFunction.html"><abbr title="\Dagger\Attribute\DaggerFunction">DaggerFunction</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Attribute-DaggerObject.html"><abbr title="\Dagger\Attribute\DaggerObject">DaggerObject</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Attribute-DefaultPath.html"><abbr title="\Dagger\Attribute\DefaultPath">DefaultPath</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Attribute-Doc.html"><abbr title="\Dagger\Attribute\Doc">Doc</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Attribute-Ignore.html"><abbr title="\Dagger\Attribute\Ignore">Ignore</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Attribute-ListOfType.html"><abbr title="\Dagger\Attribute\ListOfType">ListOfType</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Attribute-ReturnsListOfType.html"><abbr title="\Dagger\Attribute\ReturnsListOfType">ReturnsListOfType</abbr></a></li>
+											</ul>
+				</div>
+			</div>
+		</div>
+	</div>
+
+					
+					<ul>
+																									<li class="class"><a href="classes/Dagger-Address.html"><abbr title="\Dagger\Address">Address</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-AddressId.html"><abbr title="\Dagger\AddressId">AddressId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Binding.html"><abbr title="\Dagger\Binding">Binding</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-BindingId.html"><abbr title="\Dagger\BindingId">BindingId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-BuildArg.html"><abbr title="\Dagger\BuildArg">BuildArg</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-CacheVolume.html"><abbr title="\Dagger\CacheVolume">CacheVolume</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-CacheVolumeId.html"><abbr title="\Dagger\CacheVolumeId">CacheVolumeId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Changeset.html"><abbr title="\Dagger\Changeset">Changeset</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ChangesetId.html"><abbr title="\Dagger\ChangesetId">ChangesetId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Client.html"><abbr title="\Dagger\Client">Client</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Cloud.html"><abbr title="\Dagger\Cloud">Cloud</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-CloudId.html"><abbr title="\Dagger\CloudId">CloudId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Container.html"><abbr title="\Dagger\Container">Container</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ContainerId.html"><abbr title="\Dagger\ContainerId">ContainerId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-CurrentModule.html"><abbr title="\Dagger\CurrentModule">CurrentModule</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-CurrentModuleId.html"><abbr title="\Dagger\CurrentModuleId">CurrentModuleId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Directory.html"><abbr title="\Dagger\Directory">Directory</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-DirectoryId.html"><abbr title="\Dagger\DirectoryId">DirectoryId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Engine.html"><abbr title="\Dagger\Engine">Engine</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EngineCache.html"><abbr title="\Dagger\EngineCache">EngineCache</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EngineCacheEntry.html"><abbr title="\Dagger\EngineCacheEntry">EngineCacheEntry</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EngineCacheEntryId.html"><abbr title="\Dagger\EngineCacheEntryId">EngineCacheEntryId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EngineCacheEntrySet.html"><abbr title="\Dagger\EngineCacheEntrySet">EngineCacheEntrySet</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EngineCacheEntrySetId.html"><abbr title="\Dagger\EngineCacheEntrySetId">EngineCacheEntrySetId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EngineCacheId.html"><abbr title="\Dagger\EngineCacheId">EngineCacheId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EngineId.html"><abbr title="\Dagger\EngineId">EngineId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EnumTypeDef.html"><abbr title="\Dagger\EnumTypeDef">EnumTypeDef</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EnumTypeDefId.html"><abbr title="\Dagger\EnumTypeDefId">EnumTypeDefId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EnumValueTypeDef.html"><abbr title="\Dagger\EnumValueTypeDef">EnumValueTypeDef</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EnumValueTypeDefId.html"><abbr title="\Dagger\EnumValueTypeDefId">EnumValueTypeDefId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Env.html"><abbr title="\Dagger\Env">Env</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EnvFile.html"><abbr title="\Dagger\EnvFile">EnvFile</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EnvFileId.html"><abbr title="\Dagger\EnvFileId">EnvFileId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EnvId.html"><abbr title="\Dagger\EnvId">EnvId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EnvVariable.html"><abbr title="\Dagger\EnvVariable">EnvVariable</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EnvVariableId.html"><abbr title="\Dagger\EnvVariableId">EnvVariableId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Error.html"><abbr title="\Dagger\Error">Error</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ErrorId.html"><abbr title="\Dagger\ErrorId">ErrorId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ErrorValue.html"><abbr title="\Dagger\ErrorValue">ErrorValue</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ErrorValueId.html"><abbr title="\Dagger\ErrorValueId">ErrorValueId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-FieldTypeDef.html"><abbr title="\Dagger\FieldTypeDef">FieldTypeDef</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-FieldTypeDefId.html"><abbr title="\Dagger\FieldTypeDefId">FieldTypeDefId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-File.html"><abbr title="\Dagger\File">File</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-FileId.html"><abbr title="\Dagger\FileId">FileId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Function.html"><abbr title="\Dagger\Function_">Function_</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-FunctionArg.html"><abbr title="\Dagger\FunctionArg">FunctionArg</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-FunctionArgId.html"><abbr title="\Dagger\FunctionArgId">FunctionArgId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-FunctionCall.html"><abbr title="\Dagger\FunctionCall">FunctionCall</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-FunctionCallArgValue.html"><abbr title="\Dagger\FunctionCallArgValue">FunctionCallArgValue</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-FunctionCallArgValueId.html"><abbr title="\Dagger\FunctionCallArgValueId">FunctionCallArgValueId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-FunctionCallId.html"><abbr title="\Dagger\FunctionCallId">FunctionCallId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-FunctionId.html"><abbr title="\Dagger\FunctionId">FunctionId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-GeneratedCode.html"><abbr title="\Dagger\GeneratedCode">GeneratedCode</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-GeneratedCodeId.html"><abbr title="\Dagger\GeneratedCodeId">GeneratedCodeId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-GitRef.html"><abbr title="\Dagger\GitRef">GitRef</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-GitRefId.html"><abbr title="\Dagger\GitRefId">GitRefId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-GitRepository.html"><abbr title="\Dagger\GitRepository">GitRepository</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-GitRepositoryId.html"><abbr title="\Dagger\GitRepositoryId">GitRepositoryId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Host.html"><abbr title="\Dagger\Host">Host</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-HostId.html"><abbr title="\Dagger\HostId">HostId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-InputTypeDef.html"><abbr title="\Dagger\InputTypeDef">InputTypeDef</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-InputTypeDefId.html"><abbr title="\Dagger\InputTypeDefId">InputTypeDefId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-InterfaceTypeDef.html"><abbr title="\Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-InterfaceTypeDefId.html"><abbr title="\Dagger\InterfaceTypeDefId">InterfaceTypeDefId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Json.html"><abbr title="\Dagger\Json">Json</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-JsonValue.html"><abbr title="\Dagger\JsonValue">JsonValue</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-JsonValueId.html"><abbr title="\Dagger\JsonValueId">JsonValueId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Label.html"><abbr title="\Dagger\Label">Label</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-LabelId.html"><abbr title="\Dagger\LabelId">LabelId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ListTypeDef.html"><abbr title="\Dagger\ListTypeDef">ListTypeDef</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ListTypeDefId.html"><abbr title="\Dagger\ListTypeDefId">ListTypeDefId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-LLM.html"><abbr title="\Dagger\LLM">LLM</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-LLMId.html"><abbr title="\Dagger\LLMId">LLMId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-LLMTokenUsage.html"><abbr title="\Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-LLMTokenUsageId.html"><abbr title="\Dagger\LLMTokenUsageId">LLMTokenUsageId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Module.html"><abbr title="\Dagger\Module">Module</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ModuleConfigClient.html"><abbr title="\Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ModuleConfigClientId.html"><abbr title="\Dagger\ModuleConfigClientId">ModuleConfigClientId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ModuleId.html"><abbr title="\Dagger\ModuleId">ModuleId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ModuleSourceId.html"><abbr title="\Dagger\ModuleSourceId">ModuleSourceId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ObjectTypeDef.html"><abbr title="\Dagger\ObjectTypeDef">ObjectTypeDef</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ObjectTypeDefId.html"><abbr title="\Dagger\ObjectTypeDefId">ObjectTypeDefId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-PipelineLabel.html"><abbr title="\Dagger\PipelineLabel">PipelineLabel</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Platform.html"><abbr title="\Dagger\Platform">Platform</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Port.html"><abbr title="\Dagger\Port">Port</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-PortForward.html"><abbr title="\Dagger\PortForward">PortForward</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-PortId.html"><abbr title="\Dagger\PortId">PortId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ScalarTypeDef.html"><abbr title="\Dagger\ScalarTypeDef">ScalarTypeDef</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ScalarTypeDefId.html"><abbr title="\Dagger\ScalarTypeDefId">ScalarTypeDefId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-SDKConfig.html"><abbr title="\Dagger\SDKConfig">SDKConfig</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-SDKConfigId.html"><abbr title="\Dagger\SDKConfigId">SDKConfigId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-SearchResult.html"><abbr title="\Dagger\SearchResult">SearchResult</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-SearchResultId.html"><abbr title="\Dagger\SearchResultId">SearchResultId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-SearchSubmatch.html"><abbr title="\Dagger\SearchSubmatch">SearchSubmatch</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-SearchSubmatchId.html"><abbr title="\Dagger\SearchSubmatchId">SearchSubmatchId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Secret.html"><abbr title="\Dagger\Secret">Secret</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-SecretId.html"><abbr title="\Dagger\SecretId">SecretId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Service.html"><abbr title="\Dagger\Service">Service</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ServiceId.html"><abbr title="\Dagger\ServiceId">ServiceId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Socket.html"><abbr title="\Dagger\Socket">Socket</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-SocketId.html"><abbr title="\Dagger\SocketId">SocketId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-SourceMap.html"><abbr title="\Dagger\SourceMap">SourceMap</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-SourceMapId.html"><abbr title="\Dagger\SourceMapId">SourceMapId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Terminal.html"><abbr title="\Dagger\Terminal">Terminal</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-TerminalId.html"><abbr title="\Dagger\TerminalId">TerminalId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-TypeDef.html"><abbr title="\Dagger\TypeDef">TypeDef</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-TypeDefId.html"><abbr title="\Dagger\TypeDefId">TypeDefId</abbr></a></li>
+											</ul>
+				</div>
+			</div>
+		</div>
+	</div>
+
+					
+					<ul>
+																							</ul>
+				</div>
+			</div>
+		</div>
+	</div>
+
+		</div>
+	</section>
+	<section class="row-fluid">
+		<div class="span10 offset2">
+			<div class="row-fluid">
+				<div class="span8 content class">
+					<nav>
+												<a href="namespaces/dagger.html"><abbr title="\Dagger">Dagger</abbr></a>
+						<i class="fa-solid fa-turn-up"></i>
+											</nav>
+					
+					<h1>
+						<small>\Dagger</small>
+						SDKConfig</h1>
+					<p>
+						<em>The SDK config of the module.</em>
+					</p>
+					
+																																<section id="summary">
+						<h2>Summary</h2>
+						<section class="row-fluid heading">
+							<section class="span4">
+								<a href="#methods">Methods</a>
+							</section>
+							<section class="span4">
+								<a href="#properties">Properties</a>
+							</section>
+							<section class="span4">
+								<a href="#constants">Constants</a>
+							</section>
+						</section>
+						<section class="row-fluid public">
+							<section class="span4">
+																																																																																								
+																											<a href="classes/Dagger-SDKConfig.html#method_id" class="">id</a><br/>
+																			<a href="classes/Dagger-SDKConfig.html#method_source" class="">source</a><br/>
+																								</section>
+							<section class="span4">
+																
+																	<em>No public properties found</em>
+															</section>
+							<section class="span4">
+																
+																	<em>No public constants found</em>
+															</section>
+						</section>
+						<section class="row-fluid protected">
+							<section class="span4">
+																																																		
+																	<em>No protected methods found</em>
+															</section>
+							<section class="span4">
+																
+																	<em>No protected properties found</em>
+															</section>
+							<section class="span4">
+																
+																	<em>No protected constants found</em>
+															</section>
+						</section>
+						<section class="row-fluid private">
+							<section class="span4">
+																																																		
+																	<em>No private methods found</em>
+															</section>
+							<section class="span4">
+																
+																	<em>No private properties found</em>
+															</section>
+							<section class="span4">
+																
+																	<em>No private constants found</em>
+															</section>
+						</section>
+					</section>
+				</div>
+				<aside class="span4 detailsbar">
+										
+					
+					<dl>
+						<dt>File</dt>
+						<dd>
+							<a href="files/generated-sdkconfig.html">
+								<div class="path-wrapper">generated/SDKConfig.php</div>
+							</a>
+						</dd>
+													<dt>Package</dt>
+							<dd>
+								<div class="namespace-wrapper">Application</div>
+							</dd>
+												<dt>Class hierarchy</dt>
+						<dd class="hierarchy">
+																																																																
+									<div class="namespace-wrapper"><abbr title="\Dagger\Client\AbstractObject">AbstractObject</abbr></div>
+																						<div class="namespace-wrapper">\Dagger\SDKConfig</div>
+						</dd>
+
+																					<dt>Implements</dt>
+														<dd>
+								<a href="\Dagger\Client\IdAble">
+									<div class="namespace-wrapper"></div>
+								</a>
+							</dd>
+						
+						
+												
+																																																																																																																																																																																															
+																	</dl>
+					<h2>Tags</h2>
+					<table class="table table-condensed">
+																											<tr>
+									<th>
+										package
+									</th>
+									<td>
+																																<p>Application</p>
+
+																			</td>
+								</tr>
+															<tr>
+									<th>
+										uses
+									</th>
+									<td>
+																			</td>
+								</tr>
+															<tr>
+									<th>
+										method
+									</th>
+									<td>
+																			</td>
+								</tr>
+															<tr>
+									<th>
+										property
+									</th>
+									<td>
+																			</td>
+								</tr>
+															<tr>
+									<th>
+										property-read
+									</th>
+									<td>
+																			</td>
+								</tr>
+															<tr>
+									<th>
+										property-write
+									</th>
+									<td>
+																			</td>
+								</tr>
+																		</table>
+				</aside>
+			</div>
+
+						
+						
+										<a id="methods" name="methods"></a>
+				<div class="row-fluid">
+					<div class="span8 content class">
+						<h2>Methods</h2>
+					</div>
+					<aside class="span4 detailsbar"></aside>
+				</div>
+
+															    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_id" name="method_id" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">id()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">id() : \Dagger\SDKConfigId</pre>
+                <p><em>A unique identifier for this SDKConfig.</em></p>
+                
+
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\SDKConfigId
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-SDKConfig.html"><div class="path-wrapper">\Dagger\SDKConfig</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_source" name="method_source" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">source()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">source() : string</pre>
+                <p><em>Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK&#039;s implementation.</em></p>
+                
+
+                
+                
+                                    <h4>Returns</h4>
+                    string
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-SDKConfig.html"><div class="path-wrapper">\Dagger\SDKConfig</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																																																										</div>
+	</section>
+
+	<div id="source-view" class="modal hide fade" tabindex="-1" role="dialog" aria-labelledby="source-view-label" aria-hidden="true">
+		<div class="modal-header">
+			<button type="button" class="close" data-dismiss="modal" aria-hidden="true">×</button>
+			<h3 id="source-view-label">SDKConfig.php</h3>
+		</div>
+		<div class="modal-body">
+			<pre data-src="files/generated/SDKConfig.php.txt" class="language-php line-numbers"></pre>
+		</div>
+	</div>
+
+			<footer class="row-fluid">
+				<section class="span10 offset2">
+					<section class="row-fluid">
+						<section class="span10 offset1">
+							<section class="row-fluid footer-sections">
+								<section
+									class="span4">
+																		<h1>
+										<i class="fa-solid fa-code"></i>
+									</h1>
+									<div>
+										<ul>
+																							<li><a href="namespaces/dagger.html"><abbr title="\Dagger">Dagger</abbr></a></li>
+																					</ul>
+									</div>
+								</section>
+								<section
+									class="span4">
+																		<h1>
+										<i class="fa-solid fa-project-diagram"></i>
+									</h1>
+									<div>
+										<ul>
+											<li><a href="graphs/class.html">Class Hierarchy Diagram</a></li>
+										</ul>
+									</div>
+								</section>
+								<section
+									class="span4">
+																		<h1>
+										<i class="fa-solid fa-thumbtack"></i>
+									</h1>
+									<div>
+										<ul>
+											<li><a href="reports/errors.html">Errors</a></li>
+											<li><a href="reports/markers.html">Markers</a></li>
+										</ul>
+									</div>
+								</section>
+							</section>
+						</section>
+					</section>
+					<section class="row-fluid">
+						<section class="span10 offset1">
+							<hr/>
+							Documentation is powered by
+							<a href="https://www.phpdoc.org/">phpDocumentor
+							</a>
+							and authored
+							                    on
+							October 29th, 2025 at 14:26.
+						</section>
+					</section>
+				</section>
+			</footer>
+		</div>
+		<script src="resources/js/jquery-1.11.0.min.js"></script>
+		<script src="resources/js/ui/1.10.4/jquery-ui.min.js"></script>
+		<script src="resources/js/jquery.smooth-scroll.js"></script>
+		<script src="resources/js/prism.min.js"></script>
+		<script src="resources/js/bootstrap.js"></script>
+		<script src="resources/js/custom.js"></script>
+			</body>
+</html>

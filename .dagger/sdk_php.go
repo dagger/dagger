@@ -102,8 +102,10 @@ func (t PHPSDK) generateDocs(ctx context.Context, genClient *dagger.Changeset) (
 	phpdoc := dag.
 		Container().
 		From("phpdoc/phpdoc:3").
-		WithDirectory("/data", src).
-		WithExec([]string{"phpdoc", "run", "-d", "/data", "-t", "/docs"}).
+		WithWorkdir("/data").
+		WithDirectory(".", src).
+		WithFile("/data/phpdoc.dist.xml", t.Dagger.Source.File("docs/phpdoc.dist.xml")).
+		WithExec([]string{"phpdoc", "--template=clean", "run", "-t", "/docs"}).
 		Directory("/docs")
 
 	absLayer := t.Dagger.Source.
@@ -111,11 +113,6 @@ func (t PHPSDK) generateDocs(ctx context.Context, genClient *dagger.Changeset) (
 		WithDirectory("docs/static/reference/php/", phpdoc)
 
 	return absLayer.Changes(t.Dagger.Source), nil
-}
-
-// Return the doctum config file from the dagger repo
-func (t PHPSDK) doctumConfig() *dagger.File {
-	return t.Dagger.Source.File("docs/doctum-config.php")
 }
 
 // Test the publishing process

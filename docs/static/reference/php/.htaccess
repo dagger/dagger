@@ -1,0 +1,10 @@
+<ifModule mod_deflate.c>
+    <filesMatch "\.(js|css|html)$">
+        SetOutputFilter DEFLATE
+    </filesMatch>
+</ifModule>
+
+<FilesMatch \.php\.txt$>
+    RemoveHandler .php
+    ForceType text/plain
+</FilesMatch>

@@ -1,0 +1,2839 @@
+<!DOCTYPE html>
+<html lang="en" id="top-of-site">
+	<head>
+		<meta name="viewport" content="width=device-width,initial-scale=1">
+		<meta charset="utf-8"/>
+		<title>
+							Dagger PHP SDK
+					</title>
+		<meta name="author" content=""/>
+		<meta name="description" content=""/>
+		<base href="../">
+
+		<link href="resources/css/bootstrap.min.css" rel="stylesheet" media="all"/>
+		<link href="resources/css/bootstrap-responsive.min.css" rel="stylesheet" media="all"/>
+		<link href="resources/css/style.css" rel="stylesheet" media="all"/>
+		<link href="resources/css/prism.min.css" rel="stylesheet" media="all"/>
+		<link href="resources/font/css/all.min.css" rel="stylesheet" media="all"/>
+		
+		<link rel="shortcut icon" href="resources/images/favicon.ico"/>
+		<link rel="apple-touch-icon" href="resources/images/apple-touch-icon.png"/>
+		<link rel="apple-touch-icon" sizes="72x72" href="resources/images/apple-touch-icon-72x72.png"/>
+		<link rel="apple-touch-icon" sizes="114x114" href="resources/images/apple-touch-icon-114x114.png"/>
+	</head>
+	<body>
+
+		<nav class="navbar navbar-fixed-top navbar-inverse">
+			<div class="navbar-inner">
+				<div class="container">
+					<a class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
+						<i class="fa-solid fa-bars"></i>
+					</a>
+					<a class="brand" href="index.html">Dagger PHP SDK</a>
+
+					<div class="nav-collapse navbar-responsive-collapse collapse">
+						<ul class="nav pull-right">
+															<li class="dropdown" id="api-menu">
+									<a href="#" class="dropdown-toggle" data-toggle="dropdown" aria-labelledby="api-menu">
+										API Documentation
+										<b class="caret"></b>
+									</a>
+									<ul class="dropdown-menu" role="menu" aria-labelledby="api-menu">
+																					<li><a href="namespaces/dagger.html"><abbr title="\Dagger">Dagger</abbr></a></li>
+																			</ul>
+								</li>
+																					<li class="dropdown">
+								<a href="#" class="dropdown-toggle" data-toggle="dropdown">
+									Reports
+									<b class="caret"></b>
+								</a>
+								<ul class="dropdown-menu" role="menu" aria-labelledby="dropdownMenu">
+									<li>
+										<a href="reports/errors.html">
+																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																												<i class="fa-solid fa-bug"></i>&#160;Errors
+											<span class="label label-important pull-right">0</span>
+										</a>
+									</li>
+									<li>
+										<a href="reports/markers.html">
+																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																												<i class="fa-solid fa-location-dot"></i>&#160;&#160;Markers
+											<span class="label label-warning pull-right">0</span>
+										</a>
+									</li>
+									<li>
+										<a href="reports/deprecated.html">
+																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																							<i class="fa-solid fa-file-circle-xmark"></i>&#160;Deprecated
+											<span class="label label-info pull-right">0</span>
+										</a>
+									</li>
+								</ul>
+							</li>
+						</ul>
+					</div>
+				</div>
+			</div>
+			<div class="go_to_top">
+				<a href="#top-of-site" style="color: inherit">Back To Top&#160;&#160;<i class="fa-solid fa-chevron-up"></i></a>
+			</div>
+		</nav>
+
+		<div id="___" class="container-fluid"> 	<section class="row-fluid">
+		<div class="span2 sidebar">
+								<div class="accordion" style="margin-bottom: 0">
+		<div class="accordion-group">
+			<div class="accordion-heading">
+									<a class="accordion-toggle " data-toggle="collapse" data-target="#namespace-1257886593"></a>
+								<a href="namespaces/default.html" style="margin-left: 30px; padding-left: 0">\</a>
+			</div>
+			<div id="namespace-1257886593" class="accordion-body collapse in">
+				<div class="accordion-inner">
+
+													<div class="accordion" style="margin-bottom: 0">
+		<div class="accordion-group">
+			<div class="accordion-heading">
+									<a class="accordion-toggle collapsed" data-toggle="collapse" data-target="#namespace-378483392"></a>
+								<a href="namespaces/dagger.html" style="margin-left: 30px; padding-left: 0">Dagger</a>
+			</div>
+			<div id="namespace-378483392" class="accordion-body collapse ">
+				<div class="accordion-inner">
+
+													<div class="accordion" style="margin-bottom: 0">
+		<div class="accordion-group">
+			<div class="accordion-heading">
+									<a class="accordion-toggle collapsed" data-toggle="collapse" data-target="#namespace-1437736407"></a>
+								<a href="namespaces/dagger-attribute.html" style="margin-left: 30px; padding-left: 0">Attribute</a>
+			</div>
+			<div id="namespace-1437736407" class="accordion-body collapse ">
+				<div class="accordion-inner">
+
+					
+					<ul>
+																									<li class="class"><a href="classes/Dagger-Attribute-DaggerFunction.html"><abbr title="\Dagger\Attribute\DaggerFunction">DaggerFunction</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Attribute-DaggerObject.html"><abbr title="\Dagger\Attribute\DaggerObject">DaggerObject</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Attribute-DefaultPath.html"><abbr title="\Dagger\Attribute\DefaultPath">DefaultPath</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Attribute-Doc.html"><abbr title="\Dagger\Attribute\Doc">Doc</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Attribute-Ignore.html"><abbr title="\Dagger\Attribute\Ignore">Ignore</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Attribute-ListOfType.html"><abbr title="\Dagger\Attribute\ListOfType">ListOfType</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Attribute-ReturnsListOfType.html"><abbr title="\Dagger\Attribute\ReturnsListOfType">ReturnsListOfType</abbr></a></li>
+											</ul>
+				</div>
+			</div>
+		</div>
+	</div>
+
+					
+					<ul>
+																									<li class="class"><a href="classes/Dagger-Address.html"><abbr title="\Dagger\Address">Address</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-AddressId.html"><abbr title="\Dagger\AddressId">AddressId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Binding.html"><abbr title="\Dagger\Binding">Binding</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-BindingId.html"><abbr title="\Dagger\BindingId">BindingId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-BuildArg.html"><abbr title="\Dagger\BuildArg">BuildArg</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-CacheVolume.html"><abbr title="\Dagger\CacheVolume">CacheVolume</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-CacheVolumeId.html"><abbr title="\Dagger\CacheVolumeId">CacheVolumeId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Changeset.html"><abbr title="\Dagger\Changeset">Changeset</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ChangesetId.html"><abbr title="\Dagger\ChangesetId">ChangesetId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Client.html"><abbr title="\Dagger\Client">Client</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Cloud.html"><abbr title="\Dagger\Cloud">Cloud</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-CloudId.html"><abbr title="\Dagger\CloudId">CloudId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Container.html"><abbr title="\Dagger\Container">Container</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ContainerId.html"><abbr title="\Dagger\ContainerId">ContainerId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-CurrentModule.html"><abbr title="\Dagger\CurrentModule">CurrentModule</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-CurrentModuleId.html"><abbr title="\Dagger\CurrentModuleId">CurrentModuleId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Directory.html"><abbr title="\Dagger\Directory">Directory</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-DirectoryId.html"><abbr title="\Dagger\DirectoryId">DirectoryId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Engine.html"><abbr title="\Dagger\Engine">Engine</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EngineCache.html"><abbr title="\Dagger\EngineCache">EngineCache</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EngineCacheEntry.html"><abbr title="\Dagger\EngineCacheEntry">EngineCacheEntry</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EngineCacheEntryId.html"><abbr title="\Dagger\EngineCacheEntryId">EngineCacheEntryId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EngineCacheEntrySet.html"><abbr title="\Dagger\EngineCacheEntrySet">EngineCacheEntrySet</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EngineCacheEntrySetId.html"><abbr title="\Dagger\EngineCacheEntrySetId">EngineCacheEntrySetId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EngineCacheId.html"><abbr title="\Dagger\EngineCacheId">EngineCacheId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EngineId.html"><abbr title="\Dagger\EngineId">EngineId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EnumTypeDef.html"><abbr title="\Dagger\EnumTypeDef">EnumTypeDef</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EnumTypeDefId.html"><abbr title="\Dagger\EnumTypeDefId">EnumTypeDefId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EnumValueTypeDef.html"><abbr title="\Dagger\EnumValueTypeDef">EnumValueTypeDef</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EnumValueTypeDefId.html"><abbr title="\Dagger\EnumValueTypeDefId">EnumValueTypeDefId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Env.html"><abbr title="\Dagger\Env">Env</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EnvFile.html"><abbr title="\Dagger\EnvFile">EnvFile</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EnvFileId.html"><abbr title="\Dagger\EnvFileId">EnvFileId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EnvId.html"><abbr title="\Dagger\EnvId">EnvId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EnvVariable.html"><abbr title="\Dagger\EnvVariable">EnvVariable</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-EnvVariableId.html"><abbr title="\Dagger\EnvVariableId">EnvVariableId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Error.html"><abbr title="\Dagger\Error">Error</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ErrorId.html"><abbr title="\Dagger\ErrorId">ErrorId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ErrorValue.html"><abbr title="\Dagger\ErrorValue">ErrorValue</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ErrorValueId.html"><abbr title="\Dagger\ErrorValueId">ErrorValueId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-FieldTypeDef.html"><abbr title="\Dagger\FieldTypeDef">FieldTypeDef</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-FieldTypeDefId.html"><abbr title="\Dagger\FieldTypeDefId">FieldTypeDefId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-File.html"><abbr title="\Dagger\File">File</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-FileId.html"><abbr title="\Dagger\FileId">FileId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Function.html"><abbr title="\Dagger\Function_">Function_</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-FunctionArg.html"><abbr title="\Dagger\FunctionArg">FunctionArg</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-FunctionArgId.html"><abbr title="\Dagger\FunctionArgId">FunctionArgId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-FunctionCall.html"><abbr title="\Dagger\FunctionCall">FunctionCall</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-FunctionCallArgValue.html"><abbr title="\Dagger\FunctionCallArgValue">FunctionCallArgValue</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-FunctionCallArgValueId.html"><abbr title="\Dagger\FunctionCallArgValueId">FunctionCallArgValueId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-FunctionCallId.html"><abbr title="\Dagger\FunctionCallId">FunctionCallId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-FunctionId.html"><abbr title="\Dagger\FunctionId">FunctionId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-GeneratedCode.html"><abbr title="\Dagger\GeneratedCode">GeneratedCode</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-GeneratedCodeId.html"><abbr title="\Dagger\GeneratedCodeId">GeneratedCodeId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-GitRef.html"><abbr title="\Dagger\GitRef">GitRef</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-GitRefId.html"><abbr title="\Dagger\GitRefId">GitRefId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-GitRepository.html"><abbr title="\Dagger\GitRepository">GitRepository</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-GitRepositoryId.html"><abbr title="\Dagger\GitRepositoryId">GitRepositoryId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Host.html"><abbr title="\Dagger\Host">Host</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-HostId.html"><abbr title="\Dagger\HostId">HostId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-InputTypeDef.html"><abbr title="\Dagger\InputTypeDef">InputTypeDef</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-InputTypeDefId.html"><abbr title="\Dagger\InputTypeDefId">InputTypeDefId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-InterfaceTypeDef.html"><abbr title="\Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-InterfaceTypeDefId.html"><abbr title="\Dagger\InterfaceTypeDefId">InterfaceTypeDefId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Json.html"><abbr title="\Dagger\Json">Json</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-JsonValue.html"><abbr title="\Dagger\JsonValue">JsonValue</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-JsonValueId.html"><abbr title="\Dagger\JsonValueId">JsonValueId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Label.html"><abbr title="\Dagger\Label">Label</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-LabelId.html"><abbr title="\Dagger\LabelId">LabelId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ListTypeDef.html"><abbr title="\Dagger\ListTypeDef">ListTypeDef</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ListTypeDefId.html"><abbr title="\Dagger\ListTypeDefId">ListTypeDefId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-LLM.html"><abbr title="\Dagger\LLM">LLM</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-LLMId.html"><abbr title="\Dagger\LLMId">LLMId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-LLMTokenUsage.html"><abbr title="\Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-LLMTokenUsageId.html"><abbr title="\Dagger\LLMTokenUsageId">LLMTokenUsageId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Module.html"><abbr title="\Dagger\Module">Module</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ModuleConfigClient.html"><abbr title="\Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ModuleConfigClientId.html"><abbr title="\Dagger\ModuleConfigClientId">ModuleConfigClientId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ModuleId.html"><abbr title="\Dagger\ModuleId">ModuleId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ModuleSource.html"><abbr title="\Dagger\ModuleSource">ModuleSource</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ModuleSourceId.html"><abbr title="\Dagger\ModuleSourceId">ModuleSourceId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ObjectTypeDef.html"><abbr title="\Dagger\ObjectTypeDef">ObjectTypeDef</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ObjectTypeDefId.html"><abbr title="\Dagger\ObjectTypeDefId">ObjectTypeDefId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-PipelineLabel.html"><abbr title="\Dagger\PipelineLabel">PipelineLabel</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Platform.html"><abbr title="\Dagger\Platform">Platform</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Port.html"><abbr title="\Dagger\Port">Port</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-PortForward.html"><abbr title="\Dagger\PortForward">PortForward</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-PortId.html"><abbr title="\Dagger\PortId">PortId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ScalarTypeDef.html"><abbr title="\Dagger\ScalarTypeDef">ScalarTypeDef</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ScalarTypeDefId.html"><abbr title="\Dagger\ScalarTypeDefId">ScalarTypeDefId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-SDKConfig.html"><abbr title="\Dagger\SDKConfig">SDKConfig</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-SDKConfigId.html"><abbr title="\Dagger\SDKConfigId">SDKConfigId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-SearchResult.html"><abbr title="\Dagger\SearchResult">SearchResult</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-SearchResultId.html"><abbr title="\Dagger\SearchResultId">SearchResultId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-SearchSubmatch.html"><abbr title="\Dagger\SearchSubmatch">SearchSubmatch</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-SearchSubmatchId.html"><abbr title="\Dagger\SearchSubmatchId">SearchSubmatchId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Secret.html"><abbr title="\Dagger\Secret">Secret</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-SecretId.html"><abbr title="\Dagger\SecretId">SecretId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Service.html"><abbr title="\Dagger\Service">Service</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-ServiceId.html"><abbr title="\Dagger\ServiceId">ServiceId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Socket.html"><abbr title="\Dagger\Socket">Socket</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-SocketId.html"><abbr title="\Dagger\SocketId">SocketId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-SourceMap.html"><abbr title="\Dagger\SourceMap">SourceMap</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-SourceMapId.html"><abbr title="\Dagger\SourceMapId">SourceMapId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-Terminal.html"><abbr title="\Dagger\Terminal">Terminal</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-TerminalId.html"><abbr title="\Dagger\TerminalId">TerminalId</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-TypeDef.html"><abbr title="\Dagger\TypeDef">TypeDef</abbr></a></li>
+													<li class="class"><a href="classes/Dagger-TypeDefId.html"><abbr title="\Dagger\TypeDefId">TypeDefId</abbr></a></li>
+											</ul>
+				</div>
+			</div>
+		</div>
+	</div>
+
+					
+					<ul>
+																							</ul>
+				</div>
+			</div>
+		</div>
+	</div>
+
+		</div>
+	</section>
+	<section class="row-fluid">
+		<div class="span10 offset2">
+			<div class="row-fluid">
+				<div class="span8 content class">
+					<nav>
+												<a href="namespaces/dagger.html"><abbr title="\Dagger">Dagger</abbr></a>
+						<i class="fa-solid fa-turn-up"></i>
+											</nav>
+					
+					<h1>
+						<small>\Dagger</small>
+						Env</h1>
+					<p>
+						<em></em>
+					</p>
+					
+																																<section id="summary">
+						<h2>Summary</h2>
+						<section class="row-fluid heading">
+							<section class="span4">
+								<a href="#methods">Methods</a>
+							</section>
+							<section class="span4">
+								<a href="#properties">Properties</a>
+							</section>
+							<section class="span4">
+								<a href="#constants">Constants</a>
+							</section>
+						</section>
+						<section class="row-fluid public">
+							<section class="span4">
+																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																
+																											<a href="classes/Dagger-Env.html#method_id" class="">id</a><br/>
+																			<a href="classes/Dagger-Env.html#method_input" class="">input</a><br/>
+																			<a href="classes/Dagger-Env.html#method_inputs" class="">inputs</a><br/>
+																			<a href="classes/Dagger-Env.html#method_output" class="">output</a><br/>
+																			<a href="classes/Dagger-Env.html#method_outputs" class="">outputs</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withAddressInput" class="">withAddressInput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withAddressOutput" class="">withAddressOutput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withCacheVolumeInput" class="">withCacheVolumeInput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withCacheVolumeOutput" class="">withCacheVolumeOutput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withChangesetInput" class="">withChangesetInput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withChangesetOutput" class="">withChangesetOutput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withCloudInput" class="">withCloudInput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withCloudOutput" class="">withCloudOutput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withContainerInput" class="">withContainerInput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withContainerOutput" class="">withContainerOutput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withCurrentModule" class="">withCurrentModule</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withDirectoryInput" class="">withDirectoryInput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withDirectoryOutput" class="">withDirectoryOutput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withEnvFileInput" class="">withEnvFileInput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withEnvFileOutput" class="">withEnvFileOutput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withEnvInput" class="">withEnvInput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withEnvOutput" class="">withEnvOutput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withFileInput" class="">withFileInput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withFileOutput" class="">withFileOutput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withGitRefInput" class="">withGitRefInput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withGitRefOutput" class="">withGitRefOutput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withGitRepositoryInput" class="">withGitRepositoryInput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withGitRepositoryOutput" class="">withGitRepositoryOutput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withJSONValueInput" class="">withJSONValueInput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withJSONValueOutput" class="">withJSONValueOutput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withModule" class="">withModule</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withModuleConfigClientInput" class="">withModuleConfigClientInput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withModuleConfigClientOutput" class="">withModuleConfigClientOutput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withModuleInput" class="">withModuleInput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withModuleOutput" class="">withModuleOutput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withModuleSourceInput" class="">withModuleSourceInput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withModuleSourceOutput" class="">withModuleSourceOutput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withSearchResultInput" class="">withSearchResultInput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withSearchResultOutput" class="">withSearchResultOutput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withSearchSubmatchInput" class="">withSearchSubmatchInput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withSearchSubmatchOutput" class="">withSearchSubmatchOutput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withSecretInput" class="">withSecretInput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withSecretOutput" class="">withSecretOutput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withServiceInput" class="">withServiceInput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withServiceOutput" class="">withServiceOutput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withSocketInput" class="">withSocketInput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withSocketOutput" class="">withSocketOutput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withStringInput" class="">withStringInput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withStringOutput" class="">withStringOutput</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withWorkspace" class="">withWorkspace</a><br/>
+																			<a href="classes/Dagger-Env.html#method_withoutOutputs" class="">withoutOutputs</a><br/>
+																			<a href="classes/Dagger-Env.html#method_workspace" class="">workspace</a><br/>
+																								</section>
+							<section class="span4">
+																
+																	<em>No public properties found</em>
+															</section>
+							<section class="span4">
+																
+																	<em>No public constants found</em>
+															</section>
+						</section>
+						<section class="row-fluid protected">
+							<section class="span4">
+																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																				
+																	<em>No protected methods found</em>
+															</section>
+							<section class="span4">
+																
+																	<em>No protected properties found</em>
+															</section>
+							<section class="span4">
+																
+																	<em>No protected constants found</em>
+															</section>
+						</section>
+						<section class="row-fluid private">
+							<section class="span4">
+																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																				
+																	<em>No private methods found</em>
+															</section>
+							<section class="span4">
+																
+																	<em>No private properties found</em>
+															</section>
+							<section class="span4">
+																
+																	<em>No private constants found</em>
+															</section>
+						</section>
+					</section>
+				</div>
+				<aside class="span4 detailsbar">
+										
+					
+					<dl>
+						<dt>File</dt>
+						<dd>
+							<a href="files/generated-env.html">
+								<div class="path-wrapper">generated/Env.php</div>
+							</a>
+						</dd>
+													<dt>Package</dt>
+							<dd>
+								<div class="namespace-wrapper">Application</div>
+							</dd>
+												<dt>Class hierarchy</dt>
+						<dd class="hierarchy">
+																																																																
+									<div class="namespace-wrapper"><abbr title="\Dagger\Client\AbstractObject">AbstractObject</abbr></div>
+																						<div class="namespace-wrapper">\Dagger\Env</div>
+						</dd>
+
+																					<dt>Implements</dt>
+														<dd>
+								<a href="\Dagger\Client\IdAble">
+									<div class="namespace-wrapper"></div>
+								</a>
+							</dd>
+						
+						
+												
+																																																																																																																																																																																															
+																	</dl>
+					<h2>Tags</h2>
+					<table class="table table-condensed">
+																											<tr>
+									<th>
+										package
+									</th>
+									<td>
+																																<p>Application</p>
+
+																			</td>
+								</tr>
+															<tr>
+									<th>
+										uses
+									</th>
+									<td>
+																			</td>
+								</tr>
+															<tr>
+									<th>
+										method
+									</th>
+									<td>
+																			</td>
+								</tr>
+															<tr>
+									<th>
+										property
+									</th>
+									<td>
+																			</td>
+								</tr>
+															<tr>
+									<th>
+										property-read
+									</th>
+									<td>
+																			</td>
+								</tr>
+															<tr>
+									<th>
+										property-write
+									</th>
+									<td>
+																			</td>
+								</tr>
+																		</table>
+				</aside>
+			</div>
+
+						
+						
+										<a id="methods" name="methods"></a>
+				<div class="row-fluid">
+					<div class="span8 content class">
+						<h2>Methods</h2>
+					</div>
+					<aside class="span4 detailsbar"></aside>
+				</div>
+
+															    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_id" name="method_id" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">id()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">id() : \Dagger\EnvId</pre>
+                <p><em>A unique identifier for this Env.</em></p>
+                
+
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\EnvId
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_input" name="method_input" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">input()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">input(string  <span class="argument">$name</span>) : \Dagger\Binding</pre>
+                <p><em>Retrieves an input binding by name</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Binding
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_inputs" name="method_inputs" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">inputs()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">inputs() : array</pre>
+                <p><em>Returns all input bindings provided to the environment</em></p>
+                
+
+                
+                
+                                    <h4>Returns</h4>
+                    array
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_output" name="method_output" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">output()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">output(string  <span class="argument">$name</span>) : \Dagger\Binding</pre>
+                <p><em>Retrieves an output binding by name</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Binding
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_outputs" name="method_outputs" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">outputs()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">outputs() : array</pre>
+                <p><em>Returns all declared output bindings for the environment</em></p>
+                
+
+                
+                
+                                    <h4>Returns</h4>
+                    array
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withAddressInput" name="method_withAddressInput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withAddressInput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withAddressInput(string  <span class="argument">$name</span>, \Dagger\AddressId|\Dagger\Address  <span class="argument">$value</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Create or update a binding of type Address in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>\Dagger\AddressId|\Dagger\Address</td>
+                                <td>$value </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withAddressOutput" name="method_withAddressOutput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withAddressOutput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withAddressOutput(string  <span class="argument">$name</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Declare a desired Address output to be assigned in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withCacheVolumeInput" name="method_withCacheVolumeInput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withCacheVolumeInput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withCacheVolumeInput(string  <span class="argument">$name</span>, \Dagger\CacheVolumeId|\Dagger\CacheVolume  <span class="argument">$value</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Create or update a binding of type CacheVolume in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>\Dagger\CacheVolumeId|\Dagger\CacheVolume</td>
+                                <td>$value </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withCacheVolumeOutput" name="method_withCacheVolumeOutput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withCacheVolumeOutput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withCacheVolumeOutput(string  <span class="argument">$name</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Declare a desired CacheVolume output to be assigned in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withChangesetInput" name="method_withChangesetInput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withChangesetInput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withChangesetInput(string  <span class="argument">$name</span>, \Dagger\ChangesetId|\Dagger\Changeset  <span class="argument">$value</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Create or update a binding of type Changeset in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>\Dagger\ChangesetId|\Dagger\Changeset</td>
+                                <td>$value </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withChangesetOutput" name="method_withChangesetOutput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withChangesetOutput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withChangesetOutput(string  <span class="argument">$name</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Declare a desired Changeset output to be assigned in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withCloudInput" name="method_withCloudInput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withCloudInput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withCloudInput(string  <span class="argument">$name</span>, \Dagger\CloudId|\Dagger\Cloud  <span class="argument">$value</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Create or update a binding of type Cloud in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>\Dagger\CloudId|\Dagger\Cloud</td>
+                                <td>$value </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withCloudOutput" name="method_withCloudOutput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withCloudOutput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withCloudOutput(string  <span class="argument">$name</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Declare a desired Cloud output to be assigned in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withContainerInput" name="method_withContainerInput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withContainerInput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withContainerInput(string  <span class="argument">$name</span>, \Dagger\ContainerId|\Dagger\Container  <span class="argument">$value</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Create or update a binding of type Container in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>\Dagger\ContainerId|\Dagger\Container</td>
+                                <td>$value </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withContainerOutput" name="method_withContainerOutput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withContainerOutput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withContainerOutput(string  <span class="argument">$name</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Declare a desired Container output to be assigned in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withCurrentModule" name="method_withCurrentModule" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withCurrentModule()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withCurrentModule() : \Dagger\Env</pre>
+                <p><em>Installs the current module into the environment, exposing its functions to the model</em></p>
+                <p>Contextual path arguments will be populated using the environment's workspace.</p>
+
+
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withDirectoryInput" name="method_withDirectoryInput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withDirectoryInput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withDirectoryInput(string  <span class="argument">$name</span>, \Dagger\DirectoryId|\Dagger\Directory  <span class="argument">$value</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Create or update a binding of type Directory in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>\Dagger\DirectoryId|\Dagger\Directory</td>
+                                <td>$value </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withDirectoryOutput" name="method_withDirectoryOutput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withDirectoryOutput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withDirectoryOutput(string  <span class="argument">$name</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Declare a desired Directory output to be assigned in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withEnvFileInput" name="method_withEnvFileInput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withEnvFileInput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withEnvFileInput(string  <span class="argument">$name</span>, \Dagger\EnvFileId|\Dagger\EnvFile  <span class="argument">$value</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Create or update a binding of type EnvFile in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>\Dagger\EnvFileId|\Dagger\EnvFile</td>
+                                <td>$value </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withEnvFileOutput" name="method_withEnvFileOutput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withEnvFileOutput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withEnvFileOutput(string  <span class="argument">$name</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Declare a desired EnvFile output to be assigned in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withEnvInput" name="method_withEnvInput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withEnvInput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withEnvInput(string  <span class="argument">$name</span>, \Dagger\EnvId|\Dagger\Env  <span class="argument">$value</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Create or update a binding of type Env in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>\Dagger\EnvId|\Dagger\Env</td>
+                                <td>$value </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withEnvOutput" name="method_withEnvOutput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withEnvOutput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withEnvOutput(string  <span class="argument">$name</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Declare a desired Env output to be assigned in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withFileInput" name="method_withFileInput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withFileInput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withFileInput(string  <span class="argument">$name</span>, \Dagger\FileId|\Dagger\File  <span class="argument">$value</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Create or update a binding of type File in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>\Dagger\FileId|\Dagger\File</td>
+                                <td>$value </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withFileOutput" name="method_withFileOutput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withFileOutput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withFileOutput(string  <span class="argument">$name</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Declare a desired File output to be assigned in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withGitRefInput" name="method_withGitRefInput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withGitRefInput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withGitRefInput(string  <span class="argument">$name</span>, \Dagger\GitRefId|\Dagger\GitRef  <span class="argument">$value</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Create or update a binding of type GitRef in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>\Dagger\GitRefId|\Dagger\GitRef</td>
+                                <td>$value </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withGitRefOutput" name="method_withGitRefOutput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withGitRefOutput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withGitRefOutput(string  <span class="argument">$name</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Declare a desired GitRef output to be assigned in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withGitRepositoryInput" name="method_withGitRepositoryInput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withGitRepositoryInput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withGitRepositoryInput(string  <span class="argument">$name</span>, \Dagger\GitRepositoryId|\Dagger\GitRepository  <span class="argument">$value</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Create or update a binding of type GitRepository in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>\Dagger\GitRepositoryId|\Dagger\GitRepository</td>
+                                <td>$value </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withGitRepositoryOutput" name="method_withGitRepositoryOutput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withGitRepositoryOutput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withGitRepositoryOutput(string  <span class="argument">$name</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Declare a desired GitRepository output to be assigned in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withJSONValueInput" name="method_withJSONValueInput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withJSONValueInput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withJSONValueInput(string  <span class="argument">$name</span>, \Dagger\JsonValueId|\Dagger\JsonValue  <span class="argument">$value</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Create or update a binding of type JSONValue in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>\Dagger\JsonValueId|\Dagger\JsonValue</td>
+                                <td>$value </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withJSONValueOutput" name="method_withJSONValueOutput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withJSONValueOutput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withJSONValueOutput(string  <span class="argument">$name</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Declare a desired JSONValue output to be assigned in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withModule" name="method_withModule" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withModule()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withModule(\Dagger\ModuleId|\Dagger\Module  <span class="argument">$module</span>) : \Dagger\Env</pre>
+                <p><em>Installs a module into the environment, exposing its functions to the model</em></p>
+                <p>Contextual path arguments will be populated using the environment's workspace.</p>
+
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>\Dagger\ModuleId|\Dagger\Module</td>
+                                <td>$module </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withModuleConfigClientInput" name="method_withModuleConfigClientInput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withModuleConfigClientInput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withModuleConfigClientInput(string  <span class="argument">$name</span>, \Dagger\ModuleConfigClientId|\Dagger\ModuleConfigClient  <span class="argument">$value</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Create or update a binding of type ModuleConfigClient in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>\Dagger\ModuleConfigClientId|\Dagger\ModuleConfigClient</td>
+                                <td>$value </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withModuleConfigClientOutput" name="method_withModuleConfigClientOutput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withModuleConfigClientOutput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withModuleConfigClientOutput(string  <span class="argument">$name</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Declare a desired ModuleConfigClient output to be assigned in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withModuleInput" name="method_withModuleInput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withModuleInput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withModuleInput(string  <span class="argument">$name</span>, \Dagger\ModuleId|\Dagger\Module  <span class="argument">$value</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Create or update a binding of type Module in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>\Dagger\ModuleId|\Dagger\Module</td>
+                                <td>$value </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withModuleOutput" name="method_withModuleOutput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withModuleOutput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withModuleOutput(string  <span class="argument">$name</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Declare a desired Module output to be assigned in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withModuleSourceInput" name="method_withModuleSourceInput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withModuleSourceInput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withModuleSourceInput(string  <span class="argument">$name</span>, \Dagger\ModuleSourceId|\Dagger\ModuleSource  <span class="argument">$value</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Create or update a binding of type ModuleSource in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>\Dagger\ModuleSourceId|\Dagger\ModuleSource</td>
+                                <td>$value </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withModuleSourceOutput" name="method_withModuleSourceOutput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withModuleSourceOutput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withModuleSourceOutput(string  <span class="argument">$name</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Declare a desired ModuleSource output to be assigned in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withSearchResultInput" name="method_withSearchResultInput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withSearchResultInput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withSearchResultInput(string  <span class="argument">$name</span>, \Dagger\SearchResultId|\Dagger\SearchResult  <span class="argument">$value</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Create or update a binding of type SearchResult in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>\Dagger\SearchResultId|\Dagger\SearchResult</td>
+                                <td>$value </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withSearchResultOutput" name="method_withSearchResultOutput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withSearchResultOutput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withSearchResultOutput(string  <span class="argument">$name</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Declare a desired SearchResult output to be assigned in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withSearchSubmatchInput" name="method_withSearchSubmatchInput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withSearchSubmatchInput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withSearchSubmatchInput(string  <span class="argument">$name</span>, \Dagger\SearchSubmatchId|\Dagger\SearchSubmatch  <span class="argument">$value</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Create or update a binding of type SearchSubmatch in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>\Dagger\SearchSubmatchId|\Dagger\SearchSubmatch</td>
+                                <td>$value </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withSearchSubmatchOutput" name="method_withSearchSubmatchOutput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withSearchSubmatchOutput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withSearchSubmatchOutput(string  <span class="argument">$name</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Declare a desired SearchSubmatch output to be assigned in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withSecretInput" name="method_withSecretInput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withSecretInput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withSecretInput(string  <span class="argument">$name</span>, \Dagger\SecretId|\Dagger\Secret  <span class="argument">$value</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Create or update a binding of type Secret in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>\Dagger\SecretId|\Dagger\Secret</td>
+                                <td>$value </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withSecretOutput" name="method_withSecretOutput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withSecretOutput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withSecretOutput(string  <span class="argument">$name</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Declare a desired Secret output to be assigned in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withServiceInput" name="method_withServiceInput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withServiceInput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withServiceInput(string  <span class="argument">$name</span>, \Dagger\ServiceId|\Dagger\Service  <span class="argument">$value</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Create or update a binding of type Service in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>\Dagger\ServiceId|\Dagger\Service</td>
+                                <td>$value </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withServiceOutput" name="method_withServiceOutput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withServiceOutput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withServiceOutput(string  <span class="argument">$name</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Declare a desired Service output to be assigned in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withSocketInput" name="method_withSocketInput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withSocketInput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withSocketInput(string  <span class="argument">$name</span>, \Dagger\SocketId|\Dagger\Socket  <span class="argument">$value</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Create or update a binding of type Socket in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>\Dagger\SocketId|\Dagger\Socket</td>
+                                <td>$value </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withSocketOutput" name="method_withSocketOutput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withSocketOutput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withSocketOutput(string  <span class="argument">$name</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Declare a desired Socket output to be assigned in the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withStringInput" name="method_withStringInput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withStringInput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withStringInput(string  <span class="argument">$name</span>, string  <span class="argument">$value</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Provides a string input binding to the environment</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$value </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withStringOutput" name="method_withStringOutput" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withStringOutput()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withStringOutput(string  <span class="argument">$name</span>, string  <span class="argument">$description</span>) : \Dagger\Env</pre>
+                <p><em>Declares a desired string output binding</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>string</td>
+                                <td>$name </td>
+                                <td></td>
+                            </tr>
+                                                    <tr>
+                                <td>string</td>
+                                <td>$description </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withWorkspace" name="method_withWorkspace" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withWorkspace()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withWorkspace(\Dagger\DirectoryId|\Dagger\Directory  <span class="argument">$workspace</span>) : \Dagger\Env</pre>
+                <p><em>Returns a new environment with the provided workspace</em></p>
+                
+
+                                    <h4>Parameters</h4>
+                    <table class="table table-condensed table-hover">
+                                                    <tr>
+                                <td>\Dagger\DirectoryId|\Dagger\Directory</td>
+                                <td>$workspace </td>
+                                <td></td>
+                            </tr>
+                                            </table>
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_withoutOutputs" name="method_withoutOutputs" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">withoutOutputs()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">withoutOutputs() : \Dagger\Env</pre>
+                <p><em>Returns a new environment without any outputs</em></p>
+                
+
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Env
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																				    <div class="row-fluid">
+        <div class="span8 content class">
+            <a id="method_workspace" name="method_workspace" class="anchor"></a>
+            <article class="method">
+                <h3 class="public ">workspace()</h3>
+                <a href="#source-view" role="button" class="pull-right btn" data-toggle="modal" style="font-size: 1.1em; padding: 9px 14px"><i class="fa-solid fa-code"></i></a>
+                <pre class="signature" style="margin-right: 54px;">workspace() : \Dagger\Directory</pre>
+                <p><em></em></p>
+                
+
+                
+                
+                                    <h4>Returns</h4>
+                    \Dagger\Directory
+                                            &mdash; 
+                                                                                </article>
+        </div>
+        <aside class="span4 detailsbar">
+            <h1><i class="fas fa-arrow-down"></i></h1>
+                                                            <dl>
+                                                    <dt>Inherited from</dt>
+                    <dd><a href="classes/Dagger-Env.html"><div class="path-wrapper">\Dagger\Env</div></a></dd>
+                                                                                                
+                                                            </dl>
+            <h2>Tags</h2>
+            <table class="table table-condensed">
+                                                                    <tr><td colspan="2"><em>None found</em></td></tr>
+                            </table>
+        </aside>
+    </div>
+
+																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																														</div>
+	</section>
+
+	<div id="source-view" class="modal hide fade" tabindex="-1" role="dialog" aria-labelledby="source-view-label" aria-hidden="true">
+		<div class="modal-header">
+			<button type="button" class="close" data-dismiss="modal" aria-hidden="true">×</button>
+			<h3 id="source-view-label">Env.php</h3>
+		</div>
+		<div class="modal-body">
+			<pre data-src="files/generated/Env.php.txt" class="language-php line-numbers"></pre>
+		</div>
+	</div>
+
+			<footer class="row-fluid">
+				<section class="span10 offset2">
+					<section class="row-fluid">
+						<section class="span10 offset1">
+							<section class="row-fluid footer-sections">
+								<section
+									class="span4">
+																		<h1>
+										<i class="fa-solid fa-code"></i>
+									</h1>
+									<div>
+										<ul>
+																							<li><a href="namespaces/dagger.html"><abbr title="\Dagger">Dagger</abbr></a></li>
+																					</ul>
+									</div>
+								</section>
+								<section
+									class="span4">
+																		<h1>
+										<i class="fa-solid fa-project-diagram"></i>
+									</h1>
+									<div>
+										<ul>
+											<li><a href="graphs/class.html">Class Hierarchy Diagram</a></li>
+										</ul>
+									</div>
+								</section>
+								<section
+									class="span4">
+																		<h1>
+										<i class="fa-solid fa-thumbtack"></i>
+									</h1>
+									<div>
+										<ul>
+											<li><a href="reports/errors.html">Errors</a></li>
+											<li><a href="reports/markers.html">Markers</a></li>
+										</ul>
+									</div>
+								</section>
+							</section>
+						</section>
+					</section>
+					<section class="row-fluid">
+						<section class="span10 offset1">
+							<hr/>
+							Documentation is powered by
+							<a href="https://www.phpdoc.org/">phpDocumentor
+							</a>
+							and authored
+							                    on
+							October 29th, 2025 at 14:26.
+						</section>
+					</section>
+				</section>
+			</footer>
+		</div>
+		<script src="resources/js/jquery-1.11.0.min.js"></script>
+		<script src="resources/js/ui/1.10.4/jquery-ui.min.js"></script>
+		<script src="resources/js/jquery.smooth-scroll.js"></script>
+		<script src="resources/js/prism.min.js"></script>
+		<script src="resources/js/bootstrap.js"></script>
+		<script src="resources/js/custom.js"></script>
+			</body>
+</html>

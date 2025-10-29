@@ -2,12 +2,12 @@
 <phpdocumentor configVersion="3"
                xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                xmlns="https://www.phpdoc.org">
-  <title>phpDocumentor</title>
+  <title>Dagger PHP SDK</title>
   <version number="3.0.0">
     <api>
       <source dsn=".">
-        <path>attributes/*.php</path>
-        <path>generated/*php</path>
+        <path>src/Attribute/*.php</path>
+        <path>generated/*.php</path>
       </source>
     </api>
   </version>
