@@ -15,9 +15,9 @@ func CreateOrUpdateTSConfigForModule(ctx context.Context, modSourceDir *dagger.D
 
 	// If no tsconfig.json is found in the user module, we generate a default one.
 	if len(tsconfigExist) == 0 {
-		defaultTsConfigContent := tsutils.DefaultTSConfigForModule()
+		defaultTSConfigContent := tsutils.DefaultTSConfigForModule()
 
-		return dag.File("tsconfig.json", defaultTsConfigContent).Sync(ctx)
+		return dag.File("tsconfig.json", defaultTSConfigContent).Sync(ctx)
 	}
 
 	tsConfigContent, err := modSourceDir.File("tsconfig.json").Contents(ctx)
@@ -25,12 +25,12 @@ func CreateOrUpdateTSConfigForModule(ctx context.Context, modSourceDir *dagger.D
 		return nil, fmt.Errorf("failed to read module's tsconfig.json: %w", err)
 	}
 
-	updatedTsConfigContent, err := tsutils.UpdateTSConfigForModule(tsConfigContent)
+	updatedTSConfigContent, err := tsutils.UpdateTSConfigForModule(tsConfigContent)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update tsconfig.json: %w", err)
 	}
 
-	return dag.File("tsconfig.json", updatedTsConfigContent).Sync(ctx)
+	return dag.File("tsconfig.json", updatedTSConfigContent).Sync(ctx)
 }
 
 func CreateOrUpdatePackageJSON(ctx context.Context, file *dagger.File) (*dagger.File, error) {

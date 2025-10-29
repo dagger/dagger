@@ -7,7 +7,7 @@ import (
 )
 
 func TestDefaultTsConfigForModule(t *testing.T) {
-	defaultTsConfig := []byte(`{
+	defaultTSConfig := []byte(`{
   "compilerOptions": {
 		"strict": true,
     "skipLibCheck": true,
@@ -26,11 +26,11 @@ func TestDefaultTsConfigForModule(t *testing.T) {
 }`)
 
 	res := DefaultTSConfigForModule()
-	require.JSONEq(t, string(defaultTsConfig), res)
+	require.JSONEq(t, string(defaultTSConfig), res)
 }
 
 func TestDefaultTSConfigForClient(t *testing.T) {
-	defaultTsConfig := []byte(`{
+	defaultTSConfig := []byte(`{
   "compilerOptions": {
 		"strict": true,
     "skipLibCheck": true,
@@ -54,7 +54,7 @@ func TestDefaultTSConfigForClient(t *testing.T) {
 	res, err := DefaultTSConfigForClient("dagger")
 	require.NoError(t, err)
 
-	require.JSONEq(t, string(defaultTsConfig), res)
+	require.JSONEq(t, string(defaultTSConfig), res)
 }
 
 func TestUpdateTSConfigForModule(t *testing.T) {

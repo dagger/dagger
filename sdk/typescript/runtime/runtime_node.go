@@ -156,7 +156,6 @@ func (n *NodeRuntime) GenerateDir(ctx context.Context) (*dagger.Directory, error
 		WithFile("tsconfig.json", tsconfigFile).
 		WithFile(pkgManager.lockFileName(), lockFile).
 		WithDirectory(GenDir, sdkLibrary), nil
-
 }
 
 func (n *NodeRuntime) createPkgManagerCtr() PackageManager {

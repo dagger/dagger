@@ -84,7 +84,7 @@ func UpdateDenoConfigForClient(denoConfig string, clientDir string, isRemote boo
 	// Add path."@dagger.io/client"=[<path to client dir>]
 	denoConfig, err = sjson.Set(denoConfig,
 		"compilerOptions.paths."+gjson.Escape(daggerClientPathAlias),
-		// We explicitely add `./` so tsx can correctly interpret the path.
+		// We explicitly add `./` so tsx can correctly interpret the path.
 		[]string{"./" + filepath.Join(clientDir, "client.gen.ts")},
 	)
 	if err != nil {

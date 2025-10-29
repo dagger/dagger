@@ -424,16 +424,6 @@ func (c *moduleConfig) moduleRootPath() string {
 	return filepath.Join(ModSourceDirPath, c.modPath)
 }
 
-// Return the path to the SDK directory inside the module source.
-func (c *moduleConfig) sdkPath() string {
-	return filepath.Join(c.modulePath(), GenDir)
-}
-
-// Return the path to the entrypoint file inside the module source.
-func (c *moduleConfig) entrypointPath() string {
-	return filepath.Join(ModSourceDirPath, c.subPath, SrcDir, EntrypointExecutableFile)
-}
-
 // Return the path to the tsconfig.json file inside the module source.
 func (c *moduleConfig) tsConfigPath() string {
 	return filepath.Join(ModSourceDirPath, c.subPath, "tsconfig.json")

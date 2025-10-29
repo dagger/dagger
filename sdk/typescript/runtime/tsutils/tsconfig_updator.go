@@ -26,9 +26,9 @@ func DefaultTSConfigForClient(clientDir string) (string, error) {
 	defaultConfig := DefaultTSConfigJSON
 
 	// Add path."@dagger.io/client"=[<path to client dir>]
-	tsConfig, err := sjson.Set(string(defaultConfig),
+	tsConfig, err := sjson.Set(defaultConfig,
 		"compilerOptions.paths."+gjson.Escape(daggerClientPathAlias),
-		// We explicitely add `./` so tsx can correctly interpret the path.
+		// We explicitly add `./` so tsx can correctly interpret the path.
 		[]string{"./" + filepath.Join(clientDir, "client.gen.ts")},
 	)
 	if err != nil {
@@ -75,7 +75,7 @@ func UpdateTSConfigForClient(tsConfig string, clientDir string, isRemote bool) (
 	// Add path."@dagger.io/client"=[<path to client dir>]
 	tsConfig, err := sjson.Set(tsConfig,
 		"compilerOptions.paths."+gjson.Escape(daggerClientPathAlias),
-		// We explicitely add `./` so tsx can correctly interpret the path.
+		// We explicitly add `./` so tsx can correctly interpret the path.
 		[]string{"./" + filepath.Join(clientDir, "client.gen.ts")},
 	)
 	if err != nil {

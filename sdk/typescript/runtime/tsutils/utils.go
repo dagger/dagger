@@ -9,18 +9,18 @@ import (
 )
 
 func appendIfNotExists(jsonStr, path string, value string) (string, error) {
-    arr := gjson.Get(jsonStr, path).Array()
+	arr := gjson.Get(jsonStr, path).Array()
 
-    // Check if value exists
-    for _, v := range arr {
-        if v.String() == value {
-            // Already exists, do nothing
-            return jsonStr, nil
-        }
-    }
+	// Check if value exists
+	for _, v := range arr {
+		if v.String() == value {
+			// Already exists, do nothing
+			return jsonStr, nil
+		}
+	}
 
-    // Append since it's not found
-    return sjson.Set(jsonStr, path+".-1", value)
+	// Append since it's not found
+	return sjson.Set(jsonStr, path+".-1", value)
 }
 
 func setIfNotExists(jsonStr, path string, value any) (string, error) {
