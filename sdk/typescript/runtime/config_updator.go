@@ -7,10 +7,10 @@ import (
 	"typescript-sdk/tsutils"
 )
 
-func CreateOrUpdateTSConfig(ctx context.Context, modSourceDir *dagger.Directory) (*dagger.File, error) {
+func CreateOrUpdateTSConfigForModule(ctx context.Context, modSourceDir *dagger.Directory) (*dagger.File, error) {
 	tsconfigExist, err := modSourceDir.Glob(ctx, "tsconfig.json")
 	if err != nil {
-		return nil, fmt.Errorf("failed to lookup for tsconfig.json")
+		return nil, fmt.Errorf("failed to lookup for tsconfig.json: %w", err)
 	}
 
 	// If no tsconfig.json is found in the user module, we generate a default one.
@@ -22,13 +22,27 @@ func CreateOrUpdateTSConfig(ctx context.Context, modSourceDir *dagger.Directory)
 
 	tsConfigContent, err := modSourceDir.File("tsconfig.json").Contents(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read module's tsconfig.json")
+		return nil, fmt.Errorf("failed to read module's tsconfig.json: %w", err)
 	}
 
 	updatedTsConfigContent, err := tsutils.UpdateTSConfigForModule(tsConfigContent)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update tsconfig.json")
+		return nil, fmt.Errorf("failed to update tsconfig.json: %w", err)
 	}
 
 	return dag.File("tsconfig.json", updatedTsConfigContent).Sync(ctx)
+}
+
+func CreateOrUpdatePackageJSON(ctx context.Context, file *dagger.File) (*dagger.File, error) {
+	packageJSON, err := file.Contents(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read package.json: %w", err)
+	}
+
+	packageJSON, err = tsutils.UpdatePackageJSON(packageJSON)
+	if err != nil {
+		return nil, err
+	}
+
+	return dag.File("package.json", packageJSON).Sync(ctx)
 }

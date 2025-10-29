@@ -60,14 +60,7 @@ func (t *TypescriptSdk) ModuleRuntime(
 	case Deno:
 		return NewDenoRuntime(cfg, t.SDKSourceDir, introspectionJSON).SetupContainer(ctx)
 	case Node:
-		return runtimeBaseContainer(cfg, t.SDKSourceDir).
-			withConfiguredRuntimeEnvironment().
-			withGeneratedSDK(introspectionJSON).
-			withSetupPackageManager().
-			withInstalledDependencies().
-			withUserSourceCode().
-			withEntrypoint().
-			Container(), nil
+		return NewNodeRuntime(cfg, t.SDKSourceDir, introspectionJSON).SetupContainer(ctx)
 	default:
 		return nil, fmt.Errorf("unknown runtime %s", cfg.runtime)
 	}
@@ -114,66 +107,33 @@ func (t *TypescriptSdk) Codegen(
 	switch cfg.runtime {
 	case Bun:
 		codegen, err = NewBunRuntime(cfg, t.SDKSourceDir, introspectionJSON).GenerateDir(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate runtime dir: %w", err)
-		}
-
-		// Add default template if no source files exist
-		sourceFiles, err := cfg.source.Glob(ctx, "src/**/*.ts")
-		if err != nil {
-			return nil, fmt.Errorf("failed to list source files: %w", err)
-		}
-
-		if len(sourceFiles) == 0 {
-			codegen = codegen.WithFile(
-				"src/index.ts",
-				dag.File("index.ts", tsutils.TemplateIndexTS(strcase.ToCamel(cfg.name))))
-		}
-
-		codegen = dag.Directory().WithDirectory(cfg.subPath, codegen)
 	case Deno:
 		codegen, err = NewDenoRuntime(cfg, t.SDKSourceDir, introspectionJSON).GenerateDir(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate runtime dir: %w", err)
-		}
-
-		// Add default template if no source files exist
-		sourceFiles, err := cfg.source.Glob(ctx, "src/**/*.ts")
-		if err != nil {
-			return nil, fmt.Errorf("failed to list source files: %w", err)
-		}
-
-		if len(sourceFiles) == 0 {
-			codegen = codegen.WithFile(
-				"src/index.ts",
-				dag.File("index.ts", tsutils.TemplateIndexTS(strcase.ToCamel(cfg.name))))
-		}
-
-		codegen = dag.Directory().WithDirectory(cfg.subPath, codegen)
+	case Node:
+		codegen, err = NewNodeRuntime(cfg, t.SDKSourceDir, introspectionJSON).GenerateDir(ctx)
 	default:
-		runtimeBaseCtr := runtimeBaseContainer(cfg, t.SDKSourceDir).
-			withConfiguredRuntimeEnvironment().
-			withGeneratedSDK(introspectionJSON).
-			withSetupPackageManager().
-			withGeneratedLockFile().
-			withUserSourceCode()
+		return nil, fmt.Errorf("unknown runtime %s", cfg.runtime)
+	}
 
-		if runtimeBaseCtr, err = runtimeBaseCtr.addInitTemplateIfNoUserFile(ctx); err != nil {
-			return nil, err
-		}
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate runtime dir: %w", err)
+	}
 
-		// Extract codegen directory
-		codegen = dag.
-			Directory().
-			WithDirectory(
-				"/",
-				runtimeBaseCtr.ModuleDirectory(),
-				dagger.DirectoryWithDirectoryOpts{Exclude: []string{"**/node_modules", "**/.pnpm-store"}},
-			)
+	// TODO: handle that in an init method.
+	// Add default template if no source files exist
+	sourceFiles, err := cfg.source.Glob(ctx, "src/**/*.ts")
+	if err != nil {
+		return nil, fmt.Errorf("failed to list source files: %w", err)
+	}
+
+	if len(sourceFiles) == 0 {
+		codegen = codegen.WithFile(
+			"src/index.ts",
+			dag.File("index.ts", tsutils.TemplateIndexTS(strcase.ToCamel(cfg.name))))
 	}
 
 	return dag.GeneratedCode(
-		codegen,
+		dag.Directory().WithDirectory(cfg.subPath, codegen),
 	).
 		WithVCSGeneratedPaths([]string{
 			GenDir + "/**",

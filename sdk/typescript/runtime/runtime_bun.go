@@ -50,7 +50,7 @@ func (b *BunRuntime) SetupContainer(ctx context.Context) (*dagger.Container, err
 		ctx, span := Tracer().Start(ctx, "update tsconfig.json")
 		defer span.End()
 
-		tsConfig, err = CreateOrUpdateTSConfig(ctx, b.cfg.source)
+		tsConfig, err = CreateOrUpdateTSConfigForModule(ctx, b.cfg.source)
 		return err
 	})
 
@@ -68,8 +68,12 @@ func (b *BunRuntime) SetupContainer(ctx context.Context) (*dagger.Container, err
 		ctx, span := Tracer().Start(ctx, "install dependencies")
 		defer span.End()
 
-		runtimeWithDep, err = b.
-			WithPackageJSON().
+		runtimeWithDep, err = b.WithPackageJSON(ctx)
+		if err != nil {
+			return err
+		}
+
+		runtimeWithDep, err = runtimeWithDep.
 			withInstalledDependencies().
 			sync(ctx)
 		return err
@@ -97,14 +101,17 @@ func (b *BunRuntime) GenerateDir(ctx context.Context) (*dagger.Directory, error)
 	var sdkLibrary *dagger.Directory
 	var lockFile *dagger.File
 
-	runtime := b.WithPackageJSON()
+	runtime, err := b.WithPackageJSON(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() (err error) {
 		ctx, span := Tracer().Start(ctx, "update tsconfig.json")
 		defer span.End()
 
-		tsconfigFile, err = CreateOrUpdateTSConfig(ctx, b.cfg.source)
+		tsconfigFile, err = CreateOrUpdateTSConfigForModule(ctx, b.cfg.source)
 		return err
 	})
 
@@ -122,7 +129,7 @@ func (b *BunRuntime) GenerateDir(ctx context.Context) (*dagger.Directory, error)
 		ctx, span := Tracer().Start(ctx, "generate bun.lock")
 		defer span.End()
 
-		lockFile, err = runtime.GetLockfile().Sync(ctx)
+		lockFile, err = runtime.GenerateLockfile().Sync(ctx)
 		return err
 	})
 
@@ -149,7 +156,7 @@ func (b *BunRuntime) sync(ctx context.Context) (*BunRuntime, error) {
 	return b, nil
 }
 
-func (b *BunRuntime) WithPackageJSON() *BunRuntime {
+func (b *BunRuntime) WithPackageJSON(ctx context.Context) (*BunRuntime, error) {
 	var packageJSONFile *dagger.File
 
 	if b.cfg.packageJSONConfig != nil {
@@ -162,28 +169,15 @@ func (b *BunRuntime) WithPackageJSON() *BunRuntime {
 		}
 	}
 
-	ctr := b.ctr.
+	packageJSONFile, err := CreateOrUpdatePackageJSON(ctx, packageJSONFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update package.json: %w", err)
+	}
+
+	b.ctr = b.ctr.
 		WithFile("package.json", packageJSONFile)
 
-	// Set the type to module
-	ctr = ctr.WithExec([]string{"bun", "pm", "pkg", "set", "type=module"})
-
-	// Set the typescript dependency if it's not already set
-	_, ok := b.cfg.packageJSONConfig.Dependencies["typescript"]
-	if !ok {
-		ctr = ctr.WithExec([]string{"bun", "pm", "pkg", "set", fmt.Sprintf("dependencies.typescript=%s", tsdistconsts.DefaultTypeScriptVersion)})
-	}
-
-	// If the package.json has a `@dagger.io/dagger` as dependency, we remove it to automatically
-	// switch to bundle.
-	_, ok = b.cfg.packageJSONConfig.Dependencies["@dagger.io/dagger"]
-	if ok {
-		ctr = ctr.WithExec([]string{"bun", "pm", "pkg", "delete", "dependencies.@dagger.io/dagger"})
-	}
-
-	b.ctr = ctr
-
-	return b
+	return b, nil
 }
 
 func (b *BunRuntime) withInstalledDependencies() *BunRuntime {
@@ -193,7 +187,7 @@ func (b *BunRuntime) withInstalledDependencies() *BunRuntime {
 			WithMountedDirectory("node_modules/typescript", b.sdkSourceDir.Directory("typescript-library"))
 
 		// If there's only the default typescript dependency, we can early return.
-		if len(b.cfg.packageJSONConfig.Dependencies) == 1 {
+		if len(b.cfg.packageJSONConfig.Dependencies) <= 1 {
 			return b
 		}
 	}
@@ -204,7 +198,7 @@ func (b *BunRuntime) withInstalledDependencies() *BunRuntime {
 	return b
 }
 
-func (b *BunRuntime) GetLockfile() *dagger.File {
+func (b *BunRuntime) GenerateLockfile() *dagger.File {
 	return b.ctr.
 		WithDirectory(".", b.cfg.source, dagger.ContainerWithDirectoryOpts{
 			Include: []string{"bun.lock"},
