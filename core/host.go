@@ -110,6 +110,7 @@ func (Host) FindUpAll(
 }
 
 func (*Host) Directory(ctx context.Context, rootPath string, filter CopyFilter, gitIgnore bool, noCache bool, relPath string) (*Directory, error) {
+	fmt.Printf("ACB Host.Directory called on %s with filter %+v\n", rootPath, filter)
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current query: %w", err)

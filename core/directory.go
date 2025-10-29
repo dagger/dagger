@@ -648,7 +648,26 @@ func (e notADirectoryError) Unwrap() error {
 	return e.inner
 }
 
-func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
+func (dir *Directory) FileNew(ctx context.Context, file string) (*File, error) {
+	dir = dir.Clone()
+	fmt.Printf("ACB in dir.File %s\n", file)
+
+	dirRef, err := getRefOrEvaluate(ctx, dir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get directory ref: %w", err)
+	}
+
+	return &File{
+		LLB:      dir.LLB,
+		Result:   dirRef,
+		File:     path.Join(dir.Dir, file),
+		Platform: dir.Platform,
+		Services: dir.Services,
+	}, nil
+}
+
+func (dir *Directory) FileLLB(ctx context.Context, file string) (*File, error) {
+	fmt.Printf("ACB in dir.FileLLB %s\n", file)
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -950,6 +969,8 @@ func (dir *Directory) WithFile(
 ) (*Directory, error) {
 	dir = dir.Clone()
 
+	fmt.Printf("ACB WithFile called %s\n", destPath)
+
 	srcCacheRef, err := getRefOrEvaluate(ctx, src)
 	if err != nil {
 		return nil, err
@@ -1060,6 +1081,7 @@ func (dir *Directory) WithFiles(
 }
 
 func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (*Directory, error) {
+	fmt.Printf("ACB dir.WithTimestamps %d\n", unix)
 	dir = dir.Clone()
 	return execInMount(ctx, dir, func(root string) error {
 		resolvedDir, err := containerdfs.RootPath(root, dir.Dir)

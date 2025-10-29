@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -40,6 +41,7 @@ func DagOp[T dagql.Typed, A any, R dagql.Typed](
 	if err != nil {
 		return inst, err
 	}
+	fmt.Printf("ACB here1\n")
 	argDeps, err := core.InputsOf(ctx, args)
 	if err != nil {
 		return inst, err
@@ -109,13 +111,38 @@ func DagOpFile[T dagql.Typed, A any](
 		}
 	}
 
+	selfDigest, deps, err := getSelfDigest(self)
+	if err != nil {
+		return nil, err
+	}
+	argDigest, err := core.DigestOf(args)
+	if err != nil {
+		return nil, err
+	}
+
+	cacheKey := digest.FromString(
+		strings.Join([]string{
+			selfDigest.String(),
+			argDigest.String(),
+		}, "\x00"),
+	)
+
 	curIDForFSDagOp, err := currentIDForFSDagOp(ctx, filename)
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("ACB DagOpFile %s selfDigest=%s argDigest=%s\n", curIDForFSDagOp.DisplaySelf(), selfDigest, argDigest)
+	if selfDigest == "" {
+		panic("selfDigest is empty")
+	}
+	if argDigest == "" {
+		panic("argDigest is empty")
+	}
+
 	return core.NewFileDagOp(ctx, srv, &core.FSDagOp{
-		ID:   curIDForFSDagOp,
-		Path: filename,
+		ID:       curIDForFSDagOp,
+		Path:     filename,
+		CacheKey: cacheKey,
 	}, deps)
 }
 
@@ -205,8 +232,31 @@ func getOpts[T dagql.Typed, A any](opts ...DagOpOptsFn[T, A]) *DagOpOpts[T, A] {
 }
 
 func getSelfDigest(a any) (digest.Digest, []llb.State, error) {
+	fmt.Printf("ACB got %T\n", a)
 	switch x := a.(type) {
 	case *core.Directory:
+		fmt.Printf("ACB got dir\n")
+		dgst, err := core.DigestOf(x.WithoutInputs())
+		if err != nil {
+			return "", nil, err
+		}
+
+		var deps []llb.State
+		if x.LLB == nil || x.LLB.Def == nil {
+			deps = append(deps, llb.Scratch())
+		} else {
+			op, err := llb.NewDefinitionOp(x.LLB)
+			if err != nil {
+				return "", nil, err
+			}
+			deps = append(deps, llb.NewState(op))
+		}
+		return dgst, deps, err
+	case *core.Host:
+		fmt.Printf("ACB host is difficult %+v\n", x)
+		return digest.FromString("magic-host-string"), nil, nil
+	case *core.File:
+		fmt.Printf("ACB got file\n")
 		dgst, err := core.DigestOf(x.WithoutInputs())
 		if err != nil {
 			return "", nil, err
@@ -229,7 +279,8 @@ func getSelfDigest(a any) (digest.Digest, []llb.State, error) {
 		*core.GitRef,
 		*core.Changeset,
 		*core.Query,
-		*core.Host:
+		*core.Container:
+		fmt.Printf("ACB got other\n")
 		return "", nil, nil // fallback to using dagop ID
 	default:
 		return "", nil, fmt.Errorf("unable to create digest: unknown type %T", a)
@@ -258,6 +309,7 @@ func DagOpDirectory[T dagql.Typed, A any](
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("ACB here2 with selfDigest=%s argDigest=%s\n", selfDigest, argDigest)
 	argDeps, err := core.InputsOf(ctx, args)
 	if err != nil {
 		return nil, err
@@ -272,15 +324,21 @@ func DagOpDirectory[T dagql.Typed, A any](
 		}
 	}
 
+	cacheKey := digest.FromString(
+		strings.Join([]string{
+			selfDigest.String(),
+			argDigest.String(),
+		}, "\x00"),
+	)
+
 	curIDForFSDagOp, err := currentIDForFSDagOp(ctx, filename)
 	if err != nil {
 		return nil, err
 	}
 	return core.NewDirectoryDagOp(ctx, srv, &core.FSDagOp{
-		// FIXME: using this in the cache key means we effectively disable
-		// buildkit content caching
-		ID:   curIDForFSDagOp,
-		Path: filename,
+		ID:       curIDForFSDagOp,
+		Path:     filename,
+		CacheKey: cacheKey,
 	}, deps, selfDigest, argDigest)
 }
 
@@ -316,6 +374,7 @@ func DagOpContainer[A any](
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("ACB here3\n")
 	deps, err := core.InputsOf(ctx, args)
 	if err != nil {
 		return nil, err

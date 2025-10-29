@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -2582,4 +2584,63 @@ func (DirectorySuite) TestDirCaching(ctx context.Context, t *testctx.T) {
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.NotEqual(t, out, "")
+}
+
+func (DirectorySuite) TestFileCaching1(ctx context.Context, t *testctx.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "rand1"), []byte(identity.NewID()), 0o600))
+
+	for i := 0; i < 3; i++ {
+		if i > 1 {
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "rand1"), []byte(identity.NewID()), 0o600))
+		} else {
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "not-used"), []byte(identity.NewID()), 0o600))
+		}
+
+		c := connect(ctx, t)
+		defer c.Close()
+		d := c.Host().Directory(dir, dagger.HostDirectoryOpts{
+			Include: []string{"rand1"},
+		})
+		_, err := d.WithTimestamps(0).Sync(ctx)
+		require.NoError(t, err)
+	}
+}
+
+func (DirectorySuite) TestFileCaching2(ctx context.Context, t *testctx.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "rand1"), []byte(identity.NewID()), 0o600))
+
+	for i := 0; i < 3; i++ {
+		if i > 1 {
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "rand1"), []byte(identity.NewID()), 0o600))
+		} else {
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "not-used"), []byte(identity.NewID()), 0o600))
+		}
+
+		c := connect(ctx, t)
+		defer c.Close()
+		d := c.Host().File(path.Join(dir, "rand1"))
+		_, err := d.WithTimestamps(0).Sync(ctx)
+		require.NoError(t, err)
+	}
+}
+
+func (DirectorySuite) TestFileCaching3(ctx context.Context, t *testctx.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "rand1"), []byte(identity.NewID()), 0o600))
+
+	for i := 0; i < 3; i++ {
+		if i > 1 {
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "rand1"), []byte(identity.NewID()), 0o600))
+		} else {
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "not-used"), []byte(identity.NewID()), 0o600))
+		}
+
+		c := connect(ctx, t)
+		defer c.Close()
+		d := c.Host().Directory(dir).File("rand1") // in this case Directory(dir) will get it's cache busted each time; however File("rand1") should output the same digest either way
+		_, err := d.WithTimestamps(0).Sync(ctx)
+		require.NoError(t, err)
+	}
 }
