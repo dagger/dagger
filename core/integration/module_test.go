@@ -5278,6 +5278,45 @@ func (ModuleSuite) TestContextGitRemoteDep(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func (ModuleSuite) TestContextGitDetectDirty(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := modInit(t, c, "go", `
+package main
+
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) IsDirty(
+	ctx context.Context,
+	// +defaultPath="./.git"
+	git *dagger.GitRepository,
+) (bool, error) {
+	clean, err := git.Uncommitted().IsEmpty(ctx)
+	return !clean, err
+}
+`).
+		WithNewFile("somefile.txt", "some content").
+		With(gitUserConfig).
+		WithExec([]string{"sh", "-c", `git init && git add . && git commit -m "initial commit"`})
+
+	out, err := modGen.With(daggerCall("is-dirty")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "false", out)
+
+	out, err = modGen.WithNewFile("newfile.txt", "some new content").With(daggerCall("is-dirty")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "true", out)
+
+	out, err = modGen.WithoutFile("somefile.txt").With(daggerCall("is-dirty")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "true", out)
+}
+
 func (ModuleSuite) TestIgnore(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
