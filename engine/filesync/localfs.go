@@ -26,6 +26,7 @@ import (
 	"github.com/tonistiigi/fsutil/types"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
@@ -219,11 +220,13 @@ func (local *localFS) Sync( //nolint:gocyclo
 			mu:      sync.Mutex{},
 		}
 
-		rps, loaded := rootPathSpans.LoadOrStore(rootPath, dirSpan)
-		if !loaded {
+		rps, _ := rootPathSpans.LoadOrStore(rootPath, dirSpan)
+		rps.(*rootPathSpan).mu.Lock()
+		if rps.(*rootPathSpan).span == nil {
 			_, span := Tracer(egCtx).Start(egCtx, rootPath)
 			rps.(*rootPathSpan).span = span
 		}
+		rps.(*rootPathSpan).mu.Unlock()
 
 		return rps.(*rootPathSpan)
 	}
@@ -231,7 +234,6 @@ func (local *localFS) Sync( //nolint:gocyclo
 	defer func() {
 		rootPathSpans.Range(func(_, value any) bool {
 			dirSpan := value.(*rootPathSpan)
-			dirSpan.span.SetAttributes(attribute.Int64(telemetry.FilesyncWrittenBytes, dirSpan.writtenBytes))
 			dirSpan.span.End(trace.WithTimestamp(dirSpan.maxStop))
 			return true
 		})
@@ -306,21 +308,32 @@ func (local *localFS) Sync( //nolint:gocyclo
 					// we see and then change the span end time before returning.
 					rootPathSpan := getRootPath(path)
 
-					var err error
-					appliedChange, written, err := local.WriteFile(ctx, kind, path, upperStat, remote)
+					appliedChange, written, werr := local.WriteFile(ctx, kind, path, upperStat, remote)
+
 					writeEnd := time.Now()
+					m := telemetry.Meter(ctx, "dagger.io/filesync")
+					fsMetric, err := m.Int64Gauge(telemetry.FilesyncWrittenBytes)
+					if err != nil {
+						return err
+					}
+					attrs := []attribute.KeyValue{
+						attribute.String(telemetry.MetricsTraceIDAttr, rootPathSpan.span.SpanContext().TraceID().String()),
+						attribute.String(telemetry.MetricsSpanIDAttr, rootPathSpan.span.SpanContext().SpanID().String()),
+					}
 					rootPathSpan.mu.Lock()
 					rootPathSpan.writtenBytes += written
+					fsMetric.Record(ctx, written, metric.WithAttributes(attrs...))
 					// only track the max(end) of all the files within a root path
 					if writeEnd.After(rootPathSpan.maxStop) {
 						rootPathSpan.maxStop = writeEnd
 					}
-					if err != nil {
+					if werr != nil {
 						rootPathSpan.span.SetStatus(codes.Error, err.Error())
 					}
 					rootPathSpan.mu.Unlock()
-					if err != nil {
-						return err
+
+					if werr != nil {
+						return werr
 					}
 
 					cachedResultsMu.Lock()

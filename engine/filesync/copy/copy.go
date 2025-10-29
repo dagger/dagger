@@ -15,7 +15,6 @@ import (
 	"github.com/moby/patternmatcher"
 	"github.com/pkg/errors"
 	"github.com/tonistiigi/fsutil"
-	"go.opentelemetry.io/otel/trace"
 )
 
 var bufferPool = &sync.Pool{
@@ -614,8 +613,7 @@ func (c *copier) copyDirectory(
 	}
 
 	for _, fi := range fis {
-		var err error
-		if err = c.copy(
+		if err := c.copy(
 			ctx,
 			filepath.Join(src, fi.Name()), filepath.Join(srcComponents, fi.Name()),
 			filepath.Join(dst, fi.Name()),
@@ -737,8 +735,4 @@ func rel(basepath, targpath string) (string, error) {
 		}
 	}
 	return filepath.Rel(basepath, targpath)
-}
-
-func Tracer(ctx context.Context) trace.Tracer {
-	return trace.SpanFromContext(ctx).TracerProvider().Tracer("dagger.io/copy")
 }
