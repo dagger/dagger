@@ -202,41 +202,39 @@ func (local *localFS) Sync( //nolint:gocyclo
 
 	// Track spans per top-level directory
 	type rootPathSpan struct {
-		span             trace.Span
-		start            time.Time
-		writtenBytes     int64
-		maxWriteDuration time.Duration
+		span         trace.Span
+		start        time.Time
+		writtenBytes int64
+		maxStop      time.Time
+		mu           sync.Mutex
 	}
-	rootPathSpans := make(map[string]*rootPathSpan)
-	var rootPathSpansMu sync.Mutex
-
+	var rootPathSpans sync.Map
 	getRootPath := func(path string) *rootPathSpan {
 		rootPath := strings.Split(path, string(os.PathSeparator))[0]
 
-		rootPathSpansMu.Lock()
-		defer rootPathSpansMu.Unlock()
-
-		if existing, ok := rootPathSpans[rootPath]; ok {
-			return existing
-		}
-
-		_, span := Tracer(egCtx).Start(egCtx, rootPath)
+		now := time.Now()
 		dirSpan := &rootPathSpan{
-			start: time.Now(),
-			span:  span,
+			start:   now,
+			maxStop: now,
+			mu:      sync.Mutex{},
 		}
-		rootPathSpans[rootPath] = dirSpan
-		return dirSpan
+
+		rps, loaded := rootPathSpans.LoadOrStore(rootPath, dirSpan)
+		if !loaded {
+			_, span := Tracer(egCtx).Start(egCtx, rootPath)
+			rps.(*rootPathSpan).span = span
+		}
+
+		return rps.(*rootPathSpan)
 	}
 
 	defer func() {
-		// ensure all spans are ended when done
-		rootPathSpansMu.Lock()
-		for _, dirSpan := range rootPathSpans {
+		rootPathSpans.Range(func(_, value any) bool {
+			dirSpan := value.(*rootPathSpan)
 			dirSpan.span.SetAttributes(attribute.Int64(telemetry.FilesyncWrittenBytes, dirSpan.writtenBytes))
-			dirSpan.span.End(trace.WithTimestamp(dirSpan.start.Add(dirSpan.maxWriteDuration)))
-		}
-		rootPathSpansMu.Unlock()
+			dirSpan.span.End(trace.WithTimestamp(dirSpan.maxStop))
+			return true
+		})
 	}()
 
 	doubleWalkDiff(egCtx, eg, local, remote, func(kind ChangeKind, path string, lowerStat, upperStat *types.Stat) error {
@@ -309,19 +307,18 @@ func (local *localFS) Sync( //nolint:gocyclo
 					rootPathSpan := getRootPath(path)
 
 					var err error
-					writeStart := time.Now()
 					appliedChange, written, err := local.WriteFile(ctx, kind, path, upperStat, remote)
-					writeEnd := time.Since(writeStart)
-					rootPathSpansMu.Lock()
+					writeEnd := time.Now()
+					rootPathSpan.mu.Lock()
 					rootPathSpan.writtenBytes += written
-					// keep the max since multiple files are uploaded in parallel
-					if writeEnd > rootPathSpan.maxWriteDuration {
-						rootPathSpan.maxWriteDuration = writeEnd
+					// only track the max(end) of all the files within a root path
+					if writeEnd.After(rootPathSpan.maxStop) {
+						rootPathSpan.maxStop = writeEnd
 					}
 					if err != nil {
 						rootPathSpan.span.SetStatus(codes.Error, err.Error())
 					}
-					rootPathSpansMu.Unlock()
+					rootPathSpan.mu.Unlock()
 					if err != nil {
 						return err
 					}
