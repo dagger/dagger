@@ -149,6 +149,16 @@ func (op FSDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.Ca
 		}
 	}
 	cm.Digest = digest.FromString(strings.Join(inputs, "\x00"))
+
+	// disable content hashing of inputs, which is extremely expensive; we rely
+	// on the content digests of dagql inputs being mixed into the op ID digest
+	// instead now
+	for i, dep := range cm.Deps {
+		dep.PreprocessFunc = nil
+		dep.ComputeDigestFunc = nil
+		cm.Deps[i] = dep
+	}
+
 	return cm, nil
 }
 
@@ -262,6 +272,16 @@ func (op RawDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.C
 		op.ID.Digest().String(),
 		op.Filename,
 	}, "\x00"))
+
+	// disable content hashing of inputs, which is extremely expensive; we rely
+	// on the content digests of dagql inputs being mixed into the op ID digest
+	// instead now
+	for i, dep := range cm.Deps {
+		dep.PreprocessFunc = nil
+		dep.ComputeDigestFunc = nil
+		cm.Deps[i] = dep
+	}
+
 	return cm, nil
 }
 
