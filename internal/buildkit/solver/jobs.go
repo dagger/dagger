@@ -163,9 +163,6 @@ func (s *state) getEdge(index Index) *edge {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if e, ok := s.edges[index]; ok {
-		for e.owner != nil {
-			e = e.owner
-		}
 		return e
 	}
 
@@ -176,78 +173,6 @@ func (s *state) getEdge(index Index) *edge {
 	e := newEdge(Edge{Index: index, Vertex: s.vtx}, s.op, s.index)
 	s.edges[index] = e
 	return e
-}
-
-func (s *state) setEdge(index Index, targetEdge *edge, targetState *state) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	e, ok := s.edges[index]
-	if ok {
-		for e.owner != nil {
-			e = e.owner
-		}
-		if e == targetEdge {
-			return
-		}
-	} else {
-		e = newEdge(Edge{Index: index, Vertex: s.vtx}, s.op, s.index)
-		s.edges[index] = e
-	}
-	targetEdge.takeOwnership(e)
-
-	if targetState != nil {
-		targetState.addJobs(s, map[*state]struct{}{})
-
-		if _, ok := targetState.allPw[s.mpw]; !ok {
-			targetState.mpw.Add(s.mpw)
-			targetState.allPw[s.mpw] = struct{}{}
-		}
-	}
-}
-
-// addJobs recursively adds jobs to state and all its ancestors. currently
-// only used during edge merges to add jobs from the source of the merge to the
-// target and its ancestors.
-// requires that Solver.mu is read-locked and srcState.mu is locked
-func (s *state) addJobs(srcState *state, memo map[*state]struct{}) {
-	if _, ok := memo[s]; ok {
-		return
-	}
-	memo[s] = struct{}{}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for j := range srcState.jobs {
-		s.jobs[j] = struct{}{}
-	}
-
-	for _, inputEdge := range s.vtx.Inputs() {
-		inputState, ok := s.solver.actives[inputEdge.Vertex.Digest()]
-		if !ok {
-			bklog.G(context.TODO()).
-				WithField("vertex_digest", inputEdge.Vertex.Digest()).
-				Error("input vertex not found during addJobs")
-			continue
-		}
-		inputState.addJobs(srcState, memo)
-
-		// tricky case: if the inputState's edge was *already* merged we should
-		// also add jobs to the merged edge's state
-		mergedInputEdge := inputState.getEdge(inputEdge.Index)
-		if mergedInputEdge == nil || mergedInputEdge.edge.Vertex.Digest() == inputEdge.Vertex.Digest() {
-			// not merged
-			continue
-		}
-		mergedInputState, ok := s.solver.actives[mergedInputEdge.edge.Vertex.Digest()]
-		if !ok {
-			bklog.G(context.TODO()).
-				WithField("vertex_digest", mergedInputEdge.edge.Vertex.Digest()).
-				Error("merged input vertex not found during addJobs")
-			continue
-		}
-		mergedInputState.addJobs(srcState, memo)
-	}
 }
 
 func (s *state) combinedCacheManager() CacheManager {
@@ -268,9 +193,6 @@ func (s *state) combinedCacheManager() CacheManager {
 
 func (s *state) Release() {
 	for _, e := range s.edges {
-		for e.owner != nil {
-			e = e.owner
-		}
 		e.release()
 	}
 	if s.op != nil {
@@ -347,64 +269,6 @@ func NewSolver(opts SolverOpt) *Solver {
 	jl.s = newScheduler(jl)
 	jl.updateCond = sync.NewCond(jl.mu.RLocker())
 	return jl
-}
-
-// hasOwner returns true if the provided target edge (or any of it's sibling
-// edges) has the provided owner.
-func (jl *Solver) hasOwner(target Edge, owner Edge) bool {
-	jl.mu.RLock()
-	defer jl.mu.RUnlock()
-
-	st, ok := jl.actives[target.Vertex.Digest()]
-	if !ok {
-		return false
-	}
-
-	var owners []Edge
-	for _, e := range st.edges {
-		if e.owner != nil {
-			owners = append(owners, e.owner.edge)
-		}
-	}
-	for len(owners) > 0 {
-		var owners2 []Edge
-		for _, e := range owners {
-			st, ok = jl.actives[e.Vertex.Digest()]
-			if !ok {
-				continue
-			}
-
-			if st.vtx.Digest() == owner.Vertex.Digest() {
-				return true
-			}
-
-			for _, e := range st.edges {
-				if e.owner != nil {
-					owners2 = append(owners2, e.owner.edge)
-				}
-			}
-		}
-
-		// repeat recursively, this time with the linked owners owners
-		owners = owners2
-	}
-
-	return false
-}
-
-func (jl *Solver) setEdge(e Edge, targetEdge *edge) {
-	jl.mu.RLock()
-	defer jl.mu.RUnlock()
-
-	st, ok := jl.actives[e.Vertex.Digest()]
-	if !ok {
-		return
-	}
-
-	// potentially passing nil targetSt is intentional and handled in st.setEdge
-	targetSt := jl.actives[targetEdge.edge.Vertex.Digest()]
-
-	st.setEdge(e.Index, targetEdge, targetSt)
 }
 
 func (jl *Solver) getState(e Edge) *state {
@@ -1121,7 +985,12 @@ func (s *sharedOp) Exec(ctx context.Context, inputs []Result) (outputs []Result,
 
 		res, err := op.Exec(ctx, s.st.SessionGroup(), inputs)
 		complete := true
-		if err != nil {
+		switch {
+		case err == nil:
+		case errors.As(err, new(flightcontrol.RetryableError)):
+			complete = false
+			releaseError(err)
+		default:
 			select {
 			case <-ctx.Done():
 				if errdefs.IsCanceled(ctx, err) {
@@ -1132,6 +1001,7 @@ func (s *sharedOp) Exec(ctx context.Context, inputs []Result) (outputs []Result,
 			default:
 			}
 		}
+
 		if complete {
 			s.execDone = true
 			if res != nil {

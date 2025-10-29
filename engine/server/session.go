@@ -26,6 +26,7 @@ import (
 	bksolver "github.com/dagger/dagger/internal/buildkit/solver"
 	"github.com/dagger/dagger/internal/buildkit/solver/llbsolver"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/internal/buildkit/util/progress/progressui"
 	"github.com/koron-go/prefixw"
@@ -714,7 +715,12 @@ func (srv *Server) clientFromIDs(sessID, clientID string) (*daggerClient, error)
 	defer srv.daggerSessionsMu.RUnlock()
 	sess, ok := srv.daggerSessions[sessID]
 	if !ok {
-		return nil, fmt.Errorf("session %q not found", sessID)
+		// This error can happen due to per-LLB-vertex deduplication in the buildkit solver,
+		// where for instance the first client cancels and closes its session while others
+		// are waiting on the result. In this case its safe to retry the operation again with
+		// the still connected client metadata.
+		err := flightcontrol.RetryableError{Err: fmt.Errorf("session %q not found", sessID)}
+		return nil, err
 	}
 
 	sess.clientMu.RLock()
