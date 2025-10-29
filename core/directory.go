@@ -696,15 +696,16 @@ func (e notAFileError) Unwrap() error {
 }
 
 type CopyFilter struct {
-	Exclude []string `default:"[]"`
-	Include []string `default:"[]"`
+	Exclude   []string `default:"[]"`
+	Include   []string `default:"[]"`
+	Gitignore bool     `default:"false"`
 }
 
 func (cf *CopyFilter) IsEmpty() bool {
 	if cf == nil {
 		return true
 	}
-	return len(cf.Exclude) == 0 && len(cf.Include) == 0
+	return len(cf.Exclude) == 0 && len(cf.Include) == 0 && !cf.Gitignore
 }
 
 //nolint:gocyclo
@@ -813,6 +814,9 @@ func (dir *Directory) WithDirectory(
 			for _, pattern := range filter.Exclude {
 				opts = append(opts, fscopy.WithExcludePattern(pattern))
 			}
+			if filter.Gitignore {
+				opts = append(opts, fscopy.WithGitignore())
+			}
 			if owner != "" {
 				ownership, err := parseDirectoryOwner(owner)
 				if err != nil {
@@ -863,6 +867,7 @@ func (dir *Directory) WithDirectory(
 				{Name: "source", Value: dagql.NewID[*Directory](srcID)},
 				{Name: "exclude", Value: asArrayInput(filter.Exclude, dagql.NewString)},
 				{Name: "include", Value: asArrayInput(filter.Include, dagql.NewString)},
+				{Name: "gitignore", Value: dagql.Boolean(filter.Gitignore)},
 				{Name: "owner", Value: dagql.String(owner)},
 			}},
 		)

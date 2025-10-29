@@ -43,8 +43,12 @@ class CurrentModule extends Client\AbstractObject implements Client\IdAble
     /**
      * Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.
      */
-    public function workdir(string $path, ?array $exclude = null, ?array $include = null): Directory
-    {
+    public function workdir(
+        string $path,
+        ?array $exclude = null,
+        ?array $include = null,
+        ?bool $gitignore = false,
+    ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('workdir');
         $innerQueryBuilder->setArgument('path', $path);
         if (null !== $exclude) {
@@ -52,6 +56,9 @@ class CurrentModule extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
+        }
+        if (null !== $gitignore) {
+        $innerQueryBuilder->setArgument('gitignore', $gitignore);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

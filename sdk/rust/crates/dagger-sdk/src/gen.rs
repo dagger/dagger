@@ -1832,6 +1832,8 @@ pub struct AddressDirectoryOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub exclude: Option<Vec<&'a str>>,
     #[builder(setter(into, strip_option), default)]
+    pub gitignore: Option<bool>,
+    #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
     #[builder(setter(into, strip_option), default)]
     pub no_cache: Option<bool>,
@@ -1840,6 +1842,8 @@ pub struct AddressDirectoryOpts<'a> {
 pub struct AddressFileOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub exclude: Option<Vec<&'a str>>,
+    #[builder(setter(into, strip_option), default)]
+    pub gitignore: Option<bool>,
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
     #[builder(setter(into, strip_option), default)]
@@ -1881,6 +1885,9 @@ impl Address {
         if let Some(include) = opts.include {
             query = query.arg("include", include);
         }
+        if let Some(gitignore) = opts.gitignore {
+            query = query.arg("gitignore", gitignore);
+        }
         if let Some(no_cache) = opts.no_cache {
             query = query.arg("noCache", no_cache);
         }
@@ -1915,6 +1922,9 @@ impl Address {
         }
         if let Some(include) = opts.include {
             query = query.arg("include", include);
+        }
+        if let Some(gitignore) = opts.gitignore {
+            query = query.arg("gitignore", gitignore);
         }
         if let Some(no_cache) = opts.no_cache {
             query = query.arg("noCache", no_cache);
@@ -2492,6 +2502,9 @@ pub struct ContainerWithDirectoryOpts<'a> {
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
+    /// Apply .gitignore rules when writing the directory.
+    #[builder(setter(into, strip_option), default)]
+    pub gitignore: Option<bool>,
     /// Patterns to include in the written directory (e.g. ["*.go", "go.mod", "go.sum"]).
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
@@ -3481,6 +3494,9 @@ impl Container {
         }
         if let Some(include) = opts.include {
             query = query.arg("include", include);
+        }
+        if let Some(gitignore) = opts.gitignore {
+            query = query.arg("gitignore", gitignore);
         }
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
@@ -4829,6 +4845,9 @@ pub struct CurrentModuleWorkdirOpts<'a> {
     /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
     #[builder(setter(into, strip_option), default)]
     pub exclude: Option<Vec<&'a str>>,
+    /// Apply .gitignore filter rules inside the directory
+    #[builder(setter(into, strip_option), default)]
+    pub gitignore: Option<bool>,
     /// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
@@ -4886,6 +4905,9 @@ impl CurrentModule {
         }
         if let Some(include) = opts.include {
             query = query.arg("include", include);
+        }
+        if let Some(gitignore) = opts.gitignore {
+            query = query.arg("gitignore", gitignore);
         }
         Directory {
             proc: self.proc.clone(),
@@ -4977,6 +4999,9 @@ pub struct DirectoryFilterOpts<'a> {
     /// If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: ["node_modules/", ".git*", ".env"]
     #[builder(setter(into, strip_option), default)]
     pub exclude: Option<Vec<&'a str>>,
+    /// If set, apply .gitignore rules when filtering the directory.
+    #[builder(setter(into, strip_option), default)]
+    pub gitignore: Option<bool>,
     /// If set, only paths matching one of these glob patterns is included in the new snapshot. Example: (e.g., ["app/", "package.*"]).
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
@@ -5034,6 +5059,9 @@ pub struct DirectoryWithDirectoryOpts<'a> {
     /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
     #[builder(setter(into, strip_option), default)]
     pub exclude: Option<Vec<&'a str>>,
+    /// Apply .gitignore filter rules inside the directory
+    #[builder(setter(into, strip_option), default)]
+    pub gitignore: Option<bool>,
     /// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
@@ -5389,6 +5417,9 @@ impl Directory {
         if let Some(include) = opts.include {
             query = query.arg("include", include);
         }
+        if let Some(gitignore) = opts.gitignore {
+            query = query.arg("gitignore", gitignore);
+        }
         Directory {
             proc: self.proc.clone(),
             selection: query,
@@ -5617,6 +5648,9 @@ impl Directory {
         }
         if let Some(include) = opts.include {
             query = query.arg("include", include);
+        }
+        if let Some(gitignore) = opts.gitignore {
+            query = query.arg("gitignore", gitignore);
         }
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);

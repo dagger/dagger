@@ -20,12 +20,14 @@ class BaseClient {
 export type AddressDirectoryOpts = {
   exclude?: string[]
   include?: string[]
+  gitignore?: boolean
   noCache?: boolean
 }
 
 export type AddressFileOpts = {
   exclude?: string[]
   include?: string[]
+  gitignore?: boolean
   noCache?: boolean
 }
 
@@ -372,6 +374,11 @@ export type ContainerWithDirectoryOpts = {
    * Patterns to include in the written directory (e.g. ["*.go", "go.mod", "go.sum"]).
    */
   include?: string[]
+
+  /**
+   * Apply .gitignore rules when writing the directory.
+   */
+  gitignore?: boolean
 
   /**
    * A user:group to set for the directory and its contents.
@@ -727,6 +734,11 @@ export type CurrentModuleWorkdirOpts = {
    * Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    */
   include?: string[]
+
+  /**
+   * Apply .gitignore filter rules inside the directory
+   */
+  gitignore?: boolean
 }
 
 /**
@@ -824,6 +836,11 @@ export type DirectoryFilterOpts = {
    * If set, only paths matching one of these glob patterns is included in the new snapshot. Example: (e.g., ["app/", "package.*"]).
    */
   include?: string[]
+
+  /**
+   * If set, apply .gitignore rules when filtering the directory.
+   */
+  gitignore?: boolean
 }
 
 export type DirectorySearchOpts = {
@@ -915,6 +932,11 @@ export type DirectoryWithDirectoryOpts = {
    * Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    */
   include?: string[]
+
+  /**
+   * Apply .gitignore filter rules inside the directory
+   */
+  gitignore?: boolean
 
   /**
    * A user:group to set for the copied directory and its contents.
@@ -3604,6 +3626,7 @@ export class Container extends BaseClient {
    * @param source Identifier of the directory to write
    * @param opts.exclude Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).
    * @param opts.include Patterns to include in the written directory (e.g. ["*.go", "go.mod", "go.sum"]).
+   * @param opts.gitignore Apply .gitignore rules when writing the directory.
    * @param opts.owner A user:group to set for the directory and its contents.
    *
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
@@ -4268,6 +4291,7 @@ export class CurrentModule extends BaseClient {
    * @param path Location of the directory to access (e.g., ".").
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+   * @param opts.gitignore Apply .gitignore filter rules inside the directory
    */
   workdir = (path: string, opts?: CurrentModuleWorkdirOpts): Directory => {
     const ctx = this._ctx.select("workdir", { path, ...opts })
@@ -4515,6 +4539,7 @@ export class Directory extends BaseClient {
    * Return a snapshot with some paths included or excluded
    * @param opts.exclude If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: ["node_modules/", ".git*", ".env"]
    * @param opts.include If set, only paths matching one of these glob patterns is included in the new snapshot. Example: (e.g., ["app/", "package.*"]).
+   * @param opts.gitignore If set, apply .gitignore rules when filtering the directory.
    */
   filter = (opts?: DirectoryFilterOpts): Directory => {
     const ctx = this._ctx.select("filter", { ...opts })
@@ -4633,6 +4658,7 @@ export class Directory extends BaseClient {
    * @param source Identifier of the directory to copy.
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+   * @param opts.gitignore Apply .gitignore filter rules inside the directory
    * @param opts.owner A user:group to set for the copied directory and its contents.
    *
    * The user and group must be an ID (1000:1000), not a name (foo:bar).

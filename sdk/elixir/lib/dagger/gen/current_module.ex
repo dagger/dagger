@@ -54,8 +54,11 @@ defmodule Dagger.CurrentModule do
   @doc """
   Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.
   """
-  @spec workdir(t(), String.t(), [{:exclude, [String.t()]}, {:include, [String.t()]}]) ::
-          Dagger.Directory.t()
+  @spec workdir(t(), String.t(), [
+          {:exclude, [String.t()]},
+          {:include, [String.t()]},
+          {:gitignore, boolean() | nil}
+        ]) :: Dagger.Directory.t()
   def workdir(%__MODULE__{} = current_module, path, optional_args \\ []) do
     query_builder =
       current_module.query_builder
@@ -63,6 +66,7 @@ defmodule Dagger.CurrentModule do
       |> QB.put_arg("path", path)
       |> QB.maybe_put_arg("exclude", optional_args[:exclude])
       |> QB.maybe_put_arg("include", optional_args[:include])
+      |> QB.maybe_put_arg("gitignore", optional_args[:gitignore])
 
     %Dagger.Directory{
       query_builder: query_builder,
