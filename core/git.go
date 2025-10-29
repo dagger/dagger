@@ -134,10 +134,7 @@ func doGitCheckout(
 
 	tmpref := "refs/dagger.tmp/" + identity.NewID()
 
-	// TODO: maybe this should use --no-tags by default, but that's a breaking change :(
-	// also, we currently don't do any special work to ensure that the fetched
-	// tags are consistent with the GitRepository.Remote (oops)
-	args := []string{"fetch", "-u"}
+	args := []string{"fetch", "-u", "--no-tags"}
 	if depth > 0 {
 		args = append(args, fmt.Sprintf("--depth=%d", depth))
 	}

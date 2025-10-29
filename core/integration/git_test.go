@@ -625,46 +625,59 @@ func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (GitSuite) TestGitCheckedTags(ctx context.Context, t *testctx.T) {
+func (GitSuite) TestGitCheckoutNoTag(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	requireGitTagsExist := func(ctx context.Context, t *testctx.T, git *dagger.GitRef) {
-		ctr := c.Container().
-			From("alpine").
-			WithExec([]string{"apk", "add", "git"}).
-			WithWorkdir("/src").
-			WithMountedDirectory(".", git.Tree(dagger.GitRefTreeOpts{Depth: -1}))
+	base := c.Container().
+		From("alpine").
+		WithExec([]string{"apk", "add", "git"}).
+		WithWorkdir("/src")
 
-			// check tag existence
+	requireNoGitTags := func(ctx context.Context, t *testctx.T, git *dagger.GitRef) {
+		ctr := base.WithMountedDirectory(".", git.Tree(dagger.GitRefTreeOpts{Depth: -1}))
+
+		// check tag existence
 		out, err := ctr.WithExec([]string{"git", "tag", "-l"}).Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.Split(strings.TrimSpace(out), "\n")
-		require.Contains(t, lines, "v0.11.8", "v0.11.8 was tagged on main")
-		require.NotContains(t, lines, "v0.11.9", "v0.11.9 was tagged off a branch, so shouldn't appear")
+		require.NotContains(t, lines, "v0.11.8") // tagged off main
+		require.NotContains(t, lines, "v0.11.9") // tagged off branch
+	}
+
+	requireNoTmpRefs := func(ctx context.Context, t *testctx.T, git *dagger.GitRef) {
+		ctr := base.WithMountedDirectory(".", git.Tree(dagger.GitRefTreeOpts{Depth: -1}))
 
 		// make sure no dangling tmp refs exist
 		// (internal impl detail, but good to check they don't leak out)
-		out, err = ctr.WithExec([]string{"git", "ls-remote", "file:///src"}).Stdout(ctx)
+		out, err := ctr.WithExec([]string{"git", "ls-remote", "file:///src"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.NotContains(t, out, "dagger.tmp")
 	}
 
 	runCheckedTags := func(t *testctx.T, git *dagger.GitRepository) {
 		t.Run("branch", func(ctx context.Context, t *testctx.T) {
-			requireGitTagsExist(ctx, t, git.Branch("main"))
+			ref := git.Branch("main")
+			requireNoGitTags(ctx, t, ref)
+			requireNoTmpRefs(ctx, t, ref)
 		})
 
 		t.Run("tag", func(ctx context.Context, t *testctx.T) {
-			requireGitTagsExist(ctx, t, git.Tag("v0.12.0"))
+			ref := git.Tag("v0.12.0")
+			requireNoGitTags(ctx, t, ref)
+			requireNoTmpRefs(ctx, t, ref)
 		})
 
 		t.Run("commit", func(ctx context.Context, t *testctx.T) {
 			// v0.12.0 => 133917c6f9ce36d8cfdc595d9b7bd2c14cbc2c20
-			requireGitTagsExist(ctx, t, git.Commit("133917c6f9ce36d8cfdc595d9b7bd2c14cbc2c20"))
+			ref := git.Commit("133917c6f9ce36d8cfdc595d9b7bd2c14cbc2c20")
+			requireNoGitTags(ctx, t, ref)
+			requireNoTmpRefs(ctx, t, ref)
 		})
 
 		t.Run("head", func(ctx context.Context, t *testctx.T) {
-			requireGitTagsExist(ctx, t, git.Head())
+			ref := git.Head()
+			requireNoGitTags(ctx, t, ref)
+			requireNoTmpRefs(ctx, t, ref)
 		})
 	}
 

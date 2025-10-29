@@ -240,8 +240,6 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, refs []Gi
 				}
 			}
 
-			// TODO: should set doFetch if a tag in ls-remote has been updated?
-
 			if doFetch {
 				fetchRefs = append(fetchRefs, ref)
 			}
