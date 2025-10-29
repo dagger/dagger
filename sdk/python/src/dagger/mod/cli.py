@@ -5,14 +5,17 @@ import importlib.metadata
 import importlib.util
 import logging
 import os
+import json
 import typing
 
 import anyio
 
 import dagger
 from dagger import telemetry
+from dagger.mod._static_build import static_typedefs
 from dagger.mod._exceptions import ModuleError, ModuleLoadError, record_exception
-from dagger.mod._module import MAIN_OBJECT, Module
+from dagger.mod._module import MAIN_OBJECT, MODULE_NAME, TYPE_DEF_FILE, Module
+
 
 logger = logging.getLogger(__package__)
 
@@ -29,19 +32,47 @@ def app(mod: Module | None = None, register: bool = False) -> int | None:
     finally:
         telemetry.shutdown()
 
+def _find_project_root(start: str | None = None) -> str:
+    cur = os.path.abspath(start or os.getcwd())
+    chosen: str | None = None
+    while True:
+        if os.path.isdir(os.path.join(cur, "src")):
+            chosen = cur
+            break
+        parent = os.path.dirname(cur)
+        if not parent or parent == cur:
+            break
+        cur = parent
+    return chosen or os.getcwd()
 
 async def main(mod: Module | None = None, register: bool = False) -> int | None:
-    """Async entrypoint for a Dagger module."""
-    # Establishing connection early on to allow returning dag.error().
-    # Note: if there's a connection error dag.error() won't be sent but
-    # should be logged and the traceback shown on the function's stderr output.
+    """Async entrypoint for a Dagger module.
+
+    Behavior change: when `register=True` and `mod is None`, perform a fast, static
+    registration without importing user code or connecting to the engine.
+    """
     async with await dagger.connect():
         try:
+            if register and mod is None:
+                project_root = _find_project_root()
+                mod_id = await static_typedefs(project_root=project_root, main_name=MAIN_OBJECT)
+                output = json.dumps(mod_id)
+                await anyio.Path(TYPE_DEF_FILE).write_text(output)
+                return 0
             if mod is None:
                 mod = load_module()
             if register:
                 return await mod.register()
             return await mod.serve()
+        except LookupError:
+            msg = (
+                f"Main object with name '{MAIN_OBJECT}' not found or class not "
+                "decorated with '@dagger.object_type'\n"
+                f"If you believe the module name '{MODULE_NAME}' is incorrectly "
+                "being converted into PascalCase, please file a bug report."
+            )
+            logger.error(msg)
+            return 2
         except (ModuleError, dagger.QueryError) as e:
             await record_exception(e)
             return 2
