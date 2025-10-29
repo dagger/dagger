@@ -1323,7 +1323,7 @@ func (dir *Directory) WithChanges(ctx context.Context, changes *Changeset) (*Dir
 			return nil, fmt.Errorf("failed to get dagql server: %w", err)
 		}
 
-		dir, err = dir.Without(ctx, srv, changes.RemovedPaths...)
+		dir, _, err = dir.Without(ctx, srv, changes.RemovedPaths...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to remove paths: %w", err)
 		}
@@ -1332,9 +1332,9 @@ func (dir *Directory) WithChanges(ctx context.Context, changes *Changeset) (*Dir
 	return dir, nil
 }
 
-func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...string) (*Directory, error) {
+func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...string) (_ *Directory, anyPathsRemoved bool, _ error) {
 	dir = dir.Clone()
-	return execInMount(ctx, dir, func(root string) error {
+	dir, err := execInMount(ctx, dir, func(root string) error {
 		for _, p := range paths {
 			p = path.Join(dir.Dir, p)
 			var matches []string
@@ -1347,11 +1347,20 @@ func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...s
 			} else {
 				matches = []string{p}
 			}
+
 			for _, m := range matches {
 				fullPath, err := RootPathWithoutFinalSymlink(root, m)
 				if err != nil {
 					return err
 				}
+				_, statErr := os.Lstat(fullPath)
+				if errors.Is(statErr, os.ErrNotExist) {
+					continue
+				} else if statErr != nil {
+					return statErr
+				}
+
+				anyPathsRemoved = true
 				err = os.RemoveAll(fullPath)
 				if err != nil {
 					return err
@@ -1360,6 +1369,10 @@ func (dir *Directory) Without(ctx context.Context, srv *dagql.Server, paths ...s
 		}
 		return nil
 	}, withSavedSnapshot("without %s", strings.Join(paths, ",")))
+	if err != nil {
+		return nil, false, err
+	}
+	return dir, anyPathsRemoved, nil
 }
 
 func (dir *Directory) Exists(ctx context.Context, srv *dagql.Server, targetPath string, targetType ExistsType, doNotFollowSymlinks bool) (bool, error) {
