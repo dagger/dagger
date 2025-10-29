@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+
+	"dagger/my-module/internal/dagger"
 )
 
 type MyModule struct{}
