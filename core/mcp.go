@@ -21,12 +21,15 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/iancoleman/strcase"
+	"github.com/jedevc/diffparser"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -388,6 +391,55 @@ func (m *MCP) updateEnvWorkspace(ctx context.Context, workspace dagql.ObjectResu
 	return nil
 }
 
+func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) (string, error) {
+	var rawPatch string
+	if err := srv.Select(ctx, changes, &rawPatch, dagql.Selector{
+		View:  srv.View,
+		Field: "asPatch",
+	}, dagql.Selector{
+		View:  srv.View,
+		Field: "contents",
+	}); err != nil {
+		return fmt.Sprintf("WARNING: failed to fetch patch summary: %s", err), nil
+	}
+	addedDirectories := changes.Self().AddedPaths
+	addedDirectories = slices.DeleteFunc(addedDirectories, func(s string) bool {
+		return !strings.HasSuffix(s, "/")
+	})
+	removedDirectories := changes.Self().RemovedPaths
+	removedDirectories = slices.DeleteFunc(removedDirectories, func(s string) bool {
+		return !strings.HasSuffix(s, "/")
+	})
+	if rawPatch == "" && len(addedDirectories) == 0 && len(removedDirectories) == 0 {
+		// No changes
+		return "", nil
+	}
+	patch, err := diffparser.Parse(rawPatch)
+	if err != nil {
+		return "", fmt.Errorf("parse patch: %w", err)
+	}
+	preview := &idtui.PatchPreview{
+		Patch:       patch,
+		AddedDirs:   addedDirectories,
+		RemovedDirs: removedDirectories,
+	}
+	// render with nice colors to the TUI
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	uiOut := termenv.NewOutput(stdio.Stdout, termenv.WithProfile(
+		slog.ColorProfileFromContext(ctx),
+	))
+	// render without color for the LLM
+	var res strings.Builder
+	llmOut := termenv.NewOutput(&res, termenv.WithProfile(termenv.Ascii))
+	if err := preview.Summarize(llmOut, 80); err != nil {
+		return fmt.Sprintf("WARNING: failed to render patch summary: %s", err), nil
+	}
+	if err := preview.Summarize(uiOut, 80); err != nil {
+		slog.Warn("failed to render patch summary", "error", err)
+	}
+	return res.String(), nil
+}
+
 func toAny(v any) (res map[string]any, rerr error) {
 	pl, err := json.Marshal(v)
 	if err != nil {
@@ -703,11 +755,7 @@ func (m *MCP) call(ctx context.Context,
 		if err := m.updateEnvWorkspace(ctx, newWS); err != nil {
 			return "", err
 		}
-		// No particular message needed here. At one point we diffed the Env.workspace
-		// and printed which files were modified, but it's not really necessary to
-		// show things like that unilaterally vs. just allowing each Env-returning
-		// tool to control the messaging.
-		return "", nil
+		return m.summarizePatch(ctx, srv, changes)
 	}
 
 	if autoConstruct != nil {
