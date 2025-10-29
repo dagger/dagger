@@ -7,12 +7,12 @@
     <parent>
         <groupId>io.dagger</groupId>
         <artifactId>dagger-sdk-parent</artifactId>
-        <version>0.19.2</version>
+        <version>0.19.3</version>
     </parent>
 
     <artifactId>dagger-codegen-maven-plugin</artifactId>
     <packaging>maven-plugin</packaging>
-    <version>0.19.2</version>
+    <version>0.19.3</version>
     <description>Maven plugin for Dagger.io API codegen</description>
 
     <dependencies>

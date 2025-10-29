@@ -40,6 +40,11 @@ func NewChangeset(ctx context.Context, before, after dagql.ObjectResult[*Directo
 
 // computeChanges calculates added, changed, and removed files/paths
 func (ch *Changeset) computeChanges(ctx context.Context) error {
+	if ch.Before.ID().Digest() == ch.After.ID().Digest() {
+		// No changes if the directories are identical
+		return nil
+	}
+
 	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
 		return err
@@ -222,12 +227,12 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = ReadonlyMountRef(ctx, beforeRef, bkSessionGroup, func(before string) error {
+	err = MountRef(ctx, beforeRef, bkSessionGroup, func(before string) error {
 		beforeDir, err := containerdfs.RootPath(before, ch.Before.Self().Dir)
 		if err != nil {
 			return err
 		}
-		return ReadonlyMountRef(ctx, afterRef, bkSessionGroup, func(after string) error {
+		return MountRef(ctx, afterRef, bkSessionGroup, func(after string) error {
 			afterDir, err := containerdfs.RootPath(after, ch.After.Self().Dir)
 			if err != nil {
 				return err
@@ -312,8 +317,8 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 				}
 				return nil
 			})
-		})
-	})
+		}, mountRefAsReadOnly)
+	}, mountRefAsReadOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +343,7 @@ func (ch *Changeset) Export(ctx context.Context, destPath string) (rerr error) {
 		return fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	dir, err := ch.Before.Self().Diff(ctx, ch.After.Self())
+	dir, err := ch.Before.Self().DiffLLB(ctx, ch.After.Self())
 	if err != nil {
 		return err
 	}

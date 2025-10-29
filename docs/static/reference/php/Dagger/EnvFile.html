@@ -183,6 +183,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_namespace">namespace</a>(string $prefix)
+        
+                                            <p><p>Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix &quot;MY<em>APP</em>&quot; and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     array
                 </div>
                 <div class="col-md-8">
@@ -460,8 +470,50 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_variables">
+                    <h3 id="method_namespace">
         <div class="location">at line 60</div>
+        <code>                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
+    <strong>namespace</strong>(string $prefix)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix &quot;MY<em>APP</em>&quot; and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$prefix</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_variables">
+        <div class="location">at line 70</div>
         <code>                    array
     <strong>variables</strong>(bool|null $raw = null)
         </code>
@@ -503,7 +555,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withVariable">
-        <div class="location">at line 72</div>
+        <div class="location">at line 82</div>
         <code>                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
     <strong>withVariable</strong>(string $name, string $value)
         </code>
@@ -550,7 +602,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutVariable">
-        <div class="location">at line 83</div>
+        <div class="location">at line 93</div>
         <code>                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
     <strong>withoutVariable</strong>(string $name)
         </code>

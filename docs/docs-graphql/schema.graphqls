@@ -204,6 +204,9 @@ type Changeset {
   """A unique identifier for this Changeset."""
   id: ChangesetID!
 
+  """Returns true if the changeset is empty (i.e. there are no changes)."""
+  isEmpty: Boolean!
+
   """Return a snapshot containing only the created and modified files"""
   layer: Directory!
 
@@ -792,6 +795,12 @@ type Container {
     variables defined in the container (e.g. "/opt/bin:$PATH").
     """
     expand: Boolean = false
+  ): Container!
+
+  """Raise an error."""
+  withError(
+    """Message of the error to raise. If empty, the error will be ignored."""
+    err: String!
   ): Container!
 
   """
@@ -1733,6 +1742,12 @@ type Directory {
     owner: String = ""
   ): Directory!
 
+  """Raise an error."""
+  withError(
+    """Message of the error to raise. If empty, the error will be ignored."""
+    err: String!
+  ): Directory!
+
   """
   Retrieves this directory plus the contents of the given file copied to the given path.
   """
@@ -1866,11 +1881,17 @@ scalar DirectoryID
 
 """The Dagger engine configuration and state"""
 type Engine {
+  """The list of connected client IDs"""
+  clients: [String!]!
+
   """A unique identifier for this Engine."""
   id: EngineID!
 
   """The local (on-disk) cache for the Dagger engine"""
   localCache: EngineCache!
+
+  """The name of the engine instance."""
+  name: String!
 }
 
 """A cache storage for the Dagger engine"""
@@ -2535,6 +2556,17 @@ type EnvFile {
   """A unique identifier for this EnvFile."""
   id: EnvFileID!
 
+  """
+  Filters variables by prefix and removes the pref from keys. Variables without
+  the prefix are excluded. For example, with the prefix "MY_APP_" and variables:
+  MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment
+  will contain: TOKEN=topsecret NAME=hello
+  """
+  namespace(
+    """The prefix to filter by"""
+    prefix: String!
+  ): EnvFile!
+
   """Return all variables"""
   variables(
     """
@@ -2871,6 +2903,17 @@ type Function {
     sourceMap: SourceMapID
   ): Function!
 
+  """Returns the function updated to use the provided cache policy."""
+  withCachePolicy(
+    """The cache policy to use."""
+    policy: FunctionCachePolicy!
+
+    """
+    The TTL for the cache policy, if applicable. Provided as a duration string, e.g. "5m", "1h30s".
+    """
+    timeToLive: String
+  ): Function!
+
   """Returns the function with the given doc string."""
   withDescription(
     """The doc string to set."""
@@ -2928,6 +2971,13 @@ type FunctionArg {
 The `FunctionArgID` scalar type represents an identifier for an object of type FunctionArg.
 """
 scalar FunctionArgID
+
+"""The behavior configured for function result caching."""
+enum FunctionCachePolicy {
+  Default
+  PerSession
+  Never
+}
 
 """An active function call."""
 type FunctionCall {
@@ -3102,6 +3152,9 @@ type GitRepository {
     """Glob patterns (e.g., "refs/tags/v*")."""
     patterns: [String!]
   ): [String!]!
+
+  """Returns the changeset of uncommitted changes in the git repository."""
+  uncommitted: Changeset!
 
   """The URL of the git repository."""
   url: String
@@ -3556,6 +3609,16 @@ type Module {
   """Interfaces served by this module."""
   interfaces: [TypeDef!]!
 
+  """
+  The introspection schema JSON file for this module.
+
+  This file represents the schema visible to the module's source code, including
+  all core types and those from the dependencies.
+
+  Note: this is in the context of a module, so some core types may be hidden.
+  """
+  introspectionSchemaJSON: File!
+
   """The name of the module"""
   name: String!
 
@@ -3565,7 +3628,7 @@ type Module {
   """
   The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
   """
-  runtime: Container
+  runtime: Container!
 
   """The SDK config used by this module."""
   sdk: SDKConfig
@@ -3703,6 +3766,16 @@ type ModuleSource {
   """A unique identifier for this ModuleSource."""
   id: ModuleSourceID!
 
+  """
+  The introspection schema JSON file for this module source.
+
+  This file represents the schema visible to the module's source code, including
+  all core types and those from the dependencies.
+
+  Note: this is in the context of a module, so some core types may be hidden.
+  """
+  introspectionSchemaJSON: File!
+
   """The kind of module source (currently local, git or dir)."""
   kind: ModuleSourceKind!
 
@@ -3787,6 +3860,12 @@ type ModuleSource {
     version: String!
   ): ModuleSource!
 
+  """Enable the experimental features for the module source."""
+  withExperimentalFeatures(
+    """The experimental features to enable."""
+    features: [ModuleSourceExperimentalFeature!]!
+  ): ModuleSource!
+
   """
   Update the module source with additional include patterns for
   files+directories from its context that are required for building it
@@ -3847,6 +3926,18 @@ type ModuleSource {
     """The dependencies to remove."""
     dependencies: [String!]!
   ): ModuleSource!
+
+  """Disable experimental features for the module source."""
+  withoutExperimentalFeatures(
+    """The experimental features to disable."""
+    features: [ModuleSourceExperimentalFeature!]!
+  ): ModuleSource!
+}
+
+"""Experimental features of a module"""
+enum ModuleSourceExperimentalFeature {
+  """Self calls"""
+  SELF_CALLS
 }
 
 """

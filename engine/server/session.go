@@ -550,6 +550,12 @@ func (srv *Server) initializeDaggerClient(
 		go pw.UpdateFrom(logCtx, statusCh)
 	}
 
+	var parentBuildkitClient *buildkit.Client
+	numParents := len(client.parents)
+	if numParents > 0 {
+		parentBuildkitClient = client.parents[numParents-1].bkClient
+	}
+
 	client.bkClient, err = buildkit.NewClient(ctx, &buildkit.Opts{
 		Worker:               srv.worker,
 		SessionManager:       srv.bkSessionManager,
@@ -567,13 +573,25 @@ func (srv *Server) initializeDaggerClient(
 
 		Interactive:        client.daggerSession.interactive,
 		InteractiveCommand: client.daggerSession.interactiveCommand,
+
+		ParentClient: parentBuildkitClient,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create buildkit client: %w", err)
 	}
 
+	var env *call.ID
+	if opts.EncodedFunctionCall != nil {
+		var fnCall core.FunctionCall
+		if err := json.Unmarshal(opts.EncodedFunctionCall, &fnCall); err != nil {
+			return fmt.Errorf("failed to decode function call: %w", err)
+		}
+		client.fnCall = &fnCall
+		env = fnCall.EnvID
+	}
+
 	// setup the graphql server + module/function state for the client
-	client.dagqlRoot = core.NewRoot(srv)
+	client.dagqlRoot = core.NewRoot(srv, env)
 	// make query available via context to all APIs
 	ctx = core.ContextWithQuery(ctx, client.dagqlRoot)
 
@@ -619,14 +637,6 @@ func (srv *Server) initializeDaggerClient(
 			client.deps = client.deps.Append(client.mod)
 		}
 		client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
-	}
-
-	if opts.EncodedFunctionCall != nil {
-		var fnCall core.FunctionCall
-		if err := json.Unmarshal(opts.EncodedFunctionCall, &fnCall); err != nil {
-			return fmt.Errorf("failed to decode function call: %w", err)
-		}
-		client.fnCall = &fnCall
 	}
 
 	// configure OTel providers that export to SQLite

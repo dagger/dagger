@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 	"golang.org/x/crypto/argon2"
 )
@@ -92,7 +93,7 @@ func (s *secretSchema) secret(
 	}
 
 	if args.CacheKey.Valid {
-		i = i.WithObjectDigest(dagql.HashFrom(string(args.CacheKey.Value)))
+		i = i.WithObjectDigest(hashutil.HashStrings(string(args.CacheKey.Value)))
 	} else {
 		plaintext, err := secretStore.GetSecretPlaintextDirect(ctx, secret)
 		if err != nil {
@@ -161,23 +162,19 @@ func (s *secretSchema) setSecret(
 	if err != nil {
 		return i, fmt.Errorf("failed to get client resource accessor: %w", err)
 	}
-	dgst := dagql.HashFrom(
+	dgst := hashutil.HashStrings(
 		args.Name,
 		accessor,
 	)
 
-	currentID := dagql.CurrentID(ctx)
-	callID := currentID.Receiver().Append(
-		currentID.Type().ToAST(),
-		currentID.Field(),
-		currentID.View(),
-		currentID.Module(),
-		0,
-		dgst,
-		call.NewArgument("name", call.NewLiteralString(args.Name), false),
-		// hide plaintext in the returned ID, we instead rely on the
-		// digest of the ID for uniqueness+identity
-		call.NewArgument("plaintext", call.NewLiteralString("***"), false),
+	callID := dagql.CurrentID(ctx).With(
+		call.WithArgs(
+			call.NewArgument("name", call.NewLiteralString(args.Name), false),
+			// hide plaintext in the returned ID, we instead rely on the
+			// digest of the ID for uniqueness+identity
+			call.NewArgument("plaintext", call.NewLiteralString("***"), false),
+		),
+		call.WithCustomDigest(dgst),
 	)
 
 	secretStore, err := parent.Self().Secrets(ctx)

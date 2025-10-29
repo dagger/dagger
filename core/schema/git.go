@@ -24,6 +24,7 @@ import (
 	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/util/gitutil"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
@@ -112,6 +113,11 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("patterns").Doc(`Glob patterns (e.g., "refs/tags/v*").`),
 			),
+
+		dagql.NodeFunc("__cleaned", DagOpDirectoryWrapper(srv, s.cleaned, WithPathFn(keepParentGitDir[cleanedArgs]))).
+			Doc(`(Internal-only) Cleans the git repository by removing untracked files and resetting modifications.`),
+		dagql.NodeFunc("uncommitted", s.uncommitted).
+			Doc("Returns the changeset of uncommitted changes in the git repository."),
 
 		dagql.Func("withAuthToken", s.withAuthToken).
 			Doc(`Token to authenticate the remote with.`).
@@ -522,13 +528,12 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		dgstInputs = append(dgstInputs, "authHeader", strconv.FormatBool(httpAuthHeader.Self() != nil))
 		resourceIDs = append(resourceIDs, &resource.ID{ID: *httpAuthHeader.ID()})
 	}
-	inst = inst.WithDigest(dagql.HashFrom(dgstInputs...))
+	inst = inst.WithDigest(hashutil.HashStrings(dgstInputs...))
 	if len(resourceIDs) > 0 {
 		postCall, err := core.ResourceTransferPostCall(ctx, parent.Self(), clientMetadata.ClientID, resourceIDs...)
 		if err != nil {
 			return inst, fmt.Errorf("failed to create post call: %w", err)
 		}
-
 		inst = inst.ResultWithPostCall(postCall)
 	}
 	return inst, nil
@@ -605,7 +610,7 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 			dgstInputs = append(dgstInputs, "authHeader", strconv.FormatBool(remoteRepo.AuthHeader.Self() != nil))
 		}
 	}
-	inst = inst.WithDigest(dagql.HashFrom(dgstInputs...))
+	inst = inst.WithDigest(hashutil.HashStrings(dgstInputs...))
 	return inst, nil
 }
 
@@ -688,6 +693,76 @@ func (s *gitSchema) branches(ctx context.Context, parent *core.GitRepository, ar
 	}
 	remote := parent.Remote
 	return dagql.NewStringArray(remote.Filter(patterns).Branches().ShortNames()...), nil
+}
+
+type cleanedArgs struct {
+	DagOpInternalArgs
+}
+
+func keepParentGitDir[A any](_ context.Context, repo *core.GitRepository, _ A) (string, error) {
+	if local, ok := repo.Backend.(*core.LocalGitRepository); ok {
+		return local.Directory.Self().Dir, nil
+	}
+	return "", nil
+}
+
+func (s *gitSchema) cleaned(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args cleanedArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	dir, err := parent.Self().Backend.Cleaned(ctx)
+	if err != nil {
+		return inst, err
+	}
+	return dir, nil
+}
+
+func (s *gitSchema) uncommitted(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args struct{}) (inst dagql.ObjectResult[*core.Changeset], _ error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	var cleaned dagql.ObjectResult[*core.Directory]
+	var dirty dagql.ObjectResult[*core.Directory]
+
+	dirty, err = parent.Self().Backend.Dirty(ctx)
+	if err != nil {
+		return inst, err
+	}
+	if dirty.Self() == nil {
+		// clean repo, so just get head, there'll be no diff later
+		if err := dag.Select(ctx, parent, &dirty,
+			dagql.Selector{
+				Field: "head",
+			},
+			dagql.Selector{
+				Field: "tree",
+			},
+		); err != nil {
+			return inst, fmt.Errorf("failed to select head tree for clean repo: %w", err)
+		}
+		cleaned = dirty
+	} else {
+		// wrapped in an internal field to get good caching behavior
+		if err := dag.Select(ctx, parent, &cleaned, dagql.Selector{
+			Field: "__cleaned",
+		}); err != nil {
+			return inst, fmt.Errorf("failed to select cleaned: %w", err)
+		}
+	}
+
+	if err := dag.Select(ctx, dirty, &inst,
+		dagql.Selector{
+			Field: "changes",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "from",
+					Value: dagql.NewID[*core.Directory](cleaned.ID()),
+				},
+			},
+		},
+	); err != nil {
+		return inst, fmt.Errorf("failed to select cleaned digest: %w", err)
+	}
+	return inst, nil
 }
 
 type withAuthTokenArgs struct {
@@ -798,7 +873,7 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 			if err != nil {
 				return inst, fmt.Errorf("failed to get content hash: %w", err)
 			}
-			inst = inst.WithObjectDigest(dagql.HashFrom(dagql.CurrentID(ctx).Digest().String(), dgst.String()))
+			inst = inst.WithObjectDigest(hashutil.HashStrings(dagql.CurrentID(ctx).Digest().String(), dgst.String()))
 		}
 	}
 

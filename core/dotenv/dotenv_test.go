@@ -247,6 +247,32 @@ func TestAllExpansion(t *testing.T) {
 				"SPECIAL": "!@#$%^&*()",
 			},
 		},
+		{
+			name: "JSON array must be protected with quotes",
+			environ: []string{
+				`no_quotes=["ga", "bu", "zo", "meu", 42]`,
+				`single_quotes='["ga", "bu", "zo", "meu", 42]'`,
+				`double_quotes="[\"ga\", \"bu\", \"zo\", \"meu\", 42]"`,
+			},
+			want: map[string]string{
+				`no_quotes`:     `[ga, bu, zo, meu, 42]`,
+				`single_quotes`: `["ga", "bu", "zo", "meu", 42]`,
+				`double_quotes`: `["ga", "bu", "zo", "meu", 42]`,
+			},
+		},
+		{
+			name: "JSON object must be protected with quotes",
+			environ: []string{
+				`no_quotes={"name": "John Wick", "age": 58, "occupation": "assassin"}`,
+				`single_quotes='{"name": "John Wick", "age": 58, "occupation": "assassin"}'`,
+				`double_quotes="{\"name\": \"John Wick\", \"age\": 58, \"occupation\": \"assassin\"}"`,
+			},
+			want: map[string]string{
+				`no_quotes`:     `{name: John Wick, age: 58, occupation: assassin}`,
+				`single_quotes`: `{"name": "John Wick", "age": 58, "occupation": "assassin"}`,
+				`double_quotes`: `{"name": "John Wick", "age": 58, "occupation": "assassin"}`,
+			},
+		},
 	}
 
 	for _, tt := range tests {

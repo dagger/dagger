@@ -33,7 +33,7 @@ func ResourceTransferPostCall(
 		}
 	}
 	if len(secretsByDgst) == 0 {
-		return nopTransfer, nil
+		return nil, nil
 	}
 
 	var secretIDs []dagql.ID[*Secret]
@@ -62,7 +62,7 @@ func ResourceTransferPostCall(
 		// like ModuleRuntime. In this case, the only secrets involved are any related to pulling the module
 		// source (like a git auth token). These secrets are already known by the caller and the secret transfer
 		// is thus not needed.
-		return nopTransfer, nil //nolint:nilerr
+		return nil, nil //nolint:nilerr
 	}
 	srcDag, err := query.Server.Server(srcClientCtx)
 	if err != nil {
@@ -105,7 +105,7 @@ func ResourceTransferPostCall(
 	}
 
 	if len(namedSecrets) == 0 {
-		return nopTransfer, nil
+		return nil, nil
 	}
 
 	callerClientMemo := sync.Map{}
@@ -145,7 +145,7 @@ func ResourceTransferPostCall(
 			// cache results such that a function call return value result inherently results in any referenced
 			// secrets also staying in cache.
 			cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-				ResultKey: string(secret.inst.ID().Digest()),
+				CallKey: string(secret.inst.ID().Digest()),
 			}
 			_, err = destDag.Cache.GetOrInitializeWithCallbacks(ctx, cacheKey,
 				func(ctx context.Context) (*dagql.CacheValWithCallbacks, error) {
@@ -164,8 +164,4 @@ func ResourceTransferPostCall(
 	}
 
 	return postCall, nil
-}
-
-func nopTransfer(ctx context.Context) error {
-	return nil
 }

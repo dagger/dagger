@@ -1227,11 +1227,60 @@ export type FunctionWithArgOpts = {
   sourceMap?: SourceMap
 }
 
+export type FunctionWithCachePolicyOpts = {
+  /**
+   * The TTL for the cache policy, if applicable. Provided as a duration string, e.g. "5m", "1h30s".
+   */
+  timeToLive?: string
+}
+
 /**
  * The `FunctionArgID` scalar type represents an identifier for an object of type FunctionArg.
  */
 export type FunctionArgID = string & { __FunctionArgID: never }
 
+/**
+ * The behavior configured for function result caching.
+ */
+export enum FunctionCachePolicy {
+  Default = "Default",
+  Never = "Never",
+  PerSession = "PerSession",
+}
+
+/**
+ * Utility function to convert a FunctionCachePolicy value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function FunctionCachePolicyValueToName(value: FunctionCachePolicy): string {
+  switch (value) {
+    case FunctionCachePolicy.Default:
+      return "Default"
+    case FunctionCachePolicy.Never:
+      return "Never"
+    case FunctionCachePolicy.PerSession:
+      return "PerSession"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a FunctionCachePolicy name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function FunctionCachePolicyNameToValue(name: string): FunctionCachePolicy {
+  switch (name) {
+    case "Default":
+      return FunctionCachePolicy.Default
+    case "Never":
+      return FunctionCachePolicy.Never
+    case "PerSession":
+      return FunctionCachePolicy.PerSession
+    default:
+      return name as FunctionCachePolicy
+  }
+}
 /**
  * The `FunctionCallArgValueID` scalar type represents an identifier for an object of type FunctionCallArgValue.
  */
@@ -1513,6 +1562,45 @@ export type ModuleConfigClientID = string & { __ModuleConfigClientID: never }
  */
 export type ModuleID = string & { __ModuleID: never }
 
+/**
+ * Experimental features of a module
+ */
+export enum ModuleSourceExperimentalFeature {
+  /**
+   * Self calls
+   */
+  SelfCalls = "SELF_CALLS",
+}
+
+/**
+ * Utility function to convert a ModuleSourceExperimentalFeature value to its name so
+ * it can be uses as argument to call a exposed function.
+ */
+function ModuleSourceExperimentalFeatureValueToName(
+  value: ModuleSourceExperimentalFeature,
+): string {
+  switch (value) {
+    case ModuleSourceExperimentalFeature.SelfCalls:
+      return "SELF_CALLS"
+    default:
+      return value
+  }
+}
+
+/**
+ * Utility function to convert a ModuleSourceExperimentalFeature name to its value so
+ * it can be properly used inside the module runtime.
+ */
+function ModuleSourceExperimentalFeatureNameToValue(
+  name: string,
+): ModuleSourceExperimentalFeature {
+  switch (name) {
+    case "SELF_CALLS":
+      return ModuleSourceExperimentalFeature.SelfCalls
+    default:
+      return name as ModuleSourceExperimentalFeature
+  }
+}
 /**
  * The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
  */
@@ -2647,6 +2735,7 @@ export class CacheVolume extends BaseClient {
 export class Changeset extends BaseClient {
   private readonly _id?: ChangesetID = undefined
   private readonly _export?: string = undefined
+  private readonly _isEmpty?: boolean = undefined
   private readonly _sync?: ChangesetID = undefined
 
   /**
@@ -2656,12 +2745,14 @@ export class Changeset extends BaseClient {
     ctx?: Context,
     _id?: ChangesetID,
     _export?: string,
+    _isEmpty?: boolean,
     _sync?: ChangesetID,
   ) {
     super(ctx)
 
     this._id = _id
     this._export = _export
+    this._isEmpty = _isEmpty
     this._sync = _sync
   }
 
@@ -2727,6 +2818,21 @@ export class Changeset extends BaseClient {
     const ctx = this._ctx.select("export", { path })
 
     const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Returns true if the changeset is empty (i.e. there are no changes).
+   */
+  isEmpty = async (): Promise<boolean> => {
+    if (this._isEmpty) {
+      return this._isEmpty
+    }
+
+    const ctx = this._ctx.select("isEmpty")
+
+    const response: Awaited<boolean> = await ctx.execute()
 
     return response
   }
@@ -3539,6 +3645,15 @@ export class Container extends BaseClient {
     opts?: ContainerWithEnvVariableOpts,
   ): Container => {
     const ctx = this._ctx.select("withEnvVariable", { name, value, ...opts })
+    return new Container(ctx)
+  }
+
+  /**
+   * Raise an error.
+   * @param err Message of the error to raise. If empty, the error will be ignored.
+   */
+  withError = (err: string): Container => {
+    const ctx = this._ctx.select("withError", { err })
     return new Container(ctx)
   }
 
@@ -4534,6 +4649,15 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Raise an error.
+   * @param err Message of the error to raise. If empty, the error will be ignored.
+   */
+  withError = (err: string): Directory => {
+    const ctx = this._ctx.select("withError", { err })
+    return new Directory(ctx)
+  }
+
+  /**
    * Retrieves this directory plus the contents of the given file copied to the given path.
    * @param path Location of the copied file (e.g., "/file.txt").
    * @param source Identifier of the file to copy.
@@ -4679,14 +4803,16 @@ export class Directory extends BaseClient {
  */
 export class Engine extends BaseClient {
   private readonly _id?: EngineID = undefined
+  private readonly _name?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: EngineID) {
+  constructor(ctx?: Context, _id?: EngineID, _name?: string) {
     super(ctx)
 
     this._id = _id
+    this._name = _name
   }
 
   /**
@@ -4705,11 +4831,37 @@ export class Engine extends BaseClient {
   }
 
   /**
+   * The list of connected client IDs
+   */
+  clients = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("clients")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * The local (on-disk) cache for the Dagger engine
    */
   localCache = (): EngineCache => {
     const ctx = this._ctx.select("localCache")
     return new EngineCache(ctx)
+  }
+
+  /**
+   * The name of the engine instance.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 
@@ -6072,6 +6224,15 @@ export class EnvFile extends BaseClient {
   }
 
   /**
+   * Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix "MY_APP_" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello
+   * @param prefix The prefix to filter by
+   */
+  namespace_ = (prefix: string): EnvFile => {
+    const ctx = this._ctx.select("namespace", { prefix })
+    return new EnvFile(ctx)
+  }
+
+  /**
    * Return all variables
    * @param opts.raw Return values exactly as written to the file. No quote removal or variable expansion
    */
@@ -6801,6 +6962,27 @@ export class Function_ extends BaseClient {
   }
 
   /**
+   * Returns the function updated to use the provided cache policy.
+   * @param policy The cache policy to use.
+   * @param opts.timeToLive The TTL for the cache policy, if applicable. Provided as a duration string, e.g. "5m", "1h30s".
+   */
+  withCachePolicy = (
+    policy: FunctionCachePolicy,
+    opts?: FunctionWithCachePolicyOpts,
+  ): Function_ => {
+    const metadata = {
+      policy: { is_enum: true, value_to_name: FunctionCachePolicyValueToName },
+    }
+
+    const ctx = this._ctx.select("withCachePolicy", {
+      policy,
+      ...opts,
+      __metadata: metadata,
+    })
+    return new Function_(ctx)
+  }
+
+  /**
    * Returns the function with the given doc string.
    * @param description The doc string to set.
    */
@@ -7457,6 +7639,14 @@ export class GitRepository extends BaseClient {
     const response: Awaited<string[]> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Returns the changeset of uncommitted changes in the git repository.
+   */
+  uncommitted = (): Changeset => {
+    const ctx = this._ctx.select("uncommitted")
+    return new Changeset(ctx)
   }
 
   /**
@@ -8605,6 +8795,18 @@ export class Module_ extends BaseClient {
   }
 
   /**
+   * The introspection schema JSON file for this module.
+   *
+   * This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+   *
+   * Note: this is in the context of a module, so some core types may be hidden.
+   */
+  introspectionSchemaJSON = (): File => {
+    const ctx = this._ctx.select("introspectionSchemaJSON")
+    return new File(ctx)
+  }
+
+  /**
    * The name of the module
    */
   name = async (): Promise<string> => {
@@ -9094,6 +9296,18 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * The introspection schema JSON file for this module source.
+   *
+   * This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+   *
+   * Note: this is in the context of a module, so some core types may be hidden.
+   */
+  introspectionSchemaJSON = (): File => {
+    const ctx = this._ctx.select("introspectionSchemaJSON")
+    return new File(ctx)
+  }
+
+  /**
    * The kind of module source (currently local, git or dir).
    */
   kind = async (): Promise<ModuleSourceKind> => {
@@ -9308,6 +9522,17 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * Enable the experimental features for the module source.
+   * @param features The experimental features to enable.
+   */
+  withExperimentalFeatures = (
+    features: ModuleSourceExperimentalFeature[],
+  ): ModuleSource => {
+    const ctx = this._ctx.select("withExperimentalFeatures", { features })
+    return new ModuleSource(ctx)
+  }
+
+  /**
    * Update the module source with additional include patterns for files+directories from its context that are required for building it
    * @param patterns The new additional include patterns.
    */
@@ -9392,6 +9617,17 @@ export class ModuleSource extends BaseClient {
    */
   withoutDependencies = (dependencies: string[]): ModuleSource => {
     const ctx = this._ctx.select("withoutDependencies", { dependencies })
+    return new ModuleSource(ctx)
+  }
+
+  /**
+   * Disable experimental features for the module source.
+   * @param features The experimental features to disable.
+   */
+  withoutExperimentalFeatures = (
+    features: ModuleSourceExperimentalFeature[],
+  ): ModuleSource => {
+    const ctx = this._ctx.select("withoutExperimentalFeatures", { features })
     return new ModuleSource(ctx)
   }
 

@@ -1,18 +1,15 @@
 {
   "name": "go",
-  "engineVersion": "v0.19.2",
+  "engineVersion": "v0.19.3",
   "sdk": {
     "source": "go"
   },
+  "include": [
+    "../../go.sum",
+    "../../go.mod",
+    "../../util/parallel"
+  ],
   "dependencies": [
-    {
-      "name": "dirdiff",
-      "source": "../dirdiff"
-    },
-    {
-      "name": "golangci",
-      "source": "../golangci"
-    },
     {
       "name": "wolfi",
       "source": "../wolfi"

@@ -7,8 +7,9 @@ import (
 	_ "embed"
 	"fmt"
 	"path"
-	"python-sdk/internal/dagger"
 	"strings"
+
+	"python-sdk/internal/dagger"
 )
 
 const (
@@ -161,7 +162,10 @@ func (m *PythonSdk) Codegen(
 		genPaths = []string{m.VendorPath + "/**"}
 	}
 
-	return dag.GeneratedCode(m.Container.Directory(m.ContextDirPath)).
+	return dag.
+		GeneratedCode(
+			m.Container.Directory(m.ContextDirPath).
+				WithoutDirectory("sdk/runtime")).
 		WithVCSGeneratedPaths(genPaths).
 		WithVCSIgnoredPaths(ignorePaths), nil
 }
@@ -177,6 +181,23 @@ func (m *PythonSdk) ModuleRuntime(
 		return nil, err
 	}
 	return m.WithInstall().Container, nil
+}
+
+// Container for executing the Python module runtime
+func (m *PythonSdk) ModuleTypesExp(
+	ctx context.Context,
+	modSource *dagger.ModuleSource,
+	introspectionJSON *dagger.File,
+	outputFilePath string,
+) (*dagger.Container, error) {
+	ctr, err := m.ModuleRuntime(ctx, modSource, introspectionJSON)
+	if err != nil {
+		return nil, err
+	}
+	return ctr.
+			WithEnvVariable("DAGGER_MODULE_FILE", outputFilePath).
+			WithEntrypoint([]string{RuntimeExecutablePath, "--register"}),
+		nil
 }
 
 // Common steps for the ModuleRuntime and Codegen functions

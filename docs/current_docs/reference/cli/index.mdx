@@ -16,6 +16,7 @@ dagger [options] [subcommand | file...]
 
 ```
       --allow-llm strings            List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -c, --command string               Execute a dagger shell command
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -69,6 +70,7 @@ dagger call [options]
 ### Options inherited from parent commands
 
 ```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -114,6 +116,7 @@ dagger config -m github.com/dagger/hello-dagger
 ### Options inherited from parent commands
 
 ```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -147,6 +150,7 @@ dagger core [options]
 ### Options inherited from parent commands
 
 ```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -200,11 +204,14 @@ dagger develop [options]
   -r, --recursive                Develop recursively into local dependencies
       --sdk string               Install the given Dagger SDK. Can be builtin (go, python, typescript) or a module address
       --source string            Source directory used by the installed SDK. Defaults to module root
+      --with-self-calls          Enable self-calls capability for the module (experimental)
+      --without-self-calls       Disable self-calls capability for the module
 ```
 
 ### Options inherited from parent commands
 
 ```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -246,6 +253,7 @@ dagger functions [options] [function]...
 ### Options inherited from parent commands
 
 ```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -303,11 +311,13 @@ dagger init --sdk=go
       --name string        Name of the new module (defaults to parent directory name)
       --sdk string         Optionally install a Dagger SDK
       --source string      Source directory used by the installed SDK. Defaults to module root
+      --with-self-calls    Enable self-calls capability for the module (experimental)
 ```
 
 ### Options inherited from parent commands
 
 ```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -353,6 +363,7 @@ dagger install github.com/shykes/daggerverse/hello@v0.3.0
 ### Options inherited from parent commands
 
 ```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -379,6 +390,7 @@ dagger login [options] [org]
 ### Options inherited from parent commands
 
 ```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -405,6 +417,7 @@ dagger logout
 ### Options inherited from parent commands
 
 ```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -469,6 +482,7 @@ EOF
 ### Options inherited from parent commands
 
 ```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -528,6 +542,7 @@ dagger run python main.py
 ### Options inherited from parent commands
 
 ```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -572,6 +587,7 @@ dagger uninstall hello
 ### Options inherited from parent commands
 
 ```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -621,6 +637,7 @@ dagger update [options] [<DEPENDENCY>...]
 ### Options inherited from parent commands
 
 ```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
@@ -653,6 +670,7 @@ dagger version
 ### Options inherited from parent commands
 
 ```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")

@@ -160,7 +160,7 @@ func (dag *OpDAG) walk(f func(*OpDAG) error, memo map[*OpDAG]struct{}) error {
 	return nil
 }
 
-var SkipInputs = fmt.Errorf("skip inputs") //nolint:stylecheck // Err prefix isn't convention for Walk control errors
+var SkipInputs = fmt.Errorf("skip inputs") //nolint:staticcheck // Err prefix isn't convention for Walk control errors
 
 // Marshal will convert the dag back to a flat pb.Definition, updating all digests
 // based on any modifications made to the dag.

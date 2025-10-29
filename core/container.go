@@ -856,7 +856,7 @@ func (container *Container) WithDirectory(
 		if err != nil {
 			return nil, err
 		}
-		return container.replaceMount(mnt.Target, newDir, false)
+		return container.replaceMount(mnt.Target, newDir)
 
 	case mnt.FileSource != nil: // file mount
 		// should be handled by the check for exact mount point above
@@ -940,7 +940,7 @@ func (container *Container) WithFile(
 		if err != nil {
 			return nil, err
 		}
-		return container.replaceMount(mnt.Target, newDir, false)
+		return container.replaceMount(mnt.Target, newDir)
 
 	case mnt.FileSource != nil: // file mount
 		// should be handled by the check for exact mount point above
@@ -1015,7 +1015,7 @@ func (container *Container) withoutPath(
 		if err != nil {
 			return nil, err
 		}
-		return container.replaceMount(mnt.Target, newDir, false)
+		return container.replaceMount(mnt.Target, newDir)
 
 	case mnt.FileSource != nil: // file mount
 		// This should be handled by the check above for whether the path being removed is an exact mount point
@@ -1136,7 +1136,7 @@ func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, 
 		if err != nil {
 			return nil, err
 		}
-		return container.replaceMount(mnt.Target, newDir, false)
+		return container.replaceMount(mnt.Target, newDir)
 
 	case mnt.FileSource != nil: // file mount
 		// should be handled by the check for exact mount point above
@@ -1537,7 +1537,6 @@ func locatePath(
 func (container *Container) replaceMount(
 	target string,
 	dir dagql.ObjectResult[*Directory],
-	readonly bool,
 ) (*Container, error) {
 	target = absPath(container.Config.WorkingDir, target)
 
@@ -1545,7 +1544,6 @@ func (container *Container) replaceMount(
 	container.Mounts, err = container.Mounts.Replace(ContainerMount{
 		DirectorySource: &dir,
 		Target:          target,
-		Readonly:        readonly,
 	})
 	if err != nil {
 		return nil, err
@@ -2325,26 +2323,102 @@ func (container *Container) AsRecoveredService(ctx context.Context, richErr *bui
 	}, nil
 }
 
+func (container *Container) openFile(ctx context.Context, path string) (io.ReadCloser, error) {
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get server: %w", err)
+	}
+
+	mnt, mntSubpath, err := locatePath(container, path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to locate path %s: %w", path, err)
+	}
+
+	var fileSource *dagql.ObjectResult[*File]
+	var directorySource *dagql.ObjectResult[*Directory]
+
+	switch {
+	case mnt == nil: // rootfs
+		directorySource = container.FS
+
+	case mnt.DirectorySource != nil: // directory mount
+		directorySource = mnt.DirectorySource
+
+	case mnt.FileSource != nil: // file mount
+		fileSource = mnt.FileSource
+
+	default:
+		return nil, fmt.Errorf("invalid mount source for %s", path)
+	}
+
+	if fileSource == nil {
+		fileSource = &dagql.ObjectResult[*File]{}
+		err = srv.Select(ctx, directorySource, fileSource, dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(mntSubpath)},
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return fileSource.Self().Open(ctx)
+}
+
 func (container *Container) ownership(ctx context.Context, owner string) (*Ownership, error) {
 	if owner == "" {
 		// do not change ownership
 		return nil, nil
 	}
 
-	fsSt, err := container.FSState()
+	uidOrName, gidOrName, hasGroup := strings.Cut(owner, ":")
+
+	var uid, gid int
+	var uname, gname string
+
+	uid, err := parseUID(uidOrName)
 	if err != nil {
-		return nil, err
+		uname = uidOrName
 	}
 
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
+	if hasGroup {
+		gid, err = parseUID(gidOrName)
+		if err != nil {
+			gname = gidOrName
+		}
 	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+
+	if uname != "" {
+		f, err := container.openFile(ctx, "/etc/passwd")
+		if err != nil {
+			return nil, fmt.Errorf("open /etc/passwd: %w", err)
+		}
+		defer f.Close()
+		uid, err = findUID(f, uname)
+		if err != nil {
+			return nil, fmt.Errorf("find uid: %w", err)
+		}
 	}
-	return resolveUIDGID(ctx, fsSt, bk, container.Platform, owner)
+
+	if gname != "" {
+		f, err := container.openFile(ctx, "/etc/group")
+		if err != nil {
+			return nil, fmt.Errorf("open /etc/passwd: %w", err)
+		}
+		defer f.Close()
+		gid, err = findGID(f, gname)
+		if err != nil {
+			return nil, fmt.Errorf("find gid: %w", err)
+		}
+	}
+
+	if !hasGroup {
+		gid = uid
+	}
+
+	return &Ownership{uid, gid}, nil
 }
 
 func (container *Container) command(opts ContainerExecOpts) ([]string, error) {
@@ -2607,7 +2681,10 @@ func UpdatedRootFS(
 		return nil, fmt.Errorf("field spec for rootfs not found in object type Container")
 	}
 	astType := fieldSpec.Type.Type()
-	rootfsID := curID.Append(astType, "rootfs", view, fieldSpec.Module, 0, "")
+	rootfsID := curID.Append(
+		astType, "rootfs",
+		call.WithView(view),
+		call.WithModule(fieldSpec.Module))
 	updatedRootfs, err := dagql.NewObjectResultForID(dir, curSrv, rootfsID)
 	if err != nil {
 		return nil, err
@@ -2644,7 +2721,11 @@ func updatedDirMount(
 	}
 	astType := fieldSpec.Type.Type()
 	dirIDPathArg := call.NewArgument("path", call.NewLiteralString(mntTarget), false)
-	dirID := curID.Append(astType, "directory", view, fieldSpec.Module, 0, "", dirIDPathArg)
+	dirID := curID.Append(
+		astType, "directory",
+		call.WithView(view),
+		call.WithModule(fieldSpec.Module),
+		call.WithArgs(dirIDPathArg))
 	updatedDirMnt, err := dagql.NewObjectResultForID(dir, curSrv, dirID)
 	if err != nil {
 		return nil, err
@@ -2681,7 +2762,11 @@ func updatedFileMount(
 	}
 	astType := fieldSpec.Type.Type()
 	fileIDPathArg := call.NewArgument("path", call.NewLiteralString(mntTarget), false)
-	fileID := curID.Append(astType, "file", view, fieldSpec.Module, 0, "", fileIDPathArg)
+	fileID := curID.Append(
+		astType, "file",
+		call.WithView(view),
+		call.WithModule(fieldSpec.Module),
+		call.WithArgs(fileIDPathArg))
 	updatedFileMnt, err := dagql.NewObjectResultForID(file, curSrv, fileID)
 	if err != nil {
 		return nil, err

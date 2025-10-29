@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+
 	"typescript-sdk/internal/dagger"
 )
 
@@ -60,6 +61,29 @@ func (t *TypescriptSdk) ModuleRuntime(
 		Container(), nil
 }
 
+func (t *TypescriptSdk) ModuleTypes(
+	ctx context.Context,
+	modSource *dagger.ModuleSource,
+	introspectionJSON *dagger.File,
+	outputFilePath string,
+) (*dagger.Container, error) {
+	cfg, err := analyzeModuleConfig(ctx, modSource)
+	if err != nil {
+		return nil, fmt.Errorf("failed to analyze module config: %w", err)
+	}
+
+	// TODO(TomChv): Update the TypeScript Codegen so it doesn't rely on moduleSourcePath anymore.
+	clientBindings := NewLibGenerator(t.SDKSourceDir).
+		GenerateBindings(introspectionJSON, cfg.name, cfg.modulePath(), Bundle)
+
+	return NewIntrospector(t.SDKSourceDir).
+		AsEntrypoint(outputFilePath,
+			cfg.name,
+			modSource.ContextDirectory().Directory(cfg.subPath).Directory("src"),
+			clientBindings,
+		), nil
+}
+
 // Codegen implements the `Codegen` method from the SDK module interface.
 //
 // It returns the generated API client based on user's module as well as
@@ -81,15 +105,8 @@ func (t *TypescriptSdk) Codegen(
 		withGeneratedLockFile().
 		withUserSourceCode()
 
-	// Check if there's any user source files, if not, add the template file.
-	// NOTE: This should be moved in a `Init` function once we improve the SDK interface.
-	sourcesFiles, err := runtimeBaseCtr.Container().Directory(".").Glob(ctx, "src/**/*.ts")
-	if err != nil {
-		return nil, fmt.Errorf("failed to list user source files: %w", err)
-	}
-
-	if len(sourcesFiles) == 0 {
-		runtimeBaseCtr = runtimeBaseCtr.withInitTemplate()
+	if runtimeBaseCtr, err = runtimeBaseCtr.addInitTemplateIfNoUserFile(ctx); err != nil {
+		return nil, err
 	}
 
 	// Extract codegen directory

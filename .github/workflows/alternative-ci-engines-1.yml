@@ -21,7 +21,7 @@ permissions:
 jobs:
   build-devcli:
     runs-on:
-      - 'nscloud-ubuntu-24.04-amd64-16x32'
+      - "nscloud-ubuntu-24.04-amd64-16x32"
     steps:
       - name: Install dagger
         shell: bash
@@ -45,7 +45,7 @@ jobs:
   test-everything-else:
     needs: build-devcli
     runs-on:
-      - 'ubuntu-24.04'
+      - "ubuntu-24.04"
     steps:
       - uses: actions/download-artifact@v5
         id: download-dagger
@@ -70,7 +70,7 @@ jobs:
   test-module-runtimes:
     needs: build-devcli
     runs-on:
-      - 'ubuntu-24.04'
+      - "ubuntu-24.04"
     steps:
       - uses: actions/download-artifact@v5
         id: download-dagger
@@ -90,7 +90,7 @@ jobs:
   go:
     needs: build-devcli
     runs-on:
-      - 'ubuntu-24.04'
+      - "ubuntu-24.04"
     steps:
       - uses: actions/download-artifact@v5
         id: download-dagger
@@ -101,7 +101,7 @@ jobs:
         id: exec
         run: |
           chmod +x /usr/local/bin/dagger
-          dagger call --cloud --docker-cfg=file:$HOME/.docker/config.json check --targets=sdk/go
+          dagger call --cloud --docker-cfg=file:$HOME/.docker/config.json check-go-sdk
         env:
           DAGGER_CLOUD_TOKEN: oidc
           DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}
@@ -110,7 +110,7 @@ jobs:
   php:
     needs: build-devcli
     runs-on:
-      - 'ubuntu-24.04'
+      - "ubuntu-24.04"
     steps:
       - uses: actions/download-artifact@v5
         id: download-dagger
@@ -121,7 +121,7 @@ jobs:
         id: exec
         run: |
           chmod +x /usr/local/bin/dagger
-          dagger call --cloud --docker-cfg=file:$HOME/.docker/config.json check --targets=sdk/php
+          dagger call --cloud --docker-cfg=file:$HOME/.docker/config.json check-php-sdk
         env:
           DAGGER_CLOUD_TOKEN: oidc
           DAGGER_MODULE: github.com/${{ github.repository }}@${{ github.sha }}

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 	fsutiltypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -75,8 +76,9 @@ func (proto ModuleSourceKind) HumanString() string {
 }
 
 type SDKConfig struct {
-	Source string `field:"true" name:"source" doc:"Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
-	Config map[string]any
+	Source       string `field:"true" name:"source" doc:"Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
+	Config       map[string]any
+	Experimental map[string]bool
 }
 
 func (*SDKConfig) Type() *ast.Type {
@@ -95,13 +97,21 @@ func (sdk SDKConfig) Clone() *SDKConfig {
 	return &cp
 }
 
+func (sdk *SDKConfig) ExperimentalFeatureEnabled(feature ModuleSourceExperimentalFeature) bool {
+	if sdk.Experimental == nil {
+		return false
+	}
+	return sdk.Experimental[feature.String()]
+}
+
 type ModuleSource struct {
-	ConfigExists           bool   `field:"true" name:"configExists" doc:"Whether an existing dagger.json for the module was found."`
-	ModuleName             string `field:"true" name:"moduleName" doc:"The name of the module, including any setting via the withName API."`
-	ModuleOriginalName     string `field:"true" name:"moduleOriginalName" doc:"The original name of the module as read from the module's dagger.json (or set for the first time with the withName API)."`
-	EngineVersion          string `field:"true" name:"engineVersion" doc:"The engine version of the module."`
-	CodegenConfig          *modules.ModuleCodegenConfig
-	ModuleConfigUserFields modules.ModuleConfigUserFields
+	ConfigExists                  bool   `field:"true" name:"configExists" doc:"Whether an existing dagger.json for the module was found."`
+	ModuleName                    string `field:"true" name:"moduleName" doc:"The name of the module, including any setting via the withName API."`
+	ModuleOriginalName            string `field:"true" name:"moduleOriginalName" doc:"The original name of the module as read from the module's dagger.json (or set for the first time with the withName API)."`
+	EngineVersion                 string `field:"true" name:"engineVersion" doc:"The engine version of the module."`
+	CodegenConfig                 *modules.ModuleCodegenConfig
+	ModuleConfigUserFields        modules.ModuleConfigUserFields
+	DisableDefaultFunctionCaching bool
 
 	// The SDK configuration of the module as read from the module's dagger.json or set by withSDK
 	SDK *SDKConfig `field:"true" name:"sdk" doc:"The SDK configuration of the module."`
@@ -457,7 +467,7 @@ func (src *ModuleSource) CalcDigest(ctx context.Context) digest.Digest {
 		inputs = append(inputs, client.Generator, client.Directory)
 	}
 
-	return dagql.HashFrom(inputs...)
+	return hashutil.HashStrings(inputs...)
 }
 
 // LoadContextDir loads addition files+directories from the module source's context, including those that
@@ -469,15 +479,6 @@ func (src *ModuleSource) LoadContextDir(
 	include []string,
 	exclude []string,
 ) (inst dagql.ObjectResult[*Directory], err error) {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return inst, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get buildkit api: %w", err)
-	}
-
 	filterInputs := []dagql.NamedInput{}
 	if len(include) > 0 {
 		filterInputs = append(filterInputs, dagql.NamedInput{
@@ -492,6 +493,91 @@ func (src *ModuleSource) LoadContextDir(
 		})
 	}
 
+	// Check if there's an Env - if so, use its workspace as the context for
+	// defaultPath arguments.
+	//
+	// NOTE: this applies unilaterally, whether the module was loaded from Host,
+	// Git, or a Directory.
+	if envID, ok := EnvIDFromContext(ctx); ok {
+		inst, err = src.loadContextFromEnv(ctx, dag, envID, path, filterInputs)
+	} else {
+		inst, err = src.loadContextFromSource(ctx, dag, path, filterInputs)
+	}
+	if err != nil {
+		return inst, err
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	mainClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	if err := query.AddClientResourcesFromID(ctx, &resource.ID{ID: *inst.ID()}, mainClientMetadata.ClientID, false); err != nil {
+		return inst, fmt.Errorf("failed to add client resources from directory source: %w", err)
+	}
+
+	return inst, nil
+}
+
+func (src *ModuleSource) loadContextFromEnv(
+	ctx context.Context,
+	dag *dagql.Server,
+	envID *call.ID,
+	path string,
+	filterInputs []dagql.NamedInput,
+) (inst dagql.ObjectResult[*Directory], err error) {
+	// If path is not absolute, it's relative to the module root directory.
+	// If path is absolute, it's relative to the context directory.
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(src.SourceRootSubpath, path)
+	}
+	envRes, err := dag.Load(ctx, envID)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load current env: %w", err)
+	}
+	sels := []dagql.Selector{
+		{
+			Field: "workspace",
+		},
+	}
+	if path != "." {
+		sels = append(sels, dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(path)},
+			},
+		})
+	}
+	if len(filterInputs) > 0 {
+		sels = append(sels, dagql.Selector{
+			Field: "filter",
+			Args:  filterInputs,
+		})
+	}
+	err = dag.Select(ctx, envRes, &inst, sels...)
+	if err != nil {
+		return inst, fmt.Errorf("failed to select env directory: %w", err)
+	}
+	return inst, nil
+}
+
+func (src *ModuleSource) loadContextFromSource(
+	ctx context.Context,
+	dag *dagql.Server,
+	path string,
+	filterInputs []dagql.NamedInput,
+) (inst dagql.ObjectResult[*Directory], err error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get buildkit api: %w", err)
+	}
 	switch src.Kind {
 	case ModuleSourceKindLocal:
 		localSourceClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
@@ -539,7 +625,7 @@ func (src *ModuleSource) LoadContextDir(
 			},
 		)
 		if err != nil {
-			return inst, fmt.Errorf("failed to select directory: %w", err)
+			return inst, fmt.Errorf("failed to select host directory: %w", err)
 		}
 
 	case ModuleSourceKindGit:
@@ -625,6 +711,112 @@ func (src *ModuleSource) LoadContextDir(
 		inst, err = MakeDirectoryContentHashed(ctx, bk, ctxDir)
 		if err != nil {
 			return inst, err
+		}
+
+	default:
+		return inst, fmt.Errorf("unsupported module src kind: %q", src.Kind)
+	}
+
+	return inst, nil
+}
+
+func (src *ModuleSource) LoadContextFile(
+	ctx context.Context,
+	dag *dagql.Server,
+	path string,
+) (inst dagql.ObjectResult[*File], err error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	switch src.Kind {
+	case ModuleSourceKindLocal:
+		localSourceClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get client metadata: %w", err)
+		}
+		localSourceCtx := engine.ContextWithClientMetadata(ctx, localSourceClientMetadata)
+
+		// Retrieve the absolute path to the context directory (.git or dagger.json)
+		// and the module root directory (dagger.json)
+		ctxPath := src.Local.ContextDirectoryPath
+		modPath := filepath.Join(ctxPath, src.SourceRootSubpath)
+
+		// If path is not absolute, it's relative to the module root directory.
+		// If path is absolute, it's relative to the context directory.
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(modPath, path)
+		} else {
+			path = filepath.Join(ctxPath, path)
+		}
+
+		// We just check if the path is relative to the context directory,
+		// if not, that means it's a path that target an outside directory
+		// which is not allowed.
+		relativePathToCtx, err := filepath.Rel(ctxPath, path)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get relative path to context: %w", err)
+		}
+
+		// If the relative path is outisde of the context directory, throw an error.
+		if strings.HasPrefix(relativePathToCtx, "..") {
+			return inst, fmt.Errorf("path %q is outside of context directory %q, path should be relative to the context directory", path, ctxPath)
+		}
+
+		err = dag.Select(localSourceCtx, dag.Root(), &inst,
+			dagql.Selector{
+				Field: "host",
+			},
+			dagql.Selector{
+				Field: "file",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(path)},
+					{Name: "noCache", Value: dagql.Boolean(true)},
+				},
+			},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to select file: %w", err)
+		}
+
+	case ModuleSourceKindGit:
+		slog.Debug("moduleSource.LoadContext: loading contextual file from git", "path", path, "kind", src.Kind, "repo", src.Git.HTMLURL)
+
+		if !filepath.IsAbs(path) {
+			path = filepath.Join("/", src.SourceRootSubpath, path)
+		}
+
+		// Use the Git context directory without dagger.json includes applied.
+		ctxDir := src.Git.UnfilteredContextDir
+		if err := dag.Select(ctx, ctxDir, &inst,
+			dagql.Selector{
+				Field: "file",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(path)},
+				},
+			},
+		); err != nil {
+			return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
+		}
+
+	case ModuleSourceKindDir:
+		if !filepath.IsAbs(path) {
+			path = filepath.Join("/", src.SourceRootSubpath, path)
+		}
+
+		// Use the Dir context directory.
+		ctxDir := src.ContextDirectory
+
+		if err := dag.Select(ctx, ctxDir, &inst,
+			dagql.Selector{
+				Field: "file",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(path)},
+				},
+			},
+		); err != nil {
+			return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
 		}
 
 	default:
@@ -1029,4 +1221,33 @@ func (fs ModuleSourceStatFS) Stat(ctx context.Context, path string) (*fsutiltype
 	default:
 		return nil, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
 	}
+}
+
+type ModuleSourceExperimentalFeature string
+
+func (f ModuleSourceExperimentalFeature) String() string { return string(f) }
+
+var ModuleSourceExperimentalFeatures = dagql.NewEnum[ModuleSourceExperimentalFeature]()
+
+var (
+	ModuleSourceExperimentalFeatureSelfCalls = ModuleSourceExperimentalFeatures.Register("SELF_CALLS", "Self calls")
+)
+
+func (f ModuleSourceExperimentalFeature) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ModuleSourceExperimentalFeature",
+		NonNull:   true,
+	}
+}
+
+func (f ModuleSourceExperimentalFeature) TypeDescription() string {
+	return `Experimental features of a module`
+}
+
+func (f ModuleSourceExperimentalFeature) Decoder() dagql.InputDecoder {
+	return ModuleSourceExperimentalFeatures
+}
+
+func (f ModuleSourceExperimentalFeature) ToLiteral() call.Literal {
+	return ModuleSourceExperimentalFeatures.Literal(f)
 }

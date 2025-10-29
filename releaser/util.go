@@ -28,8 +28,8 @@ func (r Releaser) githubRelease(
 	ctx context.Context,
 	// GitHub repository URL
 	repository string,
-	// Source tag for the GitHub release
-	// eg. v0.14.0
+	// Source commit for the GitHub release
+	// eg. ec9686a4b922e278614ed1754d308c75eaa59586 v0.14.0
 	src string,
 	// The target tag for the component release
 	// e.g. sdk/typescript/v0.14.0
@@ -49,16 +49,11 @@ func (r Releaser) githubRelease(
 		return err
 	}
 
-	commit, err := dag.Version().Git().Commit(src).Commit(ctx)
-	if err != nil {
-		return err
-	}
-
 	if dryRun {
 		// Check that the src commit is in the repo
 		_, err = dag.
 			Git(fmt.Sprintf("https://github.com/%s", githubRepo)).
-			Commit(commit).
+			Commit(src).
 			Tree().
 			Sync(ctx)
 		if err != nil {
@@ -84,7 +79,7 @@ func (r Releaser) githubRelease(
 		dest,
 		dest,
 		dagger.GhReleaseCreateOpts{
-			Target:    commit,
+			Target:    src,
 			NotesFile: notes,
 			Latest:    dagger.GhLatestLatestFalse,
 		},

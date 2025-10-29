@@ -85,7 +85,9 @@ func (l *Loader) externalSDKForModule(
 
 	var sdkMod dagql.ObjectResult[*core.Module]
 	err = dag.Select(ctx, sdkModSrc, &sdkMod,
-		dagql.Selector{Field: "asModule"},
+		dagql.Selector{Field: "asModule", Args: []dagql.NamedInput{
+			{Name: "forceDefaultFunctionCaching", Value: dagql.Opt(dagql.Boolean(true))},
+		}},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load sdk module %q: %w", sdk.Source, err)
@@ -112,11 +114,11 @@ func (l *Loader) namedSDK(
 	case sdkTypescript:
 		return l.loadBuiltinSDK(ctx, root, sdk, digest.Digest(os.Getenv(distconsts.TypescriptSDKManifestDigestEnvName)))
 	case sdkJava:
-		return l.SDKForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/java" + sdkSuffix, Config: sdk.Config}, nil)
+		return l.SDKForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/java" + sdkSuffix, Config: sdk.Config, Experimental: sdk.Experimental}, nil)
 	case sdkPHP:
-		return l.SDKForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/php" + sdkSuffix, Config: sdk.Config}, nil)
+		return l.SDKForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/php" + sdkSuffix, Config: sdk.Config, Experimental: sdk.Experimental}, nil)
 	case sdkElixir:
-		return l.SDKForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/elixir" + sdkSuffix, Config: sdk.Config}, nil)
+		return l.SDKForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/elixir" + sdkSuffix, Config: sdk.Config, Experimental: sdk.Experimental}, nil)
 	}
 
 	return nil, getInvalidBuiltinSDKError(sdk.Source)
@@ -170,6 +172,9 @@ func (l *Loader) loadBuiltinSDK(
 		},
 		dagql.Selector{
 			Field: "asModule",
+			Args: []dagql.NamedInput{
+				{Name: "forceDefaultFunctionCaching", Value: dagql.Opt(dagql.Boolean(true))},
+			},
 		},
 	)
 	if err != nil {

@@ -69,6 +69,15 @@ class Changeset extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Returns true if the changeset is empty (i.e. there are no changes).
+     */
+    public function isEmpty(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('isEmpty');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'isEmpty');
+    }
+
+    /**
      * Return a snapshot containing only the created and modified files
      */
     public function layer(): Directory

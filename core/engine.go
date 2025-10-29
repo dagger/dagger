@@ -8,6 +8,7 @@ import (
 )
 
 type Engine struct {
+	Name string `field:"true" doc:"The name of the engine instance."`
 }
 
 func (*Engine) Type() *ast.Type {

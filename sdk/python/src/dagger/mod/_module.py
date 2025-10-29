@@ -9,6 +9,7 @@ import typing
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, TypeVar, cast
 
+import anyio
 import cattrs
 import cattrs.gen
 from cattrs.preconf import is_primitive_enum
@@ -54,7 +55,7 @@ FIELD_DEF_KEY: typing.Final[str] = "__dagger_field__"
 FUNCTION_DEF_KEY: typing.Final[str] = "__dagger_function__"
 MODULE_NAME: typing.Final[str] = os.getenv("DAGGER_MODULE", "")
 MAIN_OBJECT: typing.Final[str] = os.getenv("DAGGER_MAIN_OBJECT", "")
-
+TYPE_DEF_FILE: typing.Final[str] = os.getenv("DAGGER_MODULE_FILE", "/module.json")
 
 T = TypeVar("T", bound=type)
 
@@ -83,11 +84,11 @@ class Module:
         return self.main_cls is other.cls
 
     async def serve(self):
-        if parent_name := await dag.current_function_call().parent_name():
-            result = await self._invoke(parent_name)
+        if await dag.current_function_call().parent_name():
+            result = await self.invoke()
         else:
             try:
-                result = await self._register()
+                result = await self._typedefs()
             except TypeError as e:
                 raise RegistrationError(str(e)) from e
 
@@ -109,8 +110,19 @@ class Module:
 
         await dag.current_function_call().return_value(dagger.JSON(output))
 
-    async def _register(self) -> dagger.ModuleID:  # noqa: C901, PLR0912
+    async def register(self):
         """Register the module and its types with the Dagger API."""
+        try:
+            result = await self._typedefs()
+            output = json.dumps(result)
+        except TypeError as e:
+            raise RegistrationError(str(e), e) from e
+        await anyio.Path(TYPE_DEF_FILE).write_text(output)
+
+    async def _typedefs(self) -> dagger.ModuleID:  # noqa: C901, PLR0912
+        if not self._main_name:
+            msg = "Main object name can't be empty"
+            raise ValueError(msg)
         try:
             self.get_object(self._main_name)
         except ObjectNotFoundError as e:
@@ -175,6 +187,21 @@ class Module:
                 if doc := func.doc:
                     func_def = func_def.with_description(doc)
 
+                if func.cache_policy is not None:
+                    if func.cache_policy == "never":
+                        func_def = func_def.with_cache_policy(
+                            dagger.FunctionCachePolicy.Never,
+                        )
+                    elif func.cache_policy == "session":
+                        func_def = func_def.with_cache_policy(
+                            dagger.FunctionCachePolicy.PerSession,
+                        )
+                    elif func.cache_policy != "":
+                        func_def = func_def.with_cache_policy(
+                            dagger.FunctionCachePolicy.Default,
+                            time_to_live=func.cache_policy,
+                        )
+
                 for param in func.parameters.values():
                     arg_def = to_typedef(
                         param.resolved_type,
@@ -225,12 +252,21 @@ class Module:
 
         return await mod.id()
 
-    async def _invoke(self, parent_name: str) -> Any:
+    async def invoke(self) -> dagger.ModuleID:
         """Invoke a function and return its result.
 
         This includes getting the call context from the API and deserializing data.
         """
         fn_call = dag.current_function_call()
+        parent_name = await fn_call.parent_name()
+
+        if not parent_name:
+            msg = (
+                "Seems like the SDK module isn't registering the types correctly. "
+                "This is a bug."
+            )
+            raise RegistrationError(msg)
+
         name = await fn_call.name()
         parent_json = await fn_call.parent()
         input_args = await fn_call.input_args()
@@ -584,6 +620,7 @@ class Module:
         *,
         name: APIName | None = None,
         doc: str | None = None,
+        cache: str | None = None,
     ) -> Func[P, R] | Callable[[Func[P, R]], Func[P, R]]:
         """Exposes a Python function as a :py:class:`dagger.Function`.
 
@@ -615,7 +652,7 @@ class Module:
             # TODO: Use beartype to validate
             assert callable(func), f"Expected a callable, got {type(func)}."
 
-            meta = FunctionDefinition(name, doc)
+            meta = FunctionDefinition(name, doc, cache)
 
             if inspect.isclass(func):
                 return Constructor(func, meta)

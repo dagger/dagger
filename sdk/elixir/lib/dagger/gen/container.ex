@@ -724,6 +724,20 @@ defmodule Dagger.Container do
   end
 
   @doc """
+  Raise an error.
+  """
+  @spec with_error(t(), String.t()) :: Dagger.Container.t()
+  def with_error(%__MODULE__{} = container, err) do
+    query_builder =
+      container.query_builder |> QB.select("withError") |> QB.put_arg("err", err)
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
   Execute a command in the container, and return a new snapshot of the container state after execution.
   """
   @spec with_exec(t(), [String.t()], [

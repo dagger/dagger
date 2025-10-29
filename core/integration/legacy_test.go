@@ -1406,7 +1406,6 @@ func (m *Test) Branch(ctx context.Context, name string) (string, error) {
 
 func (LegacySuite) TestLegacyContainerBuild(ctx context.Context, t *testctx.T) {
 	// Deprecated in dagger/dagger#10811
-	// XXX: update ^^^
 	//
 	// Ensure that the old schemas still have Container.Build
 

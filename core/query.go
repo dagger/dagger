@@ -20,6 +20,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/clientdb"
+	"github.com/dagger/dagger/engine/filesync"
 	"github.com/dagger/dagger/engine/server/resource"
 )
 
@@ -27,6 +28,9 @@ import (
 // dependencies for evaluating queries.
 type Query struct {
 	Server
+
+	// An Env value propagated to a module function call, i.e. from LLM.
+	CurrentEnv *call.ID
 }
 
 var ErrNoCurrentModule = fmt.Errorf("no current module")
@@ -117,6 +121,9 @@ type Server interface {
 	// Gets the buildkit session manager
 	BuildkitSession() *bksession.Manager
 
+	// Gets the local source
+	FileSyncer() *filesync.FileSyncer
+
 	// A global lock for the engine, can be used to synchronize access to
 	// shared resources between multiple potentially concurrent calls.
 	Locker() *locker.Locker
@@ -126,6 +133,12 @@ type Server interface {
 
 	// Open a client's telemetry database.
 	ClientTelemetry(ctc context.Context, sessID, clientID string) (*clientdb.Queries, func() error, error)
+
+	// The name of the engine
+	EngineName() string
+
+	// The list of connected client IDs
+	Clients() []string
 }
 
 type queryKey struct{}
@@ -166,8 +179,8 @@ func CurrentDagqlCache(ctx context.Context) (*dagql.SessionCache, error) {
 	return cache, nil
 }
 
-func NewRoot(srv Server) *Query {
-	return &Query{Server: srv}
+func NewRoot(srv Server, envID *call.ID) *Query {
+	return &Query{Server: srv, CurrentEnv: envID}
 }
 
 func (*Query) Type() *ast.Type {

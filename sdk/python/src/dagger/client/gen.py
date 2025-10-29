@@ -307,6 +307,16 @@ class ExistsType(Enum):
     """Tests path is a symlink"""
 
 
+class FunctionCachePolicy(Enum):
+    """The behavior configured for function result caching."""
+
+    Default = "Default"
+
+    Never = "Never"
+
+    PerSession = "PerSession"
+
+
 class ImageLayerCompression(Enum):
     """Compression algorithm to use for image layers."""
 
@@ -331,6 +341,13 @@ class ImageMediaTypes(Enum):
 
     OCIMediaTypes = "OCIMediaTypes"
     OCI = "OCIMediaTypes"
+
+
+class ModuleSourceExperimentalFeature(Enum):
+    """Experimental features of a module"""
+
+    SELF_CALLS = "SELF_CALLS"
+    """Self calls"""
 
 
 class ModuleSourceKind(Enum):
@@ -989,6 +1006,25 @@ class Changeset(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(ChangesetID)
+
+    async def is_empty(self) -> bool:
+        """Returns true if the changeset is empty (i.e. there are no changes).
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("isEmpty", _args)
+        return await _ctx.execute(bool)
 
     def layer(self) -> "Directory":
         """Return a snapshot containing only the created and modified files"""
@@ -2179,6 +2215,21 @@ class Container(Type):
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withEnvVariable", _args)
+        return Container(_ctx)
+
+    def with_error(self, err: str) -> Self:
+        """Raise an error.
+
+        Parameters
+        ----------
+        err:
+            Message of the error to raise. If empty, the error will be
+            ignored.
+        """
+        _args = [
+            Arg("err", err),
+        ]
+        _ctx = self._select("withError", _args)
         return Container(_ctx)
 
     def with_exec(
@@ -3822,6 +3873,21 @@ class Directory(Type):
         _ctx = self._select("withDirectory", _args)
         return Directory(_ctx)
 
+    def with_error(self, err: str) -> Self:
+        """Raise an error.
+
+        Parameters
+        ----------
+        err:
+            Message of the error to raise. If empty, the error will be
+            ignored.
+        """
+        _args = [
+            Arg("err", err),
+        ]
+        _ctx = self._select("withError", _args)
+        return Directory(_ctx)
+
     def with_file(
         self,
         path: str,
@@ -4060,6 +4126,27 @@ class Directory(Type):
 class Engine(Type):
     """The Dagger engine configuration and state"""
 
+    async def clients(self) -> list[str]:
+        """The list of connected client IDs
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("clients", _args)
+        return await _ctx.execute(list[str])
+
     async def id(self) -> EngineID:
         """A unique identifier for this Engine.
 
@@ -4089,6 +4176,27 @@ class Engine(Type):
         _args: list[Arg] = []
         _ctx = self._select("localCache", _args)
         return EngineCache(_ctx)
+
+    async def name(self) -> str:
+        """The name of the engine instance.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -5767,6 +5875,24 @@ class EnvFile(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(EnvFileID)
 
+    def namespace(self, prefix: str) -> Self:
+        """Filters variables by prefix and removes the pref from keys. Variables
+        without the prefix are excluded. For example, with the prefix
+        "MY_APP_" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello
+        FOO=bar the resulting environment will contain: TOKEN=topsecret
+        NAME=hello
+
+        Parameters
+        ----------
+        prefix:
+            The prefix to filter by
+        """
+        _args = [
+            Arg("prefix", prefix),
+        ]
+        _ctx = self._select("namespace", _args)
+        return EnvFile(_ctx)
+
     async def variables(self, *, raw: bool | None = None) -> list["EnvVariable"]:
         """Return all variables
 
@@ -6621,6 +6747,29 @@ class Function(Type):
         _ctx = self._select("withArg", _args)
         return Function(_ctx)
 
+    def with_cache_policy(
+        self,
+        policy: FunctionCachePolicy,
+        *,
+        time_to_live: str | None = None,
+    ) -> Self:
+        """Returns the function updated to use the provided cache policy.
+
+        Parameters
+        ----------
+        policy:
+            The cache policy to use.
+        time_to_live:
+            The TTL for the cache policy, if applicable. Provided as a
+            duration string, e.g. "5m", "1h30s".
+        """
+        _args = [
+            Arg("policy", policy),
+            Arg("timeToLive", time_to_live, None),
+        ]
+        _ctx = self._select("withCachePolicy", _args)
+        return Function(_ctx)
+
     def with_description(self, description: str) -> Self:
         """Returns the function with the given doc string.
 
@@ -7406,6 +7555,12 @@ class GitRepository(Type):
         ]
         _ctx = self._select("tags", _args)
         return await _ctx.execute(list[str])
+
+    def uncommitted(self) -> Changeset:
+        """Returns the changeset of uncommitted changes in the git repository."""
+        _args: list[Arg] = []
+        _ctx = self._select("uncommitted", _args)
+        return Changeset(_ctx)
 
     async def url(self) -> str | None:
         """The URL of the git repository.
@@ -8711,6 +8866,19 @@ class Module(Type):
         _ctx = self._select("interfaces", _args)
         return await _ctx.execute_object_list(TypeDef)
 
+    def introspection_schema_json(self) -> File:
+        """The introspection schema JSON file for this module.
+
+        This file represents the schema visible to the module's source code,
+        including all core types and those from the dependencies.
+
+        Note: this is in the context of a module, so some core types may be
+        hidden.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("introspectionSchemaJSON", _args)
+        return File(_ctx)
+
     async def name(self) -> str:
         """The name of the module
 
@@ -9189,6 +9357,19 @@ class ModuleSource(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(ModuleSourceID)
 
+    def introspection_schema_json(self) -> File:
+        """The introspection schema JSON file for this module source.
+
+        This file represents the schema visible to the module's source code,
+        including all core types and those from the dependencies.
+
+        Note: this is in the context of a module, so some core types may be
+        hidden.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("introspectionSchemaJSON", _args)
+        return File(_ctx)
+
     async def kind(self) -> ModuleSourceKind:
         """The kind of module source (currently local, git or dir).
 
@@ -9493,6 +9674,23 @@ class ModuleSource(Type):
         _ctx = self._select("withEngineVersion", _args)
         return ModuleSource(_ctx)
 
+    def with_experimental_features(
+        self,
+        features: list[ModuleSourceExperimentalFeature],
+    ) -> Self:
+        """Enable the experimental features for the module source.
+
+        Parameters
+        ----------
+        features:
+            The experimental features to enable.
+        """
+        _args = [
+            Arg("features", features),
+        ]
+        _ctx = self._select("withExperimentalFeatures", _args)
+        return ModuleSource(_ctx)
+
     def with_includes(self, patterns: list[str]) -> Self:
         """Update the module source with additional include patterns for
         files+directories from its context that are required for building it
@@ -9618,6 +9816,23 @@ class ModuleSource(Type):
             Arg("dependencies", dependencies),
         ]
         _ctx = self._select("withoutDependencies", _args)
+        return ModuleSource(_ctx)
+
+    def without_experimental_features(
+        self,
+        features: list[ModuleSourceExperimentalFeature],
+    ) -> Self:
+        """Disable experimental features for the module source.
+
+        Parameters
+        ----------
+        features:
+            The experimental features to disable.
+        """
+        _args = [
+            Arg("features", features),
+        ]
+        _ctx = self._select("withoutExperimentalFeatures", _args)
         return ModuleSource(_ctx)
 
     def with_(self, cb: Callable[["ModuleSource"], "ModuleSource"]) -> "ModuleSource":
@@ -12061,6 +12276,7 @@ __all__ = [
     "Function",
     "FunctionArg",
     "FunctionArgID",
+    "FunctionCachePolicy",
     "FunctionCall",
     "FunctionCallArgValue",
     "FunctionCallArgValueID",
@@ -12093,6 +12309,7 @@ __all__ = [
     "ModuleConfigClientID",
     "ModuleID",
     "ModuleSource",
+    "ModuleSourceExperimentalFeature",
     "ModuleSourceID",
     "ModuleSourceKind",
     "NetworkProtocol",

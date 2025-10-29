@@ -79,6 +79,8 @@ type Opts struct {
 
 	Interactive        bool
 	InteractiveCommand []string
+
+	ParentClient *Client
 }
 
 type ResolveCacheExporterFunc func(ctx context.Context, g bksession.Group) (remotecache.Exporter, error)
@@ -138,6 +140,13 @@ func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, co
 	return ctx, cancel, nil
 }
 
+func (c *Client) getRootClient() *Client {
+	if c.ParentClient == nil {
+		return c
+	}
+	return c.ParentClient.getRootClient()
+}
+
 func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, rerr error) {
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
@@ -152,15 +161,16 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 			return err
 		}
 		spanCtx := trace.SpanContextFromContext(ctx)
-		c.opsmu.Lock()
+		rootClient := c.getRootClient()
+		rootClient.opsmu.Lock()
 		_ = dag.Walk(func(od *OpDAG) error {
-			c.ops[*od.OpDigest] = opCtx{
+			rootClient.ops[*od.OpDigest] = opCtx{
 				od:  od,
 				ctx: spanCtx,
 			}
 			return nil
 		})
-		c.opsmu.Unlock()
+		rootClient.opsmu.Unlock()
 		return nil
 	}
 	if req.Definition != nil {
@@ -209,6 +219,7 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 }
 
 func (c *Client) LookupOp(vertex digest.Digest) (*OpDAG, trace.SpanContext, bool) {
+	c = c.getRootClient()
 	c.opsmu.Lock()
 	opCtx, ok := c.ops[vertex]
 	c.opsmu.Unlock()
@@ -467,7 +478,7 @@ func (c *Client) ListenHostToContainer(
 			connsL.Unlock()
 
 			if !found {
-				conn, err := c.Dialer.Dial(proto, upstream)
+				conn, err = c.Dialer.Dial(proto, upstream)
 				if err != nil {
 					bklog.G(ctx).Warnf("failed to dial %s %s: %s", proto, upstream, err)
 					return

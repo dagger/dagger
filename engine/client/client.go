@@ -299,6 +299,7 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 		Module:           params.Module,
 		Function:         params.Function,
 		ExecCmd:          params.ExecCmd,
+		ClientID:         c.ID,
 	})
 	provisionCancel()
 	telemetry.End(provisionSpan, func() error { return err })

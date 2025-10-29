@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
 	"syscall"
@@ -26,12 +27,12 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/config"
+	"github.com/dagger/dagger/engine/filesync"
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
 	apitypes "github.com/dagger/dagger/internal/buildkit/api/types"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	"github.com/dagger/dagger/internal/buildkit/cache/metadata"
 	"github.com/dagger/dagger/internal/buildkit/cache/remotecache"
-	"github.com/dagger/dagger/internal/buildkit/cache/remotecache/azblob"
 	"github.com/dagger/dagger/internal/buildkit/cache/remotecache/gha"
 	inlineremotecache "github.com/dagger/dagger/internal/buildkit/cache/remotecache/inline"
 	localremotecache "github.com/dagger/dagger/internal/buildkit/cache/remotecache/local"
@@ -133,6 +134,12 @@ type Server struct {
 	cacheImporters map[string]remotecache.ResolveCacheImporterFunc
 
 	//
+	// worker file syncer
+	//
+
+	workerFileSyncer *filesync.FileSyncer
+
+	//
 	// worker/executor-specific config+state
 	//
 
@@ -210,9 +217,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			SearchDomains: bkcfg.DNS.SearchDomains,
 		},
 
-		baseDagqlCache: cache.NewCache[string, dagql.AnyResult](),
 		daggerSessions: make(map[string]*daggerSession),
-		locker:         locker.New(),
+
+		locker: locker.New(),
 	}
 
 	// start the global namespace worker pool, which is used for running Go funcs
@@ -443,13 +450,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	logrus.Infof("found worker %q, labels=%v, platforms=%v", workerID, baseLabels, FormatPlatforms(srv.enabledPlatforms))
 	archutil.WarnIfUnsupported(srv.enabledPlatforms)
 
-	ls, err := local.NewSource(local.Opt{
+	srv.workerFileSyncer = filesync.NewFileSyncer(filesync.FileSyncerOpt{
 		CacheAccessor: srv.workerCache,
 	})
-	if err != nil {
-		return nil, err
-	}
-	srv.workerSourceManager.Register(ls)
 
 	bs, err := blob.NewSource(blob.Opt{
 		CacheAccessor: srv.workerCache,
@@ -458,6 +461,10 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, err
 	}
 	srv.workerSourceManager.Register(bs)
+
+	// Protection mechanism for llb.Local operations to not panic
+	// if the operation is called.
+	srv.workerSourceManager.Register(local.NewSource())
 
 	srv.worker = buildkit.NewWorker(&buildkit.NewWorkerOpts{
 		WorkerRoot:       srv.workerRootDir,
@@ -518,14 +525,12 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		"inline":   inlineremotecache.ResolveCacheExporterFunc(),
 		"gha":      gha.ResolveCacheExporterFunc(),
 		"s3":       s3remotecache.ResolveCacheExporterFunc(),
-		"azblob":   azblob.ResolveCacheExporterFunc(),
 	}
 	srv.cacheImporters = map[string]remotecache.ResolveCacheImporterFunc{
 		"registry": registryremotecache.ResolveCacheImporterFunc(srv.bkSessionManager, srv.contentStore, srv.registryHosts),
 		"local":    localremotecache.ResolveCacheImporterFunc(srv.bkSessionManager),
 		"gha":      gha.ResolveCacheImporterFunc(),
 		"s3":       s3remotecache.ResolveCacheImporterFunc(),
-		"azblob":   azblob.ResolveCacheImporterFunc(),
 	}
 
 	srv.solver = solver.NewSolver(solver.SolverOpt{
@@ -543,6 +548,25 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	defer func() {
 		time.AfterFunc(time.Second, srv.throttledGC)
 	}()
+
+	//
+	// setup dagql caching
+	//
+	dagqlCacheDBPath := filepath.Join(srv.rootDir, "dagql-cache.db")
+	srv.baseDagqlCache, err = cache.NewCache[string, dagql.AnyResult](ctx, dagqlCacheDBPath)
+	if err != nil {
+		// Attempt to handle a corrupt db (which is possible since we currently run w/ synchronous=OFF) by removing any existing
+		// db and trying again.
+		slog.Error("failed to create dagql cache, attempting to recover by removing existing cache db", "error", err)
+		if err := os.Remove(dagqlCacheDBPath); err != nil && !os.IsNotExist(err) {
+			slog.Error("failed to remove existing dagql cache db", "error", err)
+		}
+		srv.baseDagqlCache, err = cache.NewCache[string, dagql.AnyResult](ctx, dagqlCacheDBPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create dagql cache after removing existing db: %w", err)
+		}
+	}
+	go srv.baseDagqlCache.GCLoop(ctx)
 
 	// garbage collect client DBs
 	go srv.gcClientDBs()
@@ -566,6 +590,22 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 
 	return srv, nil
+}
+
+func (srv *Server) EngineName() string {
+	return srv.engineName
+}
+
+func (srv *Server) Clients() []string {
+	srv.daggerSessionsMu.RLock()
+	defer srv.daggerSessionsMu.RUnlock()
+
+	clients := map[string]struct{}{}
+	for _, sess := range srv.daggerSessions {
+		clients[sess.mainClientCallerID] = struct{}{}
+	}
+
+	return slices.Collect(maps.Keys(clients))
 }
 
 func (srv *Server) Close() error {
@@ -595,6 +635,10 @@ func (srv *Server) BuildkitCache() bkcache.Manager {
 
 func (srv *Server) BuildkitSession() *bksession.Manager {
 	return srv.bkSessionManager
+}
+
+func (srv *Server) FileSyncer() *filesync.FileSyncer {
+	return srv.workerFileSyncer
 }
 
 func (srv *Server) Info(context.Context, *controlapi.InfoRequest) (*controlapi.InfoResponse, error) {

@@ -286,6 +286,46 @@ func (DirectorySuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Contains(t, stdout, "-r--r--r--")
 	})
+
+	t.Run("scratch into scratch", func(ctx context.Context, t *testctx.T) {
+		_, err := c.Directory().WithDirectory("/", c.Directory()).Sync(ctx)
+		require.NoError(t, err)
+	})
+}
+
+func (DirectorySuite) TestWithDirectoryUnion(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	dir1 := c.Container().From(alpineImage).
+		WithMountedDirectory("/working", c.Directory()).
+		WithWorkdir("/working").
+		WithNewFile("data/some-file", "some-content").
+		Directory("/working")
+
+	dir2 := c.Container().From(alpineImage).
+		WithMountedDirectory("/working", c.Directory()).
+		WithWorkdir("/working").
+		WithNewFile("data/some-other-file", "some-other-content").
+		Directory("/working")
+
+	dir1 = dir1.WithDirectory("/d", dir1.Directory("/data")).
+		WithoutDirectory("/data")
+
+	dir2 = dir2.WithDirectory("/d", dir2.Directory("/data")).
+		WithoutDirectory("/data")
+
+	ctr := c.Container().From(alpineImage)
+
+	ctr = ctr.WithDirectory("/", dir1)
+	ctr = ctr.WithDirectory("/", dir2)
+
+	contents, err := ctr.File("/d/some-file").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-content", contents)
+
+	contents, err = ctr.File("/d/some-other-file").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-other-content", contents)
 }
 
 func (DirectorySuite) TestDirectoryFilterIncludeExclude(ctx context.Context, t *testctx.T) {
@@ -784,13 +824,40 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 	})
 
 	// this is a regression test for: https://github.com/dagger/dagger/pull/7328
-	t.Run("equivalent subdirs", func(ctx context.Context, t *testctx.T) {
+	t.Run("equivalent", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		a := c.Git("github.com/dagger/dagger").Ref("main").Tree()
 		b := c.Directory().WithDirectory("", a)
 		ents, err := a.Diff(b).Entries(ctx)
 		require.NoError(t, err)
 		require.Len(t, ents, 0)
+	})
+
+	// this is a regression test for: https://github.com/dagger/dagger/pull/11107
+	t.Run("equivalent subdirs", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		a := c.Git("github.com/dagger/dagger").Ref("main").Tree().Directory("engine")
+		b := c.Directory().WithDirectory("engine", a).Directory("engine")
+		_, err := a.Diff(b).Sync(ctx)
+		require.NoError(t, err)
+		ents, err := a.Diff(b).Entries(ctx)
+		require.NoError(t, err)
+		require.Len(t, ents, 0)
+	})
+
+	t.Run("different subdirs", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		d := c.Directory().
+			WithNewDirectory("sub").
+			WithNewDirectory("submarine").
+			WithNewFile("sub/file1", "data1").
+			WithNewFile("submarine/file1", "data1").
+			WithNewFile("submarine/file2", "data2").
+			WithTimestamps(0)
+
+		ents, err := d.Directory("sub").Diff(d.Directory("submarine")).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, ents, []string{"file2"})
 	})
 
 	/*

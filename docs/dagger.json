@@ -1,6 +1,6 @@
 {
   "name": "docs",
-  "engineVersion": "v0.19.2",
+  "engineVersion": "v0.19.3",
   "sdk": {
     "source": "go"
   },
@@ -10,10 +10,6 @@
       "source": "../cmd/dagger"
     },
     {
-      "name": "dirdiff",
-      "source": "../modules/dirdiff"
-    },
-    {
       "name": "docusaurus",
       "source": "github.com/levlaz/daggerverse/docusaurus@docusaurus/v0.10.0",
       "pin": "929a29a0d03c66dc10c6d4ec7484e7bd897c38fe"
@@ -21,10 +17,6 @@
     {
       "name": "go",
       "source": "../modules/go"
-    },
-    {
-      "name": "version",
-      "source": "../version"
     }
   ],
   "source": ".dagger"

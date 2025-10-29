@@ -8,6 +8,7 @@ import (
 
 	"github.com/dagger/dagger/core/dotenv"
 	"github.com/dagger/dagger/dagql"
+	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -146,16 +147,38 @@ func (ef *EnvFile) Namespace(ctx context.Context, prefix string) (*EnvFile, erro
 		Expand: ef.Expand,
 	}
 	for _, variable := range vars {
-		// eg. "my-module"
-		modPrefix := strings.ReplaceAll(prefix, "-", "_") + "_"
-
-		// Does "my_module_token" start with "my_module_"? (case-insensitive)
-		if len(variable.Name) < len(modPrefix) || !strings.EqualFold(variable.Name[:len(modPrefix)], modPrefix) {
-			continue
+		if after, match := cutFlexPrefix(variable.Name, prefix); match {
+			result = result.WithVariable(after, variable.Value)
 		}
-		result = result.WithVariable(variable.Name[len(modPrefix):], variable.Value)
 	}
 	return result, nil
+}
+
+// A flexible prefix check, for maximum user convenience
+func cutFlexPrefix(s, flexPrefix string) (after string, found bool) {
+	for _, toPrefix := range []func(string) string{
+		// lower camel case + underscore. Example: "myApp_"
+		func(s string) string { return strcase.ToLowerCamel(s) + "_" },
+		// snake case + underscore. Example: "my_app_"
+		func(s string) string {
+			ts := strcase.ToSnake(s)
+			if !strings.HasSuffix(ts, "_") {
+				ts += "_"
+			}
+			return ts
+		},
+	} {
+		prefix := toPrefix(flexPrefix)
+		if len(s) < len(prefix) {
+			continue
+		}
+		// Case-insensitive match
+		if !strings.EqualFold(s[:len(prefix)], prefix) {
+			continue
+		}
+		return s[len(prefix):], true
+	}
+	return "", false
 }
 
 // Return true if the variable exists

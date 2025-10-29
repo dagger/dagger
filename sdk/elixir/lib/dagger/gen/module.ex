@@ -118,6 +118,24 @@ defmodule Dagger.Module do
   end
 
   @doc """
+  The introspection schema JSON file for this module.
+
+  This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+
+  Note: this is in the context of a module, so some core types may be hidden.
+  """
+  @spec introspection_schema_json(t()) :: Dagger.File.t()
+  def introspection_schema_json(%__MODULE__{} = module) do
+    query_builder =
+      module.query_builder |> QB.select("introspectionSchemaJSON")
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: module.client
+    }
+  end
+
+  @doc """
   The name of the module
   """
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
@@ -153,7 +171,7 @@ defmodule Dagger.Module do
   @doc """
   The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
   """
-  @spec runtime(t()) :: Dagger.Container.t() | nil
+  @spec runtime(t()) :: Dagger.Container.t()
   def runtime(%__MODULE__{} = module) do
     query_builder =
       module.query_builder |> QB.select("runtime")

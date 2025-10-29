@@ -1551,6 +1551,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Changeset::isEmpty",
+			"p": "Dagger/Changeset.html#method_isEmpty",
+			"d": "<p>Returns true if the changeset is empty (i.e. there are no changes).</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Changeset::layer",
 			"p": "Dagger/Changeset.html#method_layer",
 			"d": "<p>Return a snapshot containing only the created and modified files</p>"
@@ -2403,6 +2409,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Container::withError",
+			"p": "Dagger/Container.html#method_withError",
+			"d": "<p>Raise an error.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Container::withExec",
 			"p": "Dagger/Container.html#method_withExec",
 			"d": "<p>Execute a command in the container, and return a new snapshot of the container state after execution.</p>"
@@ -2793,6 +2805,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Directory::withError",
+			"p": "Dagger/Directory.html#method_withError",
+			"d": "<p>Raise an error.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Directory::withFile",
 			"p": "Dagger/Directory.html#method_withFile",
 			"d": "<p>Retrieves this directory plus the contents of the given file copied to the given path.</p>"
@@ -2859,6 +2877,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Engine::clients",
+			"p": "Dagger/Engine.html#method_clients",
+			"d": "<p>The list of connected client IDs</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Engine::id",
 			"p": "Dagger/Engine.html#method_id",
 			"d": "<p>A unique identifier for this Engine.</p>"
@@ -2868,6 +2892,12 @@
 			"n": "Dagger\\Engine::localCache",
 			"p": "Dagger/Engine.html#method_localCache",
 			"d": "<p>The local (on-disk) cache for the Dagger engine</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Engine::name",
+			"p": "Dagger/Engine.html#method_name",
+			"d": "<p>The name of the engine instance.</p>"
 		},
 		{
 			"t": "M",
@@ -3381,6 +3411,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\EnvFile::namespace",
+			"p": "Dagger/EnvFile.html#method_namespace",
+			"d": "<p>Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix &quot;MY<em>APP</em>&quot; and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\EnvFile::variables",
 			"p": "Dagger/EnvFile.html#method_variables",
 			"d": "<p>Return all variables</p>"
@@ -3717,6 +3753,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Function_::withCachePolicy",
+			"p": "Dagger/Function_.html#method_withCachePolicy",
+			"d": "<p>Returns the function updated to use the provided cache policy.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Function_::withDescription",
 			"p": "Dagger/Function_.html#method_withDescription",
 			"d": "<p>Returns the function with the given doc string.</p>"
@@ -3846,6 +3888,12 @@
 			"n": "Dagger\\GitRepository::tags",
 			"p": "Dagger/GitRepository.html#method_tags",
 			"d": "<p>tags that match any of the given glob patterns.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitRepository::uncommitted",
+			"p": "Dagger/GitRepository.html#method_uncommitted",
+			"d": "<p>Returns the changeset of uncommitted changes in the git repository.</p>"
 		},
 		{
 			"t": "M",
@@ -4281,6 +4329,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Module::introspectionSchemaJSON",
+			"p": "Dagger/Module.html#method_introspectionSchemaJSON",
+			"d": "<p>The introspection schema JSON file for this module.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Module::name",
 			"p": "Dagger/Module.html#method_name",
 			"d": "<p>The name of the module</p>"
@@ -4467,6 +4521,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::introspectionSchemaJSON",
+			"p": "Dagger/ModuleSource.html#method_introspectionSchemaJSON",
+			"d": "<p>The introspection schema JSON file for this module source.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::kind",
 			"p": "Dagger/ModuleSource.html#method_kind",
 			"d": "<p>The kind of module source (currently local, git or dir).</p>"
@@ -4569,6 +4629,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\ModuleSource::withExperimentalFeatures",
+			"p": "Dagger/ModuleSource.html#method_withExperimentalFeatures",
+			"d": "<p>Enable the experimental features for the module source.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\ModuleSource::withIncludes",
 			"p": "Dagger/ModuleSource.html#method_withIncludes",
 			"d": "<p>Update the module source with additional include patterns for files+directories from its context that are required for building it</p>"
@@ -4626,6 +4692,12 @@
 			"n": "Dagger\\ModuleSource::withoutDependencies",
 			"p": "Dagger/ModuleSource.html#method_withoutDependencies",
 			"d": "<p>Remove the provided dependencies from the module source's dependency list.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleSource::withoutExperimentalFeatures",
+			"p": "Dagger/ModuleSource.html#method_withoutExperimentalFeatures",
+			"d": "<p>Disable experimental features for the module source.</p>"
 		},
 		{
 			"t": "M",

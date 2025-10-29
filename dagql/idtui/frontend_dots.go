@@ -108,7 +108,7 @@ func (fe *frontendDots) SetPrimary(spanID dagui.SpanID) {
 }
 
 func (fe *frontendDots) Background(cmd tea.ExecCommand, raw bool) error {
-	return fmt.Errorf("not implemented")
+	return fmt.Errorf("running shell without the TUI is not supported")
 }
 
 func (fe *frontendDots) RevealAllSpans() {

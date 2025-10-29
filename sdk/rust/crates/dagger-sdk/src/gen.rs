@@ -2266,6 +2266,11 @@ impl Changeset {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Returns true if the changeset is empty (i.e. there are no changes).
+    pub async fn is_empty(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("isEmpty");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Return a snapshot containing only the created and modified files
     pub fn layer(&self) -> Directory {
         let query = self.selection.select("layer");
@@ -3572,6 +3577,20 @@ impl Container {
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
         }
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Raise an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `err` - Message of the error to raise. If empty, the error will be ignored.
+    pub fn with_error(&self, err: impl Into<String>) -> Container {
+        let mut query = self.selection.select("withError");
+        query = query.arg("err", err.into());
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -5608,6 +5627,20 @@ impl Directory {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Raise an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `err` - Message of the error to raise. If empty, the error will be ignored.
+    pub fn with_error(&self, err: impl Into<String>) -> Directory {
+        let mut query = self.selection.select("withError");
+        query = query.arg("err", err.into());
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieves this directory plus the contents of the given file copied to the given path.
     ///
     /// # Arguments
@@ -5909,6 +5942,11 @@ pub struct Engine {
     pub graphql_client: DynGraphQLClient,
 }
 impl Engine {
+    /// The list of connected client IDs
+    pub async fn clients(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("clients");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// A unique identifier for this Engine.
     pub async fn id(&self) -> Result<EngineId, DaggerError> {
         let query = self.selection.select("id");
@@ -5922,6 +5960,11 @@ impl Engine {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+    /// The name of the engine instance.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
     }
 }
 #[derive(Clone)]
@@ -7381,6 +7424,20 @@ impl EnvFile {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix "MY_APP_" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello
+    ///
+    /// # Arguments
+    ///
+    /// * `prefix` - The prefix to filter by
+    pub fn namespace(&self, prefix: impl Into<String>) -> EnvFile {
+        let mut query = self.selection.select("namespace");
+        query = query.arg("prefix", prefix.into());
+        EnvFile {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return all variables
     ///
     /// # Arguments
@@ -7960,6 +8017,12 @@ pub struct FunctionWithArgOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub source_map: Option<SourceMapId>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct FunctionWithCachePolicyOpts<'a> {
+    /// The TTL for the cache policy, if applicable. Provided as a duration string, e.g. "5m", "1h30s".
+    #[builder(setter(into, strip_option), default)]
+    pub time_to_live: Option<&'a str>,
+}
 impl Function {
     /// Arguments accepted by the function, if any.
     pub fn args(&self) -> Vec<FunctionArg> {
@@ -8062,6 +8125,43 @@ impl Function {
         }
         if let Some(source_map) = opts.source_map {
             query = query.arg("sourceMap", source_map);
+        }
+        Function {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Returns the function updated to use the provided cache policy.
+    ///
+    /// # Arguments
+    ///
+    /// * `policy` - The cache policy to use.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_cache_policy(&self, policy: FunctionCachePolicy) -> Function {
+        let mut query = self.selection.select("withCachePolicy");
+        query = query.arg("policy", policy);
+        Function {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Returns the function updated to use the provided cache policy.
+    ///
+    /// # Arguments
+    ///
+    /// * `policy` - The cache policy to use.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_cache_policy_opts<'a>(
+        &self,
+        policy: FunctionCachePolicy,
+        opts: FunctionWithCachePolicyOpts<'a>,
+    ) -> Function {
+        let mut query = self.selection.select("withCachePolicy");
+        query = query.arg("policy", policy);
+        if let Some(time_to_live) = opts.time_to_live {
+            query = query.arg("timeToLive", time_to_live);
         }
         Function {
             proc: self.proc.clone(),
@@ -8533,6 +8633,15 @@ impl GitRepository {
             query = query.arg("patterns", patterns);
         }
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Returns the changeset of uncommitted changes in the git repository.
+    pub fn uncommitted(&self) -> Changeset {
+        let query = self.selection.select("uncommitted");
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// The URL of the git repository.
     pub async fn url(&self) -> Result<String, DaggerError> {
@@ -9458,6 +9567,17 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         }]
     }
+    /// The introspection schema JSON file for this module.
+    /// This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+    /// Note: this is in the context of a module, so some core types may be hidden.
+    pub fn introspection_schema_json(&self) -> File {
+        let query = self.selection.select("introspectionSchemaJSON");
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The name of the module
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
@@ -9742,6 +9862,17 @@ impl ModuleSource {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The introspection schema JSON file for this module source.
+    /// This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+    /// Note: this is in the context of a module, so some core types may be hidden.
+    pub fn introspection_schema_json(&self) -> File {
+        let query = self.selection.select("introspectionSchemaJSON");
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The kind of module source (currently local, git or dir).
     pub async fn kind(&self) -> Result<ModuleSourceKind, DaggerError> {
         let query = self.selection.select("kind");
@@ -9877,6 +10008,23 @@ impl ModuleSource {
     pub fn with_engine_version(&self, version: impl Into<String>) -> ModuleSource {
         let mut query = self.selection.select("withEngineVersion");
         query = query.arg("version", version.into());
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Enable the experimental features for the module source.
+    ///
+    /// # Arguments
+    ///
+    /// * `features` - The experimental features to enable.
+    pub fn with_experimental_features(
+        &self,
+        features: Vec<ModuleSourceExperimentalFeature>,
+    ) -> ModuleSource {
+        let mut query = self.selection.select("withExperimentalFeatures");
+        query = query.arg("features", features);
         ModuleSource {
             proc: self.proc.clone(),
             selection: query,
@@ -10031,6 +10179,23 @@ impl ModuleSource {
                 .map(|i| i.into())
                 .collect::<Vec<String>>(),
         );
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Disable experimental features for the module source.
+    ///
+    /// # Arguments
+    ///
+    /// * `features` - The experimental features to disable.
+    pub fn without_experimental_features(
+        &self,
+        features: Vec<ModuleSourceExperimentalFeature>,
+    ) -> ModuleSource {
+        let mut query = self.selection.select("withoutExperimentalFeatures");
+        query = query.arg("features", features);
         ModuleSource {
             proc: self.proc.clone(),
             selection: query,
@@ -12567,6 +12732,15 @@ pub enum ExistsType {
     SymlinkType,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum FunctionCachePolicy {
+    #[serde(rename = "Default")]
+    Default,
+    #[serde(rename = "Never")]
+    Never,
+    #[serde(rename = "PerSession")]
+    PerSession,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ImageLayerCompression {
     #[serde(rename = "EStarGZ")]
     EStarGz,
@@ -12589,6 +12763,11 @@ pub enum ImageMediaTypes {
     Oci,
     #[serde(rename = "OCIMediaTypes")]
     OciMediaTypes,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum ModuleSourceExperimentalFeature {
+    #[serde(rename = "SELF_CALLS")]
+    SelfCalls,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ModuleSourceKind {

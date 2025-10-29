@@ -868,9 +868,10 @@ func (r *CacheVolume) MarshalJSON() ([]byte, error) {
 type Changeset struct {
 	query *querybuilder.Selection
 
-	export *string
-	id     *ChangesetID
-	sync   *ChangesetID
+	export  *string
+	id      *ChangesetID
+	isEmpty *bool
+	sync    *ChangesetID
 }
 
 func (r *Changeset) WithGraphQLQuery(q *querybuilder.Selection) *Changeset {
@@ -968,6 +969,19 @@ func (r *Changeset) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// Returns true if the changeset is empty (i.e. there are no changes).
+func (r *Changeset) IsEmpty(ctx context.Context) (bool, error) {
+	if r.isEmpty != nil {
+		return *r.isEmpty, nil
+	}
+	q := r.query.Select("isEmpty")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Return a snapshot containing only the created and modified files
@@ -2060,6 +2074,16 @@ func (r *Container) WithEnvVariable(name string, value string, opts ...Container
 	}
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Raise an error.
+func (r *Container) WithError(err string) *Container {
+	q := r.query.Select("withError")
+	q = q.Arg("err", err)
 
 	return &Container{
 		query: q,
@@ -3619,6 +3643,16 @@ func (r *Directory) WithDirectory(path string, source *Directory, opts ...Direct
 	}
 }
 
+// Raise an error.
+func (r *Directory) WithError(err string) *Directory {
+	q := r.query.Select("withError")
+	q = q.Arg("err", err)
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // DirectoryWithFileOpts contains options for Directory.WithFile
 type DirectoryWithFileOpts struct {
 	// Permission given to the copied file (e.g., 0600).
@@ -3805,13 +3839,24 @@ func (r *Directory) WithoutFiles(paths []string) *Directory {
 type Engine struct {
 	query *querybuilder.Selection
 
-	id *EngineID
+	id   *EngineID
+	name *string
 }
 
 func (r *Engine) WithGraphQLQuery(q *querybuilder.Selection) *Engine {
 	return &Engine{
 		query: q,
 	}
+}
+
+// The list of connected client IDs
+func (r *Engine) Clients(ctx context.Context) ([]string, error) {
+	q := r.query.Select("clients")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A unique identifier for this Engine.
@@ -3861,6 +3906,19 @@ func (r *Engine) LocalCache() *EngineCache {
 	return &EngineCache{
 		query: q,
 	}
+}
+
+// The name of the engine instance.
+func (r *Engine) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A cache storage for the Dagger engine
@@ -5339,6 +5397,16 @@ func (r *EnvFile) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix "MY_APP_" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello
+func (r *EnvFile) Namespace(prefix string) *EnvFile {
+	q := r.query.Select("namespace")
+	q = q.Arg("prefix", prefix)
+
+	return &EnvFile{
+		query: q,
+	}
+}
+
 // EnvFileVariablesOpts contains options for EnvFile.Variables
 type EnvFileVariablesOpts struct {
 	// Return values exactly as written to the file. No quote removal or variable expansion
@@ -6353,6 +6421,28 @@ func (r *Function) WithArg(name string, typeDef *TypeDef, opts ...FunctionWithAr
 	}
 }
 
+// FunctionWithCachePolicyOpts contains options for Function.WithCachePolicy
+type FunctionWithCachePolicyOpts struct {
+	// The TTL for the cache policy, if applicable. Provided as a duration string, e.g. "5m", "1h30s".
+	TimeToLive string
+}
+
+// Returns the function updated to use the provided cache policy.
+func (r *Function) WithCachePolicy(policy FunctionCachePolicy, opts ...FunctionWithCachePolicyOpts) *Function {
+	q := r.query.Select("withCachePolicy")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `timeToLive` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TimeToLive) {
+			q = q.Arg("timeToLive", opts[i].TimeToLive)
+		}
+	}
+	q = q.Arg("policy", policy)
+
+	return &Function{
+		query: q,
+	}
+}
+
 // Returns the function with the given doc string.
 func (r *Function) WithDescription(description string) *Function {
 	q := r.query.Select("withDescription")
@@ -7140,6 +7230,15 @@ func (r *GitRepository) Tags(ctx context.Context, opts ...GitRepositoryTagsOpts)
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Returns the changeset of uncommitted changes in the git repository.
+func (r *GitRepository) Uncommitted() *Changeset {
+	q := r.query.Select("uncommitted")
+
+	return &Changeset{
+		query: q,
+	}
 }
 
 // The URL of the git repository.
@@ -8626,6 +8725,19 @@ func (r *Module) Interfaces(ctx context.Context) ([]TypeDef, error) {
 	return convert(response), nil
 }
 
+// The introspection schema JSON file for this module.
+//
+// This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+//
+// Note: this is in the context of a module, so some core types may be hidden.
+func (r *Module) IntrospectionSchemaJSON() *File {
+	q := r.query.Select("introspectionSchemaJSON")
+
+	return &File{
+		query: q,
+	}
+}
+
 // The name of the module
 func (r *Module) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
@@ -9165,6 +9277,19 @@ func (r *ModuleSource) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// The introspection schema JSON file for this module source.
+//
+// This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+//
+// Note: this is in the context of a module, so some core types may be hidden.
+func (r *ModuleSource) IntrospectionSchemaJSON() *File {
+	q := r.query.Select("introspectionSchemaJSON")
+
+	return &File{
+		query: q,
+	}
+}
+
 // The kind of module source (currently local, git or dir).
 func (r *ModuleSource) Kind(ctx context.Context) (ModuleSourceKind, error) {
 	if r.kind != nil {
@@ -9368,6 +9493,16 @@ func (r *ModuleSource) WithEngineVersion(version string) *ModuleSource {
 	}
 }
 
+// Enable the experimental features for the module source.
+func (r *ModuleSource) WithExperimentalFeatures(features []ModuleSourceExperimentalFeature) *ModuleSource {
+	q := r.query.Select("withExperimentalFeatures")
+	q = q.Arg("features", features)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
 // Update the module source with additional include patterns for files+directories from its context that are required for building it
 func (r *ModuleSource) WithIncludes(patterns []string) *ModuleSource {
 	q := r.query.Select("withIncludes")
@@ -9460,6 +9595,16 @@ func (r *ModuleSource) WithoutClient(path string) *ModuleSource {
 func (r *ModuleSource) WithoutDependencies(dependencies []string) *ModuleSource {
 	q := r.query.Select("withoutDependencies")
 	q = q.Arg("dependencies", dependencies)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
+// Disable experimental features for the module source.
+func (r *ModuleSource) WithoutExperimentalFeatures(features []ModuleSourceExperimentalFeature) *ModuleSource {
+	q := r.query.Select("withoutExperimentalFeatures")
+	q = q.Arg("features", features)
 
 	return &ModuleSource{
 		query: q,
@@ -12315,6 +12460,67 @@ const (
 	ExistsTypeSymlinkType ExistsType = "SYMLINK_TYPE"
 )
 
+// The behavior configured for function result caching.
+type FunctionCachePolicy string
+
+func (FunctionCachePolicy) IsEnum() {}
+
+func (v FunctionCachePolicy) Name() string {
+	switch v {
+	case FunctionCachePolicyDefault:
+		return "Default"
+	case FunctionCachePolicyPerSession:
+		return "PerSession"
+	case FunctionCachePolicyNever:
+		return "Never"
+	default:
+		return ""
+	}
+}
+
+func (v FunctionCachePolicy) Value() string {
+	return string(v)
+}
+
+func (v *FunctionCachePolicy) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *FunctionCachePolicy) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "Default":
+		*v = FunctionCachePolicyDefault
+	case "Never":
+		*v = FunctionCachePolicyNever
+	case "PerSession":
+		*v = FunctionCachePolicyPerSession
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	FunctionCachePolicyDefault FunctionCachePolicy = "Default"
+
+	FunctionCachePolicyPerSession FunctionCachePolicy = "PerSession"
+
+	FunctionCachePolicyNever FunctionCachePolicy = "Never"
+)
+
 // Compression algorithm to use for image layers.
 type ImageLayerCompression string
 
@@ -12444,6 +12650,56 @@ const (
 
 	ImageMediaTypesDockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
 	ImageMediaTypesDocker           ImageMediaTypes = ImageMediaTypesDockerMediaTypes
+)
+
+// Experimental features of a module
+type ModuleSourceExperimentalFeature string
+
+func (ModuleSourceExperimentalFeature) IsEnum() {}
+
+func (v ModuleSourceExperimentalFeature) Name() string {
+	switch v {
+	case ModuleSourceExperimentalFeatureSelfCalls:
+		return "SELF_CALLS"
+	default:
+		return ""
+	}
+}
+
+func (v ModuleSourceExperimentalFeature) Value() string {
+	return string(v)
+}
+
+func (v *ModuleSourceExperimentalFeature) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *ModuleSourceExperimentalFeature) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "SELF_CALLS":
+		*v = ModuleSourceExperimentalFeatureSelfCalls
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	// Self calls
+	ModuleSourceExperimentalFeatureSelfCalls ModuleSourceExperimentalFeature = "SELF_CALLS"
 )
 
 // The kind of module source.

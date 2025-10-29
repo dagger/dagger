@@ -162,6 +162,7 @@
               <li><a href="#definition-Function">Function</a></li>
               <li><a href="#definition-FunctionArg">FunctionArg</a></li>
               <li><a href="#definition-FunctionArgID">FunctionArgID</a></li>
+              <li><a href="#definition-FunctionCachePolicy">FunctionCachePolicy</a></li>
               <li><a href="#definition-FunctionCall">FunctionCall</a></li>
               <li><a href="#definition-FunctionCallArgValue">FunctionCallArgValue</a></li>
               <li><a href="#definition-FunctionCallArgValueID">FunctionCallArgValueID</a></li>
@@ -198,6 +199,7 @@
               <li><a href="#definition-ModuleConfigClientID">ModuleConfigClientID</a></li>
               <li><a href="#definition-ModuleID">ModuleID</a></li>
               <li><a href="#definition-ModuleSource">ModuleSource</a></li>
+              <li><a href="#definition-ModuleSourceExperimentalFeature">ModuleSourceExperimentalFeature</a></li>
               <li><a href="#definition-ModuleSourceID">ModuleSourceID</a></li>
               <li><a href="#definition-ModuleSourceKind">ModuleSourceKind</a></li>
               <li><a href="#definition-NetworkProtocol">NetworkProtocol</a></li>
@@ -4935,6 +4937,10 @@
                         <td> A unique identifier for this Changeset. </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Changeset-isEmpty" href="#Changeset-isEmpty"><code>isEmpty</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> Returns true if the changeset is empty (i.e. there are no changes). </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Changeset-layer" href="#Changeset-layer"><code>layer</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td> Return a snapshot containing only the created and modified files </td>
                       </tr>
@@ -5693,6 +5699,23 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>Replace &quot;${VAR}&quot; or &quot;$VAR&quot; in the value according to the current environment variables defined in the container (e.g. &quot;/opt/bin:$PATH&quot;).</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Container-withError" href="#Container-withError"><code>withError</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td> Raise an error. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>err</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Message of the error to raise. If empty, the error will be ignored.</p>
                               </div>
                             </div>
                           </div>
@@ -7111,6 +7134,23 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Directory-withError" href="#Directory-withError"><code>withError</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
+                        <td> Raise an error. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>err</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Message of the error to raise. If empty, the error will be ignored.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Directory-withFile" href="#Directory-withFile"><code>withFile</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td> Retrieves this directory plus the contents of the given file copied to the given path. </td>
                       </tr>
@@ -7378,12 +7418,20 @@
                     </thead>
                     <tbody>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Engine-clients" href="#Engine-clients"><code>clients</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
+                        <td> The list of connected client IDs </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Engine-id" href="#Engine-id"><code>id</code></a> - <span class="property-type"><a href="#definition-EngineID"><code>EngineID!</code></a></span> </td>
                         <td> A unique identifier for this Engine. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Engine-localCache" href="#Engine-localCache"><code>localCache</code></a> - <span class="property-type"><a href="#definition-EngineCache"><code>EngineCache!</code></a></span> </td>
                         <td> The local (on-disk) cache for the Dagger engine </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Engine-name" href="#Engine-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The name of the engine instance. </td>
                       </tr>
                     </tbody>
                   </table>
@@ -8906,6 +8954,23 @@
                         <td> A unique identifier for this EnvFile. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="EnvFile-namespace" href="#EnvFile-namespace"><code>namespace</code></a> - <span class="property-type"><a href="#definition-EnvFile"><code>EnvFile!</code></a></span> </td>
+                        <td> Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix "MY_APP_" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>prefix</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The prefix to filter by</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="EnvFile-variables" href="#EnvFile-variables"><code>variables</code></a> - <span class="property-type"><a href="#definition-EnvVariable"><code>[EnvVariable!]!</code></a></span> </td>
                         <td> Return all variables </td>
                       </tr>
@@ -9648,6 +9713,27 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Function-withCachePolicy" href="#Function-withCachePolicy"><code>withCachePolicy</code></a> - <span class="property-type"><a href="#definition-Function"><code>Function!</code></a></span> </td>
+                        <td> Returns the function updated to use the provided cache policy. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>policy</code></span> - <span class="property-type"><a href="#definition-FunctionCachePolicy"><code>FunctionCachePolicy!</code></a></span></h6>
+                                <p>The cache policy to use.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>timeToLive</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>The TTL for the cache policy, if applicable. Provided as a duration string, e.g. &quot;5m&quot;, &quot;1h30s&quot;.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Function-withDescription" href="#Function-withDescription"><code>withDescription</code></a> - <span class="property-type"><a href="#definition-Function"><code>Function!</code></a></span> </td>
                         <td> Returns the function with the given doc string. </td>
                       </tr>
@@ -9757,6 +9843,61 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>FunctionArgID</code> scalar type represents an identifier for an object of type FunctionArg.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-FunctionCachePolicy" class="definition definition-enum" data-traverse-target="definition-FunctionCachePolicy">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">FunctionCachePolicy</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The behavior configured for function result caching.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Values</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Enum Value</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <p><code>Default</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>PerSession</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>Never</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="doc-examples">
+                <div class="example-section example-section-is-code">
+                  <h5>Example</h5>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"Default"</span>
+</code></pre>
                 </div>
               </div>
             </div>
@@ -10237,6 +10378,10 @@
                             </div>
                           </div>
                         </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GitRepository-uncommitted" href="#GitRepository-uncommitted"><code>uncommitted</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
+                        <td> Returns the changeset of uncommitted changes in the git repository. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="GitRepository-url" href="#GitRepository-url"><code>url</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
@@ -11423,6 +11568,14 @@
                         <td> Interfaces served by this module. </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Module-introspectionSchemaJSON" href="#Module-introspectionSchemaJSON"><code>introspectionSchemaJSON</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
+                        <td>
+                          <p>The introspection schema JSON file for this module.</p>
+                          <p>This file represents the schema visible to the module&#39;s source code, including all core types and those from the dependencies.</p>
+                          <p>Note: this is in the context of a module, so some core types may be hidden.</p>
+                        </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Module-name" href="#Module-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The name of the module </td>
                       </tr>
@@ -11431,7 +11584,7 @@
                         <td> Objects served by this module. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Module-runtime" href="#Module-runtime"><code>runtime</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="Module-runtime" href="#Module-runtime"><code>runtime</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
                         <td> The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile. </td>
                       </tr>
                       <tr>
@@ -11707,6 +11860,14 @@
                         <td> A unique identifier for this ModuleSource. </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-introspectionSchemaJSON" href="#ModuleSource-introspectionSchemaJSON"><code>introspectionSchemaJSON</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
+                        <td>
+                          <p>The introspection schema JSON file for this module source.</p>
+                          <p>This file represents the schema visible to the module&#39;s source code, including all core types and those from the dependencies.</p>
+                          <p>Note: this is in the context of a module, so some core types may be hidden.</p>
+                        </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-kind" href="#ModuleSource-kind"><code>kind</code></a> - <span class="property-type"><a href="#definition-ModuleSourceKind"><code>ModuleSourceKind!</code></a></span> </td>
                         <td> The kind of module source (currently local, git or dir). </td>
                       </tr>
@@ -11825,6 +11986,23 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>version</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>The engine version to upgrade to.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-withExperimentalFeatures" href="#ModuleSource-withExperimentalFeatures"><code>withExperimentalFeatures</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Enable the experimental features for the module source. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>features</code></span> - <span class="property-type"><a href="#definition-ModuleSourceExperimentalFeature"><code>[ModuleSourceExperimentalFeature!]!</code></a></span></h6>
+                                <p>The experimental features to enable.</p>
                               </div>
                             </div>
                           </div>
@@ -11974,8 +12152,65 @@
                           </div>
                         </td>
                       </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-withoutExperimentalFeatures" href="#ModuleSource-withoutExperimentalFeatures"><code>withoutExperimentalFeatures</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Disable experimental features for the module source. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>features</code></span> - <span class="property-type"><a href="#definition-ModuleSourceExperimentalFeature"><code>[ModuleSourceExperimentalFeature!]!</code></a></span></h6>
+                                <p>The experimental features to disable.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-ModuleSourceExperimentalFeature" class="definition definition-enum" data-traverse-target="definition-ModuleSourceExperimentalFeature">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ModuleSourceExperimentalFeature</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Experimental features of a module</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Values</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Enum Value</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <p><code>SELF_CALLS</code></p>
+                        </td>
+                        <td> Self calls </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="doc-examples">
+                <div class="example-section example-section-is-code">
+                  <h5>Example</h5>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"SELF_CALLS"</span>
+</code></pre>
                 </div>
               </div>
             </div>

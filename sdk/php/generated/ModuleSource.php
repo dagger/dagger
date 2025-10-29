@@ -159,6 +159,19 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The introspection schema JSON file for this module source.
+     *
+     * This file represents the schema visible to the module's source code, including all core types and those from the dependencies.
+     *
+     * Note: this is in the context of a module, so some core types may be hidden.
+     */
+    public function introspectionSchemaJSON(): File
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('introspectionSchemaJSON');
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The kind of module source (currently local, git or dir).
      */
     public function kind(): ModuleSourceKind
@@ -317,6 +330,16 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Enable the experimental features for the module source.
+     */
+    public function withExperimentalFeatures(array $features): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withExperimentalFeatures');
+        $innerQueryBuilder->setArgument('features', $features);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Update the module source with additional include patterns for files+directories from its context that are required for building it
      */
     public function withIncludes(array $patterns): ModuleSource
@@ -411,6 +434,16 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDependencies');
         $innerQueryBuilder->setArgument('dependencies', $dependencies);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Disable experimental features for the module source.
+     */
+    public function withoutExperimentalFeatures(array $features): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutExperimentalFeatures');
+        $innerQueryBuilder->setArgument('features', $features);
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

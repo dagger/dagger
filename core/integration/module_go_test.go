@@ -596,6 +596,62 @@ func main() {
 		require.NoError(t, err)
 		require.Contains(t, daggerjson, "bar")
 	})
+
+	t.Run("from scratch with self calls", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=bare", "--sdk=go", "--with-self-calls"))
+
+		daggerjson, err := modGen.File("dagger.json").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, "\"SELF_CALLS\": true")
+	})
+
+	t.Run("enable self calls", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=bare", "--sdk=go"))
+
+		daggerjson, err := modGen.File("dagger.json").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, daggerjson, "SELF_CALLS")
+
+		modGen = modGen.With(daggerExec("develop", "--with-self-calls"))
+
+		daggerjson, err = modGen.File("dagger.json").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, "\"SELF_CALLS\": true")
+	})
+
+	t.Run("disable self calls", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=bare", "--sdk=go", "--with-self-calls"))
+
+		daggerjson, err := modGen.File("dagger.json").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, "\"SELF_CALLS\": true")
+
+		modGen = modGen.With(daggerExec("develop", "--without-self-calls"))
+
+		daggerjson, err = modGen.File("dagger.json").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, "\"SELF_CALLS\": false")
+	})
 }
 
 //go:embed testdata/modules/go/minimal/main.go
@@ -1426,7 +1482,7 @@ func New() *Minimal {
 	require.JSONEq(t, `{"minimal":{"config":"{\"a\":1}"}}`, out)
 }
 
-// this is no longer allowed, but verify the SDK errors out
+// this is no longer allowed, but verify the Engine errors out
 func (GoSuite) TestExtendCore(ctx context.Context, t *testctx.T) {
 	moreContents := `package dagger
 
@@ -1453,7 +1509,10 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 		require.Error(t, err)
 		require.NoError(t, c.Close())
 		t.Log(logs.String())
-		require.Regexp(t, "cannot define methods on objects from outside this module", logs.String())
+
+		// With lazy module loading, the error is no longer thrown by the SDK but directly by the engine
+		// when evaluating the query against the engine GQL schema.
+		require.Contains(t, logs.String(), `Cannot query field \"echo\" on type \"Container\"`)
 	})
 
 	t.Run("in same mod name", func(ctx context.Context, t *testctx.T) {
@@ -1470,7 +1529,9 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 		require.Error(t, err)
 		require.NoError(t, c.Close())
 		t.Log(logs.String())
-		require.Regexp(t, "cannot define methods on objects from outside this module", logs.String())
+		// With lazy module loading, the error is no longer thrown by the SDK but directly by the engine
+		// when evaluating the query against the engine GQL schema.
+		require.Contains(t, logs.String(), `type "Container" is already defined by module "daggercore"`)
 	})
 }
 

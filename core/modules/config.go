@@ -77,6 +77,10 @@ type ModuleConfig struct {
 
 	// The clients generated for this module.
 	Clients []*ModuleConfigClient `json:"clients,omitempty"`
+
+	// If true, disable the new default function caching behavior for this module. Functions will
+	// instead default to the old behavior of per-session caching.
+	DisableDefaultFunctionCaching *bool `json:"disableDefaultFunctionCaching,omitempty"`
 }
 
 type ModuleConfigUserFields struct {
@@ -90,6 +94,8 @@ type ModuleConfigUserFields struct {
 type SDK struct {
 	Source string         `json:"source"`
 	Config map[string]any `json:"config,omitempty"`
+	// The experimental features enabled for this module.
+	Experimental map[string]bool `json:"experimental,omitempty"`
 }
 
 func (sdk *SDK) UnmarshalJSON(data []byte) error {

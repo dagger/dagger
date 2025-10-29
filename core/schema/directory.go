@@ -13,6 +13,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/moby/patternmatcher/ignorefile"
 	"github.com/opencontainers/go-digest"
 )
@@ -130,7 +131,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the directory to retrieve. Example: "/src"`),
 			),
-		dagql.Func("withDirectory", s.withDirectory).
+		dagql.NodeFunc("withDirectory", DagOpDirectoryWrapper(srv, s.withDirectory, WithPathFn(keepParentDir[WithDirectoryArgs]))).
 			View(AllVersion).
 			Doc(`Return a snapshot with a directory added`).
 			Args(
@@ -143,7 +144,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 					`The user and group must be an ID (1000:1000), not a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
-		dagql.Func("filter", s.filter).
+		dagql.NodeFunc("filter", DagOpDirectoryWrapper(srv, s.filter, WithPathFn(keepParentDir[FilterArgs]))).
 			Doc(`Return a snapshot with some paths included or excluded`).
 			Args(
 				dagql.Arg("exclude").Doc(`If set, paths matching one of these glob patterns is excluded from the new snapshot. Example: ["node_modules/", ".git*", ".env"]`),
@@ -160,7 +161,7 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Path of the subdirectory to remove. Example: ".github/workflows"`),
 			),
-		dagql.Func("diff", s.diff).
+		dagql.NodeFunc("diff", DagOpDirectoryWrapper(srv, s.diff, WithStaticPath[*core.Directory, diffArgs]("/"))).
 			Doc(`Return the difference between this directory and an another directory. The difference is encoded as a directory.`).
 			Args(
 				dagql.Arg("other").Doc(`The directory to compare against`),
@@ -264,6 +265,11 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 					`The user and group must be an ID (1000:1000), not a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
 			),
+		dagql.NodeFunc("withError", s.withError).
+			Doc(`Raise an error.`).
+			Args(
+				dagql.Arg("err").Doc(`Message of the error to raise. If empty, the error will be ignored.`),
+			),
 	}.Install(srv)
 
 	dagql.Fields[*core.SearchResult]{}.Install(srv)
@@ -283,6 +289,8 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the copied directory (e.g., "logs/").`),
 			),
+		dagql.NodeFunc("isEmpty", s.changesetEmpty).
+			Doc(`Returns true if the changeset is empty (i.e. there are no changes).`),
 	}.Install(srv)
 }
 
@@ -375,37 +383,73 @@ type WithDirectoryArgs struct {
 	Directory core.DirectoryID // legacy, use Source instead
 
 	core.CopyFilter
+	DagOpInternalArgs
 }
 
-func (s *directorySchema) withDirectory(ctx context.Context, parent *core.Directory, args WithDirectoryArgs) (*core.Directory, error) {
+var _ core.Inputs = WithDirectoryArgs{}
+
+func (args WithDirectoryArgs) Inputs(ctx context.Context) ([]llb.State, error) {
+	deps := []llb.State{}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
 
-	dir, err := cmp.Or(args.Source, args.Directory).Load(ctx, srv)
+	if args.Source.ID() == nil {
+		return nil, nil
+	}
+
+	sourceRes, err := args.Source.Load(ctx, srv)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load source: %w", err)
+	}
+	sourceOp, err := llb.NewDefinitionOp(sourceRes.Self().LLB)
+	if err != nil {
+		return nil, fmt.Errorf("source op: %w", err)
+	}
+	if sourceOp.Output() != nil {
+		deps = append(deps, llb.NewState(sourceOp))
 	}
 
-	return parent.WithDirectory(ctx, args.Path, dir.Self(), args.CopyFilter, args.Owner)
+	return deps, nil
+}
+
+func (s *directorySchema) withDirectory(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args WithDirectoryArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return res, err
+	}
+	src := cmp.Or(args.Source, args.Directory)
+	with, err := parent.Self().WithDirectory(ctx, args.Path, src.ID(), args.CopyFilter, args.Owner)
+	if err != nil {
+		return res, fmt.Errorf("failed to add directory %q: %w", args.Path, err)
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, with)
 }
 
 type FilterArgs struct {
 	core.CopyFilter
+
+	DagOpInternalArgs
 }
 
-func (s *directorySchema) filter(ctx context.Context, parent *core.Directory, args FilterArgs) (*core.Directory, error) {
-	query, err := core.CurrentQuery(ctx)
+func (s *directorySchema) filter(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args FilterArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, err
-	}
-	dir, err := s.directory(ctx, query, struct{}{})
-	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
-	return dir.WithDirectory(ctx, "/", parent, args.CopyFilter, "")
+	platform := parent.Self().Platform
+	scratchDir := core.Directory{
+		Platform: platform,
+		Dir:      parent.Self().Dir,
+	}
+
+	filtered, err := scratchDir.WithDirectory(ctx, "/", parent.ID(), args.CopyFilter, "")
+	if err != nil {
+		return inst, fmt.Errorf("failed to filter: %w", err)
+	}
+	return dagql.NewObjectResultForCurrentID(ctx, srv, filtered)
 }
 
 type dirWithTimestampsArgs struct {
@@ -644,9 +688,13 @@ func (s *directorySchema) withoutDirectory(ctx context.Context, parent dagql.Obj
 		return inst, err
 	}
 
-	dir, err := parent.Self().Without(ctx, srv, args.Path)
+	dir, anyPathsRemoved, err := parent.Self().Without(ctx, srv, args.Path)
 	if err != nil {
 		return inst, err
+	}
+	if !anyPathsRemoved {
+		// no changes, return parent to avoid unnecessary DAG node
+		return parent, nil
 	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
@@ -663,9 +711,13 @@ func (s *directorySchema) withoutFile(ctx context.Context, parent dagql.ObjectRe
 		return inst, err
 	}
 
-	dir, err := parent.Self().Without(ctx, srv, args.Path)
+	dir, anyPathsRemoved, err := parent.Self().Without(ctx, srv, args.Path)
 	if err != nil {
 		return inst, err
+	}
+	if !anyPathsRemoved {
+		// no changes, return parent to avoid unnecessary DAG node
+		return parent, nil
 	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
@@ -682,9 +734,13 @@ func (s *directorySchema) withoutFiles(ctx context.Context, parent dagql.ObjectR
 		return inst, err
 	}
 
-	dir, err := parent.Self().Without(ctx, srv, args.Paths...)
+	dir, anyPathsRemoved, err := parent.Self().Without(ctx, srv, args.Paths...)
 	if err != nil {
 		return inst, err
+	}
+	if !anyPathsRemoved {
+		// no changes, return parent to avoid unnecessary DAG node
+		return parent, nil
 	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
@@ -707,19 +763,59 @@ func (s *directorySchema) exists(ctx context.Context, parent *core.Directory, ar
 
 type diffArgs struct {
 	Other core.DirectoryID
+
+	FSDagOpInternalArgs
 }
 
-func (s *directorySchema) diff(ctx context.Context, parent *core.Directory, args diffArgs) (*core.Directory, error) {
+func (s *directorySchema) diff(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args diffArgs) (res dagql.ObjectResult[*core.Directory], _ error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 
-	dir, err := args.Other.Load(ctx, srv)
-	if err != nil {
-		return nil, err
+	if parent.Self().Dir != "" && parent.Self().Dir != "/" {
+		// in order to compare different directories, they must be rebased to /
+		var rebasedDir dagql.ObjectResult[*core.Directory]
+		err = srv.Select(ctx, srv.Root(), &rebasedDir,
+			dagql.Selector{Field: "directory"}, // scratch
+			dagql.Selector{Field: "withDirectory", Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String("/")},
+				{Name: "source", Value: dagql.NewID[*core.Directory](parent.ID())},
+			}},
+		)
+		if err != nil {
+			return res, err
+		}
+		parent = rebasedDir
 	}
-	return parent.Diff(ctx, dir.Self())
+
+	otherDir, err := args.Other.Load(ctx, srv)
+	if err != nil {
+		return res, err
+	}
+
+	if otherDir.Self().Dir != "" && otherDir.Self().Dir != "/" {
+		// in order to compare different directories, they must be rebased to /
+		var rebasedDir dagql.ObjectResult[*core.Directory]
+		err = srv.Select(ctx, srv.Root(), &rebasedDir,
+			dagql.Selector{Field: "directory"}, // scratch
+			dagql.Selector{Field: "withDirectory", Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String("/")},
+				{Name: "source", Value: dagql.NewID[*core.Directory](otherDir.ID())},
+			}},
+		)
+		if err != nil {
+			return res, err
+		}
+		otherDir = rebasedDir
+	}
+
+	diff, err := parent.Self().Diff(ctx, otherDir.Self())
+	if err != nil {
+		return res, err
+	}
+
+	return dagql.NewObjectResultForCurrentID(ctx, srv, diff)
 }
 
 type findUpArgs struct {
@@ -828,6 +924,27 @@ func (s *directorySchema) changesetExport(ctx context.Context, parent *core.Chan
 		return "", err
 	}
 	return dagql.String(stat.Path), err
+}
+
+func (s *directorySchema) changesetEmpty(ctx context.Context, parent dagql.ObjectResult[*core.Changeset], args struct{}) (dagql.Boolean, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	var size dagql.Int
+	if err := srv.Select(ctx, parent, &size,
+		dagql.Selector{
+			Field: "asPatch",
+		},
+		dagql.Selector{
+			Field: "size",
+		},
+	); err != nil {
+		return false, err
+	}
+
+	return size == 0, nil
 }
 
 type dirExportArgs struct {
@@ -1029,27 +1146,10 @@ func (s *directorySchema) asGit(
 		return inst, err
 	}
 
-	dgstInputs := []string{
-		string(repo.Remote.Digest()),
-	}
-
-	shallowFile, err := backend.File(ctx, "shallow")
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return inst, err
-	}
-	if shallowFile != nil {
-		dt, err := shallowFile.Contents(ctx, nil, nil)
-		if err != nil {
-			return inst, err
-		}
-		dgstInputs = append(dgstInputs, string(dt))
-	}
-
 	inst, err = dagql.NewResultForCurrentID(ctx, repo)
 	if err != nil {
 		return inst, err
 	}
-	inst = inst.WithDigest(dagql.HashFrom(dgstInputs...))
 	return inst, nil
 }
 
@@ -1071,6 +1171,14 @@ func (s *directorySchema) withSymlink(ctx context.Context, parent dagql.ObjectRe
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+}
+
+func (s *directorySchema) withError(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args struct{ Err string }) (dagql.ObjectResult[*core.Directory], error) {
+	_ = ctx
+	if args.Err == "" {
+		return parent, nil
+	}
+	return parent, errors.New(args.Err)
 }
 
 type directoryChownArgs struct {
@@ -1109,7 +1217,7 @@ func maintainContentHashing[A any](
 		}
 
 		// in practice right now, a custom digest is always a content hash
-		// *unless* it's been manually rewritten using dagql.HashFrom (e.g. in
+		// *unless* it's been manually rewritten using hashutil.HashStrings (e.g. in
 		// the case of GitRef.tree - that case is manually rewritten to avoid
 		// accidental collisions later)
 		if parent.ID().HasCustomDigest() && parent.ID().Digest().Algorithm() == digest.SHA256 {

@@ -3,9 +3,8 @@ package call
 import (
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
-	"math"
+	"slices"
 	"strings"
 	"sync"
 
@@ -16,15 +15,12 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 var marshalBufPool = &sync.Pool{New: func() any {
 	b := make([]byte, 0, 1024)
 	return &b
-}}
-
-var hasherPool = &sync.Pool{New: func() any {
-	return xxh3.New()
 }}
 
 func New() *ID {
@@ -61,6 +57,10 @@ type ID struct {
 }
 
 type View string
+
+func (v View) String() string {
+	return string(v)
+}
 
 // The ID of the object that the field selection will be evaluated against.
 //
@@ -102,6 +102,15 @@ func (id *ID) View() View {
 // can corrupt the ID
 func (id *ID) Args() []*Argument {
 	return id.args
+}
+
+func (id *ID) Arg(name string) *Argument {
+	for _, arg := range id.args {
+		if arg.pb.Name == name {
+			return arg
+		}
+	}
+	return nil
 }
 
 // If the field returns a list, this is the index of the element to select.
@@ -223,82 +232,106 @@ func (id *ID) SelectNth(nth int) *ID {
 	h := xxh3.New()
 	h.Write(buf)
 	dgst := digest.NewDigest("xxh3", h)
-
-	return id.Append(
-		id.pb.Type.Elem.ToAST(),
-		id.pb.Field,
-		View(id.pb.View),
-		id.module,
-		nth,
-		dgst,
+	return id.With(
+		WithReceiver(id),
+		WithNth(nth),
+		WithType(id.pb.Type.Elem.ToAST()),
+		WithCustomDigest(dgst),
 	)
 }
 
-func (id *ID) Append(
-	ret *ast.Type,
-	field string,
-	view View,
-	mod *Module,
-	nth int,
-	customDigest digest.Digest,
-	args ...*Argument,
-) *ID {
+type IDOpt func(*ID)
+
+func WithModule(mod *Module) IDOpt {
+	return func(id *ID) {
+		if mod != nil {
+			id.module = mod
+			id.pb.Module = mod.pb
+		} else {
+			id.module = nil
+			id.pb.Module = nil
+		}
+	}
+}
+
+func WithType(typ *ast.Type) IDOpt {
+	return func(id *ID) {
+		id.typ = NewType(typ)
+		id.pb.Type = id.typ.pb
+	}
+}
+
+func WithNth(n int) IDOpt {
+	return func(id *ID) {
+		id.pb.Nth = int64(n)
+	}
+}
+
+func WithView(view View) IDOpt {
+	return func(id *ID) {
+		id.pb.View = view.String()
+	}
+}
+
+func WithCustomDigest(dig digest.Digest) IDOpt {
+	return func(id *ID) {
+		if dig != "" {
+			id.pb.Digest = dig.String()
+			id.pb.IsCustomDigest = true
+		} else {
+			id.pb.Digest = ""
+			id.pb.IsCustomDigest = false
+		}
+	}
+}
+
+func WithArgs(args ...*Argument) IDOpt {
+	return func(id *ID) {
+		id.args = args
+		id.pb.Args = make([]*callpbv1.Argument, 0, len(args))
+		for _, arg := range args {
+			if arg.isSensitive {
+				continue
+			}
+			id.pb.Args = append(id.pb.Args, arg.pb)
+		}
+	}
+}
+
+func WithReceiver(recv *ID) IDOpt {
+	return func(id *ID) {
+		id.receiver = recv
+		if recv != nil {
+			id.pb.ReceiverDigest = recv.pb.Digest
+		} else {
+			id.pb.ReceiverDigest = ""
+		}
+	}
+}
+
+func (id *ID) With(opts ...IDOpt) *ID {
+	return id.shallowClone().apply(opts...)
+}
+
+func (id *ID) Append(ret *ast.Type, field string, opts ...IDOpt) *ID {
+	typ := NewType(ret)
 	newID := &ID{
 		pb: &callpbv1.Call{
-			ReceiverDigest: string(id.Digest()),
+			Type:           typ.pb,
+			ReceiverDigest: id.Digest().String(),
 			Field:          field,
-			View:           string(view),
-			Args:           make([]*callpbv1.Argument, 0, len(args)),
-			Nth:            int64(nth),
 		},
 		receiver: id,
-		module:   mod,
-		args:     args,
-		typ:      NewType(ret),
+		typ:      typ,
 	}
-
-	newID.pb.Type = newID.typ.pb
-
-	if mod != nil {
-		newID.pb.Module = mod.pb
-	}
-
-	for _, arg := range args {
-		if arg.isSensitive {
-			continue
-		}
-		newID.pb.Args = append(newID.pb.Args, arg.pb)
-	}
-
-	if customDigest != "" {
-		newID.pb.Digest = string(customDigest)
-		newID.pb.IsCustomDigest = true
-	} else {
-		var err error
-		newID.pb.Digest, err = newID.calcDigest()
-		if err != nil {
-			// something has to be deeply wrong if we can't
-			// marshal proto and hash the bytes
-			panic(err)
-		}
-	}
-
-	return newID
+	return newID.apply(opts...)
 }
 
 // WithDigest returns a new ID that's the same as before except with the
 // given customDigest set as the ID's digest. If empty string, the default
 // digest for the call will be used (based on digest of encoded call pb).
 func (id *ID) WithDigest(customDigest digest.Digest) *ID {
-	return id.receiver.Append(
-		id.pb.Type.ToAST(),
-		id.pb.Field,
-		View(id.pb.View),
-		id.module,
-		int(id.pb.Nth),
-		customDigest,
-		id.args...,
-	)
+	return id.With(WithCustomDigest(customDigest))
 }
 
 func (id *ID) HasCustomDigest() bool {
@@ -318,8 +351,7 @@ func (id *ID) WithArgument(arg *Argument) *ID {
 		return nil
 	}
 
-	newArgs := make([]*Argument, len(id.args))
-	copy(newArgs, id.args)
+	newArgs := slices.Clone(id.args)
 	var replaced bool
 	for i, existingArg := range newArgs {
 		if existingArg.pb.Name == arg.pb.Name {
@@ -333,18 +365,13 @@ func (id *ID) WithArgument(arg *Argument) *ID {
 		newArgs = append(newArgs, arg)
 	}
 
-	return id.receiver.Append(
-		id.pb.Type.ToAST(),
-		id.pb.Field,
-		View(id.pb.View),
-		id.module,
-		int(id.pb.Nth),
-		"", // reset to default digest
-		newArgs...,
-	)
+	return id.With(WithArgs(newArgs...))
 }
 
 func (id *ID) Encode() (string, error) {
+	if id == nil {
+		return "", nil
+	}
 	dagPB, err := id.ToProto()
 	if err != nil {
 		return "", fmt.Errorf("failed to convert ID to proto: %w", err)
@@ -396,6 +423,43 @@ func (id *ID) FromProto(dagPB *callpbv1.DAG) error {
 		return fmt.Errorf("failed to decode DAG: %w", err)
 	}
 	return nil
+}
+
+func (id *ID) shallowClone() *ID {
+	cp := *id
+	// NB: this is finnicky, but shouldn't change much, seems worth avoiding
+	// reflection in proto.CloneOf
+	cp.pb = &callpbv1.Call{
+		ReceiverDigest: cp.pb.ReceiverDigest,
+		Type:           cp.pb.Type,
+		Field:          cp.pb.Field,
+		Args:           cp.pb.Args, // NOTE: no slices.Clone here - ALWAYS use WithArgs
+		Nth:            cp.pb.Nth,
+		Module:         cp.pb.Module,
+		Digest:         cp.pb.Digest,
+		View:           cp.pb.View,
+		IsCustomDigest: cp.pb.IsCustomDigest,
+	}
+	return &cp
+}
+
+func (id *ID) apply(opts ...IDOpt) *ID {
+	// clear any existing digest; must be re-applied each time
+	id.pb.Digest = ""
+	id.pb.IsCustomDigest = false
+	for _, opt := range opts {
+		opt(id)
+	}
+	if !id.HasCustomDigest() {
+		var err error
+		id.pb.Digest, err = id.calcDigest()
+		if err != nil {
+			// something has to be deeply wrong if we can't
+			// marshal proto and hash the bytes
+			panic(err)
+		}
+	}
+	return id
 }
 
 func (id *ID) gatherCalls(callsByDigest map[string]*callpbv1.Call) {
@@ -503,170 +567,135 @@ func (id *ID) calcDigest() (string, error) {
 
 	var err error
 
-	// re-use buffers to save some allocations and work for the go GC
-	// don't do a defer Put to avoid the overhead of defers
-	bufPtr := marshalBufPool.Get().(*[]byte)
-	buf := *bufPtr
-	buf = buf[:0]
-
-	// also re-use xxh3 hashers since the struct has some large arrays (not slices), which
-	// are expensive to allocate and (surprisingly) trigger a lot of cpu work expanding the
-	// stack when not stored in heap
-	h := hasherPool.Get().(*xxh3.Hasher)
+	h := hashutil.NewHasher()
 
 	// ReceiverDigest
-	buf = append(buf, []byte(id.pb.ReceiverDigest)...)
-	buf = append(buf, 0)
+	h = h.WithString(id.pb.ReceiverDigest).
+		WithDelim()
 
 	// Type
 	var curType *callpbv1.Type
 	for curType = id.pb.Type; curType != nil; curType = curType.Elem {
-		buf = append(buf, []byte(curType.NamedType)...)
-		buf = append(buf, 0)
+		h = h.WithString(curType.NamedType)
 		if curType.NonNull {
-			buf = append(buf, 2, 0)
+			h = h.WithByte(2)
 		} else {
-			buf = append(buf, 1, 0)
+			h = h.WithByte(1)
 		}
+		h = h.WithDelim()
 	}
-	buf = append(buf, 0)
+	h = h.WithDelim()
 
 	// Field
-	buf = append(buf, []byte(id.pb.Field)...)
-	buf = append(buf, 0)
+	h = h.WithString(id.pb.Field).
+		WithDelim()
 
 	// Args
 	for _, arg := range id.pb.Args {
-		buf, err = AppendArgumentBytes(arg, buf)
+		h, err = AppendArgumentBytes(arg, h)
 		if err != nil {
-			marshalBufPool.Put(bufPtr)
-			h.Reset()
-			hasherPool.Put(h)
+			h.Close()
 			return "", err
 		}
+		h = h.WithDelim()
 	}
-	buf = append(buf, 0)
+	h = h.WithDelim()
 
 	// Nth
-	buf = binary.BigEndian.AppendUint64(buf, uint64(id.pb.Nth))
-	buf = append(buf, 0)
+	h = h.WithInt64(id.pb.Nth).
+		WithDelim()
 
 	// Module
 	if id.pb.Module != nil {
-		buf = append(buf, []byte(id.pb.Module.CallDigest)...)
-		buf = append(buf, 0)
-		buf = append(buf, []byte(id.pb.Module.Name)...)
-		buf = append(buf, 0)
-		buf = append(buf, []byte(id.pb.Module.Ref)...)
-		buf = append(buf, 0)
-		buf = append(buf, []byte(id.pb.Module.Pin)...)
-		buf = append(buf, 0)
+		h = h.WithString(id.pb.Module.CallDigest).
+			WithString(id.pb.Module.Name).
+			WithString(id.pb.Module.Ref).
+			WithString(id.pb.Module.Pin)
 	}
-	buf = append(buf, 0)
+	h = h.WithDelim()
 
 	// View
-	buf = append(buf, []byte(id.pb.View)...)
-	buf = append(buf, 0)
+	h = h.WithString(id.pb.View).
+		WithDelim()
 
-	_, _ = h.Write(buf) // docs say it never errors even though it returns one
-
-	// format as a hex string; do it the efficient way rather than fmt.Sprintf
-	hashBuf := make([]byte, 8)
-	binary.BigEndian.PutUint64(hashBuf, h.Sum64())
-	hexStr := make([]byte, 5+16) // 5 for "xxh3:" + 16 for the hex
-	hexStr[0], hexStr[1], hexStr[2], hexStr[3], hexStr[4] = 'x', 'x', 'h', '3', ':'
-	hex.Encode(hexStr[5:], hashBuf)
-
-	marshalBufPool.Put(bufPtr)
-	h.Reset()
-	hasherPool.Put(h)
-	return string(hexStr), nil
+	return h.DigestAndClose(), nil
 }
 
 // AppendArgumentBytes appends a binary representation of the given argument to the given byte slice.
-func AppendArgumentBytes(arg *callpbv1.Argument, buf []byte) ([]byte, error) {
-	var err error
+func AppendArgumentBytes(arg *callpbv1.Argument, h *hashutil.Hasher) (*hashutil.Hasher, error) {
+	h = h.WithString(arg.Name)
 
-	buf = append(buf, []byte(arg.Name)...)
-	buf = append(buf, 0)
-
-	buf, err = appendLiteralBytes(arg.Value, buf)
+	h, err := appendLiteralBytes(arg.Value, h)
 	if err != nil {
-		return nil, fmt.Errorf("failed to append argument %q: %w", arg.Name, err)
+		return nil, fmt.Errorf("failed to write argument %q to hash: %w", arg.Name, err)
 	}
 
-	buf = append(buf, 0)
-	return buf, nil
+	return h, nil
 }
 
 // appendLiteralBytes appends a binary representation of the given literal to the given byte slice.
-func appendLiteralBytes(lit *callpbv1.Literal, buf []byte) ([]byte, error) {
+func appendLiteralBytes(lit *callpbv1.Literal, h *hashutil.Hasher) (*hashutil.Hasher, error) {
 	var err error
 	// we use a unique prefix byte for each type to avoid collisions
 	switch v := lit.Value.(type) {
 	case *callpbv1.Literal_CallDigest:
 		const prefix = '0'
-		buf = append(buf, prefix)
-		buf = append(buf, []byte(v.CallDigest)...)
-		buf = append(buf, 0)
+		h = h.WithByte(prefix).
+			WithString(v.CallDigest)
 	case *callpbv1.Literal_Null:
 		const prefix = '1'
-		buf = append(buf, prefix)
+		h = h.WithByte(prefix)
 		if v.Null {
-			buf = append(buf, prefix, 1, 0)
+			h = h.WithByte(1)
 		} else {
-			buf = append(buf, prefix, 2, 0)
+			h = h.WithByte(2)
 		}
 	case *callpbv1.Literal_Bool:
 		const prefix = '2'
-		buf = append(buf, prefix)
+		h = h.WithByte(prefix)
 		if v.Bool {
-			buf = append(buf, prefix, 1, 0)
+			h = h.WithByte(1)
 		} else {
-			buf = append(buf, prefix, 2, 0)
+			h = h.WithByte(2)
 		}
 	case *callpbv1.Literal_Enum:
 		const prefix = '3'
-		buf = append(buf, prefix)
-		buf = append(buf, []byte(v.Enum)...)
-		buf = append(buf, 0)
+		h = h.WithByte(prefix).
+			WithString(v.Enum)
 	case *callpbv1.Literal_Int:
 		const prefix = '4'
-		buf = append(buf, prefix)
-		buf = binary.BigEndian.AppendUint64(buf, uint64(v.Int))
-		buf = append(buf, 0)
+		h = h.WithByte(prefix).
+			WithInt64(v.Int)
 	case *callpbv1.Literal_Float:
 		const prefix = '5'
-		buf = append(buf, prefix)
-		buf = binary.BigEndian.AppendUint64(buf, math.Float64bits(v.Float))
-		buf = append(buf, 0)
+		h = h.WithByte(prefix).
+			WithFloat64(v.Float)
 	case *callpbv1.Literal_String_:
 		const prefix = '6'
-		buf = append(buf, prefix)
-		buf = append(buf, []byte(v.String_)...)
-		buf = append(buf, 0)
+		h = h.WithByte(prefix).
+			WithString(v.String_)
 	case *callpbv1.Literal_List:
 		const prefix = '7'
-		buf = append(buf, prefix)
+		h = h.WithByte(prefix)
 		for _, elem := range v.List.Values {
-			buf, err = appendLiteralBytes(elem, buf)
+			h, err = appendLiteralBytes(elem, h)
 			if err != nil {
 				return nil, err
 			}
 		}
-		buf = append(buf, 0)
 	case *callpbv1.Literal_Object:
 		const prefix = '8'
-		buf = append(buf, prefix)
+		h = h.WithByte(prefix)
 		for _, arg := range v.Object.Values {
-			buf, err = AppendArgumentBytes(arg, buf)
+			h, err = AppendArgumentBytes(arg, h)
 			if err != nil {
 				return nil, err
 			}
+			h = h.WithDelim()
 		}
-		buf = append(buf, 0)
 	default:
 		return nil, fmt.Errorf("unknown literal type %T", v)
 	}
-	return buf, nil
+	h = h.WithDelim()
+	return h, nil
 }

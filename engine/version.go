@@ -44,6 +44,10 @@ var (
 	// introduced - if it's present and not a dev version, it must be higher
 	// than v0.9.9.
 	MinimumModuleVersion = "v0.9.9"
+
+	// MinimumDefaultFunctionCachingModuleVersion is the minimum module version at which
+	// we will enable default function caching behavior.
+	MinimumDefaultFunctionCachingModuleVersion = "v0.19.4"
 )
 
 var (

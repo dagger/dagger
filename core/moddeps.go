@@ -18,6 +18,10 @@ const (
 	ModuleName = "daggercore"
 )
 
+var (
+	TypesToIgnoreForModuleIntrospection = []string{"Host"}
+)
+
 /*
 ModDeps represents a set of dependencies for a module or for a caller depending on a
 particular set of modules to be served.
@@ -83,6 +87,12 @@ func (d *ModDeps) SchemaIntrospectionJSONFile(ctx context.Context, hiddenTypes [
 		return inst, err
 	}
 	return schemaJSONFile, nil
+}
+
+// The introspection json for combined schema exposed by each mod in this set of dependencies, as a file.
+// Some APIs are automatically hidden as they should not be exposed to modules.
+func (d *ModDeps) SchemaIntrospectionJSONFileForModule(ctx context.Context) (inst dagql.Result[*File], _ error) {
+	return d.SchemaIntrospectionJSONFile(ctx, TypesToIgnoreForModuleIntrospection)
 }
 
 // All the TypeDefs exposed by this set of dependencies
@@ -179,10 +189,11 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
 			asIfaceFieldName := gqlFieldName(fmt.Sprintf("as%s", iface.Name))
 			class.Extend(
 				dagql.FieldSpec{
-					Name:        asIfaceFieldName,
-					Description: fmt.Sprintf("Converts this %s to a %s.", obj.Name, iface.Name),
-					Type:        &InterfaceAnnotatedValue{TypeDef: iface},
-					Module:      ifaceType.mod.IDModule(),
+					Name:           asIfaceFieldName,
+					Description:    fmt.Sprintf("Converts this %s to a %s.", obj.Name, iface.Name),
+					Type:           &InterfaceAnnotatedValue{TypeDef: iface},
+					Module:         ifaceType.mod.IDModule(),
+					GetCacheConfig: ifaceType.mod.CacheConfigForCall,
 				},
 				func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
 					inst, ok := dagql.UnwrapAs[*ModuleObject](self)
@@ -195,9 +206,6 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context, hiddenTypes []string) (
 						UnderlyingType: objType,
 						IfaceType:      ifaceType,
 					})
-				},
-				dagql.CacheSpec{
-					GetCacheConfig: ifaceType.mod.CacheConfigForCall,
 				},
 			)
 		}

@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -42,13 +44,19 @@ func (*Env) Type() *ast.Type {
 
 type envKey struct{}
 
-func EnvToContext(ctx context.Context, env dagql.ObjectResult[*Env]) context.Context {
+func EnvIDToContext(ctx context.Context, env *call.ID) context.Context {
 	return context.WithValue(ctx, envKey{}, env)
 }
 
-func EnvFromContext(ctx context.Context) (res dagql.ObjectResult[*Env], ok bool) {
-	env, ok := ctx.Value(envKey{}).(dagql.ObjectResult[*Env])
+func EnvIDFromContext(ctx context.Context) (res *call.ID, ok bool) {
+	// Env overidden via explicit context, i.e. from LLM to tool call
+	env, ok := ctx.Value(envKey{}).(*call.ID)
 	if !ok {
+		q, err := CurrentQuery(ctx)
+		if err == nil && q.CurrentEnv != nil {
+			// Env set on Query, i.e. propagated from LLM to module
+			return q.CurrentEnv, true
+		}
 		return res, false
 	}
 	return env, true
@@ -242,7 +250,7 @@ func (b *Binding) Digest() digest.Digest {
 	if err != nil {
 		return digest.FromString("")
 	}
-	return dagql.HashFrom(string(jsonBytes))
+	return hashutil.HashStrings(string(jsonBytes))
 }
 
 func (b *Binding) AsString() (string, bool) {
@@ -348,7 +356,6 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 
 			return dagql.NewResultForCurrentID(ctx, env.WithInput(name, obj, description))
 		},
-		dagql.CacheSpec{},
 	)
 
 	envType.Extend(
@@ -376,7 +383,6 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 
 			return dagql.NewResultForCurrentID(ctx, env.WithOutput(name, targetType, desc))
 		},
-		dagql.CacheSpec{},
 	)
 
 	// Install Binding.as<TargetType>()
@@ -386,6 +392,7 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 			Description: fmt.Sprintf("Retrieve the binding value, as type %s", typeName),
 			Type:        targetType.Typed(),
 			Args:        dagql.InputSpecs{},
+			DoNotCache:  "Bindings are mutable",
 		},
 		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
 			binding := self.(dagql.ObjectResult[*Binding]).Self()
@@ -406,9 +413,6 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 				}
 			}
 			return res, nil
-		},
-		dagql.CacheSpec{
-			DoNotCache: "Bindings are mutable",
 		},
 	)
 	return nil

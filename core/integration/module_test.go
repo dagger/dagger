@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"crypto/rand"
 	_ "embed"
 	"encoding/base64"
 	"encoding/json"
@@ -2085,10 +2086,31 @@ func (ModuleSuite) TestCustomSDK(ctx context.Context, t *testctx.T) {
 			WithNewFile("main.go", `package main
 
 import (
+	"context"
+	"encoding/json"
+
 	"dagger/cool-sdk/internal/dagger"
 )
 
 type CoolSdk struct {}
+
+func (m *CoolSdk) ModuleTypes(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
+	mod := modSource.WithSDK("go").AsModule()
+	modID, err := mod.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	b, err := json.Marshal(modID)
+	if err != nil {
+		return nil, err
+	}
+	return dag.Container().
+		From("alpine").
+		WithNewFile(outputFilePath, string(b)).
+		WithEntrypoint([]string{
+			"sh", "-c", "",
+		}), nil
+}
 
 func (m *CoolSdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.Container {
 	return modSource.WithSDK("go").AsModule().Runtime().WithEnvVariable("COOL", "true")
@@ -2163,79 +2185,45 @@ func (m *Test) Fn() string {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/coolsdk").
 			With(daggerExec("init", "--source=.", "--name=cool-sdk", "--sdk=go")).
-			// we override the go sdk's dagger.gen.go with this custom one that tests functionality
-			// during init
-			WithNewFile("fixedsrc/dagger.gen.go", `package main
+			WithNewFile("main.go", `package main
+
 import (
 	"context"
 	"encoding/json"
 
-	"dagger/test/internal/dagger"
-)
-
-var dag = dagger.Connect()
-
-func main() {
-	ctx := context.Background()
-
-	fnCall := dag.CurrentFunctionCall()
-
-	// verify execs work
-	_, err := dag.Container().From("`+alpineImage+`").
-		WithExec([]string{"true"}).
-		Sync(ctx)
-	if err != nil {
-		panic(err)
-	}
-
-	// verify CurrentModule().Source() works
-	_, err = dag.CurrentModule().Source().File("main.go").Contents(ctx)
-	if err != nil {
-		panic(err)
-	}
-
-	// return hardcoded typedefs; this module will thus only work during init, but that's all we're testing here
-	result := dag.Module().WithObject(dag.TypeDef().
-		WithObject("Test").
-		WithFunction(dag.Function("CoolFn", dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true))),
-	)
-
-	resultBytes, err := json.Marshal(result)
-	if err != nil {
-		panic(err)
-	}
-
-	if err := fnCall.ReturnValue(ctx, dagger.JSON(resultBytes)); err != nil {
-		panic(err)
-	}
-}
-`).
-			WithNewFile("main.go", `package main
-
-import (
 	"dagger/cool-sdk/internal/dagger"
 )
 
 type CoolSdk struct {}
 
+
+func (m *CoolSdk) ModuleTypes(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
+	// return hardcoded typedefs; this module will thus only work during init, but that's all we're testing here
+	mod := dag.Module().WithObject(dag.TypeDef().
+		WithObject("Test").
+		WithFunction(dag.Function("CoolFn", dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true))))
+	modID, err := mod.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	b, err := json.Marshal(modID)
+	if err != nil {
+		return nil, err
+	}
+	return dag.Container().
+		From("alpine").
+		WithNewFile(outputFilePath, string(b)).
+		WithEntrypoint([]string{
+			"sh", "-c", "",
+		}), nil
+}
+
 func (m *CoolSdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.Container {
-	ctxDir := m.generatedCtx(modSource)
-	return dag.Container().From("`+golangImage+`").
-		WithMountedDirectory("/work", ctxDir).
-		WithWorkdir("/work").
-		WithExec([]string{"go", "build", "-o", "/runtime", "."}).
-		WithEntrypoint([]string{"/runtime"})
+	return modSource.WithSDK("go").AsModule().Runtime().WithEnvVariable("COOL", "true")
 }
 
 func (m *CoolSdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.GeneratedCode {
-	return dag.GeneratedCode(m.generatedCtx(modSource))
-}
-
-func (m *CoolSdk) generatedCtx(modSource *dagger.ModuleSource) *dagger.Directory {
-	ctxDir := modSource.WithSDK("go").AsModule().GeneratedContextDirectory()
-	ctxDir = modSource.ContextDirectory().WithDirectory("/", ctxDir)
-	ctxDir = ctxDir.WithFile("dagger.gen.go", dag.CurrentModule().Source().File("fixedsrc/dagger.gen.go"))
-	return ctxDir
+	return dag.GeneratedCode(modSource.WithSDK("go").AsModule().GeneratedContextDirectory())
 }
 `,
 			).
@@ -2251,7 +2239,7 @@ type Test struct {}
 			With(daggerFunctions()).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, `cool-fn`) // hardcoded typedef in fixedsrc/dagger.gen.go
+		require.Contains(t, out, `cool-fn`) // hardcoded typedef
 	})
 }
 
@@ -6059,6 +6047,114 @@ export class Dep {
 	}
 }
 
+func (ModuleSuite) TestSelfCalls(ctx context.Context, t *testctx.T) {
+	tcs := []struct {
+		sdk    string
+		source string
+	}{
+		{
+			sdk: "go",
+			source: `package main
+
+import (
+	"context"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) ContainerEcho(
+	// +optional
+	// +default="Hello Self Calls"
+	stringArg string,
+) *dagger.Container {
+	return dag.Container().From("alpine:latest").WithExec([]string{"echo", stringArg})
+}
+
+func (m *Test) Print(ctx context.Context, stringArg string) (string, error) {
+	return dag.Test().ContainerEcho(dagger.TestContainerEchoOpts{
+		StringArg: stringArg,
+	}).Stdout(ctx)
+}
+
+func (m *Test) PrintDefault(ctx context.Context) (string, error) {
+	return dag.Test().ContainerEcho().Stdout(ctx)
+}
+`,
+		},
+		//		{
+		//			sdk: "typescript",
+		//			source: `import { dag, Container, object, func } from "@dagger.io/dagger"
+		//
+		// @object()
+		// export class Test {
+		//   /**
+		//    * Returns a container that echoes whatever string argument is provided
+		//    */
+		//   @func()
+		//   containerEcho(stringArg: string = "Hello Self Calls"): Container {
+		//     return dag.container().from("alpine:latest").withExec(["echo", stringArg])
+		//   }
+		//
+		//   @func()
+		//   async print(stringArg: string): Promise<string> {
+		//     return dag.test().containerEcho({stringArg}).stdout()
+		//   }
+		//
+		//   @func()
+		//   async printDefault(): Promise<string> {
+		//     return dag.test().containerEcho().stdout()
+		//   }
+		// }
+		// `,
+		//		},
+		//		{
+		//			sdk: "python",
+		//			source: `import dagger
+		// from dagger import dag, function, object_type
+		//
+		// @object_type
+		// class Test:
+		//     @function
+		//     def container_echo(self, string_arg: str = "Hello Self Calls") -> dagger.Container:
+		//         return dag.container().from_("alpine:latest").with_exec(["echo", string_arg])
+		//
+		//     @function
+		//     async def print(self, string_arg: str) -> str:
+		//         return await dag.test().container_echo(string_arg=string_arg).stdout()
+		//
+		//     @function
+		//     async def print_default(self) -> str:
+		//         return await dag.test().container_echo().stdout()
+		// `,
+		//		},
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			modGen := modInit(t, c, tc.sdk, tc.source, "--with-self-calls")
+
+			t.Run("can call with arguments", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.
+					With(daggerQuery(`{test{print(stringArg:"hello")}}`)).
+					Stdout(ctx)
+				require.NoError(t, err)
+				require.JSONEq(t, `{"test":{"print":"hello\n"}}`, out)
+			})
+
+			t.Run("can call with optional arguments", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.
+					With(daggerQuery(`{test{printDefault}}`)).
+					Stdout(ctx)
+				require.NoError(t, err)
+				require.JSONEq(t, `{"test":{"printDefault":"Hello Self Calls\n"}}`, out)
+			})
+		})
+	}
+}
+
 func (ModuleSuite) TestLoadWhenNoModule(ctx context.Context, t *testctx.T) {
 	// verify that if a module is loaded from a directory w/ no module we don't
 	// load extra files
@@ -6357,6 +6453,281 @@ func (m *Test) Nothing() (*dagger.Directory, error) {
 	require.NoError(t, err)
 }
 
+func (ModuleSuite) TestFunctionCacheControl(ctx context.Context, t *testctx.T) {
+	for _, tc := range []struct {
+		sdk    string
+		source string
+	}{
+		{
+			// TODO: add test that function doc strings still get parsed correctly, don't include //+ etc.
+			sdk: "go",
+			source: `package main
+
+import (
+	"crypto/rand"
+)
+
+type Test struct{}
+
+// My cool doc on TestTtl
+// +cache="40s"
+func (m *Test) TestTtl() string {
+	return rand.Text()
+}
+
+// My dope doc on TestCachePerSession
+// +cache="session"
+func (m *Test) TestCachePerSession() string {
+	return rand.Text()
+}
+
+// My darling doc on TestNeverCache
+// +cache="never"
+func (m *Test) TestNeverCache() string {
+	return rand.Text()
+}
+
+// My rad doc on TestAlwaysCache
+func (m *Test) TestAlwaysCache() string {
+	return rand.Text()
+}
+`,
+		},
+		{
+			sdk: "python",
+			source: `import dagger
+import random
+import string
+
+@dagger.object_type
+class Test:
+		@dagger.function(cache="40s")
+		def test_ttl(self) -> str:
+				return ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
+
+		@dagger.function(cache="session")
+		def test_cache_per_session(self) -> str:
+				return ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
+
+		@dagger.function(cache="never")
+		def test_never_cache(self) -> str:
+				return ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
+
+		@dagger.function
+		def test_always_cache(self) -> str:
+				return ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
+`,
+		},
+
+		{
+			sdk: "typescript",
+			source: `
+import crypto from "crypto"
+
+import {  object, func } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+	@func({ cache: "40s"})
+	testTtl(): string {
+		return crypto.randomBytes(16).toString("hex")
+	}
+
+	@func({ cache: "session" })
+	testCachePerSession(): string {
+		return crypto.randomBytes(16).toString("hex")
+	}
+
+	@func({ cache: "never" })
+	testNeverCache(): string {
+		return crypto.randomBytes(16).toString("hex")
+	}
+
+	@func()
+	testAlwaysCache(): string {
+		return crypto.randomBytes(16).toString("hex")
+	}
+}
+
+`,
+		},
+	} {
+		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+			t.Run("always cache", func(ctx context.Context, t *testctx.T) {
+				c1 := connect(ctx, t)
+				modGen1 := modInit(t, c1, tc.sdk, tc.source)
+
+				// TODO: this is gonna be flaky to cache prunes, might need an isolated engine
+
+				out1, err := modGen1.
+					WithEnvVariable("CACHE_BUST", rand.Text()). // don't cache the nested execs themselves
+					With(daggerCall("test-always-cache")).Stdout(ctx)
+				require.NoError(t, err)
+				require.NoError(t, c1.Close())
+
+				c2 := connect(ctx, t)
+				modGen2 := modInit(t, c2, tc.sdk, tc.source)
+
+				out2, err := modGen2.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-always-cache")).Stdout(ctx)
+				require.NoError(t, err)
+
+				require.Equal(t, out1, out2, "outputs should be equal since the result is always cached")
+			})
+
+			t.Run("cache per session", func(ctx context.Context, t *testctx.T) {
+				c1 := connect(ctx, t)
+				modGen1 := modInit(t, c1, tc.sdk, tc.source)
+
+				out1a, err := modGen1.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-cache-per-session")).Stdout(ctx)
+				require.NoError(t, err)
+				out1b, err := modGen1.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-cache-per-session")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, out1a, out1b, "outputs should be equal since they are from the same session")
+				require.NoError(t, c1.Close())
+
+				c2 := connect(ctx, t)
+				modGen2 := modInit(t, c2, tc.sdk, tc.source)
+
+				out2a, err := modGen2.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-cache-per-session")).Stdout(ctx)
+				require.NoError(t, err)
+				out2b, err := modGen2.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-cache-per-session")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, out2a, out2b, "outputs should be equal since they are from the same session")
+
+				require.NotEqual(t, out1a, out2a, "outputs should not be equal since they are from different sessions")
+			})
+
+			t.Run("never cache", func(ctx context.Context, t *testctx.T) {
+				c1 := connect(ctx, t)
+				modGen1 := modInit(t, c1, tc.sdk, tc.source)
+
+				out1a, err := modGen1.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-never-cache")).Stdout(ctx)
+				require.NoError(t, err)
+				out1b, err := modGen1.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-never-cache")).Stdout(ctx)
+				require.NoError(t, err)
+				require.NotEqual(t, out1a, out1b, "outputs should not be equal since they are never cached")
+				require.NoError(t, c1.Close())
+
+				c2 := connect(ctx, t)
+				modGen2 := modInit(t, c2, tc.sdk, tc.source)
+
+				out2a, err := modGen2.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-never-cache")).Stdout(ctx)
+				require.NoError(t, err)
+				out2b, err := modGen2.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-never-cache")).Stdout(ctx)
+				require.NoError(t, err)
+				require.NotEqual(t, out2a, out2b, "outputs should not be equal since they are never cached")
+
+				require.NotEqual(t, out1a, out2a, "outputs should not be equal since they are never cached")
+			})
+
+			// TODO: this is gonna be hella flaky probably, need isolated engine to combat pruning and probably more generous times...
+			t.Run("cache ttl", func(ctx context.Context, t *testctx.T) {
+				c1 := connect(ctx, t)
+				modGen1 := modInit(t, c1, tc.sdk, tc.source)
+
+				out1, err := modGen1.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-ttl")).Stdout(ctx)
+				require.NoError(t, err)
+				require.NoError(t, c1.Close())
+
+				c2 := connect(ctx, t)
+				modGen2 := modInit(t, c2, tc.sdk, tc.source)
+
+				out2, err := modGen2.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-ttl")).Stdout(ctx)
+				require.NoError(t, err)
+				require.NoError(t, c2.Close())
+
+				require.Equal(t, out1, out2, "outputs should be equal since the cache ttl has not expired")
+				time.Sleep(41 * time.Second)
+
+				c3 := connect(ctx, t)
+				modGen3 := modInit(t, c3, tc.sdk, tc.source)
+
+				out3, err := modGen3.
+					WithEnvVariable("CACHE_BUST", rand.Text()).
+					With(daggerCall("test-ttl")).Stdout(ctx)
+				require.NoError(t, err)
+				require.NotEqual(t, out1, out3, "outputs should not be equal since the cache ttl has expired")
+			})
+		})
+	}
+
+	// rest of tests are SDK agnostic so just test w/ go
+	t.Run("setSecret invalidates cache", func(ctx context.Context, t *testctx.T) {
+		const modSDK = "go"
+		const modSrc = `package main
+
+import (
+	"crypto/rand"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) TestSetSecret() *dagger.Container {
+	r := rand.Text()
+	s := dag.SetSecret(r, r)
+	return dag.Container().
+		From("` + alpineImage + `").
+		WithSecretVariable("TOP_SECRET", s)
+}
+`
+
+		// in memory cache should be hit within a session, but
+		// no cache hits across sessions should happen
+
+		c1 := connect(ctx, t)
+		modGen1 := modInit(t, c1, modSDK, modSrc)
+
+		out1a, err := modGen1.
+			WithEnvVariable("CACHE_BUST", rand.Text()).
+			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
+		require.NoError(t, err)
+		out1b, err := modGen1.
+			WithEnvVariable("CACHE_BUST", rand.Text()).
+			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, out1a, out1b)
+		require.NoError(t, c1.Close())
+
+		c2 := connect(ctx, t)
+		modGen2 := modInit(t, c2, modSDK, modSrc)
+
+		out2a, err := modGen2.
+			WithEnvVariable("CACHE_BUST", rand.Text()).
+			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
+		require.NoError(t, err)
+		out2b, err := modGen2.
+			WithEnvVariable("CACHE_BUST", rand.Text()).
+			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, out2a, out2b)
+
+		require.NotEqual(t, out1a, out2a)
+	})
+}
+
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
@@ -6595,7 +6966,7 @@ func sdkCodegenFile(t *testctx.T, sdk string) string {
 	}
 }
 
-func modInit(t *testctx.T, c *dagger.Client, sdk, contents string) *dagger.Container {
+func modInit(t *testctx.T, c *dagger.Client, sdk, contents string, extra ...string) *dagger.Container {
 	t.Helper()
 	return goGitBase(t, c).
 		With(func(ctr *dagger.Container) *dagger.Container {
@@ -6608,20 +6979,22 @@ func modInit(t *testctx.T, c *dagger.Client, sdk, contents string) *dagger.Conta
 			}
 			return ctr
 		}).
-		With(withModInit(sdk, contents))
+		With(withModInit(sdk, contents, extra...))
 }
 
-func withModInit(sdk, contents string) dagger.WithContainerFunc {
-	return withModInitAt(".", sdk, contents)
+func withModInit(sdk, contents string, extra ...string) dagger.WithContainerFunc {
+	return withModInitAt(".", sdk, contents, extra...)
 }
 
-func withModInitAt(dir, sdk, contents string) dagger.WithContainerFunc {
+func withModInitAt(dir, sdk, contents string, extra ...string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		name := filepath.Base(dir)
 		if name == "." {
 			name = "test"
 		}
-		args := []string{"init", "--sdk=" + sdk, "--name=" + name, "--source=" + dir, dir}
+		args := []string{"init", "--sdk=" + sdk, "--name=" + name, "--source=" + dir}
+		args = append(args, extra...)
+		args = append(args, dir)
 		ctr = ctr.With(daggerExec(args...))
 		if contents != "" {
 			return ctr.With(sdkSourceAt(dir, sdk, contents))

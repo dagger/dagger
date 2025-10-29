@@ -31,6 +31,7 @@
     },
     "require-dev": {
         "phpunit/phpunit": "^12.4",
+        "phpstan/phpstan": "^2.1.31",
         "squizlabs/php_codesniffer": "^4.0",
         "mikey179/vfsstream": "^1.6.12"
     }

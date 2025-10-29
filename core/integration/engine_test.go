@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -188,33 +187,6 @@ exit $?
 	require.NoError(t, err)
 }
 
-func (ClientSuite) TestWaitsForEngine(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	devEngine := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
-		return c.
-			WithNewFile(
-				"/usr/local/bin/slow-entrypoint.sh",
-				strings.Join([]string{
-					`#!/bin/sh`,
-					`set -eux`,
-					`sleep 15`,
-					`echo my hostname is $(hostname)`,
-					`exec /usr/local/bin/dagger-entrypoint.sh "$@"`,
-				}, "\n"),
-				dagger.ContainerWithNewFileOpts{Permissions: 0o700},
-			).
-			WithEntrypoint([]string{"/usr/local/bin/slow-entrypoint.sh"})
-	})
-
-	clientCtr := engineClientContainer(ctx, t, c, devEngineContainerAsService(devEngine))
-	_, err := clientCtr.
-		WithNewFile("/query.graphql", `{ version }`). // arbitrary valid query
-		WithExec([]string{"dagger", "query", "--doc", "/query.graphql"}).Sync(ctx)
-
-	require.NoError(t, err)
-}
-
 func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -228,18 +200,25 @@ func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
 
 	clientCtr := engineClientContainer(ctx, t, c, devEngineSvc)
 
-	clientCtr = clientCtr.
-		WithNewFile("/query.graphql", `{ version }`).
-		WithExec([]string{"dagger", "query", "--doc", "/query.graphql"})
+	clientCtr = clientCtr.WithExec([]string{"dagger", "core", "version"})
+
+	// version call
 	stdout, err := clientCtr.Stdout(ctx)
 	require.NoError(t, err)
+	require.Equal(t, engineVersion, strings.TrimSpace(stdout))
+
+	// in progress output
 	stderr, err := clientCtr.Stderr(ctx)
 	require.NoError(t, err)
-
 	require.Contains(t, stderr, engineName)
 	require.Contains(t, stderr, engineVersion)
 
-	require.Contains(t, stdout, engineVersion)
+	clientCtr = clientCtr.WithExec([]string{"dagger", "core", "engine", "name"})
+
+	// name call
+	stdout, err = clientCtr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, engineName, strings.TrimSpace(stdout))
 }
 
 func (EngineSuite) TestDaggerRun(ctx context.Context, t *testctx.T) {
@@ -274,71 +253,6 @@ func (EngineSuite) TestDaggerRun(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	// verify we got some progress output
 	require.Contains(t, stderr, "Container.from")
-}
-
-func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	devEngine := devEngineContainerAsService(devEngineContainer(c))
-	thisRepoPath, err := filepath.Abs("../..")
-	require.NoError(t, err)
-
-	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
-		Include: []string{
-			"core/integration/testdata/telemetry/",
-			"core/integration/testdata/basic-container/",
-			"sdk/go/",
-			"go.mod",
-			"go.sum",
-		},
-	})
-
-	eventsVol := c.CacheVolume("dagger-dev-engine-events-" + identity.NewID())
-
-	withCode := c.Container().
-		From(golangImage).
-		WithExec([]string{"apk", "add", "git"}).
-		With(goCache(c)).
-		WithMountedDirectory("/src", code).
-		WithWorkdir("/src")
-
-	fakeCloud := withCode.
-		WithMountedCache("/events", eventsVol).
-		WithDefaultArgs([]string{
-			"go", "run", "./core/integration/testdata/telemetry/",
-		}).
-		WithExposedPort(8080).
-		AsService()
-
-	eventsID := identity.NewID()
-
-	daggerCli := daggerCliFile(t, c)
-
-	_, err = withCode.
-		WithServiceBinding("dev-engine", devEngine).
-		WithMountedFile("/bin/dagger", daggerCli).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dev-engine:1234").
-		WithServiceBinding("cloud", fakeCloud).
-		WithEnvVariable("DAGGER_CLOUD_URL", "http://cloud:8080/"+eventsID).
-		WithEnvVariable("DAGGER_CLOUD_TOKEN", "test").
-		WithExec([]string{"git", "config", "--global", "init.defaultBranch", "main"}).
-		WithExec([]string{"git", "config", "--global", "user.email", "test@example.com"}).
-		// make sure we handle non-ASCII usernames
-		WithExec([]string{"git", "config", "--global", "user.name", "Tiësto User"}).
-		WithExec([]string{"git", "init"}). // init a git repo to test git labels
-		WithExec([]string{"git", "add", "."}).
-		WithExec([]string{"git", "commit", "-m", "init test repo"}).
-		WithExec([]string{"dagger", "run", "go", "run", "./core/integration/testdata/basic-container/"}).
-		Stderr(ctx)
-	require.NoError(t, err)
-
-	_, err = withCode.
-		WithMountedCache("/events", eventsVol).
-		WithExec([]string{"sh", "-c", "grep dagger.io/git.title $0", fmt.Sprintf("/events/%s/**/*.json", eventsID)}).
-		WithExec([]string{"sh", "-c", "grep 'init test repo' $0", fmt.Sprintf("/events/%s/**/*.json", eventsID)}).
-		Sync(ctx)
-	require.NoError(t, err)
 }
 
 func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {

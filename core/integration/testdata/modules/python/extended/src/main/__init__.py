@@ -27,6 +27,19 @@ class ExtPythonSdk:
     ) -> dagger.Container:
         return self.common(mod_source, introspection_json).with_install().container()
 
+    @dagger.function
+    def module_defs(
+        self,
+        mod_source: dagger.ModuleSource,
+        introspection_json: dagger.File,
+        output_file_path: str,
+    ) -> dagger.Container:
+        return (
+            self.module_runtime(mod_source, introspection_json)
+            .with_env_variable("DAGGER_MODULE_FILE", output_file_path)
+            .with_entrypoint(["/runtime", "--register"])
+        )
+
     def common(
         self,
         mod_source: dagger.ModuleSource,
