@@ -105,6 +105,7 @@ func analyzeModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) (c
 		runtime:           Node,
 		packageJSONConfig: nil,
 		sdkLibOrigin:      Bundle,
+		source:            dag.Directory(),
 	}
 
 	cfg.name, err = modSource.ModuleOriginalName(ctx)
@@ -131,14 +132,26 @@ func analyzeModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) (c
 
 	// If a first init, there will be no directory, so we ignore the error here.
 	// We also only include package.json & lockfiles to benefit from caching.
-	cfg.source = modSource.ContextDirectory().Directory(cfg.subPath)
-	configEntries, err := dag.Directory().WithDirectory(".", cfg.source, dagger.DirectoryWithDirectoryOpts{
-		Include: moduleConfigFiles("."),
-	}).Entries(ctx)
-	if err == nil {
-		for _, entry := range configEntries {
-			cfg.entries[entry] = true
-		}
+	matches, err := modSource.ContextDirectory().Glob(ctx, cfg.subPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to glob module source in context directory: %w", err)
+	}
+
+	// If we find files in the module source path, we set it in the config.
+	if len(matches) > 0 {
+		cfg.source = modSource.ContextDirectory().Directory(cfg.subPath)
+	}
+
+	configEntries, err := dag.Directory().
+		WithDirectory(".", cfg.source, dagger.DirectoryWithDirectoryOpts{
+			Include: moduleConfigFiles("."),
+		}).Entries(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list module source entries: %w", err)
+	}
+
+	for _, entry := range configEntries {
+		cfg.entries[entry] = true
 	}
 
 	if cfg.hasFile("package.json") {
