@@ -688,9 +688,13 @@ func (s *directorySchema) withoutDirectory(ctx context.Context, parent dagql.Obj
 		return inst, err
 	}
 
-	dir, err := parent.Self().Without(ctx, srv, args.Path)
+	dir, anyPathsRemoved, err := parent.Self().Without(ctx, srv, args.Path)
 	if err != nil {
 		return inst, err
+	}
+	if !anyPathsRemoved {
+		// no changes, return parent to avoid unnecessary DAG node
+		return parent, nil
 	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
@@ -707,9 +711,13 @@ func (s *directorySchema) withoutFile(ctx context.Context, parent dagql.ObjectRe
 		return inst, err
 	}
 
-	dir, err := parent.Self().Without(ctx, srv, args.Path)
+	dir, anyPathsRemoved, err := parent.Self().Without(ctx, srv, args.Path)
 	if err != nil {
 		return inst, err
+	}
+	if !anyPathsRemoved {
+		// no changes, return parent to avoid unnecessary DAG node
+		return parent, nil
 	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
@@ -726,9 +734,13 @@ func (s *directorySchema) withoutFiles(ctx context.Context, parent dagql.ObjectR
 		return inst, err
 	}
 
-	dir, err := parent.Self().Without(ctx, srv, args.Paths...)
+	dir, anyPathsRemoved, err := parent.Self().Without(ctx, srv, args.Paths...)
 	if err != nil {
 		return inst, err
+	}
+	if !anyPathsRemoved {
+		// no changes, return parent to avoid unnecessary DAG node
+		return parent, nil
 	}
 	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
