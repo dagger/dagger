@@ -37,6 +37,7 @@ type DriverOpts struct {
 	Module           string
 	Function         string
 	ExecCmd          []string
+	ClientID         string
 }
 
 const (

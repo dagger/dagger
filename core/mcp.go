@@ -412,7 +412,7 @@ func (m *MCP) loadModuleTools(srv *dagql.Server, allTools *LLMToolSet) error {
 			var hasRequiredArgs bool
 			if def.Constructor.Valid {
 				for _, arg := range def.Constructor.Value.Args {
-					if !arg.TypeDef.Optional && arg.DefaultPath == "" {
+					if !arg.TypeDef.Optional && arg.DefaultPath == "" && arg.DefaultValue == nil {
 						hasRequiredArgs = true
 						break
 					}

@@ -1260,3 +1260,89 @@ ctr=$(container)
 		require.Contains(t, out, "Container@xxh3:")
 	})
 }
+
+func (ShellSuite) TestNamedArguments(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("named arguments for required parameters", func(ctx context.Context, t *testctx.T) {
+		// Test with-exec using named arguments for args parameter
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`container | from alpine | with-exec --args=echo --args=hello | stdout`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello\n", out)
+	})
+
+	t.Run("named arguments for from function", func(ctx context.Context, t *testctx.T) {
+		// Test from function using named argument for address parameter
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`container | from --address=alpine | with-exec echo test | stdout`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "test\n", out)
+	})
+
+	t.Run("mixed positional and named arguments", func(ctx context.Context, t *testctx.T) {
+		// Test mixing positional and named arguments (positional first)
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`directory | with-new-file /test --contents="hello world" | file /test | contents`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello world", out)
+	})
+
+	t.Run("backward compatibility - all positional", func(ctx context.Context, t *testctx.T) {
+		// Ensure original positional syntax still works
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`container | from alpine | with-exec echo "backward compatible" | stdout`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "backward compatible\n", out)
+	})
+
+	t.Run("slice arguments with multiple values", func(ctx context.Context, t *testctx.T) {
+		// Test that slice arguments can accept multiple named values
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`container | from alpine | with-exec --args=sh --args=-c --args="echo 'multiple args'" | stdout`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "multiple args\n", out)
+	})
+
+	t.Run("error on mixed args incorrectly", func(ctx context.Context, t *testctx.T) {
+		// Test error when mixing positional and named incorrectly
+		_, err := daggerCliBase(t, c).
+			With(daggerShell(`container | from alpine | with-exec echo --args=hello | stdout`)).
+			Sync(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "requires 0 positional argument(s), received 1")
+	})
+
+	t.Run("all required args as named", func(ctx context.Context, t *testctx.T) {
+		// Test providing all required arguments as named arguments
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`directory | with-new-file --path=/greeting --contents="Hello Named Args!" | file --path=/greeting | contents`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello Named Args!", out)
+	})
+
+	t.Run("named args with optional flags", func(ctx context.Context, t *testctx.T) {
+		// Test named required args combined with optional flags
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`container | from alpine | with-exec --args=echo --args=test --redirect-stdout=/output | file /output | contents`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "test\n", out)
+	})
+
+	t.Run("order preservation with mixed args", func(ctx context.Context, t *testctx.T) {
+		// Test that positional order is preserved when mixing args
+		// This should be equivalent to: with-directory /src .
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`directory | with-new-file test.txt "content" | with-directory --path=/src $(directory) | entries`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "test.txt")
+	})
+}

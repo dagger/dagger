@@ -1881,6 +1881,9 @@ scalar DirectoryID
 
 """The Dagger engine configuration and state"""
 type Engine {
+  """The list of connected client IDs"""
+  clients: [String!]!
+
   """A unique identifier for this Engine."""
   id: EngineID!
 

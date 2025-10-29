@@ -94,6 +94,7 @@ func (ms *mockServer) ClientTelemetry(ctc context.Context, sessID, clientID stri
 	return nil, nil, nil
 }
 func (ms *mockServer) EngineName() string { return "mockEngine" }
+func (ms *mockServer) Clients() []string  { return []string{} }
 
 func TestParseCallerCalleeRefs(t *testing.T) {
 	mID := call.New().Append(&ast.Type{}, "callee1")

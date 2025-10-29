@@ -162,7 +162,10 @@ func (m *PythonSdk) Codegen(
 		genPaths = []string{m.VendorPath + "/**"}
 	}
 
-	return dag.GeneratedCode(m.Container.Directory(m.ContextDirPath)).
+	return dag.
+		GeneratedCode(
+			m.Container.Directory(m.ContextDirPath).
+				WithoutDirectory("sdk/runtime")).
 		WithVCSGeneratedPaths(genPaths).
 		WithVCSIgnoredPaths(ignorePaths), nil
 }

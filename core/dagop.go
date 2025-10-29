@@ -24,6 +24,11 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
+const (
+	keyDaggerDigest = "dagger.digest"
+	daggerDigestIdx = keyDaggerDigest + ":"
+)
+
 func init() {
 	buildkit.RegisterCustomOp(FSDagOp{})
 	buildkit.RegisterCustomOp(RawDagOp{})
@@ -149,6 +154,35 @@ func (op FSDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.Ca
 		}
 	}
 	cm.Digest = digest.FromString(strings.Join(inputs, "\x00"))
+
+	// Read digests of results from dagger ref metadata, only doing a real content hash if that's
+	// not available. Reading the digest from the ref metadata enables us to use possibly optimized
+	// digests as determined from within dag-ops. e.g. `Directory.Without` may determine that no
+	// files were removed and thus we can reuse the parent object digest.
+	for i, dep := range cm.Deps {
+		dep.PreprocessFunc = nil
+		origFunc := dep.ComputeDigestFunc
+		dep.ComputeDigestFunc = func(ctx context.Context, res solver.Result, g bksession.Group) (digest.Digest, error) {
+			workerRef, ok := res.Sys().(*worker.WorkerRef)
+			if !ok {
+				return "", fmt.Errorf("invalid ref: %T", res.Sys())
+			}
+			ref := workerRef.ImmutableRef
+			if ref == nil {
+				return origFunc(ctx, res, g)
+			}
+
+			dgstStr := ref.GetString(keyDaggerDigest)
+			if dgstStr == "" {
+				// fall back to original function if no dagger digest found
+				return origFunc(ctx, res, g)
+			}
+
+			return digest.Digest(dgstStr), nil
+		}
+		cm.Deps[i] = dep
+	}
+
 	return cm, nil
 }
 
@@ -163,11 +197,12 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 		return nil, err
 	}
 
+	var solverRes solver.Result
 	switch inst := obj.Unwrap().(type) {
 	case *Directory:
 		if inst.Result != nil {
-			ref := worker.NewWorkerRefResult(inst.Result.Clone(), opt.Worker)
-			return []solver.Result{ref}, nil
+			solverRes = worker.NewWorkerRefResult(inst.Result.Clone(), opt.Worker)
+			break
 		}
 
 		res, err := inst.Evaluate(ctx)
@@ -178,12 +213,12 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 		if err != nil {
 			return nil, err
 		}
-		return []solver.Result{ref}, nil
+		solverRes = ref
 
 	case *File:
 		if inst.Result != nil {
-			ref := worker.NewWorkerRefResult(inst.Result.Clone(), opt.Worker)
-			return []solver.Result{ref}, nil
+			solverRes = worker.NewWorkerRefResult(inst.Result.Clone(), opt.Worker)
+			break
 		}
 
 		res, err := inst.Evaluate(ctx)
@@ -194,12 +229,30 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 		if err != nil {
 			return nil, err
 		}
-		return []solver.Result{ref}, nil
+		solverRes = ref
 
 	default:
 		// shouldn't happen, should have errored in DagLLB already
 		return nil, fmt.Errorf("expected FS to be selected, instead got %T", obj)
 	}
+
+	if solverRes == nil {
+		solverRes = worker.NewWorkerRefResult(nil, opt.Worker)
+	}
+
+	workerRef, ok := solverRes.Sys().(*worker.WorkerRef)
+	if !ok {
+		return nil, fmt.Errorf("invalid ref: %T", solverRes.Sys())
+	}
+	ref := workerRef.ImmutableRef
+	if ref != nil {
+		idDgst := obj.ID().Digest().String()
+		if err := ref.SetString(keyDaggerDigest, idDgst, daggerDigestIdx+idDgst); err != nil {
+			return nil, fmt.Errorf("failed to set dagger digest on ref: %w", err)
+		}
+	}
+
+	return []solver.Result{solverRes}, nil
 }
 
 // NewRawDagOp takes a target ID for any JSON-serializable dagql type, and returns
@@ -262,6 +315,16 @@ func (op RawDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.C
 		op.ID.Digest().String(),
 		op.Filename,
 	}, "\x00"))
+
+	// disable content hashing of inputs, which is extremely expensive; we rely
+	// on the content digests of dagql inputs being mixed into the op ID digest
+	// instead now
+	for i, dep := range cm.Deps {
+		dep.PreprocessFunc = nil
+		dep.ComputeDigestFunc = nil
+		cm.Deps[i] = dep
+	}
+
 	return cm, nil
 }
 
@@ -816,11 +879,15 @@ func (op *ContainerDagOp) setAllContainerMounts(
 // extractContainerBkOutputs returns a list of outputs suitable to be returned
 // from CustomOp.Exec extracted from the container according to the dagop specification.
 func extractContainerBkOutputs(ctx context.Context, container *Container, bk *buildkit.Client, wkr worker.Worker, mounts ContainerMountData) ([]solver.Result, error) {
-	getResult := func(def *pb.Definition, ref bkcache.ImmutableRef) (solver.Result, error) {
-		if ref != nil {
-			return worker.NewWorkerRefResult(ref.Clone(), wkr), nil
-		}
-		if def != nil {
+	getResult := func(
+		def *pb.Definition,
+		ref bkcache.ImmutableRef,
+		dgst digest.Digest,
+	) (solver.Result, error) {
+		switch {
+		case ref != nil:
+			ref = ref.Clone()
+		case def != nil:
 			res, err := bk.Solve(ctx, bkgw.SolveRequest{
 				Evaluate:   true,
 				Definition: def,
@@ -828,15 +895,22 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 			if err != nil {
 				return nil, err
 			}
-			ref, err := res.Ref.Result(ctx)
+			cachedRes, err := res.Ref.Result(ctx)
 			if err != nil {
 				return nil, err
 			}
-			if ref != nil {
-				return worker.NewWorkerRefResult(ref.Sys().(*worker.WorkerRef).ImmutableRef, wkr), nil
+			ref = cachedRes.Sys().(*worker.WorkerRef).ImmutableRef
+		default:
+			return worker.NewWorkerRefResult(nil, wkr), nil
+		}
+
+		if ref != nil && dgst != "" {
+			if err := ref.SetString(keyDaggerDigest, dgst.String(), daggerDigestIdx+dgst.String()); err != nil {
+				return nil, fmt.Errorf("failed to set dagger digest on ref: %w", err)
 			}
 		}
-		return worker.NewWorkerRefResult(nil, wkr), nil
+
+		return worker.NewWorkerRefResult(ref, wkr), nil
 	}
 
 	outputs := make([]solver.Result, mounts.OutputCount)
@@ -848,7 +922,11 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 		var err error
 		switch mountIdx {
 		case 0:
-			ref, err = getResult(container.FS.Self().LLB, container.FS.Self().Result)
+			ref, err = getResult(
+				container.FS.Self().LLB,
+				container.FS.Self().Result,
+				container.FS.ID().Digest(),
+			)
 		case 1:
 			var llb *pb.Definition
 			var res bkcache.ImmutableRef
@@ -856,14 +934,22 @@ func extractContainerBkOutputs(ctx context.Context, container *Container, bk *bu
 				llb = container.Meta.LLB
 				res = container.Meta.Result
 			}
-			ref, err = getResult(llb, res)
+			ref, err = getResult(llb, res, "")
 		default:
 			mnt := container.Mounts[mountIdx-2]
 			switch {
 			case mnt.DirectorySource != nil:
-				ref, err = getResult(mnt.DirectorySource.Self().LLB, mnt.DirectorySource.Self().Result)
+				ref, err = getResult(
+					mnt.DirectorySource.Self().LLB,
+					mnt.DirectorySource.Self().Result,
+					mnt.DirectorySource.ID().Digest(),
+				)
 			case mnt.FileSource != nil:
-				ref, err = getResult(mnt.FileSource.Self().LLB, mnt.FileSource.Self().Result)
+				ref, err = getResult(
+					mnt.FileSource.Self().LLB,
+					mnt.FileSource.Self().Result,
+					mnt.FileSource.ID().Digest(),
+				)
 			default:
 				err = fmt.Errorf("mount %d has no source", mountIdx)
 			}

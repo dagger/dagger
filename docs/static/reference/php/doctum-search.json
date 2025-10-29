@@ -2877,6 +2877,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Engine::clients",
+			"p": "Dagger/Engine.html#method_clients",
+			"d": "<p>The list of connected client IDs</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Engine::id",
 			"p": "Dagger/Engine.html#method_id",
 			"d": "<p>A unique identifier for this Engine.</p>"

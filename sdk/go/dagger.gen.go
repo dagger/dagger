@@ -3849,6 +3849,16 @@ func (r *Engine) WithGraphQLQuery(q *querybuilder.Selection) *Engine {
 	}
 }
 
+// The list of connected client IDs
+func (r *Engine) Clients(ctx context.Context) ([]string, error) {
+	q := r.query.Select("clients")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // A unique identifier for this Engine.
 func (r *Engine) ID(ctx context.Context) (EngineID, error) {
 	if r.id != nil {

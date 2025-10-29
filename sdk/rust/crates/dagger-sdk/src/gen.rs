@@ -5942,6 +5942,11 @@ pub struct Engine {
     pub graphql_client: DynGraphQLClient,
 }
 impl Engine {
+    /// The list of connected client IDs
+    pub async fn clients(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("clients");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// A unique identifier for this Engine.
     pub async fn id(&self) -> Result<EngineId, DaggerError> {
         let query = self.selection.select("id");
