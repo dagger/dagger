@@ -524,6 +524,19 @@ func (src *ModuleSource) CalcDigest(ctx context.Context) digest.Digest {
 		inputs = append(inputs, dep.Self().Digest)
 	}
 
+	// Include blueprint in digest so changes to blueprint invalidate cache
+	if src.Blueprint.Self() != nil {
+		inputs = append(inputs, "blueprint:"+src.Blueprint.Self().Digest)
+	}
+
+	// Include toolchains in digest so changes to toolchains invalidate cache
+	for _, toolchain := range src.Toolchains {
+		if toolchain.Self() == nil {
+			continue
+		}
+		inputs = append(inputs, "toolchain:"+toolchain.Self().Digest)
+	}
+
 	for _, client := range src.ConfigClients {
 		inputs = append(inputs, client.Generator, client.Directory)
 	}
