@@ -639,7 +639,10 @@ func (s *LLMSession) Compact(ctx context.Context) (_ *dagger.LLM, rerr error) {
 
 	return s.llm.
 		WithoutMessageHistory().
-		WithPrompt(compactedPrompt), nil
+		WithPrompt(fmt.Sprintf(
+			"This session is being continued from a previous conversation that ran out of context. The conversation is summarized below:\n\n%s",
+			compactedPrompt,
+		)), nil
 }
 
 func (s *LLMSession) History(ctx context.Context) (*LLMSession, error) {
