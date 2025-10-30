@@ -746,6 +746,9 @@ This command is idempotent: you can run it at any time, any number of times. It 
 var toolchainCmd = &cobra.Command{
 	Use:   "toolchain",
 	Short: "Manage toolchains",
+	Annotations: map[string]string{
+		"experimental": "true",
+	},
 }
 
 var toolchainInstallCmd = &cobra.Command{
