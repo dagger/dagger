@@ -279,23 +279,20 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 }
 
 func (m *PythonSdk) uv() dagger.WithContainerFunc {
-	// NB: Always add uvImage to avoid a dynamic base pipeline as much as possible.
-	// Even if users don't use it, it's useful to create a faster virtual env
-	// and faster install for the codegen package.
 	uvImage := m.getImage(UvImageName)
 
-	bins := dag.Container().From(uvImage.String()).Rootfs()
-
 	return func(ctr *dagger.Container) *dagger.Container {
+		var bins *dagger.Directory
 		// Use bundled uv binaries if version wasn't overridden.
 		if m.Discovery.SdkHasFile("dist/uv") && uvImage.Equal(m.Discovery.DefaultImages[UvImageName]) {
 			bins = m.SdkSourceDir.Directory("dist")
+		} else {
+			bins = dag.Container().From(uvImage.String()).Rootfs()
 		}
 
 		return ctr.
-			WithDirectory("/usr/local/bin", bins, dagger.ContainerWithDirectoryOpts{
-				Include: []string{"uv*"}, // uv and uvx
-			}).
+			WithMountedFile("/usr/local/bin/uv", bins.File("uv")).
+			WithMountedFile("/usr/local/bin/uvx", bins.File("uvx")).
 			WithMountedCache("/root/.cache/uv", dag.CacheVolume("modpython-uv")).
 			// These are informational only, to be leveraged by the target module if needed.
 			WithEnvVariable("DAGGER_UV_IMAGE", uvImage.String()).
