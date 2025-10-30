@@ -1268,11 +1268,13 @@ func (m *MCP) captureLogs(ctx context.Context, spanID string) ([]string, error) 
 				continue
 			}
 			var skip bool
+		dance:
 			for _, attr := range logAttrs {
-				if attr.Key == telemetry.StdioEOFAttr || attr.Key == telemetry.LogsVerboseAttr {
+				switch attr.Key {
+				case telemetry.StdioEOFAttr, telemetry.LogsVerboseAttr, telemetry.LogsGlobalAttr:
 					if attr.Value.GetBoolValue() {
 						skip = true
-						break
+						break dance
 					}
 				}
 			}
