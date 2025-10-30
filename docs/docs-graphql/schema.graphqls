@@ -3837,6 +3837,9 @@ type ModuleSource {
   """
   sync: ModuleSourceID!
 
+  """The toolchains referenced by the module source."""
+  toolchains: [ModuleSource!]!
+
   """User-defined defaults read from local .env files"""
   userDefaults: EnvFile!
 
@@ -3907,6 +3910,12 @@ type ModuleSource {
     path: String!
   ): ModuleSource!
 
+  """Add toolchains to the module source."""
+  withToolchains(
+    """The toolchain modules to add."""
+    toolchains: [ModuleSourceID!]!
+  ): ModuleSource!
+
   """Update the blueprint module to the latest version."""
   withUpdateBlueprint: ModuleSource!
 
@@ -3914,6 +3923,12 @@ type ModuleSource {
   withUpdateDependencies(
     """The dependencies to update."""
     dependencies: [String!]!
+  ): ModuleSource!
+
+  """Update one or more toolchains."""
+  withUpdateToolchains(
+    """The toolchains to update."""
+    toolchains: [String!]!
   ): ModuleSource!
 
   """Update one or more clients."""
@@ -3943,6 +3958,12 @@ type ModuleSource {
   withoutExperimentalFeatures(
     """The experimental features to disable."""
     features: [ModuleSourceExperimentalFeature!]!
+  ): ModuleSource!
+
+  """Remove the provided toolchains from the module source."""
+  withoutToolchains(
+    """The toolchains to remove."""
+    toolchains: [String!]!
   ): ModuleSource!
 }
 

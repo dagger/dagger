@@ -45,7 +45,8 @@ var (
 
 	installName string
 
-	initBlueprint string
+	initBlueprint        string
+	toolchainInstallName string
 
 	developSDK        string
 	developSourcePath string
@@ -163,6 +164,23 @@ func init() {
 	moduleDevelopCmd.Flags().BoolVar(&selfCalls, "with-self-calls", false, "Enable self-calls capability for the module (experimental)")
 	moduleDevelopCmd.Flags().BoolVar(&noSelfCalls, "without-self-calls", false, "Disable self-calls capability for the module")
 	moduleAddFlags(moduleDevelopCmd, moduleDevelopCmd.Flags(), false)
+
+	toolchainInstallCmd.Flags().StringVarP(&toolchainInstallName, "name", "n", "", "Name to use for the toolchain in the module. Defaults to the name of the toolchain being installed.")
+	toolchainInstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
+	moduleAddFlags(toolchainInstallCmd, toolchainInstallCmd.Flags(), false)
+
+	toolchainUpdateCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
+	moduleAddFlags(toolchainUpdateCmd, toolchainUpdateCmd.Flags(), false)
+
+	toolchainUninstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
+	moduleAddFlags(toolchainUninstallCmd, toolchainUninstallCmd.Flags(), false)
+
+	moduleAddFlags(toolchainListCmd, toolchainListCmd.Flags(), false)
+
+	toolchainCmd.AddCommand(toolchainInstallCmd)
+	toolchainCmd.AddCommand(toolchainUpdateCmd)
+	toolchainCmd.AddCommand(toolchainUninstallCmd)
+	toolchainCmd.AddCommand(toolchainListCmd)
 }
 
 var moduleInitCmd = &cobra.Command{
@@ -333,7 +351,7 @@ var moduleInstallCmd = &cobra.Command{
 	Use:     "install [options] <module>",
 	Aliases: []string{"use"},
 	Short:   "Install a dependency",
-	Long:    "Install another module as a dependency to the current module. The target module must be local.",
+	Long:    "Install another module as a dependency to the current module.",
 	Example: "dagger install github.com/shykes/daggerverse/hello@v0.3.0",
 	GroupID: moduleGroup.ID,
 	Args:    cobra.ExactArgs(1),
@@ -721,6 +739,238 @@ This command is idempotent: you can run it at any time, any number of times. It 
 				})
 			}
 			return eg.Wait()
+		})
+	},
+}
+
+var toolchainCmd = &cobra.Command{
+	Use:   "toolchain",
+	Short: "Manage toolchains",
+	Annotations: map[string]string{
+		"experimental": "true",
+	},
+}
+
+var toolchainInstallCmd = &cobra.Command{
+	Use:     "install [options] <module>",
+	Short:   "Install a toolchain to the current module",
+	Long:    "Install another module as a toolchain to the current module.",
+	Example: "dagger toolchain install github.com/dagger/dagger/toolchains/go",
+	Args:    cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
+		ctx := cmd.Context()
+		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			dag := engineClient.Dagger()
+
+			modRef, err := getModuleSourceRefWithDefault()
+			if err != nil {
+				return err
+			}
+			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
+				// We can only install toolchains to a local module
+				RequireKind: dagger.ModuleSourceKindLocalSource,
+			})
+
+			alreadyExists, err := modSrc.ConfigExists(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to check if module already exists: %w", err)
+			}
+			if !alreadyExists {
+				return fmt.Errorf("module must be fully initialized")
+			}
+
+			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get local context directory path: %w", err)
+			}
+
+			toolchainRefStr := extraArgs[0]
+			toolchainSrc := dag.ModuleSource(toolchainRefStr, dagger.ModuleSourceOpts{
+				DisableFindUp: true,
+			})
+
+			if toolchainInstallName != "" {
+				toolchainSrc = toolchainSrc.WithName(toolchainInstallName)
+			}
+
+			modSrc = modSrc.WithToolchains([]*dagger.ModuleSource{toolchainSrc})
+
+			if engineVersion := getCompatVersion(); engineVersion != "" {
+				modSrc = modSrc.WithEngineVersion(engineVersion)
+			}
+
+			_, err = modSrc.
+				GeneratedContextDirectory().
+				Export(ctx, contextDirPath)
+			if err != nil {
+				return fmt.Errorf("failed to install toolchain: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "toolchain installed\n")
+			return nil
+		})
+	},
+}
+
+var toolchainUpdateCmd = &cobra.Command{
+	Use:     "update [options] [<toolchain>...]",
+	Short:   "Update toolchains",
+	Long:    "Update all or specific toolchains of the current module.",
+	Example: "dagger toolchain update",
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
+		ctx := cmd.Context()
+		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			dag := engineClient.Dagger()
+
+			modRef, err := getModuleSourceRefWithDefault()
+			if err != nil {
+				return err
+			}
+			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
+				// We can only update toolchains on a local module
+				RequireKind: dagger.ModuleSourceKindLocalSource,
+			})
+
+			alreadyExists, err := modSrc.ConfigExists(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to check if module already exists: %w", err)
+			}
+			if !alreadyExists {
+				return fmt.Errorf("module must be fully initialized")
+			}
+
+			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get local context directory path: %w", err)
+			}
+
+			modSrc = modSrc.WithUpdateBlueprint()
+			if engineVersion := getCompatVersion(); engineVersion != "" {
+				modSrc = modSrc.WithEngineVersion(engineVersion)
+			}
+
+			_, err = modSrc.
+				GeneratedContextDirectory().
+				Export(ctx, contextDirPath)
+			if err != nil {
+				return fmt.Errorf("failed to update toolchains: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "toolchains updated\n")
+			return nil
+		})
+	},
+}
+
+var toolchainUninstallCmd = &cobra.Command{
+	Use:     "uninstall [options] <toolchain>",
+	Short:   "Uninstall a toolchain",
+	Long:    "Uninstall a toolchain from the current module.",
+	Example: "dagger toolchain uninstall mytoolchain",
+	Args:    cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
+		ctx := cmd.Context()
+		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			dag := engineClient.Dagger()
+
+			modRef, err := getModuleSourceRefWithDefault()
+			if err != nil {
+				return err
+			}
+			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
+				// We can only uninstall toolchains on a local module
+				RequireKind: dagger.ModuleSourceKindLocalSource,
+			})
+
+			alreadyExists, err := modSrc.ConfigExists(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to check if module already exists: %w", err)
+			}
+			if !alreadyExists {
+				return fmt.Errorf("module must be fully initialized")
+			}
+
+			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get local context directory path: %w", err)
+			}
+
+			toolchainRefStr := extraArgs[0]
+
+			modSrc = modSrc.WithoutToolchains(([]string{toolchainRefStr}))
+			if engineVersion := getCompatVersion(); engineVersion != "" {
+				modSrc = modSrc.WithEngineVersion(engineVersion)
+			}
+
+			_, err = modSrc.
+				GeneratedContextDirectory().
+				Export(ctx, contextDirPath)
+			if err != nil {
+				return fmt.Errorf("failed to uninstall toolchain: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "toolchain uninstalled\n")
+			return nil
+		})
+	},
+}
+
+var toolchainListCmd = &cobra.Command{
+	Use:     "list [options]",
+	Short:   "List all toolchains",
+	Long:    "List all toolchains of the current module.",
+	Example: "dagger toolchain list",
+	Args:    cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
+		ctx := cmd.Context()
+		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			dag := engineClient.Dagger()
+
+			modRef, err := getModuleSourceRefWithDefault()
+			if err != nil {
+				return err
+			}
+			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
+				// We can only list toolchains from a local module
+				RequireKind: dagger.ModuleSourceKindLocalSource,
+			})
+
+			alreadyExists, err := modSrc.ConfigExists(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to check if module already exists: %w", err)
+			}
+			if !alreadyExists {
+				return fmt.Errorf("module must be fully initialized")
+			}
+
+			toolchains, err := modSrc.Toolchains(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get toolchains: %w", err)
+			}
+
+			if len(toolchains) == 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "No toolchains found\n")
+				return nil
+			}
+
+			// Print header
+			fmt.Fprintf(cmd.OutOrStdout(), "Name\tDescription\n")
+
+			// Print each toolchain
+			for _, toolchain := range toolchains {
+				mod := toolchain.AsModule()
+				name, err := mod.Name(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get toolchain name: %w", err)
+				}
+				description, err := mod.Description(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get toolchain description: %w", err)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", name, description)
+			}
+
+			return nil
 		})
 	},
 }

@@ -45,6 +45,7 @@ dagger [options] [subcommand | file...]
 * [dagger logout](#dagger-logout)	 - Log out from Dagger Cloud
 * [dagger query](#dagger-query)	 - Send API queries to a dagger engine
 * [dagger run](#dagger-run)	 - Run a command in a Dagger session
+* [dagger toolchain](#dagger-toolchain)	 - Manage toolchains
 * [dagger uninstall](#dagger-uninstall)	 - Uninstall a dependency
 * [dagger update](#dagger-update)	 - Update a module's dependencies
 * [dagger version](#dagger-version)	 - Print dagger version
@@ -339,7 +340,7 @@ Install a dependency
 
 ### Synopsis
 
-Install another module as a dependency to the current module. The target module must be local.
+Install another module as a dependency to the current module.
 
 ```
 dagger install [options] <module>
@@ -557,6 +558,213 @@ dagger run python main.py
 ### SEE ALSO
 
 * [dagger](#dagger)	 - A tool to run composable workflows in containers
+
+## dagger toolchain
+
+Manage toolchains
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
+* [dagger toolchain install](#dagger-toolchain-install)	 - Install a toolchain to the current module
+* [dagger toolchain list](#dagger-toolchain-list)	 - List all toolchains
+* [dagger toolchain uninstall](#dagger-toolchain-uninstall)	 - Uninstall a toolchain
+* [dagger toolchain update](#dagger-toolchain-update)	 - Update toolchains
+
+## dagger toolchain install
+
+Install a toolchain to the current module
+
+### Synopsis
+
+Install another module as a toolchain to the current module.
+
+```
+dagger toolchain install [options] <module> [flags]
+```
+
+### Examples
+
+```
+dagger toolchain install github.com/dagger/dagger/toolchains/go
+```
+
+### Options
+
+```
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --compat string       Engine API version to target (default "latest")
+  -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
+  -n, --name string         Name to use for the toolchain in the module. Defaults to the name of the toolchain being installed.
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger toolchain](#dagger-toolchain)	 - Manage toolchains
+
+## dagger toolchain list
+
+List all toolchains
+
+### Synopsis
+
+List all toolchains of the current module.
+
+```
+dagger toolchain list [options] [flags]
+```
+
+### Examples
+
+```
+dagger toolchain list
+```
+
+### Options
+
+```
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+  -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger toolchain](#dagger-toolchain)	 - Manage toolchains
+
+## dagger toolchain uninstall
+
+Uninstall a toolchain
+
+### Synopsis
+
+Uninstall a toolchain from the current module.
+
+```
+dagger toolchain uninstall [options] <toolchain> [flags]
+```
+
+### Examples
+
+```
+dagger toolchain uninstall mytoolchain
+```
+
+### Options
+
+```
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --compat string       Engine API version to target (default "latest")
+  -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger toolchain](#dagger-toolchain)	 - Manage toolchains
+
+## dagger toolchain update
+
+Update toolchains
+
+### Synopsis
+
+Update all or specific toolchains of the current module.
+
+```
+dagger toolchain update [options] [<toolchain>...] [flags]
+```
+
+### Examples
+
+```
+dagger toolchain update
+```
+
+### Options
+
+```
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --compat string       Engine API version to target (default "latest")
+  -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger toolchain](#dagger-toolchain)	 - Manage toolchains
 
 ## dagger uninstall
 

@@ -7,7 +7,7 @@
   "dependencies": [
     {
       "name": "hello",
-      "source": "../myblueprint"
+      "source": "../hello"
     }
   ]
 }

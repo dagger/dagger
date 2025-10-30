@@ -423,6 +423,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    array
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_toolchains">toolchains</a>()
+        
+                                            <p><p>The toolchains referenced by the module source.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -536,6 +546,16 @@
                     <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
                 </div>
                 <div class="col-md-8">
+                    <a href="#method_withToolchains">withToolchains</a>(array $toolchains)
+        
+                                            <p><p>Add toolchains to the module source.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
+                </div>
+                <div class="col-md-8">
                     <a href="#method_withUpdateBlueprint">withUpdateBlueprint</a>()
         
                                             <p><p>Update the blueprint module to the latest version.</p></p>                </div>
@@ -549,6 +569,16 @@
                     <a href="#method_withUpdateDependencies">withUpdateDependencies</a>(array $dependencies)
         
                                             <p><p>Update one or more module dependencies.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withUpdateToolchains">withUpdateToolchains</a>(array $toolchains)
+        
+                                            <p><p>Update one or more toolchains.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -599,6 +629,16 @@
                     <a href="#method_withoutExperimentalFeatures">withoutExperimentalFeatures</a>(array $features)
         
                                             <p><p>Disable experimental features for the module source.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withoutToolchains">withoutToolchains</a>(array $toolchains)
+        
+                                            <p><p>Remove the provided toolchains from the module source.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -1604,8 +1644,40 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_userDefaults">
+                    <h3 id="method_toolchains">
         <div class="location">at line 276</div>
+        <code>                    array
+    <strong>toolchains</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The toolchains referenced by the module source.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>array</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_userDefaults">
+        <div class="location">at line 285</div>
         <code>                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
     <strong>userDefaults</strong>()
         </code>
@@ -1637,7 +1709,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_version">
-        <div class="location">at line 285</div>
+        <div class="location">at line 294</div>
         <code>                    string
     <strong>version</strong>()
         </code>
@@ -1669,7 +1741,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withBlueprint">
-        <div class="location">at line 294</div>
+        <div class="location">at line 303</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withBlueprint</strong>(<abbr title="Dagger\ModuleSourceId|Dagger\ModuleSource">ModuleSource</abbr> $blueprint)
         </code>
@@ -1711,7 +1783,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withClient">
-        <div class="location">at line 304</div>
+        <div class="location">at line 313</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withClient</strong>(string $generator, string $outputDir)
         </code>
@@ -1758,7 +1830,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withDependencies">
-        <div class="location">at line 315</div>
+        <div class="location">at line 324</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withDependencies</strong>(array $dependencies)
         </code>
@@ -1800,7 +1872,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withEngineVersion">
-        <div class="location">at line 325</div>
+        <div class="location">at line 334</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withEngineVersion</strong>(string $version)
         </code>
@@ -1842,7 +1914,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withExperimentalFeatures">
-        <div class="location">at line 335</div>
+        <div class="location">at line 344</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withExperimentalFeatures</strong>(array $features)
         </code>
@@ -1884,7 +1956,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withIncludes">
-        <div class="location">at line 345</div>
+        <div class="location">at line 354</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withIncludes</strong>(array $patterns)
         </code>
@@ -1926,7 +1998,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withName">
-        <div class="location">at line 355</div>
+        <div class="location">at line 364</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withName</strong>(string $name)
         </code>
@@ -1968,7 +2040,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withSDK">
-        <div class="location">at line 365</div>
+        <div class="location">at line 374</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withSDK</strong>(string $source)
         </code>
@@ -2010,7 +2082,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withSourceSubpath">
-        <div class="location">at line 375</div>
+        <div class="location">at line 384</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withSourceSubpath</strong>(string $path)
         </code>
@@ -2051,8 +2123,50 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_withToolchains">
+        <div class="location">at line 394</div>
+        <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
+    <strong>withToolchains</strong>(array $toolchains)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Add toolchains to the module source.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>array</td>
+                <td>$toolchains</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_withUpdateBlueprint">
-        <div class="location">at line 385</div>
+        <div class="location">at line 404</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withUpdateBlueprint</strong>()
         </code>
@@ -2084,7 +2198,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withUpdateDependencies">
-        <div class="location">at line 394</div>
+        <div class="location">at line 413</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withUpdateDependencies</strong>(array $dependencies)
         </code>
@@ -2125,8 +2239,50 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_withUpdateToolchains">
+        <div class="location">at line 423</div>
+        <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
+    <strong>withUpdateToolchains</strong>(array $toolchains)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Update one or more toolchains.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>array</td>
+                <td>$toolchains</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_withUpdatedClients">
-        <div class="location">at line 404</div>
+        <div class="location">at line 433</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withUpdatedClients</strong>(array $clients)
         </code>
@@ -2168,7 +2324,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutBlueprint">
-        <div class="location">at line 414</div>
+        <div class="location">at line 443</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withoutBlueprint</strong>()
         </code>
@@ -2200,7 +2356,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutClient">
-        <div class="location">at line 423</div>
+        <div class="location">at line 452</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withoutClient</strong>(string $path)
         </code>
@@ -2242,7 +2398,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutDependencies">
-        <div class="location">at line 433</div>
+        <div class="location">at line 462</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withoutDependencies</strong>(array $dependencies)
         </code>
@@ -2284,7 +2440,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutExperimentalFeatures">
-        <div class="location">at line 443</div>
+        <div class="location">at line 472</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withoutExperimentalFeatures</strong>(array $features)
         </code>
@@ -2303,6 +2459,48 @@
                     <tr>
                 <td>array</td>
                 <td>$features</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withoutToolchains">
+        <div class="location">at line 482</div>
+        <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
+    <strong>withoutToolchains</strong>(array $toolchains)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Remove the provided toolchains from the module source.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>array</td>
+                <td>$toolchains</td>
                 <td></td>
             </tr>
             </table>

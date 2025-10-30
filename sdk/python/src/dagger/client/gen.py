@@ -9607,6 +9607,12 @@ class ModuleSource(Type):
     def __await__(self):
         return self.sync().__await__()
 
+    async def toolchains(self) -> list["ModuleSource"]:
+        """The toolchains referenced by the module source."""
+        _args: list[Arg] = []
+        _ctx = self._select("toolchains", _args)
+        return await _ctx.execute_object_list(ModuleSource)
+
     def user_defaults(self) -> EnvFile:
         """User-defined defaults read from local .env files"""
         _args: list[Arg] = []
@@ -9769,6 +9775,20 @@ class ModuleSource(Type):
         _ctx = self._select("withSourceSubpath", _args)
         return ModuleSource(_ctx)
 
+    def with_toolchains(self, toolchains: list["ModuleSource"]) -> Self:
+        """Add toolchains to the module source.
+
+        Parameters
+        ----------
+        toolchains:
+            The toolchain modules to add.
+        """
+        _args = [
+            Arg("toolchains", toolchains),
+        ]
+        _ctx = self._select("withToolchains", _args)
+        return ModuleSource(_ctx)
+
     def with_update_blueprint(self) -> Self:
         """Update the blueprint module to the latest version."""
         _args: list[Arg] = []
@@ -9787,6 +9807,20 @@ class ModuleSource(Type):
             Arg("dependencies", dependencies),
         ]
         _ctx = self._select("withUpdateDependencies", _args)
+        return ModuleSource(_ctx)
+
+    def with_update_toolchains(self, toolchains: list[str]) -> Self:
+        """Update one or more toolchains.
+
+        Parameters
+        ----------
+        toolchains:
+            The toolchains to update.
+        """
+        _args = [
+            Arg("toolchains", toolchains),
+        ]
+        _ctx = self._select("withUpdateToolchains", _args)
         return ModuleSource(_ctx)
 
     def with_updated_clients(self, clients: list[str]) -> Self:
@@ -9853,6 +9887,20 @@ class ModuleSource(Type):
             Arg("features", features),
         ]
         _ctx = self._select("withoutExperimentalFeatures", _args)
+        return ModuleSource(_ctx)
+
+    def without_toolchains(self, toolchains: list[str]) -> Self:
+        """Remove the provided toolchains from the module source.
+
+        Parameters
+        ----------
+        toolchains:
+            The toolchains to remove.
+        """
+        _args = [
+            Arg("toolchains", toolchains),
+        ]
+        _ctx = self._select("withoutToolchains", _args)
         return ModuleSource(_ctx)
 
     def with_(self, cb: Callable[["ModuleSource"], "ModuleSource"]) -> "ModuleSource":
