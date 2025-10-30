@@ -457,11 +457,12 @@ export class AST {
     ): string | number | boolean | bigint | undefined => {
       if (t.flags & ts.TypeFlags.BooleanLiteral) {
         const intrinsic = t as unknown as { intrinsicName?: string }
-        if (intrinsic.intrinsicName === "true") {
-          return true
-        }
-        if (intrinsic.intrinsicName === "false") {
-          return false
+        // Handle boolean value
+        switch (intrinsic.intrinsicName) {
+          case "true":
+            return true
+          case "false":
+            return false
         }
       }
 
@@ -477,6 +478,9 @@ export class AST {
           return literal.value as string | number | bigint
         }
 
+        // Some literals only expose `intrinsicName`. Example:
+        // const yes = true; function use(flag: boolean = yes) {}
+        // The checker reports `intrinsicName: "true"` without a `value`, so we fallback.
         const intrinsic = literal as unknown as { intrinsicName?: string }
         if (intrinsic.intrinsicName !== undefined) {
           return intrinsic.intrinsicName as string
@@ -487,6 +491,13 @@ export class AST {
     }
 
     if (type.isUnion()) {
+      // Walk union members to surface the literal. Example:
+      // ```ts
+      // const defaults = { proto: NetworkProtocol.Udp }
+      // function use(proto: NetworkProtocol = defaults.proto) {}
+      // ```
+      // The checker reports `defaults.proto` as `NetworkProtocol.Tcp | NetworkProtocol.Udp`,
+      // so we inspect each subtype to recover the actual default value.
       for (const subtype of type.types) {
         const literal = resolveLiteral(subtype)
         if (literal !== undefined) {
