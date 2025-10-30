@@ -15,8 +15,6 @@ const (
 	phpSDKDigest        = "sha256:e4ffe0a17a6814009b5f0713a5444634a9c5b688ee34b8399e7d4f2db312c3b4"
 	phpSDKComposerImage = "composer:2@sha256:6d2b5386580c3ba67399c6ccfb50873146d68fcd7c31549f8802781559bed709"
 	phpSDKVersionFile   = "src/Connection/version.php"
-
-	phpDoctumVersion = "5.5.4"
 )
 
 type PHPSDK struct {
@@ -77,7 +75,7 @@ func (t PHPSDK) Test(ctx context.Context) (MyCheckStatus, error) {
 // Regenerate the PHP SDK API + docs
 func (t PHPSDK) Generate(ctx context.Context) (*dagger.Changeset, error) {
 	genClient := t.generateClient()
-	genDocs, err := t.generateDocs(ctx, genClient)
+	genDocs, err := t.generateDocs(genClient)
 	if err != nil {
 		return nil, err
 	}
@@ -111,38 +109,25 @@ func (t PHPSDK) generateClient() *dagger.Changeset {
 	return absLayer.Changes(t.Dagger.Source)
 }
 
-func (t PHPSDK) generateDocs(ctx context.Context, genClient *dagger.Changeset) (*dagger.Changeset, error) {
-	// FXME: do we even need the rest of the source?
+func (t PHPSDK) generateDocs(genClient *dagger.Changeset) (*dagger.Changeset, error) {
 	src := t.Source().WithChanges(genClient)
-	relLayer := dag.PhpSDKDev(dagger.PhpSDKDevOpts{Source: src}).
-		Base().
-		WithFile(
-			"/usr/bin/doctum",
-			dag.HTTP(fmt.Sprintf("https://doctum.long-term.support/releases/%s/doctum.phar", phpDoctumVersion)),
-			dagger.ContainerWithFileOpts{Permissions: 0711},
-		).
-		WithFile("/etc/doctum-config.php", t.doctumConfig()).
-		WithExec([]string{"doctum", "update", "/etc/doctum-config.php", "-v"}).
-		Directory("/src/sdk/php/build")
 
-	// format this file, since otherwise it's on one line and makes lots of conflicts
-	search, err := formatJSONFile(ctx, relLayer.File("doctum-search.json"))
-	if err != nil {
-		return nil, err
-	}
-	relLayer = relLayer.
-		WithFile("doctum-search.json", search).
-		// remove the renderer.index file, which seems to not be required to render the docs
-		WithoutFile("renderer.index")
+	src = dag.Directory().
+		WithDirectory("generated", src.Directory("generated")).
+		WithDirectory("src/Attribute", src.Directory("src/Attribute")).
+		WithFile("src/functions.php", src.File("src/functions.php")).
+		WithFile("phpdoc.dist.xml", src.File("phpdoc.dist.xml")).
+		WithDirectory(".phpdoc/template", src.Directory(".phpdoc/template"))
+
+	relLayer := dag.
+		PhpSDKDev(dagger.PhpSDKDevOpts{Source: src}).
+		GenerateDocs()
+
 	absLayer := t.Dagger.Source.
 		WithoutDirectory("docs/static/reference/php/").
 		WithDirectory("docs/static/reference/php/", relLayer)
-	return absLayer.Changes(t.Dagger.Source), nil
-}
 
-// Return the doctum config file from the dagger repo
-func (t PHPSDK) doctumConfig() *dagger.File {
-	return t.Dagger.Source.File("docs/doctum-config.php")
+	return absLayer.Changes(t.Dagger.Source), nil
 }
 
 // Test the publishing process

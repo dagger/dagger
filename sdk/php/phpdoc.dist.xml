@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<phpdocumentor configVersion="3"
+               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+               xmlns="https://www.phpdoc.org">
+  <title>Dagger PHP SDK</title>
+  <template name=".phpdoc/template"/>
+  <setting name="visibility" value="public"/>
+  <setting name="use-cache" value="false"/>
+  <version number="3.0.0">
+    <api ignore-packages="true">
+      <default-package-name>Dagger</default-package-name>
+      <include-source>false</include-source>
+      <source dsn=".">
+        <path>src/Attribute/*.php</path>
+        <path>generated/*.php</path>
+        <path>src/functions.php</path>
+      </source>
+    </api>
+  </version>
+</phpdocumentor>

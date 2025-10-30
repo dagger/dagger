@@ -1,0 +1,127 @@
+{% set constants = constants(node) %}
+{% set properties = properties(node) %}
+{% set methods = methods(node) %}
+{% set cases = cases(node) %}
+{% set functions = node.functions|default([]) %}
+
+<h3 id="toc">
+    Table of Contents
+    {{ include('components/headerlink.html.twig', {'on': node, 'at': 'toc'}, with_context = false) }}
+</h3>
+
+{% if packages|default([]) is not empty %}
+<h4 id="packages">
+    Packages
+    {{ include('components/headerlink.html.twig', {'on': node, 'at': 'packages'}, with_context = false) }}
+</h4>
+<dl class="phpdocumentor-table-of-contents">
+    {% for package in packages %}
+        <dt class="phpdocumentor-table-of-contents__entry -package">{{ package|route('class:short') }}</dt>
+    {% endfor %}
+</dl>
+{% endif %}
+
+{% if functions is not empty %}
+<h4 id="toc-functions">
+    Functions
+    {{ include('components/headerlink.html.twig', {'on': node, 'at': 'toc-functions'}, with_context = false) }}
+</h4>
+<dl class="phpdocumentor-table-of-contents">
+    {% for function in functions %}
+        {{ include('components/table-of-contents-entry.html.twig', {'type': 'function', 'node': function}) }}
+    {% endfor %}
+</dl>
+{% endif %}
+
+{% if node.classes is not empty %}
+    <h4 id="toc-classes">
+        Classes
+        {{ include('components/headerlink.html.twig', {'on': node, 'at': 'toc-classes'}, with_context = false) }}
+    </h4>
+    <dl class="phpdocumentor-table-of-contents">
+        {% for class in node.classes %}
+            <dt class="phpdocumentor-table-of-contents__entry -class">{{ class|route('class:short') }}</dt>
+            {%- if class.summary -%}
+            <dd>{{ class.summary }}</dd>
+            {%- endif -%}
+        {% endfor %}
+    </dl>
+{% endif %}
+
+{% if node.traits is not empty %}
+    <h4 id="toc-traits">
+        Traits
+        {{ include('components/headerlink.html.twig', {'on': node, 'at': 'toc-traits'}, with_context = false) }}
+    </h4>
+    <dl class="phpdocumentor-table-of-contents">
+    {% for trait in node.traits %}
+        <dt class="phpdocumentor-table-of-contents__entry -trait">{{ trait|route('class:short') }}</dt>
+        {%- if trait.summary -%}
+        <dd>{{ trait.summary }}</dd>
+        {%- endif -%}
+    {% endfor %}
+    </dl>
+{% endif %}
+
+{% if node.enums is not empty %}
+    <h4 id="toc-enums">
+        Enums
+        {{ include('components/headerlink.html.twig', {'on': node, 'at': 'toc-enums'}, with_context = false) }}
+    </h4>
+    <dl class="phpdocumentor-table-of-contents">
+    {% for enum in node.enums %}
+        <dt class="phpdocumentor-table-of-contents__entry -enum">{{ enum|route('class:short') }}</dt>
+        {%- if enum.summary -%}
+        <dd>{{ enum.summary }}</dd>
+        {%- endif -%}
+    {% endfor %}
+</dl>
+{% endif %}
+
+{% if constants is not empty %}
+<h4 id="toc-constants">
+    Constants
+    {{ include('components/headerlink.html.twig', {'on': node, 'at': 'toc-constants'}, with_context = false) }}
+</h4>
+<dl class="phpdocumentor-table-of-contents">
+    {% for constant in constants|sortByVisibility %}
+        {{ include('components/table-of-contents-entry.html.twig', {'type': 'constant', 'node': constant}) }}
+    {% endfor %}
+</dl>
+{% endif %}
+
+{% if cases is not empty %}
+<h4 id="toc-cases">
+    Cases
+    {{ include('components/headerlink.html.twig', {'on': node, 'at': 'toc-cases'}, with_context = false) }}
+</h4>
+<dl class="phpdocumentor-table-of-contents">
+    {% for case in cases|sortByVisibility %}
+        {{ include('components/table-of-contents-entry.html.twig', {'type': 'case', 'node': case}) }}
+    {% endfor %}
+</dl>
+{% endif %}
+
+{% if properties is not empty %}
+<h4 id="toc-properties">
+    Properties
+    {{ include('components/headerlink.html.twig', {'on': node, 'at': 'toc-properties'}, with_context = false) }}
+</h4>
+<dl class="phpdocumentor-table-of-contents">
+    {% for property in properties|sortByVisibility %}
+        {{ include('components/table-of-contents-entry.html.twig', {'type': 'property', 'node': property}) }}
+    {% endfor %}
+</dl>
+{% endif %}
+
+{% if methods is not empty %}
+<h4 id="toc-methods">
+    Methods
+    {{ include('components/headerlink.html.twig', {'on': node, 'at': 'toc-methods'}, with_context = false) }}
+</h4>
+<dl class="phpdocumentor-table-of-contents">
+    {% for method in methods|sortByVisibility %}
+        {{ include('components/table-of-contents-entry.html.twig', {'type': 'method', 'node': method}) }}
+    {% endfor %}
+</dl>
+{% endif %}

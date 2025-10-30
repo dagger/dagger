@@ -1,0 +1,18 @@
+<input class="phpdocumentor-sidebar__menu-button" type="checkbox" id="sidebar-button" name="sidebar-button" />
+<label class="phpdocumentor-sidebar__menu-icon" for="sidebar-button">
+    Menu
+</label>
+<aside class="phpdocumentor-column -three phpdocumentor-sidebar">
+    {% for version in project.versions %}
+        {% for toc in version.tableOfContents %}
+            {% if toc.name|title == "Namespaces" %}
+                <section class="phpdocumentor-sidebar__category -{{ toc.name|lower }}">
+                  <h2 class="phpdocumentor-sidebar__category-header">{{ toc.name|title }}</h2>
+                  {% for root in toc.roots %}
+                  {{ toc(root, 'components/menu.html.twig', 1) }}
+                  {% endfor %}
+                </section>
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+</aside>
