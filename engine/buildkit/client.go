@@ -481,7 +481,16 @@ func (c *Client) ListenHostToContainer(
 				conn, err = c.Dialer.Dial(proto, upstream)
 				if err != nil {
 					bklog.G(ctx).Warnf("failed to dial %s %s: %s", proto, upstream, err)
-					return
+					sendL.Lock()
+					err = listener.Send(&h2c.ListenRequest{
+						ConnId: connID,
+						Close:  true,
+					})
+					sendL.Unlock()
+					if err != nil {
+						return
+					}
+					continue
 				}
 
 				connsL.Lock()
@@ -496,7 +505,7 @@ func (c *Client) ListenHostToContainer(
 					for {
 						n, err := conn.Read(data)
 						if err != nil {
-							return
+							break
 						}
 
 						sendL.Lock()
@@ -506,9 +515,16 @@ func (c *Client) ListenHostToContainer(
 						})
 						sendL.Unlock()
 						if err != nil {
-							return
+							break
 						}
 					}
+
+					sendL.Lock()
+					_ = listener.Send(&h2c.ListenRequest{
+						ConnId: connID,
+						Close:  true,
+					})
+					sendL.Unlock()
 				}()
 			}
 
