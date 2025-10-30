@@ -402,42 +402,46 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 	}); err != nil {
 		return fmt.Sprintf("WARNING: failed to fetch patch summary: %s", err), nil
 	}
-	addedDirectories := changes.Self().AddedPaths
-	addedDirectories = slices.DeleteFunc(addedDirectories, func(s string) bool {
-		return !strings.HasSuffix(s, "/")
-	})
-	removedDirectories := changes.Self().RemovedPaths
-	removedDirectories = slices.DeleteFunc(removedDirectories, func(s string) bool {
-		return !strings.HasSuffix(s, "/")
-	})
-	if rawPatch == "" && len(addedDirectories) == 0 && len(removedDirectories) == 0 {
-		// No changes
+	if rawPatch == "" {
+		// No changes; don't say anything, since saying "No changes" could be
+		// confusing depending on other context (like logs from a `git show`)
 		return "", nil
 	}
-	patch, err := diffparser.Parse(rawPatch)
-	if err != nil {
-		return "", fmt.Errorf("parse patch: %w", err)
+	if strings.Count(rawPatch, "\n") > 100 {
+		// If the patch is too large, show a summary instead
+		addedDirectories := changes.Self().AddedPaths
+		addedDirectories = slices.DeleteFunc(addedDirectories, func(s string) bool {
+			return !strings.HasSuffix(s, "/")
+		})
+		removedDirectories := changes.Self().RemovedPaths
+		removedDirectories = slices.DeleteFunc(removedDirectories, func(s string) bool {
+			return !strings.HasSuffix(s, "/")
+		})
+		patch, err := diffparser.Parse(rawPatch)
+		if err != nil {
+			return "", fmt.Errorf("parse patch: %w", err)
+		}
+		preview := &idtui.PatchPreview{
+			Patch:       patch,
+			AddedDirs:   addedDirectories,
+			RemovedDirs: removedDirectories,
+		}
+		// render with nice colors to the TUI
+		stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+		uiOut := termenv.NewOutput(stdio.Stdout, termenv.WithProfile(
+			slog.ColorProfileFromContext(ctx),
+		))
+		var res strings.Builder
+		llmOut := termenv.NewOutput(&res, termenv.WithProfile(termenv.Ascii))
+		if err := preview.Summarize(llmOut, 80); err != nil {
+			return fmt.Sprintf("WARNING: failed to render patch summary: %s", err), nil
+		}
+		if err := preview.Summarize(uiOut, 80); err != nil {
+			slog.Warn("failed to render patch summary", "error", err)
+		}
+		return res.String(), nil
 	}
-	preview := &idtui.PatchPreview{
-		Patch:       patch,
-		AddedDirs:   addedDirectories,
-		RemovedDirs: removedDirectories,
-	}
-	// render with nice colors to the TUI
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	uiOut := termenv.NewOutput(stdio.Stdout, termenv.WithProfile(
-		slog.ColorProfileFromContext(ctx),
-	))
-	// render without color for the LLM
-	var res strings.Builder
-	llmOut := termenv.NewOutput(&res, termenv.WithProfile(termenv.Ascii))
-	if err := preview.Summarize(llmOut, 80); err != nil {
-		return fmt.Sprintf("WARNING: failed to render patch summary: %s", err), nil
-	}
-	if err := preview.Summarize(uiOut, 80); err != nil {
-		slog.Warn("failed to render patch summary", "error", err)
-	}
-	return res.String(), nil
+	return rawPatch, nil
 }
 
 func toAny(v any) (res map[string]any, rerr error) {
