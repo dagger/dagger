@@ -75,7 +75,7 @@
             "dist": {
                 "type": "path",
                 "url": "./sdk",
-                "reference": "7f3bb10370eb961157119c44484f95a5c5ea969b"
+                "reference": "76a75b8276f57742e1cb7db6373077c5cfdd2a14"
             },
             "require": {
                 "carnage/php-graphql-client": "^1.14.1",
@@ -90,6 +90,7 @@
             },
             "require-dev": {
                 "mikey179/vfsstream": "^1.6.12",
+                "phpstan/phpstan": "^2.1.31",
                 "phpunit/phpunit": "^12.4",
                 "squizlabs/php_codesniffer": "^4.0"
             },

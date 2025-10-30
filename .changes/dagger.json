@@ -1,8 +1,9 @@
 {
   "name": "changelog",
-  "engineVersion": "v0.19.3",
+  "engineVersion": "v0.19.4",
   "sdk": {
     "source": "go"
   },
-  "source": ".dagger"
+  "source": ".dagger",
+  "disableDefaultFunctionCaching": true
 }
