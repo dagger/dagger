@@ -508,7 +508,9 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                               .addParameter(String[].class, "args")
                               .beginControlFlow(
                                   "try ($T telemetry = new $T())", Telemetry.class, Telemetry.class)
-                              .addStatement("new Entrypoint().dispatch($T.dag().currentFunctionCall())", Dagger.class)
+                              .addStatement(
+                                  "new Entrypoint().dispatch($T.dag().currentFunctionCall())",
+                                  Dagger.class)
                               .nextControlFlow("finally")
                               .addStatement("$T.dag().close()", Dagger.class)
                               .endControlFlow()
