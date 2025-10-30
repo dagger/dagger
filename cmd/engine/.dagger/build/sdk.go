@@ -93,6 +93,27 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 				"-r", "/requirements.txt",
 			}).
 			File("/codegen"),
+		).
+		WithFile("dist/register", base.
+			WithWorkdir("/src").
+			WithDirectory("/usr/local/bin", rootfs.Directory("dist")).
+			WithMountedDirectory("", rootfs).
+			WithExec([]string{
+				"uv", "export",
+				"--no-hashes",
+				"--no-editable",
+				"--no-dev",
+				"-o", "/requirements.txt",
+			}).
+			WithExec([]string{
+				"uvx", "shiv==1.0.8", // this version doesn't need to be constantly updated
+				"--reproducible",
+				"--compressed",
+				"-e", "dagger.mod.cli:register",
+				"-o", "/register",
+				"-r", "/requirements.txt",
+			}).
+			File("/register"),
 		)
 
 	sdkCtrTarball := dag.Container().
