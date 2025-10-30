@@ -197,6 +197,7 @@ export const daggerVersion = "%s";
 }
 
 // Deploys a current build of the docs.
+// +cache="session"
 func (d Docs) Deploy(
 	ctx context.Context,
 	message string,
@@ -225,6 +226,7 @@ func (d Docs) Deploy(
 }
 
 // Publish a previous deployment to production - defaults to the latest deployment on the main branch.
+// +cache="session"
 func (d Docs) Publish(
 	ctx context.Context,
 	netlifyToken *dagger.Secret,

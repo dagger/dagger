@@ -20,6 +20,7 @@ type Test struct {
 }
 
 // Run all engine tests
+// +cache="session"
 func (t *Test) All(
 	ctx context.Context,
 	// +optional
@@ -58,6 +59,7 @@ func (t *Test) All(
 }
 
 // Run telemetry tests
+// +cache="session"
 func (t *Test) Telemetry(
 	ctx context.Context,
 	// Only run these tests
@@ -125,6 +127,7 @@ func (t *Test) List(ctx context.Context) (string, error) {
 }
 
 // Run specific tests
+// +cache="session"
 func (t *Test) Specific(
 	ctx context.Context,
 	// Only run these tests
@@ -179,6 +182,7 @@ func (t *Test) Specific(
 }
 
 // Update specific tests
+// +cache="session"
 func (t *Test) Update(
 	ctx context.Context,
 	// Only run these tests
@@ -241,6 +245,7 @@ func (t *Test) Update(
 // `dagger call test dump --run=TestCache/TestVolume --pkg=./core/integration --interval=1s export --path=/tmp/dump-$(date +"%Y%m%d_%H%M%S")`
 // but also works for profiles:
 // `dagger call test dump --run=TestCache/TestVolume --pkg=./core/integration --route=pprof/profile --no-final export --path=/tmp/dump-$(date +"%Y%m%d_%H%M%S")`
+// +cache="session"
 func (t *Test) Dump(
 	ctx context.Context,
 	// Only run these tests

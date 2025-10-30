@@ -1,6 +1,6 @@
 {
   "name": "shellcheck",
-  "engineVersion": "v0.19.3",
+  "engineVersion": "v0.19.4",
   "sdk": {
     "source": "go"
   }

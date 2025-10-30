@@ -11,6 +11,7 @@ import (
 )
 
 // LoadToDocker loads the engine container into docker
+// +cache="session"
 func (e *DaggerEngine) LoadToDocker(
 	ctx context.Context,
 
@@ -83,6 +84,7 @@ type LoadedEngine struct {
 }
 
 // Start the loaded engine container
+// +cache="session"
 func (e LoadedEngine) Start(
 	ctx context.Context,
 

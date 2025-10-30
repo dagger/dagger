@@ -118,6 +118,7 @@ func (r *Releaser) Bump(ctx context.Context, version string) (*dagger.Changeset,
 	return r.Dagger.Bump(version).Sync(ctx)
 }
 
+// +cache="session"
 func (r *Releaser) Publish(
 	ctx context.Context,
 	tag string,
@@ -415,6 +416,7 @@ func (r *Releaser) Publish(
 	return &report, nil
 }
 
+// +cache="session"
 func (r Releaser) Notify(
 	ctx context.Context,
 	// GitHub repository URL
