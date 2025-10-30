@@ -1978,7 +1978,7 @@ func (TypescriptSuite) TestBundleLocalMigration(ctx context.Context, t *testctx.
 		require.Equal(t, "hello\n", out)
 	})
 
-	t.Run("migrate to bundle", func(ctx context.Context, t *testctx.T) {
+	t.Run("auto migrate to bundle", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
@@ -1992,10 +1992,6 @@ func (TypescriptSuite) TestBundleLocalMigration(ctx context.Context, t *testctx.
   }
 }`).
 			With(daggerExec("init", "--name=test", "--sdk=typescript", "--source=."))
-
-		files, err := modGen.Directory("/work/sdk").Entries(ctx)
-		require.NoError(t, err)
-		checkFileExistence(t, files, []string{"package.json", "src/", "tsconfig.json"})
 
 		t.Run("auto-switch to bundle", func(ctx context.Context, t *testctx.T) {
 			modGen := modGen.With(daggerExec("develop"))

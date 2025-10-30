@@ -89,7 +89,8 @@ func (b *BunRuntime) SetupContainer(ctx context.Context) (*dagger.Container, err
 	return runtimeWithDep.ctr.
 		WithMountedDirectory(GenDir, sdkLibrary).
 		WithMountedFile("tsconfig.json", tsConfig).
-		WithMountedDirectory("src", b.cfg.source.Directory("src")).
+		// TODO: ideally it should just be: `n.cfg.source.Directory(SrcDir)`
+		WithMountedDirectory("src", b.cfg.wrappedSourceDirectory()).
 		WithMountedFile(entrypointPath, entrypointFile()).
 		WithEntrypoint([]string{
 			"bun", "run", entrypointPath,

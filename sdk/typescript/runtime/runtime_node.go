@@ -48,10 +48,10 @@ func (n *NodeRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 	var sdkLibrary *dagger.Directory
 	var runtimeWithDep *NodeRuntime
 
-	eg, ctx := errgroup.WithContext(ctx)
+	eg, gctx := errgroup.WithContext(ctx)
 
 	eg.Go(func() (err error) {
-		ctx, span := Tracer().Start(ctx, "update tsconfig.json")
+		ctx, span := Tracer().Start(gctx, "update tsconfig.json")
 		defer span.End()
 
 		tsConfig, err = CreateOrUpdateTSConfigForModule(ctx, n.cfg.source)
@@ -59,7 +59,7 @@ func (n *NodeRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 	})
 
 	eg.Go(func() (err error) {
-		ctx, span := Tracer().Start(ctx, "generate SDK library")
+		ctx, span := Tracer().Start(gctx, "generate SDK library")
 		defer span.End()
 
 		sdkLibrary, err = NewLibGenerator(n.sdkSourceDir).
@@ -69,7 +69,7 @@ func (n *NodeRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 	})
 
 	eg.Go(func() (err error) {
-		ctx, span := Tracer().Start(ctx, "install dependencies")
+		ctx, span := Tracer().Start(gctx, "install dependencies")
 		defer span.End()
 
 		runtimeWithPkgJSON, err := n.withPackageJSON(ctx)
@@ -97,7 +97,8 @@ func (n *NodeRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 	return runtimeWithDep.ctr.
 		WithMountedDirectory(GenDir, sdkLibrary).
 		WithMountedFile("tsconfig.json", tsConfig).
-		WithMountedDirectory("src", n.cfg.source.Directory("src")).
+		// TODO: ideally it should just be: `n.cfg.source.Directory(SrcDir)`
+		WithMountedDirectory("src", n.cfg.wrappedSourceDirectory()).
 		WithMountedFile(entrypointPath, entrypointFile()).
 		WithEntrypoint([]string{
 			"tsx", "--no-deprecation", "--tsconfig", n.cfg.tsConfigPath(), entrypointPath,

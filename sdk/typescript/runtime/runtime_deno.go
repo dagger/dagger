@@ -75,7 +75,8 @@ func (d *DenoRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 
 	return denoRuntimeWithDep.ctr.
 		WithMountedDirectory(GenDir, sdkLibrary).
-		WithMountedDirectory("src", d.cfg.source.Directory("src")).
+		// TODO: ideally it should just be: `n.cfg.source.Directory(SrcDir)`
+		WithMountedDirectory("src", d.cfg.wrappedSourceDirectory()).
 		WithMountedFile(entrypointPath, entrypointFile()).
 		WithEntrypoint([]string{
 			"deno", "run", "-q", "-A", entrypointPath,
