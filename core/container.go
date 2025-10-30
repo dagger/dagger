@@ -1481,9 +1481,9 @@ func (container *Container) File(ctx context.Context, filePath string) (*File, e
 		if container.FS == nil {
 			return nil, fmt.Errorf("container rootfs is not set")
 		}
-		f, err = container.FS.Self().File(ctx, subpath)
+		f, err = container.FS.Self().FileLLB(ctx, subpath)
 	case mnt.DirectorySource != nil: // mounted directory
-		f, err = mnt.DirectorySource.Self().File(ctx, subpath)
+		f, err = mnt.DirectorySource.Self().FileLLB(ctx, subpath)
 	case mnt.FileSource != nil: // mounted file
 		return mnt.FileSource.Self(), nil
 	default:

@@ -5212,3 +5212,70 @@ func (ContainerSuite) TestWithFileOnMountedFile(ctx context.Context, t *testctx.
 	require.NoError(t, err)
 	require.Equal(t, "4", f2Contents)
 }
+
+func (ContainerSuite) TestFileCaching(ctx context.Context, t *testctx.T) {
+	theTest := func(ctx context.Context, t *testctx.T, useFileDirectly bool) {
+		dir := t.TempDir()
+		fileData := identity.NewID()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "rand1"), []byte(fileData), 0o600))
+
+		// this test must be run sequentially, using two different clients
+		// each client runs in an separate func scope to prevent accidentally
+		// using the wrong client
+
+		fn := func() (string, string, error) {
+			c := connect(ctx, t)
+			defer c.Close()
+			var f *dagger.File
+			if useFileDirectly {
+				f = c.Host().File(filepath.Join(dir, "rand1"))
+			} else {
+				f = c.Host().Directory(dir).File("rand1") // TODO this is still breaking
+			}
+			out, err := c.Container().
+				From(alpineImage).
+				WithFile("the-file", f).
+				WithExec([]string{"sh", "-c", "cat the-file && echo -n : && head -c 99 /dev/random | base64 -w0"}).
+				Stdout(ctx)
+			if err != nil {
+				return "", "", err
+			}
+
+			fileData, randData, ok := strings.Cut(out, ":")
+			if !ok {
+				return "", "", fmt.Errorf("failed to cut %s", out)
+			}
+			require.Len(t, randData, 132) // test that 99 chars were randomly produced, this accounts for 4/3 times base64 bloat
+			return fileData, randData, nil
+		}
+
+		fileData1, randData1, err := fn()
+		require.NoError(t, err)
+		require.Equal(t, fileData, fileData1)
+
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "this-is-not-used"), []byte(identity.NewID()), 0o600))
+
+		fileData2, randData2, err := fn()
+		require.NoError(t, err)
+		require.Equal(t, fileData, fileData2)
+		require.Equal(t, randData1, randData2, "command was re-executed when it should have been cached")
+
+		// change the used file, to ensure it busts the cache
+		newFileData := identity.NewID()
+		require.NotEqual(t, fileData, newFileData)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "rand1"), []byte(newFileData), 0o600))
+
+		fileData3, randData3, err := fn()
+		require.NoError(t, err)
+		require.NotEqual(t, randData1, randData3, "execution was cached when it should have been re-run")
+		require.Equal(t, newFileData, fileData3)
+	}
+
+	t.Run("use file directly", func(ctx context.Context, t *testctx.T) {
+		theTest(ctx, t, true)
+	})
+	t.Run("use file indirectly", func(ctx context.Context, t *testctx.T) {
+		theTest(ctx, t, false)
+	})
+
+}

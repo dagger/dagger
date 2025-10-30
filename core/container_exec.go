@@ -228,6 +228,7 @@ func (container *Container) WithExec(
 	execMD *buildkit.ExecutionMetadata,
 ) (_ *Container, rerr error) {
 	container = container.Clone()
+	fmt.Printf("ACB WithExec called\n")
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {

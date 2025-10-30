@@ -48,12 +48,14 @@ func NewDirectoryDagOp(
 ) (*Directory, error) {
 	if selfDigest == "" || argDigest == "" {
 		// fall back to using op ID (which will return a different CacheMap value for each op
+		fmt.Printf("ACB NewDirectoryDagOp falling back to using ID\n")
 		dagop.CacheKey = digest.FromString(
 			strings.Join([]string{
 				dagop.ID.Digest().String(),
 				dagop.Path,
 			}, "\x00"))
 	} else {
+		fmt.Printf("ACB NewDirectoryDagOp using self+arg digests\n")
 		dagop.CacheKey = digest.FromString(
 			strings.Join([]string{
 				selfDigest.String(),
@@ -108,6 +110,8 @@ func newFSDagOp[T dagql.Typed](
 		return llb.State{}, fmt.Errorf("expected %s to be selected, instead got %s", requiredType, dagop.ID.Type().NamedType())
 	}
 
+	fmt.Printf("ACB newFSDagOp %s has inputs(deps) %v\n", dagop.ID.DisplaySelf(), inputs)
+
 	return newDagOpLLB(ctx, dagop, dagop.ID, inputs)
 }
 
@@ -131,16 +135,23 @@ func (op FSDagOp) Backend() buildkit.CustomOpBackend {
 }
 
 func (op FSDagOp) Digest() (digest.Digest, error) {
-	return digest.FromString(strings.Join([]string{
-		engine.BaseVersion(engine.Version),
-		op.ID.Digest().String(),
-		op.Path,
-	}, "\x00")), nil
+	fmt.Printf("ACB FSDagOp.Digest %s returning cachekey: %s\n", op.ID.DisplaySelf(), op.CacheKey.String())
+	return op.CacheKey, nil
+
+	//d := digest.FromString(strings.Join([]string{
+	//	engine.BaseVersion(engine.Version),
+	//	op.ID.Digest().String(),
+	//	op.Path,
+	//}, "\x00"))
+
+	//fmt.Printf("ACB FSDagOp.Digest %s returning cachekey: %s\n", op.ID.DisplaySelf(), d.String())
+	//return d, nil
 }
 
 func (op FSDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.CacheMap, error) {
 	var inputs []string
 	if op.CacheKey.String() == "" {
+		fmt.Printf("ACB FSDagOp.CacheMap using ID %s\n", op.ID.View())
 		// TODO replace this with a panic("this shouldnt happen") once all FSDagOps are correctly created
 		inputs = []string{
 			engine.BaseVersion(engine.Version),
@@ -152,6 +163,7 @@ func (op FSDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.Ca
 			engine.BaseVersion(engine.Version),
 			op.CacheKey.String(),
 		}
+		fmt.Printf("ACB FSDagOp.CacheMap using CacheKey %s\n", op.CacheKey.String())
 	}
 	cm.Digest = digest.FromString(strings.Join(inputs, "\x00"))
 
@@ -160,6 +172,7 @@ func (op FSDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.Ca
 	// digests as determined from within dag-ops. e.g. `Directory.Without` may determine that no
 	// files were removed and thus we can reuse the parent object digest.
 	for i, dep := range cm.Deps {
+		fmt.Printf("ACB dep %d %+v\n", i, dep)
 		dep.PreprocessFunc = nil
 		origFunc := dep.ComputeDigestFunc
 		dep.ComputeDigestFunc = func(ctx context.Context, res solver.Result, g bksession.Group) (digest.Digest, error) {
@@ -187,6 +200,7 @@ func (op FSDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.Ca
 }
 
 func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, err error) {
+	fmt.Printf("ACB FSDagOp.Exec called on ID %s\n", op.ID.DisplaySelf())
 	query, ok := opt.Server.Root().Unwrap().(*Query)
 	if !ok {
 		return nil, fmt.Errorf("server root was %T", opt.Server.Root())
@@ -329,6 +343,7 @@ func (op RawDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*solver.C
 }
 
 func (op RawDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, retErr error) {
+	fmt.Printf("ACB RawDagOp.Exec called on ID %s\n", op.ID.DisplaySelf())
 	query, ok := opt.Server.Root().Unwrap().(*Query)
 	if !ok {
 		return nil, fmt.Errorf("server root was %T", opt.Server.Root())
@@ -555,6 +570,7 @@ func (op ContainerDagOp) CacheMap(ctx context.Context, cm *solver.CacheMap) (*so
 }
 
 func (op ContainerDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opt buildkit.OpOpts) (outputs []solver.Result, retErr error) {
+	fmt.Printf("ACB ContainerDagOp.Exec called on ID %s\n", op.ID.DisplaySelf())
 	loadCtx := ctx
 
 	query, ok := opt.Server.Root().Unwrap().(*Query)

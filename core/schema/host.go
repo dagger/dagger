@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/content/local"
@@ -231,6 +232,12 @@ type hostDirectoryArgs struct {
 	DagOpInternalArgs
 }
 
+func (hda hostDirectoryArgs) Digest() (digest.Digest, error) {
+	d := digest.FromString(fmt.Sprintf("%v", time.Now().UnixNano()))
+	fmt.Printf("ACB hostDirectoryArgs.Digest returning %s\n", d.String())
+	return d, nil
+}
+
 func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostDirectoryArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
@@ -386,6 +393,7 @@ func (cc HostDirCacheConfig) CacheType() dagql.CacheControlType {
 }
 
 func (s *hostSchema) file(ctx context.Context, host dagql.ObjectResult[*core.Host], args hostFileArgs) (i dagql.Result[*core.File], err error) {
+	fmt.Printf("ACB hostSchema.file called %+v\n", args)
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return i, fmt.Errorf("failed to get current dagql server: %w", err)
