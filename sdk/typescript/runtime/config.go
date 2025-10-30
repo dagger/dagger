@@ -132,7 +132,7 @@ func analyzeModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) (c
 
 	// If a first init, there will be no directory, so we ignore the error here.
 	// We also only include package.json & lockfiles to benefit from caching.
-	matches, err := modSource.ContextDirectory().Glob(ctx, cfg.subPath)
+	matches, err := modSource.ContextDirectory().Glob(ctx, cfg.subPath+"/**")
 	if err != nil {
 		return nil, fmt.Errorf("failed to glob module source in context directory: %w", err)
 	}
