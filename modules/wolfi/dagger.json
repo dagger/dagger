@@ -9,6 +9,5 @@
       "name": "alpine",
       "source": "../alpine"
     }
-  ],
-  "disableDefaultFunctionCaching": true
+  ]
 }

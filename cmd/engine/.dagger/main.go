@@ -274,6 +274,7 @@ func (e *DaggerEngine) CheckReleaseDryRun(ctx context.Context) error {
 }
 
 // Publish all engine images to a registry
+// +cache="session"
 func (e *DaggerEngine) Publish(
 	ctx context.Context,
 

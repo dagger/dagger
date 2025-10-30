@@ -87,6 +87,5 @@
       "source": "modules/wolfi"
     }
   ],
-  "source": ".dagger",
-  "disableDefaultFunctionCaching": true
+  "source": ".dagger"
 }

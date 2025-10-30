@@ -19,6 +19,7 @@ type User struct {
 	Login string `json:"login"`
 }
 
+// +cache="session"
 func (r *Releaser) GetMaintainers(
 	ctx context.Context,
 

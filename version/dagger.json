@@ -9,6 +9,5 @@
       "name": "wolfi",
       "source": "../modules/wolfi"
     }
-  ],
-  "disableDefaultFunctionCaching": true
+  ]
 }

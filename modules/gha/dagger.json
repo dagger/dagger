@@ -9,6 +9,5 @@
       "name": "wolfi",
       "source": "../wolfi"
     }
-  ],
-  "disableDefaultFunctionCaching": true
+  ]
 }

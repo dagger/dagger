@@ -3,6 +3,5 @@
   "engineVersion": "v0.19.4",
   "sdk": {
     "source": "go"
-  },
-  "disableDefaultFunctionCaching": true
+  }
 }

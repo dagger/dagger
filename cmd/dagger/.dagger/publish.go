@@ -20,6 +20,7 @@ const (
 )
 
 // Publish the CLI using GoReleaser
+// +cache="session"
 func (cli *DaggerCli) Publish(
 	ctx context.Context,
 	tag string,
@@ -134,6 +135,7 @@ func optSecretVariable(name string, val *dagger.Secret) dagger.WithContainerFunc
 	}
 }
 
+// +cache="session"
 func (cli *DaggerCli) PublishMetadata(
 	ctx context.Context,
 

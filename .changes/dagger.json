@@ -4,6 +4,5 @@
   "sdk": {
     "source": "go"
   },
-  "source": ".dagger",
-  "disableDefaultFunctionCaching": true
+  "source": ".dagger"
 }

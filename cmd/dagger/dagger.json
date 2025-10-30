@@ -23,6 +23,5 @@
       "source": "../../version"
     }
   ],
-  "source": ".dagger",
-  "disableDefaultFunctionCaching": true
+  "source": ".dagger"
 }

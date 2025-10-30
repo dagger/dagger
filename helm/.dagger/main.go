@@ -246,6 +246,7 @@ func (h *Helm) CheckReleaseDryRun(ctx context.Context) error {
 }
 
 // Package & publish chart to our registry + github release
+// +cache="session"
 func (h *Helm) Publish(
 	ctx context.Context,
 	// The git ref to publish

@@ -12,6 +12,7 @@ type Bench struct {
 	Test *Test // +private
 }
 
+// +cache="session"
 func (b *Bench) All(
 	ctx context.Context,
 	// +optional
@@ -45,6 +46,7 @@ func (b *Bench) All(
 	), discordWebhook)
 }
 
+// +cache="session"
 func (b *Bench) Specific(
 	ctx context.Context,
 	// Only run these benchmarks
@@ -98,6 +100,7 @@ func (b *Bench) Specific(
 // `dagger call test dump --run=TestCache/TestVolume --pkg=./core/integration --interval=1s export --path=/tmp/dump-$(date +"%Y%m%d_%H%M%S")`
 // but also works for profiles:
 // `dagger call test dump --run=TestCache/TestVolume --pkg=./core/integration --route=pprof/profile --no-final export --path=/tmp/dump-$(date +"%Y%m%d_%H%M%S")`
+// +cache="session"
 func (b *Bench) Dump(
 	ctx context.Context,
 	// Only run these tests
