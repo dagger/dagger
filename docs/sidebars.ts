@@ -118,6 +118,7 @@ module.exports = {
         "extending/modules/custom-types",
         "extending/modules/interfaces",
         "extending/modules/state",
+        "extending/modules/function-caching",
         "extending/modules/playground",
         {
           type: "link",

@@ -7,10 +7,11 @@ toc_max_heading_level: 2
 
 One of Dagger's most powerful features is its speed, by virtue of its ability to cache data across workflow runs.
 
-Dagger caches two types of data:
+Dagger caches several types of data:
 
-1. **Layers**: This refers to build instructions and the results of some API calls. This cache is implemented by Buildkit
-2. **Volumes**: This refers to the contents of a Dagger filesystem volume and is persisted across Dagger Engine sessions It is implemented by Dagger (distinct from Buildkit)
+1. **Layers**: This refers to build instructions and the results of some API calls, such as those that modify files and directories.
+2. **Volumes**: This refers to the contents of a Dagger filesystem volume and is persisted across Dagger Engine sessions.
+2. **Function Calls**: This refers to the values returned by calling a function in a module. Execution of the function call may be skipped when there is a cached result for the function call.
 
 ## Layer caching
 
@@ -25,3 +26,7 @@ Volume caching involves caching specific parts of the filesystem and reusing the
 :::info
 For these tools to cache properly, they need their own cache data (usually a directory) to be persisted between sessions. By using a cache volume for this data, Dagger can reuse the cached contents across workflow runs and reduce execution time.
 :::
+
+## Function Calls
+
+More details may be found in the [Extending Dagger](../../extending/modules/function-caching.mdx) documentation. 
