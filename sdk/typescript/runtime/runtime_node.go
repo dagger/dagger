@@ -97,8 +97,8 @@ func (n *NodeRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 	return runtimeWithDep.ctr.
 		WithMountedDirectory(GenDir, sdkLibrary).
 		WithMountedFile("tsconfig.json", tsConfig).
-		// TODO: ideally it should just be: `n.cfg.source.Directory(SrcDir)`
-		WithMountedDirectory("src", n.cfg.wrappedSourceDirectory()).
+		// Merge source code directory with current directory
+		WithDirectory(".", n.cfg.wrappedSourceCodeDirectory()).
 		WithMountedFile(entrypointPath, entrypointFile()).
 		WithEntrypoint([]string{
 			"tsx", "--no-deprecation", "--tsconfig", n.cfg.tsConfigPath(), entrypointPath,
@@ -156,7 +156,9 @@ func (n *NodeRuntime) GenerateDir(ctx context.Context) (*dagger.Directory, error
 		WithFile("package.json", runtime.ctr.File("package.json")).
 		WithFile("tsconfig.json", tsconfigFile).
 		WithFile(pkgManager.lockFileName(), lockFile).
-		WithDirectory(GenDir, sdkLibrary), nil
+		WithDirectory(GenDir, sdkLibrary).
+		// Also add the source directory so it's accessible from `dag.currentModule().source()`
+		WithDirectory(".", n.cfg.wrappedSourceCodeDirectory()), nil
 }
 
 func (n *NodeRuntime) createPkgManagerCtr() PackageManager {

@@ -23,9 +23,17 @@ func UpdatePackageJSON(packageJSON string) (string, error) {
 		return "", fmt.Errorf("failed to set typescript dependency: %w", err)
 	}
 
-	// Remote "@dagger.io/dagger" dependency if it's set
-	// so smoothly transition from local to module
+	// Remove "@dagger.io/dagger" from dependencies if it's set
+	// so we smoothly transition from local to module
 	packageJSON, err = sjson.Delete(packageJSON, "dependencies."+gjson.Escape(daggerLibPathAlias))
+	if err != nil {
+		return "", fmt.Errorf("failed to delete @dagger.io/dagger dependency: %w", err)
+	}
+
+	// Remove "@dagger.io/dagger" from devDependencies if it's set
+	// so we smoothly transition from local to module
+	// (older dagger version were setting dagger in devDependencies)
+	packageJSON, err = sjson.Delete(packageJSON, "devDependencies."+gjson.Escape(daggerLibPathAlias))
 	if err != nil {
 		return "", fmt.Errorf("failed to delete @dagger.io/dagger dependency: %w", err)
 	}

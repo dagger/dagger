@@ -75,8 +75,8 @@ func (d *DenoRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 
 	return denoRuntimeWithDep.ctr.
 		WithMountedDirectory(GenDir, sdkLibrary).
-		// TODO: ideally it should just be: `n.cfg.source.Directory(SrcDir)`
-		WithMountedDirectory("src", d.cfg.wrappedSourceDirectory()).
+		// Merge source code directory with current directory
+		WithDirectory(".", d.cfg.wrappedSourceCodeDirectory()).
 		WithMountedFile(entrypointPath, entrypointFile()).
 		WithEntrypoint([]string{
 			"deno", "run", "-q", "-A", entrypointPath,
@@ -122,7 +122,9 @@ func (d *DenoRuntime) GenerateDir(ctx context.Context) (*dagger.Directory, error
 	// Merge all generated/updated files into a single directory.
 	return dag.Directory().
 		WithFile("deno.json", denoJSON).
-		WithDirectory(GenDir, sdkLibrary), nil
+		WithDirectory(GenDir, sdkLibrary).
+		// Also add the source directory so it's accessible from `dag.currentModule().source()`
+		WithDirectory(".", d.cfg.wrappedSourceCodeDirectory()), nil
 }
 
 func (d *DenoRuntime) withDenoJSON(ctx context.Context) (*DenoRuntime, error) {

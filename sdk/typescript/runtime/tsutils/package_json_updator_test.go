@@ -41,6 +41,25 @@ func TestUpdatePackageJSON(t *testing.T) {
 }`,
 		},
 		{
+			name: "package.json with local dagger dev dependency correctly switch to bundle mode",
+			packageJSON: `{
+  "type": "module",
+  "dependencies": {
+    "typescript": "5.9.3"
+  },
+	"devDependencies": {
+		"@dagger.io/dagger": "./sdk"
+	}
+}`,
+			expected: `{
+  "type": "module",
+  "dependencies": {
+    "typescript": "5.9.3"
+  },
+	"devDependencies": {}
+}`,
+		},
+		{
 			name: "package.json with comments",
 			packageJSON: `{
   // Environment setup & latest features

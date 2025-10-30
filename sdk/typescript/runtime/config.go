@@ -442,17 +442,21 @@ func (c *moduleConfig) tsConfigPath() string {
 	return filepath.Join(ModSourceDirPath, c.subPath, "tsconfig.json")
 }
 
-// This is a weird hack to get the source directory from the host
-// It's not ideal but if we directly try to mount
-// the source without wrapping it in a new directory, it fails
-// to load the source directory on the engine side.
-func (c *moduleConfig) wrappedSourceDirectory() *dagger.Directory {
+// Get the source code directory wrapped in a dagger.Directory
+// to be used in the runtime container.
+// This excludes config files, sdk and node_modules but keep any
+// extra files that may exist in the module source dir.
+func (c *moduleConfig) wrappedSourceCodeDirectory() *dagger.Directory {
 	return dag.Directory().WithDirectory("/",
-		c.contextDirectory,
+		c.source,
 		dagger.DirectoryWithDirectoryOpts{
-			Include: []string{filepath.Join(c.subPath, SrcDir)},
+			Exclude: append(
+				moduleConfigFiles("."),
+				"sdk",
+				"node_modules",
+			),
 		},
-	).Directory(filepath.Join(c.subPath, SrcDir))
+	)
 }
 
 // Returns a list of files to include for module configs.

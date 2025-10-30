@@ -89,8 +89,8 @@ func (b *BunRuntime) SetupContainer(ctx context.Context) (*dagger.Container, err
 	return runtimeWithDep.ctr.
 		WithMountedDirectory(GenDir, sdkLibrary).
 		WithMountedFile("tsconfig.json", tsConfig).
-		// TODO: ideally it should just be: `n.cfg.source.Directory(SrcDir)`
-		WithMountedDirectory("src", b.cfg.wrappedSourceDirectory()).
+		// Merge source code directory with current directory
+		WithDirectory(".", b.cfg.wrappedSourceCodeDirectory()).
 		WithMountedFile(entrypointPath, entrypointFile()).
 		WithEntrypoint([]string{
 			"bun", "run", entrypointPath,
@@ -143,7 +143,9 @@ func (b *BunRuntime) GenerateDir(ctx context.Context) (*dagger.Directory, error)
 		WithFile("package.json", runtime.ctr.File("package.json")).
 		WithFile("tsconfig.json", tsconfigFile).
 		WithFile("bun.lock", lockFile).
-		WithDirectory(GenDir, sdkLibrary), nil
+		WithDirectory(GenDir, sdkLibrary).
+		// Also add the source directory so it's accessible from `dag.currentModule().source()`
+		WithDirectory(".", b.cfg.wrappedSourceCodeDirectory()), nil
 }
 
 func (b *BunRuntime) sync(ctx context.Context) (*BunRuntime, error) {
