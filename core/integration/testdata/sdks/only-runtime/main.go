@@ -24,7 +24,7 @@ func (m *OnlyRuntime) ModuleRuntime(
 	introspectionJSON *dagger.File,
 ) (*dagger.Container, error) {
 	return dag.Container().
-		From("golang:1.25.2-alpine").
+		From("golang:1.25.3-alpine").
 		WithDirectory("/src", m.Src).
 		WithWorkdir("/src").
 		WithExec([]string{"go", "build", "-o", "/bin/sdk", "."}).

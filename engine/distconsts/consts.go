@@ -27,7 +27,7 @@ const (
 	AlpineVersion = "3.22.1"
 	AlpineImage   = "alpine:" + AlpineVersion
 
-	GolangVersion = "1.25.2"
+	GolangVersion = "1.25.3"
 	GolangImage   = "golang:" + GolangVersion + "-alpine"
 
 	BusyboxVersion = "1.37.0"
