@@ -1,7 +1,0 @@
-kind: Dependencies
-body: |
-    Update go to 1.25.3
-time: 2025-10-30T12:32:41.214129451Z
-custom:
-    Author: jedevc
-    PR: "11331"

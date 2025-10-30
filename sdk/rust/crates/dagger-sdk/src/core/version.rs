@@ -1,1 +1,1 @@
-pub const DAGGER_ENGINE_VERSION: &'static str = "0.19.3";
+pub const DAGGER_ENGINE_VERSION: &'static str = "0.19.4";

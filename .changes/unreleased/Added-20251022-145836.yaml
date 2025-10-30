@@ -1,7 +1,0 @@
-kind: Added
-body: |
-    New `GitRepository.uncommited` API to get changeset of dirty changes in the working directory
-time: 2025-10-22T14:58:36.682074344+01:00
-custom:
-    Author: jedevc
-    PR: "11241"

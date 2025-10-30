@@ -1,6 +1,0 @@
-kind: Fixed
-body: Optimize numerous core APIs to be less CPU+memory intensive.
-time: 2025-10-29T01:09:19.498795983-07:00
-custom:
-  Author: sipsma
-  PR: "11320"
