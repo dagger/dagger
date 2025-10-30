@@ -146,7 +146,7 @@ func (m *PythonSdk) Codegen(
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
 ) (*dagger.GeneratedCode, error) {
-	m, err := m.Common(ctx, modSource, introspectionJSON)
+	m, err := m.Common(ctx, modSource, introspectionJSON, true)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +176,7 @@ func (m *PythonSdk) ModuleRuntime(
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
 ) (*dagger.Container, error) {
-	m, err := m.Common(ctx, modSource, introspectionJSON)
+	m, err := m.Common(ctx, modSource, introspectionJSON, true)
 	if err != nil {
 		return nil, err
 	}
@@ -190,14 +190,25 @@ func (m *PythonSdk) ModuleTypes(
 	introspectionJSON *dagger.File,
 	outputFilePath string,
 ) (*dagger.Container, error) {
-	ctr, err := m.ModuleRuntime(ctx, modSource, introspectionJSON)
+	_ = introspectionJSON
+
+	m, err := m.Common(ctx, modSource, nil, false)
 	if err != nil {
 		return nil, err
 	}
-	return ctr.
+
+	if m.Discovery.SdkHasFile("dist/register") {
+		return m.Container.
 			WithEnvVariable("DAGGER_MODULE_FILE", outputFilePath).
-			WithEntrypoint([]string{RuntimeExecutablePath, "--register"}),
-		nil
+			WithMountedFile("/usr/local/bin/register", m.SdkSourceDir.File("dist/register")).
+			WithExec([]string{"register"},
+				dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}), nil
+	} else {
+		return m.WithInstall().Container.
+			WithEnvVariable("DAGGER_MODULE_FILE", outputFilePath).
+			WithExec([]string{"uv", "run", "--frozen", "python", RuntimeExecutablePath, "--register"},
+				dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}), nil
+	}
 }
 
 // Common steps for the ModuleRuntime and Codegen functions
@@ -206,6 +217,7 @@ func (m *PythonSdk) Common(
 	modSource *dagger.ModuleSource,
 	// +optional
 	introspectionJSON *dagger.File,
+	withUpdate bool,
 ) (*PythonSdk, error) {
 	// The following functions were built to be composable in a granular way,
 	// to allow a custom SDK to depend on this one and hook into before or
@@ -227,7 +239,7 @@ func (m *PythonSdk) Common(
 		WithSDK(introspectionJSON).
 		WithTemplate().
 		WithSource().
-		WithUpdates(), nil
+		WithUpdates(withUpdate), nil
 }
 
 // Get all the needed information from the module's metadata and source files
@@ -428,7 +440,10 @@ func (m *PythonSdk) WithSource() *PythonSdk {
 }
 
 // Make any updates to current source
-func (m *PythonSdk) WithUpdates() *PythonSdk {
+func (m *PythonSdk) WithUpdates(perform bool) *PythonSdk {
+	if !perform {
+		return m
+	}
 	if !m.UseUv() {
 		return m
 	}
