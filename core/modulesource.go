@@ -476,20 +476,25 @@ func (src *ModuleSource) LoadContextDir(
 	ctx context.Context,
 	dag *dagql.Server,
 	path string,
-	include []string,
-	exclude []string,
+	filter CopyFilter,
 ) (inst dagql.ObjectResult[*Directory], err error) {
 	filterInputs := []dagql.NamedInput{}
-	if len(include) > 0 {
+	if len(filter.Include) > 0 {
 		filterInputs = append(filterInputs, dagql.NamedInput{
 			Name:  "include",
-			Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(include...)),
+			Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(filter.Include...)),
 		})
 	}
-	if len(exclude) > 0 {
+	if len(filter.Exclude) > 0 {
 		filterInputs = append(filterInputs, dagql.NamedInput{
 			Name:  "exclude",
-			Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(exclude...)),
+			Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(filter.Exclude...)),
+		})
+	}
+	if filter.Gitignore {
+		filterInputs = append(filterInputs, dagql.NamedInput{
+			Name:  "gitignore",
+			Value: dagql.NewBoolean(true),
 		})
 	}
 
@@ -860,7 +865,9 @@ func (src *ModuleSource) LoadContextGit(
 	}
 
 	// bit harder, this is actually a local directory
-	dir, err := src.LoadContextDir(ctx, dag, "/", []string{".git"}, nil)
+	dir, err := src.LoadContextDir(ctx, dag, "/", CopyFilter{
+		Include: []string{".git"},
+	})
 	if err != nil {
 		return inst, fmt.Errorf("failed to load contextual git: %w", err)
 	}

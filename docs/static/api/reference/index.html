@@ -4501,6 +4501,9 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
                               </div>
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>gitignore</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>noCache</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                               </div>
                             </div>
@@ -4521,6 +4524,9 @@
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>gitignore</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>noCache</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
@@ -5645,6 +5651,10 @@
                                 <p>Patterns to include in the written directory (e.g. [&quot;*.go&quot;, &quot;go.mod&quot;, &quot;go.sum&quot;]).</p>
                               </div>
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>gitignore</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Apply .gitignore rules when writing the directory.</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>owner</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>A user:group to set for the directory and its contents.</p>
                                 <p>The user and group can either be an ID (1000:1000) or a name (foo:bar).</p>
@@ -6619,6 +6629,10 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
                                 <p>Include only artifacts that match the given pattern (e.g., [&quot;app/&quot;, &quot;package.*&quot;]).</p>
                               </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>gitignore</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Apply .gitignore filter rules inside the directory</p>
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -6938,6 +6952,10 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
                                 <p>If set, only paths matching one of these glob patterns is included in the new snapshot. Example: (e.g., [&quot;app/&quot;, &quot;package.*&quot;]).</p>
                               </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>gitignore</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>If set, apply .gitignore rules when filtering the directory.</p>
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -7122,6 +7140,10 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
                                 <p>Include only artifacts that match the given pattern (e.g., [&quot;app/&quot;, &quot;package.*&quot;]).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>gitignore</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Apply .gitignore filter rules inside the directory</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>owner</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>

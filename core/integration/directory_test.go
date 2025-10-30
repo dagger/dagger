@@ -389,6 +389,15 @@ func (DirectorySuite) TestDirectoryFilterIncludeExclude(ctx context.Context, t *
 		require.NoError(t, err)
 		require.Equal(t, []string{"d.txt", "e.txt"}, entries)
 	})
+
+	t.Run("gitignore works", func(ctx context.Context, t *testctx.T) {
+		dir := dir.WithNewFile(".gitignore", "b.txt\nsubdir/\n")
+		entries, err := dir.Filter(dagger.DirectoryFilterOpts{
+			Gitignore: true,
+		}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{".gitignore", "a.txt", "c.txt.rar"}, entries)
+	})
 }
 
 func (DirectorySuite) TestWithDirectoryIncludeExclude(ctx context.Context, t *testctx.T) {
@@ -452,6 +461,15 @@ func (DirectorySuite) TestWithDirectoryIncludeExclude(ctx context.Context, t *te
 		}).Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"d.txt", "e.txt"}, entries)
+	})
+
+	t.Run("gitignore works", func(ctx context.Context, t *testctx.T) {
+		dir := dir.WithNewFile(".gitignore", "b.txt\nsubdir/\n")
+		entries, err := dir.Filter(dagger.DirectoryFilterOpts{
+			Gitignore: true,
+		}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{".gitignore", "a.txt", "c.txt.rar"}, entries)
 	})
 }
 

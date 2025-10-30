@@ -813,6 +813,9 @@ func (container *Container) WithDirectory(
 	if len(filter.Include) > 0 {
 		args = append(args, dagql.NamedInput{Name: "include", Value: asArrayInput(filter.Include, dagql.NewString)})
 	}
+	if filter.Gitignore {
+		args = append(args, dagql.NamedInput{Name: "gitignore", Value: dagql.Boolean(true)})
+	}
 	if owner != "" {
 		// directories only handle int uid/gid, so make sure we resolve names if needed
 		ownership, err := container.ownership(ctx, owner)

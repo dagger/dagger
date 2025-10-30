@@ -35,6 +35,7 @@ defmodule Dagger.Address do
   @spec directory(t(), [
           {:exclude, [String.t()]},
           {:include, [String.t()]},
+          {:gitignore, boolean() | nil},
           {:no_cache, boolean() | nil}
         ]) :: Dagger.Directory.t()
   def directory(%__MODULE__{} = address, optional_args \\ []) do
@@ -43,6 +44,7 @@ defmodule Dagger.Address do
       |> QB.select("directory")
       |> QB.maybe_put_arg("exclude", optional_args[:exclude])
       |> QB.maybe_put_arg("include", optional_args[:include])
+      |> QB.maybe_put_arg("gitignore", optional_args[:gitignore])
       |> QB.maybe_put_arg("noCache", optional_args[:no_cache])
 
     %Dagger.Directory{
@@ -57,6 +59,7 @@ defmodule Dagger.Address do
   @spec file(t(), [
           {:exclude, [String.t()]},
           {:include, [String.t()]},
+          {:gitignore, boolean() | nil},
           {:no_cache, boolean() | nil}
         ]) :: Dagger.File.t()
   def file(%__MODULE__{} = address, optional_args \\ []) do
@@ -65,6 +68,7 @@ defmodule Dagger.Address do
       |> QB.select("file")
       |> QB.maybe_put_arg("exclude", optional_args[:exclude])
       |> QB.maybe_put_arg("include", optional_args[:include])
+      |> QB.maybe_put_arg("gitignore", optional_args[:gitignore])
       |> QB.maybe_put_arg("noCache", optional_args[:no_cache])
 
     %Dagger.File{

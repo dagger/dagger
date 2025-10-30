@@ -185,7 +185,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     /**
      * Return a snapshot with some paths included or excluded
      */
-    public function filter(?array $exclude = null, ?array $include = null): Directory
+    public function filter(?array $exclude = null, ?array $include = null, ?bool $gitignore = false): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filter');
         if (null !== $exclude) {
@@ -193,6 +193,9 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
+        }
+        if (null !== $gitignore) {
+        $innerQueryBuilder->setArgument('gitignore', $gitignore);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -341,6 +344,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         DirectoryId|Directory $source,
         ?array $exclude = null,
         ?array $include = null,
+        ?bool $gitignore = false,
         ?string $owner = '',
     ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDirectory');
@@ -351,6 +355,9 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
+        }
+        if (null !== $gitignore) {
+        $innerQueryBuilder->setArgument('gitignore', $gitignore);
         }
         if (null !== $owner) {
         $innerQueryBuilder->setArgument('owner', $owner);

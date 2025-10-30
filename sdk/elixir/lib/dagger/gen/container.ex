@@ -666,6 +666,7 @@ defmodule Dagger.Container do
   @spec with_directory(t(), String.t(), Dagger.Directory.t(), [
           {:exclude, [String.t()]},
           {:include, [String.t()]},
+          {:gitignore, boolean() | nil},
           {:owner, String.t() | nil},
           {:expand, boolean() | nil}
         ]) :: Dagger.Container.t()
@@ -677,6 +678,7 @@ defmodule Dagger.Container do
       |> QB.put_arg("source", Dagger.ID.id!(source))
       |> QB.maybe_put_arg("exclude", optional_args[:exclude])
       |> QB.maybe_put_arg("include", optional_args[:include])
+      |> QB.maybe_put_arg("gitignore", optional_args[:gitignore])
       |> QB.maybe_put_arg("owner", optional_args[:owner])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
 

@@ -156,7 +156,7 @@
                     <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_directory">directory</a>(array|null $exclude = null, array|null $include = null, bool|null $noCache = false)
+                    <a href="#method_directory">directory</a>(array|null $exclude = null, array|null $include = null, bool|null $gitignore = false, bool|null $noCache = false)
         
                                             <p><p>Load a directory from the address.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -166,7 +166,7 @@
                     <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_file">file</a>(array|null $exclude = null, array|null $include = null, bool|null $noCache = false)
+                    <a href="#method_file">file</a>(array|null $exclude = null, array|null $include = null, bool|null $gitignore = false, bool|null $noCache = false)
         
                                             <p><p>Load a file from the address.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -372,7 +372,7 @@
                     <h3 id="method_directory">
         <div class="location">at line 28</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
-    <strong>directory</strong>(array|null $exclude = null, array|null $include = null, bool|null $noCache = false)
+    <strong>directory</strong>(array|null $exclude = null, array|null $include = null, bool|null $gitignore = false, bool|null $noCache = false)
         </code>
     </h3>
     <div class="details">    
@@ -394,6 +394,11 @@
                     <tr>
                 <td>array|null</td>
                 <td>$include</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>bool|null</td>
+                <td>$gitignore</td>
                 <td></td>
             </tr>
                     <tr>
@@ -422,9 +427,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_file">
-        <div class="location">at line 46</div>
+        <div class="location">at line 53</div>
         <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
-    <strong>file</strong>(array|null $exclude = null, array|null $include = null, bool|null $noCache = false)
+    <strong>file</strong>(array|null $exclude = null, array|null $include = null, bool|null $gitignore = false, bool|null $noCache = false)
         </code>
     </h3>
     <div class="details">    
@@ -446,6 +451,11 @@
                     <tr>
                 <td>array|null</td>
                 <td>$include</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>bool|null</td>
+                <td>$gitignore</td>
                 <td></td>
             </tr>
                     <tr>
@@ -474,7 +484,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_gitRef">
-        <div class="location">at line 64</div>
+        <div class="location">at line 78</div>
         <code>                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
     <strong>gitRef</strong>()
         </code>
@@ -506,7 +516,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_gitRepository">
-        <div class="location">at line 73</div>
+        <div class="location">at line 87</div>
         <code>                    <a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a>
     <strong>gitRepository</strong>()
         </code>
@@ -538,7 +548,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 82</div>
+        <div class="location">at line 96</div>
         <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
     <strong>id</strong>()
         </code>
@@ -570,7 +580,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_secret">
-        <div class="location">at line 91</div>
+        <div class="location">at line 105</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>secret</strong>()
         </code>
@@ -602,7 +612,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_service">
-        <div class="location">at line 100</div>
+        <div class="location">at line 114</div>
         <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
     <strong>service</strong>()
         </code>
@@ -634,7 +644,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_socket">
-        <div class="location">at line 109</div>
+        <div class="location">at line 123</div>
         <code>                    <a href="../Dagger/Socket.html"><abbr title="Dagger\Socket">Socket</abbr></a>
     <strong>socket</strong>()
         </code>
@@ -666,7 +676,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_value">
-        <div class="location">at line 118</div>
+        <div class="location">at line 132</div>
         <code>                    string
     <strong>value</strong>()
         </code>

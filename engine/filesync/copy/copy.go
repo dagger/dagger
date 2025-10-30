@@ -236,6 +236,12 @@ func WithExcludePattern(excludePattern string) Opt {
 	}
 }
 
+func WithGitignore() Opt {
+	return func(ci *CopyInfo) {
+		ci.UseGitignore = true
+	}
+}
+
 func WithChangeNotifier(fn fsutil.ChangeFunc) Opt {
 	return func(ci *CopyInfo) {
 		ci.ChangeFunc = fn

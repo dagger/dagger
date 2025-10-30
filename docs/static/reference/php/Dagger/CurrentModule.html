@@ -176,7 +176,7 @@
                     <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_workdir">workdir</a>(string $path, array|null $exclude = null, array|null $include = null)
+                    <a href="#method_workdir">workdir</a>(string $path, array|null $exclude = null, array|null $include = null, bool|null $gitignore = false)
         
                                             <p><p>Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -386,7 +386,7 @@
                     <h3 id="method_workdir">
         <div class="location">at line 46</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
-    <strong>workdir</strong>(string $path, array|null $exclude = null, array|null $include = null)
+    <strong>workdir</strong>(string $path, array|null $exclude = null, array|null $include = null, bool|null $gitignore = false)
         </code>
     </h3>
     <div class="details">    
@@ -415,6 +415,11 @@
                 <td>$include</td>
                 <td></td>
             </tr>
+                    <tr>
+                <td>bool|null</td>
+                <td>$gitignore</td>
+                <td></td>
+            </tr>
             </table>
 
             
@@ -436,7 +441,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_workdirFile">
-        <div class="location">at line 62</div>
+        <div class="location">at line 69</div>
         <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
     <strong>workdirFile</strong>(string $path)
         </code>

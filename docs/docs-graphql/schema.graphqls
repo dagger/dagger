@@ -28,10 +28,10 @@ type Address {
   container: Container!
 
   """Load a directory from the address."""
-  directory(exclude: [String!] = [], include: [String!] = [], noCache: Boolean = false): Directory!
+  directory(exclude: [String!] = [], include: [String!] = [], gitignore: Boolean = false, noCache: Boolean = false): Directory!
 
   """Load a file from the address."""
-  file(exclude: [String!] = [], include: [String!] = [], noCache: Boolean = false): File!
+  file(exclude: [String!] = [], include: [String!] = [], gitignore: Boolean = false, noCache: Boolean = false): File!
 
   """Load a git ref (branch, tag or commit) from the address."""
   gitRef: GitRef!
@@ -751,6 +751,9 @@ type Container {
     """
     include: [String!] = []
 
+    """Apply .gitignore rules when writing the directory."""
+    gitignore: Boolean = false
+
     """
     A user:group to set for the directory and its contents.
 
@@ -1430,6 +1433,9 @@ type CurrentModule {
     Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
     """
     include: [String!] = []
+
+    """Apply .gitignore filter rules inside the directory"""
+    gitignore: Boolean = false
   ): Directory!
 
   """
@@ -1613,6 +1619,9 @@ type Directory {
     new snapshot. Example: (e.g., ["app/", "package.*"]).
     """
     include: [String!] = []
+
+    """If set, apply .gitignore rules when filtering the directory."""
+    gitignore: Boolean = false
   ): Directory!
 
   """
@@ -1731,6 +1740,9 @@ type Directory {
     Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
     """
     include: [String!] = []
+
+    """Apply .gitignore filter rules inside the directory"""
+    gitignore: Boolean = false
 
     """
     A user:group to set for the copied directory and its contents.

@@ -353,6 +353,8 @@ type AddressDirectoryOpts struct {
 
 	Include []string
 
+	Gitignore bool
+
 	NoCache bool
 }
 
@@ -367,6 +369,10 @@ func (r *Address) Directory(opts ...AddressDirectoryOpts) *Directory {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `gitignore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Gitignore) {
+			q = q.Arg("gitignore", opts[i].Gitignore)
 		}
 		// `noCache` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoCache) {
@@ -385,6 +391,8 @@ type AddressFileOpts struct {
 
 	Include []string
 
+	Gitignore bool
+
 	NoCache bool
 }
 
@@ -399,6 +407,10 @@ func (r *Address) File(opts ...AddressFileOpts) *File {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `gitignore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Gitignore) {
+			q = q.Arg("gitignore", opts[i].Gitignore)
 		}
 		// `noCache` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoCache) {
@@ -1995,6 +2007,8 @@ type ContainerWithDirectoryOpts struct {
 	Exclude []string
 	// Patterns to include in the written directory (e.g. ["*.go", "go.mod", "go.sum"]).
 	Include []string
+	// Apply .gitignore rules when writing the directory.
+	Gitignore bool
 	// A user:group to set for the directory and its contents.
 	//
 	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
@@ -2017,6 +2031,10 @@ func (r *Container) WithDirectory(path string, source *Directory, opts ...Contai
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `gitignore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Gitignore) {
+			q = q.Arg("gitignore", opts[i].Gitignore)
 		}
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
@@ -3009,6 +3027,8 @@ type CurrentModuleWorkdirOpts struct {
 	Exclude []string
 	// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
 	Include []string
+	// Apply .gitignore filter rules inside the directory
+	Gitignore bool
 }
 
 // Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.
@@ -3022,6 +3042,10 @@ func (r *CurrentModule) Workdir(path string, opts ...CurrentModuleWorkdirOpts) *
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `gitignore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Gitignore) {
+			q = q.Arg("gitignore", opts[i].Gitignore)
 		}
 	}
 	q = q.Arg("path", path)
@@ -3338,6 +3362,8 @@ type DirectoryFilterOpts struct {
 	Exclude []string
 	// If set, only paths matching one of these glob patterns is included in the new snapshot. Example: (e.g., ["app/", "package.*"]).
 	Include []string
+	// If set, apply .gitignore rules when filtering the directory.
+	Gitignore bool
 }
 
 // Return a snapshot with some paths included or excluded
@@ -3351,6 +3377,10 @@ func (r *Directory) Filter(opts ...DirectoryFilterOpts) *Directory {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `gitignore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Gitignore) {
+			q = q.Arg("gitignore", opts[i].Gitignore)
 		}
 	}
 
@@ -3609,6 +3639,8 @@ type DirectoryWithDirectoryOpts struct {
 	Exclude []string
 	// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
 	Include []string
+	// Apply .gitignore filter rules inside the directory
+	Gitignore bool
 	// A user:group to set for the copied directory and its contents.
 	//
 	// The user and group must be an ID (1000:1000), not a name (foo:bar).
@@ -3629,6 +3661,10 @@ func (r *Directory) WithDirectory(path string, source *Directory, opts ...Direct
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `gitignore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Gitignore) {
+			q = q.Arg("gitignore", opts[i].Gitignore)
 		}
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {

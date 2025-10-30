@@ -127,6 +127,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("path").Doc(`Location of the directory to access (e.g., ".").`),
 				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
 				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
+				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory`),
 			),
 
 		dagql.NodeFuncWithCacheKey("workdirFile", s.currentModuleWorkdirFile, dagql.CachePerClient).
@@ -873,6 +874,7 @@ func (s *moduleSchema) currentModuleWorkdir(
 				{Name: "path", Value: dagql.String(args.Path)},
 				{Name: "exclude", Value: asArrayInput(args.Exclude, dagql.NewString)},
 				{Name: "include", Value: asArrayInput(args.Include, dagql.NewString)},
+				{Name: "gitignore", Value: dagql.Boolean(args.Gitignore)},
 			},
 		},
 	)

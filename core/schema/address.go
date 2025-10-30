@@ -124,23 +124,29 @@ type loadDirectoryArgs struct {
 	HostDirCacheConfig
 }
 
-func queryLocalDirectory(path string, include, exclude []string) []dagql.Selector {
+func queryLocalDirectory(path string, filter core.CopyFilter) []dagql.Selector {
 	args := []dagql.NamedInput{
 		{
 			Name:  "path",
 			Value: dagql.NewString(getLocalPath(path)),
 		},
 	}
-	if len(exclude) > 0 {
+	if len(filter.Exclude) > 0 {
 		args = append(args, dagql.NamedInput{
 			Name:  "exclude",
-			Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(exclude...)),
+			Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(filter.Exclude...)),
 		})
 	}
-	if len(include) > 0 {
+	if len(filter.Include) > 0 {
 		args = append(args, dagql.NamedInput{
 			Name:  "include",
-			Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(include...)),
+			Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(filter.Include...)),
+		})
+	}
+	if filter.Gitignore {
+		args = append(args, dagql.NamedInput{
+			Name:  "gitignore",
+			Value: dagql.Boolean(true),
 		})
 	}
 	return []dagql.Selector{
@@ -175,7 +181,7 @@ func (s *addressSchema) directory(
 			})
 		}
 	} else {
-		q = queryLocalDirectory(addr, args.Include, args.Exclude)
+		q = queryLocalDirectory(addr, args.CopyFilter)
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {

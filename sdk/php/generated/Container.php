@@ -530,6 +530,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
         DirectoryId|Directory $source,
         ?array $exclude = null,
         ?array $include = null,
+        ?bool $gitignore = false,
         ?string $owner = '',
         ?bool $expand = false,
     ): Container {
@@ -541,6 +542,9 @@ class Container extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
+        }
+        if (null !== $gitignore) {
+        $innerQueryBuilder->setArgument('gitignore', $gitignore);
         }
         if (null !== $owner) {
         $innerQueryBuilder->setArgument('owner', $owner);

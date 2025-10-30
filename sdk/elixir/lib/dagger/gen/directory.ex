@@ -230,13 +230,18 @@ defmodule Dagger.Directory do
   @doc """
   Return a snapshot with some paths included or excluded
   """
-  @spec filter(t(), [{:exclude, [String.t()]}, {:include, [String.t()]}]) :: Dagger.Directory.t()
+  @spec filter(t(), [
+          {:exclude, [String.t()]},
+          {:include, [String.t()]},
+          {:gitignore, boolean() | nil}
+        ]) :: Dagger.Directory.t()
   def filter(%__MODULE__{} = directory, optional_args \\ []) do
     query_builder =
       directory.query_builder
       |> QB.select("filter")
       |> QB.maybe_put_arg("exclude", optional_args[:exclude])
       |> QB.maybe_put_arg("include", optional_args[:include])
+      |> QB.maybe_put_arg("gitignore", optional_args[:gitignore])
 
     %Dagger.Directory{
       query_builder: query_builder,
@@ -408,6 +413,7 @@ defmodule Dagger.Directory do
   @spec with_directory(t(), String.t(), Dagger.Directory.t(), [
           {:exclude, [String.t()]},
           {:include, [String.t()]},
+          {:gitignore, boolean() | nil},
           {:owner, String.t() | nil}
         ]) :: Dagger.Directory.t()
   def with_directory(%__MODULE__{} = directory, path, source, optional_args \\ []) do
@@ -418,6 +424,7 @@ defmodule Dagger.Directory do
       |> QB.put_arg("source", Dagger.ID.id!(source))
       |> QB.maybe_put_arg("exclude", optional_args[:exclude])
       |> QB.maybe_put_arg("include", optional_args[:include])
+      |> QB.maybe_put_arg("gitignore", optional_args[:gitignore])
       |> QB.maybe_put_arg("owner", optional_args[:owner])
 
     %Dagger.Directory{

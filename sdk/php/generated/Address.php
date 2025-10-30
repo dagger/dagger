@@ -25,14 +25,21 @@ class Address extends Client\AbstractObject implements Client\IdAble
     /**
      * Load a directory from the address.
      */
-    public function directory(?array $exclude = null, ?array $include = null, ?bool $noCache = false): Directory
-    {
+    public function directory(
+        ?array $exclude = null,
+        ?array $include = null,
+        ?bool $gitignore = false,
+        ?bool $noCache = false,
+    ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
         if (null !== $exclude) {
         $innerQueryBuilder->setArgument('exclude', $exclude);
         }
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
+        }
+        if (null !== $gitignore) {
+        $innerQueryBuilder->setArgument('gitignore', $gitignore);
         }
         if (null !== $noCache) {
         $innerQueryBuilder->setArgument('noCache', $noCache);
@@ -43,14 +50,21 @@ class Address extends Client\AbstractObject implements Client\IdAble
     /**
      * Load a file from the address.
      */
-    public function file(?array $exclude = null, ?array $include = null, ?bool $noCache = false): File
-    {
+    public function file(
+        ?array $exclude = null,
+        ?array $include = null,
+        ?bool $gitignore = false,
+        ?bool $noCache = false,
+    ): File {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('file');
         if (null !== $exclude) {
         $innerQueryBuilder->setArgument('exclude', $exclude);
         }
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
+        }
+        if (null !== $gitignore) {
+        $innerQueryBuilder->setArgument('gitignore', $gitignore);
         }
         if (null !== $noCache) {
         $innerQueryBuilder->setArgument('noCache', $noCache);

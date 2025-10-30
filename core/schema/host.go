@@ -320,9 +320,10 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	}
 
 	dir, err := host.Self().Directory(ctx, absRootCopyPath, core.CopyFilter{
-		Include: includePatterns,
-		Exclude: excludePatterns,
-	}, args.Gitignore, args.NoCache, relPathFromRoot)
+		Include:   includePatterns,
+		Exclude:   excludePatterns,
+		Gitignore: args.Gitignore,
+	}, args.NoCache, relPathFromRoot)
 
 	if err != nil {
 		return inst, fmt.Errorf("failed to get directory: %w", err)
