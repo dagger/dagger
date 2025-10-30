@@ -40,8 +40,7 @@ public class Entrypoint {
 
   public static void main(String[] args) throws Exception {
     try (Telemetry telemetry = new Telemetry()) {
-      FunctionCall fnCall = dag().currentFunctionCall();
-      telemetry.trace(fnCall, () -> new Entrypoint().dispatch(fnCall));
+      () -> new Entrypoint().dispatch(dag().currentFunctionCall());
     } finally {
       dag().close();
     }

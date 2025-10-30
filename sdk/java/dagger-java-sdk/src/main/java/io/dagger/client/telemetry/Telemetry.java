@@ -37,22 +37,22 @@ public class Telemetry implements AutoCloseable {
   }
 
   private Context getContext() {
-    LOG.info("Retrieving context");
+    LOG.debug("Retrieving context");
     Context ctx = Context.current();
 
     if (Span.current() != null && Span.current().getSpanContext().isValid()) {
-      LOG.info("Current context is valid");
+      LOG.debug("Current context is valid");
       return ctx;
     }
 
     String traceparent = System.getenv("TRACEPARENT");
     if (traceparent == null || traceparent.isBlank()) {
-      LOG.info("Current context is valid, traceparent don't exists");
+      LOG.debug("Current context is valid, traceparent don't exists");
       return ctx;
     }
 
     try {
-      LOG.info("Retrieving remote context");
+      LOG.debug("Retrieving remote context");
 
       String[] parts = traceparent.split("-");
       if (parts.length != 4) {
@@ -69,7 +69,7 @@ public class Telemetry implements AutoCloseable {
 
       return ctx.with(Span.wrap(remoteContext));
     } catch (Exception e) {
-      LOG.error("Failed to parse TRACEPARENT: " + e.getMessage());
+      LOG.error("Telemetry failed to parse TRACEPARENT: {}", e.getMessage(), e);
       return ctx;
     }
   }

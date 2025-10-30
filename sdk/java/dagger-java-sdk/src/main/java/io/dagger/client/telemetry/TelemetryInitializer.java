@@ -45,7 +45,7 @@ public class TelemetryInitializer {
         && !Strings.CS.startsWith(OTLP_ENDPOINT, "https://")
         && !Strings.CS.startsWith(OTLP_TRACES_ENDPOINT, "http://")
         && !Strings.CS.startsWith(OTLP_TRACES_ENDPOINT, "https://")) {
-      LOG.info("Opentelemetry configuration is not valid, please check!");
+      LOG.warn("Opentelemetry configuration is not valid, please check!");
       return OpenTelemetry.noop();
     }
 
@@ -84,11 +84,11 @@ public class TelemetryInitializer {
 
     // Configure sdk as global instance for opentelemetry
     GlobalOpenTelemetry.set(sdk);
-    LOG.info("GlobalTelemetry initialized successfully {}", sdk);
+    LOG.debug("GlobalTelemetry initialized successfully {}", sdk);
 
     INSTANCE = sdk;
 
-    LOG.info("Telemetry initialized successfully {}", sdk);
+    LOG.info("Telemetry initialized successfully");
 
     return sdk;
   }
