@@ -22,7 +22,7 @@ func (dev *DaggerDev) CheckScan(ctx context.Context) error {
 	}
 
 	ctr := dag.Container().
-		From("aquasec/trivy:0.65.0@sha256:a22415a38938a56c379387a8163fcb0ce38b10ace73e593475d3658d578b2436").
+		From("aquasec/trivy:0.67.2@sha256:e2b22eac59c02003d8749f5b8d9bd073b62e30fefaef5b7c8371204e0a4b0c08").
 		WithMountedDirectory("/mnt/ignores", ignoreFiles).
 		WithMountedCache("/root/.cache/", dag.CacheVolume("trivy-cache")).
 		With(dev.withDockerCfg)
