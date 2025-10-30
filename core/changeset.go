@@ -20,6 +20,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -218,7 +219,7 @@ func (ch *Changeset) AsPatch(ctx context.Context) (*File, error) {
 		return nil, fmt.Errorf("no buildkit opts in context")
 	}
 	ctx = trace.ContextWithSpanContext(ctx, opt.CauseCtx)
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, log.Bool(telemetry.LogsVerboseAttr, true))
 	defer stdio.Close()
 
 	newRef, err := query.BuildkitCache().New(ctx, nil, bkSessionGroup,
