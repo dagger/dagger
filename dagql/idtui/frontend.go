@@ -202,6 +202,12 @@ const (
 	kwColor     = termenv.ANSICyan
 	faintColor  = termenv.ANSIBrightBlack
 	moduleColor = termenv.ANSIMagenta
+
+	// filesync upload colors
+	bytesColor = termenv.ANSIGreen
+	kbColor    = bytesColor
+	mbColor    = termenv.ANSIYellow
+	bigColor   = termenv.ANSIRed
 )
 
 func (r *renderer) indent(out TermOutput, depth int) {
@@ -545,6 +551,7 @@ var metricsVerbosity = map[string]int{
 	telemetry.NetstatTxPackets:         3,
 	telemetry.LLMInputTokens:           1,
 	telemetry.LLMOutputTokens:          1,
+	telemetry.FilesyncWrittenBytes:     3,
 }
 
 func (r renderer) renderMetrics(out TermOutput, span *dagui.Span) {
@@ -575,6 +582,9 @@ func (r renderer) renderMetrics(out TermOutput, span *dagui.Span) {
 		r.renderMetric(out, metricsByName, telemetry.LLMOutputTokens, "Output Tokens", humanizeTokens)
 		r.renderMetric(out, metricsByName, telemetry.LLMInputTokensCacheReads, "Token Cache Reads", humanizeTokens)
 		r.renderMetric(out, metricsByName, telemetry.LLMInputTokensCacheWrites, "Token Cache Writes", humanizeTokens)
+
+		// Filesync Stats
+		r.renderMetric(out, metricsByName, telemetry.FilesyncWrittenBytes, "Written Bytes", colorizeBytes)
 	}
 }
 
@@ -650,6 +660,22 @@ func durationString(microseconds int64) string {
 
 func humanizeBytes(v int64) string {
 	return humanize.Bytes(uint64(v))
+}
+
+func colorizeBytes(v int64) string {
+	vh := humanizeBytes(v)
+	vs := strings.Split(vh, " ")
+	if len(vs) != 2 {
+		return vh
+	}
+	switch vs[1] {
+	case "B", "kB":
+		return termenv.String(vh).Foreground(kbColor).String()
+	case "MB":
+		return termenv.String(vh).Foreground(mbColor).String()
+	default:
+		return termenv.String(vh).Foreground(bigColor).String()
+	}
 }
 
 func humanizeTokens(v int64) string {

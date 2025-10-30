@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/containerd/continuity/sysx"
 	fscopy "github.com/dagger/dagger/engine/filesync/copy"
@@ -23,6 +24,10 @@ import (
 	digest "github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/fsutil"
 	"github.com/tonistiigi/fsutil/types"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
@@ -196,6 +201,44 @@ func (local *localFS) Sync( //nolint:gocyclo
 	var hardlinks []*hardlinkChange
 	var hardlinkMu sync.Mutex
 
+	// Track spans per top-level directory
+	type rootPathSpan struct {
+		span         trace.Span
+		start        time.Time
+		writtenBytes int64
+		maxStop      time.Time
+		mu           sync.Mutex
+	}
+	var rootPathSpans sync.Map
+	getRootPath := func(path string) *rootPathSpan {
+		rootPath := strings.Split(path, string(os.PathSeparator))[0]
+
+		now := time.Now()
+		dirSpan := &rootPathSpan{
+			start:   now,
+			maxStop: now,
+			mu:      sync.Mutex{},
+		}
+
+		rps, _ := rootPathSpans.LoadOrStore(rootPath, dirSpan)
+		rps.(*rootPathSpan).mu.Lock()
+		if rps.(*rootPathSpan).span == nil {
+			_, span := Tracer(egCtx).Start(egCtx, rootPath)
+			rps.(*rootPathSpan).span = span
+		}
+		rps.(*rootPathSpan).mu.Unlock()
+
+		return rps.(*rootPathSpan)
+	}
+
+	defer func() {
+		rootPathSpans.Range(func(_, value any) bool {
+			dirSpan := value.(*rootPathSpan)
+			dirSpan.span.End(trace.WithTimestamp(dirSpan.maxStop))
+			return true
+		})
+	}()
+
 	doubleWalkDiff(egCtx, eg, local, remote, func(kind ChangeKind, path string, lowerStat, upperStat *types.Stat) error {
 		switch kind {
 		case ChangeKindAdd, ChangeKindModify:
@@ -260,10 +303,39 @@ func (local *localFS) Sync( //nolint:gocyclo
 
 			default:
 				eg.Go(func() error {
-					appliedChange, err := local.WriteFile(egCtx, kind, path, upperStat, remote)
+					// since we can't really know when a root path is done as
+					// all files are synced in parallel, we track everything
+					// we see and then change the span end time before returning.
+					rootPathSpan := getRootPath(path)
+
+					appliedChange, written, werr := local.WriteFile(ctx, kind, path, upperStat, remote)
+
+					writeEnd := time.Now()
+					m := telemetry.Meter(ctx, "dagger.io/filesync")
+					fsMetric, err := m.Int64Gauge(telemetry.FilesyncWrittenBytes)
 					if err != nil {
 						return err
 					}
+					attrs := []attribute.KeyValue{
+						attribute.String(telemetry.MetricsTraceIDAttr, rootPathSpan.span.SpanContext().TraceID().String()),
+						attribute.String(telemetry.MetricsSpanIDAttr, rootPathSpan.span.SpanContext().SpanID().String()),
+					}
+					rootPathSpan.mu.Lock()
+					rootPathSpan.writtenBytes += written
+					fsMetric.Record(ctx, written, metric.WithAttributes(attrs...))
+					// only track the max(end) of all the files within a root path
+					if writeEnd.After(rootPathSpan.maxStop) {
+						rootPathSpan.maxStop = writeEnd
+					}
+					if werr != nil {
+						rootPathSpan.span.SetStatus(codes.Error, err.Error())
+					}
+					rootPathSpan.mu.Unlock()
+
+					if werr != nil {
+						return werr
+					}
+
 					cachedResultsMu.Lock()
 					cachedResults = append(cachedResults, appliedChange)
 					only[path] = struct{}{}
@@ -322,7 +394,6 @@ func (local *localFS) Sync( //nolint:gocyclo
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
-
 	for _, hardlink := range hardlinks {
 		appliedChange, err := local.Hardlink(ctx, hardlink.kind, hardlink.path, hardlink.upperStat)
 		if err != nil {
@@ -687,7 +758,8 @@ var copyBufferPool = &sync.Pool{
 	},
 }
 
-func (local *localFS) WriteFile(ctx context.Context, expectedChangeKind ChangeKind, path string, upperStat *types.Stat, upperFS ReadFS) (CachedChange, error) {
+func (local *localFS) WriteFile(ctx context.Context, expectedChangeKind ChangeKind, path string, upperStat *types.Stat, upperFS ReadFS) (CachedChange, int64, error) {
+	var writtenBytes int64
 	appliedChange, err := local.changeCache.GetOrInitialize(ctx, local.cacheKey(path), func(ctx context.Context) (*ChangeWithStat, error) {
 		reader, err := upperFS.ReadFile(ctx, path)
 		if err != nil {
@@ -719,7 +791,8 @@ func (local *localFS) WriteFile(ctx context.Context, expectedChangeKind ChangeKi
 		h := newHashFromStat(upperStat)
 
 		copyBuf := copyBufferPool.Get().(*[]byte)
-		_, err = io.CopyBuffer(io.MultiWriter(f, h), reader, *copyBuf)
+		written, err := io.CopyBuffer(io.MultiWriter(f, h), reader, *copyBuf)
+		writtenBytes = written
 		copyBufferPool.Put(copyBuf)
 		if err != nil {
 			return nil, fmt.Errorf("failed to copy contents: %w", err)
@@ -747,14 +820,14 @@ func (local *localFS) WriteFile(ctx context.Context, expectedChangeKind ChangeKi
 		}, nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	if err := verifyExpectedChange(path, appliedChange.Result(), expectedChangeKind, upperStat); err != nil {
 		err = errors.Join(err, appliedChange.Release(ctx))
-		return nil, err
+		return nil, 0, err
 	}
-	return appliedChange, nil
+	return appliedChange, writtenBytes, nil
 }
 
 func (local *localFS) Walk(ctx context.Context, path string, walkFn fs.WalkDirFunc) error {
