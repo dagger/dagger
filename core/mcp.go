@@ -1119,21 +1119,7 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToo
 
 	var allResults []*ModelMessage
 
-	// 1. Execute all regular read-only (non-MCP) calls in parallel
-	if len(regularCalls) > 0 {
-		allResults = append(allResults, m.callBatchRegular(ctx, tools, regularCalls)...)
-	}
-
-	// 2. Execute all read-only MCP calls in parallel (safe across servers)
-	var readOnlyToolCalls []LLMToolCall
-	for _, calls := range readOnlyMCPCalls {
-		readOnlyToolCalls = append(readOnlyToolCalls, calls...)
-	}
-	if len(readOnlyToolCalls) > 0 {
-		allResults = append(allResults, m.callBatchRegular(ctx, tools, readOnlyToolCalls)...)
-	}
-
-	// 3. Execute destructive non-MCP calls sequentially (they modify Env/Changeset state)
+	// 1. Execute destructive non-MCP calls sequentially (they modify Env/Changeset state)
 	for _, call := range destructiveCalls {
 		result, isError := m.Call(ctx, tools, call)
 		allResults = append(allResults, &ModelMessage{
@@ -1144,10 +1130,24 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToo
 		})
 	}
 
-	// 4. Execute destructive MCP calls one server at a time to avoid workspace conflicts
+	// 2. Execute destructive MCP calls one server at a time to avoid workspace conflicts
 	for serverName, calls := range destructiveMCPCalls {
 		serverResults := m.callBatchMCPServer(ctx, tools, calls, serverName)
 		allResults = append(allResults, serverResults...)
+	}
+
+	// 3. Execute all regular read-only (non-MCP) calls in parallel
+	if len(regularCalls) > 0 {
+		allResults = append(allResults, m.callBatchRegular(ctx, tools, regularCalls)...)
+	}
+
+	// 4. Execute all read-only MCP calls in parallel (safe across servers)
+	var readOnlyToolCalls []LLMToolCall
+	for _, calls := range readOnlyMCPCalls {
+		readOnlyToolCalls = append(readOnlyToolCalls, calls...)
+	}
+	if len(readOnlyToolCalls) > 0 {
+		allResults = append(allResults, m.callBatchRegular(ctx, tools, readOnlyToolCalls)...)
 	}
 
 	return allResults
