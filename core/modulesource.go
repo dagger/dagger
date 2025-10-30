@@ -884,6 +884,108 @@ func (src *ModuleSource) LoadContextGit(
 	return inst, nil
 }
 
+func (src *ModuleSource) LoadContextWatcher(
+	ctx context.Context,
+	dag *dagql.Server,
+	path string,
+	filter CopyFilter,
+) (inst dagql.ObjectResult[*Watcher], err error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	switch src.Kind {
+	case ModuleSourceKindLocal:
+		localSourceClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get client metadata: %w", err)
+		}
+		localSourceCtx := engine.ContextWithClientMetadata(ctx, localSourceClientMetadata)
+
+		// Retrieve the absolute path to the context directory (.git or dagger.json)
+		// and the module root directory (dagger.json)
+		ctxPath := src.Local.ContextDirectoryPath
+		modPath := filepath.Join(ctxPath, src.SourceRootSubpath)
+
+		// If path is not absolute, it's relative to the module root directory.
+		// If path is absolute, it's relative to the context directory.
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(modPath, path)
+		} else {
+			path = filepath.Join(ctxPath, path)
+		}
+
+		// We just check if the path is relative to the context directory,
+		// if not, that means it's a path that target an outside directory
+		// which is not allowed.
+		relativePathToCtx, err := filepath.Rel(ctxPath, path)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get relative path to context: %w", err)
+		}
+
+		// If the relative path is outisde of the context directory, throw an error.
+		if strings.HasPrefix(relativePathToCtx, "..") {
+			return inst, fmt.Errorf("path %q is outside of context directory %q, path should be relative to the context directory", path, ctxPath)
+		}
+
+		args := []dagql.NamedInput{
+			{Name: "path", Value: dagql.String(path)},
+		}
+		if len(filter.Include) > 0 {
+			args = append(args, dagql.NamedInput{
+				Name:  "include",
+				Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(filter.Include...)),
+			})
+		}
+		if len(filter.Exclude) > 0 {
+			args = append(args, dagql.NamedInput{
+				Name:  "exclude",
+				Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(filter.Exclude...)),
+			})
+		}
+		if filter.Gitignore {
+			args = append(args, dagql.NamedInput{
+				Name:  "gitignore",
+				Value: dagql.NewBoolean(true),
+			})
+		}
+		err = dag.Select(localSourceCtx, dag.Root(), &inst,
+			dagql.Selector{
+				Field: "host",
+			},
+			dagql.Selector{
+				Field: "watcher",
+				Args:  args,
+			},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to select watcher: %w", err)
+		}
+
+	case ModuleSourceKindGit:
+		// TODO: git sources aren't mutable
+		fallthrough
+
+	case ModuleSourceKindDir:
+		// TODO: directory sources aren't mutable
+		fallthrough
+
+	default:
+		return inst, fmt.Errorf("unsupported module src kind: %q", src.Kind)
+	}
+
+	mainClientMetadata, err := query.NonModuleParentClientMetadata(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	if err := query.AddClientResourcesFromID(ctx, &resource.ID{ID: *inst.ID()}, mainClientMetadata.ClientID, false); err != nil {
+		return inst, fmt.Errorf("failed to add client resources from directory source: %w", err)
+	}
+
+	return inst, nil
+}
+
 type LocalModuleSource struct {
 	ContextDirectoryPath string
 }

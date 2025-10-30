@@ -1005,6 +1005,15 @@ func (fn *ModuleFunction) loadContextualArg(
 		}
 		return dagql.NewID[*File](file.ID()), nil
 
+	case "Watcher":
+		watcher, err := fn.mod.ContextSource.Value.Self().LoadContextWatcher(ctx, dag, arg.DefaultPath, CopyFilter{
+			Exclude: arg.Ignore,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("load contextual file %q: %w", arg.DefaultPath, err)
+		}
+		return dagql.NewID[*Watcher](watcher.ID()), nil
+
 	case "GitRepository", "GitRef":
 		var git dagql.ObjectResult[*GitRepository]
 

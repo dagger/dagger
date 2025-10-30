@@ -158,6 +158,8 @@ func (s *hostSchema) Install(srv *dagql.Server) {
 				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory`),
 			),
 
+		dagql.FuncWithCacheKey("watcher", s.watcher, dagql.CachePerClient),
+
 		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CacheAsRequested).
 			Doc(`Accesses a file on the host.`).
 			Args(
@@ -330,6 +332,15 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	}
 
 	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
+}
+
+type hostWatcherArgs struct {
+	Path string
+	core.CopyFilter
+}
+
+func (s *hostSchema) watcher(ctx context.Context, host *core.Host, args hostWatcherArgs) (*core.Watcher, error) {
+	return core.NewWatcher(ctx, args.Path, args.CopyFilter)
 }
 
 type hostSocketArgs struct {

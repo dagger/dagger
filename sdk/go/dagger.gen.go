@@ -294,6 +294,9 @@ type TypeDefID string
 // A Null Void is used as a placeholder for resolvers that do not return anything.
 type Void string
 
+// The `WatcherID` scalar type represents an identifier for an object of type Watcher.
+type WatcherID string
+
 // Key value object that represents a build argument.
 type BuildArg struct {
 	// The build argument name.
@@ -521,6 +524,38 @@ func (r *Address) Value(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// AddressWatcherOpts contains options for Address.Watcher
+type AddressWatcherOpts struct {
+	Exclude []string
+
+	Include []string
+
+	Gitignore bool
+}
+
+// Load a watcher from the address.
+func (r *Address) Watcher(opts ...AddressWatcherOpts) *Watcher {
+	q := r.query.Select("watcher")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		// `gitignore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Gitignore) {
+			q = q.Arg("gitignore", opts[i].Gitignore)
+		}
+	}
+
+	return &Watcher{
+		query: q,
+	}
+}
+
 type Binding struct {
 	query *querybuilder.Selection
 
@@ -729,6 +764,15 @@ func (r *Binding) AsString(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Retrieve the binding value, as type Watcher
+func (r *Binding) AsWatcher() *Watcher {
+	q := r.query.Select("asWatcher")
+
+	return &Watcher{
+		query: q,
+	}
 }
 
 // Returns the digest of the binding value
@@ -5293,6 +5337,30 @@ func (r *Env) WithStringOutput(name string, description string) *Env {
 	}
 }
 
+// Create or update a binding of type Watcher in the environment
+func (r *Env) WithWatcherInput(name string, value *Watcher, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withWatcherInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Watcher output to be assigned in the environment
+func (r *Env) WithWatcherOutput(name string, description string) *Env {
+	q := r.query.Select("withWatcherOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Returns a new environment with the provided workspace
 func (r *Env) WithWorkspace(workspace *Directory) *Env {
 	assertNotNil("workspace", workspace)
@@ -7508,6 +7576,38 @@ func (r *Host) UnixSocket(path string) *Socket {
 	q = q.Arg("path", path)
 
 	return &Socket{
+		query: q,
+	}
+}
+
+// HostWatcherOpts contains options for Host.Watcher
+type HostWatcherOpts struct {
+	Exclude []string
+
+	Include []string
+
+	Gitignore bool
+}
+
+func (r *Host) Watcher(path string, opts ...HostWatcherOpts) *Watcher {
+	q := r.query.Select("watcher")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		// `gitignore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Gitignore) {
+			q = q.Arg("gitignore", opts[i].Gitignore)
+		}
+	}
+	q = q.Arg("path", path)
+
+	return &Watcher{
 		query: q,
 	}
 }
@@ -10855,6 +10955,16 @@ func (r *Client) LoadTypeDefFromID(id TypeDefID) *TypeDef {
 	}
 }
 
+// Load a Watcher from its ID.
+func (r *Client) LoadWatcherFromID(id WatcherID) *Watcher {
+	q := r.query.Select("loadWatcherFromID")
+	q = q.Arg("id", id)
+
+	return &Watcher{
+		query: q,
+	}
+}
+
 // Create a new module.
 func (r *Client) Module() *Module {
 	q := r.query.Select("module")
@@ -12364,6 +12474,83 @@ func (r *TypeDef) WithScalar(name string, opts ...TypeDefWithScalarOpts) *TypeDe
 	q = q.Arg("name", name)
 
 	return &TypeDef{
+		query: q,
+	}
+}
+
+// A directory watcher.
+type Watcher struct {
+	query *querybuilder.Selection
+
+	id *WatcherID
+}
+type WithWatcherFunc func(r *Watcher) *Watcher
+
+// With calls the provided function with current Watcher.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Watcher) With(f WithWatcherFunc) *Watcher {
+	return f(r)
+}
+
+func (r *Watcher) WithGraphQLQuery(q *querybuilder.Selection) *Watcher {
+	return &Watcher{
+		query: q,
+	}
+}
+
+func (r *Watcher) AsDirectory() *Directory {
+	q := r.query.Select("asDirectory")
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// A unique identifier for this Watcher.
+func (r *Watcher) ID(ctx context.Context) (WatcherID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response WatcherID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Watcher) XXX_GraphQLType() string {
+	return "Watcher"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Watcher) XXX_GraphQLIDType() string {
+	return "WatcherID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Watcher) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Watcher) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+func (r *Watcher) Next() *Watcher {
+	q := r.query.Select("next")
+
+	return &Watcher{
 		query: q,
 	}
 }

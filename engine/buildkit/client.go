@@ -39,6 +39,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/session/fswatch"
 	"github.com/dagger/dagger/engine/session/git"
 	"github.com/dagger/dagger/engine/session/h2c"
 	"github.com/dagger/dagger/engine/session/pipe"
@@ -791,6 +792,22 @@ func (c *Client) OpenPipe(
 	}
 	// io.ReadWriter wrapper
 	return &pipe.PipeIO{GRPC: pipeIOClient}, nil
+}
+
+func (c *Client) Watcher(
+	ctx context.Context,
+) (fswatch.FSWatchClient, error) {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	caller, err := c.GetClientCaller(md.ClientID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client caller: %w", err)
+	}
+
+	client := fswatch.NewFSWatchClient(caller.Conn())
+	return client, nil
 }
 
 func (c *Client) WriteImage(

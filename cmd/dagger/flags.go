@@ -38,6 +38,8 @@ func GetCustomFlagValue(name string) DaggerValue {
 		return &directoryValue{}
 	case File:
 		return &fileValue{}
+	case Watcher:
+		return &watcherValue{}
 	case Secret:
 		return &secretValue{}
 	case Service:
@@ -306,6 +308,33 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 				Exclude: modArg.Ignore,
 			},
 		).Sync(ctx)
+}
+
+// watcherValue is a pflag.Value that builds a dagger.Watcher from a host path.
+type watcherValue struct {
+	address string
+}
+
+func (v *watcherValue) Type() string {
+	return Watcher
+}
+
+func (v *watcherValue) Set(s string) error {
+	v.address = s
+	return nil
+}
+
+func (v *watcherValue) String() string {
+	return v.address
+}
+
+func (v *watcherValue) Get(ctx context.Context, dag *dagger.Client, modSrc *dagger.ModuleSource, modArg *modFunctionArg) (any, error) {
+	return dag.Address(v.String()).
+		Watcher(
+			dagger.AddressWatcherOpts{
+				Exclude: modArg.Ignore,
+			},
+		), nil
 }
 
 // fileValue is a pflag.Value that builds a dagger.File from a host path.
