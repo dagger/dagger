@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/containerd/containerd/content"
-	contentlocal "github.com/containerd/containerd/content/local"
+	"github.com/containerd/containerd/v2/core/content"
+	contentlocal "github.com/containerd/containerd/v2/plugins/content/local"
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/client/ociindex"

@@ -15,13 +15,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/containerd/containerd/content"
-	localcontentstore "github.com/containerd/containerd/content/local"
-	"github.com/containerd/containerd/diff/apply"
-	"github.com/containerd/containerd/diff/walking"
-	ctdmetadata "github.com/containerd/containerd/metadata"
-	"github.com/containerd/containerd/remotes/docker"
-	ctdsnapshot "github.com/containerd/containerd/snapshots"
+	"github.com/containerd/containerd/v2/core/content"
+	"github.com/containerd/containerd/v2/core/diff/apply"
+	ctdmetadata "github.com/containerd/containerd/v2/core/metadata"
+	"github.com/containerd/containerd/v2/core/remotes/docker"
+	ctdsnapshot "github.com/containerd/containerd/v2/core/snapshots"
+	localcontentstore "github.com/containerd/containerd/v2/plugins/content/local"
+	"github.com/containerd/containerd/v2/plugins/diff/walking"
 	"github.com/containerd/go-runc"
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/dagql"
@@ -326,7 +326,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, err
 	}
 
-	srv.snapshotter, srv.snapshotterName, err = newSnapshotter(srv.snapshotterRootDir, ociCfg, srv.bkSessionManager, srv.registryHosts)
+	srv.snapshotter, srv.snapshotterName, err = newSnapshotter(srv.snapshotterRootDir, ociCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create snapshotter: %w", err)
 	}

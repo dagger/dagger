@@ -8,7 +8,7 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/containerd/containerd/leases"
+	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	"github.com/dagger/dagger/internal/buildkit/cache/contenthash"

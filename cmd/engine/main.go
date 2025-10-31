@@ -19,8 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/containerd/containerd/pkg/seed" //nolint:staticcheck // SA1019 deprecated
-	"github.com/containerd/containerd/sys"
+	"github.com/containerd/containerd/v2/pkg/sys"
 	"github.com/containerd/platforms"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
 	"github.com/dagger/dagger/engine"
@@ -57,8 +56,6 @@ func init() {
 	apicaps.ExportedProduct = "dagger-engine"
 	stack.SetVersionInfo(version.Version, version.Revision)
 
-	//nolint:staticcheck // SA1019 deprecated
-	seed.WithTimeAndRand()
 	if reexec.Init() {
 		os.Exit(0)
 	}

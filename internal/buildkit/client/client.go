@@ -10,7 +10,7 @@ import (
 	"time"
 
 	contentapi "github.com/containerd/containerd/api/services/content/v1"
-	"github.com/containerd/containerd/defaults"
+	"github.com/containerd/containerd/v2/defaults"
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
 	"github.com/dagger/dagger/internal/buildkit/client/connhelper"
 	"github.com/dagger/dagger/internal/buildkit/session"

@@ -3,11 +3,11 @@ package containerd
 import (
 	"context"
 
-	"github.com/containerd/containerd/mount"
-	"github.com/containerd/containerd/namespaces"
-	"github.com/containerd/containerd/snapshots"
-	"github.com/docker/docker/pkg/idtools"
+	"github.com/containerd/containerd/v2/core/mount"
+	"github.com/containerd/containerd/v2/core/snapshots"
+	"github.com/containerd/containerd/v2/pkg/namespaces"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
+	"github.com/docker/docker/pkg/idtools"
 	"github.com/pkg/errors"
 )
 

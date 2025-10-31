@@ -4,8 +4,8 @@ import (
 	"context"
 	"strconv"
 
-	"github.com/containerd/containerd/leases"
-	"github.com/containerd/containerd/snapshots"
+	"github.com/containerd/containerd/v2/core/leases"
+	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"

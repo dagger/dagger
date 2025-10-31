@@ -5,9 +5,9 @@ import (
 	"io"
 	"time"
 
-	"github.com/containerd/containerd/content"
-	"github.com/containerd/containerd/reference"
-	"github.com/containerd/containerd/remotes"
+	"github.com/containerd/containerd/v2/core/content"
+	"github.com/containerd/containerd/v2/core/remotes"
+	"github.com/containerd/containerd/v2/pkg/reference"
 	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"
 	"github.com/dagger/dagger/internal/buildkit/session"
 	sessioncontent "github.com/dagger/dagger/internal/buildkit/session/content"

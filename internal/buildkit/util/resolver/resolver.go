@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/containerd/containerd/remotes/docker"
+	"github.com/containerd/containerd/v2/core/remotes/docker"
 	"github.com/pkg/errors"
 
 	"github.com/dagger/dagger/internal/buildkit/util/resolver/config"

@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/containerd/containerd/remotes/docker"
-	"github.com/containerd/containerd/remotes/docker/auth"
-	remoteserrors "github.com/containerd/containerd/remotes/errors"
+	"github.com/containerd/containerd/v2/core/remotes/docker"
+	"github.com/containerd/containerd/v2/core/remotes/docker/auth"
+	remoteserrors "github.com/containerd/containerd/v2/core/remotes/errors"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/internal/buildkit/session"
 	sessionauth "github.com/dagger/dagger/internal/buildkit/session/auth"

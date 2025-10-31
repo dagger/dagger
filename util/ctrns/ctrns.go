@@ -3,7 +3,7 @@
 package ctrns
 
 import (
-	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/v2/core/content"
 	containerdsnapshotter "github.com/dagger/dagger/internal/buildkit/snapshot/containerd"
 )
 

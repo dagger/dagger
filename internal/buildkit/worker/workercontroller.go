@@ -1,10 +1,10 @@
 package worker
 
 import (
-	"github.com/containerd/containerd/filters"
-	"github.com/hashicorp/go-multierror"
+	"github.com/containerd/containerd/v2/pkg/filters"
 	"github.com/dagger/dagger/internal/buildkit/cache"
 	"github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/hashicorp/go-multierror"
 	"github.com/pkg/errors"
 )
 

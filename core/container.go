@@ -16,9 +16,9 @@ import (
 	"sync"
 
 	"dagger.io/dagger/telemetry"
-	"github.com/containerd/containerd/content"
-	"github.com/containerd/containerd/images"
-	"github.com/containerd/containerd/pkg/transfer/archive"
+	"github.com/containerd/containerd/v2/core/content"
+	"github.com/containerd/containerd/v2/core/images"
+	"github.com/containerd/containerd/v2/core/transfer/archive"
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/client/llb/sourceresolver"

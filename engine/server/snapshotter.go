@@ -1,40 +1,27 @@
 package server
 
 import (
-	"context"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	snapshotsapi "github.com/containerd/containerd/api/services/snapshots/v1"
-	"github.com/containerd/containerd/defaults"
-	"github.com/containerd/containerd/pkg/dialer"
-	"github.com/containerd/containerd/reference"
-	"github.com/containerd/containerd/remotes/docker"
-	ctdsnapshot "github.com/containerd/containerd/snapshots"
-	"github.com/containerd/containerd/snapshots/native"
-	"github.com/containerd/containerd/snapshots/overlay"
-	"github.com/containerd/containerd/snapshots/overlay/overlayutils"
-	snproxy "github.com/containerd/containerd/snapshots/proxy"
-	fuseoverlayfs "github.com/containerd/fuse-overlayfs-snapshotter"
-	sgzfs "github.com/containerd/stargz-snapshotter/fs"
-	sgzconf "github.com/containerd/stargz-snapshotter/fs/config"
-	sgzlayer "github.com/containerd/stargz-snapshotter/fs/layer"
-	sgzsource "github.com/containerd/stargz-snapshotter/fs/source"
-	remotesn "github.com/containerd/stargz-snapshotter/snapshot"
+	ctdsnapshot "github.com/containerd/containerd/v2/core/snapshots"
+	snproxy "github.com/containerd/containerd/v2/core/snapshots/proxy"
+	"github.com/containerd/containerd/v2/defaults"
+	"github.com/containerd/containerd/v2/pkg/dialer"
+	"github.com/containerd/containerd/v2/plugins/snapshots/native"
+	"github.com/containerd/containerd/v2/plugins/snapshots/overlay"
+	"github.com/containerd/containerd/v2/plugins/snapshots/overlay/overlayutils"
+	fuseoverlayfs "github.com/containerd/fuse-overlayfs-snapshotter/v2"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
-	"github.com/dagger/dagger/internal/buildkit/session"
-	"github.com/dagger/dagger/internal/buildkit/util/resolver"
-	"github.com/pelletier/go-toml"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-func newSnapshotter(rootDir string, cfg bkconfig.OCIConfig, sm *session.Manager, hosts docker.RegistryHosts) (ctdsnapshot.Snapshotter, string, error) {
+func newSnapshotter(rootDir string, cfg bkconfig.OCIConfig) (ctdsnapshot.Snapshotter, string, error) {
 	var (
 		name    = cfg.Snapshotter
 		address = cfg.ProxySnapshotterPath
@@ -87,43 +74,6 @@ func newSnapshotter(rootDir string, cfg bkconfig.OCIConfig, sm *session.Manager,
 	case "fuse-overlayfs":
 		// no Opt (AsynchronousRemove is untested for fuse-overlayfs)
 		sn, snErr = fuseoverlayfs.NewSnapshotter(rootDir)
-	case "stargz":
-		sgzCfg := sgzconf.Config{}
-		if cfg.StargzSnapshotterConfig != nil {
-			// In order to keep the stargz Config type (and dependency) out of
-			// the main BuildKit config, the main config Unmarshalls it into a
-			// generic map[string]interface{}. Here we convert it back into TOML
-			// tree, and unmarshal it to the actual type.
-			t, err := toml.TreeFromMap(cfg.StargzSnapshotterConfig)
-			if err != nil {
-				return nil, "", fmt.Errorf("failed to parse stargz config: %w", err)
-			}
-			err = t.Unmarshal(&sgzCfg)
-			if err != nil {
-				return nil, "", fmt.Errorf("failed to unmarshal stargz config: %w", err)
-			}
-		}
-		userxattr, err := overlayutils.NeedsUserXAttr(rootDir)
-		if err != nil {
-			logrus.WithError(err).Warnf("cannot detect whether \"userxattr\" option needs to be used, assuming to be %v", userxattr)
-		}
-		opq := sgzlayer.OverlayOpaqueTrusted
-		if userxattr {
-			opq = sgzlayer.OverlayOpaqueUser
-		}
-		fs, err := sgzfs.NewFilesystem(filepath.Join(rootDir, "stargz"),
-			sgzCfg,
-			// Source info based on the buildkit's registry config and session
-			sgzfs.WithGetSources(sourceWithSession(hosts, sm)),
-			sgzfs.WithMetricsLogLevel(logrus.DebugLevel),
-			sgzfs.WithOverlayOpaqueType(opq),
-		)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to create stargz filesystem: %w", err)
-		}
-		sn, snErr = remotesn.NewSnapshotter(context.Background(),
-			filepath.Join(rootDir, "snapshotter"),
-			fs, remotesn.AsynchronousRemove, remotesn.NoRestore)
 	default:
 		return nil, "", fmt.Errorf("unknown snapshotter %q", name)
 	}
@@ -132,75 +82,4 @@ func newSnapshotter(rootDir string, cfg bkconfig.OCIConfig, sm *session.Manager,
 	}
 
 	return sn, name, nil
-}
-
-const (
-	// targetRefLabel is a label which contains image reference.
-	targetRefLabel = "containerd.io/snapshot/remote/stargz.reference"
-
-	// targetDigestLabel is a label which contains layer digest.
-	targetDigestLabel = "containerd.io/snapshot/remote/stargz.digest"
-
-	// targetImageLayersLabel is a label which contains layer digests contained in
-	// the target image.
-	targetImageLayersLabel = "containerd.io/snapshot/remote/stargz.layers"
-
-	// targetSessionLabel is a label which contains session IDs usable for
-	// authenticating the target snapshot.
-	targetSessionLabel = "containerd.io/snapshot/remote/stargz.session"
-)
-
-// sourceWithSession returns a callback which implements a converter from labels to the
-// typed snapshot source info. This callback is called every time the snapshotter resolves a
-// snapshot. This callback returns configuration that is based on buildkitd's registry config
-// and utilizes the session-based authorizer.
-func sourceWithSession(hosts docker.RegistryHosts, sm *session.Manager) sgzsource.GetSources {
-	return func(labels map[string]string) (src []sgzsource.Source, err error) {
-		// labels contains multiple source candidates with unique IDs appended on each call
-		// to the snapshotter API. So, first, get all these IDs
-		var ids []string
-		for k := range labels {
-			if strings.HasPrefix(k, targetRefLabel+".") {
-				ids = append(ids, strings.TrimPrefix(k, targetRefLabel+"."))
-			}
-		}
-
-		// Parse all labels
-		for _, id := range ids {
-			// Parse session labels
-			ref, ok := labels[targetRefLabel+"."+id]
-			if !ok {
-				continue
-			}
-			named, err := reference.Parse(ref)
-			if err != nil {
-				continue
-			}
-			var sids []string
-			for i := 0; ; i++ {
-				sidKey := targetSessionLabel + "." + fmt.Sprintf("%d", i) + "." + id
-				sid, ok := labels[sidKey]
-				if !ok {
-					break
-				}
-				sids = append(sids, sid)
-			}
-
-			// Get source information based on labels and RegistryHosts containing
-			// session-based authorizer.
-			parse := sgzsource.FromDefaultLabels(func(ref reference.Spec) ([]docker.RegistryHost, error) {
-				return resolver.DefaultPool.GetResolver(hosts, named.String(), "pull", sm, session.NewGroup(sids...)).
-					HostsFunc(ref.Hostname())
-			})
-			if s, err := parse(map[string]string{
-				targetRefLabel:         ref,
-				targetDigestLabel:      labels[targetDigestLabel+"."+id],
-				targetImageLayersLabel: labels[targetImageLayersLabel+"."+id],
-			}); err == nil {
-				src = append(src, s...)
-			}
-		}
-
-		return src, nil
-	}
 }

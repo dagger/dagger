@@ -7,8 +7,8 @@ import (
 	"io"
 	"net"
 
-	"github.com/containerd/containerd/content"
-	"github.com/containerd/containerd/content/local"
+	"github.com/containerd/containerd/v2/core/content"
+	"github.com/containerd/containerd/v2/plugins/content/local"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	sessioncontent "github.com/dagger/dagger/internal/buildkit/session/content"

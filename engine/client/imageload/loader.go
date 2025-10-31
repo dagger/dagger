@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/containerd/containerd/content"
-	"github.com/containerd/containerd/images"
-	"github.com/containerd/containerd/leases"
+	"github.com/containerd/containerd/v2/core/content"
+	"github.com/containerd/containerd/v2/core/images"
+	"github.com/containerd/containerd/v2/core/leases"
 )
 
 type TarballWriter func(ctx context.Context, name string, tarball io.Reader) error

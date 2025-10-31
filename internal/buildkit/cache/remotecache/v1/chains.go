@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/solver"
 	digest "github.com/opencontainers/go-digest"

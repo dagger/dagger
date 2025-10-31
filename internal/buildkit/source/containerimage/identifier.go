@@ -1,7 +1,7 @@
 package containerimage
 
 import (
-	"github.com/containerd/containerd/reference"
+	"github.com/containerd/containerd/v2/pkg/reference"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/solver/llbsolver/provenance"
 	provenancetypes "github.com/dagger/dagger/internal/buildkit/solver/llbsolver/provenance/types"
