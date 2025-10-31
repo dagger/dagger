@@ -429,7 +429,7 @@ func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (
 
 	val, err := dag.Load(ctx, &idp)
 	if err != nil {
-		return nil, fmt.Errorf("CoreModObject.load %s: %w", idp.Display(), err)
+		return nil, fmt.Errorf("CoreModObject.load %s: %w", idp.DisplaySelf(), err)
 	}
 	return val, nil
 }
