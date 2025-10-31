@@ -940,7 +940,7 @@ func (src *ModuleSource) LoadContextGit(
 
 	// bit harder, this is actually a local directory
 	dir, err := src.LoadContextDir(ctx, dag, "/", CopyFilter{
-		Include: []string{".git"},
+		Gitignore: true,
 	})
 	if err != nil {
 		return inst, fmt.Errorf("failed to load contextual git: %w", err)
