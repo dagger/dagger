@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/internal/buildkit/cache/remotecache"
 	"github.com/dagger/dagger/internal/buildkit/session"
 	sessioncontent "github.com/dagger/dagger/internal/buildkit/session/content"

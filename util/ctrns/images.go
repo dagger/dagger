@@ -3,8 +3,8 @@ package ctrns
 import (
 	"context"
 
-	"github.com/containerd/containerd/images"
-	"github.com/containerd/containerd/namespaces"
+	"github.com/containerd/containerd/v2/core/images"
+	"github.com/containerd/containerd/v2/pkg/namespaces"
 )
 
 func ImageStoreWithNamespace(store images.Store, ns string) images.Store {

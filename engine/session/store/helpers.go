@@ -5,9 +5,9 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/containerd/containerd/api/types"
-	"github.com/containerd/containerd/images"
-	"github.com/containerd/containerd/leases"
-	"github.com/containerd/containerd/protobuf"
+	"github.com/containerd/containerd/v2/core/images"
+	"github.com/containerd/containerd/v2/core/leases"
+	"github.com/containerd/containerd/v2/pkg/protobuf"
 
 	imagesapi "github.com/containerd/containerd/api/services/images/v1"
 	leasesapi "github.com/containerd/containerd/api/services/leases/v1"

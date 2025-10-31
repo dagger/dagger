@@ -1,7 +1,7 @@
 package ctrns
 
 import (
-	"github.com/containerd/containerd/leases"
+	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 )
 

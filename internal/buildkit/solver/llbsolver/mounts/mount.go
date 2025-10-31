@@ -11,8 +11,7 @@ import (
 
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 
-	"github.com/containerd/containerd/mount"
-	"github.com/docker/docker/pkg/idtools"
+	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/dagger/dagger/internal/buildkit/cache"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -22,6 +21,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/grpcerrors"
+	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/locker"
 	"github.com/moby/sys/userns"
 	"github.com/pkg/errors"

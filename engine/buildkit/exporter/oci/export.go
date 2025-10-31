@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	archiveexporter "github.com/containerd/containerd/images/archive"
-	"github.com/containerd/containerd/leases"
+	archiveexporter "github.com/containerd/containerd/v2/core/images/archive"
+	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/dagger/dagger/internal/buildkit/cache"
 	cacheconfig "github.com/dagger/dagger/internal/buildkit/cache/config"
 	"github.com/dagger/dagger/internal/buildkit/client"

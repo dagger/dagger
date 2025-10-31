@@ -5,8 +5,8 @@ import (
 	"os"
 
 	"dagger.io/dagger/telemetry"
-	"github.com/containerd/containerd"
-	"github.com/containerd/containerd/defaults"
+	containerd "github.com/containerd/containerd/v2/client"
+	"github.com/containerd/containerd/v2/defaults"
 	"github.com/dagger/dagger/util/ctrns"
 	"go.opentelemetry.io/otel"
 )

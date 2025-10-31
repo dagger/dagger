@@ -6,10 +6,10 @@ import (
 	"net"
 	"syscall"
 
-	"github.com/containerd/containerd/mount"
-	"github.com/docker/docker/pkg/idtools"
+	"github.com/containerd/containerd/v2/core/mount"
 	resourcestypes "github.com/dagger/dagger/internal/buildkit/executor/resources/types"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/docker/docker/pkg/idtools"
 )
 
 type Meta struct {

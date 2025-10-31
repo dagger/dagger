@@ -8,11 +8,10 @@ import (
 	contentapi "github.com/containerd/containerd/api/services/content/v1"
 	imagesapi "github.com/containerd/containerd/api/services/images/v1"
 	leasesapi "github.com/containerd/containerd/api/services/leases/v1"
-	"github.com/containerd/containerd/images"
-	"github.com/containerd/containerd/leases"
-	"github.com/containerd/containerd/pkg/epoch"
-	ptypes "github.com/containerd/containerd/protobuf/types"
-	"github.com/containerd/containerd/services/content/contentserver"
+	"github.com/containerd/containerd/v2/core/images"
+	"github.com/containerd/containerd/v2/core/leases"
+	"github.com/containerd/containerd/v2/pkg/epoch"
+	"github.com/containerd/containerd/v2/plugins/services/content/contentserver"
 	"github.com/dagger/dagger/engine/client/imageload"
 	"github.com/dagger/dagger/internal/buildkit/session"
 	grpc "google.golang.org/grpc"
@@ -20,7 +19,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/containerd/containerd/errdefs"
+	"github.com/containerd/errdefs/pkg/errgrpc"
 )
 
 func NewImageLoaderAttachable(loader *imageload.Loader) (session.Attachable, error) {
@@ -85,7 +84,7 @@ var _ imagesapi.ImagesServer = &imagesServer{}
 func (l *imagesServer) Get(ctx context.Context, req *imagesapi.GetImageRequest) (*imagesapi.GetImageResponse, error) {
 	image, err := l.store.Get(ctx, req.Name)
 	if err != nil {
-		return nil, errdefs.ToGRPC(err)
+		return nil, errgrpc.ToGRPC(err)
 	}
 
 	imagepb := imageToProto(&image)
@@ -97,7 +96,7 @@ func (l *imagesServer) Get(ctx context.Context, req *imagesapi.GetImageRequest) 
 func (l *imagesServer) List(ctx context.Context, req *imagesapi.ListImagesRequest) (*imagesapi.ListImagesResponse, error) {
 	images, err := l.store.List(ctx, req.Filters...)
 	if err != nil {
-		return nil, errdefs.ToGRPC(err)
+		return nil, errgrpc.ToGRPC(err)
 	}
 
 	return &imagesapi.ListImagesResponse{
@@ -118,7 +117,7 @@ func (l *imagesServer) Create(ctx context.Context, req *imagesapi.CreateImageReq
 	image := imageFromProto(req.Image)
 	created, err := l.store.Create(ctx, image)
 	if err != nil {
-		return nil, errdefs.ToGRPC(err)
+		return nil, errgrpc.ToGRPC(err)
 	}
 
 	return &imagesapi.CreateImageResponse{
@@ -144,7 +143,7 @@ func (l *imagesServer) Update(ctx context.Context, req *imagesapi.UpdateImageReq
 	image := imageFromProto(req.Image)
 	updated, err := l.store.Update(ctx, image, fieldpaths...)
 	if err != nil {
-		return nil, errdefs.ToGRPC(err)
+		return nil, errgrpc.ToGRPC(err)
 	}
 
 	return &imagesapi.UpdateImageResponse{
@@ -152,12 +151,12 @@ func (l *imagesServer) Update(ctx context.Context, req *imagesapi.UpdateImageReq
 	}, nil
 }
 
-func (l *imagesServer) Delete(ctx context.Context, req *imagesapi.DeleteImageRequest) (*ptypes.Empty, error) {
+func (l *imagesServer) Delete(ctx context.Context, req *imagesapi.DeleteImageRequest) (*emptypb.Empty, error) {
 	if err := l.store.Delete(ctx, req.Name); err != nil {
-		return nil, errdefs.ToGRPC(err)
+		return nil, errgrpc.ToGRPC(err)
 	}
 
-	return &ptypes.Empty{}, nil
+	return &emptypb.Empty{}, nil
 }
 
 type leasesServer struct {

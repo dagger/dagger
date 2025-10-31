@@ -19,8 +19,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/containerd/containerd/mount"
-	ctdoci "github.com/containerd/containerd/oci"
+	"github.com/containerd/containerd/v2/core/mount"
+	ctdoci "github.com/containerd/containerd/v2/pkg/oci"
 	"github.com/containerd/continuity/fs"
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/engine/buildkit/resources"

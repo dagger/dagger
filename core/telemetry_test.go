@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"

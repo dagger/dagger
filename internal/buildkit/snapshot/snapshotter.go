@@ -6,8 +6,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/containerd/containerd/mount"
-	"github.com/containerd/containerd/snapshots"
+	"github.com/containerd/containerd/v2/core/mount"
+	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/sys/userns"

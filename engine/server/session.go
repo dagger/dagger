@@ -16,7 +16,7 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/Khan/genqlient/graphql"
-	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/internal/buildkit/cache/remotecache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
