@@ -18,7 +18,7 @@ type Remote struct {
 }
 
 type Ref struct {
-	// Name is the fully resolved ref name, e.g. refs/heads/main or refs/tags/v1.0.0 or a commit SHA
+	// Name is the fully resolved ref name, e.g. refs/heads/main or refs/tags/v1.0.0
 	Name string
 
 	// SHA is the commit SHA the ref points to
@@ -168,10 +168,11 @@ func (remote *Remote) Get(name string) (result *Ref) {
 // Lookup looks up a ref by name, simulating git-checkout semantics.
 // It handles full refs, partial refs, commits, symrefs, HEAD resolution, etc.
 func (remote *Remote) Lookup(target string) (result *Ref, _ error) {
-	isHead := target == "HEAD"
-	if isHead && remote.Head != nil && remote.Head.Name != "" {
-		// resolve HEAD to a specific ref
-		target = remote.Head.Name
+	if target == "HEAD" && remote.Head != nil {
+		if remote.Head.SHA != "" {
+			return remote.Head, nil // use fully resolved HEAD
+		}
+		target = remote.Head.Name // resolve HEAD to its target
 	}
 
 	if IsCommitSHA(target) {
@@ -221,10 +222,6 @@ func (remote *Remote) Lookup(target string) (result *Ref, _ error) {
 	// resolve symrefs to get the right ref result
 	if ref, ok := remote.Symrefs[match.Name]; ok {
 		match.Name = ref
-	}
-
-	if isHead && remote.Head != nil && remote.Head.SHA != "" {
-		match.SHA = remote.Head.SHA
 	}
 
 	return match, nil
