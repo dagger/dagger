@@ -97,6 +97,7 @@ func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, e
 	}
 	objChecksCache := map[string][]*Check{}
 	group := &CheckGroup{Module: mod}
+	// 1. Walk main module for checks
 	for _, check := range mod.walkObjectChecks(ctx, mainObj, objChecksCache) {
 		match, err := check.Match(include)
 		if err != nil {
@@ -104,6 +105,27 @@ func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, e
 		}
 		if match {
 			group.Checks = append(group.Checks, check)
+		}
+	}
+	// 2. Walk toolchain modules for checks
+	for _, dep := range mod.Deps.Mods {
+		if tcMod, ok := dep.(*Module); ok && tcMod.IsToolchain {
+			tcMainObj, ok := tcMod.MainObject()
+			if !ok {
+				continue // skip toolchains without a main object
+			}
+			// Walk the toolchain module's checks
+			for _, check := range tcMod.walkObjectChecks(ctx, tcMainObj, objChecksCache) {
+				// Prepend the toolchain name to the check path
+				check.Path = append([]string{gqlFieldName(tcMod.NameField)}, check.Path...)
+				match, err := check.Match(include)
+				if err != nil {
+					return nil, err
+				}
+				if match {
+					group.Checks = append(group.Checks, check)
+				}
+			}
 		}
 	}
 	return group, nil
