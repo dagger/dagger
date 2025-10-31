@@ -20,6 +20,7 @@ import io.dagger.client.ModuleID;
 import io.dagger.client.TypeDef;
 import io.dagger.client.exception.DaggerExecException;
 import io.dagger.client.exception.DaggerQueryException;
+import io.dagger.client.telemetry.Telemetry;
 import io.dagger.module.annotation.Default;
 import io.dagger.module.annotation.DefaultPath;
 import io.dagger.module.annotation.Enum;
@@ -505,8 +506,11 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                               .addException(Exception.class)
                               .returns(void.class)
                               .addParameter(String[].class, "args")
-                              .beginControlFlow("try")
-                              .addStatement("new Entrypoint().dispatch()")
+                              .beginControlFlow(
+                                  "try ($T telemetry = new $T())", Telemetry.class, Telemetry.class)
+                              .addStatement(
+                                  "new Entrypoint().dispatch($T.dag().currentFunctionCall())",
+                                  Dagger.class)
                               .nextControlFlow("finally")
                               .addStatement("$T.dag().close()", Dagger.class)
                               .endControlFlow()
@@ -514,12 +518,9 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                       .addMethod(
                           MethodSpec.methodBuilder("dispatch")
                               .addModifiers(Modifier.PRIVATE)
-                              .returns(void.class)
+                              .returns(Void.class)
+                              .addParameter(FunctionCall.class, "fnCall")
                               .addException(Exception.class)
-                              .addStatement(
-                                  "$T fnCall = $T.dag().currentFunctionCall()",
-                                  FunctionCall.class,
-                                  Dagger.class)
                               .beginControlFlow("try")
                               .addStatement("$T parentName = fnCall.parentName()", String.class)
                               .addStatement("$T fnName = fnCall.name()", String.class)
@@ -547,6 +548,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                                   "result = invoke(parentJson, parentName, fnName, inputArgs)")
                               .endControlFlow()
                               .addStatement("fnCall.returnValue(result)")
+                              .addStatement("return null")
                               .nextControlFlow("catch ($T e)", InvocationTargetException.class)
                               .addStatement(
                                   "fnCall.returnError($T.dag().error(e.getTargetException().getMessage()))",
