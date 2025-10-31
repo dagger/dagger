@@ -35,6 +35,7 @@ dagger [options] [subcommand | file...]
 ### SEE ALSO
 
 * [dagger call](#dagger-call)	 - Call one or more functions, interconnected into a pipeline
+* [dagger checks](#dagger-checks)	 - Load and execute checks
 * [dagger config](#dagger-config)	 - Get or set module configuration
 * [dagger core](#dagger-core)	 - Call a core function
 * [dagger develop](#dagger-develop)	 - Prepare a local module for development
@@ -66,6 +67,54 @@ dagger call [options]
   -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
   -M, --no-mod              Don't automatically load a module (mutually exclusive with --mod)
   -o, --output string       Save the result to a local file or directory
+```
+
+### Options inherited from parent commands
+
+```
+  -y, --auto-apply                   Automatically apply changes when a changeset is returned
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty, dots) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - A tool to run composable workflows in containers
+
+## dagger checks
+
+Load and execute checks
+
+### Synopsis
+
+Load and execute checks using the Checks API.
+
+Run all checks and print results, or list available checks.
+
+Examples:
+  dagger checks                    # Run all checks
+  dagger checks -l                 # List all checks without running
+  dagger checks pattern1 pattern2  # Run checks matching patterns
+
+
+```
+dagger checks [options] [pattern...]
+```
+
+### Options
+
+```
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --exclude strings     Exclude checks matching the specified patterns
+  -l, --list                List checks without running them
+  -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
 ```
 
 ### Options inherited from parent commands

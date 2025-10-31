@@ -70,6 +70,12 @@ type Binding {
   """Retrieve the binding value, as type Changeset"""
   asChangeset: Changeset!
 
+  """Retrieve the binding value, as type Check"""
+  asCheck: Check!
+
+  """Retrieve the binding value, as type CheckGroup"""
+  asCheckGroup: CheckGroup!
+
   """Retrieve the binding value, as type Cloud"""
   asCloud: Cloud!
 
@@ -229,6 +235,62 @@ type Changeset {
 The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
 """
 scalar ChangesetID
+
+type Check {
+  """Whether the check completed"""
+  completed: Boolean!
+
+  """The description of the check"""
+  description: String!
+
+  """A unique identifier for this Check."""
+  id: CheckID!
+
+  """A message emitted when running the check"""
+  message: String!
+
+  """Return the fully qualified name of the check"""
+  name: String!
+
+  """Whether the check passed"""
+  passed: Boolean!
+
+  """The path of the check within its module"""
+  path: [String!]!
+
+  """An emoji representing the result of the check"""
+  resultEmoji: String!
+}
+
+type CheckGroup {
+  """A unique identifier for this CheckGroup."""
+  id: CheckGroupID!
+
+  """Return a list of individual checks and their details"""
+  list: [Check!]!
+
+  """Generate a markdown report"""
+  report: File!
+
+  """Execute all selected checks"""
+  run: CheckGroup!
+}
+
+"""
+The `CheckGroupID` scalar type represents an identifier for an object of type CheckGroup.
+"""
+scalar CheckGroupID
+
+"""
+The `CheckID` scalar type represents an identifier for an object of type Check.
+"""
+scalar CheckID
+
+"""The result of a check."""
+enum CheckStatus {
+  COMPLETED
+  SKIPPED
+}
 
 """Dagger Cloud configuration and state"""
 type Cloud {
@@ -2125,6 +2187,48 @@ type Env {
     description: String!
   ): Env!
 
+  """Create or update a binding of type CheckGroup in the environment"""
+  withCheckGroupInput(
+    """The name of the binding"""
+    name: String!
+
+    """The CheckGroup value to assign to the binding"""
+    value: CheckGroupID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired CheckGroup output to be assigned in the environment"""
+  withCheckGroupOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type Check in the environment"""
+  withCheckInput(
+    """The name of the binding"""
+    name: String!
+
+    """The Check value to assign to the binding"""
+    value: CheckID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired Check output to be assigned in the environment"""
+  withCheckOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Create or update a binding of type Cloud in the environment"""
   withCloudInput(
     """The name of the binding"""
@@ -3601,6 +3705,12 @@ scalar ListTypeDefID
 
 """A Dagger module."""
 type Module {
+  """Return all checks defined by the module"""
+  checks(
+    """Only include checks matching the specified patterns"""
+    include: [String!]
+  ): CheckGroup!
+
   """The dependencies of the module."""
   dependencies: [Module!]!
 
@@ -4280,6 +4390,12 @@ type Query {
 
   """Load a Changeset from its ID."""
   loadChangesetFromID(id: ChangesetID!): Changeset!
+
+  """Load a Check from its ID."""
+  loadCheckFromID(id: CheckID!): Check!
+
+  """Load a CheckGroup from its ID."""
+  loadCheckGroupFromID(id: CheckGroupID!): CheckGroup!
 
   """Load a Cloud from its ID."""
   loadCloudFromID(id: CloudID!): Cloud!

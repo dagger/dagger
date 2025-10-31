@@ -146,6 +146,74 @@ impl ChangesetId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct CheckGroupId(pub String);
+impl From<&str> for CheckGroupId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for CheckGroupId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<CheckGroupId> for CheckGroup {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<CheckGroupId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<CheckGroupId> for CheckGroupId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<CheckGroupId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<CheckGroupId, DaggerError>(self) })
+    }
+}
+impl CheckGroupId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct CheckId(pub String);
+impl From<&str> for CheckId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for CheckId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<CheckId> for Check {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<CheckId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<CheckId> for CheckId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<CheckId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<CheckId, DaggerError>(self) })
+    }
+}
+impl CheckId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct CloudId(pub String);
 impl From<&str> for CloudId {
     fn from(value: &str) -> Self {
@@ -2025,6 +2093,24 @@ impl Binding {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Retrieve the binding value, as type Check
+    pub fn as_check(&self) -> Check {
+        let query = self.selection.select("asCheck");
+        Check {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type CheckGroup
+    pub fn as_check_group(&self) -> CheckGroup {
+        let query = self.selection.select("asCheckGroup");
+        CheckGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieve the binding value, as type Cloud
     pub fn as_cloud(&self) -> Cloud {
         let query = self.selection.select("asCloud");
@@ -2304,6 +2390,94 @@ impl Changeset {
     pub async fn sync(&self) -> Result<ChangesetId, DaggerError> {
         let query = self.selection.select("sync");
         query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
+pub struct Check {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl Check {
+    /// Whether the check completed
+    pub async fn completed(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("completed");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The description of the check
+    pub async fn description(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("description");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this Check.
+    pub async fn id(&self) -> Result<CheckId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A message emitted when running the check
+    pub async fn message(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("message");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Return the fully qualified name of the check
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Whether the check passed
+    pub async fn passed(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("passed");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The path of the check within its module
+    pub async fn path(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("path");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// An emoji representing the result of the check
+    pub async fn result_emoji(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("resultEmoji");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
+pub struct CheckGroup {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl CheckGroup {
+    /// A unique identifier for this CheckGroup.
+    pub async fn id(&self) -> Result<CheckGroupId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Return a list of individual checks and their details
+    pub fn list(&self) -> Vec<Check> {
+        let query = self.selection.select("list");
+        vec![Check {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }]
+    }
+    /// Generate a markdown report
+    pub fn report(&self) -> File {
+        let query = self.selection.select("report");
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Execute all selected checks
+    pub fn run(&self) -> CheckGroup {
+        let query = self.selection.select("run");
+        CheckGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
 }
 #[derive(Clone)]
@@ -6453,6 +6627,104 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Create or update a binding of type CheckGroup in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The CheckGroup value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_check_group_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<CheckGroupId>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withCheckGroupInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired CheckGroup output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_check_group_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withCheckGroupOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type Check in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The Check value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_check_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<CheckId>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withCheckInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired Check output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_check_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withCheckOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create or update a binding of type Cloud in the environment
     ///
     /// # Arguments
@@ -9549,12 +9821,47 @@ pub struct Module {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ModuleChecksOpts<'a> {
+    /// Only include checks matching the specified patterns
+    #[builder(setter(into, strip_option), default)]
+    pub include: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ModuleServeOpts {
     /// Expose the dependencies of this module to the client
     #[builder(setter(into, strip_option), default)]
     pub include_dependencies: Option<bool>,
 }
 impl Module {
+    /// Return all checks defined by the module
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn checks(&self) -> CheckGroup {
+        let query = self.selection.select("checks");
+        CheckGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Return all checks defined by the module
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn checks_opts<'a>(&self, opts: ModuleChecksOpts<'a>) -> CheckGroup {
+        let mut query = self.selection.select("checks");
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
+        }
+        CheckGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The dependencies of the module.
     pub fn dependencies(&self) -> Vec<Module> {
         let query = self.selection.select("dependencies");
@@ -10997,6 +11304,38 @@ impl Query {
             }),
         );
         Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a Check from its ID.
+    pub fn load_check_from_id(&self, id: impl IntoID<CheckId>) -> Check {
+        let mut query = self.selection.select("loadCheckFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        Check {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a CheckGroup from its ID.
+    pub fn load_check_group_from_id(&self, id: impl IntoID<CheckGroupId>) -> CheckGroup {
+        let mut query = self.selection.select("loadCheckGroupFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        CheckGroup {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -12818,6 +13157,13 @@ pub enum CacheSharingMode {
     Private,
     #[serde(rename = "SHARED")]
     Shared,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum CheckStatus {
+    #[serde(rename = "COMPLETED")]
+    Completed,
+    #[serde(rename = "SKIPPED")]
+    Skipped,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ExistsType {

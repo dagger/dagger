@@ -140,6 +140,12 @@ type CacheVolumeID string
 // The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
 type ChangesetID string
 
+// The `CheckGroupID` scalar type represents an identifier for an object of type CheckGroup.
+type CheckGroupID string
+
+// The `CheckID` scalar type represents an identifier for an object of type Check.
+type CheckID string
+
 // The `CloudID` scalar type represents an identifier for an object of type Cloud.
 type CloudID string
 
@@ -561,6 +567,24 @@ func (r *Binding) AsChangeset() *Changeset {
 	q := r.query.Select("asChangeset")
 
 	return &Changeset{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Check
+func (r *Binding) AsCheck() *Check {
+	q := r.query.Select("asCheck")
+
+	return &Check{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type CheckGroup
+func (r *Binding) AsCheckGroup() *CheckGroup {
+	q := r.query.Select("asCheckGroup")
+
+	return &CheckGroup{
 		query: q,
 	}
 }
@@ -1036,6 +1060,263 @@ func (r *Changeset) Sync(ctx context.Context) (*Changeset, error) {
 	return &Changeset{
 		query: q.Root().Select("loadChangesetFromID").Arg("id", id),
 	}, nil
+}
+
+type Check struct {
+	query *querybuilder.Selection
+
+	completed   *bool
+	description *string
+	id          *CheckID
+	message     *string
+	name        *string
+	passed      *bool
+	resultEmoji *string
+}
+
+func (r *Check) WithGraphQLQuery(q *querybuilder.Selection) *Check {
+	return &Check{
+		query: q,
+	}
+}
+
+// Whether the check completed
+func (r *Check) Completed(ctx context.Context) (bool, error) {
+	if r.completed != nil {
+		return *r.completed, nil
+	}
+	q := r.query.Select("completed")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The description of the check
+func (r *Check) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Check.
+func (r *Check) ID(ctx context.Context) (CheckID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response CheckID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Check) XXX_GraphQLType() string {
+	return "Check"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Check) XXX_GraphQLIDType() string {
+	return "CheckID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Check) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Check) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// A message emitted when running the check
+func (r *Check) Message(ctx context.Context) (string, error) {
+	if r.message != nil {
+		return *r.message, nil
+	}
+	q := r.query.Select("message")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Return the fully qualified name of the check
+func (r *Check) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Whether the check passed
+func (r *Check) Passed(ctx context.Context) (bool, error) {
+	if r.passed != nil {
+		return *r.passed, nil
+	}
+	q := r.query.Select("passed")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The path of the check within its module
+func (r *Check) Path(ctx context.Context) ([]string, error) {
+	q := r.query.Select("path")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// An emoji representing the result of the check
+func (r *Check) ResultEmoji(ctx context.Context) (string, error) {
+	if r.resultEmoji != nil {
+		return *r.resultEmoji, nil
+	}
+	q := r.query.Select("resultEmoji")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+type CheckGroup struct {
+	query *querybuilder.Selection
+
+	id *CheckGroupID
+}
+type WithCheckGroupFunc func(r *CheckGroup) *CheckGroup
+
+// With calls the provided function with current CheckGroup.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *CheckGroup) With(f WithCheckGroupFunc) *CheckGroup {
+	return f(r)
+}
+
+func (r *CheckGroup) WithGraphQLQuery(q *querybuilder.Selection) *CheckGroup {
+	return &CheckGroup{
+		query: q,
+	}
+}
+
+// A unique identifier for this CheckGroup.
+func (r *CheckGroup) ID(ctx context.Context) (CheckGroupID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response CheckGroupID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *CheckGroup) XXX_GraphQLType() string {
+	return "CheckGroup"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *CheckGroup) XXX_GraphQLIDType() string {
+	return "CheckGroupID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *CheckGroup) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *CheckGroup) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Return a list of individual checks and their details
+func (r *CheckGroup) List(ctx context.Context) ([]Check, error) {
+	q := r.query.Select("list")
+
+	q = q.Select("id")
+
+	type list struct {
+		Id CheckID
+	}
+
+	convert := func(fields []list) []Check {
+		out := []Check{}
+
+		for i := range fields {
+			val := Check{id: &fields[i].Id}
+			val.query = q.Root().Select("loadCheckFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []list
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Generate a markdown report
+func (r *CheckGroup) Report() *File {
+	q := r.query.Select("report")
+
+	return &File{
+		query: q,
+	}
+}
+
+// Execute all selected checks
+func (r *CheckGroup) Run() *CheckGroup {
+	q := r.query.Select("run")
+
+	return &CheckGroup{
+		query: q,
+	}
 }
 
 // Dagger Cloud configuration and state
@@ -4838,6 +5119,54 @@ func (r *Env) WithChangesetOutput(name string, description string) *Env {
 	}
 }
 
+// Create or update a binding of type CheckGroup in the environment
+func (r *Env) WithCheckGroupInput(name string, value *CheckGroup, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withCheckGroupInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired CheckGroup output to be assigned in the environment
+func (r *Env) WithCheckGroupOutput(name string, description string) *Env {
+	q := r.query.Select("withCheckGroupOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Check in the environment
+func (r *Env) WithCheckInput(name string, value *Check, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withCheckInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired Check output to be assigned in the environment
+func (r *Env) WithCheckOutput(name string, description string) *Env {
+	q := r.query.Select("withCheckOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create or update a binding of type Cloud in the environment
 func (r *Env) WithCloudInput(name string, value *Cloud, description string) *Env {
 	assertNotNil("value", value)
@@ -8600,6 +8929,27 @@ func (r *Module) WithGraphQLQuery(q *querybuilder.Selection) *Module {
 	}
 }
 
+// ModuleChecksOpts contains options for Module.Checks
+type ModuleChecksOpts struct {
+	// Only include checks matching the specified patterns
+	Include []string
+}
+
+// Return all checks defined by the module
+func (r *Module) Checks(opts ...ModuleChecksOpts) *CheckGroup {
+	q := r.query.Select("checks")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &CheckGroup{
+		query: q,
+	}
+}
+
 // The dependencies of the module.
 func (r *Module) Dependencies(ctx context.Context) ([]Module, error) {
 	q := r.query.Select("dependencies")
@@ -10444,6 +10794,26 @@ func (r *Client) LoadChangesetFromID(id ChangesetID) *Changeset {
 	q = q.Arg("id", id)
 
 	return &Changeset{
+		query: q,
+	}
+}
+
+// Load a Check from its ID.
+func (r *Client) LoadCheckFromID(id CheckID) *Check {
+	q := r.query.Select("loadCheckFromID")
+	q = q.Arg("id", id)
+
+	return &Check{
+		query: q,
+	}
+}
+
+// Load a CheckGroup from its ID.
+func (r *Client) LoadCheckGroupFromID(id CheckGroupID) *CheckGroup {
+	q := r.query.Select("loadCheckGroupFromID")
+	q = q.Arg("id", id)
+
+	return &CheckGroup{
 		query: q,
 	}
 }
@@ -12493,6 +12863,61 @@ const (
 
 	// Shares the cache volume amongst many build pipelines, but will serialize the writes
 	CacheSharingModeLocked CacheSharingMode = "LOCKED"
+)
+
+// The result of a check.
+type CheckStatus string
+
+func (CheckStatus) IsEnum() {}
+
+func (v CheckStatus) Name() string {
+	switch v {
+	case CheckStatusCompleted:
+		return "COMPLETED"
+	case CheckStatusSkipped:
+		return "SKIPPED"
+	default:
+		return ""
+	}
+}
+
+func (v CheckStatus) Value() string {
+	return string(v)
+}
+
+func (v *CheckStatus) MarshalJSON() ([]byte, error) {
+	if *v == "" {
+		return []byte(`""`), nil
+	}
+	name := v.Name()
+	if name == "" {
+		return nil, fmt.Errorf("invalid enum value %q", *v)
+	}
+	return json.Marshal(name)
+}
+
+func (v *CheckStatus) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "":
+		*v = ""
+	case "COMPLETED":
+		*v = CheckStatusCompleted
+	case "SKIPPED":
+		*v = CheckStatusSkipped
+	default:
+		return fmt.Errorf("invalid enum value %q", s)
+	}
+	return nil
+}
+
+const (
+	CheckStatusCompleted CheckStatus = "COMPLETED"
+
+	CheckStatusSkipped CheckStatus = "SKIPPED"
 )
 
 // File type.

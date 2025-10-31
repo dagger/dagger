@@ -31,6 +31,16 @@ class ChangesetID(Scalar):
     object of type Changeset."""
 
 
+class CheckGroupID(Scalar):
+    """The `CheckGroupID` scalar type represents an identifier for an
+    object of type CheckGroup."""
+
+
+class CheckID(Scalar):
+    """The `CheckID` scalar type represents an identifier for an object of
+    type Check."""
+
+
 class CloudID(Scalar):
     """The `CloudID` scalar type represents an identifier for an object of
     type Cloud."""
@@ -292,6 +302,14 @@ class CacheSharingMode(Enum):
 
     SHARED = "SHARED"
     """Shares the cache volume amongst many build pipelines"""
+
+
+class CheckStatus(Enum):
+    """The result of a check."""
+
+    COMPLETED = "COMPLETED"
+
+    SKIPPED = "SKIPPED"
 
 
 class ExistsType(Enum):
@@ -655,6 +673,18 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asChangeset", _args)
         return Changeset(_ctx)
+
+    def as_check(self) -> "Check":
+        """Retrieve the binding value, as type Check"""
+        _args: list[Arg] = []
+        _ctx = self._select("asCheck", _args)
+        return Check(_ctx)
+
+    def as_check_group(self) -> "CheckGroup":
+        """Retrieve the binding value, as type CheckGroup"""
+        _args: list[Arg] = []
+        _ctx = self._select("asCheckGroup", _args)
+        return CheckGroup(_ctx)
 
     def as_cloud(self) -> "Cloud":
         """Retrieve the binding value, as type Cloud"""
@@ -1095,6 +1125,228 @@ class Changeset(Type):
 
     def __await__(self):
         return self.sync().__await__()
+
+
+@typecheck
+class Check(Type):
+    async def completed(self) -> bool:
+        """Whether the check completed
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("completed", _args)
+        return await _ctx.execute(bool)
+
+    async def description(self) -> str:
+        """The description of the check
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> CheckID:
+        """A unique identifier for this Check.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        CheckID
+            The `CheckID` scalar type represents an identifier for an object
+            of type Check.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(CheckID)
+
+    async def message(self) -> str:
+        """A message emitted when running the check
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("message", _args)
+        return await _ctx.execute(str)
+
+    async def name(self) -> str:
+        """Return the fully qualified name of the check
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    async def passed(self) -> bool:
+        """Whether the check passed
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("passed", _args)
+        return await _ctx.execute(bool)
+
+    async def path(self) -> list[str]:
+        """The path of the check within its module
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("path", _args)
+        return await _ctx.execute(list[str])
+
+    async def result_emoji(self) -> str:
+        """An emoji representing the result of the check
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("resultEmoji", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
+class CheckGroup(Type):
+    async def id(self) -> CheckGroupID:
+        """A unique identifier for this CheckGroup.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        CheckGroupID
+            The `CheckGroupID` scalar type represents an identifier for an
+            object of type CheckGroup.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(CheckGroupID)
+
+    async def list_(self) -> list[Check]:
+        """Return a list of individual checks and their details"""
+        _args: list[Arg] = []
+        _ctx = self._select("list", _args)
+        return await _ctx.execute_object_list(Check)
+
+    def report(self) -> "File":
+        """Generate a markdown report"""
+        _args: list[Arg] = []
+        _ctx = self._select("report", _args)
+        return File(_ctx)
+
+    def run(self) -> Self:
+        """Execute all selected checks"""
+        _args: list[Arg] = []
+        _ctx = self._select("run", _args)
+        return CheckGroup(_ctx)
+
+    def with_(self, cb: Callable[["CheckGroup"], "CheckGroup"]) -> "CheckGroup":
+        """Call the provided callable with current CheckGroup.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 @typecheck
@@ -4978,6 +5230,90 @@ class Env(Type):
         _ctx = self._select("withChangesetOutput", _args)
         return Env(_ctx)
 
+    def with_check_group_input(
+        self,
+        name: str,
+        value: CheckGroup,
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type CheckGroup in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The CheckGroup value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withCheckGroupInput", _args)
+        return Env(_ctx)
+
+    def with_check_group_output(self, name: str, description: str) -> Self:
+        """Declare a desired CheckGroup output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withCheckGroupOutput", _args)
+        return Env(_ctx)
+
+    def with_check_input(
+        self,
+        name: str,
+        value: Check,
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type Check in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The Check value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withCheckInput", _args)
+        return Env(_ctx)
+
+    def with_check_output(self, name: str, description: str) -> Self:
+        """Declare a desired Check output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withCheckOutput", _args)
+        return Env(_ctx)
+
     def with_cloud_input(
         self,
         name: str,
@@ -8815,6 +9151,24 @@ class ListTypeDef(Type):
 class Module(Type):
     """A Dagger module."""
 
+    def checks(
+        self,
+        *,
+        include: list[str] | None = None,
+    ) -> CheckGroup:
+        """Return all checks defined by the module
+
+        Parameters
+        ----------
+        include:
+            Only include checks matching the specified patterns
+        """
+        _args = [
+            Arg("include", include, None),
+        ]
+        _ctx = self._select("checks", _args)
+        return CheckGroup(_ctx)
+
     async def dependencies(self) -> list["Module"]:
         """The dependencies of the module."""
         _args: list[Arg] = []
@@ -10534,6 +10888,22 @@ class Client(Root):
         ]
         _ctx = self._select("loadChangesetFromID", _args)
         return Changeset(_ctx)
+
+    def load_check_from_id(self, id: CheckID) -> Check:
+        """Load a Check from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadCheckFromID", _args)
+        return Check(_ctx)
+
+    def load_check_group_from_id(self, id: CheckGroupID) -> CheckGroup:
+        """Load a CheckGroup from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadCheckGroupFromID", _args)
+        return CheckGroup(_ctx)
 
     def load_cloud_from_id(self, id: CloudID) -> Cloud:
         """Load a Cloud from its ID."""
@@ -12305,6 +12675,11 @@ __all__ = [
     "CacheVolumeID",
     "Changeset",
     "ChangesetID",
+    "Check",
+    "CheckGroup",
+    "CheckGroupID",
+    "CheckID",
+    "CheckStatus",
     "Client",
     "Cloud",
     "CloudID",

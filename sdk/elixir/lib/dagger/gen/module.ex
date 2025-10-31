@@ -16,6 +16,22 @@ defmodule Dagger.Module do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Return all checks defined by the module
+  """
+  @spec checks(t(), [{:include, [String.t()]}]) :: Dagger.CheckGroup.t()
+  def checks(%__MODULE__{} = module, optional_args \\ []) do
+    query_builder =
+      module.query_builder
+      |> QB.select("checks")
+      |> QB.maybe_put_arg("include", optional_args[:include])
+
+    %Dagger.CheckGroup{
+      query_builder: query_builder,
+      client: module.client
+    }
+  end
+
+  @doc """
   The dependencies of the module.
   """
   @spec dependencies(t()) :: {:ok, [Dagger.Module.t()]} | {:error, term()}

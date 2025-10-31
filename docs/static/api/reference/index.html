@@ -54,6 +54,8 @@
               <li><a href="#query-loadBindingFromID">loadBindingFromID</a></li>
               <li><a href="#query-loadCacheVolumeFromID">loadCacheVolumeFromID</a></li>
               <li><a href="#query-loadChangesetFromID">loadChangesetFromID</a></li>
+              <li><a href="#query-loadCheckFromID">loadCheckFromID</a></li>
+              <li><a href="#query-loadCheckGroupFromID">loadCheckGroupFromID</a></li>
               <li><a href="#query-loadCloudFromID">loadCloudFromID</a></li>
               <li><a href="#query-loadContainerFromID">loadContainerFromID</a></li>
               <li><a href="#query-loadCurrentModuleFromID">loadCurrentModuleFromID</a></li>
@@ -124,6 +126,11 @@
               <li><a href="#definition-CacheVolumeID">CacheVolumeID</a></li>
               <li><a href="#definition-Changeset">Changeset</a></li>
               <li><a href="#definition-ChangesetID">ChangesetID</a></li>
+              <li><a href="#definition-Check">Check</a></li>
+              <li><a href="#definition-CheckGroup">CheckGroup</a></li>
+              <li><a href="#definition-CheckGroupID">CheckGroupID</a></li>
+              <li><a href="#definition-CheckID">CheckID</a></li>
+              <li><a href="#definition-CheckStatus">CheckStatus</a></li>
               <li><a href="#definition-Cloud">Cloud</a></li>
               <li><a href="#definition-CloudID">CloudID</a></li>
               <li><a href="#definition-Container">Container</a></li>
@@ -1588,6 +1595,112 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-ChangesetID"><code>ChangesetID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadCheckFromID" class="operation operation-query" data-traverse-target="query-loadCheckFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadCheckFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a Check from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Check"><code>Check!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-CheckID"><code>CheckID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadCheckGroupFromID" class="operation operation-query" data-traverse-target="query-loadCheckGroupFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadCheckGroupFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a CheckGroup from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-CheckGroup"><code>CheckGroup!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-CheckGroupID"><code>CheckGroupID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -4613,6 +4726,14 @@
                         <td> Retrieve the binding value, as type Changeset </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asCheck" href="#Binding-asCheck"><code>asCheck</code></a> - <span class="property-type"><a href="#definition-Check"><code>Check!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type Check </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asCheckGroup" href="#Binding-asCheckGroup"><code>asCheckGroup</code></a> - <span class="property-type"><a href="#definition-CheckGroup"><code>CheckGroup!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type CheckGroup </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asCloud" href="#Binding-asCloud"><code>asCloud</code></a> - <span class="property-type"><a href="#definition-Cloud"><code>Cloud!</code></a></span> </td>
                         <td> Retrieve the binding value, as type Cloud </td>
                       </tr>
@@ -4978,6 +5099,176 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>ChangesetID</code> scalar type represents an identifier for an object of type Changeset.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-Check" class="definition definition-object" data-traverse-target="definition-Check">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">Check</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Check-completed" href="#Check-completed"><code>completed</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> Whether the check completed </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Check-description" href="#Check-description"><code>description</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The description of the check </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Check-id" href="#Check-id"><code>id</code></a> - <span class="property-type"><a href="#definition-CheckID"><code>CheckID!</code></a></span> </td>
+                        <td> A unique identifier for this Check. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Check-message" href="#Check-message"><code>message</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> A message emitted when running the check </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Check-name" href="#Check-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Return the fully qualified name of the check </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Check-passed" href="#Check-passed"><code>passed</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> Whether the check passed </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Check-path" href="#Check-path"><code>path</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
+                        <td> The path of the check within its module </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Check-resultEmoji" href="#Check-resultEmoji"><code>resultEmoji</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> An emoji representing the result of the check </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-CheckGroup" class="definition definition-object" data-traverse-target="definition-CheckGroup">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">CheckGroup</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="CheckGroup-id" href="#CheckGroup-id"><code>id</code></a> - <span class="property-type"><a href="#definition-CheckGroupID"><code>CheckGroupID!</code></a></span> </td>
+                        <td> A unique identifier for this CheckGroup. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="CheckGroup-list" href="#CheckGroup-list"><code>list</code></a> - <span class="property-type"><a href="#definition-Check"><code>[Check!]!</code></a></span> </td>
+                        <td> Return a list of individual checks and their details </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="CheckGroup-report" href="#CheckGroup-report"><code>report</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
+                        <td> Generate a markdown report </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="CheckGroup-run" href="#CheckGroup-run"><code>run</code></a> - <span class="property-type"><a href="#definition-CheckGroup"><code>CheckGroup!</code></a></span> </td>
+                        <td> Execute all selected checks </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-CheckGroupID" class="definition definition-scalar" data-traverse-target="definition-CheckGroupID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">CheckGroupID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>CheckGroupID</code> scalar type represents an identifier for an object of type CheckGroup.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-CheckID" class="definition definition-scalar" data-traverse-target="definition-CheckID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">CheckID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>CheckID</code> scalar type represents an identifier for an object of type Check.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-CheckStatus" class="definition definition-enum" data-traverse-target="definition-CheckStatus">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">CheckStatus</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The result of a check.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Values</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Enum Value</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <p><code>COMPLETED</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>SKIPPED</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="doc-examples">
+                <div class="example-section example-section-is-code">
+                  <h5>Example</h5>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol">"COMPLETED"</span>
+</code></pre>
                 </div>
               </div>
             </div>
@@ -8004,6 +8295,98 @@
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withChangesetOutput" href="#Env-withChangesetOutput"><code>withChangesetOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Declare a desired Changeset output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withCheckGroupInput" href="#Env-withCheckGroupInput"><code>withCheckGroupInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type CheckGroup in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-CheckGroupID"><code>CheckGroupID!</code></a></span></h6>
+                                <p>The CheckGroup value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withCheckGroupOutput" href="#Env-withCheckGroupOutput"><code>withCheckGroupOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired CheckGroup output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withCheckInput" href="#Env-withCheckInput"><code>withCheckInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type Check in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-CheckID"><code>CheckID!</code></a></span></h6>
+                                <p>The Check value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withCheckOutput" href="#Env-withCheckOutput"><code>withCheckOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired Check output to be assigned in the environment </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -11565,6 +11948,23 @@
                       </tr>
                     </thead>
                     <tbody>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Module-checks" href="#Module-checks"><code>checks</code></a> - <span class="property-type"><a href="#definition-CheckGroup"><code>CheckGroup!</code></a></span> </td>
+                        <td> Return all checks defined by the module </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                                <p>Only include checks matching the specified patterns</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Module-dependencies" href="#Module-dependencies"><code>dependencies</code></a> - <span class="property-type"><a href="#definition-Module"><code>[Module!]!</code></a></span> </td>
                         <td> The dependencies of the module. </td>

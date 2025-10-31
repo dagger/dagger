@@ -168,6 +168,46 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Check",
+			"p": "Dagger/Check.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\CheckGroup",
+			"p": "Dagger/CheckGroup.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\CheckGroupId",
+			"p": "Dagger/CheckGroupId.html",
+			"d": "<p>The <code>CheckGroupID</code> scalar type represents an identifier for an object of type CheckGroup.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\CheckId",
+			"p": "Dagger/CheckId.html",
+			"d": "<p>The <code>CheckID</code> scalar type represents an identifier for an object of type Check.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Client",
 			"p": "Dagger/Client.html",
 			"d": "<p>The root of the DAG.</p>",
@@ -1365,6 +1405,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Binding::asCheck",
+			"p": "Dagger/Binding.html#method_asCheck",
+			"d": "<p>Retrieve the binding value, as type Check</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asCheckGroup",
+			"p": "Dagger/Binding.html#method_asCheckGroup",
+			"d": "<p>Retrieve the binding value, as type CheckGroup</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Binding::asCloud",
 			"p": "Dagger/Binding.html#method_asCloud",
 			"d": "<p>Retrieve the binding value, as type Cloud</p>"
@@ -1581,6 +1633,78 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Check::completed",
+			"p": "Dagger/Check.html#method_completed",
+			"d": "<p>Whether the check completed</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Check::description",
+			"p": "Dagger/Check.html#method_description",
+			"d": "<p>The description of the check</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Check::id",
+			"p": "Dagger/Check.html#method_id",
+			"d": "<p>A unique identifier for this Check.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Check::message",
+			"p": "Dagger/Check.html#method_message",
+			"d": "<p>A message emitted when running the check</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Check::name",
+			"p": "Dagger/Check.html#method_name",
+			"d": "<p>Return the fully qualified name of the check</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Check::passed",
+			"p": "Dagger/Check.html#method_passed",
+			"d": "<p>Whether the check passed</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Check::path",
+			"p": "Dagger/Check.html#method_path",
+			"d": "<p>The path of the check within its module</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Check::resultEmoji",
+			"p": "Dagger/Check.html#method_resultEmoji",
+			"d": "<p>An emoji representing the result of the check</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CheckGroup::id",
+			"p": "Dagger/CheckGroup.html#method_id",
+			"d": "<p>A unique identifier for this CheckGroup.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CheckGroup::list",
+			"p": "Dagger/CheckGroup.html#method_list",
+			"d": "<p>Return a list of individual checks and their details</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CheckGroup::report",
+			"p": "Dagger/CheckGroup.html#method_report",
+			"d": "<p>Generate a markdown report</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\CheckGroup::run",
+			"p": "Dagger/CheckGroup.html#method_run",
+			"d": "<p>Execute all selected checks</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::address",
 			"p": "Dagger/Client.html#method_address",
 			"d": "<p>initialize an address to load directories, containers, secrets or other object types.</p>"
@@ -1734,6 +1858,18 @@
 			"n": "Dagger\\Client::loadChangesetFromID",
 			"p": "Dagger/Client.html#method_loadChangesetFromID",
 			"d": "<p>Load a Changeset from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadCheckFromID",
+			"p": "Dagger/Client.html#method_loadCheckFromID",
+			"d": "<p>Load a Check from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadCheckGroupFromID",
+			"p": "Dagger/Client.html#method_loadCheckGroupFromID",
+			"d": "<p>Load a CheckGroup from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -3141,6 +3277,30 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withCheckGroupInput",
+			"p": "Dagger/Env.html#method_withCheckGroupInput",
+			"d": "<p>Create or update a binding of type CheckGroup in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withCheckGroupOutput",
+			"p": "Dagger/Env.html#method_withCheckGroupOutput",
+			"d": "<p>Declare a desired CheckGroup output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withCheckInput",
+			"p": "Dagger/Env.html#method_withCheckInput",
+			"d": "<p>Create or update a binding of type Check in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withCheckOutput",
+			"p": "Dagger/Env.html#method_withCheckOutput",
+			"d": "<p>Declare a desired Check output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withCloudInput",
 			"p": "Dagger/Env.html#method_withCloudInput",
 			"d": "<p>Create or update a binding of type Cloud in the environment</p>"
@@ -4290,6 +4450,12 @@
 			"n": "Dagger\\ListTypeDef::id",
 			"p": "Dagger/ListTypeDef.html#method_id",
 			"d": "<p>A unique identifier for this ListTypeDef.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Module::checks",
+			"p": "Dagger/Module.html#method_checks",
+			"d": "<p>Return all checks defined by the module</p>"
 		},
 		{
 			"t": "M",
