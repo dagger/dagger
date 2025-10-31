@@ -391,6 +391,11 @@ func (r Result[T]) WithSafeToPersistCache(safe bool) AnyResult {
 	return r
 }
 
+func (r Result[T]) ResultWithSafeToPersistCache(safe bool) Result[T] {
+	r.safeToPersistCache = safe
+	return r
+}
+
 func (r Result[T]) IsSafeToPersistCache() bool {
 	return r.safeToPersistCache
 }

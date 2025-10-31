@@ -5,18 +5,22 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/server/resource"
-	"github.com/dagger/dagger/engine/slog"
 	"github.com/opencontainers/go-digest"
 )
 
 // ModType wraps the core TypeDef type with schema specific concerns like ID conversion
 // and tracking of the module in which the type was originally defined.
 type ModType interface {
-	// ConvertFromSDKResult converts a value returned from an SDK into values
-	// expected by the server, including conversion of IDs to their "unpacked"
-	// objects
-	ConvertFromSDKResult(ctx context.Context, value any) (dagql.AnyResult, error)
+	// ConvertFromSDKResult converts a value returned from an SDK into a value
+	// expected by the server including conversion of IDs to their "unpacked"
+	// objects.
+	//
+	// It returns two values, the first as a conversion to a standard
+	// dagql.Typed, with no additional wrapping, and a dagql.AnyResult with all
+	// the appropriate result construction.
+	ConvertFromSDKResult(ctx context.Context, id *call.ID, value any) (dagql.Typed, dagql.AnyResult, error)
 
 	// ConvertToSDKInput converts a value from the server into a value expected
 	// by the SDK, which may include converting objects to their IDs
@@ -24,7 +28,7 @@ type ModType interface {
 
 	// CollectCoreIDs collects all the call IDs from core objects in the given value, whether
 	// it's idable itself or is a list/object containing idable values (recursively)
-	CollectCoreIDs(ctx context.Context, value dagql.AnyResult, ids map[digest.Digest]*resource.ID) error
+	CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error
 
 	// SourceMod is the module in which this type was originally defined
 	SourceMod() Mod
@@ -40,25 +44,31 @@ type PrimitiveType struct {
 
 var _ ModType = &PrimitiveType{}
 
-func (t *PrimitiveType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.AnyResult, error) {
+func (t *PrimitiveType) ConvertFromSDKResult(ctx context.Context, id *call.ID, value any) (typed dagql.Typed, result dagql.AnyResult, err error) {
 	// NB: we lean on the fact that all primitive types are also dagql.Inputs
 	input := t.Def.ToInput()
-	if value == nil {
-		return dagql.NewResultForCurrentID(ctx, input)
+	if value != nil {
+		input, err = input.Decoder().DecodeInput(value)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
-	retVal, err := input.Decoder().DecodeInput(value)
-	if err != nil {
-		return nil, err
+	if id != nil {
+		result, err = dagql.NewResultForID(input, id)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
-	return dagql.NewResultForCurrentID(ctx, retVal)
+
+	return input, result, err
 }
 
 func (t *PrimitiveType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
 	return value, nil
 }
 
-func (t *PrimitiveType) CollectCoreIDs(context.Context, dagql.AnyResult, map[digest.Digest]*resource.ID) error {
+func (t *PrimitiveType) CollectCoreIDs(context.Context, dagql.Typed, map[digest.Digest]*resource.ID) error {
 	return nil
 }
 
@@ -77,34 +87,45 @@ type ListType struct {
 
 var _ ModType = &ListType{}
 
-func (t *ListType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.AnyResult, error) {
-	arr := dagql.DynamicResultArrayOutput{
-		Elem: t.Elem.ToTyped(),
-	}
-	if value == nil {
-		slog.Debug("ListType.ConvertFromSDKResult: got nil value")
-		// return an empty array, _not_ nil
-		return dagql.NewResultForCurrentID(ctx, arr)
-	}
-	list, ok := value.([]any)
-	if !ok {
-		return nil, fmt.Errorf("ListType.ConvertFromSDKResult: expected []any, got %T", value)
-	}
-	arr.Values = make([]dagql.AnyResult, 0, len(list))
-	for i, item := range list {
-		var err error
+func (t *ListType) ConvertFromSDKResult(ctx context.Context, id *call.ID, value any) (typed dagql.Typed, result dagql.AnyResult, err error) {
+	elem := t.Elem.ToTyped()
+	types := dagql.DynamicArrayOutput{Elem: elem}
+	results := dagql.DynamicResultArrayOutput{Elem: elem}
 
-		curID := dagql.CurrentID(ctx)
-		itemID := curID.SelectNth(i + 1)
-		ctx := dagql.ContextWithID(ctx, itemID)
-
-		t, err := t.Underlying.ConvertFromSDKResult(ctx, item)
-		if err != nil {
-			return nil, err
+	if value != nil {
+		list, ok := value.([]any)
+		if !ok {
+			return nil, nil, fmt.Errorf("ListType.ConvertFromSDKResult: expected []any, got %T", value)
 		}
-		arr.Values = append(arr.Values, t)
+		types.Values = make([]dagql.Typed, 0, len(list))
+		if id != nil {
+			results.Values = make([]dagql.AnyResult, 0, len(list))
+		}
+		for i, item := range list {
+			var err error
+
+			var itemID *call.ID
+			if id != nil {
+				itemID = id.SelectNth(i + 1)
+			}
+			itemTyped, itemResult, err := t.Underlying.ConvertFromSDKResult(ctx, itemID, item)
+			if err != nil {
+				return nil, nil, err
+			}
+			types.Values = append(types.Values, itemTyped)
+			if id != nil {
+				results.Values = append(results.Values, itemResult)
+			}
+		}
 	}
-	return dagql.NewResultForCurrentID(ctx, arr)
+
+	if id != nil {
+		result, err = dagql.NewResultForID(results, id)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	return types, result, nil
 }
 
 func (t *ListType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
@@ -129,25 +150,38 @@ func (t *ListType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (an
 	return resultList, nil
 }
 
-func (t *ListType) CollectCoreIDs(ctx context.Context, value dagql.AnyResult, ids map[digest.Digest]*resource.ID) error {
+func (t *ListType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
 	if value == nil {
 		return nil
 	}
-	list, ok := value.Unwrap().(dagql.Enumerable)
-	if !ok {
-		return fmt.Errorf("%T.CollectCoreIDs: expected Enumerable, got %T: %#v", t, value, value)
-	}
 
-	for i := 1; i <= list.Len(); i++ {
-		item, err := value.NthValue(i)
-		if err != nil {
-			return err
+	if result, ok := value.(dagql.AnyResult); ok {
+		list, ok := result.Unwrap().(dagql.Enumerable)
+		if !ok {
+			return fmt.Errorf("%T.CollectCoreIDs: expected Enumerable, got %T: %#v", t, value, value)
 		}
-
-		ctx := dagql.ContextWithID(ctx, item.ID())
-
-		if err := t.Underlying.CollectCoreIDs(ctx, item, ids); err != nil {
-			return err
+		for i := 1; i <= list.Len(); i++ {
+			item, err := result.NthValue(i)
+			if err != nil {
+				return err
+			}
+			if err := t.Underlying.CollectCoreIDs(ctx, item, ids); err != nil {
+				return err
+			}
+		}
+	} else {
+		list, ok := value.(dagql.Enumerable)
+		if !ok {
+			return fmt.Errorf("%T.CollectCoreIDs: expected Enumerable, got %T: %#v", t, value, value)
+		}
+		for i := 1; i <= list.Len(); i++ {
+			item, err := list.Nth(i)
+			if err != nil {
+				return err
+			}
+			if err := t.Underlying.CollectCoreIDs(ctx, item, ids); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -173,19 +207,27 @@ type NullableType struct {
 
 var _ ModType = &NullableType{}
 
-func (t *NullableType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.AnyResult, error) {
-	nullable := dagql.DynamicNullable{
-		Elem: t.InnerDef.ToTyped(),
-	}
+func (t *NullableType) ConvertFromSDKResult(ctx context.Context, id *call.ID, value any) (typed dagql.Typed, result dagql.AnyResult, err error) {
+	nullTyped := dagql.DynamicNullable{Elem: t.InnerDef.ToTyped()}
+	nullResult := dagql.DynamicNullable{Elem: t.InnerDef.ToTyped()}
 	if value != nil {
-		val, err := t.Inner.ConvertFromSDKResult(ctx, value)
+		val, result, err := t.Inner.ConvertFromSDKResult(ctx, id, value)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		nullable.Value = val
-		nullable.Valid = true
+		nullTyped.Value, nullTyped.Valid = val, true
+		if id != nil {
+			nullResult.Value, nullResult.Valid = result, true
+		}
 	}
-	return dagql.NewResultForCurrentID(ctx, nullable)
+
+	if id != nil {
+		result, err = dagql.NewResultForID(nullResult, id)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	return nullTyped, result, nil
 }
 
 func (t *NullableType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
@@ -207,11 +249,22 @@ func (t *NullableType) ConvertToSDKInput(ctx context.Context, value dagql.Typed)
 	return result, nil
 }
 
-func (t *NullableType) CollectCoreIDs(ctx context.Context, value dagql.AnyResult, ids map[digest.Digest]*resource.ID) error {
+func (t *NullableType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
 	if value == nil {
 		return nil
 	}
-	val, present := value.DerefValue()
+
+	var val dagql.Typed
+	var present bool
+	if result, ok := value.(dagql.AnyResult); ok {
+		val, present = result.DerefValue()
+	} else {
+		derefable, ok := value.(dagql.Derefable)
+		if !ok {
+			return fmt.Errorf("%T.CollectCoreIDs: expected Derefable, got %T: %#v", t, value, value)
+		}
+		val, present = derefable.Deref()
+	}
 	if !present {
 		return nil
 	}
