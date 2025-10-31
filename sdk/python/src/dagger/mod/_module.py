@@ -119,138 +119,38 @@ class Module:
             raise RegistrationError(str(e), e) from e
         await anyio.Path(TYPE_DEF_FILE).write_text(output)
 
-    async def _typedefs(self) -> dagger.ModuleID:  # noqa: C901, PLR0912
+    async def _typedefs(self) -> dagger.ModuleID:
         if not self._main_name:
             msg = "Main object name can't be empty"
             raise ValueError(msg)
+
+        # Determine the project root directory (the directory that contains 'src')
+        import os
+
+        root = os.getcwd()
+        cur = root
+        chosen: str | None = None
+        while True:
+            if os.path.isdir(os.path.join(cur, "src")):
+                chosen = cur
+                break
+            parent = os.path.dirname(cur)
+            if not parent or parent == cur:
+                break
+            cur = parent
+        project_root = chosen or root
+
         try:
-            self.get_object(self._main_name)
-        except ObjectNotFoundError as e:
+            from dagger.mod._static_build import static_typedefs as _static_typedefs
+            return await _static_typedefs(project_root=project_root, main_name=self._main_name)
+        except LookupError as e:
             msg = (
                 f"Main object with name '{self._main_name}' not found or class not "
                 "decorated with '@dagger.object_type'\n"
                 f"If you believe the module name '{MODULE_NAME}' is incorrectly "
                 "being converted into PascalCase, please file a bug report."
             )
-            raise ObjectNotFoundError(msg, extra=e.extra) from None
-
-        mod = dag.module()
-
-        # Object types
-        for obj_name, obj_type in self._objects.items():
-            if self.is_main(obj_type):
-                # Only the main object's constructor is needed.
-                # It's the entrypoint to the module.
-                obj_type.get_constructor(self._converter)
-
-                # Module description from main object's parent module
-                if desc := get_parent_module_doc(obj_type.cls):
-                    mod = mod.with_description(desc)
-
-            # Object/interface type
-            type_def = dag.type_def()
-            if obj_type.interface:
-                type_def = type_def.with_interface(
-                    obj_name,
-                    description=get_doc(obj_type.cls),
-                )
-            else:
-                type_def = type_def.with_object(
-                    obj_name,
-                    description=get_doc(obj_type.cls),
-                )
-
-            # Object fields
-            if obj_type.fields:
-                types = typing.get_type_hints(obj_type.cls)
-
-                for field_name, field in obj_type.fields.items():
-                    ctx = f"type for field '{field.original_name}' in {obj_type}"
-                    type_def = type_def.with_field(
-                        field_name,
-                        to_typedef(types[field.original_name], ctx),
-                        description=get_doc(field.return_type),
-                    )
-
-            # Object/interface functions
-            for func_name, func in obj_type.functions.items():
-                what = f"function '{func_name}'" if func_name else "constructor"
-
-                func_def = dag.function(
-                    func_name,
-                    to_typedef(
-                        func.return_type,
-                        f"return type for {what} in {obj_type}",
-                    ),
-                )
-
-                if doc := func.doc:
-                    func_def = func_def.with_description(doc)
-
-                if func.cache_policy is not None:
-                    if func.cache_policy == "never":
-                        func_def = func_def.with_cache_policy(
-                            dagger.FunctionCachePolicy.Never,
-                        )
-                    elif func.cache_policy == "session":
-                        func_def = func_def.with_cache_policy(
-                            dagger.FunctionCachePolicy.PerSession,
-                        )
-                    elif func.cache_policy != "":
-                        func_def = func_def.with_cache_policy(
-                            dagger.FunctionCachePolicy.Default,
-                            time_to_live=func.cache_policy,
-                        )
-
-                for param in func.parameters.values():
-                    arg_def = to_typedef(
-                        param.resolved_type,
-                        f"parameter type for '{param.name}' in {what} and {obj_type}",
-                    )
-
-                    if param.is_nullable:
-                        arg_def = arg_def.with_optional(True)
-
-                    func_def = func_def.with_arg(
-                        param.name,
-                        arg_def,
-                        description=param.doc,
-                        default_value=param.default_value,
-                        default_path=param.default_path,
-                        ignore=param.ignore,
-                    )
-
-                type_def = (
-                    type_def.with_constructor(func_def)
-                    if func_name == ""
-                    else type_def.with_function(func_def)
-                )
-
-            # Add object/interface to module
-            if obj_type.interface:
-                mod = mod.with_interface(type_def)
-            else:
-                mod = mod.with_object(type_def)
-
-        # Enum types
-        for name, cls in self._enums.items():
-            enum_def = dag.type_def().with_enum(name, description=get_doc(cls))
-            member_docs = extract_enum_member_doc(cls)
-
-            for member in cls:
-                # Get description from either description attribute or AST doc
-                description = getattr(member, "description", None)
-                if description is None:
-                    description = member_docs.get(member.name)
-
-                enum_def = enum_def.with_enum_member(
-                    member.name,
-                    value=str(member.value),
-                    description=description,
-                )
-            mod = mod.with_enum(enum_def)
-
-        return await mod.id()
+            raise ObjectNotFoundError(msg) from None
 
     async def invoke(self) -> dagger.ModuleID:
         """Invoke a function and return its result.
