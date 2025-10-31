@@ -804,7 +804,7 @@ func (c *Client) init(ctx context.Context) error {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("do shutdown: %w", err)
+		return fmt.Errorf("do init: %w", err)
 	}
 
 	return resp.Body.Close()
