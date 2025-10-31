@@ -183,7 +183,7 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 			for _, field := range check.Path {
 				selectPath = append(selectPath, dagql.Selector{Field: field})
 			}
-			checkErr := dag.Select(ctx, dag.Root(), &status, selectPath...)
+			checkErr := dag.Select(dagql.WithRepeatedTelemetry(ctx), dag.Root(), &status, selectPath...)
 			// FIXME: handle skipped
 			check.Completed = true
 			if checkErr != nil {
