@@ -41,6 +41,7 @@ const (
 	Changeset     string = "Changeset"
 	Container     string = "Container"
 	File          string = "File"
+	Watcher       string = "Watcher"
 	Secret        string = "Secret"
 	Service       string = "Service"
 	PortForward   string = "PortForward"

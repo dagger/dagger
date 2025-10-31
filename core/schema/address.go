@@ -30,6 +30,8 @@ func (s *addressSchema) Install(srv *dagql.Server) {
 			Doc(`Load a container from the address.`),
 		dagql.NodeFuncWithCacheKey("directory", s.directory, dagql.CacheAsRequested).
 			Doc(`Load a directory from the address.`),
+		dagql.NodeFuncWithCacheKey("watcher", s.watcher, dagql.CachePerClient).
+			Doc(`Load a watcher from the address.`),
 		dagql.NodeFuncWithCacheKey("file", s.file, dagql.CacheAsRequested).
 			Doc(`Load a file from the address.`),
 		dagql.NodeFuncWithCacheKey("gitRef", s.gitRef, dagql.CachePerClient).
@@ -124,7 +126,44 @@ type loadDirectoryArgs struct {
 	HostDirCacheConfig
 }
 
-func queryLocalDirectory(path string, filter core.CopyFilter) []dagql.Selector {
+func queryLocalDirectory(path string, filter core.CopyFilter, noCache bool) []dagql.Selector {
+	args := []dagql.NamedInput{
+		{
+			Name:  "path",
+			Value: dagql.NewString(getLocalPath(path)),
+		},
+	}
+	if len(filter.Exclude) > 0 {
+		args = append(args, dagql.NamedInput{
+			Name:  "exclude",
+			Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(filter.Exclude...)),
+		})
+	}
+	if len(filter.Include) > 0 {
+		args = append(args, dagql.NamedInput{
+			Name:  "include",
+			Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(filter.Include...)),
+		})
+	}
+	if filter.Gitignore {
+		args = append(args, dagql.NamedInput{
+			Name:  "gitignore",
+			Value: dagql.Boolean(true),
+		})
+	}
+	if noCache {
+		args = append(args, dagql.NamedInput{
+			Name:  "noCache",
+			Value: dagql.Boolean(true),
+		})
+	}
+	return []dagql.Selector{
+		{Field: "host"},
+		{Field: "directory", Args: args},
+	}
+}
+
+func queryLocalWatcher(path string, filter core.CopyFilter) []dagql.Selector {
 	args := []dagql.NamedInput{
 		{
 			Name:  "path",
@@ -151,7 +190,7 @@ func queryLocalDirectory(path string, filter core.CopyFilter) []dagql.Selector {
 	}
 	return []dagql.Selector{
 		{Field: "host"},
-		{Field: "directory", Args: args},
+		{Field: "watcher", Args: args},
 	}
 }
 
@@ -181,12 +220,35 @@ func (s *addressSchema) directory(
 			})
 		}
 	} else {
-		q = queryLocalDirectory(addr, args.CopyFilter)
+		q = queryLocalDirectory(addr, args.CopyFilter, false)
 	}
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, err
 	}
+	if err := srv.Select(ctx, srv.Root(), &inst, q...); err != nil {
+		return inst, err
+	}
+	return inst, nil
+}
+
+type loadWatcherArgs struct {
+	core.CopyFilter
+}
+
+func (s *addressSchema) watcher(
+	ctx context.Context,
+	r dagql.ObjectResult[*core.Address],
+	args loadWatcherArgs,
+) (
+	inst dagql.ObjectResult[*core.Watcher],
+	err error,
+) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	q := queryLocalWatcher(r.Self().Value, args.CopyFilter)
 	if err := srv.Select(ctx, srv.Root(), &inst, q...); err != nil {
 		return inst, err
 	}
