@@ -196,8 +196,8 @@ func s3Path(bucket string, path string, args ...any) string {
 }
 
 // Verify that the CLI builds without actually publishing anything
-func (cli *DaggerCli) CheckReleaseDryRun(ctx context.Context) error {
-	return parallel.New().
+func (cli *DaggerCli) ReleaseDryRun(ctx context.Context) (CheckStatus, error) {
+	return CheckCompleted, parallel.New().
 		WithJob(
 			"dry-run build on all targets",
 			// TODO: ideally this would also use go releaser, but we want to run this

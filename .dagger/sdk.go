@@ -12,6 +12,21 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 )
 
+// Develop Dagger SDKs
+func (dev *DaggerDev) SDK() *SDK {
+	return &SDK{
+		Dagger:     dev, // for generating changesets on generate. Remove once Changesets can be merged
+		Go:         &GoSDK{Dagger: dev},
+		Python:     &PythonSDK{Dagger: dev},
+		Typescript: &TypescriptSDK{Dagger: dev},
+		Elixir:     &ElixirSDK{Dagger: dev},
+		Rust:       &RustSDK{Dagger: dev},
+		PHP:        &PHPSDK{Dagger: dev},
+		Java:       &JavaSDK{Dagger: dev},
+		Dotnet:     &DotnetSDK{Dagger: dev},
+	}
+}
+
 // A dev environment for the official Dagger SDKs
 type SDK struct {
 	Dagger *DaggerDev // +private
@@ -39,7 +54,15 @@ type SDK struct {
 func (dev *DaggerDev) devEngineSidecar() func(*dagger.Container) *dagger.Container {
 	// The name "sdk" is an arbitrary key for engine state reuse across builds
 	instanceName := "sdk"
-	engineSvc := dag.DaggerEngine().Service(instanceName)
+	engineSvc := dag.DaggerEngine().Service(instanceName, dagger.DaggerEngineServiceOpts{
+		// We set a cidr different from the default (10.88), to allow an additional layer of nesting
+		// - With custom CIDR: maximum 3 layers of engines (dagger-in-dagger-in-dagger)
+		// - Without custom CIDR: maximum 2 layers (dagger-in-dagger)
+		// We need 3 layers for the 'CiInCi' check to work.
+		// Symptom if it doesn't: the innermost engine cannot connect to the internet (causing clients to fail
+		// on basic operations like 'Container.from()')
+		NetworkCidr: "10.89.0.0/16",
+	})
 	cliBinary := dag.DaggerCli().Binary()
 	cliBinaryPath := "/.dagger-cli"
 
@@ -75,13 +98,6 @@ func allSDKs[T any](dev *DaggerDev) []T {
 	return result
 }
 
-func (dev *DaggerDev) codegenBinary() *dagger.File {
-	return dev.godev().Binary("./cmd/codegen", dagger.GoBinaryOpts{
-		NoSymbols: true,
-		NoDwarf:   true,
-	})
-}
-
 // Return the introspection.json from the current dev engine
 func (dev *DaggerDev) introspectionJSON() *dagger.File {
 	return dag.
@@ -90,7 +106,7 @@ func (dev *DaggerDev) introspectionJSON() *dagger.File {
 		}).
 		Container().
 		With(dev.devEngineSidecar()).
-		WithFile("/usr/local/bin/codegen", dev.codegenBinary()).
+		WithFile("/usr/local/bin/codegen", dag.Codegen().Binary()).
 		WithExec([]string{"codegen", "introspect", "-o", "/schema.json"}).
 		File("/schema.json")
 }

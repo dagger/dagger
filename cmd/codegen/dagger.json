@@ -1,0 +1,14 @@
+{
+  "name": "codegen",
+  "engineVersion": "v0.19.3",
+  "sdk": {
+    "source": "github.com/vito/dang/dagger-sdk"
+  },
+  "dependencies": [
+    {
+      "name": "go",
+      "source": "../../modules/go"
+    }
+  ],
+  "source": ".dagger"
+}

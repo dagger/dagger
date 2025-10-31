@@ -8,6 +8,11 @@ import (
 	"github.com/dagger/dagger/.dagger/internal/dagger"
 )
 
+// Find benchmark suites to run
+func (dev *DaggerDev) Bench() *Bench {
+	return &Bench{Test: dev.Test()}
+}
+
 type Bench struct {
 	Test *Test // +private
 }

@@ -30,7 +30,7 @@ jobs:
               id: exec
               uses: dagger/dagger-for-github@v8.2.0
               with:
-                call: --docker-cfg=file:$HOME/.docker/config.json check-test-helm
+                call: --docker-cfg=file:$HOME/.docker/config.json test-helm
                 cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
                 version: v0.19.4

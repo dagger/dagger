@@ -9,7 +9,7 @@ import (
 
 // Scan source code and artifacts for security vulnerabilities
 // +cache="session"
-func (dev *DaggerDev) CheckScan(ctx context.Context) error {
+func (dev *DaggerDev) Scan(ctx context.Context) (MyCheckStatus, error) {
 	ignoreFiles := dag.Directory().WithDirectory("/", dev.Source, dagger.DirectoryWithDirectoryOpts{
 		Include: []string{
 			".trivyignore",
@@ -19,7 +19,7 @@ func (dev *DaggerDev) CheckScan(ctx context.Context) error {
 	})
 	ignoreFileNames, err := ignoreFiles.Entries(ctx)
 	if err != nil {
-		return err
+		return CheckCompleted, err
 	}
 
 	ctr := dag.Container().
@@ -38,7 +38,7 @@ func (dev *DaggerDev) CheckScan(ctx context.Context) error {
 		commonArgs = append(commonArgs, "--ignorefile=/mnt/ignores/"+ignoreFileNames[0])
 	}
 
-	return parallel.New().
+	return CheckCompleted, parallel.New().
 		WithJob("scan the source code", func(ctx context.Context) error {
 			args := []string{
 				"trivy",

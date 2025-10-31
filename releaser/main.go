@@ -208,7 +208,7 @@ func (r *Releaser) Publish(
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
 	} else {
-		err = dag.DaggerCli().CheckReleaseDryRun(ctx)
+		_, err = dag.DaggerCli().ReleaseDryRun(ctx)
 		if err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
@@ -361,7 +361,7 @@ func (r *Releaser) Publish(
 				}
 
 				if semver.IsValid(version) {
-					notes := r.changeNotes(component.path, version)
+					notes := dag.Changelog().LookupEntry(component.path, version)
 					if err := r.githubRelease(ctx, "https://github.com/dagger/dagger", commit, target, notes, githubToken, dryRun); err != nil {
 						artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 						return nil

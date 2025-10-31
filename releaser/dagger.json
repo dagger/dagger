@@ -10,6 +10,10 @@
   ],
   "dependencies": [
     {
+      "name": "changelog",
+      "source": "../.changes"
+    },
+    {
       "name": "dagger-cli",
       "source": "../cmd/dagger"
     },
