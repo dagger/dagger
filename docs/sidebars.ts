@@ -86,6 +86,7 @@ module.exports = {
         "getting-started/ci-integrations/github-actions",
         "getting-started/ci-integrations/github",
         "getting-started/ci-integrations/jenkins",
+        "getting-started/ci-integrations/teamcity",
         "getting-started/ci-integrations/tekton",
       ],
     },
