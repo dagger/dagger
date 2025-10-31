@@ -86,8 +86,6 @@ type MCP struct {
 	lastResult dagql.Typed
 	// Indicates that the model has returned
 	returned bool
-	// History of spans that have logs that we can read
-	loggedSpans []trace.SpanID
 	// Saved objects by ID (Foo#123)
 	objsByID map[string]contextualBinding
 	// Auto incrementing number per-type
@@ -603,15 +601,12 @@ func (m *MCP) call(ctx context.Context,
 	defer func() {
 		// Capture logs produced by the tool call and prepend them to the response
 		spanID := trace.SpanContextFromContext(ctx).SpanID()
-		logs, err := m.captureLogs(ctx, spanID)
+		logs, err := m.captureLogs(ctx, spanID.String())
 		if err != nil {
 			slog.Error("failed to capture logs", "error", err)
 		} else if len(logs) > 0 {
-			// Keep track of this span's logs so we can read more of it later
-			m.loggedSpans = append(m.loggedSpans, spanID)
-
 			// Show only the last 10 lines by default
-			logs = limitLines(logs, llmLogsLastLines, llmLogsMaxLineLen)
+			logs = limitLines(spanID.String(), logs, llmLogsLastLines, llmLogsMaxLineLen)
 
 			// Avoid any extra surrounding whitespace (i.e. blank logs somehow)
 			res = strings.Trim(strings.Join(logs, "\n")+"\n\n"+res, "\n")
@@ -1180,7 +1175,7 @@ const llmLogsBatchSize = 1000
 
 // captureLogs returns nicely Heroku-formatted lines of all logs seen since the
 // last capture.
-func (m *MCP) captureLogs(ctx context.Context, spanID trace.SpanID) ([]string, error) {
+func (m *MCP) captureLogs(ctx context.Context, spanID string) ([]string, error) {
 	root, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -1202,7 +1197,7 @@ func (m *MCP) captureLogs(ctx context.Context, spanID trace.SpanID) ([]string, e
 	for {
 		logs, err := q.SelectLogsBeneathSpan(ctx, clientdb.SelectLogsBeneathSpanParams{
 			ID:     lastLogID,
-			SpanID: sql.NullString{Valid: true, String: spanID.String()},
+			SpanID: sql.NullString{Valid: true, String: spanID},
 			Limit:  llmLogsBatchSize,
 		})
 		if err != nil {
@@ -1548,6 +1543,10 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSe
 		Schema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
+				"span": map[string]any{
+					"type":        "string",
+					"description": "Span ID to query logs beneath, recursively",
+				},
 				"limit": map[string]any{
 					"type":        "integer",
 					"description": "Number of lines to read from the end.",
@@ -1564,6 +1563,7 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSe
 					"description": "Grep pattern to filter logs. If specified, only lines matching this pattern will be returned.",
 				},
 			},
+			"required":             []string{"span"},
 			"additionalProperties": false,
 		},
 		Strict: false,
@@ -1602,15 +1602,12 @@ func (m *MCP) loadBuiltins(srv *dagql.Server, allTools, objectMethods *LLMToolSe
 
 func (m *MCP) readLogsTool(srv *dagql.Server) LLMToolFunc {
 	return ToolFunc(srv, func(ctx context.Context, args struct {
+		Span   string
 		Offset int    `default:"0"`
 		Limit  int    `default:"100"`
 		Grep   string `default:""`
 	}) (any, error) {
-		if len(m.loggedSpans) == 0 {
-			return nil, fmt.Errorf("no logs captured")
-		}
-
-		logs, err := m.captureLogs(ctx, m.loggedSpans[len(m.loggedSpans)-1])
+		logs, err := m.captureLogs(ctx, args.Span)
 		if err != nil {
 			return nil, fmt.Errorf("failed to capture logs: %w", err)
 		}
@@ -1641,7 +1638,7 @@ func (m *MCP) readLogsTool(srv *dagql.Server) LLMToolFunc {
 		}
 
 		// Apply line limit if specified
-		logs = limitLines(logs, args.Limit, llmLogsMaxLineLen)
+		logs = limitLines(args.Span, logs, args.Limit, llmLogsMaxLineLen)
 
 		return strings.Join(logs, "\n"), nil
 	})
@@ -2343,9 +2340,9 @@ func toolStructuredResponse(val any) (string, error) {
 	return str.String(), nil
 }
 
-func limitLines(logs []string, limit, maxLineLen int) []string {
+func limitLines(spanID string, logs []string, limit, maxLineLen int) []string {
 	if limit > 0 && len(logs) > limit {
-		snipped := fmt.Sprintf("... %d lines omitted (use ReadLogs to read more) ...", len(logs)-limit)
+		snipped := fmt.Sprintf("... %d lines omitted (use ReadLogs(span: %s) to read more) ...", len(logs)-limit, spanID)
 		logs = append([]string{snipped}, logs[len(logs)-limit:]...)
 	}
 	for i, line := range logs {
