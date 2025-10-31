@@ -15,6 +15,7 @@ import (
 	"github.com/containerd/containerd/v2/pkg/gc"
 	"github.com/containerd/containerd/v2/pkg/labels"
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/buildkit/cache/metadata"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -1360,6 +1361,8 @@ type cacheUsageInfo struct {
 	recordType  client.UsageRecordType
 	shared      bool
 	parentChain []digest.Digest
+
+	rec *cacheRecord
 }
 
 func (cm *cacheManager) DiskUsage(ctx context.Context, opt client.DiskUsageInfo) ([]*client.UsageInfo, error) {
@@ -1393,6 +1396,7 @@ func (cm *cacheManager) DiskUsage(ctx context.Context, opt client.DiskUsageInfo)
 			doubleRef:   cr.equalImmutable != nil,
 			recordType:  cr.GetRecordType(),
 			parentChain: cr.layerDigestChain().digests,
+			rec:         cr,
 		}
 		if c.recordType == "" {
 			c.recordType = client.UsageRecordTypeRegular
@@ -1447,6 +1451,7 @@ func (cm *cacheManager) DiskUsage(ctx context.Context, opt client.DiskUsageInfo)
 	}
 
 	var du []*client.UsageInfo
+	eg, ctx := errgroup.WithContext(ctx)
 	for id, cr := range m {
 		c := &client.UsageInfo{
 			ID:          id,
@@ -1463,31 +1468,20 @@ func (cm *cacheManager) DiskUsage(ctx context.Context, opt client.DiskUsageInfo)
 		}
 		if filter.Match(adaptUsageInfo(c)) {
 			du = append(du, c)
-		}
-	}
-
-	eg, ctx := errgroup.WithContext(ctx)
-
-	for _, d := range du {
-		if d.Size == sizeUnknown {
-			func(d *client.UsageInfo) {
-				eg.Go(func() error {
-					cm.mu.Lock()
-					ref, err := cm.get(ctx, d.ID, nil, NoUpdateLastUsed)
-					cm.mu.Unlock()
-					if err != nil {
-						d.Size = 0
+			if c.Size == sizeUnknown {
+				func(d *client.UsageInfo) {
+					eg.Go(func() error {
+						s, err := cr.rec.size(ctx)
+						if err != nil {
+							slog.Error("failed to calculate size", "id", d.ID, "error", err)
+							d.Size = 0
+							return nil
+						}
+						d.Size = s
 						return nil
-					}
-					defer ref.Release(context.TODO())
-					s, err := ref.size(ctx)
-					if err != nil {
-						return err
-					}
-					d.Size = s
-					return nil
-				})
-			}(d)
+					})
+				}(c)
+			}
 		}
 	}
 
