@@ -3,8 +3,10 @@ package templates
 import (
 	"cmp"
 	"fmt"
+	"go/ast"
 	"go/constant"
 	"go/types"
+	"maps"
 	"slices"
 	"strings"
 
@@ -69,8 +71,10 @@ func (ps *parseState) parseGoEnumReference(t *types.Basic, named *types.Named, i
 		}
 		for _, v := range tp.EnumValues {
 			ref.values = append(ref.values, &parsedEnumMember{
-				name:  v.Name,
-				value: v.Directives.EnumValue(),
+				name:       v.Name,
+				value:      v.Directives.EnumValue(),
+				doc:        v.Description,
+				deprecated: v.DeprecationReason,
 			})
 		}
 		return ref, nil
@@ -136,9 +140,31 @@ func (ps *parseState) parseGoEnum(t *types.Basic, named *types.Named) (*parsedEn
 		if err != nil {
 			return nil, fmt.Errorf("failed to find decl for object %s: %w", spec.name, err)
 		}
+
+		pragmas := make(map[string]any)
+		comment := ""
 		if doc := docForAstSpec(astSpec); doc != nil {
-			valueSpec.doc = doc.Text()
+			docPragmas, docComment := parsePragmaComment(doc.Text())
+			comment = strings.TrimSpace(docComment)
+			maps.Copy(pragmas, docPragmas)
 		}
+		if val, ok := astSpec.(*ast.ValueSpec); ok && val.Comment != nil {
+			linePragmas, lineComment := parsePragmaComment(val.Comment.Text())
+			if comment == "" {
+				comment = strings.TrimSpace(lineComment)
+			}
+			maps.Copy(pragmas, linePragmas)
+		}
+
+		if raw, ok := pragmas["deprecated"]; ok {
+			reason := ""
+			if str, _ := raw.(string); str != "" {
+				reason = str
+			}
+			valueSpec.deprecated = &reason
+		}
+		valueSpec.doc = comment
+
 		valueSpec.sourceMap = ps.sourceMap(astSpec)
 		spec.values = append(spec.values, valueSpec)
 	}
@@ -190,6 +216,7 @@ type parsedEnumMember struct {
 	name         string
 	value        string
 	doc          string
+	deprecated   *string
 	sourceMap    *sourceMap
 }
 
@@ -212,6 +239,9 @@ func (spec *parsedEnumType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, error)
 		}
 		if val.doc != "" {
 			memberOpts.Description = strings.TrimSpace(val.doc)
+		}
+		if val.deprecated != nil {
+			memberOpts.Deprecated = strings.TrimSpace(*val.deprecated)
 		}
 		if val.sourceMap != nil {
 			memberOpts.SourceMap = val.sourceMap.TypeDef(dag)

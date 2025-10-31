@@ -156,6 +156,16 @@
                     string
                 </div>
                 <div class="col-md-8">
+                    <a href="#method_deprecated">deprecated</a>()
+        
+                                            <p><p>The reason this function is deprecated, if any.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
                     <a href="#method_description">description</a>()
         
                                             <p><p>A doc string for the function, if any.</p></p>                </div>
@@ -206,7 +216,7 @@
                     <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withArg">withArg</a>(string $name, <abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $typeDef, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\Json">Json</abbr>|null $defaultValue = null, string|null $defaultPath = &#039;&#039;, array|null $ignore = null, <abbr title="Dagger\Dagger\SourceMapId|Dagger\SourceMap|null">SourceMap|null</abbr> $sourceMap = null)
+                    <a href="#method_withArg">withArg</a>(string $name, <abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $typeDef, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\Json">Json</abbr>|null $defaultValue = null, string|null $defaultPath = &#039;&#039;, array|null $ignore = null, <abbr title="Dagger\Dagger\SourceMapId|Dagger\SourceMap|null">SourceMap|null</abbr> $sourceMap = null, string|null $deprecated = null)
         
                                             <p><p>Returns the function with the provided argument</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -219,6 +229,16 @@
                     <a href="#method_withCachePolicy">withCachePolicy</a>(<abbr title="Dagger\FunctionCachePolicy">FunctionCachePolicy</abbr> $policy, string|null $timeToLive = null)
         
                                             <p><p>Returns the function updated to use the provided cache policy.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withDeprecated">withDeprecated</a>(string|null $reason = null)
+        
+                                            <p><p>Returns the function with the provided deprecation reason.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -369,8 +389,40 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_description">
+                    <h3 id="method_deprecated">
         <div class="location">at line 30</div>
+        <code>                    string
+    <strong>deprecated</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The reason this function is deprecated, if any.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_description">
+        <div class="location">at line 39</div>
         <code>                    string
     <strong>description</strong>()
         </code>
@@ -402,7 +454,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 39</div>
+        <div class="location">at line 48</div>
         <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
     <strong>id</strong>()
         </code>
@@ -434,7 +486,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_name">
-        <div class="location">at line 48</div>
+        <div class="location">at line 57</div>
         <code>                    string
     <strong>name</strong>()
         </code>
@@ -466,7 +518,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_returnType">
-        <div class="location">at line 57</div>
+        <div class="location">at line 66</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>returnType</strong>()
         </code>
@@ -498,7 +550,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sourceMap">
-        <div class="location">at line 66</div>
+        <div class="location">at line 75</div>
         <code>                    <a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a>
     <strong>sourceMap</strong>()
         </code>
@@ -530,9 +582,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withArg">
-        <div class="location">at line 75</div>
+        <div class="location">at line 84</div>
         <code>                    <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
-    <strong>withArg</strong>(string $name, <abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $typeDef, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\Json">Json</abbr>|null $defaultValue = null, string|null $defaultPath = &#039;&#039;, array|null $ignore = null, <abbr title="Dagger\Dagger\SourceMapId|Dagger\SourceMap|null">SourceMap|null</abbr> $sourceMap = null)
+    <strong>withArg</strong>(string $name, <abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $typeDef, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\Json">Json</abbr>|null $defaultValue = null, string|null $defaultPath = &#039;&#039;, array|null $ignore = null, <abbr title="Dagger\Dagger\SourceMapId|Dagger\SourceMap|null">SourceMap|null</abbr> $sourceMap = null, string|null $deprecated = null)
         </code>
     </h3>
     <div class="details">    
@@ -581,6 +633,11 @@
                 <td>$sourceMap</td>
                 <td></td>
             </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$deprecated</td>
+                <td></td>
+            </tr>
             </table>
 
             
@@ -602,7 +659,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withCachePolicy">
-        <div class="location">at line 108</div>
+        <div class="location">at line 121</div>
         <code>                    <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
     <strong>withCachePolicy</strong>(<abbr title="Dagger\FunctionCachePolicy">FunctionCachePolicy</abbr> $policy, string|null $timeToLive = null)
         </code>
@@ -648,8 +705,50 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_withDeprecated">
+        <div class="location">at line 134</div>
+        <code>                    <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
+    <strong>withDeprecated</strong>(string|null $reason = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Returns the function with the provided deprecation reason.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string|null</td>
+                <td>$reason</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_withDescription">
-        <div class="location">at line 121</div>
+        <div class="location">at line 146</div>
         <code>                    <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
     <strong>withDescription</strong>(string $description)
         </code>
@@ -691,7 +790,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withSourceMap">
-        <div class="location">at line 131</div>
+        <div class="location">at line 156</div>
         <code>                    <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
     <strong>withSourceMap</strong>(<abbr title="Dagger\SourceMapId|Dagger\SourceMap">SourceMap</abbr> $sourceMap)
         </code>

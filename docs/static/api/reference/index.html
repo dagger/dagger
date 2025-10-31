@@ -7784,6 +7784,10 @@
                     </thead>
                     <tbody>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-deprecated" href="#EnumValueTypeDef-deprecated"><code>deprecated</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
+                        <td> The reason this enum member is deprecated, if any. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-description" href="#EnumValueTypeDef-description"><code>description</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> A doc string for the enum member, if any. </td>
                       </tr>
@@ -9328,6 +9332,10 @@
                     </thead>
                     <tbody>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="FieldTypeDef-deprecated" href="#FieldTypeDef-deprecated"><code>deprecated</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
+                        <td> The reason this enum member is deprecated, if any. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="FieldTypeDef-description" href="#FieldTypeDef-description"><code>description</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> A doc string for the field, if any. </td>
                       </tr>
@@ -9674,6 +9682,10 @@
                         <td> Arguments accepted by the function, if any. </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Function-deprecated" href="#Function-deprecated"><code>deprecated</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
+                        <td> The reason this function is deprecated, if any. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Function-description" href="#Function-description"><code>description</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> A doc string for the function, if any. </td>
                       </tr>
@@ -9730,6 +9742,10 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>sourceMap</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID</code></a></span></h6>
                                 <p>The source map for the argument definition.</p>
                               </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>deprecated</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>If deprecated, the reason or migration path.</p>
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -9750,6 +9766,23 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>timeToLive</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>The TTL for the cache policy, if applicable. Provided as a duration string, e.g. &quot;5m&quot;, &quot;1h30s&quot;.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Function-withDeprecated" href="#Function-withDeprecated"><code>withDeprecated</code></a> - <span class="property-type"><a href="#definition-Function"><code>Function!</code></a></span> </td>
+                        <td> Returns the function with the provided deprecation reason. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>reason</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Reason or migration path describing the deprecation.</p>
                               </div>
                             </div>
                           </div>
@@ -9824,6 +9857,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="FunctionArg-defaultValue" href="#FunctionArg-defaultValue"><code>defaultValue</code></a> - <span class="property-type"><a href="#definition-JSON"><code>JSON!</code></a></span> </td>
                         <td> A default value to use for this argument when not explicitly set by the caller, if any. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="FunctionArg-deprecated" href="#FunctionArg-deprecated"><code>deprecated</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
+                        <td> The reason this function is deprecated, if any. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="FunctionArg-description" href="#FunctionArg-description"><code>description</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -12456,6 +12493,10 @@
                         <td> The function used to construct new instances of this object, if any </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="ObjectTypeDef-deprecated" href="#ObjectTypeDef-deprecated"><code>deprecated</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
+                        <td> The reason this enum member is deprecated, if any. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="ObjectTypeDef-description" href="#ObjectTypeDef-description"><code>description</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The doc string for the object, if any. </td>
                       </tr>
@@ -13473,6 +13514,10 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>sourceMap</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID</code></a></span></h6>
                                 <p>The source map for the enum member definition.</p>
                               </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>deprecated</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>If deprecated, the reason or migration path.</p>
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -13498,6 +13543,10 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>sourceMap</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID</code></a></span></h6>
                                 <p>The source map for the enum value definition.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>deprecated</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>If deprecated, the reason or migration path.</p>
                               </div>
                             </div>
                           </div>
@@ -13527,6 +13576,10 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>sourceMap</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID</code></a></span></h6>
                                 <p>The source map for the field definition.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>deprecated</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>If deprecated, the reason or migration path.</p>
                               </div>
                             </div>
                           </div>
@@ -13622,6 +13675,9 @@
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>sourceMap</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID</code></a></span></h6>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>deprecated</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                               </div>
                             </div>
                           </div>

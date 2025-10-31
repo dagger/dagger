@@ -13,6 +13,7 @@ ContextPath: TypeAlias = str
 class FieldDefinition:
     name: APIName | None
     optional: bool = False
+    deprecated: str | None = None
 
 
 @dataclasses.dataclass(slots=True, frozen=True)
@@ -20,6 +21,7 @@ class FunctionDefinition:
     name: APIName | None = None
     doc: str | None = None
     cache: str | None = None
+    deprecated: str | None = None
 
 
 class Enum(str, base.Enum):

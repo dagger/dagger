@@ -3045,6 +3045,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\EnumValueTypeDef::deprecated",
+			"p": "Dagger/EnumValueTypeDef.html#method_deprecated",
+			"d": "<p>The reason this enum member is deprecated, if any.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\EnumValueTypeDef::description",
 			"p": "Dagger/EnumValueTypeDef.html#method_description",
 			"d": "<p>A doc string for the enum member, if any.</p>"
@@ -3495,6 +3501,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\FieldTypeDef::deprecated",
+			"p": "Dagger/FieldTypeDef.html#method_deprecated",
+			"d": "<p>The reason this enum member is deprecated, if any.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\FieldTypeDef::description",
 			"p": "Dagger/FieldTypeDef.html#method_description",
 			"d": "<p>A doc string for the field, if any.</p>"
@@ -3615,6 +3627,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\FunctionArg::deprecated",
+			"p": "Dagger/FunctionArg.html#method_deprecated",
+			"d": "<p>The reason this function is deprecated, if any.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\FunctionArg::description",
 			"p": "Dagger/FunctionArg.html#method_description",
 			"d": "<p>A doc string for the argument, if any.</p>"
@@ -3717,6 +3735,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Function_::deprecated",
+			"p": "Dagger/Function_.html#method_deprecated",
+			"d": "<p>The reason this function is deprecated, if any.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Function_::description",
 			"p": "Dagger/Function_.html#method_description",
 			"d": "<p>A doc string for the function, if any.</p>"
@@ -3756,6 +3780,12 @@
 			"n": "Dagger\\Function_::withCachePolicy",
 			"p": "Dagger/Function_.html#method_withCachePolicy",
 			"d": "<p>Returns the function updated to use the provided cache policy.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Function_::withDeprecated",
+			"p": "Dagger/Function_.html#method_withDeprecated",
+			"d": "<p>Returns the function with the provided deprecation reason.</p>"
 		},
 		{
 			"t": "M",
@@ -4728,6 +4758,12 @@
 			"n": "Dagger\\ObjectTypeDef::constructor",
 			"p": "Dagger/ObjectTypeDef.html#method_constructor",
 			"d": "<p>The function used to construct new instances of this object, if any</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ObjectTypeDef::deprecated",
+			"p": "Dagger/ObjectTypeDef.html#method_deprecated",
+			"d": "<p>The reason this enum member is deprecated, if any.</p>"
 		},
 		{
 			"t": "M",

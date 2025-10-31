@@ -19,6 +19,7 @@ export type DaggerArguments = { [name: string]: DaggerArgument }
 export class DaggerArgument extends Locatable {
   public name: string
   public description: string
+  public deprecated?: string
   private _typeRef?: string
   public type?: TypeDef<TypeDefKind>
   public isVariadic: boolean
@@ -38,16 +39,24 @@ export class DaggerArgument extends Locatable {
 
     this.symbol = this.ast.getSymbolOrThrow(node.name)
     this.name = this.node.name.getText()
-    this.description = this.ast.getDocFromSymbol(this.symbol)
+    const { description, deprecated } = this.ast.getSymbolDoc(this.symbol)
+    this.description = description
+    this.deprecated = deprecated
     this.defaultValue = this.getDefaultValue()
     this.isVariadic = this.node.dotDotDotToken !== undefined
     this.isNullable = this.getIsNullable()
     this.isOptional =
-      this.isVariadic || // if arguments has ...
+      this.isVariadic || // if argument has ...
       (this.defaultValue === undefined && // if argument has a default value that couldn't be resolved.
         this.node.initializer !== undefined) ||
       this.isNullable || // if argument is nullable
       this.node.questionToken !== undefined // if argument has ?
+
+    if (this.deprecated !== undefined && !this.isOptional) {
+      throw new IntrospectionError(
+        `argument ${this.name} is required and cannot be deprecated at ${AST.getNodePosition(this.node)}.`,
+      )
+    }
 
     const decoratorArguments = this.ast.getDecoratorArgument<ArgumentOptions>(
       this.node,
@@ -139,6 +148,7 @@ export class DaggerArgument extends Locatable {
     return {
       name: this.name,
       description: this.description,
+      deprecated: this.deprecated,
       type: this.type,
       isVariadic: this.isVariadic,
       isNullable: this.isNullable,

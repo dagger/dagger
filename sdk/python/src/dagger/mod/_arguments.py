@@ -83,6 +83,22 @@ class Ignore:
         return hash(tuple(self.patterns))
 
 
+@dataclasses.dataclass(slots=True, frozen=True)
+class Deprecated:
+    """Mark a function argument as deprecated.
+
+    Example usage::
+
+        @function
+        def old(self, value: Annotated[str, Deprecated("Use new instead")]): ...
+    """
+
+    reason: str = ""
+
+    def __str__(self) -> str:
+        return self.reason
+
+
 @dataclasses.dataclass(slots=True, kw_only=True)
 class Parameter:
     """Parameter from function signature in :py:class:`FunctionResolver`."""
@@ -99,6 +115,7 @@ class Parameter:
     ignore: list[str] | None = None
     default_path: ContextPath | None = None
     default_value: dagger.JSON | None = None
+    deprecated: str | None = None
 
     conv: dataclasses.InitVar[JsonConverter]
 
@@ -166,3 +183,10 @@ class Parameter:
                     f"parameter '{self.signature.name}'"
                 )
                 raise BadUsageError(msg, extra=extra)
+
+        if self.deprecated and not self.is_optional:
+            msg = (
+                f"Can't deprecate required parameter '{self.signature.name}'. "
+                "Mark it optional or provide a default value."
+            )
+            raise BadUsageError(msg, extra=extra)

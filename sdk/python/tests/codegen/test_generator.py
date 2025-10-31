@@ -2,18 +2,50 @@ from textwrap import dedent
 
 import graphql
 import pytest
-from graphql import GraphQLArgument as Argument
-from graphql import GraphQLEnumType, GraphQLEnumValue, GraphQLID
-from graphql import GraphQLField as Field
-from graphql import GraphQLInputField as Input
-from graphql import GraphQLInputField as InputField
-from graphql import GraphQLInputObjectType as InputObject
-from graphql import GraphQLInt as Int
-from graphql import GraphQLList as List
-from graphql import GraphQLNonNull as NonNull
-from graphql import GraphQLObjectType as Object
-from graphql import GraphQLScalarType as Scalar
-from graphql import GraphQLString as String
+from graphql import (
+    GraphQLArgument as Argument,
+)
+from graphql import (
+    GraphQLBoolean as Boolean,
+)
+from graphql import (
+    GraphQLEnumType,
+    GraphQLEnumValue,
+    GraphQLID,
+)
+from graphql import (
+    GraphQLField as Field,
+)
+from graphql import (
+    GraphQLInputField as Input,
+)
+from graphql import (
+    GraphQLInputField as InputField,
+)
+from graphql import (
+    GraphQLInputObjectType as InputObject,
+)
+from graphql import (
+    GraphQLInt as Int,
+)
+from graphql import (
+    GraphQLInterfaceType as Interface,
+)
+from graphql import (
+    GraphQLList as List,
+)
+from graphql import (
+    GraphQLNonNull as NonNull,
+)
+from graphql import (
+    GraphQLObjectType as Object,
+)
+from graphql import (
+    GraphQLScalarType as Scalar,
+)
+from graphql import (
+    GraphQLString as String,
+)
 
 from codegen.generator import (
     Context,
@@ -24,8 +56,15 @@ from codegen.generator import (
     format_name,
     format_output_type,
 )
-from codegen.generator import Enum as EnumHandler
-from codegen.generator import Scalar as ScalarHandler
+from codegen.generator import (
+    Enum as EnumHandler,
+)
+from codegen.generator import (
+    Input as InputHandler,
+)
+from codegen.generator import (
+    Scalar as ScalarHandler,
+)
 
 
 @pytest.fixture
@@ -178,6 +217,28 @@ def test_input_field_arg(cls, name, args, expected, ctx: Context):
     assert _InputField(ctx, name, cls(*args)).as_arg() == expected
 
 
+def test_input_object_field_deprecated():
+    local_ctx = Context()
+    input_type = InputObject(
+        "LegacyInput",
+        lambda: {
+            "legacyField": InputField(
+                String,
+                description="Legacy config path.",
+                deprecation_reason="Use `configPath` instead.",
+            ),
+            "active": InputField(Boolean),
+        },
+        description="Configuration options.",
+    )
+
+    rendered = InputHandler(local_ctx).render(input_type)
+
+    assert "class LegacyInput(Input):" in rendered
+    assert "legacy_field: str | None = None" in rendered
+    assert ".. deprecated:: Use config_path instead." in rendered
+
+
 def test_core_sync(ctx: Context):
     handler = _ObjectField(
         ctx,
@@ -229,6 +290,76 @@ def test_user_sync_object(ctx: Context):
             return Foo(_ctx)
         """.rstrip()
     )
+
+
+def test_func_doc_deprecated_args(ctx: Context):
+    field = Field(
+        String,
+        {
+            "path": Argument(NonNull(String)),
+            "configDir": Argument(
+                String,
+                deprecation_reason="Use `configPath` instead.",
+            ),
+        },
+        deprecation_reason="Use apply_config instead.",
+    )
+
+    parent = Object("Container", lambda: {"apply": field})
+    handler = _ObjectField(ctx, "apply", field, parent)
+
+    docstring = handler.func_doc()
+
+    assert "Parameters" in docstring
+    assert ".. deprecated::\n    Use apply_config instead." in docstring
+    doc_lines = {line.strip() for line in docstring.splitlines()}
+    assert "config_dir:" in doc_lines
+    assert ".. deprecated:: Use config_path instead." in doc_lines
+
+    body = handler.func_body()
+    normalized = body.replace('\\"', '"')
+    assert 'Method "apply" is deprecated: Use apply_config instead.' in normalized
+
+
+def test_interface_methods_deprecated(ctx: Context):
+    iface = Interface(
+        "Fooer",
+        lambda: {
+            "foo": Field(
+                String,
+                {
+                    "value": Argument(
+                        Int,
+                        deprecation_reason="Use `other` instead.",
+                    )
+                },
+                deprecation_reason="Call `bar` instead.",
+            ),
+            "bar": Field(
+                String,
+                {"note": Argument(String, description="Caller note.")},
+            ),
+        },
+    )
+
+    foo_handler = _ObjectField(ctx, "foo", iface.fields["foo"], iface)
+    foo_doc = foo_handler.func_doc()
+    assert ".. deprecated::\n    Call :py:meth:`bar` instead." in foo_doc
+
+    foo_doc_lines = {line.strip() for line in foo_doc.splitlines()}
+    assert ".. deprecated:: Use other instead." in foo_doc_lines
+
+    foo_body = foo_handler.func_body()
+    foo_normalized = foo_body.replace('\\"', '"')
+    assert 'Method "foo" is deprecated: Call "bar" instead.' in foo_normalized
+
+    bar_handler = _ObjectField(ctx, "bar", iface.fields["bar"], iface)
+    bar_doc = bar_handler.func_doc()
+    assert ".. deprecated::" not in bar_doc
+    assert "Parameters" in bar_doc
+
+    bar_body = bar_handler.func_body()
+    assert "warnings.warn" not in bar_body
 
 
 @pytest.mark.parametrize(
@@ -325,6 +456,25 @@ def test_scalar_render(type_, expected, ctx: Context):
 
                     TWO = 'TWO'
                 """,
+            ),
+        ),
+        (
+            GraphQLEnumType(
+                "Mode",
+                {
+                    "VALUE": GraphQLEnumValue(
+                        "VALUE",
+                        deprecation_reason="Use ModeV2 instead.",
+                    ),
+                },
+            ),
+            dedent(
+                '''
+                class Mode(Enum):
+
+                    VALUE = 'VALUE'
+                    """.. deprecated:: Use ModeV2 instead."""
+                ''',
             ),
         ),
     ],

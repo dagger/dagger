@@ -253,10 +253,7 @@ func dagqlToCodegenField(dagqlField *introspection.Field) *codegenintrospection.
 	}
 
 	f.IsDeprecated = dagqlField.IsDeprecated()
-
-	if reason := dagqlField.DeprecationReason(); reason != nil {
-		f.DeprecationReason = *reason
-	}
+	f.DeprecationReason = dagqlField.DeprecationReason()
 
 	dagqlDirectives := dagqlField.Directives()
 	f.Directives = make(codegenintrospection.Directives, 0, len(dagqlDirectives))
@@ -278,6 +275,9 @@ func dagqlToCodegenInputValue(dagqlInputValue *introspection.InputValue) codegen
 
 	v.TypeRef = dagqlToCodegenTypeRef(dagqlInputValue.Type_)
 
+	v.DeprecationReason = dagqlInputValue.DeprecationReason()
+	v.IsDeprecated = dagqlInputValue.IsDeprecated()
+
 	dagqlDirectives := dagqlInputValue.Directives()
 	v.Directives = make(codegenintrospection.Directives, 0, len(dagqlDirectives))
 	for _, dagqlDirective := range dagqlDirectives {
@@ -295,10 +295,7 @@ func dagqlToCodegenEnumValue(dagqlInputValue *introspection.EnumValue) codegenin
 	v.Description = dagqlInputValue.Description()
 
 	v.IsDeprecated = dagqlInputValue.IsDeprecated()
-
-	if reason := dagqlInputValue.DeprecationReason(); reason != nil {
-		v.DeprecationReason = *reason
-	}
+	v.DeprecationReason = dagqlInputValue.DeprecationReason()
 
 	dagqlDirectives := dagqlInputValue.Directives()
 	v.Directives = make(codegenintrospection.Directives, 0, len(dagqlDirectives))

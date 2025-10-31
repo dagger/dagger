@@ -1,8 +1,10 @@
 package templates
 
 import (
+	"bytes"
 	"cmp"
 	"context"
+	"encoding/json"
 	"fmt"
 	"go/token"
 	"regexp"
@@ -89,7 +91,19 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"ModuleRelPath":           funcs.moduleRelPath,
 		"Dependencies":            funcs.Dependencies,
 		"HasLocalDependencies":    funcs.HasLocalDependencies,
+		"json":                    funcs.json,
 	}
+}
+
+func (goTemplateFuncs) json(v any) (string, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
+		return "", err
+	}
+	return strings.TrimRight(buf.String(), "\n"), nil
 }
 
 // comments out a string

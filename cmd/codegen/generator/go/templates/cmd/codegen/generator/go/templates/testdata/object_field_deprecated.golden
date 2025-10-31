@@ -1,0 +1,25 @@
+// Test object with deprecated field
+type Test struct {
+	query *querybuilder.Selection
+
+	legacyField *string
+}
+
+func (r *Test) WithGraphQLQuery(q *querybuilder.Selection) *Test {
+	return &Test{
+		query: q,
+	}
+}
+
+// Deprecated: This field is deprecated and will be removed in future versions.
+func (r *Test) LegacyField(ctx context.Context) (string, error) {
+	if r.legacyField != nil {
+		return *r.legacyField, nil
+	}
+	q := r.query.Select("legacyField")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
