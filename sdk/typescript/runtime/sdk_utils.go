@@ -1,6 +1,9 @@
 package main
 
-import "typescript-sdk/internal/dagger"
+import (
+	"typescript-sdk/internal/dagger"
+	"typescript-sdk/tsutils"
+)
 
 func templateDirectory() *dagger.Directory {
 	return dag.CurrentModule().Source().Directory("template")
@@ -11,7 +14,11 @@ func binDirectory() *dagger.Directory {
 }
 
 func entrypointFile() *dagger.File {
-	return binDirectory().File("__dagger.entrypoint.ts")
+	return dag.File("__dagger.entrypoint.ts", tsutils.StaticEntrypointTS)
+}
+
+func defaultPackageJSONFile() *dagger.File {
+	return dag.File("package.json", tsutils.StaticDefaultPackageJSON)
 }
 
 func denoConfigUpdatorFile() *dagger.File {
@@ -19,7 +26,7 @@ func denoConfigUpdatorFile() *dagger.File {
 }
 
 func tsConfigUpdatorFile() *dagger.File {
-	return binDirectory().File("__tsconfig.updator.ts")
+	return dag.CurrentModule().Source().File("bin/__tsconfig.updator.ts")
 }
 
 func bundledStaticDirectoryForModule() *dagger.Directory {

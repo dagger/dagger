@@ -18,8 +18,7 @@ type Introspector struct {
 func NewIntrospector(sdkSourceDir *dagger.Directory) *Introspector {
 	ctr := dag.
 		Container().
-		From(tsdistconsts.DefaultAlpineImageRef).
-		WithExec([]string{"apk", "add", "libgcc", "libstdc++"}).
+		From(tsdistconsts.DefaultBunImageRef).
 		WithMountedFile(introspectorBinPath, sdkSourceDir.File(introspectorBinPath)).
 		WithMountedDirectory(typescriptLibPath, sdkSourceDir.Directory("typescript-library")).
 		WithWorkdir(ModSourceDirPath)

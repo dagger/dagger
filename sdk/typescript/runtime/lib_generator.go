@@ -3,6 +3,7 @@ package main
 import (
 	"typescript-sdk/internal/dagger"
 	"typescript-sdk/tsdistconsts"
+	"typescript-sdk/tsutils"
 )
 
 type LibGenerator struct {
@@ -19,7 +20,7 @@ type LibGenerator struct {
 func NewLibGenerator(sdkSourceDir *dagger.Directory) *LibGenerator {
 	ctr := dag.
 		Container().
-		From(tsdistconsts.DefaultAlpineImageRef).
+		From(tsdistconsts.DefaultBunImageRef).
 		WithMountedFile(codegenBinPath, sdkSourceDir.File("/codegen"))
 
 	return &LibGenerator{
@@ -77,7 +78,8 @@ func (l *LibGenerator) GenerateBundleLibrary(
 	modulePath string,
 ) *dagger.Directory {
 	return l.StaticBundleLib.
-		WithDirectory("/", bundledStaticDirectoryForModule()).
+		WithNewFile("index.ts", tsutils.StaticBundleIndexTS).
+		WithNewFile("telemetry.ts", tsutils.StaticBundleTelemetryTS).
 		WithFile(
 			"client.gen.ts",
 			l.GenerateBindings(
