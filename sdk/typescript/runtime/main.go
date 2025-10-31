@@ -121,15 +121,23 @@ func (t *TypescriptSdk) Codegen(
 
 	// TODO: handle that in an init method.
 	// Add default template if no source files exist
-	sourceFiles, err := cfg.source.Glob(ctx, "src/**/*.ts")
+	srcDirExist, err := cfg.source.Exists(ctx, SrcDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list source files: %w", err)
+		return nil, fmt.Errorf("failed to check if src dir exists: %w", err)
+	}
+
+	sourceFiles := []string{}
+	if srcDirExist {
+		sourceFiles, err = cfg.source.Glob(ctx, "src/**/*.ts")
+		if err != nil {
+			return nil, fmt.Errorf("failed to list source files: %w", err)
+		}
 	}
 
 	if len(sourceFiles) == 0 {
-		codegen = codegen.WithFile(
+		codegen = codegen.WithNewFile(
 			"src/index.ts",
-			dag.File("index.ts", tsutils.TemplateIndexTS(strcase.ToCamel(cfg.name))))
+			tsutils.TemplateIndexTS(strcase.ToCamel(cfg.name)))
 	}
 
 	return dag.GeneratedCode(

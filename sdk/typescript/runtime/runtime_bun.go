@@ -28,7 +28,7 @@ func NewBunRuntime(
 	ctr := dag.Container().
 		From(cfg.image).
 		WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(cacheVolumeName), dagger.ContainerWithMountedCacheOpts{
-			Sharing: dagger.CacheSharingModePrivate,
+			Sharing: dagger.CacheSharingModeShared,
 		}).
 		WithWorkdir(cfg.modulePath())
 

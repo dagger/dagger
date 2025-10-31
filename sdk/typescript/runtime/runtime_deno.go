@@ -27,7 +27,9 @@ func NewDenoRuntime(
 
 	ctr := dag.Container().
 		From(cfg.image).
-		WithMountedCache("/root/.deno/cache", dag.CacheVolume(cacheVolumeName)).
+		WithMountedCache("/root/.deno/cache", dag.CacheVolume(cacheVolumeName), dagger.ContainerWithMountedCacheOpts{
+			Sharing: dagger.CacheSharingModeShared,
+		}).
 		WithWorkdir(cfg.modulePath())
 
 	return &DenoRuntime{

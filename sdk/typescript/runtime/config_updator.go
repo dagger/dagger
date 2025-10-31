@@ -8,13 +8,13 @@ import (
 )
 
 func CreateOrUpdateTSConfigForModule(ctx context.Context, modSourceDir *dagger.Directory) (*dagger.File, error) {
-	tsconfigExist, err := modSourceDir.Glob(ctx, "tsconfig.json")
+	tsconfigExist, err := modSourceDir.Exists(ctx, "tsconfig.json")
 	if err != nil {
 		return nil, fmt.Errorf("failed to lookup for tsconfig.json: %w", err)
 	}
 
 	// If no tsconfig.json is found in the user module, we generate a default one.
-	if len(tsconfigExist) == 0 {
+	if !tsconfigExist {
 		defaultTSConfigContent := tsutils.DefaultTSConfigForModule()
 
 		return dag.File("tsconfig.json", defaultTSConfigContent).Sync(ctx)

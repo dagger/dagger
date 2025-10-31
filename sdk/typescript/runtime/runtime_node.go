@@ -226,7 +226,9 @@ func NewYarnPkgManager(runtime *NodeRuntime) *YarnPkgManager {
 	cacheVolumeName := fmt.Sprintf("yarn-cache-%s-%s", runtime.cfg.runtime, runtime.cfg.runtimeVersion)
 
 	runtime.ctr = runtime.ctr.
-		WithMountedCache("/root/.cache/yarn", dag.CacheVolume(cacheVolumeName))
+		WithMountedCache("/root/.cache/yarn", dag.CacheVolume(cacheVolumeName), dagger.ContainerWithMountedCacheOpts{
+			Sharing: dagger.CacheSharingModeShared,
+		})
 
 	return &YarnPkgManager{
 		NodeRuntime: runtime,
@@ -277,7 +279,9 @@ func NewNpmPkgManager(runtime *NodeRuntime) *NpmPkgManager {
 	cacheVolumeName := fmt.Sprintf("npm-cache-%s-%s", runtime.cfg.runtime, runtime.cfg.runtimeVersion)
 
 	runtime.ctr = runtime.ctr.
-		WithMountedCache("/root/.npm", dag.CacheVolume(cacheVolumeName))
+		WithMountedCache("/root/.npm", dag.CacheVolume(cacheVolumeName), dagger.ContainerWithMountedCacheOpts{
+			Sharing: dagger.CacheSharingModeShared,
+		})
 
 	return &NpmPkgManager{
 		NodeRuntime: runtime,
@@ -333,7 +337,9 @@ func NewPnpmPkgManager(runtime *NodeRuntime) *PnpmPkgManager {
 	cacheVolumeName := fmt.Sprintf("pnpm-cache-%s-%s", runtime.cfg.runtime, runtime.cfg.runtimeVersion)
 
 	runtime.ctr = runtime.ctr.
-		WithMountedCache("/root/.pnpm-store", dag.CacheVolume(cacheVolumeName))
+		WithMountedCache("/root/.pnpm-store", dag.CacheVolume(cacheVolumeName), dagger.ContainerWithMountedCacheOpts{
+			Sharing: dagger.CacheSharingModeShared,
+		})
 
 	return &PnpmPkgManager{
 		NodeRuntime: runtime,
