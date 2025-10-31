@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/db"
 	"github.com/dagger/dagger/internal/buildkit/util/db/boltutil"
 	"github.com/pkg/errors"
+	"go.etcd.io/bbolt"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -27,7 +28,7 @@ type Store struct {
 }
 
 func NewStore(dbPath string) (*Store, error) {
-	db, err := boltutil.Open(dbPath, 0600, nil)
+	db, err := boltutil.Open(dbPath, 0600, &bbolt.Options{NoSync: true})
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open database file %s", dbPath)
 	}
