@@ -8,6 +8,7 @@ import (
 	snapshotsapi "github.com/containerd/containerd/api/services/snapshots/v1"
 	ctdsnapshot "github.com/containerd/containerd/v2/core/snapshots"
 	snproxy "github.com/containerd/containerd/v2/core/snapshots/proxy"
+	"github.com/containerd/containerd/v2/core/snapshots/storage"
 	"github.com/containerd/containerd/v2/defaults"
 	"github.com/containerd/containerd/v2/pkg/dialer"
 	"github.com/containerd/containerd/v2/plugins/snapshots/native"
@@ -21,7 +22,11 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-func newSnapshotter(rootDir string, cfg bkconfig.OCIConfig) (ctdsnapshot.Snapshotter, string, error) {
+func newSnapshotter(
+	rootDir string,
+	cfg bkconfig.OCIConfig,
+	mdStore *storage.MetaStore,
+) (ctdsnapshot.Snapshotter, string, error) {
 	var (
 		name    = cfg.Snapshotter
 		address = cfg.ProxySnapshotterPath
@@ -70,7 +75,7 @@ func newSnapshotter(rootDir string, cfg bkconfig.OCIConfig) (ctdsnapshot.Snapsho
 	case "native":
 		sn, snErr = native.NewSnapshotter(rootDir)
 	case "overlayfs": // not "overlay", for consistency with containerd snapshotter plugin ID.
-		sn, snErr = overlay.NewSnapshotter(rootDir, overlay.AsynchronousRemove)
+		sn, snErr = overlay.NewSnapshotter(rootDir, overlay.AsynchronousRemove, overlay.WithMetaStore(mdStore))
 	case "fuse-overlayfs":
 		// no Opt (AsynchronousRemove is untested for fuse-overlayfs)
 		sn, snErr = fuseoverlayfs.NewSnapshotter(rootDir)
