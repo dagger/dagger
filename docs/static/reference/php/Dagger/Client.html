@@ -895,6 +895,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    <a href="../Dagger/Volume.html"><abbr title="Dagger\Volume">Volume</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadVolumeFromID">loadVolumeFromID</a>(<abbr title="Dagger\VolumeId|Dagger\Volume">Volume</abbr> $id)
+        
+                                            <p><p>Load a Volume from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -941,6 +951,16 @@
                     <a href="#method_sourceMap">sourceMap</a>(string $filename, int $line, int $column)
         
                                             <p><p>Creates source map metadata.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Volume.html"><abbr title="Dagger\Volume">Volume</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_sshfsVolume">sshfsVolume</a>(string $endpoint, <abbr title="Dagger\SecretId|Dagger\Secret">Secret</abbr> $privateKey, <abbr title="Dagger\SecretId|Dagger\Secret">Secret</abbr> $publicKey)
+        
+                                            <p><p>Create or retrieve an engine-managed SSHFS volume. Endpoint must be a parseable SSH URL, e.g. 'ssh://user@host:2222/path'.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -4150,8 +4170,50 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_module">
+                    <h3 id="method_loadVolumeFromID">
         <div class="location">at line 813</div>
+        <code>                    <a href="../Dagger/Volume.html"><abbr title="Dagger\Volume">Volume</abbr></a>
+    <strong>loadVolumeFromID</strong>(<abbr title="Dagger\VolumeId|Dagger\Volume">Volume</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a Volume from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\VolumeId|Dagger\Volume">Volume</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Volume.html"><abbr title="Dagger\Volume">Volume</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_module">
+        <div class="location">at line 823</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>module</strong>()
         </code>
@@ -4183,7 +4245,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_moduleSource">
-        <div class="location">at line 822</div>
+        <div class="location">at line 832</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>moduleSource</strong>(string $refString, string|null $refPin = &#039;&#039;, bool|null $disableFindUp = false, bool|null $allowNotExists = false, <abbr title="Dagger\Dagger\ModuleSourceKind">ModuleSourceKind</abbr>|null $requireKind = null)
         </code>
@@ -4245,7 +4307,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_secret">
-        <div class="location">at line 849</div>
+        <div class="location">at line 859</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>secret</strong>(string $uri, string|null $cacheKey = null)
         </code>
@@ -4292,7 +4354,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_setSecret">
-        <div class="location">at line 864</div>
+        <div class="location">at line 874</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>setSecret</strong>(string $name, string $plaintext)
         </code>
@@ -4339,7 +4401,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sourceMap">
-        <div class="location">at line 875</div>
+        <div class="location">at line 885</div>
         <code>                    <a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a>
     <strong>sourceMap</strong>(string $filename, int $line, int $column)
         </code>
@@ -4390,8 +4452,60 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_sshfsVolume">
+        <div class="location">at line 897</div>
+        <code>                    <a href="../Dagger/Volume.html"><abbr title="Dagger\Volume">Volume</abbr></a>
+    <strong>sshfsVolume</strong>(string $endpoint, <abbr title="Dagger\SecretId|Dagger\Secret">Secret</abbr> $privateKey, <abbr title="Dagger\SecretId|Dagger\Secret">Secret</abbr> $publicKey)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or retrieve an engine-managed SSHFS volume. Endpoint must be a parseable SSH URL, e.g. 'ssh://user@host:2222/path'.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$endpoint</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\SecretId|Dagger\Secret">Secret</abbr></td>
+                <td>$privateKey</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\SecretId|Dagger\Secret">Secret</abbr></td>
+                <td>$publicKey</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Volume.html"><abbr title="Dagger\Volume">Volume</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_typeDef">
-        <div class="location">at line 887</div>
+        <div class="location">at line 909</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>typeDef</strong>()
         </code>
@@ -4423,7 +4537,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_version">
-        <div class="location">at line 896</div>
+        <div class="location">at line 918</div>
         <code>                    string
     <strong>version</strong>()
         </code>
