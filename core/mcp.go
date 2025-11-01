@@ -21,12 +21,15 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/iancoleman/strcase"
+	"github.com/jedevc/diffparser"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -388,6 +391,51 @@ func (m *MCP) updateEnvWorkspace(ctx context.Context, workspace dagql.ObjectResu
 	return nil
 }
 
+func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dagql.ObjectResult[*Changeset]) (string, error) {
+	var rawPatch string
+	if err := srv.Select(ctx, changes, &rawPatch, dagql.Selector{
+		View:  srv.View,
+		Field: "asPatch",
+	}, dagql.Selector{
+		View:  srv.View,
+		Field: "contents",
+	}); err != nil {
+		return fmt.Sprintf("WARNING: failed to fetch patch summary: %s", err), nil
+	}
+	if rawPatch == "" {
+		// No changes; don't say anything, since saying "No changes" could be
+		// confusing depending on other context (like logs from a `git show`)
+		return "", nil
+	}
+	if strings.Count(rawPatch, "\n") > 100 {
+		// If the patch is too large, show a summary instead
+		addedDirectories := changes.Self().AddedPaths
+		addedDirectories = slices.DeleteFunc(addedDirectories, func(s string) bool {
+			return !strings.HasSuffix(s, "/")
+		})
+		removedDirectories := changes.Self().RemovedPaths
+		removedDirectories = slices.DeleteFunc(removedDirectories, func(s string) bool {
+			return !strings.HasSuffix(s, "/")
+		})
+		patch, err := diffparser.Parse(rawPatch)
+		if err != nil {
+			return "", fmt.Errorf("parse patch: %w", err)
+		}
+		preview := &idtui.PatchPreview{
+			Patch:       patch,
+			AddedDirs:   addedDirectories,
+			RemovedDirs: removedDirectories,
+		}
+		var res strings.Builder
+		llmOut := termenv.NewOutput(&res, termenv.WithProfile(termenv.Ascii))
+		if err := preview.Summarize(llmOut, 80); err != nil {
+			return fmt.Sprintf("WARNING: failed to render patch summary: %s", err), nil
+		}
+		return res.String(), nil
+	}
+	return rawPatch, nil
+}
+
 func toAny(v any) (res map[string]any, rerr error) {
 	pl, err := json.Marshal(v)
 	if err != nil {
@@ -703,11 +751,7 @@ func (m *MCP) call(ctx context.Context,
 		if err := m.updateEnvWorkspace(ctx, newWS); err != nil {
 			return "", err
 		}
-		// No particular message needed here. At one point we diffed the Env.workspace
-		// and printed which files were modified, but it's not really necessary to
-		// show things like that unilaterally vs. just allowing each Env-returning
-		// tool to control the messaging.
-		return "", nil
+		return m.summarizePatch(ctx, srv, changes)
 	}
 
 	if autoConstruct != nil {
@@ -1067,21 +1111,7 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToo
 
 	var allResults []*ModelMessage
 
-	// 1. Execute all regular read-only (non-MCP) calls in parallel
-	if len(regularCalls) > 0 {
-		allResults = append(allResults, m.callBatchRegular(ctx, tools, regularCalls)...)
-	}
-
-	// 2. Execute all read-only MCP calls in parallel (safe across servers)
-	var readOnlyToolCalls []LLMToolCall
-	for _, calls := range readOnlyMCPCalls {
-		readOnlyToolCalls = append(readOnlyToolCalls, calls...)
-	}
-	if len(readOnlyToolCalls) > 0 {
-		allResults = append(allResults, m.callBatchRegular(ctx, tools, readOnlyToolCalls)...)
-	}
-
-	// 3. Execute destructive non-MCP calls sequentially (they modify Env/Changeset state)
+	// 1. Execute destructive non-MCP calls sequentially (they modify Env/Changeset state)
 	for _, call := range destructiveCalls {
 		result, isError := m.Call(ctx, tools, call)
 		allResults = append(allResults, &ModelMessage{
@@ -1092,10 +1122,24 @@ func (m *MCP) CallBatch(ctx context.Context, tools []LLMTool, toolCalls []LLMToo
 		})
 	}
 
-	// 4. Execute destructive MCP calls one server at a time to avoid workspace conflicts
+	// 2. Execute destructive MCP calls one server at a time to avoid workspace conflicts
 	for serverName, calls := range destructiveMCPCalls {
 		serverResults := m.callBatchMCPServer(ctx, tools, calls, serverName)
 		allResults = append(allResults, serverResults...)
+	}
+
+	// 3. Execute all regular read-only (non-MCP) calls in parallel
+	if len(regularCalls) > 0 {
+		allResults = append(allResults, m.callBatchRegular(ctx, tools, regularCalls)...)
+	}
+
+	// 4. Execute all read-only MCP calls in parallel (safe across servers)
+	var readOnlyToolCalls []LLMToolCall
+	for _, calls := range readOnlyMCPCalls {
+		readOnlyToolCalls = append(readOnlyToolCalls, calls...)
+	}
+	if len(readOnlyToolCalls) > 0 {
+		allResults = append(allResults, m.callBatchRegular(ctx, tools, readOnlyToolCalls)...)
 	}
 
 	return allResults
@@ -1216,11 +1260,13 @@ func (m *MCP) captureLogs(ctx context.Context, spanID string) ([]string, error) 
 				continue
 			}
 			var skip bool
+		dance:
 			for _, attr := range logAttrs {
-				if attr.Key == telemetry.StdioEOFAttr || attr.Key == telemetry.LogsVerboseAttr {
+				switch attr.Key {
+				case telemetry.StdioEOFAttr, telemetry.LogsVerboseAttr, telemetry.LogsGlobalAttr:
 					if attr.Value.GetBoolValue() {
 						skip = true
-						break
+						break dance
 					}
 				}
 			}
@@ -1289,7 +1335,7 @@ func toolErrorMessage(err error) string {
 		// TODO: return a structured error object instead?
 		var exts []string
 		for k, v := range extErr.Extensions() {
-			if k == "traceparent" {
+			if k == "traceparent" || k == "baggage" {
 				// silence this one
 				continue
 			}

@@ -160,5 +160,6 @@ func GlobalLogsSpanContext(ctx context.Context) context.Context {
 
 // GlobalWriter returns a Writer that writes to the global logging span.
 func GlobalWriter(ctx context.Context, name string, attrs ...log.KeyValue) io.Writer {
+	attrs = append(attrs, log.Bool(LogsGlobalAttr, true))
 	return NewWriter(GlobalLogsSpanContext(ctx), name, attrs...)
 }

@@ -516,7 +516,7 @@ type searchArgs struct {
 }
 
 func (s *directorySchema) search(ctx context.Context, parent dagql.ObjectResult[*core.Directory], args searchArgs) (dagql.Array[*core.SearchResult], error) {
-	return parent.Self().Search(ctx, args.SearchOpts, args.Paths, args.Globs)
+	return parent.Self().Search(ctx, args.SearchOpts, true, args.Paths, args.Globs)
 }
 
 type withPatchArgs struct {

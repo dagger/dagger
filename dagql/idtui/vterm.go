@@ -198,6 +198,8 @@ func (term *Vterm) redraw() {
 		renderer, _ := glamour.NewTermRenderer(
 			glamour.WithWordWrap(term.Width-lipgloss.Width(term.Prefix)),
 			glamour.WithStyles(MarkdownStyle),
+			glamour.WithPreservedNewLines(),
+			glamour.WithEmoji(),
 		)
 
 		rendered, err := renderer.Render(term.markdownBuf.String())
@@ -255,6 +257,8 @@ func (m *Markdown) View() string {
 	}
 	glamourOpts := []glamour.TermRendererOption{
 		glamour.WithStyles(st),
+		glamour.WithPreservedNewLines(),
+		glamour.WithEmoji(),
 	}
 	if m.Width != 0 {
 		glamourOpts = append(glamourOpts,
