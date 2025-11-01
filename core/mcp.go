@@ -426,18 +426,10 @@ func (m *MCP) summarizePatch(ctx context.Context, srv *dagql.Server, changes dag
 			AddedDirs:   addedDirectories,
 			RemovedDirs: removedDirectories,
 		}
-		// render with nice colors to the TUI
-		stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-		uiOut := termenv.NewOutput(stdio.Stdout, termenv.WithProfile(
-			slog.ColorProfileFromContext(ctx),
-		))
 		var res strings.Builder
 		llmOut := termenv.NewOutput(&res, termenv.WithProfile(termenv.Ascii))
 		if err := preview.Summarize(llmOut, 80); err != nil {
 			return fmt.Sprintf("WARNING: failed to render patch summary: %s", err), nil
-		}
-		if err := preview.Summarize(uiOut, 80); err != nil {
-			slog.Warn("failed to render patch summary", "error", err)
 		}
 		return res.String(), nil
 	}
