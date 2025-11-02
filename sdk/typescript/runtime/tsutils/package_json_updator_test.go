@@ -77,6 +77,22 @@ func TestUpdatePackageJSON(t *testing.T) {
 }`,
 		},
 		{
+			name: "package.json with inline comment on dependency line",
+			packageJSON: `{
+ "dependencies": {
+      "typescript": "5.9.3", // keep local toolchain
+			"test": "https://github.com/test/test.git#v1.0.0" // verify that inline link are kept
+  }
+}`,
+			expected: `{
+    "type": "module",
+    "dependencies": {
+      "typescript": "5.9.3",
+			"test": "https://github.com/test/test.git#v1.0.0"
+    }
+}`,
+		},
+		{
 			name: "package.json with existing typescript version",
 			packageJSON: `{
   "type": "module",

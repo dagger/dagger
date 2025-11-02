@@ -118,7 +118,7 @@ func TestUpdateTSConfigForModule(t *testing.T) {
     "lib": ["ESNext"],
     "target": "ESNext",
     "module": "Preserve",
-    "moduleDetection": "force",
+    "moduleDetection": "force", // A module detection
     "jsx": "react-jsx",
     "allowJs": true,
 
@@ -132,7 +132,7 @@ func TestUpdateTSConfigForModule(t *testing.T) {
     "strict": true,
     "skipLibCheck": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true,
+    "noUncheckedIndexedAccess": true, // A no unchecked indexed access
     "noImplicitOverride": true,
 
     // Some stricter flags (disabled by default)

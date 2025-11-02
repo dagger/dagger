@@ -2,7 +2,6 @@ package tsutils
 
 import (
 	"bytes"
-	"strings"
 
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -36,13 +35,29 @@ func setIfNotExists(jsonStr, path string, value any) (string, error) {
 
 func removeJSONComments(input string) string {
 	var out bytes.Buffer
-	lines := strings.Split(input, "\n")
-	for _, line := range lines {
-		// remove everything after // (simple approach)
-		if idx := strings.Index(strings.TrimSpace(line), "//"); idx >= 0 {
-			line = line[:idx]
+	inString := false
+	escaped := false
+	runes := []rune(input)
+
+	for i := 0; i < len(runes); i++ {
+		c := runes[i]
+
+		if c == '"' && !escaped {
+			inString = !inString
 		}
-		out.WriteString(line + "\n")
+
+		if !inString && c == '/' && i+1 < len(runes) && runes[i+1] == '/' {
+			// skip until newline
+			for i < len(runes) && runes[i] != '\n' {
+				i++
+			}
+			out.WriteRune('\n')
+			continue
+		}
+
+		out.WriteRune(c)
+		escaped = (c == '\\' && !escaped)
 	}
+
 	return out.String()
 }

@@ -66,8 +66,9 @@ func TestUpdateDenoConfigForModule(t *testing.T) {
 			denoConfig: `{
   // Environment setup & latest features
   "imports": {
-    "typescript": "npm:typescript@5.9.3"
-  }
+    "typescript": "npm:typescript@5.9.3" // A typescript version
+  },
+  "url": "https://foo/bar/baz.html" // A URL
 } `,
 			expected: `{
   "imports": {
@@ -84,7 +85,8 @@ func TestUpdateDenoConfigForModule(t *testing.T) {
     "sloppy-imports",
     "node-globals",
     "byonm"
-  ]
+  ],
+  "url": "https://foo/bar/baz.html"
 }`,
 		},
 		{
