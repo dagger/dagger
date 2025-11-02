@@ -105,6 +105,7 @@ func analyzeModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) (c
 		runtime:           Node,
 		packageJSONConfig: nil,
 		sdkLibOrigin:      Bundle,
+		source:            dag.Directory(),
 	}
 
 	cfg.name, err = modSource.ModuleOriginalName(ctx)
@@ -131,14 +132,22 @@ func analyzeModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) (c
 
 	// If a first init, there will be no directory, so we ignore the error here.
 	// We also only include package.json & lockfiles to benefit from caching.
-	cfg.source = modSource.ContextDirectory().Directory(cfg.subPath)
-	configEntries, err := dag.Directory().WithDirectory(".", cfg.source, dagger.DirectoryWithDirectoryOpts{
-		Include: moduleConfigFiles("."),
-	}).Entries(ctx)
-	if err == nil {
-		for _, entry := range configEntries {
-			cfg.entries[entry] = true
-		}
+	// If there's no source yet, we keep it as an empty directory.
+	_, silentErr := modSource.ContextDirectory().Directory(cfg.subPath).Entries(ctx)
+	if silentErr == nil {
+		cfg.source = modSource.ContextDirectory().Directory(cfg.subPath)
+	}
+
+	configEntries, err := dag.Directory().
+		WithDirectory(".", cfg.source, dagger.DirectoryWithDirectoryOpts{
+			Include: moduleConfigFiles("."),
+		}).Entries(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list module source entries: %w", err)
+	}
+
+	for _, entry := range configEntries {
+		cfg.entries[entry] = true
 	}
 
 	if cfg.hasFile("package.json") {
@@ -424,19 +433,26 @@ func (c *moduleConfig) moduleRootPath() string {
 	return filepath.Join(ModSourceDirPath, c.modPath)
 }
 
-// Return the path to the SDK directory inside the module source.
-func (c *moduleConfig) sdkPath() string {
-	return filepath.Join(c.modulePath(), GenDir)
-}
-
-// Return the path to the entrypoint file inside the module source.
-func (c *moduleConfig) entrypointPath() string {
-	return filepath.Join(ModSourceDirPath, c.subPath, SrcDir, EntrypointExecutableFile)
-}
-
 // Return the path to the tsconfig.json file inside the module source.
 func (c *moduleConfig) tsConfigPath() string {
 	return filepath.Join(ModSourceDirPath, c.subPath, "tsconfig.json")
+}
+
+// Get the source code directory wrapped in a dagger.Directory
+// to be used in the runtime container.
+// This excludes config files, sdk and node_modules but keep any
+// extra files that may exist in the module source dir.
+func (c *moduleConfig) wrappedSourceCodeDirectory() *dagger.Directory {
+	return dag.Directory().WithDirectory("/",
+		c.source,
+		dagger.DirectoryWithDirectoryOpts{
+			Exclude: append(
+				moduleConfigFiles("."),
+				"sdk",
+				"node_modules",
+			),
+		},
+	)
 }
 
 // Returns a list of files to include for module configs.
