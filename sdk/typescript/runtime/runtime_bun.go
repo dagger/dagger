@@ -32,6 +32,10 @@ func NewBunRuntime(
 		}).
 		WithWorkdir(cfg.modulePath())
 
+	if cfg.debug {
+		ctr = ctr.Terminal()
+	}
+
 	return &BunRuntime{
 		sdkSourceDir:      sdkSourceDir,
 		introspectionJSON: introspectionJSON,
