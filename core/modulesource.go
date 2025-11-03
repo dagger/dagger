@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"net/url"
@@ -107,6 +108,7 @@ func (proto ModuleSourceKind) HumanString() string {
 
 type SDKConfig struct {
 	Source       string `field:"true" name:"source" doc:"Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
+	Debug        bool   `field:"true" name:"debug" doc:"Whether to start the SDK runtime in debug mode with an interactive terminal."`
 	Config       map[string]any
 	Experimental map[string]bool
 }
@@ -488,6 +490,10 @@ func (src *ModuleSource) CalcDigest(ctx context.Context) digest.Digest {
 		src.SourceRootSubpath,
 		src.SourceSubpath,
 		src.ContextDirectory.ID().Digest().String(),
+	}
+
+	if src.SDK != nil && src.SDK.Debug {
+		inputs = append(inputs, rand.Text())
 	}
 
 	// Include user defaults in digest so changes to env files invalidate cache

@@ -97,6 +97,7 @@ type ModuleConfigUserFields struct {
 type SDK struct {
 	Source string         `json:"source"`
 	Config map[string]any `json:"config,omitempty"`
+	Debug  bool           `json:"debug,omitempty"`
 	// The experimental features enabled for this module.
 	Experimental map[string]bool `json:"experimental,omitempty"`
 }
