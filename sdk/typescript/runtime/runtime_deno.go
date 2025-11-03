@@ -32,6 +32,10 @@ func NewDenoRuntime(
 		}).
 		WithWorkdir(cfg.modulePath())
 
+	if cfg.debug {
+		ctr = ctr.Terminal()
+	}
+
 	return &DenoRuntime{
 		sdkSourceDir:      sdkSourceDir,
 		introspectionJSON: introspectionJSON,
