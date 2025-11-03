@@ -299,8 +299,8 @@
         <jakarta.json.bind-api.version>3.0.1</jakarta.json.bind-api.version>
         <javapoet.version>0.7.0</javapoet.version>
         <javaparser.version>3.27.1</javaparser.version>
-        <json-path.version>2.9.0</json-path.version>
-        <junit.version>6.0.0</junit.version>
+        <json-path.version>2.10.0</json-path.version>
+        <junit.version>6.0.1</junit.version>
         <maven-assembly-plugin.version>3.7.1</maven-assembly-plugin.version>
         <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
         <maven-failsafe-plugin.version>3.5.2</maven-failsafe-plugin.version>
