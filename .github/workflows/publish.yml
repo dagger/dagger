@@ -146,16 +146,15 @@ jobs:
           echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
         shell: bash
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.3"
       - name: "Install Docker"
         uses: douglascamata/setup-docker-macos-action@v1.0.1
 
       - uses: docker/setup-qemu-action@v3
 
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.23"
       - name: "Test Go SDK"
         run: |
           cd sdk/go
