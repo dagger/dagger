@@ -82,8 +82,6 @@ public final class Connection {
     String encodedToken =
         Base64.getEncoder().encodeToString((token + ":").getBytes(StandardCharsets.UTF_8));
 
-    // LOG.info("graphql headers {}", headers);
-
     VertxDynamicGraphQLClientBuilder clientBuilder =
         new VertxDynamicGraphQLClientBuilder()
             .vertx(vertx)

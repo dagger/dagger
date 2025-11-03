@@ -34,7 +34,7 @@ public class TelemetryInitializer {
       return INSTANCE;
     }
 
-    LOG.info("Initializing Telemetry");
+    LOG.debug("Initializing Telemetry");
 
     if (Strings.CI.equals(OTLP_DISABLED, "TRUE")) {
       LOG.info("Opentelemetry is disabled");
@@ -87,8 +87,6 @@ public class TelemetryInitializer {
     LOG.debug("GlobalTelemetry initialized successfully {}", sdk);
 
     INSTANCE = sdk;
-
-    LOG.info("Telemetry initialized successfully");
 
     return sdk;
   }

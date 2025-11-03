@@ -1,8 +1,0 @@
-{
-  "name": "java-test-module",
-  "engineVersion": "v0.19.2",
-  "sdk": {
-    "source": "../../sdk/java"
-  },
-  "source": ".dagger"
-}
