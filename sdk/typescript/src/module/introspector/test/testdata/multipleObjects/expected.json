@@ -2,6 +2,22 @@
   "name": "MultipleObjects",
   "description": "Foo object module\n\nCompose of bar but its file description should be ignore.",
   "objects": {
+    "MultipleObjects": {
+      "name": "MultipleObjects",
+      "description": "Foo class",
+      "methods": {
+        "bar": {
+          "name": "bar",
+          "description": "Return Bar object",
+          "arguments": {},
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "Bar"
+          }
+        }
+      },
+      "properties": {}
+    },
     "Bar": {
       "name": "Bar",
       "description": "Bar class",
@@ -26,22 +42,6 @@
           },
           "returnType": {
             "kind": "STRING_KIND"
-          }
-        }
-      },
-      "properties": {}
-    },
-    "MultipleObjects": {
-      "name": "MultipleObjects",
-      "description": "Foo class",
-      "methods": {
-        "bar": {
-          "name": "bar",
-          "description": "Return Bar object",
-          "arguments": {},
-          "returnType": {
-            "kind": "OBJECT_KIND",
-            "name": "Bar"
           }
         }
       },

@@ -21,6 +21,7 @@ export class DaggerProperty
 {
   public name: string
   public description: string
+  public deprecated?: string
   public alias: string | undefined
   public isExposed: boolean
 
@@ -46,7 +47,9 @@ export class DaggerProperty
       this.ast.isNodeDecoratedWith(this.node, FUNCTION_DECORATOR) ||
       this.ast.isNodeDecoratedWith(this.node, FIELD_DECORATOR)
 
-    this.description = this.ast.getDocFromSymbol(this.symbol)
+    const { description, deprecated } = this.ast.getSymbolDoc(this.symbol)
+    this.description = description
+    this.deprecated = deprecated
     this.alias = this.getAlias()
     this.type = this.getType()
   }
@@ -118,6 +121,7 @@ export class DaggerProperty
     return {
       name: this.name,
       description: this.description,
+      deprecated: this.deprecated,
       alias: this.alias,
       type: this.type,
       isExposed: this.isExposed,

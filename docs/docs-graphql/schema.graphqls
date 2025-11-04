@@ -2025,6 +2025,9 @@ scalar EnumTypeDefID
 
 """A definition of a value in a custom enum defined in a Module."""
 type EnumValueTypeDef {
+  """The reason this enum member is deprecated, if any."""
+  deprecated: String
+
   """A doc string for the enum member, if any."""
   description: String!
 
@@ -2690,6 +2693,9 @@ A field on an object has a static value, as opposed to a function on an object
 whose value is computed by invoking code (and can accept arguments).
 """
 type FieldTypeDef {
+  """The reason this enum member is deprecated, if any."""
+  deprecated: String
+
   """A doc string for the field, if any."""
   description: String!
 
@@ -2872,6 +2878,9 @@ type Function {
   """Arguments accepted by the function, if any."""
   args: [FunctionArg!]!
 
+  """The reason this function is deprecated, if any."""
+  deprecated: String
+
   """A doc string for the function, if any."""
   description: String!
 
@@ -2913,6 +2922,9 @@ type Function {
 
     """The source map for the argument definition."""
     sourceMap: SourceMapID
+
+    """If deprecated, the reason or migration path."""
+    deprecated: String
   ): Function!
 
   """Returns the function updated to use the provided cache policy."""
@@ -2924,6 +2936,12 @@ type Function {
     The TTL for the cache policy, if applicable. Provided as a duration string, e.g. "5m", "1h30s".
     """
     timeToLive: String
+  ): Function!
+
+  """Returns the function with the provided deprecation reason."""
+  withDeprecated(
+    """Reason or migration path describing the deprecation."""
+    reason: String
   ): Function!
 
   """Returns the function with the given doc string."""
@@ -2955,6 +2973,9 @@ type FunctionArg {
   A default value to use for this argument when not explicitly set by the caller, if any.
   """
   defaultValue: JSON!
+
+  """The reason this function is deprecated, if any."""
+  deprecated: String
 
   """A doc string for the argument, if any."""
   description: String!
@@ -3999,6 +4020,9 @@ type ObjectTypeDef {
   """The function used to construct new instances of this object, if any"""
   constructor: Function
 
+  """The reason this enum member is deprecated, if any."""
+  deprecated: String
+
   """The doc string for the object, if any."""
   description: String!
 
@@ -4832,6 +4856,9 @@ type TypeDef {
 
     """The source map for the enum member definition."""
     sourceMap: SourceMapID
+
+    """If deprecated, the reason or migration path."""
+    deprecated: String
   ): TypeDef!
 
   """
@@ -4846,6 +4873,9 @@ type TypeDef {
 
     """The source map for the enum value definition."""
     sourceMap: SourceMapID
+
+    """If deprecated, the reason or migration path."""
+    deprecated: String
   ): TypeDef! @deprecated(reason: "Use `withEnumMember` instead")
 
   """
@@ -4863,6 +4893,9 @@ type TypeDef {
 
     """The source map for the field definition."""
     sourceMap: SourceMapID
+
+    """If deprecated, the reason or migration path."""
+    deprecated: String
   ): TypeDef!
 
   """
@@ -4888,7 +4921,7 @@ type TypeDef {
   only to refer to an object. This is how functions are able to return their own
   object, or any other circular reference.
   """
-  withObject(name: String!, description: String = "", sourceMap: SourceMapID): TypeDef!
+  withObject(name: String!, description: String = "", sourceMap: SourceMapID, deprecated: String): TypeDef!
 
   """Sets whether this type can be set to null."""
   withOptional(optional: Boolean!): TypeDef!

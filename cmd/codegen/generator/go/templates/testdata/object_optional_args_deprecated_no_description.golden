@@ -1,0 +1,40 @@
+// Container with deprecated args
+type Container struct {
+	query *querybuilder.Selection
+}
+type WithContainerFunc func(r *Container) *Container
+
+// With calls the provided function with current Container.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Container) With(f WithContainerFunc) *Container {
+	return f(r)
+}
+
+func (r *Container) WithGraphQLQuery(q *querybuilder.Selection) *Container {
+	return &Container{
+		query: q,
+	}
+}
+
+// ContainerApplyOpts contains options for Container.Apply
+type ContainerApplyOpts struct {
+
+	// Deprecated: Templates are expanded automatically.
+	Expand bool
+}
+
+// Apply configuration to the container
+func (r *Container) Apply(opts ...ContainerApplyOpts) *Container {
+	q := r.query.Select("apply")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `expand` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Expand) {
+			q = q.Arg("expand", opts[i].Expand)
+		}
+	}
+
+	return &Container{
+		query: q,
+	}
+}

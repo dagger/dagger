@@ -40,6 +40,17 @@ defmodule Dagger.Function do
   end
 
   @doc """
+  The reason this function is deprecated, if any.
+  """
+  @spec deprecated(t()) :: {:ok, String.t() | nil} | {:error, term()}
+  def deprecated(%__MODULE__{} = function) do
+    query_builder =
+      function.query_builder |> QB.select("deprecated")
+
+    Client.execute(function.client, query_builder)
+  end
+
+  @doc """
   A doc string for the function, if any.
   """
   @spec description(t()) :: {:ok, String.t()} | {:error, term()}
@@ -108,7 +119,8 @@ defmodule Dagger.Function do
           {:default_value, Dagger.JSON.t() | nil},
           {:default_path, String.t() | nil},
           {:ignore, [String.t()]},
-          {:source_map, Dagger.SourceMapID.t() | nil}
+          {:source_map, Dagger.SourceMapID.t() | nil},
+          {:deprecated, String.t() | nil}
         ]) :: Dagger.Function.t()
   def with_arg(%__MODULE__{} = function, name, type_def, optional_args \\ []) do
     query_builder =
@@ -121,6 +133,7 @@ defmodule Dagger.Function do
       |> QB.maybe_put_arg("defaultPath", optional_args[:default_path])
       |> QB.maybe_put_arg("ignore", optional_args[:ignore])
       |> QB.maybe_put_arg("sourceMap", optional_args[:source_map])
+      |> QB.maybe_put_arg("deprecated", optional_args[:deprecated])
 
     %Dagger.Function{
       query_builder: query_builder,
@@ -139,6 +152,22 @@ defmodule Dagger.Function do
       |> QB.select("withCachePolicy")
       |> QB.put_arg("policy", policy)
       |> QB.maybe_put_arg("timeToLive", optional_args[:time_to_live])
+
+    %Dagger.Function{
+      query_builder: query_builder,
+      client: function.client
+    }
+  end
+
+  @doc """
+  Returns the function with the provided deprecation reason.
+  """
+  @spec with_deprecated(t(), [{:reason, String.t() | nil}]) :: Dagger.Function.t()
+  def with_deprecated(%__MODULE__{} = function, optional_args \\ []) do
+    query_builder =
+      function.query_builder
+      |> QB.select("withDeprecated")
+      |> QB.maybe_put_arg("reason", optional_args[:reason])
 
     %Dagger.Function{
       query_builder: query_builder,

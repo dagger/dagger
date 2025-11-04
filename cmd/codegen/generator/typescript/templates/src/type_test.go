@@ -116,6 +116,53 @@ export type BuildArg = {
 		require.Equal(t, want, b.String())
 	})
 
+	t.Run("input deprecated field", func(t *testing.T) {
+		var expectedInputType = `
+export type DeprecatedInput = {
+  /**
+   * Field description.
+   *
+   * @deprecated Use otherField instead.
+   */
+  deprecatedField?: string
+}
+`
+
+		var deprecatedInputTypeJSON = `
+	{
+	  "kind": "INPUT_OBJECT",
+	  "name": "DeprecatedInput",
+	  "description": "foo",
+	  "inputFields": [
+	    {
+	      "name": "deprecatedField",
+	      "description": "Field description.",
+	      "isDeprecated": true,
+	      "deprecationReason": "Use otherField instead.",
+	      "defaultValue": null,
+	      "type": {
+	        "kind": "SCALAR",
+	        "name": "String",
+	        "ofType": null
+	      }
+	    }
+	  ]
+	}
+`
+
+		tmpl := templateHelper(t)
+
+		object := objectInit(t, deprecatedInputTypeJSON)
+
+		var b bytes.Buffer
+		err := tmpl.ExecuteTemplate(&b, "type", object)
+
+		want := expectedInputType
+
+		require.NoError(t, err)
+		require.Equal(t, want, b.String())
+	})
+
 	t.Run("args", func(t *testing.T) {
 		wantFile := "testdata/type_test_args_want.ts"
 
@@ -197,6 +244,173 @@ export type BuildArg = {
 		tmpl := templateHelper(t)
 
 		object := objectInit(t, fieldArgsTypeJSON)
+
+		var b bytes.Buffer
+		err := tmpl.ExecuteTemplate(&b, "type", object)
+
+		want := updateAndGetFixtures(t, wantFile, b.String())
+
+		require.NoError(t, err)
+		require.Equal(t, want, b.String())
+	})
+
+	t.Run("args deprecated", func(t *testing.T) {
+		wantFile := "testdata/type_test_args_deprecated_want.ts"
+
+		var fieldArgsDeprecatedJSON = `
+    {
+      "description": "Container with deprecated args",
+      "fields": [
+        {
+          "args": [
+            {
+              "defaultValue": null,
+              "description": "Path of the configuration file",
+              "isDeprecated": false,
+              "name": "path",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              }
+            },
+            {
+              "defaultValue": null,
+              "description": "Expand template variables before applying",
+              "isDeprecated": true,
+              "deprecationReason": "Templates are expanded automatically.",
+              "name": "expand",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Boolean"
+              }
+            }
+          ],
+          "deprecationReason": "",
+          "description": "Apply configuration to the container",
+          "isDeprecated": false,
+          "name": "apply",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Container"
+            }
+          }
+        }
+      ],
+      "kind": "OBJECT",
+      "name": "Container"
+    }
+`
+		tmpl := templateHelper(t)
+
+		object := objectInit(t, fieldArgsDeprecatedJSON)
+
+		var b bytes.Buffer
+		err := tmpl.ExecuteTemplate(&b, "type", object)
+
+		want := updateAndGetFixtures(t, wantFile, b.String())
+
+		require.NoError(t, err)
+		require.Equal(t, want, b.String())
+	})
+
+	t.Run("args deprecated no description", func(t *testing.T) {
+		wantFile := "testdata/type_test_args_deprecated_no_description_want.ts"
+
+		var fieldArgsDeprecatedNoDescJSON = `
+    {
+      "description": "Container with deprecated args",
+      "fields": [
+        {
+          "args": [
+            {
+              "defaultValue": null,
+              "description": "",
+              "isDeprecated": true,
+              "deprecationReason": "Templates are expanded automatically.",
+              "name": "expand",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Boolean"
+              }
+            }
+          ],
+          "deprecationReason": "",
+          "description": "Apply configuration to the container",
+          "isDeprecated": false,
+          "name": "apply",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Container"
+            }
+          }
+        }
+      ],
+      "kind": "OBJECT",
+      "name": "Container"
+    }
+`
+		tmpl := templateHelper(t)
+
+		object := objectInit(t, fieldArgsDeprecatedNoDescJSON)
+
+		var b bytes.Buffer
+		err := tmpl.ExecuteTemplate(&b, "type", object)
+
+		want := updateAndGetFixtures(t, wantFile, b.String())
+
+		require.NoError(t, err)
+		require.Equal(t, want, b.String())
+	})
+
+	t.Run("interface optional arg deprecated", func(t *testing.T) {
+		wantFile := "testdata/type_test_interface_optional_arg_deprecated_want.ts"
+
+		var interfaceOptionalArgDeprecatedJSON = `
+    {
+      "description": "Test interface with deprecated method",
+      "fields": [
+        {
+          "args": [
+            {
+              "defaultValue": null,
+              "description": "",
+              "isDeprecated": true,
+              "deprecationReason": "Not needed anymore.",
+              "name": "bar",
+              "type": {
+                "kind": "SCALAR",
+                "name": "Int"
+              }
+            }
+          ],
+          "deprecationReason": "Use Bar instead.",
+          "description": "",
+          "isDeprecated": true,
+          "name": "foo",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String"
+            }
+          }
+        }
+      ],
+      "kind": "INTERFACE",
+      "name": "TestFooer"
+    }
+`
+
+		tmpl := templateHelper(t)
+
+		object := objectInit(t, interfaceOptionalArgDeprecatedJSON)
 
 		var b bytes.Buffer
 		err := tmpl.ExecuteTemplate(&b, "type", object)
@@ -410,6 +624,39 @@ func TestTypeEnum(t *testing.T) {
 		require.NoError(t, err)
 
 		want := updateAndGetFixtures(t, wantFile, b.String())
+		require.Equal(t, want, b.String())
+	})
+
+	t.Run("value deprecated", func(t *testing.T) {
+		wantFile := "testdata/type_test_enum_value_deprecated_want.ts"
+
+		var enumValueDeprecatedJSON = `{
+  "description": "",
+  "directives": [],
+  "enumValues": [
+    {
+      "deprecationReason": "Use ModeV2 instead.",
+      "description": "",
+      "directives": [],
+      "isDeprecated": true,
+      "name": "VALUE"
+    }
+  ],
+  "kind": "ENUM",
+  "name": "Mode"
+}
+`
+
+		tmpl := templateHelper(t)
+
+		object := objectInit(t, enumValueDeprecatedJSON)
+
+		var b bytes.Buffer
+		err := tmpl.ExecuteTemplate(&b, "type", object)
+
+		want := updateAndGetFixtures(t, wantFile, b.String())
+
+		require.NoError(t, err)
 		require.Equal(t, want, b.String())
 	})
 }

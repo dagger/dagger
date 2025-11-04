@@ -16,6 +16,7 @@ export class DaggerEnumClassValue
   public name: string
   public value: string
   public description: string
+  public deprecated?: string
 
   private symbol: ts.Symbol
 
@@ -26,7 +27,9 @@ export class DaggerEnumClassValue
     super(node)
     this.name = this.node.name.getText()
     this.symbol = this.ast.getSymbolOrThrow(this.node.name)
-    this.description = this.ast.getDocFromSymbol(this.symbol)
+    const { description, deprecated } = this.ast.getSymbolDoc(this.symbol)
+    this.description = description
+    this.deprecated = deprecated
 
     const initializer = this.node.initializer
     if (!initializer) {
@@ -41,6 +44,7 @@ export class DaggerEnumClassValue
       name: this.name,
       value: this.value,
       description: this.description,
+      deprecated: this.deprecated,
     }
   }
 }

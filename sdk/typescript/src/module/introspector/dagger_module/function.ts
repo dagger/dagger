@@ -19,6 +19,7 @@ export type DaggerFunctions = { [name: string]: DaggerFunction }
 export class DaggerFunction extends Locatable {
   public name: string
   public description: string
+  public deprecated?: string
   private _returnTypeRef?: string
   public returnType?: TypeDef<TypeDefKind>
   public arguments: DaggerArguments = {}
@@ -37,7 +38,9 @@ export class DaggerFunction extends Locatable {
     this.symbol = this.ast.getSymbolOrThrow(node.name)
     this.signature = this.ast.getSignatureFromFunctionOrThrow(node)
     this.name = this.node.name.getText()
-    this.description = this.ast.getDocFromSymbol(this.symbol)
+    const { description, deprecated } = this.ast.getSymbolDoc(this.symbol)
+    this.description = description
+    this.deprecated = deprecated
 
     const functionArguments = this.ast.getDecoratorArgument<
       FunctionOptions | string
@@ -124,6 +127,7 @@ export class DaggerFunction extends Locatable {
     return {
       name: this.name,
       description: this.description,
+      deprecated: this.deprecated,
       alias: this.alias,
       arguments: this.arguments,
       returnType: this.returnType,

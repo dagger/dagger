@@ -1,6 +1,34 @@
 {
   "name": "MultipleObjectsAsFields",
   "objects": {
+    "MultipleObjectsAsFields": {
+      "name": "MultipleObjectsAsFields",
+      "description": "",
+      "constructor": {
+        "arguments": {}
+      },
+      "methods": {},
+      "properties": {
+        "test": {
+          "name": "test",
+          "description": "",
+          "type": {
+            "kind": "OBJECT_KIND",
+            "name": "Test"
+          },
+          "isExposed": true
+        },
+        "lint": {
+          "name": "lint",
+          "description": "",
+          "type": {
+            "kind": "OBJECT_KIND",
+            "name": "Lint"
+          },
+          "isExposed": true
+        }
+      }
+    },
     "Test": {
       "name": "Test",
       "description": "",
@@ -30,34 +58,6 @@
         }
       },
       "properties": {}
-    },
-    "MultipleObjectsAsFields": {
-      "name": "MultipleObjectsAsFields",
-      "description": "",
-      "constructor": {
-        "arguments": {}
-      },
-      "methods": {},
-      "properties": {
-        "test": {
-          "name": "test",
-          "description": "",
-          "type": {
-            "kind": "OBJECT_KIND",
-            "name": "Test"
-          },
-          "isExposed": true
-        },
-        "lint": {
-          "name": "lint",
-          "description": "",
-          "type": {
-            "kind": "OBJECT_KIND",
-            "name": "Lint"
-          },
-          "isExposed": true
-        }
-      }
     }
   },
   "enums": {},

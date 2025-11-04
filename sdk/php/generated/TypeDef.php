@@ -133,6 +133,7 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
         ?string $value = '',
         ?string $description = '',
         SourceMapId|SourceMap|null $sourceMap = null,
+        ?string $deprecated = null,
     ): TypeDef {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnumMember');
         $innerQueryBuilder->setArgument('name', $name);
@@ -145,6 +146,9 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
         if (null !== $sourceMap) {
         $innerQueryBuilder->setArgument('sourceMap', $sourceMap);
         }
+        if (null !== $deprecated) {
+        $innerQueryBuilder->setArgument('deprecated', $deprecated);
+        }
         return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -155,6 +159,7 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
         string $value,
         ?string $description = '',
         SourceMapId|SourceMap|null $sourceMap = null,
+        ?string $deprecated = null,
     ): TypeDef {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnumValue');
         $innerQueryBuilder->setArgument('value', $value);
@@ -163,6 +168,9 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $sourceMap) {
         $innerQueryBuilder->setArgument('sourceMap', $sourceMap);
+        }
+        if (null !== $deprecated) {
+        $innerQueryBuilder->setArgument('deprecated', $deprecated);
         }
         return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -175,6 +183,7 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
         TypeDefId|TypeDef $typeDef,
         ?string $description = '',
         SourceMapId|SourceMap|null $sourceMap = null,
+        ?string $deprecated = null,
     ): TypeDef {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withField');
         $innerQueryBuilder->setArgument('name', $name);
@@ -184,6 +193,9 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $sourceMap) {
         $innerQueryBuilder->setArgument('sourceMap', $sourceMap);
+        }
+        if (null !== $deprecated) {
+        $innerQueryBuilder->setArgument('deprecated', $deprecated);
         }
         return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -246,6 +258,7 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
         string $name,
         ?string $description = '',
         SourceMapId|SourceMap|null $sourceMap = null,
+        ?string $deprecated = null,
     ): TypeDef {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withObject');
         $innerQueryBuilder->setArgument('name', $name);
@@ -254,6 +267,9 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $sourceMap) {
         $innerQueryBuilder->setArgument('sourceMap', $sourceMap);
+        }
+        if (null !== $deprecated) {
+        $innerQueryBuilder->setArgument('deprecated', $deprecated);
         }
         return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

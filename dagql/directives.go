@@ -70,15 +70,22 @@ var (
 	DirectiveLocationInputFieldDefinition = DirectiveLocations.Register("INPUT_FIELD_DEFINITION")
 )
 
-func deprecated(reason string) *ast.Directive {
+func deprecated(reason *string) *ast.Directive {
+	if reason == nil {
+		return nil
+	}
+	if *reason == "" {
+		return &ast.Directive{Name: "deprecated"}
+	}
+
 	return &ast.Directive{
 		Name: "deprecated",
-		Arguments: []*ast.Argument{
-			{
+		Arguments: ast.ArgumentList{
+			&ast.Argument{
 				Name: "reason",
 				Value: &ast.Value{
 					Kind: ast.StringValue,
-					Raw:  reason,
+					Raw:  *reason,
 				},
 			},
 		},

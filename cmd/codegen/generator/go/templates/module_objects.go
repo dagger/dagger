@@ -13,7 +13,7 @@ import (
 	. "github.com/dave/jennifer/jen" //nolint:staticcheck
 )
 
-func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parsedObjectType, error) {
+func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parsedObjectType, error) { //nolint:gocyclo // parsing struct metadata is inherently branchy
 	spec := &parsedObjectType{
 		goType:     t,
 		moduleName: ps.moduleName,
@@ -77,7 +77,16 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 		return nil, fmt.Errorf("failed to find decl for named type %s: %w", spec.name, err)
 	}
 	if doc := docForAstSpec(astSpec); doc != nil {
-		spec.doc = doc.Text()
+		docPragmas, docComment := parsePragmaComment(doc.Text())
+		comment := strings.TrimSpace(docComment)
+		if raw, ok := docPragmas["deprecated"]; ok {
+			reason := ""
+			if str, _ := raw.(string); str != "" {
+				reason = str
+			}
+			spec.deprecated = &reason
+		}
+		spec.doc = comment
 	}
 
 	spec.sourceMap = ps.sourceMap(astSpec)
@@ -112,11 +121,13 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 		// end up asking for a name that we won't unmarshal correctly
 		tag := reflect.StructTag(t.Tag(i))
 		if dt := tag.Get("json"); dt != "" {
-			dt, _, _ = strings.Cut(dt, ",")
-			if dt == "-" {
+			namePart, _, _ := strings.Cut(dt, ",")
+			if namePart == "-" {
 				continue
 			}
-			fieldSpec.name = dt
+			if namePart != "" {
+				fieldSpec.name = namePart
+			}
 		}
 
 		docPragmas, docComment := parsePragmaComment(astFields[i].Doc.Text())
@@ -134,6 +145,13 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 			} else {
 				fieldSpec.isPrivate, _ = v.(bool)
 			}
+		}
+		if raw, ok := pragmas["deprecated"]; ok {
+			reason := ""
+			if str, _ := raw.(string); str != "" {
+				reason = str
+			}
+			fieldSpec.deprecated = &reason
 		}
 
 		fieldSpec.doc = comment
@@ -158,6 +176,7 @@ type parsedObjectType struct {
 	moduleName string
 	doc        string
 	sourceMap  *sourceMap
+	deprecated *string
 
 	fields      []*fieldSpec
 	methods     []*funcTypeSpec
@@ -172,6 +191,9 @@ func (spec *parsedObjectType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, erro
 	withObjectOpts := dagger.TypeDefWithObjectOpts{}
 	if spec.doc != "" {
 		withObjectOpts.Description = strings.TrimSpace(spec.doc)
+	}
+	if spec.deprecated != nil {
+		withObjectOpts.Deprecated = strings.TrimSpace(*spec.deprecated)
 	}
 	if spec.sourceMap != nil {
 		withObjectOpts.SourceMap = spec.sourceMap.TypeDef(dag)
@@ -204,6 +226,9 @@ func (spec *parsedObjectType) TypeDef(dag *dagger.Client) (*dagger.TypeDef, erro
 		}
 		if field.sourceMap != nil {
 			withFieldOpts.SourceMap = field.sourceMap.TypeDef(dag)
+		}
+		if field.deprecated != nil {
+			withFieldOpts.Deprecated = strings.TrimSpace(*field.deprecated)
 		}
 		typeDefObject = typeDefObject.WithField(field.name, fieldTypeDef, withFieldOpts)
 	}
@@ -506,10 +531,11 @@ func (spec *parsedObjectType) setFieldsToMarshalStructCode(field *fieldSpec) *St
 }
 
 type fieldSpec struct {
-	name      string
-	doc       string
-	sourceMap *sourceMap
-	typeSpec  ParsedType
+	name       string
+	doc        string
+	deprecated *string
+	sourceMap  *sourceMap
+	typeSpec   ParsedType
 
 	// isPrivate is true if the field is marked with the +private pragma
 	isPrivate bool

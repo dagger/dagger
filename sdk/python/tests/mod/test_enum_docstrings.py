@@ -21,8 +21,16 @@ def test_extract_enum_member_doc():
     """Test that we can extract docstrings from enum members using AST parsing."""
     docs = extract_enum_member_doc(ExampleEnum)
 
-    assert docs.get("FIRST") == "This is the first option"
-    assert docs.get("SECOND") == "This is the second option"
+    first = docs.get("FIRST")
+    assert first is not None
+    assert first.description == "This is the first option"
+    assert first.deprecated is None
+
+    second = docs.get("SECOND")
+    assert second is not None
+    assert second.description == "This is the second option"
+    assert second.deprecated is None
+
     assert "THIRD" not in docs  # No docstring for THIRD
 
 
@@ -35,6 +43,24 @@ def test_extract_enum_member_doc_no_docs():
     docs = extract_enum_member_doc(EmptyEnum)
 
     assert docs == {}
+
+
+class DeprecatedExample(enum.Enum):
+    ALPHA = "alpha"
+    """Alpha value.
+
+    .. deprecated:: 1.2
+        Use beta instead.
+        Remove no later than 2.0.
+    """
+
+
+def test_extract_enum_member_doc_with_deprecated_directive():
+    docs = extract_enum_member_doc(DeprecatedExample)
+
+    meta = docs["ALPHA"]
+    assert meta.description == "Alpha value."
+    assert meta.deprecated == "1.2\nUse beta instead.\nRemove no later than 2.0."
 
 
 def test_enum_deprecation():

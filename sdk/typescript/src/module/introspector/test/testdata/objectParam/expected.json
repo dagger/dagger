@@ -1,35 +1,6 @@
 {
   "name": "ObjectParam",
   "objects": {
-    "Message": {
-      "name": "Message",
-      "description": "",
-      "constructor": {
-        "arguments": {
-          "content": {
-            "name": "content",
-            "description": "",
-            "type": {
-              "kind": "STRING_KIND"
-            },
-            "isVariadic": false,
-            "isNullable": false,
-            "isOptional": false
-          }
-        }
-      },
-      "methods": {},
-      "properties": {
-        "content": {
-          "name": "content",
-          "description": "",
-          "type": {
-            "kind": "STRING_KIND"
-          },
-          "isExposed": true
-        }
-      }
-    },
     "ObjectParam": {
       "name": "ObjectParam",
       "description": "",
@@ -104,6 +75,35 @@
         }
       },
       "properties": {}
+    },
+    "Message": {
+      "name": "Message",
+      "description": "",
+      "constructor": {
+        "arguments": {
+          "content": {
+            "name": "content",
+            "description": "",
+            "type": {
+              "kind": "STRING_KIND"
+            },
+            "isVariadic": false,
+            "isNullable": false,
+            "isOptional": false
+          }
+        }
+      },
+      "methods": {},
+      "properties": {
+        "content": {
+          "name": "content",
+          "description": "",
+          "type": {
+            "kind": "STRING_KIND"
+          },
+          "isExposed": true
+        }
+      }
     }
   },
   "enums": {},

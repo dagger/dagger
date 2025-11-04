@@ -26,6 +26,7 @@ import { References } from "./reference.js"
 export class DaggerObject extends Locatable implements DaggerObjectBase {
   public name: string
   public description: string
+  public deprecated?: string
   public _constructor: DaggerConstructor | undefined = undefined
   public methods: DaggerFunctions = {}
   public properties: DaggerProperties = {}
@@ -64,7 +65,9 @@ export class DaggerObject extends Locatable implements DaggerObjectBase {
     }
 
     this.symbol = this.ast.getSymbolOrThrow(this.node.name)
-    this.description = this.ast.getDocFromSymbol(this.symbol)
+    const { description, deprecated } = this.ast.getSymbolDoc(this.symbol)
+    this.description = description
+    this.deprecated = deprecated
 
     for (const member of this.node.members) {
       if (ts.isPropertyDeclaration(member)) {
@@ -136,6 +139,7 @@ export class DaggerObject extends Locatable implements DaggerObjectBase {
     return {
       name: this.name,
       description: this.description,
+      deprecated: this.deprecated,
       constructor: this._constructor,
       methods: this.methods,
       properties: this.properties,
