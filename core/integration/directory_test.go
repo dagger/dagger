@@ -2561,6 +2561,18 @@ func (DirectorySuite) TestExists(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func (DirectorySuite) TestExistsUsingAbsoluteSymlink(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ok, err := c.Directory().
+		WithNewFile("/some-file", "some-content").
+		WithSymlink("/some-file", "/symlink-to-some-file").
+		Exists(ctx, "symlink-to-some-file", dagger.DirectoryExistsOpts{
+			ExpectedType: dagger.ExistsTypeRegularType,
+		})
+	require.NoError(t, err)
+	require.True(t, ok)
+}
+
 func (DirectorySuite) TestDirCaching(ctx context.Context, t *testctx.T) {
 	// NOTE: This test requires that WithNewFile sets the creation date to the current time,
 	// if this side-effect were to ever change (i.e. adopting SOURCE_DATE_EPOCH functionality),
