@@ -139,6 +139,9 @@
         "config": {
           "type": "object"
         },
+        "debug": {
+          "type": "boolean"
+        },
         "experimental": {
           "additionalProperties": {
             "type": "boolean"

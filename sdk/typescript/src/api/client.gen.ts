@@ -10849,15 +10849,22 @@ export class Client extends BaseClient {
  */
 export class SDKConfig extends BaseClient {
   private readonly _id?: SDKConfigID = undefined
+  private readonly _debug?: boolean = undefined
   private readonly _source?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: SDKConfigID, _source?: string) {
+  constructor(
+    ctx?: Context,
+    _id?: SDKConfigID,
+    _debug?: boolean,
+    _source?: string,
+  ) {
     super(ctx)
 
     this._id = _id
+    this._debug = _debug
     this._source = _source
   }
 
@@ -10872,6 +10879,21 @@ export class SDKConfig extends BaseClient {
     const ctx = this._ctx.select("id")
 
     const response: Awaited<SDKConfigID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether to start the SDK runtime in debug mode with an interactive terminal.
+   */
+  debug = async (): Promise<boolean> => {
+    if (this._debug) {
+      return this._debug
+    }
+
+    const ctx = this._ctx.select("debug")
+
+    const response: Awaited<boolean> = await ctx.execute()
 
     return response
   }

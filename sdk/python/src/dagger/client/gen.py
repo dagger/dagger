@@ -11200,6 +11200,26 @@ class Client(Root):
 class SDKConfig(Type):
     """The SDK config of the module."""
 
+    async def debug(self) -> bool:
+        """Whether to start the SDK runtime in debug mode with an interactive
+        terminal.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("debug", _args)
+        return await _ctx.execute(bool)
+
     async def id(self) -> SDKConfigID:
         """A unique identifier for this SDKConfig.
 

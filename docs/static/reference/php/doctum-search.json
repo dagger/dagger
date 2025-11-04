@@ -4851,6 +4851,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\SDKConfig::debug",
+			"p": "Dagger/SDKConfig.html#method_debug",
+			"d": "<p>Whether to start the SDK runtime in debug mode with an interactive terminal.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\SDKConfig::id",
 			"p": "Dagger/SDKConfig.html#method_id",
 			"d": "<p>A unique identifier for this SDKConfig.</p>"
