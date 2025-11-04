@@ -515,7 +515,7 @@ func (s *moduleSourceSchema) localModuleSource(
 		// load this module source's context directory, ignore patterns, sdk and deps in parallel
 		var eg errgroup.Group
 		eg.Go(func() error {
-			if err := s.loadModuleSourceContext(ctx, bk, localSrc); err != nil {
+			if err := s.loadModuleSourceContext(ctx, localSrc); err != nil {
 				return fmt.Errorf("failed to load local module source context: %w", err)
 			}
 
@@ -673,7 +673,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 	// load this module source's context directory and deps in parallel
 	var eg errgroup.Group
 	eg.Go(func() error {
-		if err := s.loadModuleSourceContext(ctx, bk, gitSrc); err != nil {
+		if err := s.loadModuleSourceContext(ctx, gitSrc); err != nil {
 			return fmt.Errorf("failed to load git module source context: %w", err)
 		}
 
@@ -710,7 +710,6 @@ func (s *moduleSourceSchema) gitModuleSource(
 	if err := gitSrc.LoadUserDefaults(ctx); err != nil {
 		return inst, fmt.Errorf("load user defaults: %w", err)
 	}
-
 	gitSrc.Digest = gitSrc.CalcDigest(ctx).String()
 
 	inst, err = dagql.NewResultForCurrentID(ctx, gitSrc)
@@ -851,7 +850,7 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 
 	if dirSrc.SDK != nil {
 		eg.Go(func() error {
-			if err := s.loadModuleSourceContext(ctx, bk, dirSrc); err != nil {
+			if err := s.loadModuleSourceContext(ctx, dirSrc); err != nil {
 				return err
 			}
 
@@ -1117,7 +1116,6 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 // load (or re-load) the context directory for the given module source
 func (s *moduleSourceSchema) loadModuleSourceContext(
 	ctx context.Context,
-	bk *buildkit.Client,
 	src *core.ModuleSource,
 ) error {
 	dag, err := core.CurrentDagqlServer(ctx)
@@ -1160,8 +1158,6 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 			return err
 		}
 
-		// host.directory already content hashes, no need to here
-
 	case core.ModuleSourceKindGit:
 		fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
 
@@ -1178,19 +1174,6 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		)
 		if err != nil {
 			return err
-		}
-
-		// content hash the context dir so that different git commits with the same module source code can all share cache
-		src.ContextDirectory, err = core.MakeDirectoryContentHashed(ctx, bk, src.ContextDirectory)
-		if err != nil {
-			return fmt.Errorf("failed to content hash git module source context dir: %w", err)
-		}
-
-	case core.ModuleSourceKindDir:
-		// content hash the context dir so that different dirs with the same module source code can all share cache
-		src.ContextDirectory, err = core.MakeDirectoryContentHashed(ctx, bk, src.ContextDirectory)
-		if err != nil {
-			return fmt.Errorf("failed to content hash dir module source context dir: %w", err)
 		}
 	}
 
@@ -1240,15 +1223,7 @@ func (s *moduleSourceSchema) moduleSourceWithSourceSubpath(
 	}
 
 	// reload context since the subpath impacts what we implicitly include in the load
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-	err = s.loadModuleSourceContext(ctx, bk, src)
+	err = s.loadModuleSourceContext(ctx, src)
 	switch {
 	case err == nil:
 	case codes.NotFound == status.Code(err) && src.Kind == core.ModuleSourceKindLocal:
@@ -1324,15 +1299,7 @@ func (s *moduleSourceSchema) moduleSourceWithIncludes(
 	src.RebasedIncludePaths = append(src.RebasedIncludePaths, rebasedIncludes...)
 
 	// reload context in case includes have changed it
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-	err = s.loadModuleSourceContext(ctx, bk, src)
+	err = s.loadModuleSourceContext(ctx, src)
 	switch {
 	case err == nil:
 	case codes.NotFound == status.Code(err) && src.Kind == core.ModuleSourceKindLocal:
