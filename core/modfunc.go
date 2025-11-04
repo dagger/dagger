@@ -990,9 +990,31 @@ func (fn *ModuleFunction) loadContextualArg(
 
 	switch arg.TypeDef.AsObject.Value.Name {
 	case "Directory":
-		dir, err := fn.mod.ContextSource.Value.Self().LoadContextDir(ctx, dag, arg.DefaultPath, CopyFilter{
-			Exclude: arg.Ignore,
-		})
+		contentCacheKey := fn.mod.ContentDigestCacheKey()
+		var dir dagql.ObjectResult[*Directory]
+		err := dag.Select(ctx, dag.Root(), &dir,
+			dagql.Selector{
+				Field: "_contextDirectory",
+				Args: []dagql.NamedInput{
+					{
+						Name:  "path",
+						Value: dagql.String(arg.DefaultPath),
+					},
+					{
+						Name:  "exclude",
+						Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Ignore...)),
+					},
+					{
+						Name:  "module",
+						Value: dagql.String(fn.mod.ContextSource.Value.Self().AsString()),
+					},
+					{
+						Name:  "digest",
+						Value: dagql.String(contentCacheKey.CallKey),
+					},
+				},
+			},
+		)
 		if err != nil {
 			return nil, fmt.Errorf("load contextual directory %q: %w", arg.DefaultPath, err)
 		}

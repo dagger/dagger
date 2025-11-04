@@ -75,6 +75,9 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("allowNotExists").Doc(`If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.`),
 				dagql.Arg("requireKind").Doc(`If set, error out if the ref string is not of the provided requireKind.`),
 			),
+
+		dagql.NodeFuncWithCacheKey("_contextDirectory", s.contextDirectory, dagql.CachePerCall).
+			Doc(`Obtain a contextual directory argument for the given path, include/excludes and module.`),
 	}.Install(dag)
 
 	dagql.Fields[*core.Directory]{
@@ -884,6 +887,64 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 		return inst, fmt.Errorf("load user defaults: %w", err)
 	}
 	dirSrc.Digest = dirSrc.CalcDigest(ctx).String()
+	return inst, nil
+}
+
+func (s *moduleSourceSchema) contextDirectory(
+	ctx context.Context,
+	query dagql.ObjectResult[*core.Query],
+	args struct {
+		Path string
+		core.CopyFilter
+
+		// the human-readable name of the module, currently just to help telemetry look nicer
+		Module string
+
+		// the content digest of the module
+		Digest string
+	},
+) (inst dagql.ObjectResult[*core.Directory], err error) {
+	// Load the module based on its content hashed key as saved in ModuleSource.asModule.
+	// We can't accept an actual Module as an argument because the current caching logic
+	// will result in that Module being re-loaded by clients (due to it being CachePerClient)
+	// and then possibly trying to load it from the wrong context (in the case of a cached
+	// result including a _contextDirectory call).
+	dag, err := query.Self().Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
+		CallKey: args.Digest,
+	}
+	modRes, err := dag.Cache.GetOrInitialize(ctx, cacheKey, func(ctx context.Context) (dagql.CacheValueType, error) {
+		return nil, fmt.Errorf("module not found: %s", args.Module)
+	})
+	if err != nil {
+		return inst, err
+	}
+
+	mod, ok := modRes.Result().(dagql.ObjectResult[*core.Module])
+	if !ok {
+		return inst, fmt.Errorf("cached module source is not a module: %T", modRes.Result())
+	}
+
+	dir, err := mod.Self().ContextSource.Value.Self().LoadContextDir(ctx, dag, args.Path, args.CopyFilter)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load contextual directory: %w", err)
+	}
+
+	inst, err = dagql.NewObjectResultForCurrentID(ctx, dag, dir.Self())
+	if err != nil {
+		return inst, fmt.Errorf("failed to create directory result: %w", err)
+	}
+	// mix-in a constant string to avoid collisions w/ normal host dir loads, which
+	// can lead function calls encountering cached results that include contextual
+	// dir loads from older sessions to load from the wrong path
+	// FIXME:(sipsma) this is not ideal since contextual loaded dirs will have
+	// different cache keys. Support for multiple cache keys per result should
+	// help fix this.
+	dgst := hashutil.HashStrings(dir.ID().Digest().String(), "contextualDir")
+	inst = inst.WithObjectDigest(dgst)
 	return inst, nil
 }
 
@@ -3019,7 +3080,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		// to latest engine versions.
 		ForceDefaultFunctionCaching bool `internal:"true" default:"false"`
 	},
-) (inst dagql.Result[*core.Module], err error) {
+) (inst dagql.ObjectResult[*core.Module], err error) {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
@@ -3105,10 +3166,19 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, err
 	}
 
-	inst, err = dagql.NewResultForCurrentID(ctx, mod)
+	inst, err = dagql.NewObjectResultForCurrentID(ctx, dag, mod)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", src.Self().ModuleName, err)
 	}
+
+	// save a result for the final module based on its content hash, currently used in the _contextDirectory API
+	contentCacheKey := mod.ContentDigestCacheKey()
+	contentHashedInst := inst.WithObjectDigest(digest.Digest(contentCacheKey.CallKey))
+	_, err = dag.Cache.GetOrInitializeValue(ctx, contentCacheKey, contentHashedInst)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get or initialize instance: %w", err)
+	}
+
 	return inst, nil
 }
 
