@@ -120,7 +120,7 @@ func NewFileWithContents(
 	if err != nil {
 		return nil, err
 	}
-	return dir.File(ctx, name)
+	return dir.FileLLB(ctx, name)
 }
 
 func NewFileSt(ctx context.Context, st llb.State, file string, platform Platform, services ServiceBindings) (*File, error) {
@@ -138,6 +138,15 @@ func (file *File) Clone() *File {
 	cp := *file
 	cp.Services = slices.Clone(cp.Services)
 	return &cp
+}
+
+func (file *File) WithoutInputs() *File {
+	file = file.Clone()
+
+	file.LLB = nil
+	file.Result = nil
+
+	return file
 }
 
 func (file *File) State() (llb.State, error) {

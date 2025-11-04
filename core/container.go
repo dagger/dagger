@@ -438,6 +438,30 @@ func (mnt ContainerMount) SourceState() (llb.State, error) {
 	}
 }
 
+// GetLLB returns the associated LLB with a mount
+func (mnt *ContainerMount) GetLLB() *pb.Definition {
+	var llb *pb.Definition
+	handleMount(*mnt,
+		func(dir *dagql.ObjectResult[*Directory]) {
+			if dir != nil && dir.Self() != nil {
+				llb = dir.Self().LLB
+			}
+		},
+		func(file *dagql.ObjectResult[*File]) {
+			if file != nil && file.Self() != nil {
+				llb = file.Self().LLB
+			}
+		},
+		func(cacheMount *CacheMountSource) {
+			llb = cacheMount.Base
+		},
+		func(tmpMount *TmpfsMountSource) {
+			// no LLB
+		},
+	)
+	return llb
+}
+
 type ContainerMounts []ContainerMount
 
 func (mnts ContainerMounts) With(newMnt ContainerMount) ContainerMounts {
@@ -1484,9 +1508,9 @@ func (container *Container) File(ctx context.Context, filePath string) (*File, e
 		if container.FS == nil {
 			return nil, fmt.Errorf("container rootfs is not set")
 		}
-		f, err = container.FS.Self().File(ctx, subpath)
+		f, err = container.FS.Self().FileLLB(ctx, subpath)
 	case mnt.DirectorySource != nil: // mounted directory
-		f, err = mnt.DirectorySource.Self().File(ctx, subpath)
+		f, err = mnt.DirectorySource.Self().FileLLB(ctx, subpath)
 	case mnt.FileSource != nil: // mounted file
 		return mnt.FileSource.Self(), nil
 	default:
