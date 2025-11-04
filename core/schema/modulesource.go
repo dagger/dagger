@@ -78,6 +78,8 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 
 		dagql.NodeFuncWithCacheKey("_contextDirectory", s.contextDirectory, dagql.CachePerCall).
 			Doc(`Obtain a contextual directory argument for the given path, include/excludes and module.`),
+		dagql.NodeFuncWithCacheKey("_contextFile", s.contextFile, dagql.CachePerCall).
+			Doc(`Obtain a contextual file argument for the given path and module.`),
 	}.Install(dag)
 
 	dagql.Fields[*core.Directory]{
@@ -913,19 +915,9 @@ func (s *moduleSourceSchema) contextDirectory(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
 	}
-	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
-		CallKey: args.Digest,
-	}
-	modRes, err := dag.Cache.GetOrInitialize(ctx, cacheKey, func(ctx context.Context) (dagql.CacheValueType, error) {
-		return nil, fmt.Errorf("module not found: %s", args.Module)
-	})
+	mod, err := s.getModuleFromContentDigest(ctx, dag, args.Module, args.Digest)
 	if err != nil {
 		return inst, err
-	}
-
-	mod, ok := modRes.Result().(dagql.ObjectResult[*core.Module])
-	if !ok {
-		return inst, fmt.Errorf("cached module source is not a module: %T", modRes.Result())
 	}
 
 	dir, err := mod.Self().ContextSource.Value.Self().LoadContextDir(ctx, dag, args.Path, args.CopyFilter)
@@ -941,10 +933,79 @@ func (s *moduleSourceSchema) contextDirectory(
 	// can lead function calls encountering cached results that include contextual
 	// dir loads from older sessions to load from the wrong path
 	// FIXME:(sipsma) this is not ideal since contextual loaded dirs will have
-	// different cache keys. Support for multiple cache keys per result should
-	// help fix this.
+	// different cache keys than normally loaded host dirs. Support for multiple
+	// cache keys per result should help fix this.
 	dgst := hashutil.HashStrings(dir.ID().Digest().String(), "contextualDir")
 	inst = inst.WithObjectDigest(dgst)
+	return inst, nil
+}
+
+func (s *moduleSourceSchema) contextFile(
+	ctx context.Context,
+	query dagql.ObjectResult[*core.Query],
+	args struct {
+		Path string
+
+		// the human-readable name of the module, currently just to help telemetry look nicer
+		Module string
+
+		// the content digest of the module
+		Digest string
+	},
+) (inst dagql.ObjectResult[*core.File], err error) {
+	dag, err := query.Self().Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	mod, err := s.getModuleFromContentDigest(ctx, dag, args.Module, args.Digest)
+	if err != nil {
+		return inst, err
+	}
+	f, err := mod.Self().ContextSource.Value.Self().LoadContextFile(ctx, dag, args.Path)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load contextual directory: %w", err)
+	}
+
+	inst, err = dagql.NewObjectResultForCurrentID(ctx, dag, f.Self())
+	if err != nil {
+		return inst, fmt.Errorf("failed to create directory result: %w", err)
+	}
+	// mix-in a constant string to avoid collisions w/ normal host file loads, which
+	// can lead function calls encountering cached results that include contextual
+	// file loads from older sessions to load from the wrong path
+	// FIXME:(sipsma) this is not ideal since contextual loaded files will have
+	// different cache keys than normally loaded host files. Support for multiple
+	// cache keys per result should help fix this.
+	dgst := hashutil.HashStrings(f.ID().Digest().String(), "contextualFile")
+	inst = inst.WithObjectDigest(dgst)
+	return inst, nil
+}
+
+func (s *moduleSourceSchema) getModuleFromContentDigest(
+	ctx context.Context,
+	dag *dagql.Server,
+	modName string,
+	dgst string,
+) (inst dagql.ObjectResult[*core.Module], err error) {
+	// Load the module based on its content hashed key as saved in ModuleSource.asModule.
+	// We can't accept an actual Module as an argument because the current caching logic
+	// will result in that Module being re-loaded by clients (due to it being CachePerClient)
+	// and then possibly trying to load it from the wrong context (in the case of a cached
+	// result including a _contextDirectory call).
+	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
+		CallKey: dgst,
+	}
+	modRes, err := dag.Cache.GetOrInitialize(ctx, cacheKey, func(ctx context.Context) (dagql.CacheValueType, error) {
+		return nil, fmt.Errorf("module not found: %s", modName)
+	})
+	if err != nil {
+		return inst, err
+	}
+	inst, ok := modRes.Result().(dagql.ObjectResult[*core.Module])
+	if !ok {
+		return inst, fmt.Errorf("cached module has unexpected type: %T", modRes.Result())
+	}
+
 	return inst, nil
 }
 

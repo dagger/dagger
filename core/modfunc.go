@@ -1021,11 +1021,31 @@ func (fn *ModuleFunction) loadContextualArg(
 		return dagql.NewID[*Directory](dir.ID()), nil
 
 	case "File":
-		file, err := fn.mod.ContextSource.Value.Self().LoadContextFile(ctx, dag, arg.DefaultPath)
+		contentCacheKey := fn.mod.ContentDigestCacheKey()
+		var f dagql.ObjectResult[*File]
+		err := dag.Select(ctx, dag.Root(), &f,
+			dagql.Selector{
+				Field: "_contextFile",
+				Args: []dagql.NamedInput{
+					{
+						Name:  "path",
+						Value: dagql.String(arg.DefaultPath),
+					},
+					{
+						Name:  "module",
+						Value: dagql.String(fn.mod.ContextSource.Value.Self().AsString()),
+					},
+					{
+						Name:  "digest",
+						Value: dagql.String(contentCacheKey.CallKey),
+					},
+				},
+			},
+		)
 		if err != nil {
 			return nil, fmt.Errorf("load contextual file %q: %w", arg.DefaultPath, err)
 		}
-		return dagql.NewID[*File](file.ID()), nil
+		return dagql.NewID[*File](f.ID()), nil
 
 	case "GitRepository", "GitRef":
 		var git dagql.ObjectResult[*GitRepository]

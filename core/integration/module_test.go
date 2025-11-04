@@ -7477,8 +7477,7 @@ func (m *Test) TestSetSecret() *dagger.Container {
 		require.NotEqual(t, out1a, out2a)
 	})
 
-	// TODO: ALSO TEST FILE + GIT
-	t.Run("dependency contextual dir", func(ctx context.Context, t *testctx.T) {
+	t.Run("dependency contextual arg", func(ctx context.Context, t *testctx.T) {
 		const modSDK = "go"
 		const modSrc = `package main
 import (
@@ -7489,6 +7488,9 @@ type Test struct{}
 func (m *Test) CallDep(ctx context.Context, cacheBust string) (*dagger.Directory, error) {
 	return dag.Dep().Test().Sync(ctx)
 }
+func (m *Test) CallDepFile(ctx context.Context, cacheBust string) (*dagger.Directory, error) {
+	return dag.Dep().TestFile().Sync(ctx)
+}
 `
 
 		const depSrc = `package main
@@ -7498,6 +7500,9 @@ import (
 type Dep struct{}
 func (m *Dep) Test() *dagger.Directory {
 	return dag.Depdep().Test()
+}
+func (m *Dep) TestFile() *dagger.Directory {
+	return dag.Depdep().TestFile()
 }
 `
 
@@ -7512,6 +7517,14 @@ func (m *Depdep) Test(
 	dir *dagger.Directory,
 ) *dagger.Directory {
 	return dir.WithNewFile("rand.txt", rand.Text())
+}
+func (m *Depdep) TestFile(
+	// +defaultPath="dagger.json"
+	f *dagger.File,
+) *dagger.Directory {
+	return dag.Directory().
+		WithFile("dagger.json", f).
+		WithNewFile("rand.txt", rand.Text())
 }
 `
 
@@ -7530,20 +7543,39 @@ func (m *Depdep) Test(
 				With(daggerExec("install", "./dep"))
 		}
 
-		c1 := connect(ctx, t)
-		out1, err := getModGen(c1).
-			With(daggerCall("call-dep", "--cache-bust", rand.Text(), "file", "--path", "rand.txt", "contents")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.NoError(t, c1.Close())
+		t.Run("dir", func(ctx context.Context, t *testctx.T) {
+			c1 := connect(ctx, t)
+			out1, err := getModGen(c1).
+				With(daggerCall("call-dep", "--cache-bust", rand.Text(), "file", "--path", "rand.txt", "contents")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.NoError(t, c1.Close())
 
-		c2 := connect(ctx, t)
-		out2, err := getModGen(c2).
-			With(daggerCall("call-dep", "--cache-bust", rand.Text(), "file", "--path", "rand.txt", "contents")).
-			Stdout(ctx)
-		require.NoError(t, err)
+			c2 := connect(ctx, t)
+			out2, err := getModGen(c2).
+				With(daggerCall("call-dep", "--cache-bust", rand.Text(), "file", "--path", "rand.txt", "contents")).
+				Stdout(ctx)
+			require.NoError(t, err)
 
-		require.Equal(t, out1, out2)
+			require.Equal(t, out1, out2)
+		})
+
+		t.Run("file", func(ctx context.Context, t *testctx.T) {
+			c1 := connect(ctx, t)
+			out1, err := getModGen(c1).
+				With(daggerCall("call-dep-file", "--cache-bust", rand.Text(), "file", "--path", "rand.txt", "contents")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.NoError(t, c1.Close())
+
+			c2 := connect(ctx, t)
+			out2, err := getModGen(c2).
+				With(daggerCall("call-dep-file", "--cache-bust", rand.Text(), "file", "--path", "rand.txt", "contents")).
+				Stdout(ctx)
+			require.NoError(t, err)
+
+			require.Equal(t, out1, out2)
+		})
 	})
 }
 
