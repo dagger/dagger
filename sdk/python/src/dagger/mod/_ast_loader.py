@@ -49,6 +49,7 @@ class FieldInfo:
     name: str
     type_annotation: str | None
     has_default: bool
+    default_value: Any  # The actual default value, can be None
     is_dagger_field: bool
     deprecated: str | None
     field_name: str | None  # Alternative name from mod.field(name=...)
@@ -332,8 +333,10 @@ def parse_class(node: ast.ClassDef) -> ClassInfo:  # noqa: C901, PLR0912, PLR091
             is_dagger_field = False
             field_deprecated = None
             field_alt_name = None
+            default_value = None
+            field_default = None
 
-            if item.value:  # noqa: SIM102
+            if item.value:
                 # Check if the value is a call to field()
                 if isinstance(item.value, ast.Call):
                     # Could be field() or dagger.field()
@@ -357,11 +360,27 @@ def parse_class(node: ast.ClassDef) -> ClassInfo:  # noqa: C901, PLR0912, PLR091
                             elif keyword.arg == "name":
                                 with contextlib.suppress(Exception):
                                     field_alt_name = ast.literal_eval(keyword.value)
+                            elif keyword.arg == "default":
+                                # Extract default value from field()
+                                with contextlib.suppress(Exception):
+                                    field_default = ast.literal_eval(keyword.value)
+                    else:
+                        # Regular default value (not a field() call)
+                        with contextlib.suppress(Exception):
+                            default_value = ast.literal_eval(item.value)
+                else:
+                    # Simple default value (not a call)
+                    with contextlib.suppress(Exception):
+                        default_value = ast.literal_eval(item.value)
+
+            # Use field_default if it's a dagger field, otherwise use default_value
+            actual_default = field_default if is_dagger_field else default_value
 
             fields[field_name] = FieldInfo(
                 name=field_name,
                 type_annotation=type_annotation,
                 has_default=item.value is not None,
+                default_value=actual_default,
                 is_dagger_field=is_dagger_field,
                 deprecated=field_deprecated,
                 field_name=field_alt_name,
@@ -524,7 +543,8 @@ def build_mock_class_from_info(  # noqa: C901, PLR0912
             # Create a field descriptor with mod.field()
             field_kwargs = {}
             if field_info.has_default:
-                field_kwargs["default"] = None  # Placeholder
+                # Use the actual default value extracted from AST
+                field_kwargs["default"] = field_info.default_value
             if field_info.deprecated:
                 field_kwargs["deprecated"] = field_info.deprecated
             if field_info.field_name:
@@ -532,8 +552,8 @@ def build_mock_class_from_info(  # noqa: C901, PLR0912
 
             class_attrs[field_name] = mod.field(**field_kwargs)
         elif field_info.has_default:
-            # Regular field with default value
-            class_attrs[field_name] = None  # Placeholder default
+            # Regular field with default value - use the actual default
+            class_attrs[field_name] = field_info.default_value
         # Note: Fields without defaults and without field() are just type annotations
         # The dataclass decorator will handle them
 
