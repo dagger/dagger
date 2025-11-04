@@ -47,6 +47,20 @@ defmodule Dagger.Terminal do
        }}
     end
   end
+
+  @deprecated """
+  Use newer dagger to access the terminal
+  """
+  @doc """
+  An http endpoint at which this terminal can be connected to over a websocket.
+  """
+  @spec websocket_endpoint(t()) :: {:ok, String.t()} | {:error, term()}
+  def websocket_endpoint(%__MODULE__{} = terminal) do
+    query_builder =
+      terminal.query_builder |> QB.select("websocketEndpoint")
+
+    Client.execute(terminal.client, query_builder)
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.Terminal do

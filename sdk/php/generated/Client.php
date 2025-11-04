@@ -202,7 +202,7 @@ class Client extends Client\AbstractClient
      */
     public function git(
         string $url,
-        ?bool $keepGitDir = true,
+        ?bool $keepGitDir = false,
         ?string $sshKnownHosts = '',
         SocketId|Socket|null $sshAuthSocket = null,
         ?string $httpAuthUsername = '',
@@ -841,6 +841,22 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder->setArgument('requireKind', $requireKind);
         }
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Creates a named sub-pipeline.
+     */
+    public function pipeline(string $name, ?string $description = '', ?array $labels = null): Client
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('pipeline');
+        $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $description) {
+        $innerQueryBuilder->setArgument('description', $description);
+        }
+        if (null !== $labels) {
+        $innerQueryBuilder->setArgument('labels', $labels);
+        }
+        return new \Dagger\Client($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

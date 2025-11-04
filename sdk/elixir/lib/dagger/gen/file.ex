@@ -78,7 +78,7 @@ defmodule Dagger.File do
   Writes the file to a file path on the host.
   """
   @spec export(t(), String.t(), [{:allow_parent_dir_path, boolean() | nil}]) ::
-          {:ok, String.t()} | {:error, term()}
+          {:ok, boolean()} | {:error, term()}
   def export(%__MODULE__{} = file, path, optional_args \\ []) do
     query_builder =
       file.query_builder

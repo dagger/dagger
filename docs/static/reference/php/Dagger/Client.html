@@ -338,7 +338,7 @@
                     <a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_git">git</a>(string $url, bool|null $keepGitDir = true, string|null $sshKnownHosts = &#039;&#039;, <abbr title="Dagger\Dagger\SocketId|Dagger\Socket|null">Socket|null</abbr> $sshAuthSocket = null, string|null $httpAuthUsername = &#039;&#039;, <abbr title="Dagger\Dagger\SecretId|Dagger\Secret|null">Secret|null</abbr> $httpAuthToken = null, <abbr title="Dagger\Dagger\SecretId|Dagger\Secret|null">Secret|null</abbr> $httpAuthHeader = null, <abbr title="Dagger\Dagger\ServiceId|Dagger\Service|null">Service|null</abbr> $experimentalServiceHost = null)
+                    <a href="#method_git">git</a>(string $url, bool|null $keepGitDir = false, string|null $sshKnownHosts = &#039;&#039;, <abbr title="Dagger\Dagger\SocketId|Dagger\Socket|null">Socket|null</abbr> $sshAuthSocket = null, string|null $httpAuthUsername = &#039;&#039;, <abbr title="Dagger\Dagger\SecretId|Dagger\Secret|null">Secret|null</abbr> $httpAuthToken = null, <abbr title="Dagger\Dagger\SecretId|Dagger\Secret|null">Secret|null</abbr> $httpAuthHeader = null, <abbr title="Dagger\Dagger\ServiceId|Dagger\Service|null">Service|null</abbr> $experimentalServiceHost = null)
         
                                             <p><p>Queries a Git repository.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -911,6 +911,16 @@
                     <a href="#method_moduleSource">moduleSource</a>(string $refString, string|null $refPin = &#039;&#039;, bool|null $disableFindUp = false, bool|null $allowNotExists = false, <abbr title="Dagger\Dagger\ModuleSourceKind">ModuleSourceKind</abbr>|null $requireKind = null)
         
                                             <p><p>Create a new module source instance from a source ref string</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_pipeline">pipeline</a>(string $name, string|null $description = &#039;&#039;, array|null $labels = null)
+        
+                                            <p><p>Creates a named sub-pipeline.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -1761,7 +1771,7 @@
                     <h3 id="method_git">
         <div class="location">at line 203</div>
         <code>                    <a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a>
-    <strong>git</strong>(string $url, bool|null $keepGitDir = true, string|null $sshKnownHosts = &#039;&#039;, <abbr title="Dagger\Dagger\SocketId|Dagger\Socket|null">Socket|null</abbr> $sshAuthSocket = null, string|null $httpAuthUsername = &#039;&#039;, <abbr title="Dagger\Dagger\SecretId|Dagger\Secret|null">Secret|null</abbr> $httpAuthToken = null, <abbr title="Dagger\Dagger\SecretId|Dagger\Secret|null">Secret|null</abbr> $httpAuthHeader = null, <abbr title="Dagger\Dagger\ServiceId|Dagger\Service|null">Service|null</abbr> $experimentalServiceHost = null)
+    <strong>git</strong>(string $url, bool|null $keepGitDir = false, string|null $sshKnownHosts = &#039;&#039;, <abbr title="Dagger\Dagger\SocketId|Dagger\Socket|null">Socket|null</abbr> $sshAuthSocket = null, string|null $httpAuthUsername = &#039;&#039;, <abbr title="Dagger\Dagger\SecretId|Dagger\Secret|null">Secret|null</abbr> $httpAuthToken = null, <abbr title="Dagger\Dagger\SecretId|Dagger\Secret|null">Secret|null</abbr> $httpAuthHeader = null, <abbr title="Dagger\Dagger\ServiceId|Dagger\Service|null">Service|null</abbr> $experimentalServiceHost = null)
         </code>
     </h3>
     <div class="details">    
@@ -4244,8 +4254,60 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_secret">
+                    <h3 id="method_pipeline">
         <div class="location">at line 849</div>
+        <code>                    <a href="../Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a>
+    <strong>pipeline</strong>(string $name, string|null $description = &#039;&#039;, array|null $labels = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Creates a named sub-pipeline.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$description</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>array|null</td>
+                <td>$labels</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_secret">
+        <div class="location">at line 865</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>secret</strong>(string $uri, string|null $cacheKey = null)
         </code>
@@ -4292,7 +4354,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_setSecret">
-        <div class="location">at line 864</div>
+        <div class="location">at line 880</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>setSecret</strong>(string $name, string $plaintext)
         </code>
@@ -4339,7 +4401,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sourceMap">
-        <div class="location">at line 875</div>
+        <div class="location">at line 891</div>
         <code>                    <a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a>
     <strong>sourceMap</strong>(string $filename, int $line, int $column)
         </code>
@@ -4391,7 +4453,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_typeDef">
-        <div class="location">at line 887</div>
+        <div class="location">at line 903</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>typeDef</strong>()
         </code>
@@ -4423,7 +4485,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_version">
-        <div class="location">at line 896</div>
+        <div class="location">at line 912</div>
         <code>                    string
     <strong>version</strong>()
         </code>

@@ -321,26 +321,20 @@ class ImageLayerCompression(Enum):
     """Compression algorithm to use for image layers."""
 
     EStarGZ = "EStarGZ"
-    ESTARGZ = "EStarGZ"
 
     Gzip = "Gzip"
-    GZIP = "Gzip"
 
     Uncompressed = "Uncompressed"
-    UNCOMPRESSED = "Uncompressed"
 
     Zstd = "Zstd"
-    ZSTD = "Zstd"
 
 
 class ImageMediaTypes(Enum):
     """Mediatypes to use in published or exported image metadata."""
 
     DockerMediaTypes = "DockerMediaTypes"
-    DOCKER = "DockerMediaTypes"
 
     OCIMediaTypes = "OCIMediaTypes"
-    OCI = "OCIMediaTypes"
 
 
 class ModuleSourceExperimentalFeature(Enum):
@@ -354,13 +348,10 @@ class ModuleSourceKind(Enum):
     """The kind of module source."""
 
     DIR_SOURCE = "DIR_SOURCE"
-    DIR = "DIR_SOURCE"
 
     GIT_SOURCE = "GIT_SOURCE"
-    GIT = "GIT_SOURCE"
 
     LOCAL_SOURCE = "LOCAL_SOURCE"
-    LOCAL = "LOCAL_SOURCE"
 
 
 class NetworkProtocol(Enum):
@@ -389,15 +380,8 @@ class TypeDefKind(Enum):
 
     BOOLEAN_KIND = "BOOLEAN_KIND"
     """A boolean value."""
-    BOOLEAN = "BOOLEAN_KIND"
-    """A boolean value."""
 
     ENUM_KIND = "ENUM_KIND"
-    """A GraphQL enum type and its values
-
-    Always paired with an EnumTypeDef.
-    """
-    ENUM = "ENUM_KIND"
     """A GraphQL enum type and its values
 
     Always paired with an EnumTypeDef.
@@ -405,25 +389,14 @@ class TypeDefKind(Enum):
 
     FLOAT_KIND = "FLOAT_KIND"
     """A float value."""
-    FLOAT = "FLOAT_KIND"
-    """A float value."""
 
     INPUT_KIND = "INPUT_KIND"
-    """A graphql input type, used only when representing the core API via TypeDefs."""
-    INPUT = "INPUT_KIND"
     """A graphql input type, used only when representing the core API via TypeDefs."""
 
     INTEGER_KIND = "INTEGER_KIND"
     """An integer value."""
-    INTEGER = "INTEGER_KIND"
-    """An integer value."""
 
     INTERFACE_KIND = "INTERFACE_KIND"
-    """Always paired with an InterfaceTypeDef.
-
-    A named type of functions that can be matched+implemented by other objects+interfaces.
-    """
-    INTERFACE = "INTERFACE_KIND"
     """Always paired with an InterfaceTypeDef.
 
     A named type of functions that can be matched+implemented by other objects+interfaces.
@@ -434,18 +407,8 @@ class TypeDefKind(Enum):
 
     A list of values all having the same type.
     """
-    LIST = "LIST_KIND"
-    """Always paired with a ListTypeDef.
-
-    A list of values all having the same type.
-    """
 
     OBJECT_KIND = "OBJECT_KIND"
-    """Always paired with an ObjectTypeDef.
-
-    A named type defined in the GraphQL schema, with fields and functions.
-    """
-    OBJECT = "OBJECT_KIND"
     """Always paired with an ObjectTypeDef.
 
     A named type defined in the GraphQL schema, with fields and functions.
@@ -453,20 +416,11 @@ class TypeDefKind(Enum):
 
     SCALAR_KIND = "SCALAR_KIND"
     """A scalar value of any basic kind."""
-    SCALAR = "SCALAR_KIND"
-    """A scalar value of any basic kind."""
 
     STRING_KIND = "STRING_KIND"
     """A string value."""
-    STRING = "STRING_KIND"
-    """A string value."""
 
     VOID_KIND = "VOID_KIND"
-    """A special kind used to signify that no value is returned.
-
-    This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
-    """
-    VOID = "VOID_KIND"
     """A special kind used to signify that no value is returned.
 
     This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
@@ -1151,56 +1105,12 @@ class Cloud(Type):
 class Container(Type):
     """An OCI-compatible container, also known as a Docker container."""
 
-    def as_service(
-        self,
-        *,
-        args: list[str] | None = None,
-        use_entrypoint: bool | None = False,
-        experimental_privileged_nesting: bool | None = False,
-        insecure_root_capabilities: bool | None = False,
-        expand: bool | None = False,
-        no_init: bool | None = False,
-    ) -> "Service":
+    def as_service(self) -> "Service":
         """Turn the container into a Service.
 
         Be sure to set any exposed ports before this conversion.
-
-        Parameters
-        ----------
-        args:
-            Command to run instead of the container's default command (e.g.,
-            ["go", "run", "main.go"]).
-            If empty, the container's default command is used.
-        use_entrypoint:
-            If the container has an entrypoint, prepend it to the args.
-        experimental_privileged_nesting:
-            Provides Dagger access to the executed command.
-        insecure_root_capabilities:
-            Execute the command with all root capabilities. This is similar to
-            running a command with "sudo" or executing "docker run" with the "
-            --privileged" flag. Containerization does not provide any security
-            guarantees when using this option. It should only be used when
-            absolutely necessary and only with trusted commands.
-        expand:
-            Replace "${VAR}" or "$VAR" in the args according to the current
-            environment variables defined in the container (e.g. "/$VAR/foo").
-        no_init:
-            If set, skip the automatic init process injected into containers
-            by default.
-            This should only be used if the user requires that their exec
-            process be the pid 1 process in the container. Otherwise it may
-            result in unexpected behavior.
         """
-        _args = [
-            Arg("args", [] if args is None else args, []),
-            Arg("useEntrypoint", use_entrypoint, False),
-            Arg(
-                "experimentalPrivilegedNesting", experimental_privileged_nesting, False
-            ),
-            Arg("insecureRootCapabilities", insecure_root_capabilities, False),
-            Arg("expand", expand, False),
-            Arg("noInit", no_init, False),
-        ]
+        _args: list[Arg] = []
         _ctx = self._select("asService", _args)
         return Service(_ctx)
 
@@ -1244,6 +1154,63 @@ class Container(Type):
         ]
         _ctx = self._select("asTarball", _args)
         return File(_ctx)
+
+    def build(
+        self,
+        context: "Directory",
+        *,
+        dockerfile: str | None = "Dockerfile",
+        target: str | None = "",
+        build_args: list[BuildArg] | None = None,
+        secrets: "list[Secret] | None" = None,
+        no_init: bool | None = False,
+    ) -> Self:
+        """Initializes this container from a Dockerfile build.
+
+        .. deprecated::
+            Use `Directory.build` instead
+
+        Parameters
+        ----------
+        context:
+            Directory context used by the Dockerfile.
+        dockerfile:
+            Path to the Dockerfile to use.
+        target:
+            Target build stage to build.
+        build_args:
+            Additional build arguments.
+        secrets:
+            Secrets to pass to the build.
+            They will be mounted at /run/secrets/[secret-name] in the build
+            container
+            They can be accessed in the Dockerfile using the "secret" mount
+            type and mount path /run/secrets/[secret-name], e.g. RUN
+            --mount=type=secret,id=my-secret curl
+            [http://example.com?token=$(cat /run/secrets/my-
+            secret)](http://example.com?token=$(cat /run/secrets/my-secret))
+        no_init:
+            If set, skip the automatic init process injected into containers
+            created by RUN statements.
+            This should only be used if the user requires that their exec
+            processes be the pid 1 process in the container. Otherwise it may
+            result in unexpected behavior.
+        """
+        warnings.warn(
+            'Method "build" is deprecated: Use `Directory.build` instead',
+            DeprecationWarning,
+            stacklevel=4,
+        )
+        _args = [
+            Arg("context", context),
+            Arg("dockerfile", dockerfile, "Dockerfile"),
+            Arg("target", target, ""),
+            Arg("buildArgs", [] if build_args is None else build_args, []),
+            Arg("secrets", [] if secrets is None else secrets, []),
+            Arg("noInit", no_init, False),
+        ]
+        _ctx = self._select("build", _args)
+        return Container(_ctx)
 
     async def combined_output(self) -> str:
         """The combined buffered standard output and standard error stream of the
@@ -1472,7 +1439,7 @@ class Container(Type):
         forced_compression: ImageLayerCompression | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
         expand: bool | None = False,
-    ) -> str:
+    ) -> bool:
         """Writes the container as an OCI tarball to the destination file path on
         the host.
 
@@ -1506,10 +1473,8 @@ class Container(Type):
 
         Returns
         -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
 
         Raises
         ------
@@ -1530,7 +1495,7 @@ class Container(Type):
             Arg("expand", expand, False),
         ]
         _ctx = self._select("export", _args)
-        return await _ctx.execute(str)
+        return await _ctx.execute(bool)
 
     async def export_image(
         self,
@@ -1766,6 +1731,40 @@ class Container(Type):
         _ctx = self._select("mounts", _args)
         return await _ctx.execute(list[str])
 
+    def pipeline(
+        self,
+        name: str,
+        *,
+        description: str | None = "",
+        labels: list[PipelineLabel] | None = None,
+    ) -> Self:
+        """Creates a named sub-pipeline.
+
+        .. deprecated::
+            Explicit pipeline creation is now a no-op
+
+        Parameters
+        ----------
+        name:
+            Name of the sub-pipeline.
+        description:
+            Description of the sub-pipeline.
+        labels:
+            Labels to apply to the sub-pipeline.
+        """
+        warnings.warn(
+            'Method "pipeline" is deprecated: Explicit pipeline creation is now a no-op',
+            DeprecationWarning,
+            stacklevel=4,
+        )
+        _args = [
+            Arg("name", name),
+            Arg("description", description, ""),
+            Arg("labels", [] if labels is None else labels, []),
+        ]
+        _ctx = self._select("pipeline", _args)
+        return Container(_ctx)
+
     async def platform(self) -> Platform:
         """The platform this container executes and publishes as.
 
@@ -1930,7 +1929,7 @@ class Container(Type):
         cmd: list[str] | None = None,
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
-    ) -> Self:
+    ) -> "Terminal":
         """Opens an interactive terminal for this container using its configured
         default terminal command if not overridden by args (or sh as a
         fallback default).
@@ -1957,19 +1956,13 @@ class Container(Type):
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
         ]
         _ctx = self._select("terminal", _args)
-        return Container(_ctx)
+        return Terminal(_ctx)
 
     async def up(
         self,
         *,
-        random: bool | None = False,
         ports: list[PortForward] | None = None,
-        args: list[str] | None = None,
-        use_entrypoint: bool | None = False,
-        experimental_privileged_nesting: bool | None = False,
-        insecure_root_capabilities: bool | None = False,
-        expand: bool | None = False,
-        no_init: bool | None = False,
+        random: bool | None = False,
     ) -> Void | None:
         """Starts a Service and creates a tunnel that forwards traffic from the
         caller's network to that service.
@@ -1978,35 +1971,12 @@ class Container(Type):
 
         Parameters
         ----------
-        random:
-            Bind each tunnel port to a random port on the host.
         ports:
             List of frontend/backend port mappings to forward.
             Frontend is the port accepting traffic on the host, backend is the
             service port.
-        args:
-            Command to run instead of the container's default command (e.g.,
-            ["go", "run", "main.go"]).
-            If empty, the container's default command is used.
-        use_entrypoint:
-            If the container has an entrypoint, prepend it to the args.
-        experimental_privileged_nesting:
-            Provides Dagger access to the executed command.
-        insecure_root_capabilities:
-            Execute the command with all root capabilities. This is similar to
-            running a command with "sudo" or executing "docker run" with the "
-            --privileged" flag. Containerization does not provide any security
-            guarantees when using this option. It should only be used when
-            absolutely necessary and only with trusted commands.
-        expand:
-            Replace "${VAR}" or "$VAR" in the args according to the current
-            environment variables defined in the container (e.g. "/$VAR/foo").
-        no_init:
-            If set, skip the automatic init process injected into containers
-            by default.
-            This should only be used if the user requires that their exec
-            process be the pid 1 process in the container. Otherwise it may
-            result in unexpected behavior.
+        random:
+            Bind each tunnel port to a random port on the host.
 
         Returns
         -------
@@ -2022,16 +1992,8 @@ class Container(Type):
             If the API returns an error.
         """
         _args = [
-            Arg("random", random, False),
             Arg("ports", [] if ports is None else ports, []),
-            Arg("args", [] if args is None else args, []),
-            Arg("useEntrypoint", use_entrypoint, False),
-            Arg(
-                "experimentalPrivilegedNesting", experimental_privileged_nesting, False
-            ),
-            Arg("insecureRootCapabilities", insecure_root_capabilities, False),
-            Arg("expand", expand, False),
-            Arg("noInit", no_init, False),
+            Arg("random", random, False),
         ]
         _ctx = self._select("up", _args)
         await _ctx.execute()
@@ -2125,7 +2087,7 @@ class Container(Type):
     def with_directory(
         self,
         path: str,
-        source: "Directory",
+        directory: "Directory",
         *,
         exclude: list[str] | None = None,
         include: list[str] | None = None,
@@ -2140,7 +2102,7 @@ class Container(Type):
         ----------
         path:
             Location of the written directory (e.g., "/tmp/directory").
-        source:
+        directory:
             Identifier of the directory to write
         exclude:
             Patterns to exclude in the written directory (e.g.
@@ -2162,7 +2124,7 @@ class Container(Type):
         """
         _args = [
             Arg("path", path),
-            Arg("source", source),
+            Arg("directory", directory),
             Arg("exclude", [] if exclude is None else exclude, []),
             Arg("include", [] if include is None else include, []),
             Arg("gitignore", gitignore, False),
@@ -2244,7 +2206,8 @@ class Container(Type):
         self,
         args: list[str],
         *,
-        use_entrypoint: bool | None = False,
+        use_entrypoint: bool | None = True,
+        skip_entrypoint: bool | None = False,
         stdin: str | None = "",
         redirect_stdin: str | None = "",
         redirect_stdout: str | None = "",
@@ -2270,6 +2233,9 @@ class Container(Type):
         use_entrypoint:
             Apply the OCI entrypoint, if present, by prepending it to the
             args. Ignored by default.
+        skip_entrypoint:
+            For true this can be removed. For false, use `useEntrypoint`
+            instead.
         stdin:
             Content to write to the command's standard input. Example: "Hello
             world")
@@ -2304,7 +2270,8 @@ class Container(Type):
         """
         _args = [
             Arg("args", args),
-            Arg("useEntrypoint", use_entrypoint, False),
+            Arg("useEntrypoint", use_entrypoint, True),
+            Arg("skipEntrypoint", skip_entrypoint, False),
             Arg("stdin", stdin, ""),
             Arg("redirectStdin", redirect_stdin, ""),
             Arg("redirectStdout", redirect_stdout, ""),
@@ -2434,6 +2401,14 @@ class Container(Type):
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withFiles", _args)
+        return Container(_ctx)
+
+    def with_focus(self) -> Self:
+        """Indicate that subsequent operations should be featured more
+        prominently in the UI.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withFocus", _args)
         return Container(_ctx)
 
     def with_label(self, name: str, value: str) -> Self:
@@ -2645,40 +2620,32 @@ class Container(Type):
     def with_new_file(
         self,
         path: str,
-        contents: str,
         *,
+        contents: str | None = "",
         permissions: int | None = 420,
         owner: str | None = "",
-        expand: bool | None = False,
     ) -> Self:
-        """Return a new container snapshot, with a file added to its filesystem
-        with text content
+        """Retrieves this container plus a new file written at the given path.
 
         Parameters
         ----------
         path:
-            Path of the new file. May be relative or absolute. Example:
-            "README.md" or "/etc/profile"
+            Location of the written file (e.g., "/tmp/file.txt").
         contents:
-            Contents of the new file. Example: "Hello world!"
+            Content of the file to write (e.g., "Hello world!").
         permissions:
-            Permissions of the new file. Example: 0600
+            Permission given to the written file (e.g., 0600).
         owner:
             A user:group to set for the file.
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
-        expand:
-            Replace "${VAR}" or "$VAR" in the value of path according to the
-            current environment variables defined in the container (e.g.
-            "/$VAR/foo.txt").
         """
         _args = [
             Arg("path", path),
-            Arg("contents", contents),
+            Arg("contents", contents, ""),
             Arg("permissions", permissions, 420),
             Arg("owner", owner, ""),
-            Arg("expand", expand, False),
         ]
         _ctx = self._select("withNewFile", _args)
         return Container(_ctx)
@@ -3020,6 +2987,16 @@ class Container(Type):
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withoutFiles", _args)
+        return Container(_ctx)
+
+    def without_focus(self) -> Self:
+        """Indicate that subsequent operations should not be featured more
+        prominently in the UI.
+
+        This is the initial state of all containers.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withoutFocus", _args)
         return Container(_ctx)
 
     def without_label(self, name: str) -> Self:
@@ -3535,7 +3512,7 @@ class Directory(Type):
         path: str,
         *,
         wipe: bool | None = False,
-    ) -> str:
+    ) -> bool:
         """Writes the contents of the directory to a path on the host.
 
         Parameters
@@ -3553,10 +3530,8 @@ class Directory(Type):
 
         Returns
         -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
 
         Raises
         ------
@@ -3570,7 +3545,7 @@ class Directory(Type):
             Arg("wipe", wipe, False),
         ]
         _ctx = self._select("export", _args)
-        return await _ctx.execute(str)
+        return await _ctx.execute(bool)
 
     def file(self, path: str) -> "File":
         """Retrieve a file at the given path.
@@ -3719,6 +3694,40 @@ class Directory(Type):
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
 
+    def pipeline(
+        self,
+        name: str,
+        *,
+        description: str | None = "",
+        labels: list[PipelineLabel] | None = None,
+    ) -> Self:
+        """Creates a named sub-pipeline.
+
+        .. deprecated::
+            Explicit pipeline creation is now a no-op
+
+        Parameters
+        ----------
+        name:
+            Name of the sub-pipeline.
+        description:
+            Description of the sub-pipeline.
+        labels:
+            Labels to apply to the sub-pipeline.
+        """
+        warnings.warn(
+            'Method "pipeline" is deprecated: Explicit pipeline creation is now a no-op',
+            DeprecationWarning,
+            stacklevel=4,
+        )
+        _args = [
+            Arg("name", name),
+            Arg("description", description, ""),
+            Arg("labels", [] if labels is None else labels, []),
+        ]
+        _ctx = self._select("pipeline", _args)
+        return Directory(_ctx)
+
     async def search(
         self,
         pattern: str,
@@ -3798,44 +3807,6 @@ class Directory(Type):
     def __await__(self):
         return self.sync().__await__()
 
-    def terminal(
-        self,
-        *,
-        container: Container | None = None,
-        cmd: list[str] | None = None,
-        experimental_privileged_nesting: bool | None = False,
-        insecure_root_capabilities: bool | None = False,
-    ) -> Self:
-        """Opens an interactive terminal in new container with this directory
-        mounted inside.
-
-        Parameters
-        ----------
-        container:
-            If set, override the default container used for the terminal.
-        cmd:
-            If set, override the container's default terminal command and
-            invoke these command arguments instead.
-        experimental_privileged_nesting:
-            Provides Dagger access to the executed command.
-        insecure_root_capabilities:
-            Execute the command with all root capabilities. This is similar to
-            running a command with "sudo" or executing "docker run" with the "
-            --privileged" flag. Containerization does not provide any security
-            guarantees when using this option. It should only be used when
-            absolutely necessary and only with trusted commands.
-        """
-        _args = [
-            Arg("container", container, None),
-            Arg("cmd", [] if cmd is None else cmd, []),
-            Arg(
-                "experimentalPrivilegedNesting", experimental_privileged_nesting, False
-            ),
-            Arg("insecureRootCapabilities", insecure_root_capabilities, False),
-        ]
-        _ctx = self._select("terminal", _args)
-        return Directory(_ctx)
-
     def with_changes(self, changes: Changeset) -> Self:
         """Return a directory with changes from another directory applied to it.
 
@@ -3853,7 +3824,7 @@ class Directory(Type):
     def with_directory(
         self,
         path: str,
-        source: Self,
+        directory: Self,
         *,
         exclude: list[str] | None = None,
         include: list[str] | None = None,
@@ -3866,7 +3837,7 @@ class Directory(Type):
         ----------
         path:
             Location of the written directory (e.g., "/src/").
-        source:
+        directory:
             Identifier of the directory to copy.
         exclude:
             Exclude artifacts that match the given pattern (e.g.,
@@ -3884,7 +3855,7 @@ class Directory(Type):
         """
         _args = [
             Arg("path", path),
-            Arg("source", source),
+            Arg("directory", directory),
             Arg("exclude", [] if exclude is None else exclude, []),
             Arg("include", [] if include is None else include, []),
             Arg("gitignore", gitignore, False),
@@ -6422,7 +6393,7 @@ class File(Type):
         path: str,
         *,
         allow_parent_dir_path: bool | None = False,
-    ) -> str:
+    ) -> bool:
         """Writes the file to a file path on the host.
 
         Parameters
@@ -6436,10 +6407,8 @@ class File(Type):
 
         Returns
         -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
 
         Raises
         ------
@@ -6453,7 +6422,7 @@ class File(Type):
             Arg("allowParentDirPath", allow_parent_dir_path, False),
         ]
         _ctx = self._select("export", _args)
-        return await _ctx.execute(str)
+        return await _ctx.execute(bool)
 
     async def id(self) -> FileID:
         """A unique identifier for this File.
@@ -7492,6 +7461,8 @@ class GitRef(Type):
         *,
         discard_git_dir: bool | None = False,
         depth: int | None = 1,
+        ssh_known_hosts: str | None = None,
+        ssh_auth_socket: "Socket | None" = None,
     ) -> Directory:
         """The filesystem tree at this ref.
 
@@ -7501,10 +7472,18 @@ class GitRef(Type):
             Set to true to discard .git directory.
         depth:
             The depth of the tree to fetch.
+        ssh_known_hosts:
+            DEPRECATED: This option should be passed to `git` instead.
+            .. deprecated:: This option should be passed to git instead.
+        ssh_auth_socket:
+            DEPRECATED: This option should be passed to `git` instead.
+            .. deprecated:: This option should be passed to git instead.
         """
         _args = [
             Arg("discardGitDir", discard_git_dir, False),
             Arg("depth", depth, 1),
+            Arg("sshKnownHosts", ssh_known_hosts, None),
+            Arg("sshAuthSocket", ssh_auth_socket, None),
         ]
         _ctx = self._select("tree", _args)
         return Directory(_ctx)
@@ -7705,6 +7684,60 @@ class GitRepository(Type):
         _args: list[Arg] = []
         _ctx = self._select("url", _args)
         return await _ctx.execute(str | None)
+
+    def with_auth_header(self, header: "Secret") -> Self:
+        """Header to authenticate the remote with.
+
+        .. deprecated::
+            Use "httpAuthHeader" in the constructor instead.
+
+        Parameters
+        ----------
+        header:
+            Secret used to populate the Authorization HTTP header
+        """
+        warnings.warn(
+            'Method "with_auth_header" is deprecated: Use "httpAuthHeader" in the constructor instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
+        _args = [
+            Arg("header", header),
+        ]
+        _ctx = self._select("withAuthHeader", _args)
+        return GitRepository(_ctx)
+
+    def with_auth_token(self, token: "Secret") -> Self:
+        """Token to authenticate the remote with.
+
+        .. deprecated::
+            Use "httpAuthToken" in the constructor instead.
+
+        Parameters
+        ----------
+        token:
+            Secret used to populate the password during basic HTTP
+            Authorization
+        """
+        warnings.warn(
+            'Method "with_auth_token" is deprecated: Use "httpAuthToken" in the constructor instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
+        _args = [
+            Arg("token", token),
+        ]
+        _ctx = self._select("withAuthToken", _args)
+        return GitRepository(_ctx)
+
+    def with_(
+        self, cb: Callable[["GitRepository"], "GitRepository"]
+    ) -> "GitRepository":
+        """Call the provided callable with current GitRepository.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 @typecheck
@@ -8393,13 +8426,15 @@ class LLM(Type):
         _ctx = self._select("history", _args)
         return await _ctx.execute(list[str])
 
-    async def history_json(self) -> JSON:
+    async def history_json(self) -> str:
         """return the raw llm message history as json
 
         Returns
         -------
-        JSON
-            An arbitrary JSON-encoded value.
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
 
         Raises
         ------
@@ -8410,7 +8445,7 @@ class LLM(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("historyJSON", _args)
-        return await _ctx.execute(JSON)
+        return await _ctx.execute(str)
 
     async def id(self) -> LLMID:
         """A unique identifier for this LLM.
@@ -9283,6 +9318,36 @@ class ModuleSource(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("cloneRef", _args)
+        return await _ctx.execute(str)
+
+    async def clone_url(self) -> str:
+        """The URL to clone the root of the git repo from
+
+        .. deprecated::
+            Use :py:meth:`clone_ref` instead. :py:meth:`clone_ref` supports
+            both URL-style and SCP-like SSH references
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        warnings.warn(
+            'Method "clone_url" is deprecated: Use "clone_ref" instead. "clone_ref" supports both URL-style and SCP-like SSH references',
+            DeprecationWarning,
+            stacklevel=4,
+        )
+        _args: list[Arg] = []
+        _ctx = self._select("cloneURL", _args)
         return await _ctx.execute(str)
 
     async def commit(self) -> str:
@@ -10509,7 +10574,7 @@ class Client(Root):
         self,
         url: str,
         *,
-        keep_git_dir: bool | None = True,
+        keep_git_dir: bool | None = False,
         ssh_known_hosts: str | None = "",
         ssh_auth_socket: "Socket | None" = None,
         http_auth_username: str | None = "",
@@ -10546,7 +10611,7 @@ class Client(Root):
         """
         _args = [
             Arg("url", url),
-            Arg("keepGitDir", keep_git_dir, True),
+            Arg("keepGitDir", keep_git_dir, False),
             Arg("sshKnownHosts", ssh_known_hosts, ""),
             Arg("sshAuthSocket", ssh_auth_socket, None),
             Arg("httpAuthUsername", http_auth_username, ""),
@@ -11093,6 +11158,40 @@ class Client(Root):
         _ctx = self._select("moduleSource", _args)
         return ModuleSource(_ctx)
 
+    def pipeline(
+        self,
+        name: str,
+        *,
+        description: str | None = "",
+        labels: list[PipelineLabel] | None = None,
+    ) -> "Client":
+        """Creates a named sub-pipeline.
+
+        .. deprecated::
+            Explicit pipeline creation is now a no-op
+
+        Parameters
+        ----------
+        name:
+            Name of the sub-pipeline.
+        description:
+            Description of the sub-pipeline.
+        labels:
+            Labels to apply to the sub-pipeline.
+        """
+        warnings.warn(
+            'Method "pipeline" is deprecated: Explicit pipeline creation is now a no-op',
+            DeprecationWarning,
+            stacklevel=4,
+        )
+        _args = [
+            Arg("name", name),
+            Arg("description", description, ""),
+            Arg("labels", labels, None),
+        ]
+        _ctx = self._select("pipeline", _args)
+        return Client(_ctx)
+
     def secret(
         self,
         uri: str,
@@ -11194,6 +11293,13 @@ class Client(Root):
         _args: list[Arg] = []
         _ctx = self._select("version", _args)
         return await _ctx.execute(str)
+
+    def with_(self, cb: Callable[["Client"], "Client"]) -> "Client":
+        """Call the provided callable with current Client.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 @typecheck
@@ -12066,6 +12172,36 @@ class Terminal(Type):
 
     def __await__(self):
         return self.sync().__await__()
+
+    async def websocket_endpoint(self) -> str:
+        """An http endpoint at which this terminal can be connected to over a
+        websocket.
+
+        .. deprecated::
+            Use newer dagger to access the terminal
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        warnings.warn(
+            'Method "websocket_endpoint" is deprecated: Use newer dagger to access the terminal',
+            DeprecationWarning,
+            stacklevel=4,
+        )
+        _args: list[Arg] = []
+        _ctx = self._select("websocketEndpoint", _args)
+        return await _ctx.execute(str)
 
 
 @typecheck

@@ -15,6 +15,4 @@ enum ImageMediaTypes: string
 {
     case OCIMediaTypes = 'OCIMediaTypes';
     case DockerMediaTypes = 'DockerMediaTypes';
-    case OCI = 'OCI';
-    case DOCKER = 'DOCKER';
 }

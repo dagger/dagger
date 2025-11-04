@@ -121,42 +121,6 @@ export type ChangesetID = string & { __ChangesetID: never }
  */
 export type CloudID = string & { __CloudID: never }
 
-export type ContainerAsServiceOpts = {
-  /**
-   * Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
-   *
-   * If empty, the container's default command is used.
-   */
-  args?: string[]
-
-  /**
-   * If the container has an entrypoint, prepend it to the args.
-   */
-  useEntrypoint?: boolean
-
-  /**
-   * Provides Dagger access to the executed command.
-   */
-  experimentalPrivilegedNesting?: boolean
-
-  /**
-   * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
-   */
-  insecureRootCapabilities?: boolean
-
-  /**
-   * Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
-  expand?: boolean
-
-  /**
-   * If set, skip the automatic init process injected into containers by default.
-   *
-   * This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
-   */
-  noInit?: boolean
-}
-
 export type ContainerAsTarballOpts = {
   /**
    * Identifiers for other platform specific containers.
@@ -178,6 +142,39 @@ export type ContainerAsTarballOpts = {
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
    */
   mediaTypes?: ImageMediaTypes
+}
+
+export type ContainerBuildOpts = {
+  /**
+   * Path to the Dockerfile to use.
+   */
+  dockerfile?: string
+
+  /**
+   * Target build stage to build.
+   */
+  target?: string
+
+  /**
+   * Additional build arguments.
+   */
+  buildArgs?: BuildArg[]
+
+  /**
+   * Secrets to pass to the build.
+   *
+   * They will be mounted at /run/secrets/[secret-name] in the build container
+   *
+   * They can be accessed in the Dockerfile using the "secret" mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl [http://example.com?token=$(cat /run/secrets/my-secret)](http://example.com?token=$(cat /run/secrets/my-secret))
+   */
+  secrets?: Secret[]
+
+  /**
+   * If set, skip the automatic init process injected into containers created by RUN statements.
+   *
+   * This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+   */
+  noInit?: boolean
 }
 
 export type ContainerDirectoryOpts = {
@@ -264,6 +261,18 @@ export type ContainerImportOpts = {
   tag?: string
 }
 
+export type ContainerPipelineOpts = {
+  /**
+   * Description of the sub-pipeline.
+   */
+  description?: string
+
+  /**
+   * Labels to apply to the sub-pipeline.
+   */
+  labels?: PipelineLabel[]
+}
+
 export type ContainerPublishOpts = {
   /**
    * Identifiers for other platform specific containers.
@@ -306,11 +315,6 @@ export type ContainerTerminalOpts = {
 
 export type ContainerUpOpts = {
   /**
-   * Bind each tunnel port to a random port on the host.
-   */
-  random?: boolean
-
-  /**
    * List of frontend/backend port mappings to forward.
    *
    * Frontend is the port accepting traffic on the host, backend is the service port.
@@ -318,38 +322,9 @@ export type ContainerUpOpts = {
   ports?: PortForward[]
 
   /**
-   * Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
-   *
-   * If empty, the container's default command is used.
+   * Bind each tunnel port to a random port on the host.
    */
-  args?: string[]
-
-  /**
-   * If the container has an entrypoint, prepend it to the args.
-   */
-  useEntrypoint?: boolean
-
-  /**
-   * Provides Dagger access to the executed command.
-   */
-  experimentalPrivilegedNesting?: boolean
-
-  /**
-   * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
-   */
-  insecureRootCapabilities?: boolean
-
-  /**
-   * Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   */
-  expand?: boolean
-
-  /**
-   * If set, skip the automatic init process injected into containers by default.
-   *
-   * This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
-   */
-  noInit?: boolean
+  random?: boolean
 }
 
 export type ContainerWithDefaultTerminalCmdOpts = {
@@ -414,6 +389,11 @@ export type ContainerWithExecOpts = {
    * Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.
    */
   useEntrypoint?: boolean
+
+  /**
+   * For true this can be removed. For false, use `useEntrypoint` instead.
+   */
+  skipEntrypoint?: boolean
 
   /**
    * Content to write to the command's standard input. Example: "Hello world")
@@ -621,7 +601,12 @@ export type ContainerWithMountedTempOpts = {
 
 export type ContainerWithNewFileOpts = {
   /**
-   * Permissions of the new file. Example: 0600
+   * Content of the file to write (e.g., "Hello world!").
+   */
+  contents?: string
+
+  /**
+   * Permission given to the written file (e.g., 0600).
    */
   permissions?: number
 
@@ -633,11 +618,6 @@ export type ContainerWithNewFileOpts = {
    * If the group is omitted, it defaults to the same as the user.
    */
   owner?: string
-
-  /**
-   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
-   */
-  expand?: boolean
 }
 
 export type ContainerWithSymlinkOpts = {
@@ -843,6 +823,18 @@ export type DirectoryFilterOpts = {
   gitignore?: boolean
 }
 
+export type DirectoryPipelineOpts = {
+  /**
+   * Description of the sub-pipeline.
+   */
+  description?: string
+
+  /**
+   * Labels to apply to the sub-pipeline.
+   */
+  labels?: PipelineLabel[]
+}
+
 export type DirectorySearchOpts = {
   /**
    * Directory or file paths to search
@@ -898,28 +890,6 @@ export type DirectorySearchOpts = {
    * Limit the number of results to return
    */
   limit?: number
-}
-
-export type DirectoryTerminalOpts = {
-  /**
-   * If set, override the default container used for the terminal.
-   */
-  container?: Container
-
-  /**
-   * If set, override the container's default terminal command and invoke these command arguments instead.
-   */
-  cmd?: string[]
-
-  /**
-   * Provides Dagger access to the executed command.
-   */
-  experimentalPrivilegedNesting?: boolean
-
-  /**
-   * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
-   */
-  insecureRootCapabilities?: boolean
 }
 
 export type DirectoryWithDirectoryOpts = {
@@ -1349,6 +1319,20 @@ export type GitRefTreeOpts = {
    * The depth of the tree to fetch.
    */
   depth?: number
+
+  /**
+   * DEPRECATED: This option should be passed to `git` instead.
+   *
+   * @deprecated This option should be passed to git instead.
+   */
+  sshKnownHosts?: string
+
+  /**
+   * DEPRECATED: This option should be passed to `git` instead.
+   *
+   * @deprecated This option should be passed to git instead.
+   */
+  sshAuthSocket?: Socket
 }
 
 /**
@@ -1445,7 +1429,6 @@ export type HostID = string & { __HostID: never }
  */
 export enum ImageLayerCompression {
   EstarGz = "EStarGZ",
-  Estargz = ImageLayerCompression.EstarGz,
   Gzip = "Gzip",
   Uncompressed = "Uncompressed",
   Zstd = "Zstd",
@@ -1494,10 +1477,8 @@ function ImageLayerCompressionNameToValue(name: string): ImageLayerCompression {
  * Mediatypes to use in published or exported image metadata.
  */
 export enum ImageMediaTypes {
-  Docker = "DockerMediaTypes",
-  DockerMediaTypes = ImageMediaTypes.Docker,
-  Oci = "OCIMediaTypes",
-  OcimediaTypes = ImageMediaTypes.Oci,
+  DockerMediaTypes = "DockerMediaTypes",
+  OcimediaTypes = "OCIMediaTypes",
 }
 
 /**
@@ -1506,10 +1487,10 @@ export enum ImageMediaTypes {
  */
 function ImageMediaTypesValueToName(value: ImageMediaTypes): string {
   switch (value) {
-    case ImageMediaTypes.Docker:
-      return "DOCKER"
-    case ImageMediaTypes.Oci:
-      return "OCI"
+    case ImageMediaTypes.DockerMediaTypes:
+      return "DockerMediaTypes"
+    case ImageMediaTypes.OcimediaTypes:
+      return "OCIMediaTypes"
     default:
       return value
   }
@@ -1521,10 +1502,10 @@ function ImageMediaTypesValueToName(value: ImageMediaTypes): string {
  */
 function ImageMediaTypesNameToValue(name: string): ImageMediaTypes {
   switch (name) {
-    case "DOCKER":
-      return ImageMediaTypes.Docker
-    case "OCI":
-      return ImageMediaTypes.Oci
+    case "DockerMediaTypes":
+      return ImageMediaTypes.DockerMediaTypes
+    case "OCIMediaTypes":
+      return ImageMediaTypes.OcimediaTypes
     default:
       return name as ImageMediaTypes
   }
@@ -1646,12 +1627,9 @@ export type ModuleSourceID = string & { __ModuleSourceID: never }
  * The kind of module source.
  */
 export enum ModuleSourceKind {
-  Dir = "DIR_SOURCE",
-  DirSource = ModuleSourceKind.Dir,
-  Git = "GIT_SOURCE",
-  GitSource = ModuleSourceKind.Git,
-  Local = "LOCAL_SOURCE",
-  LocalSource = ModuleSourceKind.Local,
+  DirSource = "DIR_SOURCE",
+  GitSource = "GIT_SOURCE",
+  LocalSource = "LOCAL_SOURCE",
 }
 
 /**
@@ -1660,12 +1638,12 @@ export enum ModuleSourceKind {
  */
 function ModuleSourceKindValueToName(value: ModuleSourceKind): string {
   switch (value) {
-    case ModuleSourceKind.Dir:
-      return "DIR"
-    case ModuleSourceKind.Git:
-      return "GIT"
-    case ModuleSourceKind.Local:
-      return "LOCAL"
+    case ModuleSourceKind.DirSource:
+      return "DIR_SOURCE"
+    case ModuleSourceKind.GitSource:
+      return "GIT_SOURCE"
+    case ModuleSourceKind.LocalSource:
+      return "LOCAL_SOURCE"
     default:
       return value
   }
@@ -1677,12 +1655,12 @@ function ModuleSourceKindValueToName(value: ModuleSourceKind): string {
  */
 function ModuleSourceKindNameToValue(name: string): ModuleSourceKind {
   switch (name) {
-    case "DIR":
-      return ModuleSourceKind.Dir
-    case "GIT":
-      return ModuleSourceKind.Git
-    case "LOCAL":
-      return ModuleSourceKind.Local
+    case "DIR_SOURCE":
+      return ModuleSourceKind.DirSource
+    case "GIT_SOURCE":
+      return ModuleSourceKind.GitSource
+    case "LOCAL_SOURCE":
+      return ModuleSourceKind.LocalSource
     default:
       return name as ModuleSourceKind
   }
@@ -1898,6 +1876,18 @@ export type ClientModuleSourceOpts = {
    * If set, error out if the ref string is not of the provided requireKind.
    */
   requireKind?: ModuleSourceKind
+}
+
+export type ClientPipelineOpts = {
+  /**
+   * Description of the sub-pipeline.
+   */
+  description?: string
+
+  /**
+   * Labels to apply to the sub-pipeline.
+   */
+  labels?: PipelineLabel[]
 }
 
 export type ClientSecretOpts = {
@@ -2141,132 +2131,67 @@ export enum TypeDefKind {
   /**
    * A boolean value.
    */
-  Boolean = "BOOLEAN_KIND",
-
-  /**
-   * A boolean value.
-   */
-  BooleanKind = TypeDefKind.Boolean,
+  BooleanKind = "BOOLEAN_KIND",
 
   /**
    * A GraphQL enum type and its values
    *
    * Always paired with an EnumTypeDef.
    */
-  Enum = "ENUM_KIND",
-
-  /**
-   * A GraphQL enum type and its values
-   *
-   * Always paired with an EnumTypeDef.
-   */
-  EnumKind = TypeDefKind.Enum,
+  EnumKind = "ENUM_KIND",
 
   /**
    * A float value.
    */
-  Float = "FLOAT_KIND",
-
-  /**
-   * A float value.
-   */
-  FloatKind = TypeDefKind.Float,
+  FloatKind = "FLOAT_KIND",
 
   /**
    * A graphql input type, used only when representing the core API via TypeDefs.
    */
-  Input = "INPUT_KIND",
-
-  /**
-   * A graphql input type, used only when representing the core API via TypeDefs.
-   */
-  InputKind = TypeDefKind.Input,
+  InputKind = "INPUT_KIND",
 
   /**
    * An integer value.
    */
-  Integer = "INTEGER_KIND",
-
-  /**
-   * An integer value.
-   */
-  IntegerKind = TypeDefKind.Integer,
+  IntegerKind = "INTEGER_KIND",
 
   /**
    * Always paired with an InterfaceTypeDef.
    *
    * A named type of functions that can be matched+implemented by other objects+interfaces.
    */
-  Interface = "INTERFACE_KIND",
-
-  /**
-   * Always paired with an InterfaceTypeDef.
-   *
-   * A named type of functions that can be matched+implemented by other objects+interfaces.
-   */
-  InterfaceKind = TypeDefKind.Interface,
+  InterfaceKind = "INTERFACE_KIND",
 
   /**
    * Always paired with a ListTypeDef.
    *
    * A list of values all having the same type.
    */
-  List = "LIST_KIND",
-
-  /**
-   * Always paired with a ListTypeDef.
-   *
-   * A list of values all having the same type.
-   */
-  ListKind = TypeDefKind.List,
+  ListKind = "LIST_KIND",
 
   /**
    * Always paired with an ObjectTypeDef.
    *
    * A named type defined in the GraphQL schema, with fields and functions.
    */
-  Object = "OBJECT_KIND",
-
-  /**
-   * Always paired with an ObjectTypeDef.
-   *
-   * A named type defined in the GraphQL schema, with fields and functions.
-   */
-  ObjectKind = TypeDefKind.Object,
+  ObjectKind = "OBJECT_KIND",
 
   /**
    * A scalar value of any basic kind.
    */
-  Scalar = "SCALAR_KIND",
-
-  /**
-   * A scalar value of any basic kind.
-   */
-  ScalarKind = TypeDefKind.Scalar,
+  ScalarKind = "SCALAR_KIND",
 
   /**
    * A string value.
    */
-  String = "STRING_KIND",
-
-  /**
-   * A string value.
-   */
-  StringKind = TypeDefKind.String,
+  StringKind = "STRING_KIND",
 
   /**
    * A special kind used to signify that no value is returned.
    *
    * This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
    */
-  Void = "VOID_KIND",
-
-  /**
-   * A special kind used to signify that no value is returned.
-   *
-   * This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
-   */
-  VoidKind = TypeDefKind.Void,
+  VoidKind = "VOID_KIND",
 }
 
 /**
@@ -2275,28 +2200,28 @@ export enum TypeDefKind {
  */
 function TypeDefKindValueToName(value: TypeDefKind): string {
   switch (value) {
-    case TypeDefKind.Boolean:
-      return "BOOLEAN"
-    case TypeDefKind.Enum:
-      return "ENUM"
-    case TypeDefKind.Float:
-      return "FLOAT"
-    case TypeDefKind.Input:
-      return "INPUT"
-    case TypeDefKind.Integer:
-      return "INTEGER"
-    case TypeDefKind.Interface:
-      return "INTERFACE"
-    case TypeDefKind.List:
-      return "LIST"
-    case TypeDefKind.Object:
-      return "OBJECT"
-    case TypeDefKind.Scalar:
-      return "SCALAR"
-    case TypeDefKind.String:
-      return "STRING"
-    case TypeDefKind.Void:
-      return "VOID"
+    case TypeDefKind.BooleanKind:
+      return "BOOLEAN_KIND"
+    case TypeDefKind.EnumKind:
+      return "ENUM_KIND"
+    case TypeDefKind.FloatKind:
+      return "FLOAT_KIND"
+    case TypeDefKind.InputKind:
+      return "INPUT_KIND"
+    case TypeDefKind.IntegerKind:
+      return "INTEGER_KIND"
+    case TypeDefKind.InterfaceKind:
+      return "INTERFACE_KIND"
+    case TypeDefKind.ListKind:
+      return "LIST_KIND"
+    case TypeDefKind.ObjectKind:
+      return "OBJECT_KIND"
+    case TypeDefKind.ScalarKind:
+      return "SCALAR_KIND"
+    case TypeDefKind.StringKind:
+      return "STRING_KIND"
+    case TypeDefKind.VoidKind:
+      return "VOID_KIND"
     default:
       return value
   }
@@ -2308,28 +2233,28 @@ function TypeDefKindValueToName(value: TypeDefKind): string {
  */
 function TypeDefKindNameToValue(name: string): TypeDefKind {
   switch (name) {
-    case "BOOLEAN":
-      return TypeDefKind.Boolean
-    case "ENUM":
-      return TypeDefKind.Enum
-    case "FLOAT":
-      return TypeDefKind.Float
-    case "INPUT":
-      return TypeDefKind.Input
-    case "INTEGER":
-      return TypeDefKind.Integer
-    case "INTERFACE":
-      return TypeDefKind.Interface
-    case "LIST":
-      return TypeDefKind.List
-    case "OBJECT":
-      return TypeDefKind.Object
-    case "SCALAR":
-      return TypeDefKind.Scalar
-    case "STRING":
-      return TypeDefKind.String
-    case "VOID":
-      return TypeDefKind.Void
+    case "BOOLEAN_KIND":
+      return TypeDefKind.BooleanKind
+    case "ENUM_KIND":
+      return TypeDefKind.EnumKind
+    case "FLOAT_KIND":
+      return TypeDefKind.FloatKind
+    case "INPUT_KIND":
+      return TypeDefKind.InputKind
+    case "INTEGER_KIND":
+      return TypeDefKind.IntegerKind
+    case "INTERFACE_KIND":
+      return TypeDefKind.InterfaceKind
+    case "LIST_KIND":
+      return TypeDefKind.ListKind
+    case "OBJECT_KIND":
+      return TypeDefKind.ObjectKind
+    case "SCALAR_KIND":
+      return TypeDefKind.ScalarKind
+    case "STRING_KIND":
+      return TypeDefKind.StringKind
+    case "VOID_KIND":
+      return TypeDefKind.VoidKind
     default:
       return name as TypeDefKind
   }
@@ -2992,7 +2917,7 @@ export class Container extends BaseClient {
   private readonly _envVariable?: string = undefined
   private readonly _exists?: boolean = undefined
   private readonly _exitCode?: number = undefined
-  private readonly _export?: string = undefined
+  private readonly _export?: boolean = undefined
   private readonly _exportImage?: Void = undefined
   private readonly _imageRef?: string = undefined
   private readonly _label?: string = undefined
@@ -3015,7 +2940,7 @@ export class Container extends BaseClient {
     _envVariable?: string,
     _exists?: boolean,
     _exitCode?: number,
-    _export?: string,
+    _export?: boolean,
     _exportImage?: Void,
     _imageRef?: string,
     _label?: string,
@@ -3068,19 +2993,9 @@ export class Container extends BaseClient {
    * Turn the container into a Service.
    *
    * Be sure to set any exposed ports before this conversion.
-   * @param opts.args Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
-   *
-   * If empty, the container's default command is used.
-   * @param opts.useEntrypoint If the container has an entrypoint, prepend it to the args.
-   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
-   * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   * @param opts.noInit If set, skip the automatic init process injected into containers by default.
-   *
-   * This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
    */
-  asService = (opts?: ContainerAsServiceOpts): Service => {
-    const ctx = this._ctx.select("asService", { ...opts })
+  asService = (): Service => {
+    const ctx = this._ctx.select("asService")
     return new Service(ctx)
   }
 
@@ -3107,6 +3022,27 @@ export class Container extends BaseClient {
 
     const ctx = this._ctx.select("asTarball", { ...opts, __metadata: metadata })
     return new File(ctx)
+  }
+
+  /**
+   * Initializes this container from a Dockerfile build.
+   * @param context Directory context used by the Dockerfile.
+   * @param opts.dockerfile Path to the Dockerfile to use.
+   * @param opts.target Target build stage to build.
+   * @param opts.buildArgs Additional build arguments.
+   * @param opts.secrets Secrets to pass to the build.
+   *
+   * They will be mounted at /run/secrets/[secret-name] in the build container
+   *
+   * They can be accessed in the Dockerfile using the "secret" mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl [http://example.com?token=$(cat /run/secrets/my-secret)](http://example.com?token=$(cat /run/secrets/my-secret))
+   * @param opts.noInit If set, skip the automatic init process injected into containers created by RUN statements.
+   *
+   * This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+   * @deprecated Use `Directory.build` instead
+   */
+  build = (context: Directory, opts?: ContainerBuildOpts): Container => {
+    const ctx = this._ctx.select("build", { context, ...opts })
+    return new Container(ctx)
   }
 
   /**
@@ -3285,7 +3221,7 @@ export class Container extends BaseClient {
   export = async (
     path: string,
     opts?: ContainerExportOpts,
-  ): Promise<string> => {
+  ): Promise<boolean> => {
     if (this._export) {
       return this._export
     }
@@ -3304,7 +3240,7 @@ export class Container extends BaseClient {
       __metadata: metadata,
     })
 
-    const response: Awaited<string> = await ctx.execute()
+    const response: Awaited<boolean> = await ctx.execute()
 
     return response
   }
@@ -3453,6 +3389,18 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Creates a named sub-pipeline.
+   * @param name Name of the sub-pipeline.
+   * @param opts.description Description of the sub-pipeline.
+   * @param opts.labels Labels to apply to the sub-pipeline.
+   * @deprecated Explicit pipeline creation is now a no-op
+   */
+  pipeline = (name: string, opts?: ContainerPipelineOpts): Container => {
+    const ctx = this._ctx.select("pipeline", { name, ...opts })
+    return new Container(ctx)
+  }
+
+  /**
    * The platform this container executes and publishes as.
    */
   platform = async (): Promise<Platform> => {
@@ -3572,29 +3520,19 @@ export class Container extends BaseClient {
    * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
-  terminal = (opts?: ContainerTerminalOpts): Container => {
+  terminal = (opts?: ContainerTerminalOpts): Terminal => {
     const ctx = this._ctx.select("terminal", { ...opts })
-    return new Container(ctx)
+    return new Terminal(ctx)
   }
 
   /**
    * Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.
    *
    * Be sure to set any exposed ports before calling this api.
-   * @param opts.random Bind each tunnel port to a random port on the host.
    * @param opts.ports List of frontend/backend port mappings to forward.
    *
    * Frontend is the port accepting traffic on the host, backend is the service port.
-   * @param opts.args Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
-   *
-   * If empty, the container's default command is used.
-   * @param opts.useEntrypoint If the container has an entrypoint, prepend it to the args.
-   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
-   * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-   * @param opts.noInit If set, skip the automatic init process injected into containers by default.
-   *
-   * This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+   * @param opts.random Bind each tunnel port to a random port on the host.
    */
   up = async (opts?: ContainerUpOpts): Promise<void> => {
     if (this._up) {
@@ -3657,7 +3595,7 @@ export class Container extends BaseClient {
   /**
    * Return a new container snapshot, with a directory added to its filesystem
    * @param path Location of the written directory (e.g., "/tmp/directory").
-   * @param source Identifier of the directory to write
+   * @param directory Identifier of the directory to write
    * @param opts.exclude Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).
    * @param opts.include Patterns to include in the written directory (e.g. ["*.go", "go.mod", "go.sum"]).
    * @param opts.gitignore Apply .gitignore rules when writing the directory.
@@ -3670,10 +3608,10 @@ export class Container extends BaseClient {
    */
   withDirectory = (
     path: string,
-    source: Directory,
+    directory: Directory,
     opts?: ContainerWithDirectoryOpts,
   ): Container => {
-    const ctx = this._ctx.select("withDirectory", { path, source, ...opts })
+    const ctx = this._ctx.select("withDirectory", { path, directory, ...opts })
     return new Container(ctx)
   }
 
@@ -3722,6 +3660,7 @@ export class Container extends BaseClient {
    *
    * Defaults to the container's default arguments (see "defaultArgs" and "withDefaultArgs").
    * @param opts.useEntrypoint Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.
+   * @param opts.skipEntrypoint For true this can be removed. For false, use `useEntrypoint` instead.
    * @param opts.stdin Content to write to the command's standard input. Example: "Hello world")
    * @param opts.redirectStdin Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
    * @param opts.redirectStdout Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
@@ -3817,6 +3756,14 @@ export class Container extends BaseClient {
     opts?: ContainerWithFilesOpts,
   ): Container => {
     const ctx = this._ctx.select("withFiles", { path, sources, ...opts })
+    return new Container(ctx)
+  }
+
+  /**
+   * Indicate that subsequent operations should be featured more prominently in the UI.
+   */
+  withFocus = (): Container => {
+    const ctx = this._ctx.select("withFocus")
     return new Container(ctx)
   }
 
@@ -3945,23 +3892,18 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Return a new container snapshot, with a file added to its filesystem with text content
-   * @param path Path of the new file. May be relative or absolute. Example: "README.md" or "/etc/profile"
-   * @param contents Contents of the new file. Example: "Hello world!"
-   * @param opts.permissions Permissions of the new file. Example: 0600
+   * Retrieves this container plus a new file written at the given path.
+   * @param path Location of the written file (e.g., "/tmp/file.txt").
+   * @param opts.contents Content of the file to write (e.g., "Hello world!").
+   * @param opts.permissions Permission given to the written file (e.g., 0600).
    * @param opts.owner A user:group to set for the file.
    *
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
-   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
-  withNewFile = (
-    path: string,
-    contents: string,
-    opts?: ContainerWithNewFileOpts,
-  ): Container => {
-    const ctx = this._ctx.select("withNewFile", { path, contents, ...opts })
+  withNewFile = (path: string, opts?: ContainerWithNewFileOpts): Container => {
+    const ctx = this._ctx.select("withNewFile", { path, ...opts })
     return new Container(ctx)
   }
 
@@ -4166,6 +4108,16 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Indicate that subsequent operations should not be featured more prominently in the UI.
+   *
+   * This is the initial state of all containers.
+   */
+  withoutFocus = (): Container => {
+    const ctx = this._ctx.select("withoutFocus")
+    return new Container(ctx)
+  }
+
+  /**
    * Retrieves this container minus the given environment label.
    * @param name The name of the label to remove (e.g., "org.opencontainers.artifact.created").
    */
@@ -4349,7 +4301,7 @@ export class Directory extends BaseClient {
   private readonly _id?: DirectoryID = undefined
   private readonly _digest?: string = undefined
   private readonly _exists?: boolean = undefined
-  private readonly _export?: string = undefined
+  private readonly _export?: boolean = undefined
   private readonly _findUp?: string = undefined
   private readonly _name?: string = undefined
   private readonly _sync?: DirectoryID = undefined
@@ -4362,7 +4314,7 @@ export class Directory extends BaseClient {
     _id?: DirectoryID,
     _digest?: string,
     _exists?: boolean,
-    _export?: string,
+    _export?: boolean,
     _findUp?: string,
     _name?: string,
     _sync?: DirectoryID,
@@ -4548,14 +4500,14 @@ export class Directory extends BaseClient {
   export = async (
     path: string,
     opts?: DirectoryExportOpts,
-  ): Promise<string> => {
+  ): Promise<boolean> => {
     if (this._export) {
       return this._export
     }
 
     const ctx = this._ctx.select("export", { path, ...opts })
 
-    const response: Awaited<string> = await ctx.execute()
+    const response: Awaited<boolean> = await ctx.execute()
 
     return response
   }
@@ -4625,6 +4577,18 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Creates a named sub-pipeline.
+   * @param name Name of the sub-pipeline.
+   * @param opts.description Description of the sub-pipeline.
+   * @param opts.labels Labels to apply to the sub-pipeline.
+   * @deprecated Explicit pipeline creation is now a no-op
+   */
+  pipeline = (name: string, opts?: DirectoryPipelineOpts): Directory => {
+    const ctx = this._ctx.select("pipeline", { name, ...opts })
+    return new Directory(ctx)
+  }
+
+  /**
    * Searches for content matching the given regular expression or literal string.
    *
    * Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
@@ -4666,18 +4630,6 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * Opens an interactive terminal in new container with this directory mounted inside.
-   * @param opts.container If set, override the default container used for the terminal.
-   * @param opts.cmd If set, override the container's default terminal command and invoke these command arguments instead.
-   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
-   * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
-   */
-  terminal = (opts?: DirectoryTerminalOpts): Directory => {
-    const ctx = this._ctx.select("terminal", { ...opts })
-    return new Directory(ctx)
-  }
-
-  /**
    * Return a directory with changes from another directory applied to it.
    * @param changes Changes to apply to the directory
    */
@@ -4689,7 +4641,7 @@ export class Directory extends BaseClient {
   /**
    * Return a snapshot with a directory added
    * @param path Location of the written directory (e.g., "/src/").
-   * @param source Identifier of the directory to copy.
+   * @param directory Identifier of the directory to copy.
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    * @param opts.gitignore Apply .gitignore filter rules inside the directory
@@ -4701,10 +4653,10 @@ export class Directory extends BaseClient {
    */
   withDirectory = (
     path: string,
-    source: Directory,
+    directory: Directory,
     opts?: DirectoryWithDirectoryOpts,
   ): Directory => {
-    const ctx = this._ctx.select("withDirectory", { path, source, ...opts })
+    const ctx = this._ctx.select("withDirectory", { path, directory, ...opts })
     return new Directory(ctx)
   }
 
@@ -6688,7 +6640,7 @@ export class File extends BaseClient {
   private readonly _id?: FileID = undefined
   private readonly _contents?: string = undefined
   private readonly _digest?: string = undefined
-  private readonly _export?: string = undefined
+  private readonly _export?: boolean = undefined
   private readonly _name?: string = undefined
   private readonly _size?: number = undefined
   private readonly _sync?: FileID = undefined
@@ -6701,7 +6653,7 @@ export class File extends BaseClient {
     _id?: FileID,
     _contents?: string,
     _digest?: string,
-    _export?: string,
+    _export?: boolean,
     _name?: string,
     _size?: number,
     _sync?: FileID,
@@ -6792,14 +6744,14 @@ export class File extends BaseClient {
    * @param path Location of the written directory (e.g., "output.txt").
    * @param opts.allowParentDirPath If allowParentDirPath is true, the path argument can be a directory path, in which case the file will be created in that directory.
    */
-  export = async (path: string, opts?: FileExportOpts): Promise<string> => {
+  export = async (path: string, opts?: FileExportOpts): Promise<boolean> => {
     if (this._export) {
       return this._export
     }
 
     const ctx = this._ctx.select("export", { path, ...opts })
 
-    const response: Awaited<string> = await ctx.execute()
+    const response: Awaited<boolean> = await ctx.execute()
 
     return response
   }
@@ -7659,6 +7611,8 @@ export class GitRef extends BaseClient {
    * The filesystem tree at this ref.
    * @param opts.discardGitDir Set to true to discard .git directory.
    * @param opts.depth The depth of the tree to fetch.
+   * @param opts.sshKnownHosts DEPRECATED: This option should be passed to `git` instead.
+   * @param opts.sshAuthSocket DEPRECATED: This option should be passed to `git` instead.
    */
   tree = (opts?: GitRefTreeOpts): Directory => {
     const ctx = this._ctx.select("tree", { ...opts })
@@ -7804,6 +7758,35 @@ export class GitRepository extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Header to authenticate the remote with.
+   * @param header Secret used to populate the Authorization HTTP header
+   * @deprecated Use "httpAuthHeader" in the constructor instead.
+   */
+  withAuthHeader = (header: Secret): GitRepository => {
+    const ctx = this._ctx.select("withAuthHeader", { header })
+    return new GitRepository(ctx)
+  }
+
+  /**
+   * Token to authenticate the remote with.
+   * @param token Secret used to populate the password during basic HTTP Authorization
+   * @deprecated Use "httpAuthToken" in the constructor instead.
+   */
+  withAuthToken = (token: Secret): GitRepository => {
+    const ctx = this._ctx.select("withAuthToken", { token })
+    return new GitRepository(ctx)
+  }
+
+  /**
+   * Call the provided function with current GitRepository.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: GitRepository) => GitRepository) => {
+    return arg(this)
   }
 }
 
@@ -8307,7 +8290,7 @@ export class JSONValue extends BaseClient {
 export class LLM extends BaseClient {
   private readonly _id?: LLMID = undefined
   private readonly _hasPrompt?: boolean = undefined
-  private readonly _historyJSON?: JSON = undefined
+  private readonly _historyJSON?: string = undefined
   private readonly _lastReply?: string = undefined
   private readonly _model?: string = undefined
   private readonly _provider?: string = undefined
@@ -8322,7 +8305,7 @@ export class LLM extends BaseClient {
     ctx?: Context,
     _id?: LLMID,
     _hasPrompt?: boolean,
-    _historyJSON?: JSON,
+    _historyJSON?: string,
     _lastReply?: string,
     _model?: string,
     _provider?: string,
@@ -8413,14 +8396,14 @@ export class LLM extends BaseClient {
   /**
    * return the raw llm message history as json
    */
-  historyJSON = async (): Promise<JSON> => {
+  historyJSON = async (): Promise<string> => {
     if (this._historyJSON) {
       return this._historyJSON
     }
 
     const ctx = this._ctx.select("historyJSON")
 
-    const response: Awaited<JSON> = await ctx.execute()
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
@@ -9159,6 +9142,7 @@ export class ModuleSource extends BaseClient {
   private readonly _id?: ModuleSourceID = undefined
   private readonly _asString?: string = undefined
   private readonly _cloneRef?: string = undefined
+  private readonly _cloneURL?: string = undefined
   private readonly _commit?: string = undefined
   private readonly _configExists?: boolean = undefined
   private readonly _digest?: string = undefined
@@ -9185,6 +9169,7 @@ export class ModuleSource extends BaseClient {
     _id?: ModuleSourceID,
     _asString?: string,
     _cloneRef?: string,
+    _cloneURL?: string,
     _commit?: string,
     _configExists?: boolean,
     _digest?: string,
@@ -9208,6 +9193,7 @@ export class ModuleSource extends BaseClient {
     this._id = _id
     this._asString = _asString
     this._cloneRef = _cloneRef
+    this._cloneURL = _cloneURL
     this._commit = _commit
     this._configExists = _configExists
     this._digest = _digest
@@ -9282,6 +9268,22 @@ export class ModuleSource extends BaseClient {
     }
 
     const ctx = this._ctx.select("cloneRef")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The URL to clone the root of the git repo from
+   * @deprecated Use cloneRef instead. cloneRef supports both URL-style and SCP-like SSH references
+   */
+  cloneURL = async (): Promise<string> => {
+    if (this._cloneURL) {
+      return this._cloneURL
+    }
+
+    const ctx = this._ctx.select("cloneURL")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -10788,6 +10790,18 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Creates a named sub-pipeline.
+   * @param name Name of the sub-pipeline.
+   * @param opts.description Description of the sub-pipeline.
+   * @param opts.labels Labels to apply to the sub-pipeline.
+   * @deprecated Explicit pipeline creation is now a no-op
+   */
+  pipeline = (name: string, opts?: ClientPipelineOpts): Client => {
+    const ctx = this._ctx.select("pipeline", { name, ...opts })
+    return new Client(ctx)
+  }
+
+  /**
    * Creates a new secret.
    * @param uri The URI of the secret store
    * @param opts.cacheKey If set, the given string will be used as the cache key for this secret. This means that any secrets with the same cache key will be considered equivalent in terms of cache lookups, even if they have different URIs or plaintext values.
@@ -10841,6 +10855,15 @@ export class Client extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Call the provided function with current Client.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: Client) => Client) => {
+    return arg(this)
   }
 }
 
@@ -11612,15 +11635,22 @@ export class SourceMap extends BaseClient {
 export class Terminal extends BaseClient {
   private readonly _id?: TerminalID = undefined
   private readonly _sync?: TerminalID = undefined
+  private readonly _websocketEndpoint?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: TerminalID, _sync?: TerminalID) {
+  constructor(
+    ctx?: Context,
+    _id?: TerminalID,
+    _sync?: TerminalID,
+    _websocketEndpoint?: string,
+  ) {
     super(ctx)
 
     this._id = _id
     this._sync = _sync
+    this._websocketEndpoint = _websocketEndpoint
   }
 
   /**
@@ -11649,6 +11679,22 @@ export class Terminal extends BaseClient {
     const response: Awaited<TerminalID> = await ctx.execute()
 
     return new Client(ctx.copy()).loadTerminalFromID(response)
+  }
+
+  /**
+   * An http endpoint at which this terminal can be connected to over a websocket.
+   * @deprecated Use newer dagger to access the terminal
+   */
+  websocketEndpoint = async (): Promise<string> => {
+    if (this._websocketEndpoint) {
+      return this._websocketEndpoint
+    }
+
+    const ctx = this._ctx.select("websocketEndpoint")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 

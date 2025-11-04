@@ -60,10 +60,10 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     /**
      * return the raw llm message history as json
      */
-    public function historyJSON(): Json
+    public function historyJSON(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('historyJSON');
-        return new \Dagger\Json((string)$this->queryLeaf($leafQueryBuilder, 'historyJSON'));
+        return (string)$this->queryLeaf($leafQueryBuilder, 'historyJSON');
     }
 
     /**
