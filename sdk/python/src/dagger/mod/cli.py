@@ -11,6 +11,7 @@ import anyio
 
 import dagger
 from dagger import telemetry
+from dagger.mod._ast_loader import load_module_from_ast
 from dagger.mod._exceptions import ModuleError, ModuleLoadError, record_exception
 from dagger.mod._module import MAIN_OBJECT, Module
 
@@ -29,6 +30,8 @@ def app(mod: Module | None = None, register: bool = False) -> int | None:
     finally:
         telemetry.shutdown()
 
+def register() -> int | None:
+    return app(None, True)
 
 async def main(mod: Module | None = None, register: bool = False) -> int | None:
     """Async entrypoint for a Dagger module."""
@@ -38,14 +41,32 @@ async def main(mod: Module | None = None, register: bool = False) -> int | None:
     async with await dagger.connect():
         try:
             if mod is None:
-                mod = load_module()
+                # When registering, use AST-based loading to avoid executing user code
+                if register:
+                    try:
+                        logger.info("Using AST-based module loading for registration")
+                        mod = load_module_from_ast()
+                        logger.info(f"AST loader succeeded: {len(mod._objects)} objects found")
+                    except Exception as ast_error:
+                        logger.exception("AST-based module loading failed")
+                        # Print to stderr for visibility
+                        import sys
+                        import traceback
+                        print(f"ERROR: AST-based module loading failed:", file=sys.stderr)
+                        print(f"{type(ast_error).__name__}: {ast_error}", file=sys.stderr)
+                        traceback.print_exc(file=sys.stderr)
+                        raise
+                else:
+                    mod = load_module()
             if register:
                 return await mod.register()
             return await mod.serve()
         except (ModuleError, dagger.QueryError) as e:
+            logger.error(str(e))
             await record_exception(e)
             return 2
         except Exception as e:
+            logger.error(str(e))
             logger.exception("Unhandled exception")
             await record_exception(e)
             return 1
