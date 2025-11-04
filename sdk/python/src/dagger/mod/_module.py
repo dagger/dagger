@@ -142,7 +142,9 @@ class Module:
             if self.is_main(obj_type):
                 # Only the main object's constructor is needed.
                 # It's the entrypoint to the module.
-                obj_type.get_constructor(self._converter)
+                # Interfaces don't have constructors.
+                if not obj_type.interface:
+                    obj_type.get_constructor(self._converter)
 
                 # Module description from main object's parent module
                 if desc := get_parent_module_doc(obj_type.cls):
@@ -244,11 +246,14 @@ class Module:
                         **arg_kwargs,
                     )
 
-                type_def = (
-                    type_def.with_constructor(func_def)
-                    if func_name == ""
-                    else type_def.with_function(func_def)
-                )
+                # Interfaces don't have constructors
+                if func_name == "" and obj_type.interface:
+                    # Skip constructor for interfaces
+                    pass
+                elif func_name == "":
+                    type_def = type_def.with_constructor(func_def)
+                else:
+                    type_def = type_def.with_function(func_def)
 
             # Add object/interface to module
             mod = (
