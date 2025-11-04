@@ -258,6 +258,9 @@ def parse_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> MethodInfo:
         )
         parameters.append(param_info)
 
+    # Skip varargs (*args) and kwargs (**kwargs) - they're not supported in Dagger
+    # and would cause type resolution errors
+
     # Handle defaults
     num_defaults = len(node.args.defaults)
     if num_defaults > 0:
@@ -373,13 +376,20 @@ def parse_class(node: ast.ClassDef) -> ClassInfo:  # noqa: C901, PLR0912, PLR091
                     with contextlib.suppress(Exception):
                         default_value = ast.literal_eval(item.value)
 
-            # Use field_default if it's a dagger field, otherwise use default_value
-            actual_default = field_default if is_dagger_field else default_value
+            # Determine if there's a default value
+            # For dagger fields: only if field() has a default= kwarg
+            # For regular fields: if there's any assignment
+            if is_dagger_field:
+                has_default = field_default is not None
+                actual_default = field_default
+            else:
+                has_default = item.value is not None
+                actual_default = default_value
 
             fields[field_name] = FieldInfo(
                 name=field_name,
                 type_annotation=type_annotation,
-                has_default=item.value is not None,
+                has_default=has_default,
                 default_value=actual_default,
                 is_dagger_field=is_dagger_field,
                 deprecated=field_deprecated,
@@ -581,8 +591,22 @@ def build_mock_class_from_info(  # noqa: C901, PLR0912
 
         class_attrs[method_name] = mock_func
 
+    # For non-interface classes without fields, add a minimal __init__
+    # to ensure they have a proper constructor
+    if class_info.decorator_type != "interface" and not class_info.fields:
+
+        def __init__(self):  # noqa: N807
+            pass
+
+        class_attrs["__init__"] = __init__
+
     # Create the class using type()
-    mock_cls = type(class_info.name, (), class_attrs)
+    # For interfaces, inherit from typing.Protocol
+    # Don't override __init__ for interfaces - the module system will handle it
+    if class_info.decorator_type == "interface":
+        mock_cls = type(class_info.name, (typing.Protocol,), class_attrs)
+    else:
+        mock_cls = type(class_info.name, (), class_attrs)
 
     # Apply the appropriate decorator
     if class_info.decorator_type == "object_type":
@@ -654,37 +678,29 @@ def create_mock_method(method_info: MethodInfo, namespace: dict[str, Any]) -> An
     # Create signature
     sig = inspect.Signature(params, return_annotation=return_annotation)
 
-    # Create a placeholder function with the namespace as globals
-    # This is important so that get_type_hints() can resolve the annotations
-    import types
+    # Build a function dynamically with the exact parameters needed
+    # This avoids the issue of *args/**kwargs being detected as untyped parameters
+    param_names = [p.name for p in params]
+    param_str = ", ".join(param_names)
+
+    # Use a unique temporary name to avoid collisions in the namespace
+    import uuid
+
+    temp_name = f"_mock_{method_info.name}_{uuid.uuid4().hex[:8]}"
 
     if method_info.is_async:
-
-        async def _temp_method(self, *args, **kwargs):
-            """Mock method placeholder."""
-
-        # Recreate with proper globals
-        mock_method = types.FunctionType(
-            _temp_method.__code__,
-            namespace,  # Use the namespace as globals!
-            method_info.name,
-            None,  # argdefs
-            _temp_method.__closure__,
-        )
+        func_code = f"async def {temp_name}({param_str}):\n    pass"
     else:
+        func_code = f"def {temp_name}({param_str}):\n    pass"
 
-        def _temp_method(self, *args, **kwargs):
-            """Mock method placeholder."""
+    # Execute the function definition in a temporary namespace
+    temp_namespace = {}
+    exec(func_code, namespace, temp_namespace)  # noqa: S102
+    mock_method = temp_namespace[temp_name]
 
-        # Recreate with proper globals
-        mock_method = types.FunctionType(
-            _temp_method.__code__,
-            namespace,  # Use the namespace as globals!
-            method_info.name,
-            None,  # argdefs
-            _temp_method.__closure__,
-        )
-
+    # Set the correct name, signature, and annotations
+    mock_method.__name__ = method_info.name
+    mock_method.__qualname__ = method_info.name
     mock_method.__signature__ = sig  # type: ignore[assignment]
     mock_method.__annotations__ = annotations  # type: ignore[assignment]
     if method_info.docstring:
@@ -832,5 +848,39 @@ def load_module_from_ast(  # noqa: C901, PLR0912, PLR0915
         msg = f"No classes were successfully loaded. Failed classes: {failed_classes}"
         logger.error(msg)
         raise ModuleLoadError(msg)
+
+    # Auto-detect main object if not explicitly set
+    if mod._main is None:  # noqa: SLF001
+        logger.debug("AST loader: main object not set, attempting auto-detection")
+
+        # Strategy 1: If there's only one object/interface, use it as main
+        if len(mod._objects) == 1:  # noqa: SLF001
+            main_obj = next(iter(mod._objects.values()))  # noqa: SLF001
+            mod._main = main_obj  # noqa: SLF001
+            logger.info(
+                "AST loader: auto-detected main object (only one): %s",
+                main_obj.cls.__name__,
+            )
+        else:
+            # Strategy 2: Look for object with capitalized module name
+            # e.g., for module "duck", look for class "Duck"
+            module_name = os.getenv("DAGGER_MODULE", "")
+            if module_name:
+                capitalized_name = module_name.capitalize()
+                if capitalized_name in mod._objects:  # noqa: SLF001
+                    mod._main = mod._objects[capitalized_name]  # noqa: SLF001
+                    logger.info(
+                        "AST loader: auto-detected main object (by name): %s",
+                        capitalized_name,
+                    )
+
+        if mod._main is None:  # noqa: SLF001
+            available = list(mod._objects.keys())  # noqa: SLF001
+            msg = (
+                f"Could not auto-detect main object. Available: {available}. "
+                "Set DAGGER_MAIN_OBJECT to specify main object."
+            )
+            logger.error(msg)
+            raise ModuleLoadError(msg)
 
     return mod
