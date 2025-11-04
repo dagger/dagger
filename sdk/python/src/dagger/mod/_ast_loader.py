@@ -1,6 +1,7 @@
 """AST-based module loader for type registration without executing code."""
 
 import ast
+import contextlib
 import dataclasses
 import enum
 import importlib.metadata
@@ -9,16 +10,12 @@ import inspect
 import logging
 import os
 import sys
-import textwrap
 import typing
 from pathlib import Path
 from typing import Any
 
 from dagger.mod._exceptions import ModuleLoadError
 from dagger.mod._module import Module
-from dagger.mod._resolver import Field, Function, ObjectType
-from dagger.mod._types import APIName, FieldDefinition, FunctionDefinition, PythonName
-from dagger.mod._utils import normalize_name
 
 logger = logging.getLogger(__package__)
 
@@ -130,7 +127,7 @@ def find_module_files(module_path: Path | None = None) -> list[Path]:
         except ModuleLoadError:
             # Fall back to IMPORT_PKG environment variable
             module_name = IMPORT_PKG
-            logger.debug(f"No entry point found, using IMPORT_PKG: {module_name}")
+            logger.debug("No entry point found, using IMPORT_PKG: %s", module_name)
 
         # Try to find the module's location
         spec = importlib.util.find_spec(module_name)
@@ -139,10 +136,13 @@ def find_module_files(module_path: Path | None = None) -> list[Path]:
             cwd = Path.cwd()
             src_dir = cwd / "src" / module_name
             if src_dir.exists() and src_dir.is_dir():
-                logger.debug(f"Found module in src directory: {src_dir}")
+                logger.debug("Found module in src directory: %s", src_dir)
                 module_path = src_dir
             else:
-                msg = f"Could not find module '{module_name}' (checked sys.path and {src_dir})"
+                msg = (
+                    f"Could not find module '{module_name}' "
+                    f"(checked sys.path and {src_dir})"
+                )
                 raise ModuleLoadError(msg)
         else:
             module_path = Path(spec.origin)
@@ -152,27 +152,28 @@ def find_module_files(module_path: Path | None = None) -> list[Path]:
         module_dir = module_path
         return list(module_dir.glob("*.py"))
     # If it's __init__.py, get the directory
-    elif module_path.name == "__init__.py":
+    if module_path.name == "__init__.py":
         module_dir = module_path.parent
         return list(module_dir.glob("*.py"))
-    else:
-        return [module_path]
+    return [module_path]
 
 
 def parse_decorator_call(decorator: ast.expr) -> tuple[str | None, dict[str, Any]]:
     """Parse a decorator to extract its name and arguments.
 
-    Returns:
+    Returns
+    -------
         Tuple of (decorator_name, kwargs)
     """
     if isinstance(decorator, ast.Name):
         # Handle direct decorator like @object_type or @function
         return decorator.id, {}
-    elif isinstance(decorator, ast.Attribute):
+    if isinstance(decorator, ast.Attribute):
         # Handle mod.object_type, mod.function, etc. (less common pattern)
         return decorator.attr, {}
-    elif isinstance(decorator, ast.Call):
-        # Handle decorator with arguments like @function(name="foo") or @object_type(deprecated="...")
+    if isinstance(decorator, ast.Call):
+        # Handle decorator with arguments like @function(name="foo")
+        # or @object_type(deprecated="...")
         if isinstance(decorator.func, ast.Name):
             name = decorator.func.id
         elif isinstance(decorator.func, ast.Attribute):
@@ -201,7 +202,7 @@ def get_type_annotation(node: ast.expr | None) -> str | None:
         return None
     try:
         return ast.unparse(node)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
 
 
@@ -269,7 +270,7 @@ def parse_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> MethodInfo:
                     parameters[param_idx].default_value = ast.literal_eval(
                         node.args.defaults[i]
                     )
-                except Exception:
+                except Exception:  # noqa: BLE001
                     # If not a literal, store as unparsed string
                     parameters[param_idx].default_value = ast.unparse(
                         node.args.defaults[i]
@@ -289,7 +290,7 @@ def parse_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> MethodInfo:
     )
 
 
-def parse_class(node: ast.ClassDef) -> ClassInfo:
+def parse_class(node: ast.ClassDef) -> ClassInfo:  # noqa: C901, PLR0912, PLR0915
     """Parse a class definition from AST."""
     decorator_type = None
     deprecated = None
@@ -332,14 +333,18 @@ def parse_class(node: ast.ClassDef) -> ClassInfo:
             field_deprecated = None
             field_alt_name = None
 
-            if item.value:
+            if item.value:  # noqa: SIM102
                 # Check if the value is a call to field()
                 if isinstance(item.value, ast.Call):
                     # Could be field() or dagger.field()
                     is_field_call = False
-                    if isinstance(item.value.func, ast.Name) and item.value.func.id == "field":
-                        is_field_call = True
-                    elif isinstance(item.value.func, ast.Attribute) and item.value.func.attr == "field":
+                    if (
+                        isinstance(item.value.func, ast.Name)
+                        and item.value.func.id == "field"
+                    ) or (
+                        isinstance(item.value.func, ast.Attribute)
+                        and item.value.func.attr == "field"
+                    ):
                         is_field_call = True
 
                     if is_field_call:
@@ -347,15 +352,11 @@ def parse_class(node: ast.ClassDef) -> ClassInfo:
                         # Extract field kwargs
                         for keyword in item.value.keywords:
                             if keyword.arg == "deprecated":
-                                try:
+                                with contextlib.suppress(Exception):
                                     field_deprecated = ast.literal_eval(keyword.value)
-                                except Exception:
-                                    pass
                             elif keyword.arg == "name":
-                                try:
+                                with contextlib.suppress(Exception):
                                     field_alt_name = ast.literal_eval(keyword.value)
-                                except Exception:
-                                    pass
 
             fields[field_name] = FieldInfo(
                 name=field_name,
@@ -374,13 +375,12 @@ def parse_class(node: ast.ClassDef) -> ClassInfo:
                     member_value = None
                     member_doc = None
 
-                    try:
+                    with contextlib.suppress(Exception):
                         member_value = ast.literal_eval(item.value)
-                    except Exception:
-                        pass
 
                     # Look for docstring after the assignment
-                    # (This is a simplified approach; proper enum docstrings are more complex)
+                    # (This is a simplified approach; proper enum
+                    # docstrings are more complex)
 
                     enum_members[member_name] = (member_value, member_doc)
 
@@ -407,8 +407,8 @@ def analyze_source_file(file_path: Path) -> dict[str, ClassInfo]:
     try:
         source = file_path.read_text(encoding="utf-8")
         tree = ast.parse(source, filename=str(file_path))
-    except Exception as e:
-        logger.warning(f"Failed to parse {file_path}: {e}")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Failed to parse %s: %s", file_path, e)
         return {}
 
     classes = {}
@@ -449,10 +449,10 @@ def create_safe_namespace() -> dict[str, Any]:
         "Any": typing.Any,
         "Optional": typing.Optional,
         "Union": typing.Union,
-        "List": typing.List,
-        "Dict": typing.Dict,
-        "Tuple": typing.Tuple,
-        "Set": typing.Set,
+        "List": list,
+        "Dict": dict,
+        "Tuple": tuple,
+        "Set": set,
     }
 
     # Add dagger types
@@ -467,7 +467,8 @@ def create_safe_namespace() -> dict[str, Any]:
                 namespace[attr_name] = attr
 
         # Add commonly used dagger metadata/decorators that users import directly
-        from dagger import DefaultPath, Doc, Ignore, Name, Deprecated
+        from dagger import DefaultPath, Deprecated, Doc, Ignore, Name
+
         namespace["Doc"] = Doc
         namespace["DefaultPath"] = DefaultPath
         namespace["Ignore"] = Ignore
@@ -479,9 +480,7 @@ def create_safe_namespace() -> dict[str, Any]:
     return namespace
 
 
-def evaluate_annotation(
-    annotation_str: str | None, namespace: dict[str, Any]
-) -> Any:
+def evaluate_annotation(annotation_str: str | None, namespace: dict[str, Any]) -> Any:
     """Safely evaluate a type annotation string.
 
     Falls back to string annotation if evaluation fails.
@@ -491,14 +490,14 @@ def evaluate_annotation(
 
     try:
         # Try to evaluate the annotation
-        return eval(annotation_str, namespace)
-    except Exception as e:
-        logger.debug(f"Could not evaluate annotation '{annotation_str}': {e}")
+        return eval(annotation_str, namespace)  # noqa: S307
+    except Exception as e:  # noqa: BLE001
+        logger.debug("Could not evaluate annotation '%s': %s", annotation_str, e)
         # Return as string - will be handled by type system
         return annotation_str
 
 
-def build_mock_class_from_info(
+def build_mock_class_from_info(  # noqa: C901, PLR0912
     class_info: ClassInfo, namespace: dict[str, Any], mod: Module
 ) -> type:
     """Build a mock class from AST-extracted information.
@@ -585,7 +584,9 @@ def create_mock_method(method_info: MethodInfo, namespace: dict[str, Any]) -> An
     # Build parameter list for function signature
     # Use 'cls' for classmethods, 'self' for regular methods
     first_param_name = "cls" if method_info.is_classmethod else "self"
-    params = [inspect.Parameter(first_param_name, inspect.Parameter.POSITIONAL_OR_KEYWORD)]
+    params = [
+        inspect.Parameter(first_param_name, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+    ]
 
     # Build annotations dict for get_type_hints()
     annotations = {}
@@ -594,7 +595,11 @@ def create_mock_method(method_info: MethodInfo, namespace: dict[str, Any]) -> An
         # Use actual default value if available
         if param_info.has_default:
             # Use the actual default value from AST
-            default = param_info.default_value if param_info.default_value is not None else None
+            default = (
+                param_info.default_value
+                if param_info.default_value is not None
+                else None
+            )
         else:
             default = inspect.Parameter.empty
 
@@ -637,7 +642,6 @@ def create_mock_method(method_info: MethodInfo, namespace: dict[str, Any]) -> An
 
         async def _temp_method(self, *args, **kwargs):
             """Mock method placeholder."""
-            pass
 
         # Recreate with proper globals
         mock_method = types.FunctionType(
@@ -651,7 +655,6 @@ def create_mock_method(method_info: MethodInfo, namespace: dict[str, Any]) -> An
 
         def _temp_method(self, *args, **kwargs):
             """Mock method placeholder."""
-            pass
 
         # Recreate with proper globals
         mock_method = types.FunctionType(
@@ -662,8 +665,8 @@ def create_mock_method(method_info: MethodInfo, namespace: dict[str, Any]) -> An
             _temp_method.__closure__,
         )
 
-    mock_method.__signature__ = sig  # type: ignore
-    mock_method.__annotations__ = annotations  # type: ignore
+    mock_method.__signature__ = sig  # type: ignore[assignment]
+    mock_method.__annotations__ = annotations  # type: ignore[assignment]
     if method_info.docstring:
         mock_method.__doc__ = method_info.docstring
 
@@ -674,9 +677,9 @@ def create_mock_enum(class_info: ClassInfo, mod: Module) -> type:
     """Create a mock enum class."""
     # Build enum members
     enum_dict = {}
-    for member_name, (member_value, member_doc) in class_info.enum_members.items():
+    for member_name, (member_value, _member_doc) in class_info.enum_members.items():
         if member_value is None:
-            member_value = member_name  # Default value
+            member_value = member_name  # Default value  # noqa: PLW2901
         enum_dict[member_name] = member_value
 
     if not enum_dict:
@@ -684,7 +687,7 @@ def create_mock_enum(class_info: ClassInfo, mod: Module) -> type:
         enum_dict["PLACEHOLDER"] = "PLACEHOLDER"
 
     # Create enum class
-    mock_enum = enum.Enum(class_info.name, enum_dict)  # type: ignore
+    mock_enum = enum.Enum(class_info.name, enum_dict)  # type: ignore[misc]
 
     # Set docstring
     if class_info.docstring:
@@ -694,14 +697,16 @@ def create_mock_enum(class_info: ClassInfo, mod: Module) -> type:
     return mod.enum_type(mock_enum)
 
 
-def load_module_from_ast(
+def load_module_from_ast(  # noqa: C901, PLR0912, PLR0915
     main_name: str | None = None, module_path: Path | None = None
 ) -> Module:
     """Load a module by analyzing source code without executing it.
 
     Args:
-        main_name: Name of the main object. If None, will try to get from entry point.
-        module_path: Path to the module file or directory. If None, will try to find from entry point.
+        main_name: Name of the main object. If None, will try to get
+            from entry point.
+        module_path: Path to the module file or directory. If None, will
+            try to find from entry point.
     """
     try:
         if main_name is None:
@@ -712,86 +717,96 @@ def load_module_from_ast(
             ep = get_entry_point()
             main_name = ep.value.split(":")[1] if ":" in ep.value else ""
 
-        logger.debug(f"AST loader: main_name={main_name}, module_path={module_path}")
+        logger.debug("AST loader: main_name=%s, module_path=%s", main_name, module_path)
 
         # Find all module files
         module_files = find_module_files(module_path)
-        logger.debug(f"AST loader: found {len(module_files)} files to parse")
+        logger.debug("AST loader: found %d files to parse", len(module_files))
     except Exception as e:
-        logger.error(f"Failed to initialize AST loader: {e}")
-        raise ModuleLoadError(f"Failed to initialize AST loader: {e}") from e
+        logger.exception("Failed to initialize AST loader")
+        msg = f"Failed to initialize AST loader: {e}"
+        raise ModuleLoadError(msg) from e
 
     # Parse all files to extract class information
     all_classes: dict[str, ClassInfo] = {}
     try:
         for file_path in module_files:
-            logger.debug(f"AST loader: parsing {file_path}")
+            logger.debug("AST loader: parsing %s", file_path)
             classes = analyze_source_file(file_path)
             all_classes.update(classes)
-            logger.debug(f"AST loader: found {len(classes)} classes in {file_path}")
+            logger.debug("AST loader: found %d classes in %s", len(classes), file_path)
     except Exception as e:
-        logger.error(f"Failed to parse source files: {e}")
-        raise ModuleLoadError(f"Failed to parse source files: {e}") from e
+        logger.exception("Failed to parse source files")
+        msg = f"Failed to parse source files: {e}"
+        raise ModuleLoadError(msg) from e
 
-    logger.debug(f"AST loader: total classes found: {list(all_classes.keys())}")
+    logger.debug("AST loader: total classes found: %s", list(all_classes.keys()))
 
     # Create module instance
     try:
         mod = Module(main_name=main_name)
-        logger.debug(f"AST loader: created Module instance with main_name={main_name}")
+        logger.debug("AST loader: created Module instance with main_name=%s", main_name)
     except Exception as e:
-        logger.error(f"Failed to create Module instance: {e}")
-        raise ModuleLoadError(f"Failed to create Module instance: {e}") from e
+        logger.exception("Failed to create Module instance")
+        msg = f"Failed to create Module instance: {e}"
+        raise ModuleLoadError(msg) from e
 
     # Create namespace for evaluating type annotations
     try:
         namespace = create_safe_namespace()
         logger.debug("AST loader: created safe namespace")
     except Exception as e:
-        logger.error(f"Failed to create safe namespace: {e}")
-        raise ModuleLoadError(f"Failed to create safe namespace: {e}") from e
+        logger.exception("Failed to create safe namespace")
+        msg = f"Failed to create safe namespace: {e}"
+        raise ModuleLoadError(msg) from e
 
     # Create a mock module in sys.modules so get_type_hints() can find it
     try:
         import types
+
         mock_module = types.ModuleType("__dagger_mock__")
         mock_module.__dict__.update(namespace)
         sys.modules["__dagger_mock__"] = mock_module
         logger.debug("AST loader: created mock module in sys.modules")
     except Exception as e:
-        logger.error(f"Failed to create mock module: {e}")
-        raise ModuleLoadError(f"Failed to create mock module: {e}") from e
+        logger.exception("Failed to create mock module")
+        msg = f"Failed to create mock module: {e}"
+        raise ModuleLoadError(msg) from e
 
     # First pass: create placeholder classes for forward references
-    for class_name in all_classes.keys():
+    for class_name in all_classes:
         # Create a minimal placeholder class
         namespace[class_name] = type(class_name, (), {})
         # Also add to mock module so forward references work
         setattr(mock_module, class_name, namespace[class_name])
-    logger.debug(f"AST loader: created {len(all_classes)} placeholder classes")
+    logger.debug("AST loader: created %d placeholder classes", len(all_classes))
 
     # Second pass: build actual mock classes and populate the module
     successful_classes = []
     failed_classes = []
     for class_name, class_info in all_classes.items():
         try:
-            logger.debug(f"AST loader: building mock class for {class_name}")
+            logger.debug("AST loader: building mock class for %s", class_name)
             # Build and replace the placeholder
             mock_cls = build_mock_class_from_info(class_info, namespace, mod)
             namespace[class_name] = mock_cls
             # Also update the mock module so forward references work
             setattr(mock_module, class_name, mock_cls)
             successful_classes.append(class_name)
-            logger.debug(f"AST loader: successfully built {class_name}")
-        except Exception as e:
+            logger.debug("AST loader: successfully built %s", class_name)
+        except Exception as e:  # noqa: PERF203
             failed_classes.append(class_name)
-            logger.warning(f"Failed to build mock class for {class_name}: {e}")
-            logger.exception(e)
+            logger.warning("Failed to build mock class for %s: %s", class_name, e)
+            logger.exception("Exception details")
             continue
 
-    logger.info(f"AST loader: successfully built {len(successful_classes)} classes, failed {len(failed_classes)}")
+    logger.info(
+        "AST loader: successfully built %d classes, failed %d",
+        len(successful_classes),
+        len(failed_classes),
+    )
     if failed_classes:
-        logger.warning(f"AST loader: failed classes: {failed_classes}")
+        logger.warning("AST loader: failed classes: %s", failed_classes)
 
     if not successful_classes:
         msg = f"No classes were successfully loaded. Failed classes: {failed_classes}"
