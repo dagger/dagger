@@ -15,8 +15,6 @@ import (
 )
 
 func New(
-	ctx context.Context,
-
 	// A git repository containing the source code of the artifact to be versioned.
 	// +optional
 	// +defaultPath="/.git"
@@ -31,12 +29,12 @@ func New(
 	// +defaultPath="/"
 	// +ignore=["**_test.go", "**/.git*", "**/.venv", "**/.dagger", ".*", "bin", "**/node_modules", "**/testdata/**", "**/.changes", ".changes", "docs", "helm", "release", "version", "modules", "*.md", "LICENSE", "NOTICE", "hack"]
 	inputs *dagger.Directory,
-) (*Version, error) {
+) *Version {
 	return &Version{
 		Git:    git.AsGit(),
 		GitDir: git,
 		Inputs: inputs,
-	}, nil
+	}
 }
 
 type Version struct {
