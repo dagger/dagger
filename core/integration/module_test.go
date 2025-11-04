@@ -7896,7 +7896,7 @@ func sdkSourceFile(sdk string) string {
 	case "go":
 		return "main.go"
 	case "python":
-		return "src/test/__init__.py"
+		return "src/test/main.py"
 	case "typescript":
 		return "src/index.ts"
 	case "java", "./sdk/java":
