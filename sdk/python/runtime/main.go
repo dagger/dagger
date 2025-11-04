@@ -80,6 +80,9 @@ var tplInit string
 //go:embed template/main.py
 var tplMain string
 
+//go:embed template/runtime.py
+var tplRuntime string
+
 // Functions for building the runtime module for the Python SDK.
 //
 // The server interacts directly with the ModuleRuntime and Codegen functions.
@@ -320,14 +323,6 @@ func (m *PythonSdk) uv() dagger.WithContainerFunc {
 // - <source>/src/<package_name>/__init__.py
 // - <source>/src/<package_name>/main.py
 func (m *PythonSdk) WithTemplate() *PythonSdk {
-	m.Container = m.Container.
-		WithFile(
-			RuntimeExecutablePath,
-			dag.CurrentModule().Source().File("template/runtime.py"),
-			dagger.ContainerWithFileOpts{Permissions: 0o755},
-		).
-		WithEntrypoint([]string{RuntimeExecutablePath})
-
 	d := m.Discovery
 
 	// NB: We can't detect if it's a new module with `dagger develop --sdk`
@@ -481,6 +476,14 @@ func (m *PythonSdk) WithUpdates(perform bool) *PythonSdk {
 
 // Install the module's package and dependencies
 func (m *PythonSdk) WithInstall() *PythonSdk {
+	m.Container = m.Container.
+		WithNewFile(
+			RuntimeExecutablePath,
+			tplRuntime,
+			dagger.ContainerWithNewFileOpts{Permissions: 0o755},
+		).
+		WithEntrypoint([]string{RuntimeExecutablePath})
+
 	// NB: Only enable bytecode compilation in `dagger call`
 	// (not `dagger init/develop`), to avoid having to remove the .pyc files
 	// before exporting the module back to the host.
