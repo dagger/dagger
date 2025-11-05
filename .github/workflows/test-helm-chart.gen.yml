@@ -21,7 +21,7 @@ jobs:
     test-helm-chart:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-8x16' || 'ubuntu-24.04' }}
-            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.4' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'namespace-experiments:dagger.integration=enabled;dagger.version=0.19.5' || 'ubuntu-24.04' }}
         name: Test Helm chart
         steps:
             - name: Checkout
@@ -33,5 +33,5 @@ jobs:
                 call: --docker-cfg=file:$HOME/.docker/config.json test-helm
                 cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
-                version: v0.19.4
+                version: v0.19.5
         timeout-minutes: 20

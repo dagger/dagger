@@ -3,7 +3,7 @@ module github.com/dagger/dagger/cmd/engine/.dagger
 go 1.24.4
 
 require (
-	github.com/dagger/dagger/engine/distconsts v0.19.4
+	github.com/dagger/dagger/engine/distconsts v0.19.5
 	github.com/dagger/dagger/sdk/typescript/runtime v0.15.3
 )
 

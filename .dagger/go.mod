@@ -4,7 +4,7 @@ go 1.24.4
 
 require (
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
-	github.com/dagger/dagger/engine/distconsts v0.19.4
+	github.com/dagger/dagger/engine/distconsts v0.19.5
 )
 
 replace (

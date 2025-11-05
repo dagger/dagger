@@ -29,7 +29,7 @@ jobs:
                 call: --allow-llm all check
                 cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}/modules/evals@${{ github.sha }}
-                version: v0.19.4
+                version: v0.19.5
               env:
                 OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         timeout-minutes: 20
@@ -48,7 +48,7 @@ jobs:
                 call: --allow-llm all test specific --env-file file://.env --pkg ./cmd/dagger --run CMD/LLM
                 cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
-                version: v0.19.4
+                version: v0.19.5
               env:
                 OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         timeout-minutes: 20
