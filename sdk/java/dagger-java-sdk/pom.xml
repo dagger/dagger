@@ -7,11 +7,11 @@
     <parent>
         <groupId>io.dagger</groupId>
         <artifactId>dagger-sdk-parent</artifactId>
-        <version>0.19.4</version>
+        <version>0.19.5</version>
     </parent>
 
     <artifactId>dagger-java-sdk</artifactId>
-    <version>0.19.4</version>
+    <version>0.19.5</version>
     <description>Java SDK for Dagger.io</description>
 
     <dependencyManagement>

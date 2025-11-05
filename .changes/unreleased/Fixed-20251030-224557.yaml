@@ -1,7 +1,0 @@
-kind: Fixed
-body: Significantly improve engine performance by reducing disk syncing and associated
-  lock contention.
-time: 2025-10-30T22:45:57.394527509-07:00
-custom:
-  Author: sipsma
-  PR: "11336"

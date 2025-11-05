@@ -6,7 +6,7 @@
 
     <groupId>io.dagger</groupId>
     <artifactId>dagger-sdk-parent</artifactId>
-    <version>0.19.4</version>
+    <version>0.19.5</version>
     <packaging>pom</packaging>
 
     <modules>
@@ -284,7 +284,7 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <daggerengine.version>0.19.4</daggerengine.version>
+        <daggerengine.version>0.19.5</daggerengine.version>
         <daggerengine.schema></daggerengine.schema>
 
         <assertj-core.version>3.27.6</assertj-core.version>
