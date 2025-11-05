@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -93,9 +94,16 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Re
 		}
 
 		slog.Info("caching git remote metadata", "cache_key", cacheKey)
-		// Store the remote as a serialized string so the cache can persist a plain JSON payload
-		// without making gitutil.Remote dagql compatible.
-		return dagql.NewResultForCurrentID(ctx, dagql.NewSerializedString(remote))
+		// Serialize to JSON so the cache can persist a plain string payload without
+		// requiring gitutil.Remote to satisfy dagql's typing interfaces. The decode
+		// step also hands each repo its own copy, so later tweaks (e.g. setting
+		// repo.Remote.Head) stay scoped to that caller.
+		payload, err := json.Marshal(remote)
+		if err != nil {
+			return nil, err
+		}
+
+		return dagql.NewResultForCurrentID(ctx, dagql.NewString(string(payload)))
 	})
 	if err != nil {
 		return nil, err
@@ -104,16 +112,16 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Re
 	slog.Info("loaded git remote metadata", "cache_hit", cacheRes.HitCache(), "cache_key", cacheKey)
 
 	val := cacheRes.Result()
-	remoteRes, ok := dagql.UnwrapAs[dagql.Result[dagql.SerializedString[*gitutil.Remote]]](val)
+	strRes, ok := dagql.UnwrapAs[dagql.Result[dagql.String]](val)
 	if !ok {
 		return nil, fmt.Errorf("unexpected cache value type %T", val)
 	}
 
-	remote := remoteRes.Self().Self
-	if remote == nil {
-		return nil, fmt.Errorf("cached remote missing payload")
+	var remote gitutil.Remote
+	if err := json.Unmarshal([]byte(strRes.Self().String()), &remote); err != nil {
+		return nil, fmt.Errorf("decode cached remote: %w", err)
 	}
-	return remote, nil
+	return &remote, nil
 }
 
 func (repo *RemoteGitRepository) Get(ctx context.Context, target *gitutil.Ref) (GitRefBackend, error) {
@@ -123,8 +131,10 @@ func (repo *RemoteGitRepository) Get(ctx context.Context, target *gitutil.Ref) (
 	}, nil
 }
 
-// remoteCacheKey mixes only the inputs that influence ls-remote to avoids serializing the whole repo (secrets and DagQL wrapper bits stay out of the key).
-// It includes safely: remoteURL, auth config (usernames, secret/known-host digests), and service bindings (service digest + hostname + sorted aliases).
+// remoteCacheKey mixes only the inputs that influence ls-remote so we avoid hashing
+// the entire repo object (no raw secret payloads or dagql wrapper state). We fold in
+// the remote URL, auth settings (usernames plus hashed secret/known-host metadata),
+// and service bindings (service digest + hostname + sorted aliases).
 func (repo *RemoteGitRepository) remoteCacheKey() string {
 	parts := []string{"remote=" + repo.URL.Remote()}
 
