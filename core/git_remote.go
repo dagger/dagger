@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -28,11 +29,14 @@ import (
 	"github.com/moby/sys/mount"
 	"golang.org/x/sys/unix"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	enginecache "github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 type RemoteGitRepository struct {
@@ -62,7 +66,123 @@ func (repo *RemoteGitRepository) PBDefinitions(ctx context.Context) ([]*pb.Defin
 	return nil, nil
 }
 
-func (repo *RemoteGitRepository) Remote(ctx context.Context) (*gitutil.Remote, error) {
+func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Remote, rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "git remote metadata", telemetry.Internal())
+	defer telemetry.End(span, func() error { return rerr })
+
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query server: %w", err)
+	}
+	cacheKey := repo.remoteCacheKey()
+
+	if srv == nil || srv.Cache == nil {
+		slog.Info("git remote cache unavailable; running ls-remote", "cache_key", cacheKey)
+		return repo.runLsRemote(ctx)
+	}
+
+	cacheRes, err := srv.Cache.GetOrInitialize(ctx, enginecache.CacheKey[string]{
+		CallKey:        cacheKey,
+		ConcurrencyKey: cacheKey,
+	}, func(ctx context.Context) (dagql.AnyResult, error) {
+		remote, err := repo.runLsRemote(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		slog.Info("caching git remote metadata", "cache_key", cacheKey)
+		// Store the remote as a serialized string so the cache can persist a plain JSON payload
+		// without making gitutil.Remote dagql compatible.
+		return dagql.NewResultForCurrentID(ctx, dagql.NewSerializedString(remote))
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	slog.Info("loaded git remote metadata", "cache_hit", cacheRes.HitCache(), "cache_key", cacheKey)
+
+	val := cacheRes.Result()
+	remoteRes, ok := dagql.UnwrapAs[dagql.Result[dagql.SerializedString[*gitutil.Remote]]](val)
+	if !ok {
+		return nil, fmt.Errorf("unexpected cache value type %T", val)
+	}
+
+	remote := remoteRes.Self().Self
+	if remote == nil {
+		return nil, fmt.Errorf("cached remote missing payload")
+	}
+	return remote, nil
+}
+
+func (repo *RemoteGitRepository) Get(ctx context.Context, target *gitutil.Ref) (GitRefBackend, error) {
+	return &RemoteGitRef{
+		repo: repo,
+		Ref:  target,
+	}, nil
+}
+
+// remoteCacheKey mixes only the inputs that influence ls-remote to avoids serializing the whole repo (secrets and DagQL wrapper bits stay out of the key).
+// It includes safely: remoteURL, auth config (usernames, secret/known-host digests), and service bindings (service digest + hostname + sorted aliases).
+func (repo *RemoteGitRepository) remoteCacheKey() string {
+	parts := []string{"remote=" + repo.URL.Remote()}
+
+	if repo.AuthUsername != "" {
+		parts = append(parts, "authUsername="+repo.AuthUsername)
+	}
+	if repo.SSHKnownHosts != "" {
+		hash := hashutil.HashStrings(repo.SSHKnownHosts).String()
+		parts = append(parts, "knownHosts="+hash)
+	}
+	if repo.SSHAuthSocket.Self() != nil {
+		if id := repo.SSHAuthSocket.ID(); id != nil {
+			parts = append(parts, "sshSocket="+id.Digest().String())
+		}
+	}
+	if repo.AuthToken.Self() != nil {
+		if id := repo.AuthToken.ID(); id != nil {
+			parts = append(parts, "authToken="+id.Digest().String())
+		}
+	}
+	if repo.AuthHeader.Self() != nil {
+		if id := repo.AuthHeader.ID(); id != nil {
+			parts = append(parts, "authHeader="+id.Digest().String())
+		}
+	}
+	if len(repo.Services) > 0 {
+		serviceParts := make([]string, 0, len(repo.Services))
+		for _, binding := range repo.Services {
+			serviceParts = append(serviceParts, repo.serviceBindingKey(binding))
+		}
+		sort.Strings(serviceParts)
+		parts = append(parts, "services="+strings.Join(serviceParts, ";"))
+	}
+
+	return hashutil.HashStrings(parts...).String()
+}
+
+// serviceBindingKey renders a service binding into a stable, safe fragment for the cache key.
+func (repo *RemoteGitRepository) serviceBindingKey(binding ServiceBinding) string {
+	var builder strings.Builder
+	if binding.Service.Self() != nil {
+		if id := binding.Service.ID(); id != nil {
+			builder.WriteString(id.Digest().String())
+		}
+	}
+	builder.WriteString("@")
+	builder.WriteString(binding.Hostname)
+	if len(binding.Aliases) > 0 {
+		aliases := append([]string(nil), binding.Aliases...)
+		sort.Strings(aliases)
+		builder.WriteString("[")
+		builder.WriteString(strings.Join(aliases, ","))
+		builder.WriteString("]")
+	}
+	return builder.String()
+}
+
+func (repo *RemoteGitRepository) runLsRemote(ctx context.Context) (*gitutil.Remote, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -83,18 +203,11 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (*gitutil.Remote, e
 	}
 	defer cleanup()
 
-	out, err := git.LsRemote(ctx, repo.URL.Remote())
+	remote, err := git.LsRemote(ctx, repo.URL.Remote())
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
-}
-
-func (repo *RemoteGitRepository) Get(ctx context.Context, target *gitutil.Ref) (GitRefBackend, error) {
-	return &RemoteGitRef{
-		repo: repo,
-		Ref:  target,
-	}, nil
+	return remote, nil
 }
 
 func (repo *RemoteGitRepository) Dirty(ctx context.Context) (inst dagql.ObjectResult[*Directory], _ error) {
