@@ -11986,6 +11986,11 @@ pub struct SdkConfig {
     pub graphql_client: DynGraphQLClient,
 }
 impl SdkConfig {
+    /// Whether to start the SDK runtime in debug mode with an interactive terminal.
+    pub async fn debug(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("debug");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// A unique identifier for this SDKConfig.
     pub async fn id(&self) -> Result<SdkConfigId, DaggerError> {
         let query = self.selection.select("id");

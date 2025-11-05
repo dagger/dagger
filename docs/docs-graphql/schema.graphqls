@@ -4543,6 +4543,11 @@ enum ReturnType {
 
 """The SDK config of the module."""
 type SDKConfig {
+  """
+  Whether to start the SDK runtime in debug mode with an interactive terminal.
+  """
+  debug: Boolean!
+
   """A unique identifier for this SDKConfig."""
   id: SDKConfigID!
 

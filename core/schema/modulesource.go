@@ -1074,6 +1074,7 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	if modCfg.SDK != nil {
 		src.SDK = &core.SDKConfig{
 			Source:       modCfg.SDK.Source,
+			Debug:        modCfg.SDK.Debug,
 			Config:       modCfg.SDK.Config,
 			Experimental: modCfg.SDK.Experimental,
 		}
@@ -2223,6 +2224,7 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 	if src.SDK != nil {
 		modCfg.SDK = &modules.SDK{
 			Source:       src.SDK.Source,
+			Debug:        src.SDK.Debug,
 			Config:       src.SDK.Config,
 			Experimental: src.SDK.Experimental,
 		}
