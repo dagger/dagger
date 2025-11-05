@@ -13,6 +13,42 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "ModuleConfigArgument": {
+      "properties": {
+        "function": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "The function chain to apply this argument to. Empty or nil for constructor."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the argument to override."
+        },
+        "default": {
+          "type": "string",
+          "description": "The default value to use for this argument."
+        },
+        "defaultPath": {
+          "type": "string",
+          "description": "The default path to use for File or Directory arguments."
+        },
+        "ignore": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Ignore patterns for Directory arguments."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "description": "ModuleConfigArgument represents an argument override for a toolchain function"
+    },
     "ModuleConfigClient": {
       "properties": {
         "generator": {
@@ -44,6 +80,13 @@
         "pin": {
           "type": "string",
           "description": "The pinned version of the module dependency."
+        },
+        "arguments": {
+          "items": {
+            "$ref": "#/$defs/ModuleConfigArgument"
+          },
+          "type": "array",
+          "description": "Arguments configuration for toolchains that override function argument pragmas."
         }
       },
       "additionalProperties": false,
