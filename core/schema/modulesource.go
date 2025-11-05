@@ -2209,7 +2209,7 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 	modCfg := &modules.ModuleConfigWithUserFields{
 		ModuleConfigUserFields: src.ModuleConfigUserFields,
 		ModuleConfig: modules.ModuleConfig{
-			Name:          src.ModuleName,
+			Name:          src.ModuleOriginalName,
 			EngineVersion: src.EngineVersion,
 			Include:       src.IncludePaths,
 			Codegen:       src.CodegenConfig,
