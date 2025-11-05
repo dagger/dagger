@@ -14,6 +14,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
@@ -65,6 +66,9 @@ type Module struct {
 	// ToolchainModules stores references to toolchain module instances by their field name
 	// This enables proxy field resolution to route calls to the toolchain's runtime
 	ToolchainModules map[string]*Module
+
+	// ToolchainArgumentConfigs stores argument configuration overrides for toolchains by their original name
+	ToolchainArgumentConfigs map[string][]*modules.ModuleConfigArgument
 
 	// ResultID is the ID of the initialized module.
 	ResultID *call.ID

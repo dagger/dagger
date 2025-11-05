@@ -2864,6 +2864,15 @@ func (s *moduleSourceSchema) createBaseModule(
 		OriginalName:                  src.Self().ModuleOriginalName,
 		SDKConfig:                     sdk,
 		DisableDefaultFunctionCaching: src.Self().DisableDefaultFunctionCaching,
+		ToolchainModules:              make(map[string]*core.Module),
+		ToolchainArgumentConfigs:      make(map[string][]*modules.ModuleConfigArgument),
+	}
+
+	// Load toolchain argument configurations from the original source
+	for _, tcCfg := range tcCtx.originalSrc.Self().ConfigToolchains {
+		if len(tcCfg.Arguments) > 0 {
+			mod.ToolchainArgumentConfigs[tcCfg.Name] = tcCfg.Arguments
+		}
 	}
 
 	// Load dependencies as modules
@@ -2948,6 +2957,229 @@ func extractToolchainModules(mod *core.Module) []*core.Module {
 	return toolchainMods
 }
 
+// applyArgumentConfigToFunction applies argument configuration overrides to a function
+func applyArgumentConfigToFunction(fn *core.Function, argConfigs []*modules.ModuleConfigArgument, functionChain []string) *core.Function {
+	fn = fn.Clone()
+
+	// Apply configs that match the function chain (or empty for constructor)
+	for _, argCfg := range argConfigs {
+		// Check if this config applies to this function
+		// Empty function chain in config means constructor
+		if len(argCfg.Function) == 0 && len(functionChain) == 0 {
+			// This is for the constructor
+		} else if len(argCfg.Function) > 0 && len(functionChain) > 0 {
+			// Check if function chains match
+			if len(argCfg.Function) != len(functionChain) {
+				continue
+			}
+			match := true
+			for i, fnName := range argCfg.Function {
+				if !strings.EqualFold(fnName, functionChain[i]) {
+					match = false
+					break
+				}
+			}
+			if !match {
+				continue
+			}
+		} else {
+			// One is constructor, one is not - skip
+			continue
+		}
+
+		// Find the matching argument and apply overrides
+		for _, arg := range fn.Args {
+			if strings.EqualFold(arg.Name, argCfg.Name) || strings.EqualFold(arg.OriginalName, argCfg.Name) {
+				// Apply default value if specified
+				if argCfg.Default != "" {
+					arg.DefaultValue = core.JSON([]byte(fmt.Sprintf("%q", argCfg.Default)))
+				}
+
+				// Apply defaultPath if specified
+				if argCfg.DefaultPath != "" {
+					arg.DefaultPath = argCfg.DefaultPath
+				}
+
+				// Apply ignore patterns if specified
+				if len(argCfg.Ignore) > 0 {
+					arg.Ignore = argCfg.Ignore
+				}
+				break
+			}
+		}
+	}
+
+	return fn
+}
+
+// applyArgumentConfigsToObjectFunctions applies argument configurations to all functions in an object
+func applyArgumentConfigsToObjectFunctions(objDef *core.TypeDef, argConfigs []*modules.ModuleConfigArgument) *core.TypeDef {
+	if !objDef.AsObject.Valid {
+		return objDef
+	}
+
+	objDef = objDef.Clone()
+	obj := objDef.AsObject.Value
+
+	// Apply to constructor if it exists
+	if obj.Constructor.Valid {
+		obj.Constructor.Value = applyArgumentConfigToFunction(obj.Constructor.Value, argConfigs, []string{})
+	}
+
+	// Apply to all regular functions
+	for i, fn := range obj.Functions {
+		// Function chain is just the function's original name for direct functions
+		obj.Functions[i] = applyArgumentConfigToFunction(fn, argConfigs, []string{fn.OriginalName})
+	}
+
+	return objDef
+}
+
+// applyArgumentConfigsToModule applies argument configurations to all functions in a module, including chained functions
+func applyArgumentConfigsToModule(mod *core.Module, argConfigs []*modules.ModuleConfigArgument) {
+	// Group configs by chain length for efficiency
+	directConfigs := []*modules.ModuleConfigArgument{}
+	chainedConfigs := []*modules.ModuleConfigArgument{}
+
+	for _, cfg := range argConfigs {
+		if len(cfg.Function) <= 1 {
+			directConfigs = append(directConfigs, cfg)
+		} else {
+			chainedConfigs = append(chainedConfigs, cfg)
+		}
+	}
+
+	// Apply direct configs (constructor and single-level functions)
+	for objIdx, objDef := range mod.ObjectDefs {
+		mod.ObjectDefs[objIdx] = applyArgumentConfigsToObjectFunctions(objDef, directConfigs)
+	}
+
+	// Apply chained configs
+	for _, cfg := range chainedConfigs {
+		applyChainedArgumentConfig(mod, cfg)
+	}
+}
+
+// applyChainedArgumentConfig applies a configuration to a function in a chain
+func applyChainedArgumentConfig(mod *core.Module, cfg *modules.ModuleConfigArgument) {
+	if len(cfg.Function) < 2 {
+		return // Not a chain
+	}
+
+	// Find the starting object that has the first function in the chain
+	for _, objDef := range mod.ObjectDefs {
+		if !objDef.AsObject.Valid {
+			continue
+		}
+
+		obj := objDef.AsObject.Value
+
+		// Find the first function in the chain
+		firstFn := findFunction(obj, cfg.Function[0])
+		if firstFn == nil {
+			continue
+		}
+
+		// Follow the chain to find the target function
+		targetObj, targetFnIdx := followFunctionChain(mod, firstFn.ReturnType, cfg.Function[1:])
+		if targetObj == nil {
+			continue
+		}
+
+		// Apply the configuration to the target function
+		targetFn := targetObj.Functions[targetFnIdx]
+		updatedFn := applyArgumentConfigToFunction(targetFn, []*modules.ModuleConfigArgument{cfg}, cfg.Function)
+		targetObj.Functions[targetFnIdx] = updatedFn
+	}
+}
+
+// findFunction finds a function by name (case-insensitive) in an object
+func findFunction(obj *core.ObjectTypeDef, name string) *core.Function {
+	for _, fn := range obj.Functions {
+		if strings.EqualFold(fn.OriginalName, name) {
+			return fn
+		}
+	}
+	return nil
+}
+
+// findObjectInModule finds an object in mod.ObjectDefs by OriginalName
+func findObjectInModule(mod *core.Module, originalName string) *core.ObjectTypeDef {
+	for _, objDef := range mod.ObjectDefs {
+		if objDef.AsObject.Valid && objDef.AsObject.Value.OriginalName == originalName {
+			return objDef.AsObject.Value
+		}
+	}
+	return nil
+}
+
+// followFunctionChain traverses a chain of functions through return types
+// Returns the target object and function index if the chain is valid, nil otherwise
+func followFunctionChain(mod *core.Module, startType *core.TypeDef, chain []string) (*core.ObjectTypeDef, int) {
+	currentType := startType
+
+	for i, fnName := range chain {
+		// Unwrap the type to get to the object
+		currentType = unwrapType(currentType)
+		if currentType == nil || !currentType.AsObject.Valid {
+			return nil, -1
+		}
+
+		// Get the actual module object (not the cloned return type instance)
+		obj := findObjectInModule(mod, currentType.AsObject.Value.OriginalName)
+		if obj == nil {
+			return nil, -1
+		}
+
+		// Find the next function in the chain
+		fnIdx := findFunctionIndex(obj, fnName)
+		if fnIdx < 0 {
+			return nil, -1
+		}
+
+		// If this is the last function in the chain, we found our target
+		if i == len(chain)-1 {
+			return obj, fnIdx
+		}
+
+		// Otherwise, continue following the chain
+		currentType = obj.Functions[fnIdx].ReturnType
+	}
+
+	return nil, -1
+}
+
+// unwrapType unwraps optional and list types to get to the underlying type
+func unwrapType(t *core.TypeDef) *core.TypeDef {
+	if t == nil {
+		return nil
+	}
+
+	// Unwrap optional
+	if t.Optional {
+		unwrapped := t.Clone()
+		unwrapped.Optional = false
+		t = unwrapped
+	}
+
+	// Unwrap list
+	if t.AsList.Valid {
+		return unwrapType(t.AsList.Value.ElementTypeDef)
+	}
+
+	return t
+}
+
+// findFunctionIndex finds the index of a function by name (case-insensitive) in an object
+func findFunctionIndex(obj *core.ObjectTypeDef, name string) int {
+	for i, fn := range obj.Functions {
+		if strings.EqualFold(fn.OriginalName, name) {
+			return i
+		}
+	}
+	return -1
+}
+
 // addToolchainFieldsToObject adds toolchain fields/functions to an existing TypeDef
 func addToolchainFieldsToObject(
 	objectDef *core.TypeDef,
@@ -2975,6 +3207,11 @@ func addToolchainFieldsToObject(
 					constructor = &core.Function{
 						Args: []*core.FunctionArg{},
 					}
+				}
+
+				// Apply argument configuration overrides if present
+				if argConfigs, ok := mod.ToolchainArgumentConfigs[originalName]; ok {
+					constructor = applyArgumentConfigToFunction(constructor, argConfigs, []string{})
 				}
 
 				constructor.Name = fieldName
@@ -3265,6 +3502,17 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 		clone := tcMod.Self().Clone()
 		clone.IsToolchain = true
 		clone.ContextSource = dagql.NonNull(src)
+
+		// Apply argument configurations from the parent module's toolchain config
+		// Find matching config by toolchain name
+		for _, tcCfg := range src.Self().ConfigToolchains {
+			if tcCfg.Name == clone.OriginalName && len(tcCfg.Arguments) > 0 {
+				// Apply configurations to the toolchain module's functions, including chained functions
+				applyArgumentConfigsToModule(clone, tcCfg.Arguments)
+				break
+			}
+		}
+
 		deps = deps.Append(clone)
 	}
 	for i, depMod := range deps.Mods {
