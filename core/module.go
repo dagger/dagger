@@ -17,6 +17,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -106,6 +107,15 @@ func (mod *Module) GetContextSource() *ModuleSource {
 		return nil
 	}
 	return mod.ContextSource.Value.Self()
+}
+
+func (mod *Module) ContentDigestCacheKey() cache.CacheKey[dagql.CacheKeyType] {
+	return cache.CacheKey[dagql.CacheKeyType]{
+		CallKey: string(hashutil.HashStrings(
+			mod.ContextSource.Value.Self().Digest,
+			"asModule",
+		)),
+	}
 }
 
 // Return all user defaults for this module

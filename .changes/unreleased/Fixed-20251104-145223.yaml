@@ -1,0 +1,7 @@
+kind: Fixed
+body: Fixed directory+file not found errors when using cached function calls with
+  contextual arguments involved.
+time: 2025-11-04T14:52:23.448431556-08:00
+custom:
+  Author: sipsma
+  PR: "11350"

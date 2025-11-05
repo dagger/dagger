@@ -88,7 +88,7 @@ func (iface *InterfaceType) loadImpl(ctx context.Context, id *call.ID) (*loadedI
 	}
 	val, err := dag.Load(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("load interface ID %s: %w", id.Display(), err)
+		return nil, fmt.Errorf("load interface ID %s: %w", id.DisplaySelf(), err)
 	}
 
 	typeName := val.ObjectType().TypeName()

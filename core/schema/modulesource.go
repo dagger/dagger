@@ -75,6 +75,11 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 				dagql.Arg("allowNotExists").Doc(`If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.`),
 				dagql.Arg("requireKind").Doc(`If set, error out if the ref string is not of the provided requireKind.`),
 			),
+
+		dagql.NodeFuncWithCacheKey("_contextDirectory", s.contextDirectory, dagql.CachePerCall).
+			Doc(`Obtain a contextual directory argument for the given path, include/excludes and module.`),
+		dagql.NodeFuncWithCacheKey("_contextFile", s.contextFile, dagql.CachePerCall).
+			Doc(`Obtain a contextual file argument for the given path and module.`),
 	}.Install(dag)
 
 	dagql.Fields[*core.Directory]{
@@ -510,7 +515,7 @@ func (s *moduleSourceSchema) localModuleSource(
 		// load this module source's context directory, ignore patterns, sdk and deps in parallel
 		var eg errgroup.Group
 		eg.Go(func() error {
-			if err := s.loadModuleSourceContext(ctx, bk, localSrc); err != nil {
+			if err := s.loadModuleSourceContext(ctx, localSrc); err != nil {
 				return fmt.Errorf("failed to load local module source context: %w", err)
 			}
 
@@ -668,7 +673,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 	// load this module source's context directory and deps in parallel
 	var eg errgroup.Group
 	eg.Go(func() error {
-		if err := s.loadModuleSourceContext(ctx, bk, gitSrc); err != nil {
+		if err := s.loadModuleSourceContext(ctx, gitSrc); err != nil {
 			return fmt.Errorf("failed to load git module source context: %w", err)
 		}
 
@@ -705,7 +710,6 @@ func (s *moduleSourceSchema) gitModuleSource(
 	if err := gitSrc.LoadUserDefaults(ctx); err != nil {
 		return inst, fmt.Errorf("load user defaults: %w", err)
 	}
-
 	gitSrc.Digest = gitSrc.CalcDigest(ctx).String()
 
 	inst, err = dagql.NewResultForCurrentID(ctx, gitSrc)
@@ -846,7 +850,7 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 
 	if dirSrc.SDK != nil {
 		eg.Go(func() error {
-			if err := s.loadModuleSourceContext(ctx, bk, dirSrc); err != nil {
+			if err := s.loadModuleSourceContext(ctx, dirSrc); err != nil {
 				return err
 			}
 
@@ -884,6 +888,123 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 		return inst, fmt.Errorf("load user defaults: %w", err)
 	}
 	dirSrc.Digest = dirSrc.CalcDigest(ctx).String()
+	return inst, nil
+}
+
+func (s *moduleSourceSchema) contextDirectory(
+	ctx context.Context,
+	query dagql.ObjectResult[*core.Query],
+	args struct {
+		Path string
+		core.CopyFilter
+
+		// the human-readable name of the module, currently just to help telemetry look nicer
+		Module string
+
+		// the content digest of the module
+		Digest string
+	},
+) (inst dagql.ObjectResult[*core.Directory], err error) {
+	// Load the module based on its content hashed key as saved in ModuleSource.asModule.
+	// We can't accept an actual Module as an argument because the current caching logic
+	// will result in that Module being re-loaded by clients (due to it being CachePerClient)
+	// and then possibly trying to load it from the wrong context (in the case of a cached
+	// result including a _contextDirectory call).
+	dag, err := query.Self().Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	mod, err := s.getModuleFromContentDigest(ctx, dag, args.Module, args.Digest)
+	if err != nil {
+		return inst, err
+	}
+
+	dir, err := mod.Self().ContextSource.Value.Self().LoadContextDir(ctx, dag, args.Path, args.CopyFilter)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load contextual directory: %w", err)
+	}
+
+	inst, err = dagql.NewObjectResultForCurrentID(ctx, dag, dir.Self())
+	if err != nil {
+		return inst, fmt.Errorf("failed to create directory result: %w", err)
+	}
+	// mix-in a constant string to avoid collisions w/ normal host dir loads, which
+	// can lead function calls encountering cached results that include contextual
+	// dir loads from older sessions to load from the wrong path
+	// FIXME:(sipsma) this is not ideal since contextual loaded dirs will have
+	// different cache keys than normally loaded host dirs. Support for multiple
+	// cache keys per result should help fix this.
+	dgst := hashutil.HashStrings(dir.ID().Digest().String(), "contextualDir")
+	inst = inst.WithObjectDigest(dgst)
+	return inst, nil
+}
+
+func (s *moduleSourceSchema) contextFile(
+	ctx context.Context,
+	query dagql.ObjectResult[*core.Query],
+	args struct {
+		Path string
+
+		// the human-readable name of the module, currently just to help telemetry look nicer
+		Module string
+
+		// the content digest of the module
+		Digest string
+	},
+) (inst dagql.ObjectResult[*core.File], err error) {
+	dag, err := query.Self().Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get dag server: %w", err)
+	}
+	mod, err := s.getModuleFromContentDigest(ctx, dag, args.Module, args.Digest)
+	if err != nil {
+		return inst, err
+	}
+	f, err := mod.Self().ContextSource.Value.Self().LoadContextFile(ctx, dag, args.Path)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load contextual directory: %w", err)
+	}
+
+	inst, err = dagql.NewObjectResultForCurrentID(ctx, dag, f.Self())
+	if err != nil {
+		return inst, fmt.Errorf("failed to create directory result: %w", err)
+	}
+	// mix-in a constant string to avoid collisions w/ normal host file loads, which
+	// can lead function calls encountering cached results that include contextual
+	// file loads from older sessions to load from the wrong path
+	// FIXME:(sipsma) this is not ideal since contextual loaded files will have
+	// different cache keys than normally loaded host files. Support for multiple
+	// cache keys per result should help fix this.
+	dgst := hashutil.HashStrings(f.ID().Digest().String(), "contextualFile")
+	inst = inst.WithObjectDigest(dgst)
+	return inst, nil
+}
+
+func (s *moduleSourceSchema) getModuleFromContentDigest(
+	ctx context.Context,
+	dag *dagql.Server,
+	modName string,
+	dgst string,
+) (inst dagql.ObjectResult[*core.Module], err error) {
+	// Load the module based on its content hashed key as saved in ModuleSource.asModule.
+	// We can't accept an actual Module as an argument because the current caching logic
+	// will result in that Module being re-loaded by clients (due to it being CachePerClient)
+	// and then possibly trying to load it from the wrong context (in the case of a cached
+	// result including a _contextDirectory call).
+	cacheKey := cache.CacheKey[dagql.CacheKeyType]{
+		CallKey: dgst,
+	}
+	modRes, err := dag.Cache.GetOrInitialize(ctx, cacheKey, func(ctx context.Context) (dagql.CacheValueType, error) {
+		return nil, fmt.Errorf("module not found: %s", modName)
+	})
+	if err != nil {
+		return inst, err
+	}
+	inst, ok := modRes.Result().(dagql.ObjectResult[*core.Module])
+	if !ok {
+		return inst, fmt.Errorf("cached module has unexpected type: %T", modRes.Result())
+	}
+
 	return inst, nil
 }
 
@@ -995,7 +1116,6 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 // load (or re-load) the context directory for the given module source
 func (s *moduleSourceSchema) loadModuleSourceContext(
 	ctx context.Context,
-	bk *buildkit.Client,
 	src *core.ModuleSource,
 ) error {
 	dag, err := core.CurrentDagqlServer(ctx)
@@ -1038,8 +1158,6 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 			return err
 		}
 
-		// host.directory already content hashes, no need to here
-
 	case core.ModuleSourceKindGit:
 		fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
 
@@ -1056,19 +1174,6 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		)
 		if err != nil {
 			return err
-		}
-
-		// content hash the context dir so that different git commits with the same module source code can all share cache
-		src.ContextDirectory, err = core.MakeDirectoryContentHashed(ctx, bk, src.ContextDirectory)
-		if err != nil {
-			return fmt.Errorf("failed to content hash git module source context dir: %w", err)
-		}
-
-	case core.ModuleSourceKindDir:
-		// content hash the context dir so that different dirs with the same module source code can all share cache
-		src.ContextDirectory, err = core.MakeDirectoryContentHashed(ctx, bk, src.ContextDirectory)
-		if err != nil {
-			return fmt.Errorf("failed to content hash dir module source context dir: %w", err)
 		}
 	}
 
@@ -1118,15 +1223,7 @@ func (s *moduleSourceSchema) moduleSourceWithSourceSubpath(
 	}
 
 	// reload context since the subpath impacts what we implicitly include in the load
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-	err = s.loadModuleSourceContext(ctx, bk, src)
+	err = s.loadModuleSourceContext(ctx, src)
 	switch {
 	case err == nil:
 	case codes.NotFound == status.Code(err) && src.Kind == core.ModuleSourceKindLocal:
@@ -1202,15 +1299,7 @@ func (s *moduleSourceSchema) moduleSourceWithIncludes(
 	src.RebasedIncludePaths = append(src.RebasedIncludePaths, rebasedIncludes...)
 
 	// reload context in case includes have changed it
-	query, err := core.CurrentQuery(ctx)
-	if err != nil {
-		return nil, err
-	}
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-	err = s.loadModuleSourceContext(ctx, bk, src)
+	err = s.loadModuleSourceContext(ctx, src)
 	switch {
 	case err == nil:
 	case codes.NotFound == status.Code(err) && src.Kind == core.ModuleSourceKindLocal:
@@ -3019,7 +3108,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		// to latest engine versions.
 		ForceDefaultFunctionCaching bool `internal:"true" default:"false"`
 	},
-) (inst dagql.Result[*core.Module], err error) {
+) (inst dagql.ObjectResult[*core.Module], err error) {
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
@@ -3105,10 +3194,19 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, err
 	}
 
-	inst, err = dagql.NewResultForCurrentID(ctx, mod)
+	inst, err = dagql.NewObjectResultForCurrentID(ctx, dag, mod)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", src.Self().ModuleName, err)
 	}
+
+	// save a result for the final module based on its content hash, currently used in the _contextDirectory API
+	contentCacheKey := mod.ContentDigestCacheKey()
+	contentHashedInst := inst.WithObjectDigest(digest.Digest(contentCacheKey.CallKey))
+	_, err = dag.Cache.GetOrInitializeValue(ctx, contentCacheKey, contentHashedInst)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get or initialize instance: %w", err)
+	}
+
 	return inst, nil
 }
 
