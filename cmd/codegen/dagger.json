@@ -10,6 +10,5 @@
       "source": "../../modules/go"
     }
   ],
-  "source": ".dagger",
-  "disableDefaultFunctionCaching": true
+  "source": ".dagger"
 }

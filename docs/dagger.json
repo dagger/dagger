@@ -1,5 +1,5 @@
 {
-  "name": "dagger-docs",
+  "name": "docs",
   "engineVersion": "v0.19.5",
   "sdk": {
     "source": "go"
