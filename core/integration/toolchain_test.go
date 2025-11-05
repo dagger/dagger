@@ -228,4 +228,35 @@ func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *te
 		require.NoError(t, err)
 		require.Contains(t, out, "this is custom configuration")
 	})
+
+	t.Run("override function default argument in chained function", func(ctx context.Context, t *testctx.T) {
+		modGen := toolchainTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init")).
+			WithNewFile("dagger.json", `
+{
+  "name": "app",
+  "engineVersion": "v0.19.4",
+  "toolchains": [
+    {
+      "name": "hello",
+      "source": "../hello",
+      "arguments": [
+        {
+          "function": ["greet", "planet"],
+          "name": "planet",
+          "default": "Mars"
+        }
+      ]
+    }
+  ]
+}
+				`)
+		// verify we can call a function from our toolchain with overridden argument
+		out, err := modGen.
+			With(daggerExec("call", "hello", "greet", "planet")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "Greetings from Mars!")
+	})
 }

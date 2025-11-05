@@ -32,3 +32,17 @@ func (m *Hello) AppConfig(
 ) (string, error) {
 	return config.Contents(ctx)
 }
+
+func (m *Hello) Greet() *Greetings {
+	return &Greetings{}
+}
+
+type Greetings struct{}
+
+func (p *Greetings) Planet(
+	ctx context.Context,
+	// +default="Earth"
+	planet string,
+) string {
+	return fmt.Sprintf("Greetings from %s!", planet)
+}
