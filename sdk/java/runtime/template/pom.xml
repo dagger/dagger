@@ -12,7 +12,7 @@
     <properties>
         <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <dagger.module.deps>0.19.4-template-module</dagger.module.deps>
+        <dagger.module.deps>0.19.5-template-module</dagger.module.deps>
     </properties>
 
     <dependencies>
