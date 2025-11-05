@@ -701,7 +701,8 @@ func (srv *Server) Clients() []string {
 	return slices.Collect(maps.Keys(clients))
 }
 
-// TODO: doc, explain difference from close below
+// GracefulStop attempts to close all boltdbs and do a final syncfs since all the DBs
+// run with NoSync=true for performance reasons.
 func (srv *Server) GracefulStop(ctx context.Context) error {
 	var eg errgroup.Group
 	eg.Go(func() error {
