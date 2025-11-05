@@ -878,6 +878,16 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 		require.Equal(t, ents, []string{"file2"})
 	})
 
+	t.Run("lower scratch", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		upper := c.Directory().WithNewFile("file", "content")
+		lower := c.Directory()
+
+		ents, err := lower.Diff(upper).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, ents, []string{"file"})
+	})
+
 	/*
 		This triggers a nil panic in Buildkit!
 
