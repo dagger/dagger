@@ -20,6 +20,7 @@ import (
 	ctdmetadata "github.com/containerd/containerd/v2/core/metadata"
 	"github.com/containerd/containerd/v2/core/remotes/docker"
 	ctdsnapshot "github.com/containerd/containerd/v2/core/snapshots"
+	"github.com/containerd/containerd/v2/core/snapshots/storage"
 	localcontentstore "github.com/containerd/containerd/v2/plugins/content/local"
 	"github.com/containerd/containerd/v2/plugins/diff/walking"
 	"github.com/containerd/go-runc"
@@ -70,7 +71,9 @@ import (
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
 	bolt "go.etcd.io/bbolt"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
+	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
 	"github.com/dagger/dagger/engine"
@@ -96,6 +99,7 @@ type Server struct {
 
 	workerRootDir         string
 	snapshotterRootDir    string
+	snapshotterDBPath     string
 	contentStoreRootDir   string
 	containerdMetaDBPath  string
 	workerCacheMetaDBPath string
@@ -124,14 +128,17 @@ type Server struct {
 	localContentStore    content.Store
 	contentStore         *containerdsnapshot.Store
 
-	snapshotter     ctdsnapshot.Snapshotter
-	snapshotterName string
-	leaseManager    *leaseutil.Manager
+	snapshotter        ctdsnapshot.Snapshotter
+	snapshotterMDStore *storage.MetaStore // only set for overlay snapshotter right now
+	snapshotterName    string
+	leaseManager       *leaseutil.Manager
 
 	frontends map[string]frontend.Frontend
 
 	cacheExporters map[string]remotecache.ResolveCacheExporterFunc
 	cacheImporters map[string]remotecache.ResolveCacheImporterFunc
+
+	corruptDBReset bool
 
 	//
 	// worker file syncer
@@ -242,24 +249,87 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	srv.solverCacheDBPath = filepath.Join(srv.rootDir, "cache.db")
 
 	srv.workerRootDir = filepath.Join(srv.rootDir, "worker")
-	if err := os.MkdirAll(srv.workerRootDir, 0700); err != nil {
-		return nil, err
-	}
 	srv.snapshotterRootDir = filepath.Join(srv.workerRootDir, "snapshots")
+	srv.snapshotterDBPath = filepath.Join(srv.snapshotterRootDir, "metadata.db")
 	srv.contentStoreRootDir = filepath.Join(srv.workerRootDir, "content")
 	srv.containerdMetaDBPath = filepath.Join(srv.workerRootDir, "containerdmeta.db")
 	srv.workerCacheMetaDBPath = filepath.Join(srv.workerRootDir, "metadata_v2.db")
 	srv.buildkitMountPoolDir = filepath.Join(srv.workerRootDir, "cachemounts")
 
 	srv.executorRootDir = filepath.Join(srv.workerRootDir, "executor")
-	if err := os.MkdirAll(srv.executorRootDir, 0o711); err != nil {
+
+	//
+	// setup various buildkit/containerd entities and DBs
+	//
+
+	if err := srv.mkdirBaseDirs(); err != nil {
 		return nil, err
 	}
+
+	if err := srv.initBoltDBs(); err != nil {
+		// It's possible for DBs to get corrupted because we run them w/ Sync: false (for performance)
+		// Reset all our state, but set corruptDBReset so it can be reported via metrics
+		srv.corruptDBReset = true
+		slog.Error("failed to initialize boltdbs, resetting all local cache state", "error", err)
+
+		// need to rm paths individually since srv.rootDir is often a mount (and thus rm'ing it gives
+		// a "device busy" error)
+		rootEnts, err := os.ReadDir(srv.rootDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read root dir entries for boltdb reset: %w", err)
+		}
+		for _, ent := range rootEnts {
+			p := filepath.Join(srv.rootDir, ent.Name())
+			if err := os.RemoveAll(p); err != nil {
+				return nil, fmt.Errorf("failed to remove dir after boltdb init failure: %w", err)
+			}
+		}
+
+		// try again
+		if err := srv.mkdirBaseDirs(); err != nil {
+			return nil, err
+		}
+		if err := srv.initBoltDBs(); err != nil {
+			return nil, fmt.Errorf("failed to initialize boltdbs after reset: %w", err)
+		}
+	}
+
+	srv.snapshotter, srv.snapshotterName, err = newSnapshotter(srv.snapshotterRootDir, ociCfg, srv.snapshotterMDStore)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create snapshotter: %w", err)
+	}
+
+	srv.localContentStore, err = localcontentstore.NewStore(srv.contentStoreRootDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create content store: %w", err)
+	}
+
+	srv.containerdMetaDB = ctdmetadata.NewDB(srv.containerdMetaBoltDB, srv.localContentStore, map[string]ctdsnapshot.Snapshotter{
+		srv.snapshotterName: srv.snapshotter,
+	})
+	if err := srv.containerdMetaDB.Init(context.TODO()); err != nil {
+		return nil, fmt.Errorf("failed to init metadata db: %w", err)
+	}
+
+	srv.leaseManager = leaseutil.WithNamespace(ctdmetadata.NewLeaseManager(srv.containerdMetaDB), "buildkit")
+
+	srv.bkSessionManager, err = bksession.NewManager()
+	if err != nil {
+		return nil, err
+	}
+
+	srv.contentStore = containerdsnapshot.NewContentStore(srv.containerdMetaDB.ContentStore(), "buildkit")
+
+	//
 	// clean up old hosts/resolv.conf file. ignore errors
+	//
 	os.RemoveAll(filepath.Join(srv.executorRootDir, "hosts"))
 	os.RemoveAll(filepath.Join(srv.executorRootDir, "resolv.conf"))
 
+	//
 	// set up client DBs, and the telemetry pub/sub which writes to it
+	//
+
 	srv.clientDBDir = filepath.Join(srv.workerRootDir, "clientdbs")
 	srv.clientDBs = clientdb.NewDBs(srv.clientDBDir)
 	srv.telemetryPubSub = NewPubSub(srv)
@@ -316,45 +386,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	if slog.Default().Enabled(ctx, slog.LevelExtraDebug) {
 		srv.buildkitLogSink = os.Stderr
 	}
-
-	//
-	// setup various buildkit/containerd entities and DBs
-	//
-
-	srv.bkSessionManager, err = bksession.NewManager()
-	if err != nil {
-		return nil, err
-	}
-
-	srv.snapshotter, srv.snapshotterName, err = newSnapshotter(srv.snapshotterRootDir, ociCfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create snapshotter: %w", err)
-	}
-
-	srv.localContentStore, err = localcontentstore.NewStore(srv.contentStoreRootDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create content store: %w", err)
-	}
-
-	srv.containerdMetaBoltDB, err = bolt.Open(srv.containerdMetaDBPath, 0644, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open metadata db: %w", err)
-	}
-
-	srv.containerdMetaDB = ctdmetadata.NewDB(srv.containerdMetaBoltDB, srv.localContentStore, map[string]ctdsnapshot.Snapshotter{
-		srv.snapshotterName: srv.snapshotter,
-	})
-	if err := srv.containerdMetaDB.Init(context.TODO()); err != nil {
-		return nil, fmt.Errorf("failed to init metadata db: %w", err)
-	}
-
-	srv.leaseManager = leaseutil.WithNamespace(ctdmetadata.NewLeaseManager(srv.containerdMetaDB), "buildkit")
-	srv.workerCacheMetaDB, err = metadata.NewStore(srv.workerCacheMetaDBPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create metadata store: %w", err)
-	}
-
-	srv.contentStore = containerdsnapshot.NewContentStore(srv.containerdMetaDB.ContentStore(), "buildkit")
 
 	//
 	// setup worker+executor
@@ -503,11 +534,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 	srv.frontends["gateway.v0"] = frontendGateway
 
-	srv.solverCacheDB, err = bboltcachestorage.NewStore(srv.solverCacheDBPath)
-	if err != nil {
-		return nil, err
-	}
-
 	srv.SolverCache, err = daggercache.NewManager(ctx, daggercache.ManagerConfig{
 		KeyStore:     srv.solverCacheDB,
 		ResultStore:  bkworker.NewCacheResultStorage(baseWorkerController),
@@ -592,6 +618,73 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	return srv, nil
 }
 
+func (srv *Server) mkdirBaseDirs() (err error) {
+	if err := os.MkdirAll(srv.workerRootDir, 0700); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(srv.executorRootDir, 0o711); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (srv *Server) initBoltDBs() (err error) {
+	defer func() {
+		if panicErr := recover(); panicErr != nil {
+			err = fmt.Errorf("panic while initializing boltdbs: %v", panicErr)
+		}
+	}()
+
+	srv.snapshotterMDStore, err = storage.NewMetaStore(srv.snapshotterDBPath,
+		func(opts *bolt.Options) error {
+			opts.NoSync = true
+			return nil
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create metadata store for snapshotter: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, srv.snapshotterMDStore.Close())
+		}
+	}()
+
+	srv.containerdMetaBoltDB, err = bolt.Open(srv.containerdMetaDBPath, 0644, &bolt.Options{
+		NoSync: true,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to open metadata db: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, srv.containerdMetaBoltDB.Close())
+		}
+	}()
+
+	srv.workerCacheMetaDB, err = metadata.NewStore(srv.workerCacheMetaDBPath)
+	if err != nil {
+		return fmt.Errorf("failed to create metadata store: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, srv.workerCacheMetaDB.Close())
+		}
+	}()
+
+	srv.solverCacheDB, err = bboltcachestorage.NewStore(srv.solverCacheDBPath)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, srv.solverCacheDB.Close())
+		}
+	}()
+
+	return nil
+}
+
 func (srv *Server) EngineName() string {
 	return srv.engineName
 }
@@ -606,6 +699,72 @@ func (srv *Server) Clients() []string {
 	}
 
 	return slices.Collect(maps.Keys(clients))
+}
+
+// GracefulStop attempts to close all boltdbs and do a final syncfs since all the DBs
+// run with NoSync=true for performance reasons.
+func (srv *Server) GracefulStop(ctx context.Context) error {
+	var eg errgroup.Group
+	eg.Go(func() error {
+		err := srv.solverCacheDB.Close()
+		if err != nil {
+			return fmt.Errorf("failed to close solver cache db: %w", err)
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		err := srv.snapshotterMDStore.Close()
+		if err != nil {
+			return fmt.Errorf("failed to close snapshotter metadata store: %w", err)
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		err := srv.containerdMetaBoltDB.Close()
+		if err != nil {
+			return fmt.Errorf("failed to close containerd metadata db: %w", err)
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		err := srv.workerCacheMetaDB.Close()
+		if err != nil {
+			return fmt.Errorf("failed to close worker cache metadata db: %w", err)
+		}
+		return nil
+	})
+
+	doneClosingCh := make(chan error)
+	go func() {
+		defer close(doneClosingCh)
+
+		err := eg.Wait()
+		defer func() {
+			doneClosingCh <- err
+		}()
+
+		// all the DBs closed, do a final sync
+		// need an fd for an arbitrary file on the filesystem
+		f, err := os.Open(srv.solverCacheDBPath)
+		if err != nil {
+			err = fmt.Errorf("failed to open root dir for final sync: %w", err)
+			return
+		}
+		defer f.Close()
+
+		err = unix.Syncfs(int(f.Fd()))
+		if err != nil {
+			err = fmt.Errorf("failed to syncfs for final sync: %w", err)
+			return
+		}
+	}()
+
+	select {
+	case err := <-doneClosingCh:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (srv *Server) Close() error {
@@ -679,6 +838,10 @@ func (srv *Server) ConnectedClients() int {
 	srv.daggerSessionsMu.RLock()
 	defer srv.daggerSessionsMu.RUnlock()
 	return len(srv.daggerSessions)
+}
+
+func (srv *Server) CorruptDBReset() bool {
+	return srv.corruptDBReset
 }
 
 func (srv *Server) Locker() *locker.Locker {

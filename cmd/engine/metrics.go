@@ -28,6 +28,11 @@ var (
 		Name: "dagger_local_cache_entries",
 		Help: "Number of entries in the local cache",
 	})
+
+	localCacheCorruptDBResetGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "dagger_local_cache_corrupt_db_reset",
+		Help: "If set, the local cache database was found to be corrupt and reset",
+	})
 )
 
 // setupMetricsServer starts an HTTP server to expose Prometheus metrics
@@ -39,6 +44,9 @@ func setupMetricsServer(ctx context.Context, srv *server.Server, addr string) er
 		return err
 	}
 	if err := prometheus.Register(localCacheEntriesGauge); err != nil {
+		return err
+	}
+	if err := prometheus.Register(localCacheCorruptDBResetGauge); err != nil {
 		return err
 	}
 
@@ -83,6 +91,12 @@ func setupMetricsServer(ctx context.Context, srv *server.Server, addr string) er
 	// Set up HTTP server
 	http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		connectedClientsGauge.Set(float64(srv.ConnectedClients()))
+
+		var dbReset float64
+		if srv.CorruptDBReset() {
+			dbReset = 1
+		}
+		localCacheCorruptDBResetGauge.Set(dbReset)
 
 		promhttp.Handler().ServeHTTP(w, r)
 	})
