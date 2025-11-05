@@ -1178,9 +1178,16 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 	}
 
 	cache := query.BuildkitCache()
-	ref, err := cache.Diff(ctx, thisDirRef, otherDirRef, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to diff directories: %w", err)
+
+	var ref bkcache.ImmutableRef
+	if thisDirRef == nil {
+		// lower is nil, so the diff is just the upper ref
+		ref = otherDirRef
+	} else {
+		ref, err = cache.Diff(ctx, thisDirRef, otherDirRef, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to diff directories: %w", err)
+		}
 	}
 
 	newRef, err := cache.New(ctx, ref, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
