@@ -1,6 +1,6 @@
 {
   "name": "codegen",
-  "engineVersion": "v0.19.3",
+  "engineVersion": "v0.19.5",
   "sdk": {
     "source": "github.com/vito/dang/dagger-sdk"
   },
@@ -10,5 +10,6 @@
       "source": "../../modules/go"
     }
   ],
-  "source": ".dagger"
+  "source": ".dagger",
+  "disableDefaultFunctionCaching": true
 }
