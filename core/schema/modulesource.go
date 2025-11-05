@@ -2944,6 +2944,151 @@ func applyArgumentConfigsToObjectFunctions(objDef *core.TypeDef, argConfigs []*m
 	return objDef
 }
 
+// applyArgumentConfigsToModule applies argument configurations to all functions in a module, including chained functions
+func applyArgumentConfigsToModule(mod *core.Module, argConfigs []*modules.ModuleConfigArgument) {
+	// Group configs by chain length for efficiency
+	directConfigs := []*modules.ModuleConfigArgument{}
+	chainedConfigs := []*modules.ModuleConfigArgument{}
+
+	for _, cfg := range argConfigs {
+		if len(cfg.Function) <= 1 {
+			directConfigs = append(directConfigs, cfg)
+		} else {
+			chainedConfigs = append(chainedConfigs, cfg)
+		}
+	}
+
+	// Apply direct configs (constructor and single-level functions)
+	for objIdx, objDef := range mod.ObjectDefs {
+		mod.ObjectDefs[objIdx] = applyArgumentConfigsToObjectFunctions(objDef, directConfigs)
+	}
+
+	// Apply chained configs
+	for _, cfg := range chainedConfigs {
+		applyChainedArgumentConfig(mod, cfg)
+	}
+}
+
+// applyChainedArgumentConfig applies a configuration to a function in a chain
+func applyChainedArgumentConfig(mod *core.Module, cfg *modules.ModuleConfigArgument) {
+	if len(cfg.Function) < 2 {
+		return // Not a chain
+	}
+
+	// Find the starting object that has the first function in the chain
+	for _, objDef := range mod.ObjectDefs {
+		if !objDef.AsObject.Valid {
+			continue
+		}
+
+		obj := objDef.AsObject.Value
+
+		// Find the first function in the chain
+		firstFn := findFunction(obj, cfg.Function[0])
+		if firstFn == nil {
+			continue
+		}
+
+		// Follow the chain to find the target function
+		targetObj, targetFnIdx := followFunctionChain(mod, firstFn.ReturnType, cfg.Function[1:])
+		if targetObj == nil {
+			continue
+		}
+
+		// Apply the configuration to the target function
+		targetFn := targetObj.Functions[targetFnIdx]
+		updatedFn := applyArgumentConfigToFunction(targetFn, []*modules.ModuleConfigArgument{cfg}, cfg.Function)
+		targetObj.Functions[targetFnIdx] = updatedFn
+	}
+}
+
+// findFunction finds a function by name (case-insensitive) in an object
+func findFunction(obj *core.ObjectTypeDef, name string) *core.Function {
+	for _, fn := range obj.Functions {
+		if strings.EqualFold(fn.OriginalName, name) {
+			return fn
+		}
+	}
+	return nil
+}
+
+// findObjectInModule finds an object in mod.ObjectDefs by OriginalName
+func findObjectInModule(mod *core.Module, originalName string) *core.ObjectTypeDef {
+	for _, objDef := range mod.ObjectDefs {
+		if objDef.AsObject.Valid && objDef.AsObject.Value.OriginalName == originalName {
+			return objDef.AsObject.Value
+		}
+	}
+	return nil
+}
+
+// followFunctionChain traverses a chain of functions through return types
+// Returns the target object and function index if the chain is valid, nil otherwise
+func followFunctionChain(mod *core.Module, startType *core.TypeDef, chain []string) (*core.ObjectTypeDef, int) {
+	currentType := startType
+
+	for i, fnName := range chain {
+		// Unwrap the type to get to the object
+		currentType = unwrapType(currentType)
+		if currentType == nil || !currentType.AsObject.Valid {
+			return nil, -1
+		}
+
+		// Get the actual module object (not the cloned return type instance)
+		obj := findObjectInModule(mod, currentType.AsObject.Value.OriginalName)
+		if obj == nil {
+			return nil, -1
+		}
+
+		// Find the next function in the chain
+		fnIdx := findFunctionIndex(obj, fnName)
+		if fnIdx < 0 {
+			return nil, -1
+		}
+
+		// If this is the last function in the chain, we found our target
+		if i == len(chain)-1 {
+			return obj, fnIdx
+		}
+
+		// Otherwise, continue following the chain
+		currentType = obj.Functions[fnIdx].ReturnType
+	}
+
+	return nil, -1
+}
+
+// unwrapType unwraps optional and list types to get to the underlying type
+func unwrapType(t *core.TypeDef) *core.TypeDef {
+	if t == nil {
+		return nil
+	}
+
+	// Unwrap optional
+	if t.Optional {
+		unwrapped := t.Clone()
+		unwrapped.Optional = false
+		t = unwrapped
+	}
+
+	// Unwrap list
+	if t.AsList.Valid {
+		return unwrapType(t.AsList.Value.ElementTypeDef)
+	}
+
+	return t
+}
+
+// findFunctionIndex finds the index of a function by name (case-insensitive) in an object
+func findFunctionIndex(obj *core.ObjectTypeDef, name string) int {
+	for i, fn := range obj.Functions {
+		if strings.EqualFold(fn.OriginalName, name) {
+			return i
+		}
+	}
+	return -1
+}
+
 // addToolchainFieldsToObject adds toolchain fields/functions to an existing TypeDef
 func addToolchainFieldsToObject(
 	objectDef *core.TypeDef,
@@ -3262,15 +3407,8 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 		// Find matching config by toolchain name
 		for _, tcCfg := range src.Self().ConfigToolchains {
 			if tcCfg.Name == clone.OriginalName && len(tcCfg.Arguments) > 0 {
-				// Apply configurations to the toolchain module's functions
-				for objIdx, objDef := range clone.ObjectDefs {
-					if !objDef.AsObject.Valid {
-						continue
-					}
-
-					// Apply argument configs to all functions in the object
-					clone.ObjectDefs[objIdx] = applyArgumentConfigsToObjectFunctions(objDef, tcCfg.Arguments)
-				}
+				// Apply configurations to the toolchain module's functions, including chained functions
+				applyArgumentConfigsToModule(clone, tcCfg.Arguments)
 				break
 			}
 		}
