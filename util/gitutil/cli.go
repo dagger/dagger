@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/engine/slog"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -312,6 +313,7 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, rerr erro
 			}
 		default:
 		}
+		slog.Error("git command failed", "args", cmd.Args, "error", err, "stderr", errbuf.String())
 		return buf.Bytes(), fmt.Errorf("git error: %w", translateError(err, errbuf.String()))
 	}
 	return buf.Bytes(), nil
