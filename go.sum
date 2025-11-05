@@ -219,8 +219,8 @@ github.com/cpuguy83/go-md2man/v2 v2.0.7/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6N
 github.com/creack/pty v1.1.17/go.mod h1:MOBLtS5ELjhRRrroQr9kyvTxUAFNvYEK993ew/Vr4O4=
 github.com/creack/pty v1.1.24 h1:bJrF4RRfyJnbTJqzRLHzcGaZK1NeM5kTC9jGgovnR1s=
 github.com/creack/pty v1.1.24/go.mod h1:08sCNb52WyoAwi2QDyzUCTgcvVFhUzewun7wtTfvcwE=
-github.com/cyphar/filepath-securejoin v0.4.1 h1:JyxxyPEaktOD+GAnqIqTf9A8tHyAG22rowi7HkoSU1s=
-github.com/cyphar/filepath-securejoin v0.4.1/go.mod h1:Sdj7gXlvMcPZsbhwhQ33GguGLDGQL7h7bg04C/+u9jI=
+github.com/cyphar/filepath-securejoin v0.5.1 h1:eYgfMq5yryL4fbWfkLpFFy2ukSELzaJOTaUTuh+oF48=
+github.com/cyphar/filepath-securejoin v0.5.1/go.mod h1:Sdj7gXlvMcPZsbhwhQ33GguGLDGQL7h7bg04C/+u9jI=
 github.com/dagger/testctx v0.0.4 h1:In6AOkH1Q6LHWHAnMByViz9SFiXbYjKttGlO6GciE9s=
 github.com/dagger/testctx v0.0.4/go.mod h1:vfRtiq0HrtSux/H60iD1x7zYfrBgEtoDR1P3hJ523Oo=
 github.com/dagger/testctx/oteltest v0.0.3 h1:3a4u7S2HhQtUvZbRs+1WC4qWNCLlbcm2KoEK/Lhck/4=
@@ -569,8 +569,8 @@ github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJwooC2xJA040=
 github.com/opencontainers/image-spec v1.1.1/go.mod h1:qpqAh3Dmcf36wStyyWU+kCeDgrGnAve2nCC8+7h8Q0M=
-github.com/opencontainers/runc v1.3.2 h1:GUwgo0Fx9M/pl2utaSYlJfdBcXAB/CZXDxe322lvJ3Y=
-github.com/opencontainers/runc v1.3.2/go.mod h1:F7UQQEsxcjUNnFpT1qPLHZBKYP7yWwk6hq8suLy9cl0=
+github.com/opencontainers/runc v1.3.3 h1:qlmBbbhu+yY0QM7jqfuat7M1H3/iXjju3VkP9lkFQr4=
+github.com/opencontainers/runc v1.3.3/go.mod h1:D7rL72gfWxVs9cJ2/AayxB0Hlvn9g0gaF1R7uunumSI=
 github.com/opencontainers/runtime-spec v1.2.1 h1:S4k4ryNgEpxW1dzyqffOmhI1BHYcjzU8lpJfSlR0xww=
 github.com/opencontainers/runtime-spec v1.2.1/go.mod h1:jwyrGlmzljRJv/Fgzds9SsS/C5hL+LL3ko9hs6T5lQ0=
 github.com/opencontainers/selinux v1.12.0 h1:6n5JV4Cf+4y0KNXW48TLj5DwfXpvWlxXplUkdTrmPb8=
