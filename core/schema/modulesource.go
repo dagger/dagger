@@ -2773,6 +2773,15 @@ func (s *moduleSourceSchema) createBaseModule(
 		OriginalName:                  src.Self().ModuleOriginalName,
 		SDKConfig:                     sdk,
 		DisableDefaultFunctionCaching: src.Self().DisableDefaultFunctionCaching,
+		ToolchainModules:              make(map[string]*core.Module),
+		ToolchainArgumentConfigs:      make(map[string][]*modules.ModuleConfigArgument),
+	}
+
+	// Load toolchain argument configurations from the original source
+	for _, tcCfg := range tcCtx.originalSrc.Self().ConfigToolchains {
+		if len(tcCfg.Arguments) > 0 {
+			mod.ToolchainArgumentConfigs[tcCfg.Name] = tcCfg.Arguments
+		}
 	}
 
 	// Load dependencies as modules
@@ -2857,6 +2866,84 @@ func extractToolchainModules(mod *core.Module) []*core.Module {
 	return toolchainMods
 }
 
+// applyArgumentConfigToFunction applies argument configuration overrides to a function
+func applyArgumentConfigToFunction(fn *core.Function, argConfigs []*modules.ModuleConfigArgument, functionChain []string) *core.Function {
+	fn = fn.Clone()
+
+	// Apply configs that match the function chain (or empty for constructor)
+	for _, argCfg := range argConfigs {
+		// Check if this config applies to this function
+		// Empty function chain in config means constructor
+		if len(argCfg.Function) == 0 && len(functionChain) == 0 {
+			// This is for the constructor
+		} else if len(argCfg.Function) > 0 && len(functionChain) > 0 {
+			// Check if function chains match
+			if len(argCfg.Function) != len(functionChain) {
+				continue
+			}
+			match := true
+			for i, fnName := range argCfg.Function {
+				if !strings.EqualFold(fnName, functionChain[i]) {
+					match = false
+					break
+				}
+			}
+			if !match {
+				continue
+			}
+		} else {
+			// One is constructor, one is not - skip
+			continue
+		}
+
+		// Find the matching argument and apply overrides
+		for _, arg := range fn.Args {
+			if strings.EqualFold(arg.Name, argCfg.Name) || strings.EqualFold(arg.OriginalName, argCfg.Name) {
+				// Apply default value if specified
+				if argCfg.Default != "" {
+					arg.DefaultValue = core.JSON([]byte(fmt.Sprintf("%q", argCfg.Default)))
+				}
+
+				// Apply defaultPath if specified
+				if argCfg.DefaultPath != "" {
+					arg.DefaultPath = argCfg.DefaultPath
+				}
+
+				// Apply ignore patterns if specified
+				if len(argCfg.Ignore) > 0 {
+					arg.Ignore = argCfg.Ignore
+				}
+				break
+			}
+		}
+	}
+
+	return fn
+}
+
+// applyArgumentConfigsToObjectFunctions applies argument configurations to all functions in an object
+func applyArgumentConfigsToObjectFunctions(objDef *core.TypeDef, argConfigs []*modules.ModuleConfigArgument) *core.TypeDef {
+	if !objDef.AsObject.Valid {
+		return objDef
+	}
+
+	objDef = objDef.Clone()
+	obj := objDef.AsObject.Value
+
+	// Apply to constructor if it exists
+	if obj.Constructor.Valid {
+		obj.Constructor.Value = applyArgumentConfigToFunction(obj.Constructor.Value, argConfigs, []string{})
+	}
+
+	// Apply to all regular functions
+	for i, fn := range obj.Functions {
+		// Function chain is just the function's original name for direct functions
+		obj.Functions[i] = applyArgumentConfigToFunction(fn, argConfigs, []string{fn.OriginalName})
+	}
+
+	return objDef
+}
+
 // addToolchainFieldsToObject adds toolchain fields/functions to an existing TypeDef
 func addToolchainFieldsToObject(
 	objectDef *core.TypeDef,
@@ -2884,6 +2971,11 @@ func addToolchainFieldsToObject(
 					constructor = &core.Function{
 						Args: []*core.FunctionArg{},
 					}
+				}
+
+				// Apply argument configuration overrides if present
+				if argConfigs, ok := mod.ToolchainArgumentConfigs[originalName]; ok {
+					constructor = applyArgumentConfigToFunction(constructor, argConfigs, []string{})
 				}
 
 				constructor.Name = fieldName
@@ -3165,6 +3257,24 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 		clone := tcMod.Self().Clone()
 		clone.IsToolchain = true
 		clone.ContextSource = dagql.NonNull(src)
+
+		// Apply argument configurations from the parent module's toolchain config
+		// Find matching config by toolchain name
+		for _, tcCfg := range src.Self().ConfigToolchains {
+			if tcCfg.Name == clone.OriginalName && len(tcCfg.Arguments) > 0 {
+				// Apply configurations to the toolchain module's functions
+				for objIdx, objDef := range clone.ObjectDefs {
+					if !objDef.AsObject.Valid {
+						continue
+					}
+
+					// Apply argument configs to all functions in the object
+					clone.ObjectDefs[objIdx] = applyArgumentConfigsToObjectFunctions(objDef, tcCfg.Arguments)
+				}
+				break
+			}
+		}
+
 		deps = deps.Append(clone)
 	}
 	for i, depMod := range deps.Mods {

@@ -3,12 +3,20 @@ package main
 import (
 	"context"
 	"dagger/hello/internal/dagger"
+	"fmt"
 )
 
 type Hello struct{}
 
 func (m *Hello) Message() string {
 	return "hello from blueprint"
+}
+
+func (m *Hello) ConfigurableMessage(
+	// +default="hello"
+	message string,
+) string {
+	return fmt.Sprintf("%s from blueprint", message)
 }
 
 // This should read Hello's own config file
