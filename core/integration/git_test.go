@@ -1373,7 +1373,8 @@ func (GitSuite) TestGitLsRemoteSessionCache(ctx context.Context, t *testctx.T) {
 		require.NoError(t, c.Close())
 	}()
 
-	repo := c.Git("https://github.com/dagger/dagger")
+	const repoURL = "https://github.com/dagger/dagger-test-modules"
+	repo := c.Git(repoURL)
 
 	commit, err := repo.Head().Commit(ctx)
 	require.NoError(t, err)
@@ -1385,7 +1386,7 @@ func (GitSuite) TestGitLsRemoteSessionCache(ctx context.Context, t *testctx.T) {
 
 	// Resolve the same ref through a fresh Git node so the second call exercises the
 	// per-session ls-remote cache (the first one warmed it).
-	repo2 := c.Git("https://github.com/dagger/dagger", dagger.GitOpts{KeepGitDir: true})
+	repo2 := c.Git(repoURL, dagger.GitOpts{KeepGitDir: true})
 	commit2, err := repo2.Head().Commit(ctx)
 	require.NoError(t, err)
 	require.Equal(t, commit, commit2)

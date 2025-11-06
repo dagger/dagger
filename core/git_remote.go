@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -77,7 +76,10 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Re
 	if err != nil {
 		return nil, fmt.Errorf("query server: %w", err)
 	}
-	cacheKey := repo.remoteCacheKey()
+	cacheKey, err := repo.remoteCacheKey(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	if srv == nil || srv.Cache == nil {
 		slog.Info("git remote cache unavailable; running ls-remote", "cache_key", cacheKey)
@@ -131,65 +133,13 @@ func (repo *RemoteGitRepository) Get(ctx context.Context, target *gitutil.Ref) (
 	}, nil
 }
 
-// remoteCacheKey mixes only the inputs that influence ls-remote so we avoid hashing
-// the entire repo object (no raw secret payloads or dagql wrapper state). We fold in
-// the remote URL, auth settings (usernames plus hashed secret/known-host metadata),
-// and service bindings (service digest + hostname + sorted aliases).
-func (repo *RemoteGitRepository) remoteCacheKey() string {
-	parts := []string{"remote=" + repo.URL.Remote()}
-
-	if repo.AuthUsername != "" {
-		parts = append(parts, "authUsername="+repo.AuthUsername)
+// remoteCacheKey scopes cached git remote metadata to the current session and remote URL.
+func (repo *RemoteGitRepository) remoteCacheKey(ctx context.Context) (string, error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return "", fmt.Errorf("client metadata: %w", err)
 	}
-	if repo.SSHKnownHosts != "" {
-		hash := hashutil.HashStrings(repo.SSHKnownHosts).String()
-		parts = append(parts, "knownHosts="+hash)
-	}
-	if repo.SSHAuthSocket.Self() != nil {
-		if id := repo.SSHAuthSocket.ID(); id != nil {
-			parts = append(parts, "sshSocket="+id.Digest().String())
-		}
-	}
-	if repo.AuthToken.Self() != nil {
-		if id := repo.AuthToken.ID(); id != nil {
-			parts = append(parts, "authToken="+id.Digest().String())
-		}
-	}
-	if repo.AuthHeader.Self() != nil {
-		if id := repo.AuthHeader.ID(); id != nil {
-			parts = append(parts, "authHeader="+id.Digest().String())
-		}
-	}
-	if len(repo.Services) > 0 {
-		serviceParts := make([]string, 0, len(repo.Services))
-		for _, binding := range repo.Services {
-			serviceParts = append(serviceParts, repo.serviceBindingKey(binding))
-		}
-		sort.Strings(serviceParts)
-		parts = append(parts, "services="+strings.Join(serviceParts, ";"))
-	}
-
-	return hashutil.HashStrings(parts...).String()
-}
-
-// serviceBindingKey renders a service binding into a stable, safe fragment for the cache key.
-func (repo *RemoteGitRepository) serviceBindingKey(binding ServiceBinding) string {
-	var builder strings.Builder
-	if binding.Service.Self() != nil {
-		if id := binding.Service.ID(); id != nil {
-			builder.WriteString(id.Digest().String())
-		}
-	}
-	builder.WriteString("@")
-	builder.WriteString(binding.Hostname)
-	if len(binding.Aliases) > 0 {
-		aliases := append([]string(nil), binding.Aliases...)
-		sort.Strings(aliases)
-		builder.WriteString("[")
-		builder.WriteString(strings.Join(aliases, ","))
-		builder.WriteString("]")
-	}
-	return builder.String()
+	return hashutil.HashStrings(clientMetadata.SessionID, repo.URL.Remote()).String(), nil
 }
 
 func (repo *RemoteGitRepository) runLsRemote(ctx context.Context) (*gitutil.Remote, error) {
