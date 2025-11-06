@@ -272,8 +272,6 @@ func (s *scheduler) newRequestWithFunc(e *edge, f func(context.Context) (any, er
 // edgeFactory allows access to the edges from a shared graph
 type edgeFactory interface {
 	getEdge(Edge) *edge
-	setEdge(Edge, *edge)
-	hasOwner(Edge, Edge) bool
 }
 
 type pipeFactory struct {

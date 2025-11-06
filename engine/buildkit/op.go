@@ -21,8 +21,6 @@ type CustomOpWrapper struct {
 	Name    string
 	Backend CustomOpBackend
 
-	ClientMetadata engine.ClientMetadata
-
 	causeCtx       trace.SpanContext
 	server         dagqlServer
 	original       solver.Op
@@ -65,15 +63,9 @@ func RegisterCustomOp(op CustomOp) {
 }
 
 func NewCustomLLB(ctx context.Context, op CustomOp, inputs []llb.State, opts ...llb.ConstraintsOpt) (llb.State, error) {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return llb.State{}, fmt.Errorf("failed to get client metadata: %w", err)
-	}
-
 	opWrapped := CustomOpWrapper{
-		Name:           op.Name(),
-		Backend:        op.Backend(),
-		ClientMetadata: *clientMetadata,
+		Name:    op.Name(),
+		Backend: op.Backend(),
 	}
 
 	// generate a uniqued digest of the op to use in the buildkit id (this
@@ -186,12 +178,7 @@ func (op *CustomOpWrapper) Acquire(ctx context.Context) (release solver.ReleaseF
 }
 
 func (op *CustomOpWrapper) clientMetadata(ctx context.Context, g bksession.Group) (md *engine.ClientMetadata, _ error) {
-	_, err := op.server.Server(engine.ContextWithClientMetadata(ctx, &op.ClientMetadata))
-	if err == nil {
-		return &op.ClientMetadata, nil
-	}
-
-	err = op.sessionManager.Any(ctx, g, func(ctx context.Context, id string, c bksession.Caller) error {
+	err := op.sessionManager.Any(ctx, g, func(ctx context.Context, id string, c bksession.Caller) error {
 		var err error
 		md, err = engine.ClientMetadataFromContext(c.Context())
 		if err != nil {

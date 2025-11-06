@@ -16,9 +16,26 @@ import (
 // nested progress reporting
 
 var (
-	errRetry        = errors.Errorf("retry")
 	errRetryTimeout = errors.Errorf("exceeded retry timeout")
 )
+
+type RetryableError struct {
+	Err error
+}
+
+func (e RetryableError) Error() string {
+	if e.Err == nil {
+		return "retryable error"
+	}
+	return e.Err.Error()
+}
+
+func (e RetryableError) Unwrap() error {
+	if e.Err == nil {
+		return errors.New("retryable error")
+	}
+	return e.Err
+}
 
 type contextKeyT string
 
@@ -35,7 +52,7 @@ func (g *Group[T]) Do(ctx context.Context, key string, fn func(ctx context.Conte
 	var backoff time.Duration
 	for {
 		v, err = g.do(ctx, key, fn)
-		if err == nil || !errors.Is(err, errRetry) {
+		if err == nil || !errors.As(err, new(RetryableError)) {
 			return v, err
 		}
 		// backoff logic
@@ -136,7 +153,7 @@ func (c *call[T]) wait(ctx context.Context) (v T, err error) {
 		c.mu.Unlock()
 		if c.err != nil { // on error retry
 			<-c.cleaned
-			return empty, errRetry
+			return empty, RetryableError{Err: c.err}
 		}
 		pw, ok, _ := progress.NewFromContext(ctx)
 		if ok {
@@ -147,7 +164,7 @@ func (c *call[T]) wait(ctx context.Context) (v T, err error) {
 	case <-c.ctx.done: // could return if no error
 		c.mu.Unlock()
 		<-c.cleaned
-		return empty, errRetry
+		return empty, RetryableError{Err: c.ctx.err}
 	default:
 	}
 

@@ -65,7 +65,6 @@ type edge struct {
 	hasActiveOutgoing         bool
 
 	releaserCount int
-	owner         *edge
 	keysDidChange bool
 	index         *edgeIndex
 
@@ -117,14 +116,6 @@ type edgeRequest struct {
 	desiredState edgeStatusType
 	currentState edgeState
 	currentKeys  int
-}
-
-// takeOwnership increases the number of times release needs to be
-// called to release the edge. Called on merging edges.
-func (e *edge) takeOwnership(old *edge) {
-	e.releaserCount += old.releaserCount + 1
-	old.owner = e
-	old.releaseResult()
 }
 
 // release releases the edge resources
