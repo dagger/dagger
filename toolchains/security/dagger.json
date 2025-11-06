@@ -1,0 +1,13 @@
+{
+  "name": "security",
+  "engineVersion": "v0.19.6",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "engine-dev",
+      "source": "../engine-dev"
+    }
+  ]
+}

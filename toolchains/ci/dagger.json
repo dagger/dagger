@@ -1,0 +1,13 @@
+{
+  "name": "ci",
+  "engineVersion": "v0.19.7",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "gha",
+      "source": "../../modules/gha"
+    }
+  ]
+}

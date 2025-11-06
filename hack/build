@@ -15,13 +15,13 @@ cli |\
     export ./bin &
 cli_pid=$!
 
-.deps | dagger-engine |\
+engine-dev |\
     container ${_EXPERIMENTAL_DAGGER_GPU_SUPPORT:+--gpu-support} |\
     as-tarball --forced-compression=gzip |\
     export ./bin/engine.tar &
 engine_pid=$!
 
-.deps | dagger-engine |\
+engine-dev |\
     # HACK: /var/run/docker.sock is a linux default
     load-to-docker ${DOCKER_HOST:-/var/run/docker.sock} \
         ${IMAGE:+--name=${IMAGE-}} \

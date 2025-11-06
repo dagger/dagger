@@ -23,11 +23,6 @@ const (
 func New(
 	// Project source directory
 	// +defaultPath="/"
-	// +ignore[
-	//  "go.mod",
-	//  "go.sum",
-	//  "**/*.go"
-	// ]
 	source *dagger.Directory,
 	// Go version
 	// +optional
@@ -619,26 +614,28 @@ func (p *Go) LintModule(ctx context.Context, mod string) error {
 	if err != nil {
 		return err
 	}
-	_, err = dag.Container().
-		From(lintImage).
-		WithMountedCache("/go/pkg/mod", p.ModuleCache).
-		WithMountedCache("/root/.cache/go-build", p.BuildCache).
-		WithMountedCache("/root/.cache/golangci-lint", dag.CacheVolume("golangci-lint")).
-		WithWorkdir("/src").
-		WithMountedDirectory(".", p.Source).
-		WithWorkdir(mod).
-		WithExec([]string{
-			"golangci-lint", "run",
-			"--path-prefix", mod + "/",
-			"--output.tab.path=stderr",
-			"--output.tab.print-linter-name=true",
-			"--output.tab.colors=false",
-			"--show-stats=false",
-			"--max-issues-per-linter=0",
-			"--max-same-issues=0",
-		}).
-		Sync(ctx)
-	return err
+	return parallel.Run(ctx, "lint", func(ctx context.Context) error {
+		_, err = dag.Container().
+			From(lintImage).
+			WithMountedCache("/go/pkg/mod", p.ModuleCache).
+			WithMountedCache("/root/.cache/go-build", p.BuildCache).
+			WithMountedCache("/root/.cache/golangci-lint", dag.CacheVolume("golangci-lint")).
+			WithWorkdir("/src").
+			WithMountedDirectory(".", p.Source).
+			WithWorkdir(mod).
+			WithExec([]string{
+				"golangci-lint", "run",
+				"--path-prefix", mod + "/",
+				"--output.tab.path=stderr",
+				"--output.tab.print-linter-name=true",
+				"--output.tab.colors=false",
+				"--show-stats=false",
+				"--max-issues-per-linter=0",
+				"--max-same-issues=0",
+			}).
+			Sync(ctx)
+		return err
+	})
 }
 
 func (p *Go) GenerateDaggerRuntime(ctx context.Context, start string) (*Go, error) {

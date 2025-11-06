@@ -4,85 +4,113 @@ package main
 
 import (
 	"context"
+	"os"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
 	"github.com/dagger/dagger/util/parallel"
 )
 
 // A dev environment for the DaggerDev Engine
-type DaggerDev struct {
-	Source *dagger.Directory // +private
+type DaggerDev struct{}
 
-	Version string
-	Tag     string
-	Git     *dagger.GitRepository
-
-	// Can be used by nested clients to forward docker credentials to avoid
-	// rate limits
-	DockerCfg *dagger.Secret // +private
+// Perform a dry run of the release process
+// TODO: remove after merging https://github.com/dagger/dagger/pull/11211
+func (dev *DaggerDev) ReleaseDryRun(ctx context.Context) error {
+	return parallel.New().
+		WithJob("Helm chart", dag.Helm().ReleaseDryRun).
+		WithJob("CLI", dag.Cli().ReleaseDryRun).
+		WithJob("Engine", dag.EngineDev().ReleaseDryRun).
+		WithJob("SDKs", dag.Sdks().ReleaseDryRun).
+		Run(ctx)
 }
 
-func New(
-	ctx context.Context,
-	// +optional
-	// +defaultPath="/"
-	// +ignore=[
-	// "bin",
-	// ".git",
-	// "**/node_modules",
-	// "**/.venv",
-	// "**/__pycache__",
-	// "docs/node_modules",
-	// "sdk/typescript/node_modules",
-	// "sdk/typescript/dist",
-	// "sdk/rust/examples/backend/target",
-	// "sdk/rust/target",
-	// "sdk/php/vendor"
-	// ]
-	source *dagger.Directory,
+// Verify that generated code is up to date
+// +check
+func (dev *DaggerDev) CheckGenerated(ctx context.Context) error {
+	_, err := dev.Generate(ctx, true)
+	return err
+}
 
-	// +defaultPath="/"
-	git *dagger.GitRepository,
-
+// Run all code generation - SDKs, docs, grpc stubs, changelog
+func (dev *DaggerDev) Generate(ctx context.Context,
 	// +optional
-	dockerCfg *dagger.Secret,
-) (*DaggerDev, error) {
-	v := dag.Version()
-	version, err := v.Version(ctx)
+	check bool,
+) (*dagger.Changeset, error) {
+	var genDocs, genEngine, genChangelog, genGHA, genSDKs *dagger.Changeset
+	maybeCheck := func(ctx context.Context, changes *dagger.Changeset) error {
+		if !check {
+			return nil
+		}
+		return assertNoChanges(ctx, changes, os.Stderr)
+	}
+	err := parallel.New().
+		WithJob("docs", func(ctx context.Context) error {
+			var err error
+			genDocs, err = dag.Docs().Generate().Sync(ctx)
+			if err != nil {
+				return err
+			}
+			return maybeCheck(ctx, genDocs)
+		}).
+		WithJob("engine", func(ctx context.Context) error {
+			var err error
+			genEngine, err = dag.EngineDev().Generate().Sync(ctx)
+			if err != nil {
+				return err
+			}
+			return maybeCheck(ctx, genEngine)
+		}).
+		WithJob("changelog", func(ctx context.Context) error {
+			var err error
+			genChangelog, err = dag.Changelog().Generate().Sync(ctx)
+			if err != nil {
+				return err
+			}
+			return maybeCheck(ctx, genChangelog)
+		}).
+		WithJob("Github Actions config", func(ctx context.Context) error {
+			var err error
+			genGHA, err = dag.Ci().Generate().Sync(ctx)
+			if err != nil {
+				return err
+			}
+			return maybeCheck(ctx, genGHA)
+		}).
+		WithJob("SDKs", func(ctx context.Context) error {
+			var err error
+			genSDKs, err = dag.Sdks().Generate().Sync(ctx)
+			if err != nil {
+				return err
+			}
+			return maybeCheck(ctx, genSDKs)
+		}).
+		Run(ctx)
 	if err != nil {
 		return nil, err
 	}
-	tag, err := v.ImageTag(ctx)
-	if err != nil {
-		return nil, err
+	if check {
+		return nil, nil
 	}
-
-	dev := &DaggerDev{
-		Source:    source,
-		Tag:       tag,
-		Git:       git,
-		Version:   version,
-		DockerCfg: dockerCfg,
-	}
-	return dev, nil
-}
-
-func (dev *DaggerDev) withDockerCfg(ctr *dagger.Container) *dagger.Container {
-	if dev.DockerCfg == nil {
-		return ctr
-	}
-	return ctr.WithMountedSecret("/root/.docker/config.json", dev.DockerCfg)
+	var result *dagger.Changeset
+	// FIXME: this is a workaround to TUI being too noisy
+	err = parallel.Run(ctx, "merge all changesets", func(ctx context.Context) error {
+		var err error
+		var gen []*dagger.Changeset
+		gen = append(gen, genDocs, genEngine, genChangelog, genGHA, genSDKs)
+		result, err = changesetMerge(gen...).Sync(ctx)
+		return err
+	})
+	return result, err
 }
 
 func (dev *DaggerDev) Bump(ctx context.Context, version string) (*dagger.Changeset, error) {
 	var (
-		bumpDocs, bumpHelm *dagger.Changeset
-		bumpSDKs           []*dagger.Changeset
+		bumpDocs, bumpHelm, bumpSDKs *dagger.Changeset
 	)
 	err := parallel.New().
 		WithJob("bump docs version", func(ctx context.Context) error {
 			var err error
-			bumpDocs, err = dag.DaggerDocs().Bump(version).Sync(ctx)
+			bumpDocs, err = dag.Docs().Bump(version).Sync(ctx)
 			return err
 		}).
 		WithJob("bump helm chart version", func(ctx context.Context) error {
@@ -97,28 +125,42 @@ func (dev *DaggerDev) Bump(ctx context.Context, version string) (*dagger.Changes
 			return err
 		}).
 		WithJob("bump SDK versions", func(ctx context.Context) error {
-			type bumper interface {
-				Bump(context.Context, string) (*dagger.Changeset, error)
-				Name() string
-			}
-			bumpers := allSDKs[bumper](dev)
-			bumpSDKs = make([]*dagger.Changeset, len(bumpers))
-			for i, sdk := range bumpers {
-				bumped, err := sdk.Bump(ctx, version)
-				if err != nil {
-					return err
-				}
-				bumped, err = bumped.Sync(ctx)
-				if err != nil {
-					return err
-				}
-				bumpSDKs[i] = bumped
-			}
-			return nil
+			var err error
+			bumpSDKs, err = dag.Sdks().Bump(version).Sync(ctx)
+			return err
 		}).
 		Run(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return changesetMerge(append(bumpSDKs, bumpDocs, bumpHelm)...), nil
+	return changesetMerge(bumpSDKs, bumpDocs, bumpHelm), nil
+}
+
+// "CI in CI": check that Dagger can still run its own CI
+// Note: this doesn't actually call all CI checks: only a small subset,
+// selected for maximum coverage of Dagger features with limited compute expenditure.
+// The actual checks being performed is an implementation detail, and should NOT be relied on.
+// In other words, don't skip running <foo> just because it happens to be run here!
+//
+// +check
+func (dev *DaggerDev) CiInCi(
+	ctx context.Context,
+	// The Dagger repository to run CI against
+	// +defaultPath="/"
+	repo *dagger.GitRepository,
+) error {
+	source := repo.Head().Tree().WithChanges(repo.Uncommitted())
+	engine := dag.EngineDev()
+	cmd := []string{"dagger", "call"}
+	if engine.ClientDockerConfig() != nil {
+		cmd = append(cmd, "--docker-cfg=file:$HOME/.docker/config.json")
+	}
+	cmd = append(cmd, "test-sdks")
+	_, err := dag.EngineDev().
+		Playground().
+		WithMountedDirectory("./dagger", source).
+		WithWorkdir("./dagger").
+		WithExec(cmd, dagger.ContainerWithExecOpts{Expand: true}).
+		Sync(ctx)
+	return err
 }
