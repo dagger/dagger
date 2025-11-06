@@ -9,8 +9,13 @@ import (
 
 // Scan source code and artifacts for security vulnerabilities
 // +cache="session"
-func (dev *DaggerDev) Scan(ctx context.Context) (MyCheckStatus, error) {
-	ignoreFiles := dag.Directory().WithDirectory("/", dev.Source, dagger.DirectoryWithDirectoryOpts{
+func (dev *DaggerDev) Scan(
+	ctx context.Context,
+	// +defaultPath="/"
+	repo *dagger.GitRepository,
+) (MyCheckStatus, error) {
+	src := repo.Head().Tree().WithChanges(repo.Uncommitted())
+	ignoreFiles := dag.Directory().WithDirectory("/", src, dagger.DirectoryWithDirectoryOpts{
 		Include: []string{
 			".trivyignore",
 			".trivyignore.yml",
@@ -50,7 +55,6 @@ func (dev *DaggerDev) Scan(ctx context.Context) (MyCheckStatus, error) {
 			args = append(args, "/mnt/src")
 
 			// HACK: filter out directories that present occasional issues
-			src := dev.Source
 			src = src.
 				WithoutDirectory("docs").
 				WithoutDirectory("sdk/rust/examples").
