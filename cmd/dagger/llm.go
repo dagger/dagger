@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -77,6 +78,9 @@ type LLMSession struct {
 
 	plumbingCtx  context.Context
 	plumbingSpan trace.Span
+
+	autoCompact  bool
+	autoCompactL *sync.Mutex
 }
 
 func NewLLMSession(
@@ -100,8 +104,10 @@ func NewLLMSession(
 			// the rest should be filtered out already by skipping the first batch
 			// (sourced from os.Environ)
 		},
-		shell:    shellHandler,
-		frontend: frontend,
+		shell:        shellHandler,
+		frontend:     frontend,
+		autoCompact:  true,
+		autoCompactL: new(sync.Mutex),
 	}
 
 	// Allocate a span to tuck all the internal plumbing into, so it doesn't
@@ -142,6 +148,18 @@ func NewLLMSession(
 	return s, nil
 }
 
+func (s *LLMSession) ShouldAutocompact() bool {
+	s.autoCompactL.Lock()
+	defer s.autoCompactL.Unlock()
+	return s.autoCompact
+}
+
+func (s *LLMSession) ToggleAutocompact() {
+	s.autoCompactL.Lock()
+	s.autoCompact = !s.autoCompact
+	s.autoCompactL.Unlock()
+}
+
 func (s *LLMSession) reset() {
 	s.updateLLMAndAgentVar(
 		s.dag.LLM(dagger.LLMOpts{Model: s.model}).
@@ -176,7 +194,7 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 	s.model = resolvedModel
 
 	// Check if we need to compact before adding the prompt
-	compacted, err := s.autoCompact(ctx)
+	compacted, err := s.maybeAutoCompact(ctx)
 	if err != nil {
 		return s, fmt.Errorf("auto-compact: %w", err)
 	}
@@ -207,7 +225,7 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 		}
 
 		// Check if we need to compact in-between steps
-		prompted, err = s.autoCompact(ctx)
+		prompted, err = s.maybeAutoCompact(ctx)
 		if err != nil {
 			return s, fmt.Errorf("auto-compact: %w", err)
 		}
@@ -363,8 +381,12 @@ func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
 	return err
 }
 
-// autoCompact checks if the context usage exceeds 80% and automatically compacts if so
-func (s *LLMSession) autoCompact(ctx context.Context) (*dagger.LLM, error) {
+// maybeAutoCompact checks if the context usage exceeds 80% and automatically compacts if so
+func (s *LLMSession) maybeAutoCompact(ctx context.Context) (*dagger.LLM, error) {
+	if !s.ShouldAutocompact() {
+		return s.llm, nil
+	}
+
 	// Get current token usage
 	inputTokens, err := s.llm.TokenUsage().InputTokens(s.plumbingCtx)
 	if err != nil {
