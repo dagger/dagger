@@ -81,7 +81,8 @@ func New() *CI {
 		withSimpleDaggerCheck("check-generated", "Check generated files").
 		withSimpleDaggerCheck("go lint", "Run Go Linter").
 		withSimpleDaggerCheck("lint-sdks", "Run all SDK linters").
-		withSimpleDaggerCheck("lint-misc", "Lint docs, helm chart and install scripts").
+		withSimpleDaggerCheck("lint-scripts", "Lint install scripts").
+		withSimpleDaggerCheck("lint-misc", "Lint docs and helm chart").
 		withSimpleDaggerCheck("go check-tidy", "Check go tidy").
 		withSimpleDaggerCheck("release-dry-run", "Release dry run").
 		withSimpleDaggerCheck("scan", "Security scan").

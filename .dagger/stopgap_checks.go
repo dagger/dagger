@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 
+	"github.com/dagger/dagger/.dagger/internal/dagger"
 	"github.com/dagger/dagger/util/parallel"
 )
 
@@ -26,7 +27,6 @@ func (dev *DaggerDev) LintMisc(ctx context.Context) error {
 			_, err := dev.LintHelm(ctx)
 			return err
 		}).
-		WithJob("Install scripts", dev.Scripts().Lint).
 		Run(ctx)
 }
 
@@ -146,14 +146,18 @@ func (r RustSDK) Lint(ctx context.Context) error {
 
 // Lint scripts files
 // // TODO: remove after merging https://github.com/dagger/dagger/pull/11211
-func (s Scripts) Lint(ctx context.Context) error {
+func (s Scripts) Lint(ctx context.Context,
+	// +defaultPath="/"
+	// +ignore=["*", "!install.sh", "!install.ps1"]
+	scripts *dagger.Directory,
+) error {
 	return parallel.New().
 		WithJob("install.sh", func(ctx context.Context) error {
-			_, err := s.LintSh(ctx)
+			_, err := s.LintSh(ctx, scripts.File("install.sh"))
 			return err
 		}).
 		WithJob("install.ps1", func(ctx context.Context) error {
-			_, err := s.LintPowershell(ctx)
+			_, err := s.LintPowershell(ctx, scripts.File("install.ps1"))
 			return err
 		}).
 		Run(ctx)
