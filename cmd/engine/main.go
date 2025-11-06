@@ -52,6 +52,8 @@ import (
 	"github.com/dagger/dagger/network/netinst"
 )
 
+const gracefulStopTimeout = 5 * time.Minute // need to sync disks, which could be expensive
+
 func init() {
 	apicaps.ExportedProduct = "dagger-engine"
 	stack.SetVersionInfo(version.Version, version.Revision)
@@ -459,6 +461,13 @@ func main() { //nolint:gocyclo
 			bklog.G(ctx).Debugf("SdNotifyStopping notified=%v, err=%v", notified, notifyErr)
 		}
 		grpcServer.GracefulStop()
+
+		srvStopCtx, srvStopCancel := context.WithTimeout(context.WithoutCancel(ctx), gracefulStopTimeout)
+		defer srvStopCancel()
+		if err := srv.GracefulStop(srvStopCtx); err != nil {
+			slog.Error("server graceful stop", "error", err)
+		}
+
 		return err
 	}
 

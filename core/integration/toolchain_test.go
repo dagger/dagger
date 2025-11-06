@@ -164,3 +164,99 @@ func (ToolchainSuite) TestToolchainsWithBlueprint(ctx context.Context, t *testct
 		require.Contains(t, out, "hello from blueprint")
 	})
 }
+
+func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	t.Run("override function default argument", func(ctx context.Context, t *testctx.T) {
+		modGen := toolchainTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init")).
+			WithNewFile("dagger.json", `
+{
+  "name": "app",
+  "engineVersion": "v0.19.4",
+  "toolchains": [
+    {
+      "name": "hello",
+      "source": "../hello",
+      "arguments": [
+        {
+          "function": ["configurableMessage"],
+          "name": "message",
+          "default": "hola"
+        }
+      ]
+    }
+  ]
+}
+				`)
+		// verify we can call a function from our toolchain with overridden argument
+		out, err := modGen.
+			With(daggerExec("call", "hello", "configurable-message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hola from blueprint")
+	})
+
+	t.Run("override constructor defaultPath argument", func(ctx context.Context, t *testctx.T) {
+		modGen := toolchainTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init")).
+			WithNewFile("dagger.json", `
+{
+  "name": "app",
+  "engineVersion": "v0.19.4",
+  "toolchains": [
+    {
+      "name": "hello",
+      "source": "../hello-with-constructor",
+      "arguments": [
+        {
+          "name": "config",
+          "defaultPath": "./custom-config.txt"
+        }
+      ]
+    }
+  ]
+}
+				`).
+			WithNewFile("custom-config.txt", "this is custom configuration")
+		// verify we can call a function from our toolchain and it uses the overridden defaultPath
+		out, err := modGen.
+			With(daggerExec("call", "hello", "field-config")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "this is custom configuration")
+	})
+
+	t.Run("override function default argument in chained function", func(ctx context.Context, t *testctx.T) {
+		modGen := toolchainTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init")).
+			WithNewFile("dagger.json", `
+{
+  "name": "app",
+  "engineVersion": "v0.19.4",
+  "toolchains": [
+    {
+      "name": "hello",
+      "source": "../hello",
+      "arguments": [
+        {
+          "function": ["greet", "planet"],
+          "name": "planet",
+          "default": "Mars"
+        }
+      ]
+    }
+  ]
+}
+				`)
+		// verify we can call a function from our toolchain with overridden argument
+		out, err := modGen.
+			With(daggerExec("call", "hello", "greet", "planet")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "Greetings from Mars!")
+	})
+}

@@ -873,11 +873,11 @@ func (i *ID[T]) UnmarshalJSON(p []byte) error {
 func (i ID[T]) Load(ctx context.Context, server *Server) (res ObjectResult[T], _ error) {
 	val, err := server.Load(ctx, i.id)
 	if err != nil {
-		return res, fmt.Errorf("load %s: %w", i.id.Display(), err)
+		return res, fmt.Errorf("load %s: %w", i.id.DisplaySelf(), err)
 	}
 	obj, ok := val.(ObjectResult[T])
 	if !ok {
-		return res, fmt.Errorf("load %s: expected %T, got %T", i.id.Display(), obj, val)
+		return res, fmt.Errorf("load %s: expected %T, got %T", i.id.DisplaySelf(), obj, val)
 	}
 	return obj, nil
 }

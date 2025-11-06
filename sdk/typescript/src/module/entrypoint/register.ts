@@ -5,6 +5,9 @@ import {
   ModuleID,
   TypeDef,
   TypeDefKind,
+  TypeDefWithEnumMemberOpts,
+  TypeDefWithFieldOpts,
+  TypeDefWithObjectOpts,
   SourceMap,
   FunctionCachePolicy,
   FunctionWithCachePolicyOpts,
@@ -44,11 +47,14 @@ export class Register {
 
     // For each class scanned, register its type, method and properties in the module.
     Object.values(this.module.objects).forEach((object) => {
-      // Register the class Typedef object in Dagger
-      let typeDef = dag.typeDef().withObject(object.name, {
+      const objectOpts: TypeDefWithObjectOpts = {
         description: object.description,
         sourceMap: addSourceMap(object),
-      })
+        deprecated: object.deprecated,
+      }
+
+      // Register the class Typedef object in Dagger
+      let typeDef = dag.typeDef().withObject(object.name, objectOpts)
 
       // Register all functions (methods) to this object
       Object.values(object.methods).forEach((method) => {
@@ -58,13 +64,16 @@ export class Register {
       // Register all fields that belong to this object
       Object.values(object.properties).forEach((field) => {
         if (field.isExposed) {
+          const fieldOpts = {
+            description: field.description,
+            sourceMap: addSourceMap(field),
+            deprecated: field.deprecated,
+          } as TypeDefWithFieldOpts
+
           typeDef = typeDef.withField(
             field.alias ?? field.name,
             addTypeDef(field.type!),
-            {
-              description: field.description,
-              sourceMap: addSourceMap(field),
-            },
+            fieldOpts,
           )
         }
       })
@@ -87,11 +96,14 @@ export class Register {
       })
 
       Object.values(enum_.values).forEach((value) => {
-        typeDef = typeDef.withEnumMember(value.name, {
+        const memberOpts: TypeDefWithEnumMemberOpts = {
           value: value.value,
           description: value.description,
           sourceMap: addSourceMap(value),
-        })
+          deprecated: value.deprecated,
+        }
+
+        typeDef = typeDef.withEnumMember(value.name, memberOpts)
       })
 
       mod = mod.withEnum(typeDef)
@@ -129,6 +141,7 @@ export class Register {
       .withDescription(fct.description)
       .withSourceMap(addSourceMap(fct))
       .with(this.addArg(fct.arguments))
+
     switch (fct.cache) {
       case "never": {
         fnDef = fnDef.withCachePolicy(FunctionCachePolicy.Never)
@@ -147,6 +160,10 @@ export class Register {
       }
     }
 
+    if (fct.deprecated !== undefined) {
+      fnDef = fnDef.withDeprecated({ reason: fct.deprecated })
+    }
+
     return fnDef
   }
 
@@ -159,6 +176,7 @@ export class Register {
         const opts: FunctionWithArgOpts = {
           description: arg.description,
           sourceMap: addSourceMap(arg),
+          deprecated: arg.deprecated,
         }
 
         let typeDef = addTypeDef(arg.type!)

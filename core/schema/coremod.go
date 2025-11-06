@@ -232,6 +232,7 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.Type
 				fn := &core.Function{
 					Name:        introspectionField.Name,
 					Description: introspectionField.Description,
+					Deprecated:  introspectionField.DeprecationReason,
 				}
 
 				rtType, ok, err := introspectionRefToTypeDef(introspectionField.TypeRef, false, false)
@@ -247,6 +248,7 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.Type
 					fnArg := &core.FunctionArg{
 						Name:        introspectionArg.Name,
 						Description: introspectionArg.Description,
+						Deprecated:  introspectionArg.DeprecationReason,
 					}
 
 					if introspectionArg.DefaultValue != nil {
@@ -286,6 +288,7 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.Type
 				field := &core.FieldTypeDef{
 					Name:        introspectionField.Name,
 					Description: introspectionField.Description,
+					Deprecated:  introspectionField.DeprecationReason,
 				}
 				fieldType, ok, err := introspectionRefToTypeDef(introspectionField.TypeRef, false, false)
 				if err != nil {
@@ -325,6 +328,7 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*core.Type
 					Name:        value.Name,
 					Value:       value.Directives.EnumValue(),
 					Description: value.Description,
+					Deprecated:  value.DeprecationReason,
 				})
 			}
 
@@ -426,7 +430,7 @@ func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (
 
 	val, err := dag.Load(ctx, &idp)
 	if err != nil {
-		return nil, fmt.Errorf("CoreModObject.load %s: %w", idp.Display(), err)
+		return nil, fmt.Errorf("CoreModObject.load %s: %w", idp.DisplaySelf(), err)
 	}
 	return val, nil
 }

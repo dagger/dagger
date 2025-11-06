@@ -8,21 +8,6 @@ import (
 	"strings"
 )
 
-// Lookup the change notes file for the given component and version
-func (r Releaser) changeNotes(
-	// The component to look up change notes for
-	// Example: "sdk/php"
-	component,
-	// The version to look up change notes for
-	version string,
-) *dagger.File {
-	path := fmt.Sprintf(".changes/%s.md", version)
-	if component != "" {
-		path = strings.TrimSuffix(component, "/") + "/" + path
-	}
-	return r.Dagger.Source().File(path)
-}
-
 // Publish a Github release
 func (r Releaser) githubRelease(
 	ctx context.Context,

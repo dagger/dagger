@@ -33,6 +33,7 @@ import {
 export class DaggerTypeObject extends Locatable implements DaggerObjectBase {
   public name: string
   public description: string
+  public deprecated?: string
   public _constructor = undefined
   public methods = {}
   public properties: DaggerObjectTypeProperties = {}
@@ -56,7 +57,9 @@ export class DaggerTypeObject extends Locatable implements DaggerObjectBase {
     }
     this.name = this.node.name.getText()
     this.symbol = this.ast.getSymbolOrThrow(this.node.name)
-    this.description = this.ast.getDocFromSymbol(this.symbol)
+    const { description, deprecated } = this.ast.getSymbolDoc(this.symbol)
+    this.description = description
+    this.deprecated = deprecated
 
     const type = this.ast.getTypeFromTypeAlias(this.node)
 
@@ -102,6 +105,7 @@ export class DaggerTypeObject extends Locatable implements DaggerObjectBase {
       name: this.name,
       description: this.description,
       properties: this.properties,
+      deprecated: this.deprecated,
     }
   }
 }

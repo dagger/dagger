@@ -32,7 +32,7 @@ jobs:
                 call: test specific --race=true --parallel=16 --run='TestCall|TestShell|TestDaggerCMD'
                 cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
-                version: v0.19.4
+                version: v0.19.5
         timeout-minutes: 30
     test-cgroupsv-2:
         runs-on:
@@ -48,7 +48,7 @@ jobs:
                 call: test specific --race=true --parallel=16 --run='TestProvision|TestTelemetry'
                 cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
-                version: v0.19.4
+                version: v0.19.5
         timeout-minutes: 30
     test-cli-engine:
         runs-on:
@@ -64,7 +64,7 @@ jobs:
                 call: test specific --race=true --parallel=16 --run='TestCLI|TestEngine'
                 cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
-                version: v0.19.4
+                version: v0.19.5
         timeout-minutes: 30
     test-client-generator:
         runs-on:
@@ -80,7 +80,7 @@ jobs:
                 call: test specific --race=true --parallel=16 --run='TestClientGenerator'
                 cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
-                version: v0.19.4
+                version: v0.19.5
         timeout-minutes: 30
     test-container:
         runs-on:
@@ -96,7 +96,7 @@ jobs:
                 call: test specific --race=true --parallel=16 --run='TestContainer|TestDockerfile'
                 cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
-                version: v0.19.4
+                version: v0.19.5
         timeout-minutes: 30
     test-everything-else:
         runs-on:
@@ -112,7 +112,7 @@ jobs:
                 call: test specific --race=true --parallel=16 --skip='TestProvision|TestTelemetry|TestModule|TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestJava|TestContainer|TestDockerfile|TestLLM|TestCLI|TestEngine|TestClientGenerator|TestInterface|TestCall|TestShell|TestDaggerCMD'
                 cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
-                version: v0.19.4
+                version: v0.19.5
         timeout-minutes: 30
     test-interface:
         runs-on:
@@ -128,7 +128,7 @@ jobs:
                 call: test specific --race=true --parallel=16 --run='TestInterface'
                 cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
-                version: v0.19.4
+                version: v0.19.5
         timeout-minutes: 30
     test-llm:
         runs-on:
@@ -144,7 +144,7 @@ jobs:
                 call: test specific --race=true --parallel=16 --run='TestLLM'
                 cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
-                version: v0.19.4
+                version: v0.19.5
         timeout-minutes: 30
     test-module-runtimes:
         runs-on:
@@ -160,7 +160,7 @@ jobs:
                 call: test specific --race=true --parallel=16 --run='TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestJava'
                 cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
-                version: v0.19.4
+                version: v0.19.5
         timeout-minutes: 30
     test-modules:
         runs-on:
@@ -176,5 +176,5 @@ jobs:
                 call: test specific --race=true --parallel=16 --run='TestModule'
                 cloud-token: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 module: github.com/${{ github.repository }}@${{ github.sha }}
-                version: v0.19.4
+                version: v0.19.5
         timeout-minutes: 30

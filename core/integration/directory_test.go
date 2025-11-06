@@ -878,6 +878,16 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 		require.Equal(t, ents, []string{"file2"})
 	})
 
+	t.Run("lower scratch", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		upper := c.Directory().WithNewFile("file", "content")
+		lower := c.Directory()
+
+		ents, err := lower.Diff(upper).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, ents, []string{"file"})
+	})
+
 	/*
 		This triggers a nil panic in Buildkit!
 
@@ -2559,6 +2569,18 @@ func (DirectorySuite) TestExists(ctx context.Context, t *testctx.T) {
 			require.Equal(t, tc.Expected, exists)
 		})
 	}
+}
+
+func (DirectorySuite) TestExistsUsingAbsoluteSymlink(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ok, err := c.Directory().
+		WithNewFile("/some-file", "some-content").
+		WithSymlink("/some-file", "/symlink-to-some-file").
+		Exists(ctx, "symlink-to-some-file", dagger.DirectoryExistsOpts{
+			ExpectedType: dagger.ExistsTypeRegularType,
+		})
+	require.NoError(t, err)
+	require.True(t, ok)
 }
 
 func (DirectorySuite) TestDirCaching(ctx context.Context, t *testctx.T) {

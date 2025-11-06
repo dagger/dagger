@@ -28,6 +28,7 @@ from dagger.mod._utils import (
     get_alt_constructor,
     get_alt_name,
     get_default_path,
+    get_deprecated,
     get_doc,
     get_ignore,
     is_nullable,
@@ -88,6 +89,11 @@ class Function(Generic[P, R]):
         """Return the description for the callable to invoke."""
         return self.meta.doc if self.meta.doc is not None else get_doc(self.wrapped)
 
+    @property
+    def deprecated(self) -> str | None:
+        """Return the deprecation message for the callable, if any."""
+        return self.meta.deprecated
+
     @cached_property
     def cache_policy(self):
         return self.meta.cache
@@ -143,6 +149,7 @@ class Function(Generic[P, R]):
             doc=get_doc(param.annotation),
             ignore=get_ignore(param.annotation),
             default_path=get_default_path(param.annotation),
+            deprecated=get_deprecated(param.annotation),
             conv=self.converter,
         )
 
@@ -235,6 +242,7 @@ class Constructor(Function[P, R]):
 class ObjectType(Generic[T]):
     cls: type[T]
     interface: bool = False
+    deprecated: str | None = None
     fields: dict[APIName, Field] = dataclasses.field(default_factory=dict)
     functions: dict[APIName, Function] = dataclasses.field(default_factory=dict)
 

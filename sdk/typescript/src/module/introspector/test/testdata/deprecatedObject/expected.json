@@ -1,0 +1,40 @@
+{
+  "name": "DeprecatedObject",
+  "objects": {
+    "LegacyModule": {
+      "name": "LegacyModule",
+      "description": "",
+      "deprecated": "Use `ModernModule` instead.",
+      "methods": {
+        "manifest": {
+          "name": "manifest",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "LegacyType"
+          }
+        }
+      },
+      "properties": {}
+    },
+    "LegacyType": {
+      "name": "LegacyType",
+      "description": "",
+      "properties": {
+        "oldField": {
+          "name": "oldField",
+          "description": "",
+          "deprecated": "Migrate to `newField`.",
+          "type": {
+            "kind": "STRING_KIND"
+          },
+          "isExposed": true
+        }
+      },
+      "deprecated": "Type alias kept for compatibility."
+    }
+  },
+  "enums": {},
+  "interfaces": {}
+}

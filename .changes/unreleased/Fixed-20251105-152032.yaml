@@ -1,0 +1,7 @@
+kind: Fixed
+body: 'Fix "failed to update rootfs: session not found" errors caused by incorrect
+  use of stale client metadata.'
+time: 2025-11-05T15:20:32.548933582-08:00
+custom:
+  Author: sipsma
+  PR: "11295"

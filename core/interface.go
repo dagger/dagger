@@ -88,7 +88,7 @@ func (iface *InterfaceType) loadImpl(ctx context.Context, id *call.ID) (*loadedI
 	}
 	val, err := dag.Load(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("load interface ID %s: %w", id.Display(), err)
+		return nil, fmt.Errorf("load interface ID %s: %w", id.DisplaySelf(), err)
 	}
 
 	typeName := val.ObjectType().TypeName()
@@ -228,10 +228,11 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 		}
 
 		fieldDef := &dagql.FieldSpec{
-			Name:        fnName,
-			Description: formatGqlDescription(fnTypeDef.Description),
-			Type:        fnTypeDef.ReturnType.ToTyped(),
-			Module:      iface.mod.IDModule(),
+			Name:             fnName,
+			Description:      formatGqlDescription(fnTypeDef.Description),
+			Type:             fnTypeDef.ReturnType.ToTyped(),
+			Module:           iface.mod.IDModule(),
+			DeprecatedReason: fnTypeDef.Deprecated,
 		}
 		if fnTypeDef.SourceMap.Valid {
 			fieldDef.Directives = append(fieldDef.Directives, fnTypeDef.SourceMap.Value.TypeDirective())
@@ -260,9 +261,10 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			}
 
 			inputSpec := dagql.InputSpec{
-				Name:        gqlArgName(argMetadata.Name),
-				Description: formatGqlDescription(argMetadata.Description),
-				Type:        argMetadata.TypeDef.ToInput(),
+				Name:             gqlArgName(argMetadata.Name),
+				Description:      formatGqlDescription(argMetadata.Description),
+				Type:             argMetadata.TypeDef.ToInput(),
+				DeprecatedReason: argMetadata.Deprecated,
 			}
 			if argMetadata.SourceMap.Valid {
 				inputSpec.Directives = append(inputSpec.Directives, argMetadata.SourceMap.Value.TypeDirective())

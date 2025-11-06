@@ -63,7 +63,7 @@ func AroundFunc(
 
 	callAttr, err := id.Call().Encode()
 	if err != nil {
-		slog.Warn("failed to encode call", "id", id.Display(), "err", err)
+		slog.Warn("failed to encode call", "id", id.DisplaySelf(), "err", err)
 		return ctx, dagql.NoopDone
 	}
 	attrs := []attribute.KeyValue{
@@ -103,7 +103,7 @@ func AroundFunc(
 	}
 
 	if idInputs, err := id.Inputs(); err != nil {
-		slog.Warn("failed to compute inputs(id)", "id", id.Display(), "err", err)
+		slog.Warn("failed to compute inputs(id)", "id", id.DisplaySelf(), "err", err)
 	} else {
 		inputs := make([]string, len(idInputs))
 		for i, input := range idInputs {

@@ -327,10 +327,11 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	// if no constructor defined, install a basic one that initializes an empty object
 	if !objDef.Constructor.Valid {
 		spec := dagql.FieldSpec{
-			Name:           gqlFieldName(mod.Name()),
-			Type:           obj,
-			Module:         obj.Module.IDModule(),
-			GetCacheConfig: mod.CacheConfigForCall,
+			Name:             gqlFieldName(mod.Name()),
+			Type:             obj,
+			Module:           obj.Module.IDModule(),
+			GetCacheConfig:   mod.CacheConfigForCall,
+			DeprecatedReason: objDef.Deprecated,
 		}
 
 		if objDef.SourceMap.Valid {
@@ -429,11 +430,12 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fiel
 
 func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 	spec := &dagql.FieldSpec{
-		Name:           field.Name,
-		Description:    field.Description,
-		Type:           field.TypeDef.ToTyped(),
-		Module:         mod.IDModule(),
-		GetCacheConfig: mod.CacheConfigForCall,
+		Name:             field.Name,
+		Description:      field.Description,
+		Type:             field.TypeDef.ToTyped(),
+		Module:           mod.IDModule(),
+		GetCacheConfig:   mod.CacheConfigForCall,
+		DeprecatedReason: field.Deprecated,
 	}
 	spec.Directives = append(spec.Directives, &ast.Directive{
 		Name: trivialFieldDirectiveName,

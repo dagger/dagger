@@ -19,6 +19,7 @@ export type DaggerInterfaceFunctions = {
 export class DaggerInterfaceFunction extends Locatable {
   public name: string
   public description: string
+  public deprecated?: string
   private _returnTypeRef?: string
   public returnType?: TypeDef<TypeDefKind>
   public arguments: DaggerArguments = {}
@@ -43,7 +44,9 @@ export class DaggerInterfaceFunction extends Locatable {
     this.name = this.node.name.getText()
 
     this.symbol = this.ast.getSymbolOrThrow(this.node.name)
-    this.description = this.ast.getDocFromSymbol(this.symbol)
+    const { description, deprecated } = this.ast.getSymbolDoc(this.symbol)
+    this.description = description
+    this.deprecated = deprecated
 
     // If it's a method signature, we can directly use it to get the signature props
     // If it's a property kind signature, we need to get the signature from the type
@@ -122,6 +125,7 @@ export class DaggerInterfaceFunction extends Locatable {
     return {
       name: this.name,
       description: this.description,
+      deprecated: this.deprecated,
       arguments: this.arguments,
       returnType: this.returnType,
     }

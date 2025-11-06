@@ -30,6 +30,17 @@ defmodule Dagger.ObjectTypeDef do
   end
 
   @doc """
+  The reason this enum member is deprecated, if any.
+  """
+  @spec deprecated(t()) :: {:ok, String.t() | nil} | {:error, term()}
+  def deprecated(%__MODULE__{} = object_type_def) do
+    query_builder =
+      object_type_def.query_builder |> QB.select("deprecated")
+
+    Client.execute(object_type_def.client, query_builder)
+  end
+
+  @doc """
   The doc string for the object, if any.
   """
   @spec description(t()) :: {:ok, String.t()} | {:error, term()}

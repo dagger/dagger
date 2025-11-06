@@ -7,15 +7,13 @@ tracer = trace.get_tracer(__name__)
 
 now = str(datetime.datetime.now())
 
+
 @object_type
 class Python:
     @function
     async def echo(self, msg: str) -> str:
         return await (
-            dag.container()
-            .from_("alpine:latest")
-            .with_exec(["echo", msg])
-            .stdout()
+            dag.container().from_("alpine:latest").with_exec(["echo", msg]).stdout()
         )
 
     @function

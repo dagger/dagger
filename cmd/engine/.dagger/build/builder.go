@@ -311,7 +311,8 @@ func (build *Builder) Go(version bool, race bool) *dagger.Go {
 	if version && build.tag != "" {
 		values = append(values, "github.com/dagger/dagger/engine.Tag="+build.tag)
 	}
-	return dag.Go(build.source, dagger.GoOpts{
+	return dag.Go(dagger.GoOpts{
+		Source: build.source,
 		Values: values,
 		Race:   race,
 	})
@@ -334,15 +335,6 @@ func (build *Builder) runcBin() *dagger.File {
 		WithMountedCache("/root/.cache/go-build", dag.CacheVolume("go-build")).
 		WithMountedDirectory("/src", dag.Git("github.com/opencontainers/runc").Tag(consts.RuncVersion).Tree()).
 		WithWorkdir("/src")
-
-	// TODO: runc v1.1.x uses an old version of golang.org/x/net, which has a CVE:
-	// https://github.com/advisories/GHSA-w32m-9786-jp63
-	// We upgrade it here to avoid that showing up in our image scans. This can be removed
-	// once runc has released a new minor version and we upgrade to it (the go.mod in runc
-	// main branch already has the updated version).
-	buildCtr = buildCtr.WithExec([]string{"go", "get", "golang.org/x/net@v0.33.0"}).
-		WithExec([]string{"go", "mod", "tidy"}).
-		WithExec([]string{"go", "mod", "vendor"})
 
 	return buildCtr.
 		WithExec([]string{"xx-go", "build", "-trimpath", "-buildmode=pie", "-tags", "seccomp netgo osusergo", "-ldflags", "-X main.version=" + consts.RuncVersion + " -linkmode external -extldflags -static-pie", "-o", "runc", "."}).
@@ -376,7 +368,7 @@ func (build *Builder) cniPlugins() (bins []*dagger.File) {
 		"./plugins/meta/firewall",
 		"./plugins/ipam/host-local",
 	} {
-		bin := dag.Go(src).Binary(pluginPath, dagger.GoBinaryOpts{
+		bin := dag.Go(dagger.GoOpts{Source: src}).Binary(pluginPath, dagger.GoBinaryOpts{
 			NoSymbols: true,
 			NoDwarf:   true,
 			Platform:  build.platform,

@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  Fix dagger develop --recursive to use correct dependency name even when top-level module has a custom name for the dependency.
+time: 2025-11-05T14:00:44.198462421-08:00
+custom:
+  Author: sipsma
+  PR: "11365"

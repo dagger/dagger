@@ -1,44 +1,6 @@
 {
   "name": "List",
   "objects": {
-    "Integer": {
-      "name": "Integer",
-      "description": "",
-      "constructor": {
-        "arguments": {
-          "value": {
-            "name": "value",
-            "description": "",
-            "type": {
-              "kind": "INTEGER_KIND"
-            },
-            "isVariadic": false,
-            "isNullable": false,
-            "isOptional": false
-          }
-        }
-      },
-      "methods": {
-        "positive": {
-          "name": "positive",
-          "description": "",
-          "arguments": {},
-          "returnType": {
-            "kind": "BOOLEAN_KIND"
-          }
-        }
-      },
-      "properties": {
-        "value": {
-          "name": "value",
-          "description": "",
-          "type": {
-            "kind": "INTEGER_KIND"
-          },
-          "isExposed": true
-        }
-      }
-    },
     "List": {
       "name": "List",
       "description": "",
@@ -96,6 +58,44 @@
         }
       },
       "properties": {}
+    },
+    "Integer": {
+      "name": "Integer",
+      "description": "",
+      "constructor": {
+        "arguments": {
+          "value": {
+            "name": "value",
+            "description": "",
+            "type": {
+              "kind": "INTEGER_KIND"
+            },
+            "isVariadic": false,
+            "isNullable": false,
+            "isOptional": false
+          }
+        }
+      },
+      "methods": {
+        "positive": {
+          "name": "positive",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "BOOLEAN_KIND"
+          }
+        }
+      },
+      "properties": {
+        "value": {
+          "name": "value",
+          "description": "",
+          "type": {
+            "kind": "INTEGER_KIND"
+          },
+          "isExposed": true
+        }
+      }
     }
   },
   "enums": {},

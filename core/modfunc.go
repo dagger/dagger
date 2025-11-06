@@ -990,20 +990,84 @@ func (fn *ModuleFunction) loadContextualArg(
 
 	switch arg.TypeDef.AsObject.Value.Name {
 	case "Directory":
-		dir, err := fn.mod.ContextSource.Value.Self().LoadContextDir(ctx, dag, arg.DefaultPath, CopyFilter{
-			Exclude: arg.Ignore,
-		})
+		// only local sources need special handling to prevent errant reloads, other
+		// module types are reproducible and can be called directly
+		if fn.mod.ContextSource.Value.Self().Kind != ModuleSourceKindLocal {
+			dir, err := fn.mod.ContextSource.Value.Self().LoadContextDir(ctx, dag, arg.DefaultPath, CopyFilter{
+				Exclude: arg.Ignore,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("load contextual directory %q: %w", arg.DefaultPath, err)
+			}
+			return dagql.NewID[*Directory](dir.ID()), nil
+		}
+
+		contentCacheKey := fn.mod.ContentDigestCacheKey()
+		var dir dagql.ObjectResult[*Directory]
+		err := dag.Select(ctx, dag.Root(), &dir,
+			dagql.Selector{
+				Field: "_contextDirectory",
+				Args: []dagql.NamedInput{
+					{
+						Name:  "path",
+						Value: dagql.String(arg.DefaultPath),
+					},
+					{
+						Name:  "exclude",
+						Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Ignore...)),
+					},
+					{
+						Name:  "module",
+						Value: dagql.String(fn.mod.ContextSource.Value.Self().AsString()),
+					},
+					{
+						Name:  "digest",
+						Value: dagql.String(contentCacheKey.CallKey),
+					},
+				},
+			},
+		)
 		if err != nil {
 			return nil, fmt.Errorf("load contextual directory %q: %w", arg.DefaultPath, err)
 		}
 		return dagql.NewID[*Directory](dir.ID()), nil
 
 	case "File":
-		file, err := fn.mod.ContextSource.Value.Self().LoadContextFile(ctx, dag, arg.DefaultPath)
+		// only local sources need special handling to prevent errant reloads, other
+		// module types are reproducible and can be called directly
+		if fn.mod.ContextSource.Value.Self().Kind != ModuleSourceKindLocal {
+			dir, err := fn.mod.ContextSource.Value.Self().LoadContextFile(ctx, dag, arg.DefaultPath)
+			if err != nil {
+				return nil, fmt.Errorf("load contextual file %q: %w", arg.DefaultPath, err)
+			}
+			return dagql.NewID[*Directory](dir.ID()), nil
+		}
+
+		contentCacheKey := fn.mod.ContentDigestCacheKey()
+		var f dagql.ObjectResult[*File]
+		err := dag.Select(ctx, dag.Root(), &f,
+			dagql.Selector{
+				Field: "_contextFile",
+				Args: []dagql.NamedInput{
+					{
+						Name:  "path",
+						Value: dagql.String(arg.DefaultPath),
+					},
+					{
+						Name:  "module",
+						Value: dagql.String(fn.mod.ContextSource.Value.Self().AsString()),
+					},
+					{
+						Name:  "digest",
+						Value: dagql.String(contentCacheKey.CallKey),
+					},
+				},
+			},
+		)
 		if err != nil {
 			return nil, fmt.Errorf("load contextual file %q: %w", arg.DefaultPath, err)
 		}
-		return dagql.NewID[*File](file.ID()), nil
+		return dagql.NewID[*File](f.ID()), nil
 
 	case "GitRepository", "GitRef":
 		var git dagql.ObjectResult[*GitRepository]

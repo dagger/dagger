@@ -15,6 +15,11 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 )
 
+// Find test suites to run
+func (dev *DaggerDev) Test() *Test {
+	return &Test{Dagger: dev}
+}
+
 type Test struct {
 	Dagger *DaggerDev // +private
 }
@@ -35,10 +40,10 @@ func (t *Test) All(
 	envFile *dagger.Secret,
 	// +optional
 	testVerbose bool,
-) error {
+) (MyCheckStatus, error) {
 	cmd, _, err := t.testCmd(ctx)
 	if err != nil {
-		return err
+		return CheckCompleted, err
 	}
 	_, err = t.test(
 		cmd,
@@ -55,7 +60,7 @@ func (t *Test) All(
 			testVerbose:   testVerbose,
 		},
 	).Sync(ctx)
-	return err
+	return CheckCompleted, err
 }
 
 // Run telemetry tests
@@ -116,6 +121,7 @@ func (t *Test) Telemetry(
 
 // List all tests
 func (t *Test) List(ctx context.Context) (string, error) {
+	// FIXME: don't need a full-blown test environment (with engine sidecar & dagger CLI) just to list tests
 	cmd, _, err := t.testCmd(ctx)
 	if err != nil {
 		return "", err
@@ -158,10 +164,10 @@ func (t *Test) Specific(
 	// Enable verbose output
 	// +optional
 	testVerbose bool,
-) error {
+) (MyCheckStatus, error) {
 	cmd, _, err := t.testCmd(ctx)
 	if err != nil {
-		return err
+		return CheckCompleted, err
 	}
 	_, err = t.test(
 		cmd,
@@ -178,7 +184,7 @@ func (t *Test) Specific(
 			testVerbose:   testVerbose,
 		},
 	).Sync(ctx)
-	return err
+	return CheckCompleted, err
 }
 
 // Update specific tests
@@ -612,7 +618,13 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, string, error) {
 	cliBinPath := "/.dagger-cli"
 
 	utilDirPath := "/dagger-dev"
-	tests := t.Dagger.godev().Env().
+	// FIXME: fold test functions *into* the Go toolchain,
+	// instead of calling *out to* it.
+	goToolchain, err := t.Dagger.Go(ctx, t.Dagger.Source)
+	if err != nil {
+		return nil, "", err
+	}
+	tests := goToolchain.Env().
 		WithMountedDirectory(utilDirPath, testEngineUtils).
 		WithEnvVariable("_DAGGER_TESTS_ENGINE_TAR", filepath.Join(utilDirPath, "engine.tar")).
 		WithServiceBinding("daggerengine", devEngineSvc).

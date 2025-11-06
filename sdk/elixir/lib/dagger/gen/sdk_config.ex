@@ -16,6 +16,17 @@ defmodule Dagger.SDKConfig do
   @type t() :: %__MODULE__{}
 
   @doc """
+  Whether to start the SDK runtime in debug mode with an interactive terminal.
+  """
+  @spec debug(t()) :: {:ok, boolean()} | {:error, term()}
+  def debug(%__MODULE__{} = sdk_config) do
+    query_builder =
+      sdk_config.query_builder |> QB.select("debug")
+
+    Client.execute(sdk_config.client, query_builder)
+  end
+
+  @doc """
   A unique identifier for this SDKConfig.
   """
   @spec id(t()) :: {:ok, Dagger.SDKConfigID.t()} | {:error, term()}

@@ -15,7 +15,7 @@ on:
       dagger:
         description: "Dagger version"
         type: string
-        default: "0.19.4"
+        default: "0.19.5"
         required: false
       ubuntu:
         description: "Ubuntu version"

@@ -14,9 +14,11 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -65,6 +67,9 @@ type Module struct {
 	// This enables proxy field resolution to route calls to the toolchain's runtime
 	ToolchainModules map[string]*Module
 
+	// ToolchainArgumentConfigs stores argument configuration overrides for toolchains by their original name
+	ToolchainArgumentConfigs map[string][]*modules.ModuleConfigArgument
+
 	// ResultID is the ID of the initialized module.
 	ResultID *call.ID
 
@@ -106,6 +111,15 @@ func (mod *Module) GetContextSource() *ModuleSource {
 		return nil
 	}
 	return mod.ContextSource.Value.Self()
+}
+
+func (mod *Module) ContentDigestCacheKey() cache.CacheKey[dagql.CacheKeyType] {
+	return cache.CacheKey[dagql.CacheKeyType]{
+		CallKey: string(hashutil.HashStrings(
+			mod.ContextSource.Value.Self().Digest,
+			"asModule",
+		)),
+	}
 }
 
 // Return all user defaults for this module

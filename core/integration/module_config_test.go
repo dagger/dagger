@@ -1335,10 +1335,6 @@ func getVCSTestCase(t *testctx.T, url string) vcsTestCase {
 }
 
 func testGitModuleRef(tc vcsTestCase, subpath string) string {
-	return testGitModuleRefAtCommit(tc, subpath, tc.gitTestRepoCommit)
-}
-
-func testGitModuleRefAtCommit(tc vcsTestCase, subpath string, commit string) string {
 	url := tc.gitTestRepoRef
 	if subpath != "" {
 		if !strings.HasPrefix(subpath, "/") {
@@ -1346,7 +1342,7 @@ func testGitModuleRefAtCommit(tc vcsTestCase, subpath string, commit string) str
 		}
 		url += subpath
 	}
-	return fmt.Sprintf("%s@%s", url, commit)
+	return fmt.Sprintf("%s@%s", url, tc.gitTestRepoCommit)
 }
 
 func (ConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
@@ -1491,26 +1487,6 @@ func (m *Work) Fn(ctx context.Context) (string, error) {
 			})
 		}
 	})
-}
-
-func (ConfigSuite) TestDaggerGitModuleSourceContentCache(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	tc := getVCSTestCase(t, "github.com/dagger/dagger-test-modules")
-
-	// two commits where the module content is the same
-	const commitA = "e04b301a11c4fb11e02ecf9e4a16081894dd5255"
-	const commitB = "94b985e575900d9ede336a5ffd615558e4204c6b"
-
-	const moduleSubpath = "subdir/dep2"
-	refA := testGitModuleRefAtCommit(tc, moduleSubpath, commitA)
-	refB := testGitModuleRefAtCommit(tc, moduleSubpath, commitB)
-
-	dgstA, error := c.ModuleSource(refA).Digest(ctx)
-	require.NoError(t, error)
-	dgstB, error := c.ModuleSource(refB).Digest(ctx)
-	require.NoError(t, error)
-
-	require.Equal(t, dgstA, dgstB)
 }
 
 func (ConfigSuite) TestDepPins(ctx context.Context, t *testctx.T) {

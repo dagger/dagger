@@ -1178,9 +1178,16 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 	}
 
 	cache := query.BuildkitCache()
-	ref, err := cache.Diff(ctx, thisDirRef, otherDirRef, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to diff directories: %w", err)
+
+	var ref bkcache.ImmutableRef
+	if thisDirRef == nil {
+		// lower is nil, so the diff is just the upper ref
+		ref = otherDirRef
+	} else {
+		ref, err = cache.Diff(ctx, thisDirRef, otherDirRef, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to diff directories: %w", err)
+		}
 	}
 
 	newRef, err := cache.New(ctx, ref, bkSessionGroup, bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
@@ -1400,14 +1407,21 @@ func (dir *Directory) Exists(ctx context.Context, srv *dagql.Server, targetPath 
 	}
 
 	osStatFunc := os.Stat
+	rootPathFunc := containerdfs.RootPath
 	if targetType == ExistsTypeSymlink || doNotFollowSymlinks {
 		// symlink testing requires the Lstat call, which does NOT follow symlinks
 		osStatFunc = os.Lstat
+		// similarly, containerdfs.RootPath can't be used, since it follows symlinks
+		rootPathFunc = RootPathWithoutFinalSymlink
 	}
 
 	var fileInfo os.FileInfo
 	err = MountRef(ctx, immutableRef, nil, func(root string) error {
-		fileInfo, err = osStatFunc(path.Join(root, dir.Dir, targetPath))
+		resolvedPath, err := rootPathFunc(root, path.Join(dir.Dir, targetPath))
+		if err != nil {
+			return err
+		}
+		fileInfo, err = osStatFunc(resolvedPath)
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}

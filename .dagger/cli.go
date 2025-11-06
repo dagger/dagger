@@ -5,6 +5,11 @@ import (
 	"github.com/dagger/dagger/.dagger/internal/dagger"
 )
 
+// Develop the Dagger CLI
+func (dev *DaggerDev) CLI() *CLI {
+	return &CLI{Dagger: dev}
+}
+
 type CLI struct {
 	Dagger *DaggerDev // +private
 }

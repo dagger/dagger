@@ -18,8 +18,8 @@ Expected stderr:
 ✔ .pathArgs(
   ┆ file: Address.file: File!
   ┆ dir: Address.directory: Directory!
-  ┆ contextFile: Host.file(path: "/app/dagql/idtui/viztest/main.go", noCache: true): File!
-  ┆ contextDir: Host.directory(path: "/app/dagql/idtui/viztest", noCache: true): Directory!
+  ┆ contextFile: _contextFile(path: "main.go", module: "/app/dagql/idtui/viztest", digest: "xxh3:XXXXXXXXXXXXXXXX"): File!
+  ┆ contextDir: _contextDirectory(path: ".", exclude: [], module: "/app/dagql/idtui/viztest", digest: "xxh3:XXXXXXXXXXXXXXXX"): Directory!
   ): Void X.Xs
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
