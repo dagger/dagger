@@ -176,12 +176,12 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 	s.model = resolvedModel
 
 	// Check if we need to compact before adding the prompt
-	prompted, err := s.autoCompact(ctx)
+	compacted, err := s.autoCompact(ctx)
 	if err != nil {
 		return s, fmt.Errorf("auto-compact: %w", err)
 	}
 
-	prompted = s.llm.WithPrompt(input)
+	prompted := compacted.WithPrompt(input)
 
 	for {
 		// update the sidebar after every step, not after the entire loop
