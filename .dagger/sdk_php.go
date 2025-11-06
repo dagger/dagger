@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
-	"github.com/dagger/dagger/util/parallel"
 )
 
 const (
@@ -20,28 +19,83 @@ const (
 )
 
 type PHPSDK struct {
-	Dagger *DaggerDev // +private
+	OriginalWorkspace *dagger.Directory // +private
+	Workspace         *dagger.Directory // +private
+	DoctumConfigPath  string            // +private
+	SourcePath        string            // +private
+	BaseContainer     *dagger.Container // +private
+}
+
+// Develop the Dagger PHP SDK (experimental)
+func (sdks *SDK) PHP(
+	// A directory with all the files needed to develop the SDK
+	// +defaultPath="/"
+	// +ignore=["*", "!sdk/php", "sdk/php/vendor", "!docs/doctum-config.php"]
+	workspace *dagger.Directory,
+	// The path of the SDK source in the workspace
+	// +default="sdk/php"
+	sourcePath string,
+	// The path of the doctum config in the workspace
+	// +default="docs/doctum-config.php"
+	doctumConfigPath string,
+) *PHPSDK {
+	// Extract the PHP base container from the native SDK dev module
+	// - We build the base container eagerly, to avoid keeping a reference to DaggerDev
+	// - But we build the full dev container *lazily*, because we may have mutated our workspace with generated files
+	baseContainer := dag.
+		PhpSDKDev(dagger.PhpSDKDevOpts{Source: nil}).
+		Base().
+		With(sdks.Dagger.devEngineSidecar())
+	return &PHPSDK{
+		Workspace:         workspace,
+		OriginalWorkspace: workspace,
+		SourcePath:        sourcePath,
+		DoctumConfigPath:  doctumConfigPath,
+		BaseContainer:     baseContainer,
+	}
+}
+
+// Returns the PHP SDK workspace mounted in a dev container,
+// and working directory set to the SDK source
+func (t PHPSDK) DevContainer() *dagger.Container {
+	return t.BaseContainer.
+		WithMountedDirectory(".", t.Workspace).
+		WithWorkdir(t.SourcePath)
+}
+
+// Self-call PHP() without losing the default values
+// FIXME: this is needed for the allsdk[] plumbing:
+// aggregating the same function call across all SDKs. Currently used by:
+//   - dagger call bump
+//   - dagger call generate
+//   - ... and various stopgap check functions, soon to be removed
+//
+// --> 'bump' and 'generate' remain a problem
+func (sdks *SDK) selfCallPHP() *PHPSDK {
+	return sdks.PHP(
+		// workspace
+		sdks.Dagger.Source.Filter(dagger.DirectoryFilterOpts{
+			Include: []string{"sdk/php", "docs/doctum-config.php"},
+		}),
+		// sourcePath
+		"sdk/php",
+		// doctumConfigPath
+		"docs/doctum-config.php",
+	)
+}
+
+// Source returns the source directory for the PHP SDK
+func (t PHPSDK) Source() *dagger.Directory {
+	return t.Workspace.Directory(t.SourcePath)
+}
+
+// DoctumConfig returns the doctum configuration file
+func (t PHPSDK) DoctumConfig() *dagger.File {
+	return t.Workspace.File(t.DoctumConfigPath)
 }
 
 func (t PHPSDK) Name() string {
 	return "php"
-}
-
-func (t PHPSDK) Source() *dagger.Directory {
-	return t.Dagger.Source.Directory("sdk/php")
-}
-
-func (t PHPSDK) Lint(ctx context.Context) error {
-	return parallel.New().
-		WithJob("PHP CodeSniffer", func(ctx context.Context) error {
-			_, err := t.PhpCodeSniffer(ctx)
-			return err
-		}).
-		WithJob("PHPStan", func(ctx context.Context) error {
-			_, err := t.PhpStan(ctx)
-			return err
-		}).
-		Run(ctx)
 }
 
 // Lint the PHP code with PHP CodeSniffer (https://github.com/squizlabs/PHP_CodeSniffer)
@@ -62,8 +116,7 @@ func (t PHPSDK) PhpStan(ctx context.Context) (MyCheckStatus, error) {
 
 // Test the PHP SDK
 func (t PHPSDK) Test(ctx context.Context) (MyCheckStatus, error) {
-	base := dag.PhpSDKDev().Base().
-		With(t.Dagger.devEngineSidecar()).
+	base := t.DevContainer().
 		WithEnvVariable("PATH", "./vendor/bin:$PATH", dagger.ContainerWithEnvVariableOpts{Expand: true})
 
 	dev := dag.PhpSDKDev(dagger.PhpSDKDevOpts{Container: base, Source: t.Source()})
@@ -75,25 +128,22 @@ func (t PHPSDK) Test(ctx context.Context) (MyCheckStatus, error) {
 }
 
 // Regenerate the PHP SDK API + docs
-func (t PHPSDK) Generate(ctx context.Context) (*dagger.Changeset, error) {
-	genClient := t.generateClient()
-	genDocs, err := t.generateDocs(ctx, genClient)
+func (t *PHPSDK) Generate(ctx context.Context) (*dagger.Changeset, error) {
+	t, err := t.
+		WithGeneratedClient().
+		WithGeneratedDocs(ctx)
 	if err != nil {
 		return nil, err
 	}
-	src := t.Dagger.Source
-	return src.
-		WithChanges(genClient).
-		WithChanges(genDocs).
-		Changes(src).
-		Sync(ctx)
+	return t.Changes(), nil
 }
 
-func (t PHPSDK) generateClient() *dagger.Changeset {
-	src := t.Source()
-	relLayer := dag.PhpSDKDev(dagger.PhpSDKDevOpts{Source: src}).
-		Base().
-		With(t.Dagger.devEngineSidecar()).
+func (t *PHPSDK) Changes() *dagger.Changeset {
+	return t.Workspace.Changes(t.OriginalWorkspace)
+}
+
+func (t *PHPSDK) WithGeneratedClient() *PHPSDK {
+	relLayer := t.DevContainer().
 		WithoutDirectory("generated").
 		WithDirectory("generated", dag.Directory()).
 		// FIXME: why not inject the right dagger binary, instead of leaking this env var?
@@ -104,28 +154,28 @@ func (t PHPSDK) generateClient() *dagger.Changeset {
 				"vendor",
 			},
 		})
-	// Make the change relative to the repo root
-	absLayer := t.Dagger.Source.
+	t.Workspace = t.Workspace.
 		WithoutDirectory("sdk/php").
 		WithDirectory("sdk/php", relLayer)
-	return absLayer.Changes(t.Dagger.Source)
+	return t
 }
 
-func (t PHPSDK) generateDocs(ctx context.Context, genClient *dagger.Changeset) (*dagger.Changeset, error) {
-	// FXME: do we even need the rest of the source?
-	src := t.Source().WithChanges(genClient)
-	relLayer := dag.PhpSDKDev(dagger.PhpSDKDevOpts{Source: src}).
-		Base().
+// Generate reference docs from the generated client
+// NOTE: it's the caller's responsibility to ensure the generated client is up-to-date
+// (see WithGeneratedClient)
+func (t *PHPSDK) WithGeneratedDocs(ctx context.Context) (*PHPSDK, error) {
+	relLayer := t.DevContainer().
 		WithFile(
 			"/usr/bin/doctum",
 			dag.HTTP(fmt.Sprintf("https://doctum.long-term.support/releases/%s/doctum.phar", phpDoctumVersion)),
 			dagger.ContainerWithFileOpts{Permissions: 0711},
 		).
-		WithFile("/etc/doctum-config.php", t.doctumConfig()).
+		WithFile("/etc/doctum-config.php", t.DoctumConfig()).
 		WithExec([]string{"doctum", "update", "/etc/doctum-config.php", "-v"}).
 		Directory("/src/sdk/php/build")
 
 	// format this file, since otherwise it's on one line and makes lots of conflicts
+	// FIXME: use dagger JSON API
 	search, err := formatJSONFile(ctx, relLayer.File("doctum-search.json"))
 	if err != nil {
 		return nil, err
@@ -134,25 +184,30 @@ func (t PHPSDK) generateDocs(ctx context.Context, genClient *dagger.Changeset) (
 		WithFile("doctum-search.json", search).
 		// remove the renderer.index file, which seems to not be required to render the docs
 		WithoutFile("renderer.index")
-	absLayer := t.Dagger.Source.
+	t.Workspace = t.Workspace.
 		WithoutDirectory("docs/static/reference/php/").
 		WithDirectory("docs/static/reference/php/", relLayer)
-	return absLayer.Changes(t.Dagger.Source), nil
-}
-
-// Return the doctum config file from the dagger repo
-func (t PHPSDK) doctumConfig() *dagger.File {
-	return t.Dagger.Source.File("docs/doctum-config.php")
+	return t, nil
 }
 
 // Test the publishing process
-func (t PHPSDK) ReleaseDryRun(ctx context.Context) (MyCheckStatus, error) {
-	return CheckCompleted, t.Publish(ctx, "HEAD", true, "https://github.com/dagger/dagger-php-sdk.git", nil)
+func (t PHPSDK) ReleaseDryRun(
+	ctx context.Context,
+	// The git repository to publish *from*
+	// +defaultPath="/"
+	fromRepo *dagger.GitRepository,
+) (MyCheckStatus, error) {
+	return CheckCompleted, t.Publish(ctx, fromRepo, "HEAD", true, "https://github.com/dagger/dagger-php-sdk.git", nil)
 }
 
 // Publish the PHP SDK
 func (t PHPSDK) Publish(
 	ctx context.Context,
+
+	// The git repository to publish *from*
+	// +defaultPath="/"
+	fromRepo *dagger.GitRepository,
+
 	tag string,
 
 	// +optional
@@ -166,7 +221,7 @@ func (t PHPSDK) Publish(
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/php/")
 
-	if err := gitPublish(ctx, t.Dagger.Git, gitPublishOpts{
+	if err := gitPublish(ctx, fromRepo, gitPublishOpts{
 		sdk:         "php",
 		sourcePath:  "sdk/php/",
 		sourceTag:   tag,

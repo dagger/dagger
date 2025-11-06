@@ -114,6 +114,21 @@ func (dev *DaggerDev) LintSDKs(ctx context.Context) error {
 	return jobs.Run(ctx)
 }
 
+// Lint the PHP SDK
+// TODO: remove after merging https://github.com/dagger/dagger/pull/11211
+func (t PHPSDK) Lint(ctx context.Context) error {
+	return parallel.New().
+		WithJob("PHP CodeSniffer", func(ctx context.Context) error {
+			_, err := t.PhpCodeSniffer(ctx)
+			return err
+		}).
+		WithJob("PHPStan", func(ctx context.Context) error {
+			_, err := t.PhpStan(ctx)
+			return err
+		}).
+		Run(ctx)
+}
+
 // Test the Typescript SDK
 // TODO: remove after merging https://github.com/dagger/dagger/pull/11211
 func (t TypescriptSDK) Test(ctx context.Context) error {

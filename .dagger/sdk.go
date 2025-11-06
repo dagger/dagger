@@ -21,7 +21,6 @@ func (dev *DaggerDev) SDK() *SDK {
 		Typescript: &TypescriptSDK{Dagger: dev},
 		Elixir:     &ElixirSDK{Dagger: dev},
 		Rust:       &RustSDK{Dagger: dev},
-		PHP:        &PHPSDK{Dagger: dev},
 		Java:       &JavaSDK{Dagger: dev},
 		Dotnet:     &DotnetSDK{Dagger: dev},
 	}
@@ -36,13 +35,10 @@ type SDK struct {
 	Python *PythonSDK
 	// Develop the Dagger Typescript SDK
 	Typescript *TypescriptSDK
-
 	// Develop the Dagger Elixir SDK (experimental)
 	Elixir *ElixirSDK
 	// Develop the Dagger Rust SDK (experimental)
 	Rust *RustSDK
-	// Develop the Dagger PHP SDK (experimental)
-	PHP *PHPSDK
 	// Develop the Dagger Java SDK (experimental)
 	Java *JavaSDK
 	// Develop the Dagger Dotnet SDK (experimental)
@@ -81,15 +77,16 @@ func (dev *DaggerDev) devEngineSidecar() func(*dagger.Container) *dagger.Contain
 // Return a list of all SDKs implementing the given interface
 func allSDKs[T any](dev *DaggerDev) []T {
 	var result []T
+	sdks := dev.SDK()
 	for _, sdk := range []any{
-		&GoSDK{Dagger: dev},
-		&PythonSDK{Dagger: dev},
-		&TypescriptSDK{Dagger: dev},
-		&ElixirSDK{Dagger: dev},
-		&RustSDK{Dagger: dev},
-		&PHPSDK{Dagger: dev},
-		&JavaSDK{Dagger: dev},
-		&DotnetSDK{Dagger: dev},
+		sdks.Go,
+		sdks.Python,
+		sdks.Typescript,
+		sdks.Elixir,
+		sdks.Rust,
+		sdks.selfCallPHP(),
+		sdks.Java,
+		sdks.Dotnet,
 	} {
 		if casted, ok := sdk.(T); ok {
 			result = append(result, casted)
