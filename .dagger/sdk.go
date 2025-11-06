@@ -22,7 +22,6 @@ func (dev *DaggerDev) SDK() *SDK {
 		Elixir:     &ElixirSDK{Dagger: dev},
 		Rust:       &RustSDK{Dagger: dev},
 		Java:       &JavaSDK{Dagger: dev},
-		Dotnet:     &DotnetSDK{Dagger: dev},
 	}
 }
 
@@ -41,8 +40,6 @@ type SDK struct {
 	Rust *RustSDK
 	// Develop the Dagger Java SDK (experimental)
 	Java *JavaSDK
-	// Develop the Dagger Dotnet SDK (experimental)
-	Dotnet *DotnetSDK
 }
 
 // Return an "installer" function which, given a container, will attach
@@ -86,7 +83,7 @@ func allSDKs[T any](dev *DaggerDev) []T {
 		sdks.Rust,
 		sdks.selfCallPHP(),
 		sdks.Java,
-		sdks.Dotnet,
+		sdks.selfCallDotnet(),
 	} {
 		if casted, ok := sdk.(T); ok {
 			result = append(result, casted)
