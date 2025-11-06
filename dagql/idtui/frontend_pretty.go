@@ -705,7 +705,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "nav mode")),
 		}
 		if fe.shell != nil {
-			bnds = append(bnds, fe.shell.KeyBindings()...)
+			bnds = append(bnds, fe.shell.KeyBindings(out)...)
 		}
 		return bnds
 	}
@@ -1496,8 +1496,8 @@ func (fe *frontendPretty) handleEditlineKey(msg tea.KeyMsg) (cmd tea.Cmd) {
 		fe.recalculateViewLocked()
 		return nil
 	default:
-		if fe.shell != nil && fe.editline.AtStart() {
-			cmd := fe.shell.ReactToInput(fe.shellCtx, msg)
+		if fe.shell != nil {
+			cmd := fe.shell.ReactToInput(fe.shellCtx, msg, true, fe.editline)
 			if cmd != nil {
 				return cmd
 			}
@@ -1607,7 +1607,7 @@ func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	default:
 		if fe.shell != nil {
-			cmd := fe.shell.ReactToInput(fe.shellCtx, msg)
+			cmd := fe.shell.ReactToInput(fe.shellCtx, msg, false, fe.editline)
 			if cmd != nil {
 				return cmd
 			}

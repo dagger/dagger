@@ -37,6 +37,10 @@ func (s llmSchema) Install(srv *dagql.Server) {
 		dagql.Func("historyJSON", s.historyJSONString).
 			View(BeforeVersion("v0.18.4")).
 			Doc("return the raw llm message history as json"),
+		dagql.Func("withoutMessageHistory", s.withoutMessageHistory).
+			Doc("Clear the message history, leaving only the system prompts"),
+		dagql.Func("withoutSystemPrompts", s.withoutSystemPrompts).
+			Doc("Clear the system prompts, leaving only the default system prompt"),
 		dagql.Func("lastReply", s.lastReply).
 			Doc("return the last llm reply from the history"),
 		dagql.Func("withEnv", s.withEnv).
@@ -286,4 +290,12 @@ func (s *llmSchema) bindResult(ctx context.Context, llm *core.LLM, args struct {
 
 func (s *llmSchema) tokenUsage(ctx context.Context, llm *core.LLM, _ struct{}) (*core.LLMTokenUsage, error) {
 	return llm.TokenUsage(ctx, s.srv)
+}
+
+func (s *llmSchema) withoutMessageHistory(ctx context.Context, llm *core.LLM, _ struct{}) (*core.LLM, error) {
+	return llm.WithoutMessageHistory(), nil
+}
+
+func (s *llmSchema) withoutSystemPrompts(ctx context.Context, llm *core.LLM, _ struct{}) (*core.LLM, error) {
+	return llm.WithoutSystemPrompts(), nil
 }

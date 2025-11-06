@@ -545,7 +545,11 @@ func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
 	return h.llmSession, h.llmErr
 }
 
-func (h *shellCallHandler) KeyBindings() []key.Binding {
+func (h *shellCallHandler) KeyBindings(out idtui.TermOutput) []key.Binding {
+	autoCompactHelp := "auto-compact"
+	if h.llmSession != nil && h.llmSession.ShouldAutocompact() {
+		autoCompactHelp = out.String(autoCompactHelp).Foreground(termenv.ANSIGreen).String()
+	}
 	return []key.Binding{
 		key.NewBinding(
 			key.WithKeys("!"),
@@ -562,21 +566,34 @@ func (h *shellCallHandler) KeyBindings() []key.Binding {
 			key.WithHelp("ctrl+u", "upload changes"),
 			idtui.KeyEnabled(h.mode == modePrompt),
 		),
+		key.NewBinding(
+			key.WithKeys("ctrl+x"),
+			key.WithHelp("ctrl+x", autoCompactHelp),
+			idtui.KeyEnabled(h.llmSession != nil),
+		),
 	}
 }
 
-func (h *shellCallHandler) ReactToInput(ctx context.Context, msg tea.KeyMsg) tea.Cmd {
+func (h *shellCallHandler) ReactToInput(ctx context.Context, msg tea.KeyMsg, editing bool, editline *editline.Model) tea.Cmd {
 	switch msg.String() {
 	case ">":
-		h.mode = modePrompt
-		return func() tea.Msg {
-			h.llm(ctx) // initialize LLM
-			return idtui.UpdatePromptMsg{}
+		if editline.AtStart() {
+			h.mode = modePrompt
+			return func() tea.Msg {
+				h.llm(ctx) // initialize LLM
+				return idtui.UpdatePromptMsg{}
+			}
 		}
 	case "!":
-		h.mode = modeShell
-		return func() tea.Msg {
-			return idtui.UpdatePromptMsg{}
+		if editline.AtStart() {
+			h.mode = modeShell
+			return func() tea.Msg {
+				return idtui.UpdatePromptMsg{}
+			}
+		}
+	case "ctrl+x":
+		if h.llmSession != nil {
+			h.llmSession.ToggleAutocompact()
 		}
 	case "ctrl+s":
 		if h.llmSession != nil {

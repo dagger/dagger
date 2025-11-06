@@ -236,4 +236,22 @@ class LLM extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDefaultSystemPrompt');
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
+
+    /**
+     * Clear the message history, leaving only the system prompts
+     */
+    public function withoutMessageHistory(): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutMessageHistory');
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Clear the system prompts, leaving only the default system prompt
+     */
+    public function withoutSystemPrompts(): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutSystemPrompts');
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
 }

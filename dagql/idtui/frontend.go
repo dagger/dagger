@@ -141,10 +141,10 @@ type ShellHandler interface {
 	Prompt(ctx context.Context, out TermOutput, fg termenv.Color) (string, tea.Cmd)
 
 	// Keys returns the keys that will be displayed when the input is focused
-	KeyBindings() []key.Binding
+	KeyBindings(out TermOutput) []key.Binding
 
 	// ReactToInput allows reacting to live input before it's submitted
-	ReactToInput(ctx context.Context, msg tea.KeyMsg) tea.Cmd
+	ReactToInput(ctx context.Context, msg tea.KeyMsg, editing bool, edit *editline.Model) tea.Cmd
 
 	// Shell handlers can man-in-the-middle history items to preserve per-entry modes etc.
 	editline.HistoryEncoder

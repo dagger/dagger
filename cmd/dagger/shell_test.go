@@ -14,6 +14,7 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+	"github.com/vito/bubbline/editline"
 )
 
 func TestGitSourceArgRef(t *testing.T) {
@@ -75,12 +76,14 @@ func (DaggerCMDSuite) TestLLMFileSyncing(ctx context.Context, t *testctx.T) {
 
 	require.NoError(t, handler.Initialize(ctx))
 
+	input := editline.New(0, 0)
+
 	// set prompt to our test agent and switch to prompt mode
 	handler.Handle(ctx, "agent=$(agent)")
 	handler.ReactToInput(ctx, tea.KeyMsg{
 		Type:  tea.KeyRunes,
 		Runes: []rune{'>'},
-	})()
+	}, true, input)()
 
 	// make a change
 	handler.Handle(ctx, "Write 'apple' to fruit.txt.")
@@ -92,7 +95,7 @@ func (DaggerCMDSuite) TestLLMFileSyncing(ctx context.Context, t *testctx.T) {
 	// sync it down
 	handler.ReactToInput(ctx, tea.KeyMsg{
 		Type: tea.KeyCtrlS,
-	})()
+	}, true, input)()
 	contents, err := os.ReadFile("fruit.txt")
 	require.NoError(t, err)
 	require.Contains(t, string(contents), "apple")
@@ -106,7 +109,7 @@ func (DaggerCMDSuite) TestLLMFileSyncing(ctx context.Context, t *testctx.T) {
 	// sync them up
 	handler.ReactToInput(ctx, tea.KeyMsg{
 		Type: tea.KeyCtrlU,
-	})()
+	}, true, input)()
 
 	// check agent sees it
 	handler.Handle(ctx, "What do you see in fruit.txt?")
@@ -126,7 +129,7 @@ func (DaggerCMDSuite) TestLLMFileSyncing(ctx context.Context, t *testctx.T) {
 	// blow away their changes
 	handler.ReactToInput(ctx, tea.KeyMsg{
 		Type: tea.KeyCtrlU,
-	})()
+	}, true, input)()
 
 	// check agent sees it
 	handler.Handle(ctx, "What do you see in fruit.txt now?")

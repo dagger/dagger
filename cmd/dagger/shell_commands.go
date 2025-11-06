@@ -261,12 +261,11 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if h.llmSession == nil {
 					return fmt.Errorf("LLM not initialized")
 				}
-				newLLM, err := h.llmSession.Compact(ctx)
+				compacted, err := h.llmSession.Compact(ctx)
 				if err != nil {
 					return err
 				}
-				h.llmSession = newLLM
-				return nil
+				return h.llmSession.updateLLMAndAgentVar(compacted)
 			},
 		},
 		{

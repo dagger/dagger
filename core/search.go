@@ -125,7 +125,7 @@ type rgContent struct {
 	Bytes []byte `json:"bytes,omitempty"`
 }
 
-func (opts *SearchOpts) RunRipgrep(ctx context.Context, rg *exec.Cmd) ([]*SearchResult, error) {
+func (opts *SearchOpts) RunRipgrep(ctx context.Context, rg *exec.Cmd, verbose bool) ([]*SearchResult, error) {
 	var errBuf bytes.Buffer
 	rg.Stderr = &errBuf
 
@@ -138,7 +138,7 @@ func (opts *SearchOpts) RunRipgrep(ctx context.Context, rg *exec.Cmd) ([]*Search
 		return nil, err
 	}
 	var errs error
-	results, err := opts.parseRgOutput(ctx, out)
+	results, err := opts.parseRgOutput(ctx, out, verbose)
 	if err != nil {
 		// NOTE: probably overkill, but trying to avoid ever seeing a useless error
 		// like "broken pipe" instead of "exit status 128"
@@ -157,7 +157,7 @@ func (opts *SearchOpts) RunRipgrep(ctx context.Context, rg *exec.Cmd) ([]*Search
 	return results, errs
 }
 
-func (opts *SearchOpts) parseRgOutput(ctx context.Context, rgOut io.ReadCloser) ([]*SearchResult, error) {
+func (opts *SearchOpts) parseRgOutput(ctx context.Context, rgOut io.ReadCloser, verbose bool) ([]*SearchResult, error) {
 	defer rgOut.Close()
 
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
@@ -175,7 +175,9 @@ func (opts *SearchOpts) parseRgOutput(ctx context.Context, rgOut io.ReadCloser) 
 			if line == "" {
 				continue
 			}
-			fmt.Fprintln(stdio.Stdout, line)
+			if verbose {
+				fmt.Fprintln(stdio.Stdout, line)
+			}
 			results = append(results, &SearchResult{FilePath: line})
 		}
 		if err := scan.Err(); err != nil {
@@ -225,7 +227,9 @@ func (opts *SearchOpts) parseRgOutput(ctx context.Context, rgOut io.ReadCloser) 
 		if !strings.HasSuffix(ensureLn, "\n") {
 			ensureLn += "\n"
 		}
-		fmt.Fprintf(stdio.Stdout, "%s:%d:%s", result.FilePath, result.LineNumber, ensureLn)
+		if verbose {
+			fmt.Fprintf(stdio.Stdout, "%s:%d:%s", result.FilePath, result.LineNumber, ensureLn)
+		}
 
 		results = append(results, result)
 		if opts.Limit != nil && len(results) >= *opts.Limit {

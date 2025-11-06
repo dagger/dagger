@@ -164,7 +164,7 @@ type fileExportArgs struct {
 }
 
 func (s *fileSchema) search(ctx context.Context, parent dagql.ObjectResult[*core.File], args searchArgs) (dagql.Array[*core.SearchResult], error) {
-	return parent.Self().Search(ctx, args.SearchOpts)
+	return parent.Self().Search(ctx, args.SearchOpts, true)
 }
 
 type fileReplaceArgs struct {

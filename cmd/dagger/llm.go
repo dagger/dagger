@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -77,6 +78,9 @@ type LLMSession struct {
 
 	plumbingCtx  context.Context
 	plumbingSpan trace.Span
+
+	autoCompact  bool
+	autoCompactL *sync.Mutex
 }
 
 func NewLLMSession(
@@ -100,8 +104,10 @@ func NewLLMSession(
 			// the rest should be filtered out already by skipping the first batch
 			// (sourced from os.Environ)
 		},
-		shell:    shellHandler,
-		frontend: frontend,
+		shell:        shellHandler,
+		frontend:     frontend,
+		autoCompact:  true,
+		autoCompactL: new(sync.Mutex),
 	}
 
 	// Allocate a span to tuck all the internal plumbing into, so it doesn't
@@ -142,6 +148,18 @@ func NewLLMSession(
 	return s, nil
 }
 
+func (s *LLMSession) ShouldAutocompact() bool {
+	s.autoCompactL.Lock()
+	defer s.autoCompactL.Unlock()
+	return s.autoCompact
+}
+
+func (s *LLMSession) ToggleAutocompact() {
+	s.autoCompactL.Lock()
+	s.autoCompact = !s.autoCompact
+	s.autoCompactL.Unlock()
+}
+
 func (s *LLMSession) reset() {
 	s.updateLLMAndAgentVar(
 		s.dag.LLM(dagger.LLMOpts{Model: s.model}).
@@ -175,7 +193,13 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 	}
 	s.model = resolvedModel
 
-	prompted := s.llm.WithPrompt(input)
+	// Check if we need to compact before adding the prompt
+	compacted, err := s.maybeAutoCompact(ctx)
+	if err != nil {
+		return s, fmt.Errorf("auto-compact: %w", err)
+	}
+
+	prompted := compacted.WithPrompt(input)
 
 	for {
 		// update the sidebar after every step, not after the entire loop
@@ -184,7 +208,9 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 			return s, err
 		}
 
-		s.updateLLMAndAgentVar(prompted)
+		if err := s.updateLLMAndAgentVar(prompted); err != nil {
+			return s, err
+		}
 
 		if err := s.updateSidebar(prompted); err != nil {
 			return s, err
@@ -196,6 +222,12 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 		}
 		if !hasMore {
 			break
+		}
+
+		// Check if we need to compact in-between steps
+		prompted, err = s.maybeAutoCompact(ctx)
+		if err != nil {
+			return s, fmt.Errorf("auto-compact: %w", err)
 		}
 	}
 
@@ -347,6 +379,38 @@ func (s *LLMSession) updateSidebar(llm *dagger.LLM) error {
 	}
 
 	return err
+}
+
+// maybeAutoCompact checks if the context usage exceeds 80% and automatically compacts if so
+func (s *LLMSession) maybeAutoCompact(ctx context.Context) (*dagger.LLM, error) {
+	if !s.ShouldAutocompact() {
+		return s.llm, nil
+	}
+
+	// Get current token usage
+	inputTokens, err := s.llm.TokenUsage().InputTokens(s.plumbingCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if we know the model's context length
+	m := s.models.Lookup(s.model)
+	if m == nil {
+		// Can't determine context length, skip auto-compact
+		return s.llm, nil
+	}
+
+	// Calculate context usage percentage
+	contextUsage := float64(inputTokens) / float64(m.ContextLength)
+
+	// If we're over 80% context usage, automatically compact
+	if contextUsage > 0.80 {
+		ctx, span := Tracer().Start(ctx, "auto-compacting LLM history", telemetry.Reveal())
+		defer telemetry.End(span, func() error { return nil })
+		return s.Compact(ctx)
+	}
+
+	return s.llm, nil
 }
 
 func (s *LLMSession) syncVarsToLLM() error {
@@ -579,53 +643,28 @@ func (s *LLMSession) Clear() *LLMSession {
 	return s
 }
 
-var compact = `Please summarize our conversation so far into a concise context that:
+//go:embed llm_compact.md
+var compactPrompt string
 
-1. Preserves all critical information including:
-   - Key questions asked and answers provided
-   - Important code snippets and their purposes
-   - Project structure and technical details
-   - Decisions made and rationales
-
-2. Condenses or removes:
-   - Verbose explanations
-   - Redundant information
-   - Preliminary explorations that didn't lead anywhere
-   - Courtesy exchanges and non-technical chat
-
-3. Maintains awareness of file changes:
-   - Track which files have been viewed, created, or modified
-   - Remember the current state of important files
-   - Preserve knowledge of project structure
-
-4. Formats the summary in a structured way:
-   - Project context (language, framework, objectives)
-   - Current task status
-   - Key technical details discovered
-   - Next steps or pending questions
-
-Present this summary in a compact form that retains all essential context needed to continue our work effectively, then continue our conversation from this point forward as if we had the complete conversation history.
-
-This will be a note to yourself, not shown to the user, so prioritize your own understanding and don't ask any questions, because they won't be seen by anyone.
-`
-
-func (s *LLMSession) Compact(ctx context.Context) (_ *LLMSession, rerr error) {
+func (s *LLMSession) Compact(ctx context.Context) (_ *dagger.LLM, rerr error) {
 	ctx, span := Tracer().Start(ctx, "compact", telemetry.Internal(), telemetry.Encapsulate())
 	defer telemetry.End(span, func() error { return rerr })
-	summary, err := s.llm.WithPrompt(compact).LastReply(ctx)
+
+	compactedPrompt, err := s.llm.
+		WithoutSystemPrompts().
+		WithSystemPrompt("You are a helpful AI assistant tasked with summarizing conversations.").
+		WithPrompt(compactPrompt).
+		LastReply(ctx)
 	if err != nil {
-		return s, err
+		return nil, err
 	}
-	fresh := s.dag.LLM(dagger.LLMOpts{
-		Model: s.model,
-	})
-	compacted, err := fresh.WithPrompt(summary).Sync(ctx)
-	if err != nil {
-		return s, err
-	}
-	s = s.Fork()
-	s.updateLLMAndAgentVar(compacted)
-	return s, nil
+
+	return s.llm.
+		WithoutMessageHistory().
+		WithPrompt(fmt.Sprintf(
+			"This session is being continued from a previous conversation that ran out of context. The conversation is summarized below:\n\n%s",
+			compactedPrompt,
+		)), nil
 }
 
 func (s *LLMSession) History(ctx context.Context) (*LLMSession, error) {

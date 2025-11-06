@@ -8609,6 +8609,22 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Clear the message history, leaving only the system prompts
+   */
+  withoutMessageHistory = (): LLM => {
+    const ctx = this._ctx.select("withoutMessageHistory")
+    return new LLM(ctx)
+  }
+
+  /**
+   * Clear the system prompts, leaving only the default system prompt
+   */
+  withoutSystemPrompts = (): LLM => {
+    const ctx = this._ctx.select("withoutSystemPrompts")
+    return new LLM(ctx)
+  }
+
+  /**
    * Call the provided function with current LLM.
    *
    * This is useful for reusability and readability by not breaking the calling chain.
