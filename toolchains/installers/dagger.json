@@ -1,0 +1,26 @@
+{
+  "name": "installers",
+  "engineVersion": "v0.19.6",
+  "sdk": {
+    "source": "go"
+  },
+  "include": [
+    "../../go.mod",
+    "../../go.sum",
+    "../../util/parallel"
+  ],
+  "dependencies": [
+    {
+      "name": "alpine",
+      "source": "../../modules/alpine"
+    },
+    {
+      "name": "ps-analyzer",
+      "source": "../../modules/ps-analyzer"
+    },
+    {
+      "name": "shellcheck",
+      "source": "../../modules/shellcheck"
+    }
+  ]
+}

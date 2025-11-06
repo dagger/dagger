@@ -1,0 +1,6 @@
+dagger.gen.go
+internal/**
+vendor/
+/internal/dagger
+/internal/querybuilder
+/internal/telemetry

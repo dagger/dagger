@@ -17,6 +17,10 @@
       "source": "../../modules/alpine"
     },
     {
+      "name": "codegen",
+      "source": "../codegen"
+    },
+    {
       "name": "dagger-cli",
       "source": "../dagger"
     },
