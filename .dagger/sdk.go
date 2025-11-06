@@ -16,7 +16,6 @@ import (
 func (dev *DaggerDev) SDK() *SDK {
 	return &SDK{
 		Dagger:     dev, // for generating changesets on generate. Remove once Changesets can be merged
-		Go:         &GoSDK{Dagger: dev},
 		Python:     &PythonSDK{Dagger: dev},
 		Typescript: &TypescriptSDK{Dagger: dev},
 		Elixir:     &ElixirSDK{Dagger: dev},
@@ -28,8 +27,6 @@ func (dev *DaggerDev) SDK() *SDK {
 // A dev environment for the official Dagger SDKs
 type SDK struct {
 	Dagger *DaggerDev // +private
-	// Develop the Dagger Go SDK
-	Go *GoSDK
 	// Develop the Dagger Python SDK
 	Python *PythonSDK
 	// Develop the Dagger Typescript SDK
@@ -76,7 +73,7 @@ func allSDKs[T any](dev *DaggerDev) []T {
 	var result []T
 	sdks := dev.SDK()
 	for _, sdk := range []any{
-		sdks.Go,
+		sdks.selfCallGo(),
 		sdks.Python,
 		sdks.Typescript,
 		sdks.Elixir,

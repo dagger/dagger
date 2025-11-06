@@ -9,7 +9,58 @@ import (
 )
 
 type GoSDK struct {
-	Dagger *DaggerDev // +private
+	// Needed for devEngineSidecar(). Remove once we can decouple from that.
+	Dagger     *DaggerDev        // +private
+	Workspace  *dagger.Directory //+private
+	SourcePath string            // +private
+}
+
+// Develop the Dagger Go SDK
+func (sdks *SDK) Go(
+	// Workspace to develop the Go SDK
+	// +defaultPath="/"
+	// +ignore=[
+	//  "*",
+	//  "!sdk/go",
+	//  "!**/go.mod",
+	//  "!**/go.sum",
+	//  "!cmd/codegen",
+	//  "!engine/slog"
+	// ]
+	workspace *dagger.Directory,
+	// Path of the Go SDK source within the workspace
+	// +default="sdk/go"
+	sourcePath string,
+) *GoSDK {
+	return &GoSDK{
+		Workspace:  workspace,
+		SourcePath: sourcePath,
+	}
+}
+
+func (sdks *SDK) selfCallGo() *GoSDK {
+	return sdks.Go(
+		// workspace
+		sdks.Dagger.Source.Filter(dagger.DirectoryFilterOpts{
+			Include: []string{
+				"sdk/go",
+				// FIXME: narrow this down for better cache hit rate
+				"**/go.mod",
+				"**/go.sum",
+				"cmd/codegen",
+				"engine/slog",
+			},
+		}),
+		// sourcePath
+		"sdk/go",
+	)
+}
+
+func (t GoSDK) DevContainer() *dagger.Container {
+	return dag.Go(dagger.GoOpts{Source: t.Source()}).
+		Env().
+		With(t.Dagger.devEngineSidecar()).
+		WithWorkdir("sdk/go")
 }
 
 func (t GoSDK) Name() string {
@@ -17,18 +68,7 @@ func (t GoSDK) Name() string {
 }
 
 func (t GoSDK) Source() *dagger.Directory {
-	// FIXME: use pre-call filtering when this module is spun out
-	// (or when we get self-calls)
-	return t.Dagger.Source.Filter(dagger.DirectoryFilterOpts{
-		Include: []string{
-			"sdk/go",
-			// FIXME: narrow this down for better cache hit rate
-			"**/go.mod",
-			"**/go.sum",
-			"cmd/codegen",
-			"engine/slog",
-		},
-	})
+	return t.Workspace.Directory(t.SourcePath)
 }
 
 // Test the Go SDK
@@ -38,13 +78,6 @@ func (t GoSDK) Test(ctx context.Context) (MyCheckStatus, error) {
 		WithExec([]string{"go", "test", "-v", "-skip=TestProvision", "./..."}).
 		Sync(ctx)
 	return CheckCompleted, err
-}
-
-func (t GoSDK) DevContainer() *dagger.Container {
-	return dag.Go(dagger.GoOpts{Source: t.Source()}).
-		Env().
-		With(t.Dagger.devEngineSidecar()).
-		WithWorkdir("sdk/go")
 }
 
 // Regenerate the Go SDK API
@@ -58,9 +91,15 @@ func (t GoSDK) Generate(ctx context.Context) (*dagger.Changeset, error) {
 }
 
 // Test the release
-func (t GoSDK) ReleaseDryRun(ctx context.Context) (MyCheckStatus, error) {
+func (t GoSDK) ReleaseDryRun(
+	ctx context.Context,
+	// Git repository to publish *from*
+	// +defaultPath="/"
+	fromRepo *dagger.GitRepository,
+) (MyCheckStatus, error) {
 	return CheckCompleted, t.Publish(
 		ctx,
+		fromRepo,
 		"HEAD",
 		true, // dryRun
 		"https://github.com/dagger/dagger-go-sdk.git",
@@ -71,6 +110,10 @@ func (t GoSDK) ReleaseDryRun(ctx context.Context) (MyCheckStatus, error) {
 // Publish the Go SDK
 func (t GoSDK) Publish(
 	ctx context.Context,
+	// Git repository to publish *from*
+	// +defaultPath="/"
+	fromRepo *dagger.GitRepository,
+
 	tag string,
 
 	// +optional
@@ -84,7 +127,7 @@ func (t GoSDK) Publish(
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/go/")
 
-	if err := gitPublish(ctx, t.Dagger.Git, gitPublishOpts{
+	if err := gitPublish(ctx, fromRepo, gitPublishOpts{
 		sdk:        "go",
 		sourceTag:  tag,
 		sourcePath: "sdk/go/",
