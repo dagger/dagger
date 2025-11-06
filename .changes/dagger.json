@@ -1,8 +1,0 @@
-{
-  "name": "changelog",
-  "engineVersion": "v0.19.7",
-  "sdk": {
-    "source": "go"
-  },
-  "source": ".dagger"
-}

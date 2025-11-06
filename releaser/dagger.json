@@ -15,7 +15,7 @@
     },
     {
       "name": "dagger-cli",
-      "source": "../cmd/dagger"
+      "source": "../toolchains/cli-dev"
     },
     {
       "name": "dagger-dev",
@@ -23,7 +23,7 @@
     },
     {
       "name": "dagger-engine",
-      "source": "../cmd/engine"
+      "source": "../toolchains/engine-dev"
     },
     {
       "name": "docs",
