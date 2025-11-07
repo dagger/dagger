@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/util/parallel"
@@ -125,7 +126,10 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 						selectPath = append(selectPath, dagql.Selector{Field: field})
 					}
 					return dag.Select(dagql.WithRepeatedTelemetry(ctx), dag.Root(), &checkParent, selectPath...)
-				}, attribute.Bool("dagger.io/check.hidelogs", true)).
+				},
+					attribute.Bool(telemetry.UIInternalAttr, true),
+					attribute.Bool(telemetry.UIEncapsulateAttr, true),
+					attribute.Bool("dagger.io/check.hidelogs", true)).
 				Run(ctx); err != nil {
 				return err
 			}
@@ -135,13 +139,15 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 			check.Passed = checkErr == nil
 			// Set the passed attribute on the span for telemetry
 			if span := trace.SpanFromContext(ctx); span != nil {
-				span.SetAttributes(attribute.Bool("dagger.io/check.passed", check.Passed))
+				span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, check.Passed))
 			}
 			if checkErr != nil {
 				return checkErr
 			}
 			return nil
-		}, attribute.String("dagger.io/check.name", check.Name()))
+		},
+			attribute.Bool(telemetry.UILogsRollupAttr, true),
+			attribute.String(telemetry.CheckNameAttr, check.Name()))
 	}
 	// We can't distinguish legitimate errors from failed checks, so we just discard.
 	// Bubbling them up to here makes telemetry more useful (no green when a check failed)

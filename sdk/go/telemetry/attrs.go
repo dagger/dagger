@@ -69,6 +69,15 @@ const (
 	// Substitute the span for its children and move its logs to its parent.
 	UIPassthroughAttr = "dagger.io/ui.passthrough" //nolint: gosec // lol
 
+	// Roll up child logs into this span.
+	UILogsRollupAttr = "dagger.io/ui.logs.rollup"
+
+	// The name of the check that this span represents.
+	// TODO: redundant with span name?
+	CheckNameAttr = "dagger.io/check.name"
+	// TODO: redundant with span status?
+	CheckPassedAttr = "dagger.io/check.passed"
+
 	// Clarifies the meaning of a link between two spans.
 	LinkPurposeAttr = "dagger.io/link.purpose"
 	// The linked span caused the current span to run - in other words, this span

@@ -30,12 +30,12 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/dagql/idtui/multiprefixw"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/cleanups"
 )
@@ -1975,6 +1975,8 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 		row.PreviousVisual.Depth > row.Depth ||
 			// ensure gaps before unchained calls
 			row.Span.Call() != nil ||
+			// ensure gaps before checks
+			row.Span.CheckName != "" ||
 			// ensure gaps between calls and non-calls
 			(row.PreviousVisual.Span.Call() != nil && row.Span.Call() == nil) ||
 			// ensure gaps between messages
@@ -2367,20 +2369,24 @@ func (fe *frontendPretty) logsDone(id dagui.SpanID, waitForLogs bool) bool {
 }
 
 type prettyLogs struct {
-	DB       *dagui.DB
-	Logs     map[dagui.SpanID]*Vterm
-	LogWidth int
-	SawEOF   map[dagui.SpanID]bool
-	Profile  termenv.Profile
+	DB            *dagui.DB
+	Logs          map[dagui.SpanID]*Vterm
+	PrefixWriters map[dagui.SpanID]*multiprefixw.Writer
+	LogWidth      int
+	SawEOF        map[dagui.SpanID]bool
+	Profile       termenv.Profile
+	Output        TermOutput
 }
 
 func newPrettyLogs(profile termenv.Profile, db *dagui.DB) *prettyLogs {
 	return &prettyLogs{
-		DB:       db,
-		Logs:     make(map[dagui.SpanID]*Vterm),
-		LogWidth: -1,
-		Profile:  profile,
-		SawEOF:   make(map[dagui.SpanID]bool),
+		DB:            db,
+		Logs:          make(map[dagui.SpanID]*Vterm),
+		PrefixWriters: make(map[dagui.SpanID]*multiprefixw.Writer),
+		LogWidth:      -1,
+		Profile:       profile,
+		SawEOF:        make(map[dagui.SpanID]bool),
+		Output:        termenv.NewOutput(io.Discard, termenv.WithProfile(profile)),
 	}
 }
 
@@ -2405,8 +2411,21 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 
 		targetID := log.SpanID()
 
-		vterm := l.spanLogs(targetID)
+		spanID := dagui.SpanID{SpanID: targetID}
+		pw, rolledUp := l.findRollUpSpan(spanID)
+		if rolledUp {
+			var context string
+			span, ok := l.DB.Spans.Map[spanID]
+			if ok {
+				context = l.extractSpanContext(span)
+			} else {
+				context = targetID.String()
+			}
+			pw.Prefix = l.Output.String("["+context+"]").Foreground(termenv.ANSICyan).String() + " "
+			fmt.Fprint(pw, log.Body().AsString())
+		}
 
+		vterm := l.spanLogs(spanID)
 		if contentType == "text/markdown" {
 			_, _ = vterm.WriteMarkdown([]byte(log.Body().AsString()))
 		} else {
@@ -2416,8 +2435,71 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 	return nil
 }
 
-func (l *prettyLogs) spanLogs(id trace.SpanID) *Vterm {
-	spanID := dagui.SpanID{SpanID: id}
+// extractSpanContext extracts a meaningful context label from a span
+func (l *prettyLogs) extractSpanContext(span *dagui.Span) string {
+	call := span.Call()
+	if call == nil {
+		return span.Name
+	}
+
+	// Handle withExec: extract first argument (the command)
+	if call.Field == "withExec" {
+		if len(call.Args) > 0 && call.Args[0].Name == "args" {
+			// The args value is a list literal
+			if argList := call.Args[0].Value.GetList(); argList != nil {
+				if len(argList.Values) > 0 {
+					// Extract just the command name (first element of the list)
+					cmd := argList.Values[0].GetString_()
+					if cmd != "" {
+						return cmd
+					}
+				}
+			}
+		}
+		return "exec"
+	}
+
+	// For function calls, use the function name
+	if call.Field != "" {
+		return call.Field
+	}
+
+	// Fallback to span name
+	return span.Name
+}
+
+func (l *prettyLogs) findRollUpSpan(origID dagui.SpanID) (*multiprefixw.Writer, bool) {
+	id := origID
+	for {
+		span := l.DB.Spans.Map[id]
+		if span == nil {
+			break
+		}
+		if span.Encapsulate {
+			// Don't roll up past encapsulation points.
+			break
+		}
+		if span.RollUpLogs {
+			// Found a roll-up span; find-or-create a prefixed writer for it.
+			pw, found := l.PrefixWriters[id]
+			if !found {
+				vterm := l.spanLogs(id)
+				pw = multiprefixw.New(vterm)
+				l.PrefixWriters[id] = pw
+			}
+			return pw, true
+		}
+		if span.ParentID.IsValid() {
+			// Keep walking upward
+			id = span.ParentID
+		} else {
+			break
+		}
+	}
+	return nil, false
+}
+
+func (l *prettyLogs) spanLogs(spanID dagui.SpanID) *Vterm {
 	term, found := l.Logs[spanID]
 	if !found {
 		term = NewVterm(l.Profile)

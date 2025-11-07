@@ -19,8 +19,10 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 var (
@@ -51,25 +53,24 @@ Examples:
 		}()
 
 		// List mode - no visualization
-		if checksListMode {
-			return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
-				dag := engineClient.Dagger()
-				mod, err := loadModule(ctx, dag)
-				if err != nil {
-					return err
-				}
-				var checks *dagger.CheckGroup
-				if len(args) > 0 {
-					checks = mod.Checks(dagger.ModuleChecksOpts{Include: args})
-				} else {
-					checks = mod.Checks()
-				}
+		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
+			dag := engineClient.Dagger()
+			mod, err := loadModule(ctx, dag)
+			if err != nil {
+				return err
+			}
+			var checks *dagger.CheckGroup
+			if len(args) > 0 {
+				checks = mod.Checks(dagger.ModuleChecksOpts{Include: args})
+			} else {
+				checks = mod.Checks()
+			}
+			if checksListMode {
 				return listChecks(ctx, checks, cmd)
-			})
-		}
-
-		// Run mode - use live visualization frontend
-		return runChecksWithLiveVisualization(cmd.Context(), args, cmd)
+			} else {
+				return runChecks(ctx, checks, cmd)
+			}
+		})
 	},
 }
 
@@ -146,11 +147,31 @@ func listChecks(ctx context.Context, checkgroup *dagger.CheckGroup, cmd *cobra.C
 
 // 'dagger checks' (runs by default)
 func runChecks(ctx context.Context, checkgroup *dagger.CheckGroup, _ *cobra.Command) error {
+	ctx, shellSpan := Tracer().Start(ctx, "checks", telemetry.Passthrough())
+	defer telemetry.End(shellSpan, func() error { return nil })
+	Frontend.SetPrimary(dagui.SpanID{SpanID: shellSpan.SpanContext().SpanID()})
+	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
 	// We don't actually use the API for rendering results
 	// Instead, we rely on telemetry
 	// FIXME: this feels a little weird. Can we move the relevant telemetry collection in the API?
-	_, err := checkgroup.Run().List(ctx)
-	return err
+	checks, err := checkgroup.Run().List(ctx)
+	if err != nil {
+		return err
+	}
+	var failed int
+	for _, check := range checks {
+		passed, err := check.Passed(ctx)
+		if err != nil {
+			return err
+		}
+		if !passed {
+			failed++
+		}
+	}
+	if failed > 0 {
+		return fmt.Errorf("%d checks failed", failed)
+	}
+	return nil
 }
 
 // ChecksDB extends dagui.DB to capture logs for check spans and their children
@@ -445,7 +466,7 @@ func (db *ChecksDB) extractCheckInfo(span *dagui.Span) *CheckSpanInfo {
 		Span: span,
 		Name: span.Name, // Default name
 	}
-	if checkNameRaw, hasCheckName := span.ExtraAttributes["dagger.io/check.name"]; !hasCheckName {
+	if checkNameRaw, hasCheckName := span.ExtraAttributes[telemetry.CheckNameAttr]; !hasCheckName {
 		return nil
 	} else {
 		var name string
@@ -455,7 +476,7 @@ func (db *ChecksDB) extractCheckInfo(span *dagui.Span) *CheckSpanInfo {
 	}
 
 	// Extract check passed status if available
-	if checkPassedRaw, hasCheckPassed := span.ExtraAttributes["dagger.io/check.passed"]; hasCheckPassed {
+	if checkPassedRaw, hasCheckPassed := span.ExtraAttributes[telemetry.CheckPassedAttr]; hasCheckPassed {
 		var passed bool
 		if err := json.Unmarshal(checkPassedRaw, &passed); err == nil {
 			info.Passed = &passed
@@ -570,7 +591,7 @@ func (cle *ChecksLogExporter) checkRelatedUncached(span *dagui.Span) bool {
 			// FIXME: support setting to false. For now we interpret the attribute existence as 'true'
 			return false
 		}
-		if _, hasCheckAttr := span.ExtraAttributes["dagger.io/check.name"]; hasCheckAttr {
+		if _, hasCheckAttr := span.ExtraAttributes[telemetry.CheckNameAttr]; hasCheckAttr {
 			return true
 		}
 	}
@@ -583,7 +604,7 @@ func (cle *ChecksLogExporter) checkRelatedUncached(span *dagui.Span) bool {
 				// FIXME: support setting to false. For now we interpret the attribute existence as 'true'
 				return false
 			}
-			if _, hasCheckAttr := current.ExtraAttributes["dagger.io/check.name"]; hasCheckAttr {
+			if _, hasCheckAttr := current.ExtraAttributes[telemetry.CheckNameAttr]; hasCheckAttr {
 				return true
 			}
 		}
