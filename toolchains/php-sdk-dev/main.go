@@ -59,6 +59,10 @@ func New(
 	}
 }
 
+func (t PhpSdkDev) Name() string {
+	return "php"
+}
+
 // Returns the PHP SDK workspace mounted in a dev container,
 // and working directory set to the SDK source
 func (t PhpSdkDev) DevContainer() *dagger.Container {

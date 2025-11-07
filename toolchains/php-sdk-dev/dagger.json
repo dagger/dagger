@@ -4,6 +4,11 @@
   "sdk": {
     "source": "go"
   },
+  "include": [
+    "../../go.sum",
+    "../../go.mod",
+    "../../util/parallel"
+  ],
   "dependencies": [
     {
       "name": "dagger-engine",
