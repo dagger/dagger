@@ -57,9 +57,9 @@ func (ProvisionSuite) TestImageDriver(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 				dockerc := tc.provision(ctx, t, c, containerSetupOpts{name: t.Name()})
 				dockerc = dockerc.WithMountedFile("/bin/dagger", daggerCliFile(t, c))
-				// HACK: pre-download builtin image tag (since the original might not
+				// HACK: pre-download builtin image tag/version (since the original might not
 				// actually have been pushed to the registry)
-				dockerc, err := doLoadEngine(ctx, c, dockerc, tc.name, "registry.dagger.io/engine:"+engine.Tag)
+				dockerc, err := doLoadEngine(ctx, c, dockerc, tc.name, "registry.dagger.io/engine:"+engine.Version)
 				require.NoError(t, err)
 
 				require.True(t, semver.IsValid(detectEngineVersion(ctx, t, dockerc)))

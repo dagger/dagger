@@ -35,7 +35,7 @@ func (dev *DaggerDev) Go(
 	if err != nil {
 		return nil, err
 	}
-	tag, err := v.ImageTag(ctx)
+	tagOrCommit, err := v.TagOrCommit(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +44,7 @@ func (dev *DaggerDev) Go(
 			Source: source,
 			Values: []string{
 				"github.com/dagger/dagger/engine.Version=" + version,
-				"github.com/dagger/dagger/engine.Tag=" + tag,
+				"github.com/dagger/dagger/engine.SDKVersion=" + tagOrCommit,
 			},
 		},
 		),

@@ -193,8 +193,8 @@ func (l *Loader) loadBuiltinSDK(
 // is specified, we return an error as those sdk don't support
 // specific version
 //
-// if sdk is one of php/elixir and version is not specified,
-// we defaults the version to [engine.Tag]
+// if sdk is one of php/elixir/java and version is not specified,
+// we defaults the version to [engine.SDKVersion]
 func parseSDKName(sdkName string) (sdk, string, error) {
 	sdkNameParsed, sdkVersion, hasVersion := strings.Cut(sdkName, "@")
 
@@ -209,9 +209,9 @@ func parseSDKName(sdkName string) (sdk, string, error) {
 		return "", "", fmt.Errorf("the %s sdk does not currently support selecting a specific version", sdkNameParsed)
 	}
 
-	// for php, elixir we point them to github ref, so default the version to engine's tag
+	// for php, elixir, java we point them to github ref, so default the version to engine's tag
 	if slices.Contains([]sdk{sdkPHP, sdkElixir, sdkJava}, sdk(sdkNameParsed)) && sdkVersion == "" {
-		sdkVersion = engine.Tag
+		sdkVersion = engine.SDKVersion
 	}
 
 	sdkSuffix := ""

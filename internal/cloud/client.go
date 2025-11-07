@@ -154,10 +154,10 @@ type ErrResponse struct {
 
 func (c *Client) Engine(ctx context.Context, req EngineRequest) (*EngineSpec, error) {
 	// Remote Engine version defaults to the CLI version - this guarantees the best compatibility
-	tag := engine.Tag
+	version := engine.Version
 	// Default to `main` when the CLI is a development version
-	if tag == "" {
-		tag = "main"
+	if version == "" {
+		version = "main"
 	}
 
 	if req.ClientID == "" {
@@ -166,7 +166,7 @@ func (c *Client) Engine(ctx context.Context, req EngineRequest) (*EngineSpec, er
 
 	req.MinimumEngineVersion = engine.MinimumEngineVersion
 	engineSpec := &EngineSpec{
-		Image:         "registry.dagger.io/engine:" + tag,
+		Image:         "registry.dagger.io/engine:" + version,
 		EngineRequest: req,
 	}
 	b, err := json.Marshal(engineSpec)

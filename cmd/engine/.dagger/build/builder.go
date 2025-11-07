@@ -23,8 +23,8 @@ var dag = dagger.Connect()
 type Builder struct {
 	source *dagger.Directory
 
-	version string
-	tag     string
+	version    string
+	sdkVersion string
 
 	platform     dagger.Platform
 	platformSpec ocispecs.Platform
@@ -38,8 +38,9 @@ type Builder struct {
 func NewBuilder(
 	ctx context.Context,
 	source *dagger.Directory,
-	version, tag string,
+	version string,
 ) (*Builder, error) {
+	tagOrCommit := version
 	if version == "" {
 		v := dag.Version()
 		var err error
@@ -47,20 +48,17 @@ func NewBuilder(
 		if err != nil {
 			return nil, err
 		}
-		tag, err = v.ImageTag(ctx)
+		tagOrCommit, err = v.TagOrCommit(ctx)
 		if err != nil {
 			return nil, err
 		}
-	}
-	if tag == "" {
-		tag = version
 	}
 	return &Builder{
 		source:       source,
 		platform:     dagger.Platform(platforms.DefaultString()),
 		platformSpec: platforms.DefaultSpec(),
 		version:      version,
-		tag:          tag,
+		sdkVersion:   tagOrCommit,
 	}, nil
 }
 
@@ -302,8 +300,8 @@ func (build *Builder) Go(version bool, race bool) *dagger.Go {
 	if version && build.version != "" {
 		values = append(values, "github.com/dagger/dagger/engine.Version="+build.version)
 	}
-	if version && build.tag != "" {
-		values = append(values, "github.com/dagger/dagger/engine.Tag="+build.tag)
+	if version && build.sdkVersion != "" {
+		values = append(values, "github.com/dagger/dagger/engine.SDKVersion="+build.sdkVersion)
 	}
 	return dag.Go(dagger.GoOpts{
 		Source: build.source,

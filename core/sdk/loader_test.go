@@ -10,11 +10,11 @@ import (
 )
 
 func TestParseSDKName(t *testing.T) {
-	originalTag := engine.Tag
-	defer func() {
-		engine.Tag = originalTag
-	}()
-	engine.Tag = "v0.12.6"
+	originalVersion := engine.SDKVersion
+	t.Cleanup(func() {
+		engine.SDKVersion = originalVersion
+	})
+	engine.SDKVersion = "v0.12.6"
 
 	testcases := []struct {
 		sdkName       string
