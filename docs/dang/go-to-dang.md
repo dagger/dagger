@@ -71,6 +71,33 @@ if value != null {
 }
 ```
 
+### Enums
+
+Dang supports enum types with dot notation for accessing values:
+
+**Defining enums:**
+```dang
+enum Status {
+  PENDING
+  COMPLETED
+  FAILED
+}
+```
+
+**Accessing enum values:**
+```dang
+# Go: return CheckCompleted, nil
+# Dang: return Status.COMPLETED
+let status = Status.COMPLETED
+```
+
+**Using enums in return types:**
+```dang
+pub getStatus(): Status! {
+  Status.COMPLETED
+}
+```
+
 ---
 
 ## Module Structure
@@ -109,6 +136,11 @@ func (m *MyModule) Build(ctx context.Context, source *dagger.Directory) (*dagger
 ```dang
 type MyModule {
   """
+  Source directory (public field)
+  """
+  pub source: Directory!
+
+  """
   Version of the module (private field)
   """
   let version: String! = "1.0.0"
@@ -116,7 +148,7 @@ type MyModule {
   """
   Build the source code
   """
-  pub build(source: Directory!): File! {
+  pub build(): File! {
     # implementation
   }
 }
@@ -126,7 +158,7 @@ type MyModule {
 
 1. **No package/import statements** - Dependencies are automatically available from GraphQL schema
 2. **Constructor is implicit** - Type definition creates constructor automatically
-3. **Fields use `let`** - `let` for private fields, `pub` for public
+3. **Field visibility** - Use `pub` for public fields, `let` for private fields
 4. **Methods use `pub`** - Public methods use `pub` keyword
 5. **No context parameter** - Context is implicit in Dang
 6. **No error returns** - Operations either succeed or fail (no explicit error handling)
@@ -176,6 +208,40 @@ param string
 ```dang
 param: String! = "value"
 ```
+
+### Parameter Documentation
+
+Dang supports two styles for documenting function parameters:
+
+**Triple-quoted docstrings (preferred for public APIs):**
+```dang
+pub myFunc(
+  """
+  The source directory to process
+  """
+  source: Directory!,
+  """
+  Optional output format
+  """
+  format: String! = "json"
+): File! {
+  # ...
+}
+```
+
+**Inline comments (more concise):**
+```dang
+pub myFunc(
+  # The source directory to process
+  source: Directory!,
+  # Optional output format
+  format: String! = "json"
+): File! {
+  # ...
+}
+```
+
+Both styles are valid and can be mixed within the same module.
 
 ### Optional vs Required Parameters
 
@@ -268,22 +334,26 @@ func New(
 ```dang
 type MyModule {
   # Using named arguments (explicit)
-  let workspace: Directory! @defaultPath(path: "/") @ignorePatterns(patterns: [
+  pub workspace: Directory! @defaultPath(path: "/") @ignorePatterns(patterns: [
     "*"
     "!sdk/go"
-    "!**/go.mod"
-    "!**/go.sum"
+    "!go.mod"
+    "!go.sum"
+    "!/cmd/codegen"
+    "!/engine/slog"
   ])
 
   # Or using positional arguments (more concise)
-  # let workspace: Directory! @defaultPath("/") @ignorePatterns([
+  # pub workspace: Directory! @defaultPath("/") @ignorePatterns([
   #   "*"
   #   "!sdk/go"
-  #   "!**/go.mod"
-  #   "!**/go.sum"
+  #   "!go.mod"
+  #   "!go.sum"
+  #   "!/cmd/codegen"
+  #   "!/engine/slog"
   # ])
 
-  let sourcePath: String! = "sdk/go"
+  pub sourcePath: String! = "sdk/go"
 }
 ```
 
@@ -488,6 +558,34 @@ let base = alpine(
   packages: ["git", "go"]
 ).container
 ```
+
+### Function Arguments: Positional vs Named
+
+Dang supports positional, named, and mixed argument styles. Mixed style is common for readability:
+
+**All named arguments:**
+```dang
+gitReleaser().release(
+  sourceRepo: repo,
+  dest: url,
+  sourceTag: tag,
+  destTag: version
+)
+```
+
+**Mixed positional and named (common pattern):**
+```dang
+gitReleaser().release(
+  repo,           # First arg positional
+  url,            # Second arg positional
+  tag,            # Third arg positional
+  destTag: version,    # Remaining args named
+  callback: cb,
+  githubToken: token
+)
+```
+
+**Why mix?** Required arguments that follow obvious order can be positional, while optional or less obvious arguments benefit from explicit names. This mirrors the GraphQL argument system.
 
 ### Common Dagger Functions
 
@@ -856,7 +954,9 @@ Use this checklist when porting a module:
 
 - [ ] Remove Go package and import statements
 - [ ] Convert type name and struct to `type TypeName { }`
-- [ ] Convert struct fields to `let fieldName: Type! = default`
+- [ ] Convert struct fields:
+  - [ ] Public fields (capitalized in Go) → `pub fieldName: Type!`
+  - [ ] Private fields (marked `// +private` in Go) → `let fieldName: Type!`
 - [ ] Convert constructor `New()` function parameters to type constructor parameters
 - [ ] Convert Go annotations to Dang directives:
   - [ ] `// +defaultPath="/"` → `@defaultPath(path: "/")`
@@ -873,6 +973,7 @@ Use this checklist when porting a module:
 - [ ] Convert `fmt.Sprintf()` to string concatenation
 - [ ] Convert `strings.TrimPrefix()` to `.trimPrefix()`
 - [ ] Convert `strings.Contains()` to `.contains()`
+- [ ] Convert enum constant access to dot notation (e.g., `CheckCompleted` → `Status.COMPLETED`)
 - [ ] Handle error checking differently (see [Error Handling](#error-handling))
 - [ ] Test the module with `dagger call`
 
