@@ -947,6 +947,23 @@ defmodule Dagger.Container do
   end
 
   @doc """
+  Retrieves this container plus a host directory mounted at the given path.
+  """
+  @spec with_mounted_host_directory(t(), String.t(), String.t()) :: Dagger.Container.t()
+  def with_mounted_host_directory(%__MODULE__{} = container, source, path) do
+    query_builder =
+      container.query_builder
+      |> QB.select("withMountedHostDirectory")
+      |> QB.put_arg("source", source)
+      |> QB.put_arg("path", path)
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
   Retrieves this container plus a secret mounted into a file at the given path.
   """
   @spec with_mounted_secret(t(), String.t(), Dagger.Secret.t(), [
@@ -1135,6 +1152,23 @@ defmodule Dagger.Container do
   def with_user(%__MODULE__{} = container, name) do
     query_builder =
       container.query_builder |> QB.select("withUser") |> QB.put_arg("name", name)
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
+  Retrieves this container plus an engine-managed volume mounted at the given path.
+  """
+  @spec with_volume_mount(t(), String.t(), Dagger.Volume.t()) :: Dagger.Container.t()
+  def with_volume_mount(%__MODULE__{} = container, path, volume) do
+    query_builder =
+      container.query_builder
+      |> QB.select("withVolumeMount")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("volume", Dagger.ID.id!(volume))
 
     %Dagger.Container{
       query_builder: query_builder,

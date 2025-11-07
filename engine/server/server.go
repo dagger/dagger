@@ -192,6 +192,7 @@ type Server struct {
 	locker *locker.Locker
 
 	secretSalt []byte
+	sshfsMgr   *sshfsManager
 }
 
 type NewServerOpts struct {
@@ -225,8 +226,8 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		},
 
 		daggerSessions: make(map[string]*daggerSession),
-
-		locker: locker.New(),
+		locker:         locker.New(),
+		sshfsMgr:       newSSHFSManager(bkcfg.Root),
 	}
 
 	// start the global namespace worker pool, which is used for running Go funcs
@@ -249,6 +250,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	srv.solverCacheDBPath = filepath.Join(srv.rootDir, "cache.db")
 
 	srv.workerRootDir = filepath.Join(srv.rootDir, "worker")
+	if err := os.MkdirAll(srv.workerRootDir, 0o700); err != nil {
+		return nil, err
+	}
 	srv.snapshotterRootDir = filepath.Join(srv.workerRootDir, "snapshots")
 	srv.snapshotterDBPath = filepath.Join(srv.snapshotterRootDir, "metadata.db")
 	srv.contentStoreRootDir = filepath.Join(srv.workerRootDir, "content")
@@ -386,6 +390,45 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	if slog.Default().Enabled(ctx, slog.LevelExtraDebug) {
 		srv.buildkitLogSink = os.Stderr
 	}
+
+	//
+	// setup various buildkit/containerd entities and DBs
+	//
+
+	srv.bkSessionManager, err = bksession.NewManager()
+	if err != nil {
+		return nil, err
+	}
+
+	srv.snapshotter, srv.snapshotterName, err = newSnapshotter(srv.snapshotterRootDir, ociCfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create snapshotter: %w", err)
+	}
+
+	srv.localContentStore, err = localcontentstore.NewStore(srv.contentStoreRootDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create content store: %w", err)
+	}
+
+	srv.containerdMetaBoltDB, err = bolt.Open(srv.containerdMetaDBPath, 0o644, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open metadata db: %w", err)
+	}
+
+	srv.containerdMetaDB = ctdmetadata.NewDB(srv.containerdMetaBoltDB, srv.localContentStore, map[string]ctdsnapshot.Snapshotter{
+		srv.snapshotterName: srv.snapshotter,
+	})
+	if err := srv.containerdMetaDB.Init(context.TODO()); err != nil {
+		return nil, fmt.Errorf("failed to init metadata db: %w", err)
+	}
+
+	srv.leaseManager = leaseutil.WithNamespace(ctdmetadata.NewLeaseManager(srv.containerdMetaDB), "buildkit")
+	srv.workerCacheMetaDB, err = metadata.NewStore(srv.workerCacheMetaDBPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create metadata store: %w", err)
+	}
+
+	srv.contentStore = containerdsnapshot.NewContentStore(srv.containerdMetaDB.ContentStore(), "buildkit")
 
 	//
 	// setup worker+executor
@@ -609,7 +652,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to read secret salt rand bytes: %w", err)
 		}
-		err = os.WriteFile(secretSaltPath, srv.secretSalt, 0600)
+		err = os.WriteFile(secretSaltPath, srv.secretSalt, 0o600)
 		if err != nil {
 			slog.Warn("failed to write secret salt", "error", err, "path", secretSaltPath)
 		}

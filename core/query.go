@@ -22,6 +22,7 @@ import (
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/filesync"
 	"github.com/dagger/dagger/engine/server/resource"
+	"github.com/opencontainers/go-digest"
 )
 
 // Query forms the root of the DAG and houses all necessary state and
@@ -111,6 +112,11 @@ type Server interface {
 	// Prune the local cache of releaseable entries. If useDefaultPolicy is true, use the engine-wide default pruning policy,
 	// otherwise prune the whole cache of any releasable entries.
 	PruneEngineLocalCacheEntries(context.Context, bool) (*EngineCacheEntrySet, error)
+
+	// RegisterSSHFSVolume instructs the engine to ensure an sshfs-backed volume is mounted and
+	// returns a Volume instance describing it. privateKey and publicKey are the digest identifiers
+	// of secrets stored in the client's secret store.
+	RegisterSSHFSVolume(ctx context.Context, endpoint string, privateKey digest.Digest, publicKey digest.Digest) (*Volume, error)
 
 	// The default local cache policy to use for automatic local cache GC.
 	EngineLocalCachePolicy() *bkclient.PruneInfo
