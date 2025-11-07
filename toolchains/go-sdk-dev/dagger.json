@@ -2,7 +2,7 @@
   "name": "go-sdk-dev",
   "engineVersion": "v0.19.5",
   "sdk": {
-    "source": "go"
+    "source": "github.com/vito/dang/dagger-sdk@13e652ff5f3c86d35028335893fa96ff5bc89bf0"
   },
   "dependencies": [
     {
