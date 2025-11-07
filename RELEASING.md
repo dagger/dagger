@@ -160,6 +160,7 @@ to dagger.
 - [ ] Generate release notes `.changes/**/v0.12.4.md` for all releases:
 
   ```console
+  export CHANGIE_MAINTAINERS=$(dagger call -m releaser get-maintainers --github-org-name dagger --github-token="cmd://gh auth token" --json)
   find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php sdk/rust helm/dagger -maxdepth 1 -name .changie.yaml -execdir changie batch $ENGINE_VERSION \;
   ```
 
