@@ -1,0 +1,21 @@
+{
+  "name": "php-sdk-dev",
+  "engineVersion": "v0.19.5",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "dagger-engine",
+      "source": "../../cmd/engine"
+    },
+    {
+      "name": "git-releaser",
+      "source": "../../modules/git-releaser"
+    },
+    {
+      "name": "native",
+      "source": "../../sdk/php/dev"
+    }
+  ]
+}

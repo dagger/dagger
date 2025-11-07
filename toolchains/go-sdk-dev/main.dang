@@ -78,23 +78,25 @@ type GoSdkDev {
   }
 
   """
-  Publish the Go SDK
+  Release the Go SDK
   """
   pub release(
-    # Git repository to publish from
+    """Git repository to publish from"""
     sourceRepo: GitRepository! @defaultPath(path:"/"),
-    # The git tag to release from
+    """The git tag to release from"""
     sourceTag: String!,
-    # The git remote to publish to
-    dest: String! = "https://github.com/dagger/dagger-go-sdk.git",
+    """The git remote to publish to"""
+    destRemote: String! = "https://github.com/dagger/dagger-go-sdk.git",
+    """Optional Github authentication token"""
     githubToken: Secret = null,
     callback: File! @defaultPath(path:"./go-git-filter-callback.py"),
   ): Void {
-    let version = sourceTag.trimPrefix(sourcePath)
+    # FIXME: path.clean(sourcePath) + "/"
+    let version = sourceTag.trimPrefix("sdk/go/")
     gitReleaser().release(
-      sourceRepo,
-      dest,
-      sourceTag,
+      sourceRepo: sourceRepo,
+      sourceTag: sourceTag,
+      destRemote: destRemote,
       sourcePath: sourcePath,
       callback: callback,
       destTag: version,

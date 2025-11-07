@@ -28,20 +28,23 @@ func New(
 // to verify that a release is possible without actually completing it
 func (gitrel *GitReleaser) DryRun(
 	ctx context.Context,
-	git *dagger.GitRepository,
-	dest string, // +optional
-	sourceTag string, // +optional
+	sourceRepo *dagger.GitRepository,
+	sourceTag string,
+	destRemote string,
+
 	destTag string, // +optional
 	sourcePath string, // +optional
 	callback *dagger.File, // +optional
 ) error {
 	return gitrel.Release(ctx,
-		git,
-		dest,
+		sourceRepo,
 		sourceTag,
+		destRemote,
+
 		destTag,
 		sourcePath,
 		callback,
+
 		nil,  // githubToken
 		true, // dryRun
 	)
@@ -51,11 +54,11 @@ func (gitrel *GitReleaser) DryRun(
 func (gitrel *GitReleaser) Release(
 	ctx context.Context,
 	// The git repository to release from
-	git *dagger.GitRepository,
-	// Git remote to push the release to
-	dest string,
+	sourceRepo *dagger.GitRepository,
 	// Local tag to release from
 	sourceTag string,
+	// Git remote to push the release to
+	destRemote string,
 	// Remote tag to release to
 	destTag string, // +optional
 	// Optionally publish only a subdirectory
@@ -128,14 +131,14 @@ func (gitrel *GitReleaser) Release(
 	result := base.
 		WithEnvVariable("CACHEBUSTER", rand.Text()).
 		WithWorkdir("/src/dagger").
-		WithDirectory(".", git.Ref(sourceTag).Tree(dagger.GitRefTreeOpts{Depth: -1})).
+		WithDirectory(".", sourceRepo.Ref(sourceTag).Tree(dagger.GitRefTreeOpts{Depth: -1})).
 		WithExec(filterRepoArgs)
 	if !dryRun {
 		result = result.WithExec([]string{
 			"git",
 			"push",
 			// "--force", // NOTE: disabled to avoid accidentally rewriting the history
-			dest,
+			destRemote,
 			fmt.Sprintf("%s:%s", sourceTag, destTag),
 		})
 	} else {
@@ -150,7 +153,7 @@ func (gitrel *GitReleaser) Release(
 		destCommit, err := base.
 			WithEnvVariable("CACHEBUSTER", rand.Text()).
 			WithWorkdir("/src/dagger").
-			WithExec([]string{"git", "clone", dest, "."}).
+			WithExec([]string{"git", "clone", destRemote, "."}).
 			WithExec([]string{"git", "fetch", "origin", "-v", "--update-head-ok", fmt.Sprintf("refs/*%[1]s:refs/*%[1]s", strings.TrimPrefix(destTag, "refs/"))}).
 			WithExec([]string{"git", "checkout", destTag, "--"}).
 			WithExec([]string{"git", "rev-parse", "HEAD"}).

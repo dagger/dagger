@@ -24,16 +24,21 @@ const (
 
 func New(
 	// +defaultPath="/"
-	// +ignore=[".git", "bin", "**/.dagger", "**/.DS_Store", "**/node_modules", "**/__pycache__", "**/.venv", "**/.mypy_cache", "**/.pytest_cache", "**/.ruff_cache", "sdk/python/dist", "sdk/python/**/sdk", "go.work", "go.work.sum", "**/*_test.go", "**/target", "**/deps", "**/cover", "**/_build"]
+	// +ignore=[".git", "bin", "**/.dagger", "**/.DS_Store", "**/node_modules", "**/__pycache__", "**/.venv", "**/.mypy_cache", "**/.pytest_cache", "**/.ruff_cache", "sdk/python/dist", "sdk/python/**/sdk", "go.work", "go.work.sum", "**/*_test.go", "**/target", "**/deps", "**/cover", "**/_build", "docs"]
 	source *dagger.Directory,
 	// A configurable part of the IP subnet managed by the engine
 	// Change this to allow nested dagger engines
 	// +default=88
 	subnetNumber int,
+	// A docker config file with credentials to install on clients,
+	// to ensure they can access private registries
+	// +optional
+	clientDockerConfig *dagger.Secret,
 ) *DaggerEngine {
 	return &DaggerEngine{
-		Source:       source,
-		SubnetNumber: subnetNumber,
+		Source:             source,
+		SubnetNumber:       subnetNumber,
+		ClientDockerConfig: clientDockerConfig,
 	}
 }
 
@@ -44,7 +49,8 @@ type DaggerEngine struct {
 	LogLevel       string   // +private
 	SubnetNumber   int      // +private
 
-	Race bool // +private
+	Race               bool // +private
+	ClientDockerConfig *dagger.Secret
 }
 
 func (e *DaggerEngine) NetworkCidr() string {
@@ -85,8 +91,6 @@ func (e *DaggerEngine) Playground(
 	sharedCache bool,
 	// +optional
 	metrics bool,
-	// +optional
-	dockerConfig *dagger.Secret,
 ) (*dagger.Container, error) {
 	ctr := base
 	if ctr == nil {
@@ -104,7 +108,7 @@ func (e *DaggerEngine) Playground(
 	if err != nil {
 		return nil, err
 	}
-	return e.InstallClient(ctx, ctr, svc, dockerConfig)
+	return e.InstallClient(ctx, ctr, svc)
 }
 
 // Build the engine container
@@ -248,12 +252,23 @@ func (e *DaggerEngine) InstallClient(
 	// The client container to configure
 	client *dagger.Container,
 	// The engine service to bind
-	service *dagger.Service,
-	// Optionally install a docker config file with credentials,
-	// to ensure the dagger client can access private registries
 	// +optional
-	dockerConfig *dagger.Secret,
+	service *dagger.Service,
 ) (*dagger.Container, error) {
+	if service == nil {
+		var err error
+		service, err = e.Service(
+			ctx,
+			"",           // name
+			DistroAlpine, // distro
+			false,        // gpuSupport
+			false,        // sharedCache
+			false,        // metrics
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
 	cliPath := "/.dagger-cli"
 	endpoint, err := service.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
 	if err != nil {
@@ -266,10 +281,10 @@ func (e *DaggerEngine) InstallClient(
 		WithMountedFile(cliPath, dag.DaggerCli().Binary()).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath).
 		WithExec([]string{"ln", "-s", cliPath, "/usr/local/bin/dagger"})
-	if dockerConfig != nil {
+	if cfg := e.ClientDockerConfig; cfg != nil {
 		client = client.WithMountedSecret(
 			"${HOME}/.docker/config.json",
-			dockerConfig,
+			cfg,
 			dagger.ContainerWithMountedSecretOpts{Expand: true},
 		)
 	}
@@ -277,7 +292,7 @@ func (e *DaggerEngine) InstallClient(
 }
 
 func (e *DaggerEngine) IntrospectionJSON(ctx context.Context) (*dagger.File, error) {
-	playground, err := e.Playground(ctx, nil, false, false, false, nil)
+	playground, err := e.Playground(ctx, nil, false, false, false)
 	if err != nil {
 		return nil, err
 	}
