@@ -40,10 +40,11 @@ func (t *Test) All(
 	envFile *dagger.Secret,
 	// +optional
 	testVerbose bool,
-) (MyCheckStatus, error) {
+	// +check
+) error {
 	cmd, _, err := t.testCmd(ctx)
 	if err != nil {
-		return CheckCompleted, err
+		return err
 	}
 	_, err = t.test(
 		cmd,
@@ -60,7 +61,7 @@ func (t *Test) All(
 			testVerbose:   testVerbose,
 		},
 	).Sync(ctx)
-	return CheckCompleted, err
+	return err
 }
 
 // Run telemetry tests
@@ -164,10 +165,11 @@ func (t *Test) Specific(
 	// Enable verbose output
 	// +optional
 	testVerbose bool,
-) (MyCheckStatus, error) {
+	// +check
+) error {
 	cmd, _, err := t.testCmd(ctx)
 	if err != nil {
-		return CheckCompleted, err
+		return err
 	}
 	_, err = t.test(
 		cmd,
@@ -184,7 +186,7 @@ func (t *Test) Specific(
 			testVerbose:   testVerbose,
 		},
 	).Sync(ctx)
-	return CheckCompleted, err
+	return err
 }
 
 // Update specific tests

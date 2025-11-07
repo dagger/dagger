@@ -11,10 +11,11 @@ import (
 // selected for maximum coverage of Dagger features with limited compute expenditure.
 // The actual checks being performed is an implementation detail, and should NOT be relied on.
 // In other words, don't skip running <foo> just because it happens to be run here!
-func (dev *DaggerDev) CiInCi(ctx context.Context) (MyCheckStatus, error) {
+// +check
+func (dev *DaggerDev) CiInCi(ctx context.Context) error {
 	ctr, err := dev.Playground(ctx, nil, false, false)
 	if err != nil {
-		return CheckCompleted, err
+		return err
 	}
 	cmd := []string{"dagger", "call"}
 	if dev.DockerCfg != nil {
@@ -28,5 +29,5 @@ func (dev *DaggerDev) CiInCi(ctx context.Context) (MyCheckStatus, error) {
 		WithWorkdir("./dagger").
 		WithExec(cmd, dagger.ContainerWithExecOpts{Expand: true}).
 		Sync(ctx)
-	return CheckCompleted, err
+	return err
 }

@@ -6,44 +6,32 @@ import (
 	"github.com/dagger/dagger/util/parallel"
 )
 
-// This file contains temporary code, to be removed once 'dagger checks' is merged and released.
-type MyCheckStatus string
-
-const (
-	CheckCompleted MyCheckStatus = "COMPLETED"
-	CheckSkipped   MyCheckStatus = "SKIPPED"
-)
-
 // Lint docs, helm chart and install scripts
 // TODO: remove after merging https://github.com/dagger/dagger/pull/11211
 func (dev *DaggerDev) LintMisc(ctx context.Context) error {
 	return parallel.New().
 		WithJob("Docs", func(ctx context.Context) error {
-			_, err := dev.Docs().Lint(ctx)
-			return err
+			return dev.Docs().Lint(ctx)
 		}).
 		WithJob("Helm chart", func(ctx context.Context) error {
-			_, err := dev.LintHelm(ctx)
-			return err
+			return dev.LintHelm(ctx)
 		}).
 		WithJob("Install scripts", dev.Scripts().Lint).
 		Run(ctx)
 }
 
 // DryRun performs a dry run of the release process
-func (dev *DaggerDev) ReleaseDryRun(ctx context.Context) (MyCheckStatus, error) {
-	return CheckCompleted, parallel.New().
+// +check
+func (dev *DaggerDev) ReleaseDryRun(ctx context.Context) error {
+	return parallel.New().
 		WithJob("Helm chart", func(ctx context.Context) error {
-			_, err := dag.Helm().ReleaseDryRun(ctx)
-			return err
+			return dag.Helm().ReleaseDryRun(ctx)
 		}).
 		WithJob("CLI", func(ctx context.Context) error {
-			_, err := dag.DaggerCli().ReleaseDryRun(ctx)
-			return err
+			return dag.DaggerCli().ReleaseDryRun(ctx)
 		}).
 		WithJob("Engine", func(ctx context.Context) error {
-			_, err := dag.DaggerEngine().ReleaseDryRun(ctx)
-			return err
+			return dag.DaggerEngine().ReleaseDryRun(ctx)
 		}).
 		WithJob("SDKs", dev.dryRunSDKs).
 		Run(ctx)
@@ -52,13 +40,13 @@ func (dev *DaggerDev) ReleaseDryRun(ctx context.Context) (MyCheckStatus, error) 
 func (dev *DaggerDev) dryRunSDKs(ctx context.Context) error {
 	type releaseDryRunner interface {
 		Name() string
-		ReleaseDryRun(context.Context) (MyCheckStatus, error)
+		// +check
+		ReleaseDryRun(context.Context) error
 	}
 	jobs := parallel.New()
 	for _, sdk := range allSDKs[releaseDryRunner](dev) {
 		jobs = jobs.WithJob(sdk.Name(), func(ctx context.Context) error {
-			_, err := sdk.ReleaseDryRun(ctx)
-			return err
+			return sdk.ReleaseDryRun(ctx)
 		})
 	}
 	return jobs.Run(ctx)
@@ -70,12 +58,12 @@ func (dev *DaggerDev) TestSDKs(ctx context.Context) error {
 	jobs := parallel.New()
 	type tester interface {
 		Name() string
-		Test(context.Context) (MyCheckStatus, error)
+		// +check
+		Test(context.Context) error
 	}
 	for _, sdk := range allSDKs[tester](dev) {
 		jobs = jobs.WithJob(sdk.Name(), func(ctx context.Context) error {
-			_, err := sdk.Test(ctx)
-			return err
+			return sdk.Test(ctx)
 		})
 	}
 	// Some (but not all) sdk test functions are also aggregators which will be replaced by PR 11211. Call them here too.
@@ -95,12 +83,12 @@ func (dev *DaggerDev) LintSDKs(ctx context.Context) error {
 	jobs := parallel.New()
 	type linter interface {
 		Name() string
-		Lint(context.Context) (MyCheckStatus, error)
+		// +check
+		Lint(context.Context) error
 	}
 	for _, sdk := range allSDKs[linter](dev) {
 		jobs = jobs.WithJob(sdk.Name(), func(ctx context.Context) error {
-			_, err := sdk.Lint(ctx)
-			return err
+			return sdk.Lint(ctx)
 		})
 	}
 	// Some (but not all) sdk lint functions are also aggregators which will be replaced by PR 11211. Call them here too.
@@ -119,12 +107,10 @@ func (dev *DaggerDev) LintSDKs(ctx context.Context) error {
 func (t TypescriptSDK) Test(ctx context.Context) error {
 	return parallel.New().
 		WithJob("node", func(ctx context.Context) error {
-			_, err := t.TestNode(ctx)
-			return err
+			return t.TestNode(ctx)
 		}).
 		WithJob("bun", func(ctx context.Context) error {
-			_, err := t.TestBun(ctx)
-			return err
+			return t.TestBun(ctx)
 		}).
 		Run(ctx)
 }
@@ -134,12 +120,10 @@ func (t TypescriptSDK) Test(ctx context.Context) error {
 func (r RustSDK) Lint(ctx context.Context) error {
 	return parallel.New().
 		WithJob("check format", func(ctx context.Context) error {
-			_, err := r.CheckFormat(ctx)
-			return err
+			return r.CheckFormat(ctx)
 		}).
 		WithJob("check compilation", func(ctx context.Context) error {
-			_, err := r.CheckCompilation(ctx)
-			return err
+			return r.CheckCompilation(ctx)
 		}).
 		Run(ctx)
 }
@@ -149,12 +133,10 @@ func (r RustSDK) Lint(ctx context.Context) error {
 func (s Scripts) Lint(ctx context.Context) error {
 	return parallel.New().
 		WithJob("install.sh", func(ctx context.Context) error {
-			_, err := s.LintSh(ctx)
-			return err
+			return s.LintSh(ctx)
 		}).
 		WithJob("install.ps1", func(ctx context.Context) error {
-			_, err := s.LintPowershell(ctx)
-			return err
+			return s.LintPowershell(ctx)
 		}).
 		Run(ctx)
 }
@@ -164,12 +146,10 @@ func (s Scripts) Lint(ctx context.Context) error {
 func (t TypescriptSDK) Lint(ctx context.Context) error {
 	return parallel.New().
 		WithJob("typescript", func(ctx context.Context) error {
-			_, err := t.LintTypescript(ctx)
-			return err
+			return t.LintTypescript(ctx)
 		}).
 		WithJob("docs snippets", func(ctx context.Context) error {
-			_, err := t.LintDocsSnippets(ctx)
-			return err
+			return t.LintDocsSnippets(ctx)
 		}).
 		Run(ctx)
 }

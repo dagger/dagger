@@ -264,8 +264,9 @@ type targetResult struct {
 	Tags      []string
 }
 
-func (e *DaggerEngine) ReleaseDryRun(ctx context.Context) (MyCheckStatus, error) {
-	return CheckCompleted, e.Publish(
+// +check
+func (e *DaggerEngine) ReleaseDryRun(ctx context.Context) error {
+	return e.Publish(
 		ctx,
 		"dagger-engine.dev", // image
 		// FIXME: why not from HEAD like the SDKs?
