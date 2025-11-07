@@ -19,6 +19,12 @@ export const object = registry.object
 export const func = registry.func
 
 /**
+ * The definition of @check decorator that marks a function as a check.
+ * Checks are functions that return void/error to indicate pass/fail.
+ */
+export const check = registry.check
+
+/**
  * The definition of @field decorator that should be on top of any
  * class' property that must be exposed to the Dagger API.
  *
