@@ -53,6 +53,7 @@ logger = logging.getLogger(__package__)
 OBJECT_DEF_KEY: typing.Final[str] = "__dagger_object__"
 FIELD_DEF_KEY: typing.Final[str] = "__dagger_field__"
 FUNCTION_DEF_KEY: typing.Final[str] = "__dagger_function__"
+CHECK_DEF_KEY: typing.Final[str] = "__dagger_check__"
 MODULE_NAME: typing.Final[str] = os.getenv("DAGGER_MODULE", "")
 MAIN_OBJECT: typing.Final[str] = os.getenv("DAGGER_MAIN_OBJECT", "")
 TYPE_DEF_FILE: typing.Final[str] = os.getenv("DAGGER_MODULE_FILE", "/module.json")
@@ -205,6 +206,8 @@ class Module:
                         )
                 if deprecated := func.deprecated:
                     func_def = func_def.with_deprecated(reason=deprecated)
+                if func.check:
+                    func_def = func_def.with_check()
 
                 for param in func.parameters.values():
                     arg_def = to_typedef(
@@ -608,6 +611,38 @@ class Module:
             **kwargs,
         )
 
+    def check(
+        self,
+        func: Func[P, R] | None = None,
+    ) -> Func[P, R] | Callable[[Func[P, R]], Func[P, R]]:
+        """Mark a function as a check.
+
+        Checks are functions that validate conditions and return void/error
+        to indicate pass/fail. This decorator can be combined with
+        :py:meth:`function`.
+
+        Example usage::
+
+            @object_type
+            class MyModule:
+                @function
+                @check
+                def lint(self) -> str:
+                    return "All checks passed"
+
+        Parameters
+        ----------
+        func:
+            The function to mark as a check. Should be an instance method in a
+            class decorated with :py:meth:`object_type`.
+        """
+
+        def wrapper(fn: Func[P, R]) -> Func[P, R]:
+            setattr(fn, CHECK_DEF_KEY, True)
+            return fn
+
+        return wrapper(func) if func else wrapper
+
     @overload
     def function(
         self,
@@ -668,11 +703,15 @@ class Module:
             # TODO: Use beartype to validate
             assert callable(func), f"Expected a callable, got {type(func)}."
 
+            # Check if function is marked as a check
+            check = getattr(func, CHECK_DEF_KEY, False)
+
             meta = FunctionDefinition(
                 name=name,
                 doc=doc,
                 cache=cache,
                 deprecated=deprecated,
+                check=check,
             )
 
             if inspect.isclass(func):

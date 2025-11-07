@@ -304,6 +304,7 @@ var coreDirectives = []DirectiveSpec{
 	{
 		Name:        "check",
 		Description: FormatDescription(`Indicates that this function is a check.`),
+		Args:        NewInputSpecs(), // none
 		Locations: []DirectiveLocation{
 			DirectiveLocationFieldDefinition,
 		},

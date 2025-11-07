@@ -7187,6 +7187,14 @@ class Function(Type):
         _ctx = self._select("withCachePolicy", _args)
         return Function(_ctx)
 
+    def with_check(self, *, is_check: bool | None = True) -> Self:
+        """Returns the function with a flag indicating it's a check."""
+        _args = [
+            Arg("isCheck", is_check, True),
+        ]
+        _ctx = self._select("withCheck", _args)
+        return Function(_ctx)
+
     def with_deprecated(self, *, reason: str | None = None) -> Self:
         """Returns the function with the provided deprecation reason.
 

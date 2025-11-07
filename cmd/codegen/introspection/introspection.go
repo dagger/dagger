@@ -69,10 +69,14 @@ func (s *Schema) ScrubType(typeName string) {
 }
 
 type DirectiveDef struct {
-	Name        string      `json:"name,omitempty"`
-	Description string      `json:"description,omitempty"`
-	Locations   []string    `json:"locations,omitempty"`
-	Args        InputValues `json:"args,omitempty"`
+	Name        string   `json:"name,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Locations   []string `json:"locations,omitempty"`
+
+	// NB(vito): don't omitempty - Python complains:
+	//
+	//   https://github.com/graphql-python/graphql-core/blob/758fef19194005d3a287e28a4e172e0ed7955d42/src/graphql/utilities/build_client_schema.py#L383
+	Args InputValues `json:"args"`
 }
 
 type TypeKind string
