@@ -26,9 +26,14 @@ func New(
 	// +defaultPath="/"
 	// +ignore=[".git", "bin", "**/.dagger", "**/.DS_Store", "**/node_modules", "**/__pycache__", "**/.venv", "**/.mypy_cache", "**/.pytest_cache", "**/.ruff_cache", "sdk/python/dist", "sdk/python/**/sdk", "go.work", "go.work.sum", "**/*_test.go", "**/target", "**/deps", "**/cover", "**/_build"]
 	source *dagger.Directory,
+	// A configurable part of the IP subnet managed by the engine
+	// Change this to allow nested dagger engines
+	// +default=88
+	subnetNumber int,
 ) *DaggerEngine {
 	return &DaggerEngine{
-		Source: source,
+		Source:       source,
+		SubnetNumber: subnetNumber,
 	}
 }
 
@@ -37,8 +42,18 @@ type DaggerEngine struct {
 
 	BuildkitConfig []string // +private
 	LogLevel       string   // +private
+	SubnetNumber   int      // +private
 
 	Race bool // +private
+}
+
+func (e *DaggerEngine) NetworkCidr() string {
+	return fmt.Sprintf("10.%d.0.0/16", e.SubnetNumber)
+}
+
+func (e *DaggerEngine) IncrementSubnet() *DaggerEngine {
+	e.SubnetNumber++
+	return e
 }
 
 func (e *DaggerEngine) WithBuildkitConfig(key, value string) *DaggerEngine {
@@ -54,6 +69,42 @@ func (e *DaggerEngine) WithRace() *DaggerEngine {
 func (e *DaggerEngine) WithLogLevel(level string) *DaggerEngine {
 	e.LogLevel = level
 	return e
+}
+
+// Build an ephemeral environment with the Dagger CLI and engine built from source, installed and ready to use
+func (e *DaggerEngine) Playground(
+	ctx context.Context,
+	// Build from a custom base image
+	// +optional
+	base *dagger.Container,
+	// Enable experimental GPU support
+	// +optional
+	gpuSupport bool,
+	// Share cache globally
+	// +optional
+	sharedCache bool,
+	// +optional
+	metrics bool,
+	// +optional
+	dockerConfig *dagger.Secret,
+) (*dagger.Container, error) {
+	ctr := base
+	if ctr == nil {
+		ctr = dag.Alpine().Container().WithEnvVariable("HOME", "/root")
+	}
+	ctr = ctr.WithWorkdir("$HOME", dagger.ContainerWithWorkdirOpts{Expand: true})
+	svc, err := e.Service(
+		ctx,
+		"",       // name
+		"alpine", // distro
+		gpuSupport,
+		sharedCache,
+		metrics,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return e.InstallClient(ctx, ctr, svc, dockerConfig)
 }
 
 // Build the engine container
@@ -141,10 +192,9 @@ func (e *DaggerEngine) Service(
 	sharedCache bool,
 	// +optional
 	metrics bool,
-	// +optional
-	// +default="10.88.0.0/16"
-	networkCidr string,
 ) (*dagger.Service, error) {
+	// Support 256 layers of nested dagger engines :-P
+	e = e.IncrementSubnet()
 	cacheVolumeName := "dagger-dev-engine-state"
 	if !sharedCache {
 		version, err := dag.Version().Version(ctx)
@@ -185,11 +235,57 @@ func (e *DaggerEngine) Service(
 		Args: []string{
 			"--addr", "tcp://0.0.0.0:1234",
 			"--network-name", "dagger-dev",
-			"--network-cidr", networkCidr,
+			"--network-cidr", e.NetworkCidr(),
 		},
 		UseEntrypoint:            true,
 		InsecureRootCapabilities: true,
 	}), nil
+}
+
+// Configure the given client container so that it can connect to the given engine service
+func (e *DaggerEngine) InstallClient(
+	ctx context.Context,
+	// The client container to configure
+	client *dagger.Container,
+	// The engine service to bind
+	service *dagger.Service,
+	// Optionally install a docker config file with credentials,
+	// to ensure the dagger client can access private registries
+	// +optional
+	dockerConfig *dagger.Secret,
+) (*dagger.Container, error) {
+	cliPath := "/.dagger-cli"
+	endpoint, err := service.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	if err != nil {
+		return nil, err
+	}
+	client = client.
+		WithServiceBinding("dagger-engine", service).
+		// FIXME: retrieve endpoint dynamically?
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+		WithMountedFile(cliPath, dag.DaggerCli().Binary()).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliPath).
+		WithExec([]string{"ln", "-s", cliPath, "/usr/local/bin/dagger"})
+	if dockerConfig != nil {
+		client = client.WithMountedSecret(
+			"${HOME}/.docker/config.json",
+			dockerConfig,
+			dagger.ContainerWithMountedSecretOpts{Expand: true},
+		)
+	}
+	return client, nil
+}
+
+func (e *DaggerEngine) IntrospectionJSON(ctx context.Context) (*dagger.File, error) {
+	playground, err := e.Playground(ctx, nil, false, false, false, nil)
+	if err != nil {
+		return nil, err
+	}
+	introspectionJSON := playground.
+		WithFile("/usr/local/bin/codegen", dag.Codegen().Binary()).
+		WithExec([]string{"codegen", "introspect", "-o", "/schema.json"}).
+		File("/schema.json")
+	return introspectionJSON, nil
 }
 
 // Generate any engine-related files
