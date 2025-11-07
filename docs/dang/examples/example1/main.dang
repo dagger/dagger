@@ -61,16 +61,16 @@ type GoSdkDev {
     """Git repository to fake-release"""
     sourceRepo: GitRepository! @defaultPath(path:"/"),
     """Git tag to fake-release"""
-    sourceTag: String! = "HEAD",
+    sourceTag: String = "HEAD",
     """Git remote to fake-release to"""
-    dest: String! = "https://github.com/dagger/dagger-go-sdk.git",
+    destRemote: String = "https://github.com/dagger/dagger-go-sdk.git",
     callback: File! @defaultPath(path:"./git-filter-callback.py"),
   ): MyCheckStatus! {
     let version = sourceTag.trimPrefix(sourcePath)
     gitReleaser().dryRun(
-      sourceRepo,
-      dest: dest,
+      sourceRepo: sourceRepo,
       sourceTag: sourceTag,
+      destRemote: destRemote,
       destTag: version,
       callback: callback
     )
@@ -81,26 +81,29 @@ type GoSdkDev {
   Publish the Go SDK
   """
   pub release(
-    # Git repository to publish from
+    """Source git repository to release"""
     sourceRepo: GitRepository! @defaultPath(path:"/"),
-    # The git tag to release from
+    """Source git tag to release"""
     sourceTag: String!,
-    # The git remote to publish to
-    dest: String! = "https://github.com/dagger/dagger-go-sdk.git",
+    """Target git remote to release to"""
+    destRemote: String! = "https://github.com/dagger/dagger-go-sdk.git",
     githubToken: Secret = null,
     callback: File! @defaultPath(path:"./go-git-filter-callback.py"),
   ): Void {
     let version = sourceTag.trimPrefix(sourcePath)
     gitReleaser().release(
-      sourceRepo,
-      dest,
-      sourceTag,
+      sourceRepo: sourceRepo,
+      sourceTag: sourceTag,
+      destRemote: destRemote,
+      destTag: version,
       sourcePath: sourcePath,
       callback: callback,
-      destTag: version,
       githubToken: githubToken
     )
-    null
+  }
+
+  let versionFromTag(tag: String!): String! {
+    tag.trimPrefix(sourcePath.trimRight("/") + "/")
   }
 
   """
