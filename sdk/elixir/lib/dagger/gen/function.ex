@@ -162,12 +162,10 @@ defmodule Dagger.Function do
   @doc """
   Returns the function with a flag indicating it's a check.
   """
-  @spec with_check(t(), [{:is_check, boolean() | nil}]) :: Dagger.Function.t()
-  def with_check(%__MODULE__{} = function, optional_args \\ []) do
+  @spec with_check(t()) :: Dagger.Function.t()
+  def with_check(%__MODULE__{} = function) do
     query_builder =
-      function.query_builder
-      |> QB.select("withCheck")
-      |> QB.maybe_put_arg("isCheck", optional_args[:is_check])
+      function.query_builder |> QB.select("withCheck")
 
     %Dagger.Function{
       query_builder: query_builder,

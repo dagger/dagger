@@ -1273,10 +1273,6 @@ export type FunctionWithCachePolicyOpts = {
   timeToLive?: string
 }
 
-export type FunctionWithCheckOpts = {
-  isCheck?: boolean
-}
-
 export type FunctionWithDeprecatedOpts = {
   /**
    * Reason or migration path describing the deprecation.
@@ -7410,8 +7406,8 @@ export class Function_ extends BaseClient {
   /**
    * Returns the function with a flag indicating it's a check.
    */
-  withCheck = (opts?: FunctionWithCheckOpts): Function_ => {
-    const ctx = this._ctx.select("withCheck", { ...opts })
+  withCheck = (): Function_ => {
+    const ctx = this._ctx.select("withCheck")
     return new Function_(ctx)
   }
 

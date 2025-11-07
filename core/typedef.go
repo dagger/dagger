@@ -198,9 +198,9 @@ func (fn *Function) WithDeprecated(reason *string) *Function {
 	return fn
 }
 
-func (fn *Function) WithCheck(isCheck bool) *Function {
+func (fn *Function) WithCheck() *Function {
 	fn = fn.Clone()
-	fn.IsCheck = isCheck
+	fn.IsCheck = true
 	return fn
 }
 

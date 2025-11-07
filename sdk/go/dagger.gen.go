@@ -6885,22 +6885,9 @@ func (r *Function) WithCachePolicy(policy FunctionCachePolicy, opts ...FunctionW
 	}
 }
 
-// FunctionWithCheckOpts contains options for Function.WithCheck
-type FunctionWithCheckOpts struct {
-
-	// Default: true
-	IsCheck bool
-}
-
 // Returns the function with a flag indicating it's a check.
-func (r *Function) WithCheck(opts ...FunctionWithCheckOpts) *Function {
+func (r *Function) WithCheck() *Function {
 	q := r.query.Select("withCheck")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `isCheck` optional argument
-		if !querybuilder.IsZeroValue(opts[i].IsCheck) {
-			q = q.Arg("isCheck", opts[i].IsCheck)
-		}
-	}
 
 	return &Function{
 		query: q,

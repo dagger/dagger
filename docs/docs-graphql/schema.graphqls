@@ -3045,7 +3045,7 @@ type Function {
   ): Function!
 
   """Returns the function with a flag indicating it's a check."""
-  withCheck(isCheck: Boolean = true): Function!
+  withCheck: Function!
 
   """Returns the function with the provided deprecation reason."""
   withDeprecated(

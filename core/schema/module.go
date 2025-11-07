@@ -522,10 +522,8 @@ func (s *moduleSchema) functionWithDeprecated(ctx context.Context, fn *core.Func
 	return fn.WithDeprecated(args.Reason), nil
 }
 
-func (s *moduleSchema) functionWithCheck(ctx context.Context, fn *core.Function, args struct {
-	IsCheck bool `default:"true"`
-}) (*core.Function, error) {
-	return fn.WithCheck(args.IsCheck), nil
+func (s *moduleSchema) functionWithCheck(ctx context.Context, fn *core.Function, args struct{}) (*core.Function, error) {
+	return fn.WithCheck(), nil
 }
 
 func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, args struct {

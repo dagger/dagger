@@ -7179,11 +7179,9 @@ class Function(Type):
         _ctx = self._select("withCachePolicy", _args)
         return Function(_ctx)
 
-    def with_check(self, *, is_check: bool | None = True) -> Self:
+    def with_check(self) -> Self:
         """Returns the function with a flag indicating it's a check."""
-        _args = [
-            Arg("isCheck", is_check, True),
-        ]
+        _args: list[Arg] = []
         _ctx = self._select("withCheck", _args)
         return Function(_ctx)
 

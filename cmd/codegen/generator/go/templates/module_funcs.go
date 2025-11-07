@@ -189,9 +189,7 @@ func (spec *funcTypeSpec) TypeDefFunc(dag *dagger.Client) (*dagger.Function, err
 		})
 	}
 	if spec.isCheck {
-		fnTypeDef = fnTypeDef.WithCheck(dagger.FunctionWithCheckOpts{
-			IsCheck: true,
-		})
+		fnTypeDef = fnTypeDef.WithCheck()
 	}
 
 	for _, argSpec := range spec.argSpecs {
