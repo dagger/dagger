@@ -3,6 +3,7 @@ package core
 import (
 	"cmp"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -374,7 +375,8 @@ func nerdctlSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts co
 		WithMountedCache("/var/lib/containerd", dag.CacheVolume(opts.name+"-containerd")).
 		WithMountedCache("/var/lib/buildkit", dag.CacheVolume(opts.name+"-buildkit")).
 		WithMountedCache("/var/lib/containerd-stargz-grpc", dag.CacheVolume(opts.name+"-containerd-stargz-grpc")).
-		WithMountedCache("/var/lib/nerdctl", dag.CacheVolume(opts.name+"-nerdctl"))
+		WithMountedCache("/var/lib/nerdctl", dag.CacheVolume(opts.name+"-nerdctl")).
+		WithEnvVariable("CACHEBUST", rand.Text()) // use a new service every test run
 	if opts.middleware != nil {
 		base = base.With(opts.middleware)
 	}
@@ -387,6 +389,24 @@ func nerdctlSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts co
 	require.NoError(t, err)
 
 	ctr := base.WithServiceBinding("containerd", svc)
+
+	// try stat'ing /run/containerd/containerd.sock every 1 second, up to 30s. That's what we connect to so
+	// can't rely on network health checks atm
+	_, err = ctr.
+		WithEnvVariable("CACHEBUSTER", rand.Text()).
+		WithExec([]string{"sh", "-c", `
+			for i in $(seq 1 30); do
+				if stat /run/containerd/containerd.sock; then
+					exit 0
+				else
+					sleep 1
+				fi
+			done
+			exit 1
+			`,
+		}).
+		Sync(ctx)
+	require.NoError(t, err)
 
 	t.Cleanup(func() {
 		opts := dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny, InsecureRootCapabilities: true}
@@ -420,6 +440,7 @@ func doLoadEngine(ctx context.Context, dag *dagger.Client, ctr *dagger.Container
 	}
 	out, err := ctr.
 		WithMountedFile("engine.tar", dag.Host().File(tarPath)).
+		WithEnvVariable("CACHEBUSTER", rand.Text()).
 		WithExec([]string{cli, "image", "load", "-i", "engine.tar"}).
 		Stdout(ctx)
 	if err != nil {
