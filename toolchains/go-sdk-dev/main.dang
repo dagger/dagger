@@ -8,8 +8,8 @@ type GoSdkDev {
     "!sdk/go"
     "!go.mod"
     "!go.sum"
-    "!/cmd/codegen"
-    "!/engine/slog"
+    "!cmd/codegen"
+    "!engine/slog"
   ])
 
   """
@@ -29,7 +29,11 @@ type GoSdkDev {
     daggerEngine().installClient(ctr, devEngine)
   }
 
-  pub source(): Directory! {
+  pub name: String! {
+    "go"
+  }
+
+  pub source: Directory! {
     workspace.directory(sourcePath)
   }
 
@@ -51,7 +55,7 @@ type GoSdkDev {
       withExec(["go", "generate", "-v", "./..."]).
       withExec(["go", "mod", "tidy"]).
       directory("../.."). # pop back to repo root
-      changes(source())
+      changes(workspace)
   }
 
   """
