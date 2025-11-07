@@ -648,9 +648,6 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			}
 			linked := db.initSpan(linkedCtx.SpanID)
 			span.ErrorOrigin = linked
-			if linked.HasParent(span) {
-				span.RevealedSpans.Add(linked)
-			}
 		}
 	}
 
@@ -896,19 +893,6 @@ func (db *DB) Simplify(call *callpbv1.Call, force bool) *callpbv1.Call {
 	return call
 }
 
-// Function to check if a row is or contains a target row
-func isOrContains(row, target *TraceTree) bool {
-	if row == target {
-		return true
-	}
-	for _, child := range row.Children {
-		if isOrContains(child, target) {
-			return true
-		}
-	}
-	return false
-}
-
 type WalkDecision int
 
 const (
@@ -937,34 +921,6 @@ func WalkTree(tree []*TraceTree, f func(*TraceTree, int) WalkDecision) {
 	walk(tree, 0)
 }
 
-func (db *DB) CollectErrors(rows *RowsView) []*TraceTree {
-	reveal := make(map[*TraceTree]struct{})
-
-	var collect func(row *TraceTree, ancestorFailed bool)
-	collect = func(tree *TraceTree, ancestorFailed bool) {
-		failed := tree.Span.IsFailedOrCausedFailure()
-		unset := tree.Span.IsUnset()
-		if failed {
-			reveal[tree] = struct{}{}
-		}
-		if failed ||
-			// continue through UNSET spans beneath failed parents; these correspond
-			// to basic span.End() calls which intend to just add measurement without
-			// bubbling up or masking failure
-			(unset && ancestorFailed) {
-			for _, child := range tree.Children {
-				collect(child, true)
-			}
-		}
-	}
-
-	for _, row := range rows.Body {
-		collect(row, false)
-	}
-
-	return collectParents(rows.Body, reveal)
-}
-
 func (db *DB) FindResource(filter attribute.KeyValue) *resource.Resource {
 	for _, res := range db.Resources {
 		for _, kv := range res.Attributes() {
@@ -974,26 +930,4 @@ func (db *DB) FindResource(filter attribute.KeyValue) *resource.Resource {
 		}
 	}
 	return nil
-}
-
-func collectParents(rows []*TraceTree, targets map[*TraceTree]struct{}) []*TraceTree {
-	var result []*TraceTree
-
-	for _, row := range rows {
-		contains := false
-		for target := range targets {
-			if isOrContains(row, target) {
-				contains = true
-				break
-			}
-		}
-		if !contains {
-			continue
-		}
-		rowCopy := *row
-		rowCopy.Children = collectParents(row.Children, targets)
-		result = append(result, &rowCopy)
-	}
-
-	return result
 }

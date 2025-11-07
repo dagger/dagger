@@ -6885,6 +6885,15 @@ func (r *Function) WithCachePolicy(policy FunctionCachePolicy, opts ...FunctionW
 	}
 }
 
+// Returns the function with a flag indicating it's a check.
+func (r *Function) WithCheck() *Function {
+	q := r.query.Select("withCheck")
+
+	return &Function{
+		query: q,
+	}
+}
+
 // FunctionWithDeprecatedOpts contains options for Function.WithDeprecated
 type FunctionWithDeprecatedOpts struct {
 	// Reason or migration path describing the deprecation.
@@ -13049,61 +13058,6 @@ const (
 
 	// Shares the cache volume amongst many build pipelines, but will serialize the writes
 	CacheSharingModeLocked CacheSharingMode = "LOCKED"
-)
-
-// The result of a check.
-type CheckStatus string
-
-func (CheckStatus) IsEnum() {}
-
-func (v CheckStatus) Name() string {
-	switch v {
-	case CheckStatusCompleted:
-		return "COMPLETED"
-	case CheckStatusSkipped:
-		return "SKIPPED"
-	default:
-		return ""
-	}
-}
-
-func (v CheckStatus) Value() string {
-	return string(v)
-}
-
-func (v *CheckStatus) MarshalJSON() ([]byte, error) {
-	if *v == "" {
-		return []byte(`""`), nil
-	}
-	name := v.Name()
-	if name == "" {
-		return nil, fmt.Errorf("invalid enum value %q", *v)
-	}
-	return json.Marshal(name)
-}
-
-func (v *CheckStatus) UnmarshalJSON(dt []byte) error {
-	var s string
-	if err := json.Unmarshal(dt, &s); err != nil {
-		return err
-	}
-	switch s {
-	case "":
-		*v = ""
-	case "COMPLETED":
-		*v = CheckStatusCompleted
-	case "SKIPPED":
-		*v = CheckStatusSkipped
-	default:
-		return fmt.Errorf("invalid enum value %q", s)
-	}
-	return nil
-}
-
-const (
-	CheckStatusCompleted CheckStatus = "COMPLETED"
-
-	CheckStatusSkipped CheckStatus = "SKIPPED"
 )
 
 // File type.

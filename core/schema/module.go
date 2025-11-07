@@ -171,6 +171,9 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 				dagql.Arg("reason").Doc(`Reason or migration path describing the deprecation.`),
 			),
 
+		dagql.Func("withCheck", s.functionWithCheck).
+			Doc(`Returns the function with a flag indicating it's a check.`),
+
 		dagql.Func("withSourceMap", s.functionWithSourceMap).
 			Doc(`Returns the function with the given source map.`).
 			Args(
@@ -525,6 +528,10 @@ func (s *moduleSchema) functionWithDeprecated(ctx context.Context, fn *core.Func
 	Reason *string
 }) (*core.Function, error) {
 	return fn.WithDeprecated(args.Reason), nil
+}
+
+func (s *moduleSchema) functionWithCheck(ctx context.Context, fn *core.Function, args struct{}) (*core.Function, error) {
+	return fn.WithCheck(), nil
 }
 
 func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, args struct {

@@ -48,6 +48,12 @@ func Passthrough() trace.SpanStartOption {
 	return trace.WithAttributes(attribute.Bool(UIPassthroughAttr, true))
 }
 
+// Boundary indicates that telemetry shouldn't bubble up through this span,
+// through Reveal, RollUpLogs, or RollUpSpans.
+func Boundary() trace.SpanStartOption {
+	return trace.WithAttributes(attribute.Bool(UIBoundaryAttr, true))
+}
+
 // Tracer returns a Tracer for the given library using the provider from
 // the current span.
 func Tracer(ctx context.Context, lib string) trace.Tracer {

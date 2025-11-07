@@ -208,7 +208,7 @@ func (r *Releaser) Publish(
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
 	} else {
-		_, err = dag.DaggerCli().ReleaseDryRun(ctx)
+		err := dag.DaggerCli().ReleaseDryRun(ctx)
 		if err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}

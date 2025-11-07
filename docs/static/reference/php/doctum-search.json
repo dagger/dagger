@@ -3949,6 +3949,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Function_::withCheck",
+			"p": "Dagger/Function_.html#method_withCheck",
+			"d": "<p>Returns the function with a flag indicating it's a check.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Function_::withDeprecated",
 			"p": "Dagger/Function_.html#method_withDeprecated",
 			"d": "<p>Returns the function with the provided deprecation reason.</p>"
