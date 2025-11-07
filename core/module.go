@@ -157,8 +157,6 @@ func (mod *Module) walkObjectChecks(ctx context.Context, obj *ObjectTypeDef, obj
 		return cached
 	}
 	var checks []*Check
-	// To be a valid check, a function must return a type ending with this suffix
-	checkReturnTypeSuffix := CheckStatus("").Type().Name()
 	subObjects := map[string]*ObjectTypeDef{}
 	for _, fn := range obj.Functions {
 		func() {
@@ -166,8 +164,7 @@ func (mod *Module) walkObjectChecks(ctx context.Context, obj *ObjectTypeDef, obj
 				return
 			}
 			// 1. Scan object for checks
-			returnType := fn.ReturnType.ToType().Name()
-			if strings.HasSuffix(returnType, checkReturnTypeSuffix) {
+			if fn.IsCheck {
 				checks = append(checks, &Check{
 					Path:        []string{gqlFieldName(fn.Name)},
 					Description: fn.Description,
@@ -175,7 +172,9 @@ func (mod *Module) walkObjectChecks(ctx context.Context, obj *ObjectTypeDef, obj
 				return
 			}
 			// 2. Recursively scan reachable children objects
-			if returnsObject := fn.ReturnType.AsObject.Valid; returnsObject && returnType != obj.Name {
+			if returnsObject := fn.ReturnType.AsObject.Valid; returnsObject &&
+				// avoid cycles (X.withFoo: X)
+				fn.ReturnType.ToType().Name() != obj.Name {
 				subObj, ok := mod.ObjectByName(fn.ReturnType.ToType().Name())
 				if ok {
 					subObjects[fn.Name] = subObj

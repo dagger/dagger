@@ -301,6 +301,13 @@ var coreDirectives = []DirectiveSpec{
 			DirectiveLocationArgumentDefinition,
 		},
 	},
+	{
+		Name:        "check",
+		Description: FormatDescription(`Indicates that this function is a check.`),
+		Locations: []DirectiveLocation{
+			DirectiveLocationFieldDefinition,
+		},
+	},
 }
 
 // Root returns the root object of the server. It is suitable for passing to

@@ -31,6 +31,9 @@ type Function struct {
 	CachePolicy     FunctionCachePolicy
 	CacheTTLSeconds dagql.Nullable[dagql.Int]
 
+	// IsCheck indicates whether this function is a check
+	IsCheck bool
+
 	// OriginalName of the parent object
 	ParentOriginalName string
 
@@ -76,6 +79,17 @@ func (fn Function) Clone() *Function {
 	return &cp
 }
 
+// Directives returns the GraphQL directives that should be applied to this function.
+func (fn *Function) Directives() []*ast.Directive {
+	var directives []*ast.Directive
+	if fn.IsCheck {
+		directives = append(directives, &ast.Directive{
+			Name: "check",
+		})
+	}
+	return directives
+}
+
 // FieldSpec converts a Function into a GraphQL field specification for inclusion in a GraphQL schema.
 // This method is called during schema generation when building the GraphQL API representation of module functions.
 // It transforms the Function's metadata (name, description, arguments, return type) into the dagql.FieldSpec format
@@ -99,6 +113,7 @@ func (fn *Function) FieldSpec(ctx context.Context, mod *Module) (dagql.FieldSpec
 	if fn.SourceMap.Valid {
 		spec.Directives = append(spec.Directives, fn.SourceMap.Value.TypeDirective())
 	}
+	spec.Directives = append(spec.Directives, fn.Directives()...)
 	for _, arg := range fn.Args {
 		modType, ok, err := mod.ModTypeFor(ctx, arg.TypeDef, true)
 		if err != nil {
@@ -180,6 +195,12 @@ func (fn *Function) WithDescription(desc string) *Function {
 func (fn *Function) WithDeprecated(reason *string) *Function {
 	fn = fn.Clone()
 	fn.Deprecated = reason
+	return fn
+}
+
+func (fn *Function) WithCheck(isCheck bool) *Function {
+	fn = fn.Clone()
+	fn.IsCheck = isCheck
 	return fn
 }
 
