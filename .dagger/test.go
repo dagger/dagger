@@ -620,7 +620,7 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, string, error) {
 	utilDirPath := "/dagger-dev"
 	// FIXME: fold test functions *into* the Go toolchain,
 	// instead of calling *out to* it.
-	goToolchain, err := t.Dagger.Go(ctx, t.Dagger.Source)
+	goToolchain, err := t.Dagger.Go(t.Dagger.Source)
 	if err != nil {
 		return nil, "", err
 	}

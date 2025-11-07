@@ -13,7 +13,6 @@ type GoToolchain struct {
 
 // Go returns the Go toolchain
 func (dev *DaggerDev) Go(
-	ctx context.Context,
 	// +defaultPath="/"
 	// +ignore=[
 	// "bin",
@@ -30,21 +29,12 @@ func (dev *DaggerDev) Go(
 	// ]
 	source *dagger.Directory,
 ) (*GoToolchain, error) {
-	v := dag.Version()
-	version, err := v.Version(ctx)
-	if err != nil {
-		return nil, err
-	}
-	tagOrCommit, err := v.TagOrCommit(ctx)
-	if err != nil {
-		return nil, err
-	}
 	g := &GoToolchain{
 		Go: dag.Go(dagger.GoOpts{
 			Source: source,
 			Values: []string{
-				"github.com/dagger/dagger/engine.Version=" + version,
-				"github.com/dagger/dagger/engine.SDKVersion=" + tagOrCommit,
+				"github.com/dagger/dagger/engine.Version=" + dev.Version,
+				"github.com/dagger/dagger/engine.SDKVersion=" + dev.SDKVersion,
 			},
 		},
 		),
