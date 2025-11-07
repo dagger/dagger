@@ -498,6 +498,12 @@ func LoadTypeDefFromID(id dagger.TypeDefID) *dagger.TypeDef {
 	return client.LoadTypeDefFromID(id)
 }
 
+// Load a Watcher from its ID.
+func LoadWatcherFromID(id dagger.WatcherID) *dagger.Watcher {
+	client := initClient()
+	return client.LoadWatcherFromID(id)
+}
+
 // Create a new module.
 func Module() *dagger.Module {
 	client := initClient()

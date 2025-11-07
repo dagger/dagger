@@ -552,7 +552,7 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 			return nil, fmt.Errorf("can only set default path for Object, not %s", argType.Self().Kind)
 		}
 		name := argType.Self().AsObject.Value.Name
-		if !slices.Contains([]string{"Directory", "File", "GitRepository", "GitRef"}, name) {
+		if !slices.Contains([]string{"Directory", "File", "Watcher", "GitRepository", "GitRef"}, name) {
 			return nil, fmt.Errorf("cannot set default path for %s", name)
 		}
 	}
@@ -563,7 +563,7 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 			return nil, fmt.Errorf("can only set ignore for Object type, not %s", argType.Self().Kind)
 		}
 		name := argType.Self().AsObject.Value.Name
-		if name != "Directory" {
+		if !slices.Contains([]string{"Directory", "Watcher"}, name) {
 			return nil, fmt.Errorf("can only set ignore for Directory type, not %s", name)
 		}
 	}
