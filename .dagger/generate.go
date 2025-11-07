@@ -62,25 +62,46 @@ func (dev *DaggerDev) Generate(ctx context.Context,
 			return maybeCheck(ctx, genGHA)
 		}).
 		WithJob("SDKs", func(ctx context.Context) error {
-			type generator interface {
-				Name() string
+			jobs := parallel.New()
+			// 1. Builtin SDK toolchains have an eager signature
+			type eagerGenerator interface {
 				Generate(context.Context) (*dagger.Changeset, error)
 			}
-			generators := allSDKs[generator](dev)
-			genSDKs = make([]*dagger.Changeset, len(generators))
-			jobs := parallel.New()
-			for i, sdk := range generators {
-				jobs = jobs.WithJob(sdk.Name(), func(ctx context.Context) error {
-					var err error
-					genSDK, err := sdk.Generate(ctx)
+			eagerGenerators := allSDKs[eagerGenerator](dev)
+			eagerGen := make([]*dagger.Changeset, len(eagerGenerators))
+			for i, sdk := range eagerGenerators {
+				jobs = jobs.WithJob(sdk.Name, func(ctx context.Context) error {
+					gen, err := sdk.Value.Generate(ctx)
 					if err != nil {
 						return err
 					}
-					genSDKs[i] = genSDK
-					return maybeCheck(ctx, genSDK)
+					eagerGen[i] = gen
+					return maybeCheck(ctx, gen)
 				})
 			}
-			return jobs.Run(ctx)
+			// 2. SDK toolchains in standalone modules have a lazy signature
+			type lazyGenerator interface {
+				Generate() *dagger.Changeset
+			}
+			lazyGenerators := allSDKs[lazyGenerator](dev)
+			lazyGen := make([]*dagger.Changeset, len(lazyGenerators))
+			for i, sdk := range lazyGenerators {
+				jobs = jobs.WithJob(sdk.Name, func(ctx context.Context) error {
+					gen, err := sdk.Value.Generate().Sync(ctx)
+					if err != nil {
+						return err
+					}
+					lazyGen[i] = gen
+					return maybeCheck(ctx, gen)
+				})
+			}
+			// 3. Run all jobs and collect results
+			if err := jobs.Run(ctx); err != nil {
+				return err
+			}
+			genSDKs = append(genSDKs, eagerGen...)
+			genSDKs = append(genSDKs, lazyGen...)
+			return nil
 		}).
 		Run(ctx)
 	if err != nil {

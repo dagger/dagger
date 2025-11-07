@@ -4,6 +4,16 @@
   "sdk": {
     "source": "go"
   },
+  "toolchains": [
+    {
+      "name": "go-sdk",
+      "source": "toolchains/go-sdk-dev"
+    },
+    {
+      "name": "php-sdk",
+      "source": "toolchains/php-sdk-dev"
+    }
+  ],
   "include": [
     "engine/distconsts/**/*",
     "sdk/typescript/runtime/**/*",
@@ -65,10 +75,6 @@
       "name": "notify",
       "source": "github.com/gerhard/daggerverse/notify@main",
       "pin": "e4ee5778b10345d09a65a9655022d8ec40fc489f"
-    },
-    {
-      "name": "php-sdk-dev",
-      "source": "sdk/php/dev"
     },
     {
       "name": "ps-analyzer",

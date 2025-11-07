@@ -42,48 +42,38 @@ type SDK struct {
 // Return an "installer" function which, given a container, will attach
 // a dev engine and CLI
 func (dev *DaggerDev) devEngineSidecar() func(*dagger.Container) *dagger.Container {
-	// The name "sdk" is an arbitrary key for engine state reuse across builds
-	instanceName := "sdk"
-	engineSvc := dag.DaggerEngine().Service(instanceName, dagger.DaggerEngineServiceOpts{
-		// We set a cidr different from the default (10.88), to allow an additional layer of nesting
-		// - With custom CIDR: maximum 3 layers of engines (dagger-in-dagger-in-dagger)
-		// - Without custom CIDR: maximum 2 layers (dagger-in-dagger)
-		// We need 3 layers for the 'CiInCi' check to work.
-		// Symptom if it doesn't: the innermost engine cannot connect to the internet (causing clients to fail
-		// on basic operations like 'Container.from()')
-		NetworkCidr: "10.89.0.0/16",
-	})
-	cliBinary := dag.DaggerCli().Binary()
-	cliBinaryPath := "/.dagger-cli"
-
-	return func(ctr *dagger.Container) *dagger.Container {
-		ctr = ctr.
-			WithServiceBinding("dagger-engine", engineSvc).
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dagger-engine:1234").
-			WithMountedFile(cliBinaryPath, cliBinary).
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinaryPath).
-			WithExec([]string{"ln", "-s", cliBinaryPath, "/usr/local/bin/dagger"}).
-			With(dev.withDockerCfg) // this avoids rate limiting in our ci tests
-		return ctr
+	return func(client *dagger.Container) *dagger.Container {
+		return dag.DaggerEngine().InstallClient(client)
 	}
 }
 
+type namedSDK[T any] struct {
+	Name  string
+	Value T
+}
+
 // Return a list of all SDKs implementing the given interface
-func allSDKs[T any](dev *DaggerDev) []T {
-	var result []T
+func allSDKs[T any](dev *DaggerDev) []namedSDK[T] {
+	var result []namedSDK[T]
 	sdks := dev.SDK()
-	for _, sdk := range []any{
-		sdks.selfCallGo(),
-		sdks.Python,
-		sdks.Typescript,
-		sdks.Elixir,
-		sdks.Rust,
-		sdks.selfCallPHP(),
-		sdks.Java,
-		sdks.selfCallDotnet(),
+	for _, entry := range []struct {
+		name string
+		sdk  any
+	}{
+		{"go", dag.GoSDK()},
+		{"python", sdks.Python},
+		{"typescript", sdks.Typescript},
+		{"elixir", sdks.Elixir},
+		{"rust", sdks.Rust},
+		{"php", dag.PhpSDK()},
+		{"java", sdks.Java},
+		{"dotnet", sdks.selfCallDotnet()},
 	} {
-		if casted, ok := sdk.(T); ok {
-			result = append(result, casted)
+		if casted, ok := entry.sdk.(T); ok {
+			result = append(result, namedSDK[T]{
+				Name:  entry.name,
+				Value: casted,
+			})
 		}
 	}
 	return result
@@ -91,15 +81,7 @@ func allSDKs[T any](dev *DaggerDev) []T {
 
 // Return the introspection.json from the current dev engine
 func (dev *DaggerDev) introspectionJSON() *dagger.File {
-	return dag.
-		Alpine(dagger.AlpineOpts{
-			Branch: distconsts.AlpineVersion,
-		}).
-		Container().
-		With(dev.devEngineSidecar()).
-		WithFile("/usr/local/bin/codegen", dag.Codegen().Binary()).
-		WithExec([]string{"codegen", "introspect", "-o", "/schema.json"}).
-		File("/schema.json")
+	return dag.DaggerEngine().IntrospectionJSON()
 }
 
 type gitPublishOpts struct {

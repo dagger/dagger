@@ -99,12 +99,11 @@ func (dev *DaggerDev) Bump(ctx context.Context, version string) (*dagger.Changes
 		WithJob("bump SDK versions", func(ctx context.Context) error {
 			type bumper interface {
 				Bump(context.Context, string) (*dagger.Changeset, error)
-				Name() string
 			}
 			bumpers := allSDKs[bumper](dev)
 			bumpSDKs = make([]*dagger.Changeset, len(bumpers))
 			for i, sdk := range bumpers {
-				bumped, err := sdk.Bump(ctx, version)
+				bumped, err := sdk.Value.Bump(ctx, version)
 				if err != nil {
 					return err
 				}
