@@ -99,7 +99,7 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Re
 		// Serialize to JSON so the cache can persist a plain string payload without
 		// requiring gitutil.Remote to satisfy dagql's typing interfaces. The decode
 		// step also hands each repo its own copy, so later tweaks (e.g. setting
-		// repo.Remote.Head) stay scoped to that caller.
+		// repo.Remote.Head) stay scoped to that caller
 		payload, err := json.Marshal(remote)
 		if err != nil {
 			return nil, err
@@ -112,13 +112,6 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Re
 	}
 
 	slog.Info("loaded git remote metadata", "cache_hit", cacheRes.HitCache(), "cache_key", cacheKey)
-
-	// Auth-related tests expect ls-remote to re-run so that auth failures
-	// surface even if the metadata is cached from a prior success.
-	if cacheRes.HitCache() && (repo.AuthToken.Self() != nil || repo.AuthHeader.Self() != nil || repo.SSHAuthSocket.Self() != nil) {
-		slog.Info("forcing git ls-remote despite cache hit due to HTTP auth token", "cache_key", cacheKey)
-		return repo.runLsRemote(ctx)
-	}
 
 	val := cacheRes.Result()
 	strRes, ok := dagql.UnwrapAs[dagql.Result[dagql.String]](val)
@@ -140,13 +133,33 @@ func (repo *RemoteGitRepository) Get(ctx context.Context, target *gitutil.Ref) (
 	}, nil
 }
 
-// remoteCacheKey scopes cached git remote metadata to the current session and remote URL.
 func (repo *RemoteGitRepository) remoteCacheKey(ctx context.Context) (string, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return "", err
 	}
-	return hashutil.HashStrings(clientMetadata.SessionID, repo.URL.Remote()).String(), nil
+	inputs := []string{clientMetadata.SessionID, repo.URL.Remote()}
+	inputs = append(inputs, repo.remoteCacheScope()...)
+	return hashutil.HashStrings(inputs...).String(), nil
+}
+
+// Pipelines could query the same remote with different creds (e.g. a pipeline checking that creds were properly rotated)
+// instead of being too smart, we just scope the cache key to the auth configuration: less chance of cache poisoning
+func (repo *RemoteGitRepository) remoteCacheScope() []string {
+	scope := make([]string, 0, 4)
+	if token := repo.AuthToken; token.Self() != nil && token.ID() != nil {
+		scope = append(scope, "token:"+token.ID().Digest().String())
+	}
+	if header := repo.AuthHeader; header.Self() != nil && header.ID() != nil {
+		scope = append(scope, "header:"+header.ID().Digest().String())
+	}
+	if repo.AuthUsername != "" {
+		scope = append(scope, "username:"+repo.AuthUsername)
+	}
+	if sshSock := repo.SSHAuthSocket; sshSock.Self() != nil {
+		scope = append(scope, "ssh-sock:"+sshSock.Self().IDDigest.String())
+	}
+	return scope
 }
 
 func (repo *RemoteGitRepository) runLsRemote(ctx context.Context) (*gitutil.Remote, error) {
