@@ -127,43 +127,6 @@ export type CheckGroupID = string & { __CheckGroupID: never }
 export type CheckID = string & { __CheckID: never }
 
 /**
- * The result of a check.
- */
-export enum CheckStatus {
-  Completed = "COMPLETED",
-  Skipped = "SKIPPED",
-}
-
-/**
- * Utility function to convert a CheckStatus value to its name so
- * it can be uses as argument to call a exposed function.
- */
-function CheckStatusValueToName(value: CheckStatus): string {
-  switch (value) {
-    case CheckStatus.Completed:
-      return "COMPLETED"
-    case CheckStatus.Skipped:
-      return "SKIPPED"
-    default:
-      return value
-  }
-}
-
-/**
- * Utility function to convert a CheckStatus name to its value so
- * it can be properly used inside the module runtime.
- */
-function CheckStatusNameToValue(name: string): CheckStatus {
-  switch (name) {
-    case "COMPLETED":
-      return CheckStatus.Completed
-    case "SKIPPED":
-      return CheckStatus.Skipped
-    default:
-      return name as CheckStatus
-  }
-}
-/**
  * The `CloudID` scalar type represents an identifier for an object of type Cloud.
  */
 export type CloudID = string & { __CloudID: never }

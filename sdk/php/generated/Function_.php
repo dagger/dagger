@@ -129,6 +129,18 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Returns the function with a flag indicating it's a check.
+     */
+    public function withCheck(?bool $isCheck = true): Function_
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withCheck');
+        if (null !== $isCheck) {
+        $innerQueryBuilder->setArgument('isCheck', $isCheck);
+        }
+        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Returns the function with the provided deprecation reason.
      */
     public function withDeprecated(?string $reason = null): Function_

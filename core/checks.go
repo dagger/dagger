@@ -8,41 +8,12 @@ import (
 
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/util/parallel"
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
-
-type CheckStatus string
-
-var CheckStatuses = dagql.NewEnum[CheckStatus]()
-
-var (
-	CheckCompleted = CheckStatuses.Register("COMPLETED")
-	CheckSkipped   = CheckStatuses.Register("SKIPPED")
-)
-
-func (r CheckStatus) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: "CheckStatus",
-		NonNull:   true,
-	}
-}
-
-func (r CheckStatus) TypeDescription() string {
-	return "The result of a check."
-}
-
-func (r CheckStatus) Decoder() dagql.InputDecoder {
-	return CheckStatuses
-}
-
-func (r CheckStatus) ToLiteral() call.Literal {
-	return CheckStatuses.Literal(r)
-}
 
 // Check represents a validation check with its result
 type Check struct {

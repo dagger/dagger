@@ -8356,6 +8356,11 @@ pub struct FunctionWithCachePolicyOpts<'a> {
     pub time_to_live: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct FunctionWithCheckOpts {
+    #[builder(setter(into, strip_option), default)]
+    pub is_check: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct FunctionWithDeprecatedOpts<'a> {
     /// Reason or migration path describing the deprecation.
     #[builder(setter(into, strip_option), default)]
@@ -8508,6 +8513,35 @@ impl Function {
         query = query.arg("policy", policy);
         if let Some(time_to_live) = opts.time_to_live {
             query = query.arg("timeToLive", time_to_live);
+        }
+        Function {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Returns the function with a flag indicating it's a check.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_check(&self) -> Function {
+        let query = self.selection.select("withCheck");
+        Function {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Returns the function with a flag indicating it's a check.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_check_opts(&self, opts: FunctionWithCheckOpts) -> Function {
+        let mut query = self.selection.select("withCheck");
+        if let Some(is_check) = opts.is_check {
+            query = query.arg("isCheck", is_check);
         }
         Function {
             proc: self.proc.clone(),
@@ -13282,13 +13316,6 @@ pub enum CacheSharingMode {
     Private,
     #[serde(rename = "SHARED")]
     Shared,
-}
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
-pub enum CheckStatus {
-    #[serde(rename = "COMPLETED")]
-    Completed,
-    #[serde(rename = "SKIPPED")]
-    Skipped,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ExistsType {
