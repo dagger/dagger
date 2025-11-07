@@ -57,6 +57,8 @@ linters:
     govet:
       disable:
         - lostcancel
+      enable:
+        - nilness
     staticcheck:
       checks:
         - "all"

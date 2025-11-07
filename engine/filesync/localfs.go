@@ -328,7 +328,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 						rootPathSpan.maxStop = writeEnd
 					}
 					if werr != nil {
-						rootPathSpan.span.SetStatus(codes.Error, err.Error())
+						rootPathSpan.span.SetStatus(codes.Error, werr.Error())
 					}
 					rootPathSpan.mu.Unlock()
 
