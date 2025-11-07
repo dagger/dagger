@@ -21,7 +21,7 @@ type GoSdkDev {
   Build a container to run the go toolchain
   """
   pub devContainer(): Container! {
-    let ctr = go(source: source()).
+    let ctr = go(source: workspace).
       env().
       withWorkdir(sourcePath)
     # "sdk" is an arbitrary name for state persistence
@@ -63,14 +63,14 @@ type GoSdkDev {
     """Git tag to fake-release"""
     sourceTag: String! = "HEAD",
     """Git remote to fake-release to"""
-    dest: String! = "https://github.com/dagger/dagger-go-sdk.git",
+    destRemote: String! = "https://github.com/dagger/dagger-go-sdk.git",
     callback: File! @defaultPath(path:"./git-filter-callback.py"),
   ): MyCheckStatus! {
     let version = sourceTag.trimPrefix(sourcePath)
     gitReleaser().dryRun(
-      sourceRepo,
-      dest: dest,
+      sourceRepo: sourceRepo,
       sourceTag: sourceTag,
+      destRemote: destRemote,
       destTag: version,
       callback: callback
     )
@@ -78,31 +78,32 @@ type GoSdkDev {
   }
 
   """
-  Release the Go SDK
+  Publish the Go SDK
   """
   pub release(
-    """Git repository to publish from"""
+    """Source git repository to release"""
     sourceRepo: GitRepository! @defaultPath(path:"/"),
-    """The git tag to release from"""
+    """Source git tag to release"""
     sourceTag: String!,
-    """The git remote to publish to"""
+    """Target git remote to release to"""
     destRemote: String! = "https://github.com/dagger/dagger-go-sdk.git",
-    """Optional Github authentication token"""
-    githubToken: Secret = null,
+    githubToken: Secret,
     callback: File! @defaultPath(path:"./go-git-filter-callback.py"),
   ): Void {
-    # FIXME: path.clean(sourcePath) + "/"
-    let version = sourceTag.trimPrefix("sdk/go/")
+    let version = sourceTag.trimPrefix(sourcePath)
     gitReleaser().release(
       sourceRepo: sourceRepo,
       sourceTag: sourceTag,
       destRemote: destRemote,
+      destTag: version,
       sourcePath: sourcePath,
       callback: callback,
-      destTag: version,
       githubToken: githubToken
     )
-    null
+  }
+
+  let versionFromTag(tag: String!): String! {
+    tag.trimPrefix(sourcePath.trimRight("/") + "/")
   }
 
   """
