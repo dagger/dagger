@@ -78,7 +78,7 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Re
 	}
 	cacheKey, err := repo.remoteCacheKey(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("remote git repository %q: %w", repo.URL.Remote(), err)
 	}
 
 	if srv == nil || srv.Cache == nil {
@@ -113,6 +113,13 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Re
 
 	slog.Info("loaded git remote metadata", "cache_hit", cacheRes.HitCache(), "cache_key", cacheKey)
 
+	// Auth-related tests expect ls-remote to re-run so that auth failures
+	// surface even if the metadata is cached from a prior success.
+	if cacheRes.HitCache() && (repo.AuthToken.Self() != nil || repo.AuthHeader.Self() != nil || repo.SSHAuthSocket.Self() != nil) {
+		slog.Info("forcing git ls-remote despite cache hit due to HTTP auth token", "cache_key", cacheKey)
+		return repo.runLsRemote(ctx)
+	}
+
 	val := cacheRes.Result()
 	strRes, ok := dagql.UnwrapAs[dagql.Result[dagql.String]](val)
 	if !ok {
@@ -137,7 +144,7 @@ func (repo *RemoteGitRepository) Get(ctx context.Context, target *gitutil.Ref) (
 func (repo *RemoteGitRepository) remoteCacheKey(ctx context.Context) (string, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return "", fmt.Errorf("client metadata: %w", err)
+		return "", err
 	}
 	return hashutil.HashStrings(clientMetadata.SessionID, repo.URL.Remote()).String(), nil
 }
