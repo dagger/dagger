@@ -25,14 +25,14 @@ func (dev *DaggerDev) Scan(ctx context.Context) (MyCheckStatus, error) {
 	ctr := dag.Container().
 		From("aquasec/trivy:0.67.2@sha256:e2b22eac59c02003d8749f5b8d9bd073b62e30fefaef5b7c8371204e0a4b0c08").
 		WithMountedDirectory("/mnt/ignores", ignoreFiles).
-		WithMountedCache("/root/.cache/", dag.CacheVolume("trivy-cache")).
+		WithMountedCache("/root/.cache/", dag.CacheVolume("trivy-cache"), dagger.ContainerWithMountedCacheOpts{
+			Sharing: dagger.CacheSharingModeLocked,
+		}).
 		With(dev.withDockerCfg)
 
 	commonArgs := []string{
-		"--format=json",
 		"--exit-code=1",
 		"--severity=CRITICAL,HIGH",
-		"--show-suppressed",
 	}
 	if len(ignoreFileNames) > 0 {
 		commonArgs = append(commonArgs, "--ignorefile=/mnt/ignores/"+ignoreFileNames[0])
