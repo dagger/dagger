@@ -1,6 +1,0 @@
-kind: Fixed
-body: fix panic in filesync telemetry
-time: 2025-11-07T11:14:59.037000375-03:00
-custom:
-    Author: ""
-    PR: "11371"
