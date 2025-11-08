@@ -1,0 +1,22 @@
+{
+  "name": "python-sdk-dev",
+  "engineVersion": "v0.19.6",
+  "sdk": {
+    "source": "go"
+  },
+  "include": [
+    "../../go.sum",
+    "../../go.mod",
+    "../../util/parallel"
+  ],
+  "dependencies": [
+    {
+      "name": "dagger-engine",
+      "source": "../../cmd/engine"
+    },
+    {
+      "name": "native-toolchain",
+      "source": "../../sdk/python/dev"
+    }
+  ]
+}

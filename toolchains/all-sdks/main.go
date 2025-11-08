@@ -12,7 +12,7 @@ type AllSdks struct{}
 
 // List available SDKs
 func (sdks *AllSdks) List() []string {
-	all := allSDKs[any]()
+	all := all[any]()
 	names := make([]string, len(all))
 	for i := range all {
 		names[i] = all[i].Name
@@ -28,7 +28,7 @@ func (sdks *AllSdks) Generate(ctx context.Context) (*dagger.Changeset, error) {
 	type generator interface {
 		Generate() *dagger.Changeset
 	}
-	generators := allSDKs[generator]()
+	generators := all[generator]()
 	genSDKs := make([]*dagger.Changeset, len(generators))
 	for i, sdk := range generators {
 		jobs = jobs.WithJob(sdk.Name, func(ctx context.Context) error {
@@ -48,7 +48,7 @@ func (sdks *AllSdks) Bump(ctx context.Context, version string) (*dagger.Changese
 	type bumper interface {
 		Bump(string) *dagger.Changeset
 	}
-	bumpers := allSDKs[bumper]()
+	bumpers := all[bumper]()
 	bumpSDKs := make([]*dagger.Changeset, len(bumpers))
 	jobs := parallel.New()
 	for i, sdk := range bumpers {
@@ -70,7 +70,7 @@ type namedSDK[T any] struct {
 }
 
 // Return a list of all SDKs implementing the given interface
-func allSDKs[T any]() []namedSDK[T] {
+func all[T any]() []namedSDK[T] {
 	var result []namedSDK[T]
 	for _, entry := range []struct {
 		name string

@@ -76,8 +76,7 @@ func (dev *DaggerDev) withDockerCfg(ctr *dagger.Container) *dagger.Container {
 
 func (dev *DaggerDev) Bump(ctx context.Context, version string) (*dagger.Changeset, error) {
 	var (
-		bumpDocs, bumpHelm *dagger.Changeset
-		bumpSDKs           []*dagger.Changeset
+		bumpDocs, bumpHelm, bumpSDKs *dagger.Changeset
 	)
 	err := parallel.New().
 		WithJob("bump docs version", func(ctx context.Context) error {
@@ -97,27 +96,13 @@ func (dev *DaggerDev) Bump(ctx context.Context, version string) (*dagger.Changes
 			return err
 		}).
 		WithJob("bump SDK versions", func(ctx context.Context) error {
-			type bumper interface {
-				Bump(context.Context, string) (*dagger.Changeset, error)
-			}
-			bumpers := allSDKs[bumper](dev)
-			bumpSDKs = make([]*dagger.Changeset, len(bumpers))
-			for i, sdk := range bumpers {
-				bumped, err := sdk.Value.Bump(ctx, version)
-				if err != nil {
-					return err
-				}
-				bumped, err = bumped.Sync(ctx)
-				if err != nil {
-					return err
-				}
-				bumpSDKs[i] = bumped
-			}
-			return nil
+			var err error
+			bumpSDKs, err = dag.Sdks().Bump(version).Sync(ctx)
+			return err
 		}).
 		Run(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return changesetMerge(append(bumpSDKs, bumpDocs, bumpHelm)...), nil
+	return changesetMerge(bumpSDKs, bumpDocs, bumpHelm), nil
 }

@@ -23,40 +23,35 @@ func changesetMerge(changesets ...*dagger.Changeset) *dagger.Changeset {
 
 func (sdks *AllSdks) ReleaseDryRun(ctx context.Context) error {
 	type releaseDryRunner interface {
-		ReleaseDryRun() MyCheckStatus
+		ReleaseDryRun(context.Context) error
 	}
 	jobs := parallel.New()
-	for _, sdk := range allSDKs[releaseDryRunner](dev) {
-		jobs = jobs.WithJob(sdk.Name, func(ctx context.Context) error {
-			_, err := sdk.Value.ReleaseDryRun(ctx)
-			return err
-		})
+	for _, sdk := range all[releaseDryRunner]() {
+		jobs = jobs.WithJob(sdk.Name, sdk.Value.ReleaseDryRun)
 	}
 	return jobs.Run(ctx)
 }
 
 // Run all checks for all SDKs
 // TODO: remove after merging https://github.com/dagger/dagger/pull/11211
-func (sdks *AllSdks) TestSDKs(ctx context.Context) error {
-	return parallel.New().
-		WithJob("go", dag.GoSDKDev().Test)
-
+func (sdks *AllSdks) Test(ctx context.Context) error {
 	jobs := parallel.New()
 	type tester interface {
 		Test(context.Context) error
 	}
-	for _, sdk := range allSDKs[tester](dev) {
-		jobs = jobs.WithJob(sdk.Name, func(ctx context.Context) error {
-			_, err := sdk.Value.Test(ctx)
-			return err
-		})
-	}
-	// Some (but not all) sdk test functions are also aggregators which will be replaced by PR 11211. Call them here too.
-	type deprecatedTester interface {
-		Test(context.Context) error
-	}
-	for _, sdk := range allSDKs[deprecatedTester](dev) {
+	for _, sdk := range all[tester]() {
 		jobs = jobs.WithJob(sdk.Name, sdk.Value.Test)
+	}
+	return jobs.Run(ctx)
+}
+
+func (sdks *AllSdks) Lint(ctx context.Context) error {
+	jobs := parallel.New()
+	type linter interface {
+		Lint(context.Context) error
+	}
+	for _, sdk := range all[linter]() {
+		jobs = jobs.WithJob(sdk.Name, sdk.Value.Lint)
 	}
 	return jobs.Run(ctx)
 }
