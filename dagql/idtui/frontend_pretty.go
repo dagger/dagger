@@ -18,6 +18,7 @@ import (
 
 	"github.com/adrg/xdg"
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
@@ -100,6 +101,7 @@ type frontendPretty struct {
 
 	// TUI state/config
 	fps          float64 // frames per second
+	spinner      spinner.Model
 	profile      termenv.Profile
 	window       tea.WindowSizeMsg // set by BubbleTea
 	contentWidth int
@@ -135,6 +137,12 @@ func NewPretty(w io.Writer) Frontend {
 	return NewWithDB(w, dagui.NewDB())
 }
 
+// same as spinner.Dot but without the trailing space
+var oneCharDot = spinner.Spinner{
+	Frames: []string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"},
+	FPS:    time.Second / 10, //nolint:mnd
+}
+
 func NewReporter(w io.Writer) Frontend {
 	fe := NewWithDB(w, dagui.NewDB())
 	fe.reportOnly = true
@@ -160,6 +168,7 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 		// initial TUI state
 		window:     tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
 		fps:        30,                                       // sane default, fine-tune if needed
+		spinner:    spinner.New(spinner.WithSpinner(oneCharDot)),
 		profile:    profile,
 		view:       view,
 		viewOut:    NewOutput(view, termenv.WithProfile(profile)),
@@ -1001,6 +1010,7 @@ func (fe *frontendPretty) Init() tea.Cmd {
 	return tea.Batch(
 		frame(fe.fps),
 		fe.spawn,
+		fe.spinner.Tick,
 	)
 }
 
@@ -1368,6 +1378,12 @@ func (fe *frontendPretty) offloadUpdates(msg tea.Msg) (*frontendPretty, tea.Cmd)
 		if f, ok := form.(*huh.Form); ok {
 			fe.form = f
 		}
+	}
+	{
+		// spinner messages
+		var cmd tea.Cmd
+		fe.spinner, cmd = fe.spinner.Update(msg)
+		cmds = append(cmds, cmd)
 	}
 	return fe, tea.Batch(cmds...)
 }
@@ -2200,7 +2216,7 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 				// Don't show spans which are aggressively hidden.
 				continue
 			}
-			icon, isInteresting := statusIcon(effect)
+			icon, isInteresting := fe.statusIcon(effect)
 			if !isInteresting {
 				// summarize boring statuses, rather than showing them in full
 				summary[icon]++
@@ -2246,9 +2262,9 @@ var statusColors = map[string]termenv.Color{
 
 // statusIcon returns an icon indicating the span's status, and a bool
 // indicating whether it's interesting enough to reveal at a summary level
-func statusIcon(span *dagui.Span) (string, bool) {
+func (fe *frontendPretty) statusIcon(span *dagui.Span) (string, bool) {
 	if span.IsRunningOrEffectsRunning() {
-		return DotHalf, true
+		return fe.spinner.View(), true
 	} else if span.IsCached() {
 		return IconCached, false
 	} else if span.IsCanceled() {
@@ -2271,7 +2287,7 @@ func (fe *frontendPretty) renderToggler(out TermOutput, row *dagui.TraceRow, isF
 			toggler = out.String(CaretRightFilled)
 		}
 	} else {
-		icon, _ := statusIcon(row.Span)
+		icon, _ := fe.statusIcon(row.Span)
 		toggler = out.String(icon)
 	}
 	toggler = toggler.Foreground(statusColor(row.Span))
