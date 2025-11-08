@@ -214,9 +214,13 @@ class PythonSdkDev:
             str | None,
             Doc("Python version to test against"),
         ] = None,
+        disable_nested_exec: Annotated[
+            bool,
+            Doc("Disable nested execution for the test runs"),
+        ] = False,
     ) -> TestSuite:
         """Run the test suite."""
-        return TestSuite(container=self.container, version=version)
+        return TestSuite(container=self.container, version=version, disable_nested_exec=disable_nested_exec)
 
     @function
     def test_versions(self) -> list[TestSuite]:

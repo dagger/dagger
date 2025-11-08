@@ -18,6 +18,11 @@ class TestSuite:
         Doc("The python version to test against"),
     ] = None
 
+    disable_nested_exec: Annotated[
+        bool,
+        Doc("Disable nested execution for the test runs"),
+    ] = False
+
     @function
     def run(
         self,
@@ -32,7 +37,7 @@ class TestSuite:
             cmd.extend(["-p", self.version])
         return self.container.with_exec(
             [*cmd, "pytest", *args],
-            experimental_privileged_nesting=True,
+            experimental_privileged_nesting=not self.disable_nested_exec,
         )
 
     @function
