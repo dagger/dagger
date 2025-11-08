@@ -220,7 +220,11 @@ class PythonSdkDev:
         ] = False,
     ) -> TestSuite:
         """Run the test suite."""
-        return TestSuite(container=self.container, version=version, disable_nested_exec=disable_nested_exec)
+        return TestSuite(
+            container=self.container,
+            version=version,
+            disable_nested_exec=disable_nested_exec,
+        )
 
     @function
     def test_versions(self) -> list[TestSuite]:
