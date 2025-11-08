@@ -82,32 +82,30 @@ func (t PhpSdkDev) DoctumConfig() *dagger.File {
 }
 
 // Lint the PHP code with PHP CodeSniffer (https://github.com/squizlabs/PHP_CodeSniffer)
-func (t PhpSdkDev) PhpCodeSniffer(ctx context.Context) (MyCheckStatus, error) {
+// +check
+func (t PhpSdkDev) PhpCodeSniffer(ctx context.Context) error {
 	_, err := dag.Native(dagger.NativeOpts{Source: t.Source()}).
 		Lint().
 		Sync(ctx)
-	return CheckCompleted, err
+	return err
 }
 
 // Analyze the PHP code with PHPStan (https://phpstan.org)
-func (t PhpSdkDev) PhpStan(ctx context.Context) (MyCheckStatus, error) {
+// +check
+func (t PhpSdkDev) PhpStan(ctx context.Context) error {
 	_, err := dag.Native(dagger.NativeOpts{Source: t.Source()}).
 		Analyze().
 		Sync(ctx)
-	return CheckCompleted, err
+	return err
 }
 
 // Test the PHP SDK
-func (t PhpSdkDev) Test(ctx context.Context) (MyCheckStatus, error) {
+func (t PhpSdkDev) Test(ctx context.Context) error {
 	base := t.DevContainer().
 		WithEnvVariable("PATH", "./vendor/bin:$PATH", dagger.ContainerWithEnvVariableOpts{Expand: true})
-
 	dev := dag.Native(dagger.NativeOpts{Container: base, Source: t.Source()})
 	_, err := dev.Test().Sync(ctx)
-	if err != nil {
-		return CheckCompleted, err
-	}
-	return CheckCompleted, nil
+	return err
 }
 
 // Regenerate the PHP SDK API + docs
@@ -185,8 +183,8 @@ func (t PhpSdkDev) ReleaseDryRun(
 	// Target git remote to fake-release *to*
 	// +default="https://github.com/dagger/dagger-php-sdk.git"
 	destRemote string,
-) (MyCheckStatus, error) {
-	return CheckCompleted, dag.GitReleaser().DryRun(
+) error {
+	return dag.GitReleaser().DryRun(
 		ctx,
 		sourceRepo,
 		sourceTag,

@@ -40,11 +40,11 @@ type GoSdkDev {
   """
   Test the Go SDK
   """
-  pub test(): MyCheckStatus! {
+  pub test(): Void {
     devContainer().
       withExec(["go", "test", "-v", "-skip=TestProvision", "./..."]).
       sync
-    MyCheckStatus.COMPLETED
+    null
   }
 
   """
@@ -69,7 +69,7 @@ type GoSdkDev {
     """Git remote to fake-release to"""
     destRemote: String! = "https://github.com/dagger/dagger-go-sdk.git",
     callback: File! @defaultPath(path:"./git-filter-callback.py"),
-  ): MyCheckStatus! {
+  ): Void {
     let version = sourceTag.trimPrefix(sourcePath)
     gitReleaser().dryRun(
       sourceRepo: sourceRepo,
@@ -78,7 +78,6 @@ type GoSdkDev {
       destTag: version,
       callback: callback
     )
-    MyCheckStatus.COMPLETED
   }
 
   """
@@ -123,5 +122,3 @@ type GoSdkDev {
     layer.changes(workspace)
   }
 }
-
-enum MyCheckStatus { COMPLETED }

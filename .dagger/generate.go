@@ -3,16 +3,16 @@ package main
 import (
 	"context"
 	"os"
-	"slices"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
 	"github.com/dagger/dagger/util/parallel"
 )
 
 // Verify that generated code is up to date
-func (dev *DaggerDev) CheckGenerated(ctx context.Context) (MyCheckStatus, error) {
+// +check
+func (dev *DaggerDev) CheckGenerated(ctx context.Context) error {
 	_, err := dev.Generate(ctx, true)
-	return CheckCompleted, err
+	return err
 }
 
 // Run all code generation - SDKs, docs, grpc stubs, changelog
@@ -20,8 +20,7 @@ func (dev *DaggerDev) Generate(ctx context.Context,
 	// +optional
 	check bool,
 ) (*dagger.Changeset, error) {
-	var genDocs, genEngine, genChangelog, genGHA *dagger.Changeset
-	var genSDKs []*dagger.Changeset
+	var genDocs, genEngine, genChangelog, genGHA, genSDKs *dagger.Changeset
 	maybeCheck := func(ctx context.Context, changes *dagger.Changeset) error {
 		if !check {
 			return nil
@@ -62,46 +61,12 @@ func (dev *DaggerDev) Generate(ctx context.Context,
 			return maybeCheck(ctx, genGHA)
 		}).
 		WithJob("SDKs", func(ctx context.Context) error {
-			jobs := parallel.New()
-			// 1. Builtin SDK toolchains have an eager signature
-			type eagerGenerator interface {
-				Generate(context.Context) (*dagger.Changeset, error)
-			}
-			eagerGenerators := allSDKs[eagerGenerator](dev)
-			eagerGen := make([]*dagger.Changeset, len(eagerGenerators))
-			for i, sdk := range eagerGenerators {
-				jobs = jobs.WithJob(sdk.Name, func(ctx context.Context) error {
-					gen, err := sdk.Value.Generate(ctx)
-					if err != nil {
-						return err
-					}
-					eagerGen[i] = gen
-					return maybeCheck(ctx, gen)
-				})
-			}
-			// 2. SDK toolchains in standalone modules have a lazy signature
-			type lazyGenerator interface {
-				Generate() *dagger.Changeset
-			}
-			lazyGenerators := allSDKs[lazyGenerator](dev)
-			lazyGen := make([]*dagger.Changeset, len(lazyGenerators))
-			for i, sdk := range lazyGenerators {
-				jobs = jobs.WithJob(sdk.Name, func(ctx context.Context) error {
-					gen, err := sdk.Value.Generate().Sync(ctx)
-					if err != nil {
-						return err
-					}
-					lazyGen[i] = gen
-					return maybeCheck(ctx, gen)
-				})
-			}
-			// 3. Run all jobs and collect results
-			if err := jobs.Run(ctx); err != nil {
+			var err error
+			genSDKs, err = dag.Sdks().Generate().Sync(ctx)
+			if err != nil {
 				return err
 			}
-			genSDKs = append(genSDKs, eagerGen...)
-			genSDKs = append(genSDKs, lazyGen...)
-			return nil
+			return maybeCheck(ctx, genSDKs)
 		}).
 		Run(ctx)
 	if err != nil {
@@ -114,9 +79,9 @@ func (dev *DaggerDev) Generate(ctx context.Context,
 	// FIXME: this is a workaround to TUI being too noisy
 	err = parallel.Run(ctx, "merge all changesets", func(ctx context.Context) error {
 		var err error
-		changes := slices.Clone(genSDKs)
-		changes = append(changes, genDocs, genEngine, genChangelog, genGHA)
-		result, err = changesetMerge(changes...).Sync(ctx)
+		var gen []*dagger.Changeset
+		gen = append(gen, genDocs, genEngine, genChangelog, genGHA, genSDKs)
+		result, err = changesetMerge(gen...).Sync(ctx)
 		return err
 	})
 	return result, err

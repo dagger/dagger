@@ -55,17 +55,9 @@
       "source": "cmd/engine"
     },
     {
-      "name": "dotnet-sdk-dev",
-      "source": "sdk/dotnet/dev"
-    },
-    {
       "name": "doug",
       "source": "github.com/vito/daggerverse/doug@main",
       "pin": "776610fc77055f983a3dca99f5f55946616c624e"
-    },
-    {
-      "name": "elixir-sdk-dev",
-      "source": "sdk/elixir/dev"
     },
     {
       "name": "go",
@@ -83,10 +75,6 @@
     {
       "name": "ps-analyzer",
       "source": "modules/ps-analyzer"
-    },
-    {
-      "name": "python-sdk-dev",
-      "source": "sdk/python/dev"
     },
     {
       "name": "shellcheck",
