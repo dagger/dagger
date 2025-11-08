@@ -53,7 +53,10 @@ func (t PythonSDK) Test(ctx context.Context) (MyCheckStatus, error) {
 			fmt.Sprintf("test with python version %s", version),
 			func(ctx context.Context) error {
 				_, err := dev.
-					Test(dagger.PythonSDKDevTestOpts{Version: version}).
+					Test(dagger.PythonSDKDevTestOpts{
+						Version:           version,
+						DisableNestedExec: true, // our sidecar has a service dep on the engine
+					}).
 					Default().
 					Sync(ctx)
 				return err
