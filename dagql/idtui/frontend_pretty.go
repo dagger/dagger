@@ -139,8 +139,17 @@ func NewPretty(w io.Writer) Frontend {
 
 // same as spinner.Dot but without the trailing space
 var oneCharDot = spinner.Spinner{
-	Frames: []string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"},
-	FPS:    time.Second / 10, //nolint:mnd
+	Frames: []string{
+		"⣷",
+		"⣯",
+		"⣟",
+		"⡿",
+		"⢿",
+		"⣻",
+		"⣽",
+		"⣾",
+	},
+	FPS: time.Second / 10, //nolint:mnd
 }
 
 func NewReporter(w io.Writer) Frontend {
