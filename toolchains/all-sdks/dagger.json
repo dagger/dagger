@@ -1,0 +1,22 @@
+{
+  "name": "all-sdks",
+  "engineVersion": "v0.19.6",
+  "sdk": {
+    "source": "go"
+  },
+  "include": [
+    "../../go.sum",
+    "../../go.mod",
+    "../../util/parallel"
+  ],
+  "dependencies": [
+    {
+      "name": "go-sdk-dev",
+      "source": "../go-sdk-dev"
+    },
+    {
+      "name": "php-sdk-dev",
+      "source": "../php-sdk-dev"
+    }
+  ]
+}

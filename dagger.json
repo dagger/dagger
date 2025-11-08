@@ -12,6 +12,10 @@
     {
       "name": "php-sdk",
       "source": "toolchains/php-sdk-dev"
+    },
+    {
+      "name": "sdks",
+      "source": "toolchains/all-sdks"
     }
   ],
   "include": [
