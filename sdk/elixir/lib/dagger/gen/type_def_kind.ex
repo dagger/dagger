@@ -18,17 +18,6 @@ defmodule Dagger.TypeDefKind do
           | :INPUT_KIND
           | :VOID_KIND
           | :ENUM_KIND
-          | :STRING
-          | :INTEGER
-          | :FLOAT
-          | :BOOLEAN
-          | :SCALAR
-          | :LIST
-          | :OBJECT
-          | :INTERFACE
-          | :INPUT
-          | :VOID
-          | :ENUM
 
   @doc """
   A string value.
@@ -106,82 +95,6 @@ defmodule Dagger.TypeDefKind do
   @spec enum_kind() :: :ENUM_KIND
   def enum_kind(), do: :ENUM_KIND
 
-  @doc """
-  A string value.
-  """
-  @spec string() :: :STRING
-  def string(), do: :STRING
-
-  @doc """
-  An integer value.
-  """
-  @spec integer() :: :INTEGER
-  def integer(), do: :INTEGER
-
-  @doc """
-  A float value.
-  """
-  @spec float() :: :FLOAT
-  def float(), do: :FLOAT
-
-  @doc """
-  A boolean value.
-  """
-  @spec boolean() :: :BOOLEAN
-  def boolean(), do: :BOOLEAN
-
-  @doc """
-  A scalar value of any basic kind.
-  """
-  @spec scalar() :: :SCALAR
-  def scalar(), do: :SCALAR
-
-  @doc """
-  Always paired with a ListTypeDef.
-
-  A list of values all having the same type.
-  """
-  @spec list() :: :LIST
-  def list(), do: :LIST
-
-  @doc """
-  Always paired with an ObjectTypeDef.
-
-  A named type defined in the GraphQL schema, with fields and functions.
-  """
-  @spec object() :: :OBJECT
-  def object(), do: :OBJECT
-
-  @doc """
-  Always paired with an InterfaceTypeDef.
-
-  A named type of functions that can be matched+implemented by other objects+interfaces.
-  """
-  @spec interface() :: :INTERFACE
-  def interface(), do: :INTERFACE
-
-  @doc """
-  A graphql input type, used only when representing the core API via TypeDefs.
-  """
-  @spec input() :: :INPUT
-  def input(), do: :INPUT
-
-  @doc """
-  A special kind used to signify that no value is returned.
-
-  This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
-  """
-  @spec void() :: :VOID
-  def void(), do: :VOID
-
-  @doc """
-  A GraphQL enum type and its values
-
-  Always paired with an EnumTypeDef.
-  """
-  @spec enum() :: :ENUM
-  def enum(), do: :ENUM
-
   @doc false
   @spec from_string(String.t()) :: t()
   def from_string(string)
@@ -197,15 +110,4 @@ defmodule Dagger.TypeDefKind do
   def from_string("INPUT_KIND"), do: :INPUT_KIND
   def from_string("VOID_KIND"), do: :VOID_KIND
   def from_string("ENUM_KIND"), do: :ENUM_KIND
-  def from_string("STRING"), do: :STRING
-  def from_string("INTEGER"), do: :INTEGER
-  def from_string("FLOAT"), do: :FLOAT
-  def from_string("BOOLEAN"), do: :BOOLEAN
-  def from_string("SCALAR"), do: :SCALAR
-  def from_string("LIST"), do: :LIST
-  def from_string("OBJECT"), do: :OBJECT
-  def from_string("INTERFACE"), do: :INTERFACE
-  def from_string("INPUT"), do: :INPUT
-  def from_string("VOID"), do: :VOID
-  def from_string("ENUM"), do: :ENUM
 end

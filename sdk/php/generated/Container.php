@@ -18,33 +18,9 @@ class Container extends Client\AbstractObject implements Client\IdAble
      *
      * Be sure to set any exposed ports before this conversion.
      */
-    public function asService(
-        ?array $args = null,
-        ?bool $useEntrypoint = false,
-        ?bool $experimentalPrivilegedNesting = false,
-        ?bool $insecureRootCapabilities = false,
-        ?bool $expand = false,
-        ?bool $noInit = false,
-    ): Service {
+    public function asService(): Service
+    {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asService');
-        if (null !== $args) {
-        $innerQueryBuilder->setArgument('args', $args);
-        }
-        if (null !== $useEntrypoint) {
-        $innerQueryBuilder->setArgument('useEntrypoint', $useEntrypoint);
-        }
-        if (null !== $experimentalPrivilegedNesting) {
-        $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
-        }
-        if (null !== $insecureRootCapabilities) {
-        $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
-        }
-        if (null !== $expand) {
-        $innerQueryBuilder->setArgument('expand', $expand);
-        }
-        if (null !== $noInit) {
-        $innerQueryBuilder->setArgument('noInit', $noInit);
-        }
         return new \Dagger\Service($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -67,6 +43,37 @@ class Container extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder->setArgument('mediaTypes', $mediaTypes);
         }
         return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Initializes this container from a Dockerfile build.
+     */
+    public function build(
+        DirectoryId|Directory $context,
+        ?string $dockerfile = 'Dockerfile',
+        ?string $target = '',
+        ?array $buildArgs = null,
+        ?array $secrets = null,
+        ?bool $noInit = false,
+    ): Container {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('build');
+        $innerQueryBuilder->setArgument('context', $context);
+        if (null !== $dockerfile) {
+        $innerQueryBuilder->setArgument('dockerfile', $dockerfile);
+        }
+        if (null !== $target) {
+        $innerQueryBuilder->setArgument('target', $target);
+        }
+        if (null !== $buildArgs) {
+        $innerQueryBuilder->setArgument('buildArgs', $buildArgs);
+        }
+        if (null !== $secrets) {
+        $innerQueryBuilder->setArgument('secrets', $secrets);
+        }
+        if (null !== $noInit) {
+        $innerQueryBuilder->setArgument('noInit', $noInit);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -197,7 +204,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
         ?ImageLayerCompression $forcedCompression = null,
         ?ImageMediaTypes $mediaTypes = null,
         ?bool $expand = false,
-    ): string {
+    ): bool {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('export');
         $leafQueryBuilder->setArgument('path', $path);
         if (null !== $platformVariants) {
@@ -212,7 +219,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
         if (null !== $expand) {
         $leafQueryBuilder->setArgument('expand', $expand);
         }
-        return (string)$this->queryLeaf($leafQueryBuilder, 'export');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'export');
     }
 
     /**
@@ -334,6 +341,22 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Creates a named sub-pipeline.
+     */
+    public function pipeline(string $name, ?string $description = '', ?array $labels = null): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('pipeline');
+        $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $description) {
+        $innerQueryBuilder->setArgument('description', $description);
+        }
+        if (null !== $labels) {
+        $innerQueryBuilder->setArgument('labels', $labels);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The platform this container executes and publishes as.
      */
     public function platform(): Platform
@@ -416,7 +439,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
         ?array $cmd = null,
         ?bool $experimentalPrivilegedNesting = false,
         ?bool $insecureRootCapabilities = false,
-    ): Container {
+    ): Terminal {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
         if (null !== $cmd) {
         $innerQueryBuilder->setArgument('cmd', $cmd);
@@ -427,7 +450,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
         if (null !== $insecureRootCapabilities) {
         $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
         }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Terminal($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -435,40 +458,14 @@ class Container extends Client\AbstractObject implements Client\IdAble
      *
      * Be sure to set any exposed ports before calling this api.
      */
-    public function up(
-        ?bool $random = false,
-        ?array $ports = null,
-        ?array $args = null,
-        ?bool $useEntrypoint = false,
-        ?bool $experimentalPrivilegedNesting = false,
-        ?bool $insecureRootCapabilities = false,
-        ?bool $expand = false,
-        ?bool $noInit = false,
-    ): void {
+    public function up(?array $ports = null, ?bool $random = false): void
+    {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('up');
-        if (null !== $random) {
-        $leafQueryBuilder->setArgument('random', $random);
-        }
         if (null !== $ports) {
         $leafQueryBuilder->setArgument('ports', $ports);
         }
-        if (null !== $args) {
-        $leafQueryBuilder->setArgument('args', $args);
-        }
-        if (null !== $useEntrypoint) {
-        $leafQueryBuilder->setArgument('useEntrypoint', $useEntrypoint);
-        }
-        if (null !== $experimentalPrivilegedNesting) {
-        $leafQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
-        }
-        if (null !== $insecureRootCapabilities) {
-        $leafQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
-        }
-        if (null !== $expand) {
-        $leafQueryBuilder->setArgument('expand', $expand);
-        }
-        if (null !== $noInit) {
-        $leafQueryBuilder->setArgument('noInit', $noInit);
+        if (null !== $random) {
+        $leafQueryBuilder->setArgument('random', $random);
         }
         $this->queryLeaf($leafQueryBuilder, 'up');
     }
@@ -527,7 +524,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
      */
     public function withDirectory(
         string $path,
-        DirectoryId|Directory $source,
+        DirectoryId|Directory $directory,
         ?array $exclude = null,
         ?array $include = null,
         ?bool $gitignore = false,
@@ -536,7 +533,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDirectory');
         $innerQueryBuilder->setArgument('path', $path);
-        $innerQueryBuilder->setArgument('source', $source);
+        $innerQueryBuilder->setArgument('directory', $directory);
         if (null !== $exclude) {
         $innerQueryBuilder->setArgument('exclude', $exclude);
         }
@@ -597,7 +594,8 @@ class Container extends Client\AbstractObject implements Client\IdAble
      */
     public function withExec(
         array $args,
-        ?bool $useEntrypoint = false,
+        ?bool $useEntrypoint = true,
+        ?bool $skipEntrypoint = false,
         ?string $stdin = '',
         ?string $redirectStdin = '',
         ?string $redirectStdout = '',
@@ -612,6 +610,9 @@ class Container extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder->setArgument('args', $args);
         if (null !== $useEntrypoint) {
         $innerQueryBuilder->setArgument('useEntrypoint', $useEntrypoint);
+        }
+        if (null !== $skipEntrypoint) {
+        $innerQueryBuilder->setArgument('skipEntrypoint', $skipEntrypoint);
         }
         if (null !== $stdin) {
         $innerQueryBuilder->setArgument('stdin', $stdin);
@@ -719,6 +720,15 @@ class Container extends Client\AbstractObject implements Client\IdAble
         if (null !== $expand) {
         $innerQueryBuilder->setArgument('expand', $expand);
         }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Indicate that subsequent operations should be featured more prominently in the UI.
+     */
+    public function withFocus(): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFocus');
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -846,26 +856,24 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Return a new container snapshot, with a file added to its filesystem with text content
+     * Retrieves this container plus a new file written at the given path.
      */
     public function withNewFile(
         string $path,
-        string $contents,
+        ?string $contents = '',
         ?int $permissions = 420,
         ?string $owner = '',
-        ?bool $expand = false,
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withNewFile');
         $innerQueryBuilder->setArgument('path', $path);
+        if (null !== $contents) {
         $innerQueryBuilder->setArgument('contents', $contents);
+        }
         if (null !== $permissions) {
         $innerQueryBuilder->setArgument('permissions', $permissions);
         }
         if (null !== $owner) {
         $innerQueryBuilder->setArgument('owner', $owner);
-        }
-        if (null !== $expand) {
-        $innerQueryBuilder->setArgument('expand', $expand);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -1068,6 +1076,17 @@ class Container extends Client\AbstractObject implements Client\IdAble
         if (null !== $expand) {
         $innerQueryBuilder->setArgument('expand', $expand);
         }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Indicate that subsequent operations should not be featured more prominently in the UI.
+     *
+     * This is the initial state of all containers.
+     */
+    public function withoutFocus(): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutFocus');
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

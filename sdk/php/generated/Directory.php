@@ -162,14 +162,14 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     /**
      * Writes the contents of the directory to a path on the host.
      */
-    public function export(string $path, ?bool $wipe = false): string
+    public function export(string $path, ?bool $wipe = false): bool
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('export');
         $leafQueryBuilder->setArgument('path', $path);
         if (null !== $wipe) {
         $leafQueryBuilder->setArgument('wipe', $wipe);
         }
-        return (string)$this->queryLeaf($leafQueryBuilder, 'export');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'export');
     }
 
     /**
@@ -240,6 +240,22 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Creates a named sub-pipeline.
+     */
+    public function pipeline(string $name, ?string $description = '', ?array $labels = null): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('pipeline');
+        $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $description) {
+        $innerQueryBuilder->setArgument('description', $description);
+        }
+        if (null !== $labels) {
+        $innerQueryBuilder->setArgument('labels', $labels);
+        }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Searches for content matching the given regular expression or literal string.
      *
      * Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.
@@ -302,31 +318,6 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Opens an interactive terminal in new container with this directory mounted inside.
-     */
-    public function terminal(
-        ContainerId|Container|null $container = null,
-        ?array $cmd = null,
-        ?bool $experimentalPrivilegedNesting = false,
-        ?bool $insecureRootCapabilities = false,
-    ): Directory {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
-        if (null !== $container) {
-        $innerQueryBuilder->setArgument('container', $container);
-        }
-        if (null !== $cmd) {
-        $innerQueryBuilder->setArgument('cmd', $cmd);
-        }
-        if (null !== $experimentalPrivilegedNesting) {
-        $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
-        }
-        if (null !== $insecureRootCapabilities) {
-        $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
-        }
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Return a directory with changes from another directory applied to it.
      */
     public function withChanges(ChangesetId|Changeset $changes): Directory
@@ -341,7 +332,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
      */
     public function withDirectory(
         string $path,
-        DirectoryId|Directory $source,
+        DirectoryId|Directory $directory,
         ?array $exclude = null,
         ?array $include = null,
         ?bool $gitignore = false,
@@ -349,7 +340,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDirectory');
         $innerQueryBuilder->setArgument('path', $path);
-        $innerQueryBuilder->setArgument('source', $source);
+        $innerQueryBuilder->setArgument('directory', $directory);
         if (null !== $exclude) {
         $innerQueryBuilder->setArgument('exclude', $exclude);
         }

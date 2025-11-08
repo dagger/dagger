@@ -2031,6 +2031,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::pipeline",
+			"p": "Dagger/Client.html#method_pipeline",
+			"d": "<p>Creates a named sub-pipeline.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::secret",
 			"p": "Dagger/Client.html#method_secret",
 			"d": "<p>Creates a new secret.</p>"
@@ -2193,6 +2199,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Container::build",
+			"p": "Dagger/Container.html#method_build",
+			"d": "<p>Initializes this container from a Dockerfile build.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Container::combinedOutput",
 			"p": "Dagger/Container.html#method_combinedOutput",
 			"d": "<p>The combined buffered standard output and standard error stream of the last executed command</p>"
@@ -2319,6 +2331,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Container::pipeline",
+			"p": "Dagger/Container.html#method_pipeline",
+			"d": "<p>Creates a named sub-pipeline.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Container::platform",
 			"p": "Dagger/Container.html#method_platform",
 			"d": "<p>The platform this container executes and publishes as.</p>"
@@ -2439,6 +2457,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Container::withFocus",
+			"p": "Dagger/Container.html#method_withFocus",
+			"d": "<p>Indicate that subsequent operations should be featured more prominently in the UI.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Container::withLabel",
 			"p": "Dagger/Container.html#method_withLabel",
 			"d": "<p>Retrieves this container plus the given label.</p>"
@@ -2477,7 +2501,7 @@
 			"t": "M",
 			"n": "Dagger\\Container::withNewFile",
 			"p": "Dagger/Container.html#method_withNewFile",
-			"d": "<p>Return a new container snapshot, with a file added to its filesystem with text content</p>"
+			"d": "<p>Retrieves this container plus a new file written at the given path.</p>"
 		},
 		{
 			"t": "M",
@@ -2574,6 +2598,12 @@
 			"n": "Dagger\\Container::withoutFiles",
 			"p": "Dagger/Container.html#method_withoutFiles",
 			"d": "<p>Return a new container spanshot with specified files removed</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Container::withoutFocus",
+			"p": "Dagger/Container.html#method_withoutFocus",
+			"d": "<p>Indicate that subsequent operations should not be featured more prominently in the UI.</p>"
 		},
 		{
 			"t": "M",
@@ -2775,6 +2805,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Directory::pipeline",
+			"p": "Dagger/Directory.html#method_pipeline",
+			"d": "<p>Creates a named sub-pipeline.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Directory::search",
 			"p": "Dagger/Directory.html#method_search",
 			"d": "<p>Searches for content matching the given regular expression or literal string.</p>"
@@ -2784,12 +2820,6 @@
 			"n": "Dagger\\Directory::sync",
 			"p": "Dagger/Directory.html#method_sync",
 			"d": "<p>Force evaluation in the engine.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Directory::terminal",
-			"p": "Dagger/Directory.html#method_terminal",
-			"d": "<p>Opens an interactive terminal in new container with this directory mounted inside.</p>"
 		},
 		{
 			"t": "M",
@@ -3933,6 +3963,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\GitRepository::withAuthHeader",
+			"p": "Dagger/GitRepository.html#method_withAuthHeader",
+			"d": "<p>Header to authenticate the remote with.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitRepository::withAuthToken",
+			"p": "Dagger/GitRepository.html#method_withAuthToken",
+			"d": "<p>Token to authenticate the remote with.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Host::containerImage",
 			"p": "Dagger/Host.html#method_containerImage",
 			"d": "<p>Accesses a container image on the host.</p>"
@@ -4488,6 +4530,12 @@
 			"n": "Dagger\\ModuleSource::cloneRef",
 			"p": "Dagger/ModuleSource.html#method_cloneRef",
 			"d": "<p>The ref to clone the root of the git repo from. Only valid for git sources.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\ModuleSource::cloneURL",
+			"p": "Dagger/ModuleSource.html#method_cloneURL",
+			"d": "<p>The URL to clone the root of the git repo from</p>"
 		},
 		{
 			"t": "M",
@@ -5100,6 +5148,12 @@
 			"n": "Dagger\\Terminal::sync",
 			"p": "Dagger/Terminal.html#method_sync",
 			"d": "<p>Forces evaluation of the pipeline in the engine.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Terminal::websocketEndpoint",
+			"p": "Dagger/Terminal.html#method_websocketEndpoint",
+			"d": "<p>An http endpoint at which this terminal can be connected to over a websocket.</p>"
 		},
 		{
 			"t": "M",

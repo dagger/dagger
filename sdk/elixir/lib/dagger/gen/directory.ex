@@ -201,8 +201,7 @@ defmodule Dagger.Directory do
   @doc """
   Writes the contents of the directory to a path on the host.
   """
-  @spec export(t(), String.t(), [{:wipe, boolean() | nil}]) ::
-          {:ok, String.t()} | {:error, term()}
+  @spec export(t(), String.t(), [{:wipe, boolean() | nil}]) :: {:ok, boolean()} | {:error, term()}
   def export(%__MODULE__{} = directory, path, optional_args \\ []) do
     query_builder =
       directory.query_builder
@@ -296,6 +295,30 @@ defmodule Dagger.Directory do
     Client.execute(directory.client, query_builder)
   end
 
+  @deprecated """
+  Explicit pipeline creation is now a no-op
+  """
+  @doc """
+  Creates a named sub-pipeline.
+  """
+  @spec pipeline(t(), String.t(), [
+          {:description, String.t() | nil},
+          {:labels, [Dagger.PipelineLabel.t()]}
+        ]) :: Dagger.Directory.t()
+  def pipeline(%__MODULE__{} = directory, name, optional_args \\ []) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("pipeline")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg("description", optional_args[:description])
+      |> QB.maybe_put_arg("labels", optional_args[:labels])
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
   @doc """
   Searches for content matching the given regular expression or literal string.
 
@@ -365,33 +388,6 @@ defmodule Dagger.Directory do
   end
 
   @doc """
-  Opens an interactive terminal in new container with this directory mounted inside.
-  """
-  @spec terminal(t(), [
-          {:container, Dagger.ContainerID.t() | nil},
-          {:cmd, [String.t()]},
-          {:experimental_privileged_nesting, boolean() | nil},
-          {:insecure_root_capabilities, boolean() | nil}
-        ]) :: Dagger.Directory.t()
-  def terminal(%__MODULE__{} = directory, optional_args \\ []) do
-    query_builder =
-      directory.query_builder
-      |> QB.select("terminal")
-      |> QB.maybe_put_arg("container", optional_args[:container])
-      |> QB.maybe_put_arg("cmd", optional_args[:cmd])
-      |> QB.maybe_put_arg(
-        "experimentalPrivilegedNesting",
-        optional_args[:experimental_privileged_nesting]
-      )
-      |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
-
-    %Dagger.Directory{
-      query_builder: query_builder,
-      client: directory.client
-    }
-  end
-
-  @doc """
   Return a directory with changes from another directory applied to it.
   """
   @spec with_changes(t(), Dagger.Changeset.t()) :: Dagger.Directory.t()
@@ -416,12 +412,12 @@ defmodule Dagger.Directory do
           {:gitignore, boolean() | nil},
           {:owner, String.t() | nil}
         ]) :: Dagger.Directory.t()
-  def with_directory(%__MODULE__{} = directory, path, source, optional_args \\ []) do
+  def with_directory(%__MODULE__{} = directory_, path, directory, optional_args \\ []) do
     query_builder =
-      directory.query_builder
+      directory_.query_builder
       |> QB.select("withDirectory")
       |> QB.put_arg("path", path)
-      |> QB.put_arg("source", Dagger.ID.id!(source))
+      |> QB.put_arg("directory", Dagger.ID.id!(directory))
       |> QB.maybe_put_arg("exclude", optional_args[:exclude])
       |> QB.maybe_put_arg("include", optional_args[:include])
       |> QB.maybe_put_arg("gitignore", optional_args[:gitignore])
@@ -429,7 +425,7 @@ defmodule Dagger.Directory do
 
     %Dagger.Directory{
       query_builder: query_builder,
-      client: directory.client
+      client: directory_.client
     }
   end
 

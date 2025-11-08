@@ -216,7 +216,9 @@
                     <dd><p>The <code>BindingID</code> scalar type represents an identifier for an object of type Binding.</p></dd><dt><a href="Dagger/BuildArg.html"><abbr title="Dagger\BuildArg">BuildArg</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>Key value object that represents a build argument.</p></dd><dt><a href="Dagger/Changeset.html#method_before">
 <abbr title="Dagger\Changeset">Changeset</abbr>::before</a>() &mdash; <em>Method in class <a href="Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></em></dt>
-                    <dd><p>The older/lower snapshot to compare against.</p></dd><dt><a href="Dagger/GitRepository.html#method_branch">
+                    <dd><p>The older/lower snapshot to compare against.</p></dd><dt><a href="Dagger/Container.html#method_build">
+<abbr title="Dagger\Container">Container</abbr>::build</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
+                    <dd><p>Initializes this container from a Dockerfile build.</p></dd><dt><a href="Dagger/GitRepository.html#method_branch">
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::branch</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
                     <dd><p>Returns details of a branch.</p></dd><dt><a href="Dagger/GitRepository.html#method_branches">
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::branches</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
@@ -297,7 +299,9 @@
 <abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr>::cachedTokenWrites</a>() &mdash; <em>Method in class <a href="Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/ModuleSource.html#method_cloneRef">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::cloneRef</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>The ref to clone the root of the git repo from. Only valid for git sources.</p></dd><dt><a href="Dagger/ModuleSource.html#method_commit">
+                    <dd><p>The ref to clone the root of the git repo from. Only valid for git sources.</p></dd><dt><a href="Dagger/ModuleSource.html#method_cloneURL">
+<abbr title="Dagger\ModuleSource">ModuleSource</abbr>::cloneURL</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
+                    <dd><p>The URL to clone the root of the git repo from</p></dd><dt><a href="Dagger/ModuleSource.html#method_commit">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::commit</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The resolved commit of the git repo this source points to.</p></dd><dt><a href="Dagger/ModuleSource.html#method_configClients">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::configClients</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -971,11 +975,17 @@
                     <dd><p>The <code>ObjectTypeDefID</code> scalar type represents an identifier for an object of type ObjectTypeDef.</p></dd><dt><a href="Dagger/TypeDef.html#method_optional">
 <abbr title="Dagger\TypeDef">TypeDef</abbr>::optional</a>() &mdash; <em>Method in class <a href="Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></em></dt>
                     <dd><p>Whether this type can be set to null. Defaults to false.</p></dd>        </dl><h2 id="letterP">P</h2>
-        <dl id="indexP"><dt><a href="Dagger/Container.html#method_platform">
+        <dl id="indexP"><dt><a href="Dagger/Client.html#method_pipeline">
+<abbr title="Dagger\Client">Client</abbr>::pipeline</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>Creates a named sub-pipeline.</p></dd><dt><a href="Dagger/Container.html#method_pipeline">
+<abbr title="Dagger\Container">Container</abbr>::pipeline</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
+                    <dd><p>Creates a named sub-pipeline.</p></dd><dt><a href="Dagger/Container.html#method_platform">
 <abbr title="Dagger\Container">Container</abbr>::platform</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>The platform this container executes and publishes as.</p></dd><dt><a href="Dagger/Container.html#method_publish">
 <abbr title="Dagger\Container">Container</abbr>::publish</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Package the container state as an OCI image, and publish it to a registry</p></dd><dt><a href="Dagger/EngineCache.html#method_prune">
+                    <dd><p>Package the container state as an OCI image, and publish it to a registry</p></dd><dt><a href="Dagger/Directory.html#method_pipeline">
+<abbr title="Dagger\Directory">Directory</abbr>::pipeline</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
+                    <dd><p>Creates a named sub-pipeline.</p></dd><dt><a href="Dagger/EngineCache.html#method_prune">
 <abbr title="Dagger\EngineCache">EngineCache</abbr>::prune</a>() &mdash; <em>Method in class <a href="Dagger/EngineCache.html"><abbr title="Dagger\EngineCache">EngineCache</abbr></a></em></dt>
                     <dd><p>Prune the cache of releaseable entries</p></dd><dt><a href="Dagger/FunctionCall.html#method_parent">
 <abbr title="Dagger\FunctionCall">FunctionCall</abbr>::parent</a>() &mdash; <em>Method in class <a href="Dagger/FunctionCall.html"><abbr title="Dagger\FunctionCall">FunctionCall</abbr></a></em></dt>
@@ -1146,9 +1156,7 @@
 <abbr title="Dagger\Cloud">Cloud</abbr>::traceURL</a>() &mdash; <em>Method in class <a href="Dagger/Cloud.html"><abbr title="Dagger\Cloud">Cloud</abbr></a></em></dt>
                     <dd><p>The trace URL for the current session</p></dd><dt><a href="Dagger/Container.html#method_terminal">
 <abbr title="Dagger\Container">Container</abbr>::terminal</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).</p></dd><dt><a href="Dagger/Directory.html#method_terminal">
-<abbr title="Dagger\Directory">Directory</abbr>::terminal</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
-                    <dd><p>Opens an interactive terminal in new container with this directory mounted inside.</p></dd><dt><a href="Dagger/EngineCache.html#method_targetSpace">
+                    <dd><p>Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).</p></dd><dt><a href="Dagger/EngineCache.html#method_targetSpace">
 <abbr title="Dagger\EngineCache">EngineCache</abbr>::targetSpace</a>() &mdash; <em>Method in class <a href="Dagger/EngineCache.html"><abbr title="Dagger\EngineCache">EngineCache</abbr></a></em></dt>
                     <dd><p>The target number of bytes to keep when pruning.</p></dd><dt><a href="Dagger/FieldTypeDef.html#method_typeDef">
 <abbr title="Dagger\FieldTypeDef">FieldTypeDef</abbr>::typeDef</a>() &mdash; <em>Method in class <a href="Dagger/FieldTypeDef.html"><abbr title="Dagger\FieldTypeDef">FieldTypeDef</abbr></a></em></dt>
@@ -1249,7 +1257,9 @@
 <abbr title="Dagger\Container">Container</abbr>::withFile</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Return a container snapshot with a file added</p></dd><dt><a href="Dagger/Container.html#method_withFiles">
 <abbr title="Dagger\Container">Container</abbr>::withFiles</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Retrieves this container plus the contents of the given files copied to the given path.</p></dd><dt><a href="Dagger/Container.html#method_withLabel">
+                    <dd><p>Retrieves this container plus the contents of the given files copied to the given path.</p></dd><dt><a href="Dagger/Container.html#method_withFocus">
+<abbr title="Dagger\Container">Container</abbr>::withFocus</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
+                    <dd><p>Indicate that subsequent operations should be featured more prominently in the UI.</p></dd><dt><a href="Dagger/Container.html#method_withLabel">
 <abbr title="Dagger\Container">Container</abbr>::withLabel</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves this container plus the given label.</p></dd><dt><a href="Dagger/Container.html#method_withMountedCache">
 <abbr title="Dagger\Container">Container</abbr>::withMountedCache</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
@@ -1263,7 +1273,7 @@
 <abbr title="Dagger\Container">Container</abbr>::withMountedTemp</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.</p></dd><dt><a href="Dagger/Container.html#method_withNewFile">
 <abbr title="Dagger\Container">Container</abbr>::withNewFile</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Return a new container snapshot, with a file added to its filesystem with text content</p></dd><dt><a href="Dagger/Container.html#method_withRegistryAuth">
+                    <dd><p>Retrieves this container plus a new file written at the given path.</p></dd><dt><a href="Dagger/Container.html#method_withRegistryAuth">
 <abbr title="Dagger\Container">Container</abbr>::withRegistryAuth</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Attach credentials for future publishing to a registry. Use in combination with publish</p></dd><dt><a href="Dagger/Container.html#method_withRootfs">
 <abbr title="Dagger\Container">Container</abbr>::withRootfs</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
@@ -1295,7 +1305,9 @@
 <abbr title="Dagger\Container">Container</abbr>::withoutFile</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves this container with the file at the given path removed.</p></dd><dt><a href="Dagger/Container.html#method_withoutFiles">
 <abbr title="Dagger\Container">Container</abbr>::withoutFiles</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Return a new container spanshot with specified files removed</p></dd><dt><a href="Dagger/Container.html#method_withoutLabel">
+                    <dd><p>Return a new container spanshot with specified files removed</p></dd><dt><a href="Dagger/Container.html#method_withoutFocus">
+<abbr title="Dagger\Container">Container</abbr>::withoutFocus</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
+                    <dd><p>Indicate that subsequent operations should not be featured more prominently in the UI.</p></dd><dt><a href="Dagger/Container.html#method_withoutLabel">
 <abbr title="Dagger\Container">Container</abbr>::withoutLabel</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves this container minus the given environment label.</p></dd><dt><a href="Dagger/Container.html#method_withoutMount">
 <abbr title="Dagger\Container">Container</abbr>::withoutMount</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
@@ -1463,7 +1475,11 @@
 <abbr title="Dagger\GeneratedCode">GeneratedCode</abbr>::withVCSGeneratedPaths</a>() &mdash; <em>Method in class <a href="Dagger/GeneratedCode.html"><abbr title="Dagger\GeneratedCode">GeneratedCode</abbr></a></em></dt>
                     <dd><p>Set the list of paths to mark generated in version control.</p></dd><dt><a href="Dagger/GeneratedCode.html#method_withVCSIgnoredPaths">
 <abbr title="Dagger\GeneratedCode">GeneratedCode</abbr>::withVCSIgnoredPaths</a>() &mdash; <em>Method in class <a href="Dagger/GeneratedCode.html"><abbr title="Dagger\GeneratedCode">GeneratedCode</abbr></a></em></dt>
-                    <dd><p>Set the list of paths to ignore in version control.</p></dd><dt><a href="Dagger/JsonValue.html#method_withContents">
+                    <dd><p>Set the list of paths to ignore in version control.</p></dd><dt><a href="Dagger/GitRepository.html#method_withAuthHeader">
+<abbr title="Dagger\GitRepository">GitRepository</abbr>::withAuthHeader</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
+                    <dd><p>Header to authenticate the remote with.</p></dd><dt><a href="Dagger/GitRepository.html#method_withAuthToken">
+<abbr title="Dagger\GitRepository">GitRepository</abbr>::withAuthToken</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
+                    <dd><p>Token to authenticate the remote with.</p></dd><dt><a href="Dagger/JsonValue.html#method_withContents">
 <abbr title="Dagger\JsonValue">JsonValue</abbr>::withContents</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
                     <dd><p>Return a new json value, decoded from the given content</p></dd><dt><a href="Dagger/JsonValue.html#method_withField">
 <abbr title="Dagger\JsonValue">JsonValue</abbr>::withField</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
@@ -1537,7 +1553,9 @@
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withoutToolchains</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>Remove the provided toolchains from the module source.</p></dd><dt><a href="Dagger/Service.html#method_withHostname">
 <abbr title="Dagger\Service">Service</abbr>::withHostname</a>() &mdash; <em>Method in class <a href="Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a></em></dt>
-                    <dd><p>Configures a hostname which can be used by clients within the session to reach this container.</p></dd><dt><a href="Dagger/TypeDef.html#method_withConstructor">
+                    <dd><p>Configures a hostname which can be used by clients within the session to reach this container.</p></dd><dt><a href="Dagger/Terminal.html#method_websocketEndpoint">
+<abbr title="Dagger\Terminal">Terminal</abbr>::websocketEndpoint</a>() &mdash; <em>Method in class <a href="Dagger/Terminal.html"><abbr title="Dagger\Terminal">Terminal</abbr></a></em></dt>
+                    <dd><p>An http endpoint at which this terminal can be connected to over a websocket.</p></dd><dt><a href="Dagger/TypeDef.html#method_withConstructor">
 <abbr title="Dagger\TypeDef">TypeDef</abbr>::withConstructor</a>() &mdash; <em>Method in class <a href="Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></em></dt>
                     <dd><p>Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.</p></dd><dt><a href="Dagger/TypeDef.html#method_withEnum">
 <abbr title="Dagger\TypeDef">TypeDef</abbr>::withEnum</a>() &mdash; <em>Method in class <a href="Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></em></dt>

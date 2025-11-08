@@ -6,7 +6,7 @@ defmodule Dagger.ImageLayerCompression do
 
   use Dagger.Core.Base, kind: :enum, name: "ImageLayerCompression"
 
-  @type t() :: :Gzip | :Zstd | :EStarGZ | :Uncompressed | :GZIP | :ZSTD | :ESTARGZ | :UNCOMPRESSED
+  @type t() :: :Gzip | :Zstd | :EStarGZ | :Uncompressed
 
   @spec gzip() :: :Gzip
   def gzip(), do: :Gzip
@@ -20,9 +20,6 @@ defmodule Dagger.ImageLayerCompression do
   @spec uncompressed() :: :Uncompressed
   def uncompressed(), do: :Uncompressed
 
-  @spec estargz() :: :ESTARGZ
-  def estargz(), do: :ESTARGZ
-
   @doc false
   @spec from_string(String.t()) :: t()
   def from_string(string)
@@ -31,8 +28,4 @@ defmodule Dagger.ImageLayerCompression do
   def from_string("Zstd"), do: :Zstd
   def from_string("EStarGZ"), do: :EStarGZ
   def from_string("Uncompressed"), do: :Uncompressed
-  def from_string("GZIP"), do: :GZIP
-  def from_string("ZSTD"), do: :ZSTD
-  def from_string("ESTARGZ"), do: :ESTARGZ
-  def from_string("UNCOMPRESSED"), do: :UNCOMPRESSED
 end
