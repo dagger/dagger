@@ -9,11 +9,11 @@ import (
 	"dagger.io/dagger/telemetry"
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/util/parallel"
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/errgroup"
 )
 
 // Check represents a validation check with its result
@@ -110,48 +110,49 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 		return nil, fmt.Errorf("run checks for module %q: serve module: %w", r.Module.Name(), err)
 	}
 
-	jobs := parallel.New()
+	eg := new(errgroup.Group)
 	for _, check := range r.Checks {
-		jobs = jobs.WithJob(check.Name(), func(ctx context.Context) error {
+		ctx, span := Tracer(ctx).Start(ctx, check.Name(),
+			telemetry.Reveal(),
+			trace.WithAttributes(
+				attribute.Bool(telemetry.UIRollupAttr, true),
+				attribute.String(telemetry.CheckNameAttr, check.Name()),
+			),
+		)
+		eg.Go(func() (rerr error) {
 			// Reset output fields, in case we're re-running
 			check.Completed = false
 			check.Passed = false
 			var checkParent dagql.AnyObjectResult
-			if err := parallel.New().
-				WithJob("load check context", func(ctx context.Context) error {
-					selectPath := []dagql.Selector{{Field: gqlFieldName(r.Module.Name())}}
-					// Select the whole path except the last part, *outside* the check span
-					// This keeps log noise at a minimum (eg. logs from loading the check don't show up in check logs)
-					for _, field := range check.Path[:len(check.Path)-1] {
-						selectPath = append(selectPath, dagql.Selector{Field: field})
-					}
-					return dag.Select(dagql.WithRepeatedTelemetry(ctx), dag.Root(), &checkParent, selectPath...)
-				},
-					attribute.Bool(telemetry.UIInternalAttr, true),
-					attribute.Bool(telemetry.UIEncapsulateAttr, true),
-					attribute.Bool("dagger.io/check.hidelogs", true)).
-				Run(ctx); err != nil {
+			if err := (func() (rerr error) {
+				ctx, span := Tracer(ctx).Start(ctx, "load check context", telemetry.Internal(), telemetry.Encapsulate())
+				defer telemetry.End(span, func() error { return rerr })
+				selectPath := []dagql.Selector{{Field: gqlFieldName(r.Module.Name())}}
+				// Select the whole path except the last part, *outside* the check span
+				// This keeps log noise at a minimum (eg. logs from loading the check don't show up in check logs)
+				for _, field := range check.Path[:len(check.Path)-1] {
+					selectPath = append(selectPath, dagql.Selector{Field: field})
+				}
+				return dag.Select(ctx, dag.Root(), &checkParent, selectPath...)
+			})(); err != nil {
 				return err
 			}
+			defer telemetry.End(span, func() error { return rerr })
 			var status any
 			checkErr := dag.Select(dagql.WithRepeatedTelemetry(ctx), checkParent, &status, dagql.Selector{Field: check.Path[len(check.Path)-1]})
 			check.Completed = true
 			check.Passed = checkErr == nil
 			// Set the passed attribute on the span for telemetry
-			if span := trace.SpanFromContext(ctx); span != nil {
-				span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, check.Passed))
-			}
+			span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, check.Passed))
 			if checkErr != nil {
 				return checkErr
 			}
 			return nil
-		},
-			attribute.Bool(telemetry.UILogsRollupAttr, true),
-			attribute.String(telemetry.CheckNameAttr, check.Name()))
+		})
 	}
 	// We can't distinguish legitimate errors from failed checks, so we just discard.
 	// Bubbling them up to here makes telemetry more useful (no green when a check failed)
-	_ = jobs.Run(ctx)
+	_ = eg.Wait()
 	return r, nil
 }
 
