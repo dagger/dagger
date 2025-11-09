@@ -298,8 +298,11 @@ func (container *Container) WithExec(
 			if err != nil {
 				return
 			}
-			for i, res := range results {
-				execMounts[p.OutputRefs[i].MountIndex] = res
+			for _, outputRef := range p.OutputRefs {
+				mount := mounts.Mounts[outputRef.MountIndex]
+				if mount.Output != pb.SkipOutput && results[mount.Output] != nil {
+					execMounts[outputRef.MountIndex] = results[mount.Output]
+				}
 			}
 			for _, active := range p.Actives {
 				if active.NoCommit {
@@ -314,9 +317,16 @@ func (container *Container) WithExec(
 				}
 			}
 
-			for i, res := range results {
+			for mountIdx, mount := range mounts.Mounts {
+				if mount.Output == pb.SkipOutput {
+					continue
+				}
+				res := results[mount.Output]
+				if res == nil {
+					continue
+				}
 				iref := res.Sys().(*worker.WorkerRef).ImmutableRef
-				switch i {
+				switch mountIdx {
 				case 0:
 					rootfsDir := &Directory{
 						Result: iref,
@@ -340,12 +350,12 @@ func (container *Container) WithExec(
 					}
 
 				default:
-					mountIdx := i - 2
-					if mountIdx >= len(container.Mounts) {
+					ctrMntIdx := mountIdx - 2
+					if ctrMntIdx >= len(container.Mounts) {
 						// something is disastourously wrong, panic!
-						panic(fmt.Sprintf("index %d escapes number of mounts %d", mountIdx, len(container.Mounts)))
+						panic(fmt.Sprintf("index %d escapes number of mounts %d", ctrMntIdx, len(container.Mounts)))
 					}
-					ctrMnt := container.Mounts[mountIdx]
+					ctrMnt := container.Mounts[ctrMntIdx]
 
 					err = handleMountValue(ctrMnt,
 						func(dirMnt *dagql.ObjectResult[*Directory]) error {
@@ -359,7 +369,7 @@ func (container *Container) WithExec(
 							if err != nil {
 								return fmt.Errorf("failed to update directory mount: %w", err)
 							}
-							container.Mounts[mountIdx] = ctrMnt
+							container.Mounts[ctrMntIdx] = ctrMnt
 							return nil
 						},
 						func(fileMnt *dagql.ObjectResult[*File]) error {
@@ -373,15 +383,15 @@ func (container *Container) WithExec(
 							if err != nil {
 								return fmt.Errorf("failed to update file mount: %w", err)
 							}
-							container.Mounts[mountIdx] = ctrMnt
+							container.Mounts[ctrMntIdx] = ctrMnt
 							return nil
 						},
 						func(cache *CacheMountSource) error {
-							container.Mounts[mountIdx] = ctrMnt
+							container.Mounts[ctrMntIdx] = ctrMnt
 							return nil
 						},
 						func(tmpfs *TmpfsMountSource) error {
-							container.Mounts[mountIdx] = ctrMnt
+							container.Mounts[ctrMntIdx] = ctrMnt
 							return nil
 						},
 					)
