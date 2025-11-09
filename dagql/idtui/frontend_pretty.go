@@ -1520,7 +1520,6 @@ func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 			if fe.shellInterrupt != nil {
 				fe.shellInterrupt(errors.New("interrupted"))
 			}
-			fe.editline.Reset()
 		} else {
 			return fe.quit(ErrInterrupted)
 		}
