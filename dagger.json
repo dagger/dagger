@@ -4,6 +4,13 @@
   "sdk": {
     "source": "go"
   },
+  "toolchains": [
+    {
+      "name": "doug",
+      "source": "github.com/vito/dang/mod/doug@main",
+      "pin": "41c36bd40eb20fccf54324905524d19313a92091"
+    }
+  ],
   "include": [
     "engine/distconsts/**/*",
     "sdk/typescript/runtime/**/*",
@@ -43,11 +50,6 @@
     {
       "name": "dotnet-sdk-dev",
       "source": "sdk/dotnet/dev"
-    },
-    {
-      "name": "doug",
-      "source": "github.com/vito/daggerverse/doug@main",
-      "pin": "776610fc77055f983a3dca99f5f55946616c624e"
     },
     {
       "name": "elixir-sdk-dev",

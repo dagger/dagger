@@ -120,6 +120,7 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 			),
 		)
 		eg.Go(func() (rerr error) {
+			defer telemetry.End(span, func() error { return rerr })
 			// Reset output fields, in case we're re-running
 			check.Completed = false
 			check.Passed = false
@@ -137,7 +138,6 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 			})(); err != nil {
 				return err
 			}
-			defer telemetry.End(span, func() error { return rerr })
 			var status any
 			checkErr := dag.Select(dagql.WithRepeatedTelemetry(ctx), checkParent, &status, dagql.Selector{Field: check.Path[len(check.Path)-1]})
 			check.Completed = true
