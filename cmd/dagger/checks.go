@@ -169,7 +169,7 @@ func runChecks(ctx context.Context, checkgroup *dagger.CheckGroup, _ *cobra.Comm
 		}
 	}
 	if failed > 0 {
-		return fmt.Errorf("%d checks failed", failed)
+		return ExitError{Code: 1, Original: fmt.Errorf("%d checks failed", failed)}
 	}
 	return nil
 }
