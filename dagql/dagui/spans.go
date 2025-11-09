@@ -386,26 +386,56 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 			}
 		}
 	}
-	
+
 	// Update RollUp state for any RollUp ancestors
 	span.updateRollUpAncestors()
 }
 
 // updateRollUpAncestors recomputes RollUp state for all RollUp ancestors
 func (span *Span) updateRollUpAncestors() {
-	for parent := range span.Parents {
-		if parent.RollUp {
-			parent.computeRollUpState()
-		}
-		// Recurse to update grandparents
-		parent.updateRollUpAncestors()
+	// Use a map to track which ancestors we've already updated to avoid redundant work
+	updated := make(map[SpanID]bool)
+
+	// Use a queue to iteratively process ancestors instead of recursion
+	var queue []*Span
+
+	// Add immediate parents to queue
+	if span.ParentSpan != nil {
+		queue = append(queue, span.ParentSpan)
 	}
-	
-	for causal := range span.CausalSpans {
-		if causal.RollUp {
-			causal.computeRollUpState()
+
+	// Add causal parents to queue
+	span.CausalSpans(func(causal *Span) bool {
+		queue = append(queue, causal)
+		return true
+	})
+
+	// Process ancestors iteratively
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+
+		// Skip if already updated
+		if updated[current.ID] {
+			continue
 		}
-		causal.updateRollUpAncestors()
+		updated[current.ID] = true
+
+		// Update this ancestor if it's a RollUp span
+		if current.RollUp {
+			current.computeRollUpState()
+		}
+
+		// Add this ancestor's parents to queue
+		if current.ParentSpan != nil {
+			queue = append(queue, current.ParentSpan)
+		}
+
+		// Add this ancestor's causal parents to queue
+		current.CausalSpans(func(causal *Span) bool {
+			queue = append(queue, causal)
+			return true
+		})
 	}
 }
 
@@ -415,20 +445,20 @@ func (span *Span) computeRollUpState() {
 	if !span.RollUp {
 		return
 	}
-	
+
 	// Collect all descendant spans (recursively)
 	children := span.collectAllDescendants()
 	if len(children) == 0 {
 		span.rollUpState = nil
 		return
 	}
-	
+
 	state := &RollUpState{
 		// Set recency threshold: spans completed in last 10 keypress durations are "recent"
 		// keypressDuration is ~100ms, so 1 second total
 		RecentCompletedUntil: time.Now().Add(-1 * time.Second),
 	}
-	
+
 	for _, child := range children {
 		if child.IsRunningOrEffectsRunning() {
 			state.RunningCount++
@@ -443,7 +473,7 @@ func (span *Span) computeRollUpState() {
 			}
 		}
 	}
-	
+
 	span.rollUpState = state
 }
 
@@ -451,7 +481,7 @@ func (span *Span) computeRollUpState() {
 func (span *Span) collectAllDescendants() []*Span {
 	var children []*Span
 	seen := make(map[SpanID]bool)
-	
+
 	var collect func(*Span)
 	collect = func(s *Span) {
 		// Use ChildSpans directly since we don't have opts here
@@ -465,7 +495,7 @@ func (span *Span) collectAllDescendants() []*Span {
 			collect(child)
 		}
 	}
-	
+
 	collect(span)
 	return children
 }
