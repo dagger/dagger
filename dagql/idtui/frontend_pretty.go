@@ -2249,7 +2249,7 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 
 		// Render RollUp dots after status/duration for collapsed RollUp spans
 		if span.RollUp && !row.Expanded && (row.HasChildren || span.HasLogs) && fe.shell == nil {
-			dots := fe.renderRollUpDots(out, span, fe.FrontendOpts)
+			dots := fe.renderRollUpDots(out, span)
 			if dots != "" {
 				fmt.Fprint(out, " ")
 				fmt.Fprint(out, dots)
@@ -2295,7 +2295,7 @@ var brailleDots = []rune{
 }
 
 // renderRollUpDots renders a visual summary of child span states using pre-computed state
-func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, opts dagui.FrontendOpts) string {
+func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span) string {
 	if !span.RollUp {
 		return ""
 	}
@@ -2308,56 +2308,31 @@ func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, opt
 
 	var result strings.Builder
 
-	// Render in order: completed (old), completed (recent), running, pending
+	// Render in order: completed, running, pending
 	// This creates a "settling" effect from right to left as tasks start and complete
 	// Each group packs up to 8 items per Braille character
 
-	// Old completed dots (faint green, packed into Braille characters)
-	for i := 0; i < state.OldCompletedCount; i += 8 {
-		count := state.OldCompletedCount - i
-		if count > 8 {
-			count = 8
-		}
+	// Completed dots (green, packed into Braille characters)
+	for i := 0; i < state.CompletedCount; i += 8 {
+		count := min(state.CompletedCount-i, 8)
 		braille := string(brailleDots[count])
 		styled := out.String(braille).Foreground(termenv.ANSIGreen).Faint()
 		result.WriteString(styled.String())
 	}
 
-	// Recent completed spans (bright green, packed into Braille characters)
-	// Check if still within recency window using fe.now
-	var recentCount int
-	if fe.now.Before(state.RecentCompletedUntil.Add(time.Second)) {
-		recentCount = state.RecentCompletedCount
-	}
-	for i := 0; i < recentCount; i += 8 {
-		count := recentCount - i
-		if count > 8 {
-			count = 8
-		}
-		braille := string(brailleDots[count])
-		styled := out.String(braille).Foreground(termenv.ANSIGreen)
-		result.WriteString(styled.String())
-	}
-
 	// Running dots (yellow, packed into Braille characters)
 	for i := 0; i < state.RunningCount; i += 8 {
-		count := state.RunningCount - i
-		if count > 8 {
-			count = 8
-		}
+		count := min(state.RunningCount-i, 8)
 		braille := string(brailleDots[count])
-		styled := out.String(braille).Foreground(termenv.ANSIYellow)
+		styled := out.String(braille).Foreground(termenv.ANSIYellow).Faint()
 		result.WriteString(styled.String())
 	}
 
 	// Pending dots (bright black/gray, packed into Braille characters)
 	for i := 0; i < state.PendingCount; i += 8 {
-		count := state.PendingCount - i
-		if count > 8 {
-			count = 8
-		}
+		count := min(state.PendingCount-i, 8)
 		braille := string(brailleDots[count])
-		styled := out.String(braille).Foreground(termenv.ANSIBrightBlack)
+		styled := out.String(braille).Foreground(termenv.ANSIBrightBlack).Faint()
 		result.WriteString(styled.String())
 	}
 
