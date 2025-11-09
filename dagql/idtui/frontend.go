@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dustin/go-humanize"
+	"github.com/frioux/shellquote"
 	"github.com/iancoleman/strcase"
 	"github.com/muesli/termenv"
 	"github.com/vito/bubbline/editline"
@@ -304,19 +305,60 @@ func (r *renderer) renderCall(
 	r.rendering[call.Digest] = true
 	defer func() { delete(r.rendering, call.Digest) }()
 
-	if call.ReceiverDigest != "" {
-		if !chained {
-			r.renderIDBase(out, r.db.MustCall(call.ReceiverDigest))
+	var specialTitle bool
+	var elideArgs map[string]struct{}
+	if r.Verbosity < dagui.ShowDigestsVerbosity {
+		if call.Field == "withExec" {
+			elideArgs = map[string]struct{}{"args": {}}
+			for _, arg := range call.Args {
+				switch arg.Name {
+				case "args":
+					argList := arg.Value.GetList()
+					if argList == nil || len(argList.Values) == 0 {
+						break
+					}
+					var cmdline []string
+					for _, val := range argList.Values {
+						cmdline = append(cmdline, val.GetString_())
+					}
+					quoted, err := shellquote.Quote(cmdline)
+					if err != nil {
+						quoted = fmt.Sprintf("<quote error %q for %v>", err, cmdline)
+					}
+					fmt.Fprint(out, out.String("exec").Foreground(termenv.ANSIBlue).String()+" ")
+					fmt.Fprint(out, quoted)
+					specialTitle = true
+				}
+			}
 		}
-		fmt.Fprint(out, out.String("."))
 	}
 
-	fmt.Fprint(out, out.String(call.Field).Bold())
+	var subtitleBuf *strings.Builder
+	var origOut TermOutput
+	if specialTitle {
+		fmt.Fprint(out, " ")
+		subtitleBuf = new(strings.Builder)
+		// strip color from remainder
+		origOut = out
+		out = termenv.NewOutput(subtitleBuf, termenv.WithProfile(termenv.Ascii))
+	} else {
+		if call.ReceiverDigest != "" {
+			if !chained {
+				r.renderIDBase(out, r.db.MustCall(call.ReceiverDigest))
+			}
+			fmt.Fprint(out, out.String("."))
+		}
 
-	if len(call.Args) > 0 {
+		fmt.Fprint(out, out.String(call.Field).Bold())
+	}
+
+	if len(call.Args) > len(elideArgs) {
 		fmt.Fprint(out, out.String("("))
 		var needIndent bool
 		for _, arg := range call.Args {
+			if _, elided := elideArgs[arg.Name]; elided {
+				continue
+			}
 			if arg.GetValue().GetCallDigest() != "" {
 				needIndent = true
 				break
@@ -331,6 +373,9 @@ func (r *renderer) renderCall(
 			depth++
 			depth++
 			for _, arg := range call.Args {
+				if _, elided := elideArgs[arg.Name]; elided {
+					continue
+				}
 				fmt.Fprint(out, prefix)
 				indentLevel := depth
 				if row != nil {
@@ -372,10 +417,15 @@ func (r *renderer) renderCall(
 			r.indent(out, indentLevel)
 			depth-- //nolint:ineffassign
 		} else {
-			for i, arg := range call.Args {
-				if i > 0 {
+			printed := 0
+			for _, arg := range call.Args {
+				if _, elided := elideArgs[arg.Name]; elided {
+					continue
+				}
+				if printed > 0 {
 					fmt.Fprint(out, out.String(", "))
 				}
+				printed++
 				fmt.Fprintf(out, out.String("%s: ").Foreground(kwColor).String(), arg.GetName())
 				r.renderLiteral(out, arg.GetValue())
 			}
@@ -383,13 +433,17 @@ func (r *renderer) renderCall(
 		fmt.Fprint(out, out.String(")"))
 	}
 
-	if call.Type != nil {
+	if call.Type != nil && !specialTitle {
 		typeStr := out.String(": " + call.Type.ToAST().String()).Faint()
 		fmt.Fprint(out, typeStr)
 	}
 
 	if r.Verbosity > dagui.ShowDigestsVerbosity {
 		fmt.Fprint(out, out.String(fmt.Sprintf(" = %s", call.Digest)).Foreground(faintColor))
+	}
+
+	if subtitleBuf != nil {
+		fmt.Fprint(origOut, origOut.String(subtitleBuf.String()).Faint())
 	}
 
 	return nil

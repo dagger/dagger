@@ -293,6 +293,8 @@ github.com/fogleman/ease v0.0.0-20170301025033-8da417bf1776 h1:VRIbnDWRmAh5yBdz+
 github.com/fogleman/ease v0.0.0-20170301025033-8da417bf1776/go.mod h1:9wvnDu3YOfxzWM9Cst40msBF1C2UdQgDv962oTxSuMs=
 github.com/frankban/quicktest v1.14.6 h1:7Xjx+VpznH+oBnejlPUj8oUpdxnVs4f8XU8WnHkI4W8=
 github.com/frankban/quicktest v1.14.6/go.mod h1:4ptaffx2x8+WTWXmUCuVU6aPUX1/Mz7zb5vbUoiM6w0=
+github.com/frioux/shellquote v0.0.2 h1:CvQ1aMCS/xhhyGF4JIeA49bhE3W1s5XdBkwmhH3BceQ=
+github.com/frioux/shellquote v0.0.2/go.mod h1:1VoFO5LSUNqwAKp2QjSpf9b4PZ4ff+uKXPEjonuyJh8=
 github.com/gliderlabs/ssh v0.3.8 h1:a4YXD1V7xMF9g5nTkdfnja3Sxy1PVDCj1Zg4Wb8vY6c=
 github.com/gliderlabs/ssh v0.3.8/go.mod h1:xYoytBv1sV0aL3CavoDuJIQNURXkkfPA/wxQ1pL1fAU=
 github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 h1:+zs/tPmkDkHx3U66DAb0lQFJrpS6731Oaa12ikc+DiI=

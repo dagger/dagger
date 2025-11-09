@@ -256,6 +256,7 @@ require (
 	github.com/extism/go-sdk v1.7.0 // indirect
 	github.com/felixge/fgprof v0.9.3 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
+	github.com/frioux/shellquote v0.0.2 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.6.2 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.2 // indirect
