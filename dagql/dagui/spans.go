@@ -17,6 +17,15 @@ import (
 
 type SpanSet = *OrderedSet[SpanID, *Span]
 
+// RollUpState caches the computed state for rendering RollUp progress bars
+type RollUpState struct {
+	PendingCount         int
+	RunningCount         int
+	RecentCompletedCount int
+	OldCompletedCount    int
+	RecentCompletedUntil time.Time // time until which completed spans are "recent"
+}
+
 type Span struct {
 	SpanSnapshot
 
@@ -42,6 +51,9 @@ type Span struct {
 	// Indicates that this span was actually exported to the database, and not
 	// just allocated due to a span parent or other relationship.
 	Received bool
+
+	// Pre-computed RollUp state for rendering progress bars (only for RollUp spans)
+	rollUpState *RollUpState
 
 	db *DB
 }
@@ -374,6 +386,93 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 			}
 		}
 	}
+	
+	// Update RollUp state for any RollUp ancestors
+	span.updateRollUpAncestors()
+}
+
+// updateRollUpAncestors recomputes RollUp state for all RollUp ancestors
+func (span *Span) updateRollUpAncestors() {
+	for parent := range span.Parents {
+		if parent.RollUp {
+			parent.computeRollUpState()
+		}
+		// Recurse to update grandparents
+		parent.updateRollUpAncestors()
+	}
+	
+	for causal := range span.CausalSpans {
+		if causal.RollUp {
+			causal.computeRollUpState()
+		}
+		causal.updateRollUpAncestors()
+	}
+}
+
+// computeRollUpState pre-computes the state for rendering RollUp progress bars
+// This is called when children change, not on every render frame.
+func (span *Span) computeRollUpState() {
+	if !span.RollUp {
+		return
+	}
+	
+	// Collect all descendant spans (recursively)
+	children := span.collectAllDescendants()
+	if len(children) == 0 {
+		span.rollUpState = nil
+		return
+	}
+	
+	state := &RollUpState{
+		// Set recency threshold: spans completed in last 10 keypress durations are "recent"
+		// keypressDuration is ~100ms, so 1 second total
+		RecentCompletedUntil: time.Now().Add(-1 * time.Second),
+	}
+	
+	for _, child := range children {
+		if child.IsRunningOrEffectsRunning() {
+			state.RunningCount++
+		} else if child.IsPending() {
+			state.PendingCount++
+		} else {
+			// Completed (success, cached, failed, canceled)
+			if !child.EndTime.IsZero() && child.EndTime.After(state.RecentCompletedUntil) {
+				state.RecentCompletedCount++
+			} else {
+				state.OldCompletedCount++
+			}
+		}
+	}
+	
+	span.rollUpState = state
+}
+
+// collectAllDescendants recursively collects all descendant spans
+func (span *Span) collectAllDescendants() []*Span {
+	var children []*Span
+	seen := make(map[SpanID]bool)
+	
+	var collect func(*Span)
+	collect = func(s *Span) {
+		// Use ChildSpans directly since we don't have opts here
+		for _, child := range s.ChildSpans.Order {
+			if seen[child.ID] {
+				continue
+			}
+			seen[child.ID] = true
+			children = append(children, child)
+			// Recursively collect grandchildren
+			collect(child)
+		}
+	}
+	
+	collect(span)
+	return children
+}
+
+// RollUpState returns the pre-computed RollUp state for rendering progress bars
+func (span *Span) RollUpState() *RollUpState {
+	return span.rollUpState
 }
 
 func (span *Span) ChildOrRevealedSpans(opts FrontendOpts) (SpanSet, bool) {

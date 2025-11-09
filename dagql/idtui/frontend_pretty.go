@@ -95,10 +95,6 @@ type frontendPretty struct {
 	pressedKey   string
 	pressedKeyAt time.Time
 
-	// Track when child spans change state for recency highlighting in RollUp
-	childStateChanges map[dagui.SpanID]time.Time
-	lastRenderTime    time.Time
-
 	// set when authenticated to Cloud
 	cloudURL string
 
@@ -161,9 +157,6 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 		// shell state
 		flushed:   map[dagui.SpanID]bool{},
 		offscreen: map[dagui.SpanID]bool{},
-
-		// RollUp state tracking
-		childStateChanges: make(map[dagui.SpanID]time.Time),
 
 		// initial TUI state
 		window:     tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
@@ -838,9 +831,6 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 		fmt.Fprintln(out)
 	}
 
-	// Update last render time for state change tracking
-	fe.lastRenderTime = fe.now
-
 	return nil
 }
 
@@ -860,12 +850,6 @@ func (fe *frontendPretty) keymapView() string {
 func (fe *frontendPretty) recalculateViewLocked() {
 	fe.rowsView = fe.db.RowsView(fe.FrontendOpts)
 	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
-
-	// Track state changes for RollUp children
-	fe.trackRollUpChildStates()
-
-	// Periodically clean up old state change records
-	fe.cleanupStateChanges()
 
 	if len(fe.rows.Order) == 0 {
 		fe.focusedIdx = -1
@@ -2296,28 +2280,10 @@ var statusColors = map[string]termenv.Color{
 	IconSuccess: termenv.ANSIGreen,
 }
 
-// collectRollUpChildren recursively collects all descendant spans of a RollUp span
-func (fe *frontendPretty) collectRollUpChildren(span *dagui.Span, opts dagui.FrontendOpts) []*dagui.Span {
-	var children []*dagui.Span
-
-	var collect func(*dagui.Span)
-	collect = func(s *dagui.Span) {
-		childSet, _ := s.ChildOrRevealedSpans(opts)
-		for _, child := range childSet.Order {
-			children = append(children, child)
-			// Recursively collect grandchildren
-			collect(child)
-		}
-	}
-
-	collect(span)
-	return children
-}
-
 // brailleDots maps a count (0-8) to a Braille unicode character showing that many dots
 // Braille patterns "pile up" from bottom to top, left to right
 var brailleDots = []rune{
-	' ',     // 0 dots: empty space
+	' ',      // 0 dots: empty space
 	'\u2840', // 1 dot:  ⡀ (bottom-left)
 	'\u2844', // 2 dots: ⡄ (bottom-left, top-left)
 	'\u2846', // 3 dots: ⡆ (bottom-left, top-left, middle-left)
@@ -2328,35 +2294,16 @@ var brailleDots = []rune{
 	'\u28FF', // 8 dots: ⣿ (all dots filled)
 }
 
-// renderRollUpDots renders a visual summary of child span states using Braille unicode packing
+// renderRollUpDots renders a visual summary of child span states using pre-computed state
 func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, opts dagui.FrontendOpts) string {
 	if !span.RollUp {
 		return ""
 	}
 
-	children := fe.collectRollUpChildren(span, opts)
-	if len(children) == 0 {
+	// Use pre-computed state instead of computing on every frame
+	state := span.RollUpState()
+	if state == nil {
 		return ""
-	}
-
-	// Categorize children by state
-	var pending, running []*dagui.Span
-	var recentCompleted, oldCompleted []*dagui.Span
-	
-	for _, child := range children {
-		if child.IsRunningOrEffectsRunning() {
-			running = append(running, child)
-		} else if child.IsPending() {
-			pending = append(pending, child)
-		} else {
-			// Completed (success, cached, failed, canceled)
-			changeTime, isRecent := fe.childStateChanges[child.ID]
-			if isRecent && time.Since(changeTime) <= (10*keypressDuration) {
-				recentCompleted = append(recentCompleted, child)
-			} else {
-				oldCompleted = append(oldCompleted, child)
-			}
-		}
 	}
 
 	var result strings.Builder
@@ -2366,8 +2313,8 @@ func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, opt
 	// Each group packs up to 8 items per Braille character
 
 	// Old completed dots (faint green, packed into Braille characters)
-	for i := 0; i < len(oldCompleted); i += 8 {
-		count := len(oldCompleted) - i
+	for i := 0; i < state.OldCompletedCount; i += 8 {
+		count := state.OldCompletedCount - i
 		if count > 8 {
 			count = 8
 		}
@@ -2377,8 +2324,13 @@ func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, opt
 	}
 
 	// Recent completed spans (bright green, packed into Braille characters)
-	for i := 0; i < len(recentCompleted); i += 8 {
-		count := len(recentCompleted) - i
+	// Check if still within recency window using fe.now
+	var recentCount int
+	if fe.now.Before(state.RecentCompletedUntil.Add(time.Second)) {
+		recentCount = state.RecentCompletedCount
+	}
+	for i := 0; i < recentCount; i += 8 {
+		count := recentCount - i
 		if count > 8 {
 			count = 8
 		}
@@ -2388,8 +2340,8 @@ func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, opt
 	}
 
 	// Running dots (yellow, packed into Braille characters)
-	for i := 0; i < len(running); i += 8 {
-		count := len(running) - i
+	for i := 0; i < state.RunningCount; i += 8 {
+		count := state.RunningCount - i
 		if count > 8 {
 			count = 8
 		}
@@ -2399,8 +2351,8 @@ func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, opt
 	}
 
 	// Pending dots (bright black/gray, packed into Braille characters)
-	for i := 0; i < len(pending); i += 8 {
-		count := len(pending) - i
+	for i := 0; i < state.PendingCount; i += 8 {
+		count := state.PendingCount - i
 		if count > 8 {
 			count = 8
 		}
@@ -2410,48 +2362,6 @@ func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, opt
 	}
 
 	return result.String()
-}
-
-// trackStateChange records when a span's state changes for recency highlighting
-func (fe *frontendPretty) trackStateChange(span *dagui.Span) {
-	// Only track if state recently changed (completed or started running)
-	if !span.IsRunning() && !fe.lastRenderTime.IsZero() && span.EndTime.After(fe.lastRenderTime) {
-		// Span just completed
-		fe.childStateChanges[span.ID] = fe.now
-	} else if span.IsRunning() && !fe.lastRenderTime.IsZero() && span.StartTime.After(fe.lastRenderTime) {
-		// Span just started
-		fe.childStateChanges[span.ID] = fe.now
-	}
-}
-
-// trackRollUpChildStates walks all rows and tracks state changes for RollUp children
-func (fe *frontendPretty) trackRollUpChildStates() {
-	for _, row := range fe.rows.Order {
-		// Check if this span is under a RollUp parent
-		parent := row.Parent
-		for parent != nil {
-			if parent.Span.RollUp {
-				// This span is a descendant of a RollUp span, track its state
-				fe.trackStateChange(row.Span)
-				break
-			}
-			parent = parent.Parent
-		}
-	}
-}
-
-// cleanupStateChanges removes old state change records to avoid memory leaks
-func (fe *frontendPretty) cleanupStateChanges() {
-	if len(fe.childStateChanges) == 0 {
-		return
-	}
-
-	cutoff := fe.now.Add(-keypressDuration * 2) // Keep for 2x the highlight duration
-	for id, changeTime := range fe.childStateChanges {
-		if changeTime.Before(cutoff) {
-			delete(fe.childStateChanges, id)
-		}
-	}
 }
 
 // statusIcon returns an icon indicating the span's status, and a bool
