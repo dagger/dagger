@@ -3,6 +3,7 @@ package dagui
 import (
 	"context"
 	"iter"
+	"maps"
 	"slices"
 	"sort"
 	"time"
@@ -896,19 +897,6 @@ func (db *DB) Simplify(call *callpbv1.Call, force bool) *callpbv1.Call {
 	return call
 }
 
-// Function to check if a row is or contains a target row
-func isOrContains(row, target *TraceTree) bool {
-	if row == target {
-		return true
-	}
-	for _, child := range row.Children {
-		if isOrContains(child, target) {
-			return true
-		}
-	}
-	return false
-}
-
 type WalkDecision int
 
 const (
@@ -940,13 +928,23 @@ func WalkTree(tree []*TraceTree, f func(*TraceTree, int) WalkDecision) {
 func (db *DB) CollectErrors(rows *RowsView) []*TraceTree {
 	reveal := make(map[*TraceTree]struct{})
 
+	rootCauses := NewSpanSet()
+
 	var collect func(row *TraceTree, ancestorFailed bool)
 	collect = func(tree *TraceTree, ancestorFailed bool) {
 		failed := tree.Span.IsFailedOrCausedFailure()
-		unset := tree.Span.IsUnset()
+
 		if failed {
-			reveal[tree] = struct{}{}
+			if !tree.Span.RollUp {
+				reveal[tree] = struct{}{}
+			}
+			if tree.Span.ErrorOrigin != nil {
+				rootCauses.Add(tree.Span.ErrorOrigin)
+			}
 		}
+
+		unset := tree.Span.IsUnset()
+
 		if failed ||
 			// continue through UNSET spans beneath failed parents; these correspond
 			// to basic span.End() calls which intend to just add measurement without
@@ -960,6 +958,23 @@ func (db *DB) CollectErrors(rows *RowsView) []*TraceTree {
 
 	for _, row := range rows.Body {
 		collect(row, false)
+	}
+
+	// Prioritize root cause errors if any are found.
+	if len(rootCauses.Order) > 0 {
+		orig := maps.Clone(reveal)
+		clear(reveal)
+		for _, span := range rootCauses.Order {
+			if tree, ok := rows.BySpan[span.ID]; ok {
+				collect(tree, false)
+			} else {
+				slog.Warn("tree not found for error origin span:", "id", span.ID, "name", span.Name)
+			}
+		}
+		if len(reveal) == 0 {
+			// fallback to original set
+			reveal = orig
+		}
 	}
 
 	return collectParents(rows.Body, reveal)
@@ -996,4 +1011,16 @@ func collectParents(rows []*TraceTree, targets map[*TraceTree]struct{}) []*Trace
 	}
 
 	return result
+}
+
+func isOrContains(row, target *TraceTree) bool {
+	if row == target {
+		return true
+	}
+	for _, child := range row.Children {
+		if isOrContains(child, target) {
+			return true
+		}
+	}
+	return false
 }
