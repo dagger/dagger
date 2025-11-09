@@ -149,13 +149,6 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
 		LiveLogExporters:    []sdklog.Exporter{Frontend.LogExporter()},
 		LiveMetricExporters: []sdkmetric.Exporter{Frontend.MetricExporter()},
 	}
-	// Add checks DB exporters if checks command is running
-	// BUT only if we're NOT using the live frontend (which already provides these exporters)
-	if checksDB != nil && !checksUsingLiveFrontend {
-		telemetryCfg.LiveTraceExporters = append(telemetryCfg.LiveTraceExporters, checksDB)
-		telemetryCfg.LiveLogExporters = append(telemetryCfg.LiveLogExporters, checksDB.LogExporter())
-		telemetryCfg.LiveMetricExporters = append(telemetryCfg.LiveMetricExporters, checksDB.MetricExporter())
-	}
 	if spans, logs, metrics, ok := enginetel.ConfiguredCloudExporters(ctx); ok {
 		telemetryCfg.LiveTraceExporters = append(telemetryCfg.LiveTraceExporters, spans)
 		telemetryCfg.LiveLogExporters = append(telemetryCfg.LiveLogExporters, logs)
