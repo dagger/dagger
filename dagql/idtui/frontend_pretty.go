@@ -1269,7 +1269,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			fe.pressedKey = "up"
 			fe.pressedKeyAt = time.Now()
 		}
-		return fe.offloadUpdates(msg)
+		return fe, fe.offloadUpdates(msg)
 
 	case editline.InputCompleteMsg:
 		if !fe.editlineFocused {
@@ -1329,7 +1329,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		switch {
 		// Handle prompt input if there's an active prompt
 		case fe.form != nil:
-			return fe.offloadUpdates(msg)
+			return fe, fe.offloadUpdates(msg)
 		// send all input to editline if it's focused
 		case fe.editlineFocused:
 			return fe, fe.handleEditlineKey(msg)
@@ -1339,7 +1339,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 
 	case tea.WindowSizeMsg:
 		fe.setWindowSizeLocked(msg)
-		return fe.offloadUpdates(msg)
+		return fe, fe.offloadUpdates(msg)
 
 	case frameMsg:
 		fe.now = time.Time(msg)
@@ -1368,14 +1368,14 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		return fe, nil
 
 	default:
-		return fe.offloadUpdates(msg)
+		return fe, fe.offloadUpdates(msg)
 	}
 }
 
 // offloadUpdates delegates messages to embedded components, whether they're
 // Bubbletea built-in messages (tea.KeyMsg) or internal messages to those
 // components
-func (fe *frontendPretty) offloadUpdates(msg tea.Msg) (*frontendPretty, tea.Cmd) {
+func (fe *frontendPretty) offloadUpdates(msg tea.Msg) tea.Cmd {
 	var cmds []tea.Cmd
 	if fe.form != nil {
 		form, cmd := fe.form.Update(msg)
@@ -1390,7 +1390,7 @@ func (fe *frontendPretty) offloadUpdates(msg tea.Msg) (*frontendPretty, tea.Cmd)
 		fe.spinner = m.(*Rave)
 		cmds = append(cmds, cmd)
 	}
-	return fe, tea.Batch(cmds...)
+	return tea.Batch(cmds...)
 }
 
 type promptDone struct{}
@@ -1658,7 +1658,7 @@ func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 		}
 	}
 
-	return nil
+	return fe.offloadUpdates(msg)
 }
 
 func (fe *frontendPretty) initEditline() {
