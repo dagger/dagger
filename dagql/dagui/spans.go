@@ -19,9 +19,12 @@ type SpanSet = *OrderedSet[SpanID, *Span]
 
 // RollUpState caches the computed state for rendering RollUp progress bars
 type RollUpState struct {
-	PendingCount   int
-	RunningCount   int
-	CompletedCount int
+	PendingCount  int
+	RunningCount  int
+	CachedCount   int
+	SuccessCount  int
+	FailedCount   int
+	CanceledCount int
 }
 
 type Span struct {
@@ -384,7 +387,7 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 			}
 		}
 	}
-	
+
 	// Update RollUp state for any RollUp ancestors
 	span.updateRollUpAncestors()
 }
@@ -393,42 +396,42 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 func (span *Span) updateRollUpAncestors() {
 	// Use a map to track which ancestors we've already updated to avoid redundant work
 	updated := make(map[SpanID]bool)
-	
+
 	// Use a queue to iteratively process ancestors instead of recursion
 	var queue []*Span
-	
+
 	// Add immediate parents to queue
 	if span.ParentSpan != nil {
 		queue = append(queue, span.ParentSpan)
 	}
-	
-	// Add causal parents to queue  
+
+	// Add causal parents to queue
 	span.CausalSpans(func(causal *Span) bool {
 		queue = append(queue, causal)
 		return true
 	})
-	
+
 	// Process ancestors iteratively
 	for len(queue) > 0 {
 		current := queue[0]
 		queue = queue[1:]
-		
+
 		// Skip if already updated
 		if updated[current.ID] {
 			continue
 		}
 		updated[current.ID] = true
-		
+
 		// Update this ancestor if it's a RollUp span
 		if current.RollUp {
 			current.computeRollUpState()
 		}
-		
+
 		// Add this ancestor's parents to queue
 		if current.ParentSpan != nil {
 			queue = append(queue, current.ParentSpan)
 		}
-		
+
 		// Add this ancestor's causal parents to queue
 		current.CausalSpans(func(causal *Span) bool {
 			queue = append(queue, causal)
@@ -443,27 +446,33 @@ func (span *Span) computeRollUpState() {
 	if !span.RollUp {
 		return
 	}
-	
+
 	// Collect all descendant spans (recursively)
 	children := span.collectAllDescendants()
 	if len(children) == 0 {
 		span.rollUpState = nil
 		return
 	}
-	
+
 	state := &RollUpState{}
-	
+
 	for _, child := range children {
 		if child.IsRunningOrEffectsRunning() {
 			state.RunningCount++
 		} else if child.IsPending() {
 			state.PendingCount++
+		} else if child.IsCached() {
+			state.CachedCount++
+		} else if child.IsCanceled() {
+			state.CanceledCount++
+		} else if child.IsFailedOrCausedFailure() {
+			state.FailedCount++
 		} else {
-			// Completed (success, cached, failed, canceled)
-			state.CompletedCount++
+			// Success (completed but not cached, canceled, or failed)
+			state.SuccessCount++
 		}
 	}
-	
+
 	span.rollUpState = state
 }
 
@@ -471,7 +480,7 @@ func (span *Span) computeRollUpState() {
 func (span *Span) collectAllDescendants() []*Span {
 	var children []*Span
 	seen := make(map[SpanID]bool)
-	
+
 	var collect func(*Span)
 	collect = func(s *Span) {
 		// Use ChildSpans directly since we don't have opts here
@@ -485,7 +494,7 @@ func (span *Span) collectAllDescendants() []*Span {
 			collect(child)
 		}
 	}
-	
+
 	collect(span)
 	return children
 }
