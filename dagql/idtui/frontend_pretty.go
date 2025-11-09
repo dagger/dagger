@@ -18,7 +18,6 @@ import (
 
 	"github.com/adrg/xdg"
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
@@ -101,7 +100,7 @@ type frontendPretty struct {
 
 	// TUI state/config
 	fps          float64 // frames per second
-	spinner      spinner.Model
+	spinner      *Rave
 	profile      termenv.Profile
 	window       tea.WindowSizeMsg // set by BubbleTea
 	contentWidth int
@@ -137,21 +136,6 @@ func NewPretty(w io.Writer) Frontend {
 	return NewWithDB(w, dagui.NewDB())
 }
 
-// same as spinner.Dot but without the trailing space
-var oneCharDot = spinner.Spinner{
-	Frames: []string{
-		"⣷",
-		"⣯",
-		"⣟",
-		"⡿",
-		"⢿",
-		"⣻",
-		"⣽",
-		"⣾",
-	},
-	FPS: time.Second / 10, //nolint:mnd
-}
-
 func NewReporter(w io.Writer) Frontend {
 	fe := NewWithDB(w, dagui.NewDB())
 	fe.reportOnly = true
@@ -177,7 +161,7 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 		// initial TUI state
 		window:     tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
 		fps:        30,                                       // sane default, fine-tune if needed
-		spinner:    spinner.New(spinner.WithSpinner(oneCharDot)),
+		spinner:    NewRave(),
 		profile:    profile,
 		view:       view,
 		viewOut:    NewOutput(view, termenv.WithProfile(profile)),
@@ -1019,7 +1003,6 @@ func (fe *frontendPretty) Init() tea.Cmd {
 	return tea.Batch(
 		frame(fe.fps),
 		fe.spawn,
-		fe.spinner.Tick,
 	)
 }
 
@@ -1390,8 +1373,8 @@ func (fe *frontendPretty) offloadUpdates(msg tea.Msg) (*frontendPretty, tea.Cmd)
 	}
 	{
 		// spinner messages
-		var cmd tea.Cmd
-		fe.spinner, cmd = fe.spinner.Update(msg)
+		m, cmd := fe.spinner.Update(msg)
+		fe.spinner = m.(*Rave)
 		cmds = append(cmds, cmd)
 	}
 	return fe, tea.Batch(cmds...)
@@ -2273,7 +2256,7 @@ var statusColors = map[string]termenv.Color{
 // indicating whether it's interesting enough to reveal at a summary level
 func (fe *frontendPretty) statusIcon(span *dagui.Span) (string, bool) {
 	if span.IsRunningOrEffectsRunning() {
-		return fe.spinner.View(), true
+		return fe.spinner.ViewFancy(fe.now), true
 	} else if span.IsCached() {
 		return IconCached, false
 	} else if span.IsCanceled() {
