@@ -715,7 +715,7 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 		var err error
 		res, err = self.Select(ctx, s, sel)
 		if err != nil {
-			return fmt.Errorf("select: %w", err)
+			return err
 		}
 
 		if res == nil {
