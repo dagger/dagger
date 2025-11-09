@@ -70,7 +70,7 @@ const (
 	UIPassthroughAttr = "dagger.io/ui.passthrough" //nolint: gosec // lol
 
 	// Roll up child logs into this span.
-	UILogsRollupAttr = "dagger.io/ui.logs.rollup"
+	UIRollupAttr = "dagger.io/ui.logs.rollup"
 
 	// The name of the check that this span represents.
 	// TODO: redundant with span name?

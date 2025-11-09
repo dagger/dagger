@@ -166,7 +166,7 @@ type SpanSnapshot struct {
 	Passthrough  bool `json:",omitempty"`
 	Ignore       bool `json:",omitempty"`
 	Reveal       bool `json:",omitempty"`
-	RollUpLogs   bool `json:",omitempty"`
+	RollUp       bool `json:",omitempty"`
 
 	// Check name + status
 	CheckName   string `json:",omitempty"`
@@ -251,8 +251,8 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 	case telemetry.UIMessageAttr:
 		snapshot.Message = val.(string)
 
-	case telemetry.UILogsRollupAttr:
-		snapshot.RollUpLogs = val.(bool)
+	case telemetry.UIRollupAttr:
+		snapshot.RollUp = val.(bool)
 
 	case telemetry.CheckNameAttr:
 		snapshot.CheckName = val.(string)

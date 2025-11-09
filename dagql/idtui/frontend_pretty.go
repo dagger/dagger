@@ -474,36 +474,49 @@ func (fe *frontendPretty) renderErrorLogs(out TermOutput, r *renderer) bool {
 		Verbosity:  dagui.ShowCompletedVerbosity,
 	})
 	errTree := fe.db.CollectErrors(rowsView)
-	var anyHasLogs bool
-	dagui.WalkTree(errTree, func(row *dagui.TraceTree, _ int) dagui.WalkDecision {
-		logs := fe.logs.Logs[row.Span.ID]
-		if logs != nil && logs.UsedHeight() > 0 {
-			anyHasLogs = true
-			return dagui.WalkStop
-		}
-		return dagui.WalkContinue
-	})
-	if anyHasLogs {
-		fmt.Fprintln(out)
-		fmt.Fprintln(out, out.String("Error logs:").Bold())
-	}
+	var renderLogs []*dagui.TraceTree
 	dagui.WalkTree(errTree, func(tree *dagui.TraceTree, _ int) dagui.WalkDecision {
 		logs := fe.logs.Logs[tree.Span.ID]
-		if logs != nil && logs.UsedHeight() > 0 {
-			row := &dagui.TraceRow{
-				Span:     tree.Span,
-				Chained:  tree.Chained,
-				Expanded: true,
-			}
-			fmt.Fprintln(out)
-			fe.renderStep(out, r, row, "")
-			logs.SetHeight(logs.UsedHeight())
-			logs.SetPrefix("")
-			fmt.Fprint(out, logs.View())
-			fe.renderStepError(out, r, row, "")
+		if logs != nil && logs.UsedHeight() > 0 && !tree.Span.RollUp {
+			renderLogs = append(renderLogs, tree)
 		}
 		return dagui.WalkContinue
 	})
+	if len(renderLogs) > 0 {
+		fmt.Fprintln(out)
+		fmt.Fprintln(out)
+		fmt.Fprint(out, out.String("ERRORS").Bold(), out.String(strings.Repeat(HorizBar, 80-len("ERRORS "))).Faint())
+		fmt.Fprintln(out)
+	}
+	for _, tree := range renderLogs {
+		logs := fe.logs.Logs[tree.Span.ID]
+		row := &dagui.TraceRow{
+			Span:     tree.Span,
+			Chained:  tree.Chained,
+			Expanded: true,
+		}
+		fmt.Fprintln(out)
+		var parents []*dagui.TraceRow
+		for p := tree.Parent; p != nil; p = p.Parent {
+			parents = append(parents, &dagui.TraceRow{
+				Span:     p.Span,
+				Chained:  p.Chained,
+				Expanded: true,
+			})
+		}
+		slices.Reverse(parents)
+		context := new(strings.Builder)
+		noColorOut := termenv.NewOutput(context, termenv.WithProfile(termenv.Ascii))
+		for _, p := range parents {
+			fe.renderStep(noColorOut, r, p, "")
+		}
+		fmt.Fprint(out, out.String(context.String()).Faint())
+		fe.renderStep(out, r, row, "")
+		logs.SetHeight(logs.UsedHeight())
+		logs.SetPrefix("")
+		fmt.Fprint(out, logs.View())
+		fe.renderStepError(out, r, row, "")
+	}
 	return len(errTree) > 0
 }
 
@@ -1996,18 +2009,23 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 		fmt.Fprintln(out)
 	}
 	span := row.Span
+	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused
 	fe.renderStep(out, r, row, prefix)
 	if span.Message == "" && // messages are displayed in renderStep
 		(row.Expanded || row.Span.LLMTool != "") {
-		isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused
 		fe.renderStepLogs(out, r, row, prefix, isFocused)
-	} else if fe.shell != nil && row.Depth == 0 && !row.Expanded {
+	} else if (row.Span.RollUp || fe.shell != nil) && row.Depth == 0 && !row.Expanded {
 		// in shell mode, we print top-level command logs unindented, like shells
 		// usually does
 		if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
-			unindent := *row
-			unindent.Depth = -1
-			fe.renderLogs(out, r, &unindent, logs, logs.UsedHeight(), prefix, false)
+			if fe.shell != nil {
+				unindent := *row
+				unindent.Depth = -1
+				fe.renderLogs(out, r, &unindent, logs, logs.UsedHeight(), prefix, false)
+			} else if row.Span.RollUp && row.IsRunningOrChildRunning {
+				// Only show rolled-up logs while the span is running.
+				fe.renderStepLogs(out, r, row, prefix, isFocused)
+			}
 		}
 	}
 	fe.renderStepError(out, r, row, prefix)
@@ -2493,7 +2511,7 @@ func (l *prettyLogs) findRollUpSpan(origID dagui.SpanID) (*multiprefixw.Writer, 
 			// Don't roll up past encapsulation points.
 			break
 		}
-		if span.RollUpLogs {
+		if span.RollUp {
 			// Found a roll-up span; find-or-create a prefixed writer for it.
 			pw, found := l.PrefixWriters[id]
 			if !found {
