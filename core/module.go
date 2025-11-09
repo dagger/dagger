@@ -157,6 +157,7 @@ func (mod *Module) walkObjectChecks(ctx context.Context, obj *ObjectTypeDef, obj
 		return cached
 	}
 	var checks []*Check
+	objChecksCache[obj.Name] = checks
 	subObjects := map[string]*ObjectTypeDef{}
 	for _, fn := range obj.Functions {
 		func() {
