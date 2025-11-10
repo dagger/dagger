@@ -325,6 +325,8 @@ func (r *renderer) renderCall(
 					if err != nil {
 						quoted = fmt.Sprintf("<quote error %q for %v>", err, cmdline)
 					}
+					// prevent multiline titles
+					quoted = strings.ReplaceAll(quoted, "\n", `\n`)
 					fmt.Fprint(out, out.String("exec").Foreground(termenv.ANSIBlue).String()+" ")
 					fmt.Fprint(out, quoted)
 					specialTitle = true
@@ -336,7 +338,6 @@ func (r *renderer) renderCall(
 	var subtitleBuf *strings.Builder
 	var origOut TermOutput
 	if specialTitle {
-		fmt.Fprint(out, " ")
 		subtitleBuf = new(strings.Builder)
 		// strip color from remainder
 		origOut = out
