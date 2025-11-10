@@ -2248,7 +2248,7 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 		}
 
 		// Render RollUp dots after status/duration for collapsed RollUp spans
-		if span.RollUp && !row.Expanded && (row.HasChildren || span.HasLogs) && fe.shell == nil {
+		if span.RollUp {
 			dots := fe.renderRollUpDots(out, span, row, prefix, fe.FrontendOpts)
 			if dots != "" {
 				fmt.Fprint(out, " ")
@@ -2295,7 +2295,7 @@ var brailleDots = []rune{
 }
 
 // renderRollUpDots renders a visual summary of child span states using pre-computed state
-func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, row *dagui.TraceRow, prefix string, opts dagui.FrontendOpts) string {
+func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, row *dagui.TraceRow, prefix string, _ dagui.FrontendOpts) string {
 	if !span.RollUp {
 		return ""
 	}
@@ -2318,12 +2318,8 @@ func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, row
 	extraWidth := 25
 
 	usedWidth := prefixWidth + indentWidth + togglerWidth + nameWidth + extraWidth
-	availableWidth := fe.contentWidth - usedWidth
-
 	// Need at least some space for dots (minimum 5 characters for " " + 1 braille char)
-	if availableWidth < 5 {
-		availableWidth = 5
-	}
+	availableWidth := max(fe.contentWidth-usedWidth, 5)
 
 	// Calculate total spans across all statuses
 	totalSpans := state.SuccessCount + state.CachedCount + state.FailedCount +
@@ -2359,10 +2355,7 @@ func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, row
 		// Scale down the count
 		dotCount := (count + scale - 1) / scale // Round up
 		for i := 0; i < dotCount; i += 8 {
-			dotsInChar := dotCount - i
-			if dotsInChar > 8 {
-				dotsInChar = 8
-			}
+			dotsInChar := min(dotCount-i, 8)
 			braille := string(brailleDots[dotsInChar])
 			styled := out.String(braille).Foreground(color)
 			result.WriteString(styled.String())
