@@ -191,7 +191,7 @@ jobs:
 
       - name: "ALWAYS print engine logs - especially useful on failure"
         if: always()
-        run: docker logs $(docker ps -q --filter name=dagger-engine)
+        run: docker logs $(docker ps -q --filter name=dagger-engine) || true
 
   # TODO: daggerize provisioning tests
   test-provision-go-linux-x86:
