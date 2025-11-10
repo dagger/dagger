@@ -288,7 +288,7 @@ func (r *renderer) renderIDBase(out TermOutput, call *callpbv1.Call) {
 	}
 }
 
-func (r *renderer) renderCall(
+func (r *renderer) renderCall( //nolint: gocyclo
 	out TermOutput,
 	span *dagui.Span,
 	call *callpbv1.Call,
@@ -354,6 +354,9 @@ func (r *renderer) renderCall(
 	}
 
 	if len(call.Args) > len(elideArgs) {
+		if specialTitle {
+			fmt.Fprint(out, " ")
+		}
 		fmt.Fprint(out, out.String("("))
 		var needIndent bool
 		for _, arg := range call.Args {

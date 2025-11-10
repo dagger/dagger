@@ -227,7 +227,7 @@ type SpanLink struct {
 	Purpose     string
 }
 
-func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
+func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint: gocyclo
 	defer func() {
 		// a bit of a shortcut, but there shouldn't be much going on
 		// here and all the conversion error handling code is
@@ -802,15 +802,13 @@ func (span *Span) IsCached() bool {
 					return false
 				}
 			}
-		} else {
+		} else if span.db.CompletedEffects[effect] {
 			// if the effect is completed but we never saw a span for it, that
 			// might mean it was a multiple-layers-deep cache hit. or, some
 			// buildkit bug caused us to never see the span. or, another parallel
 			// client completed it. in all of those cases, we'll at least consider
 			// it cached so it's not stuck 'pending' forever.
-			if span.db.CompletedEffects[effect] {
-				anyCached = true
-			}
+			anyCached = true
 		}
 	}
 	// some effects were not cached

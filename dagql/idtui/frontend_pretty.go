@@ -1978,7 +1978,7 @@ func (fe *frontendPretty) renderLocked() {
 	fe.Render(fe.viewOut)
 }
 
-func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) bool {
+func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) bool { //nolint: gocyclo
 	if fe.offscreen[row.Span.ID] && fe.editlineFocused {
 		return false
 	}

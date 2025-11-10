@@ -26,9 +26,6 @@ type Rave struct {
 	// color profile configured at start (to respect NO_COLOR etc)
 	colorProfile termenv.Profile
 
-	// refresh rate
-	fps float64
-
 	// user has opted into rave
 	colors bool
 
@@ -103,8 +100,7 @@ func (rave *Rave) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	// NB: these are captured and forwarded at the outer level.
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+@":
+		if msg.String() == "ctrl+@" {
 			last := rave.lastBeat
 			rave.colors = true
 			rave.Frames = FadeFrames
@@ -125,12 +121,8 @@ func (rave *Rave) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (rave *Rave) setBPM(bpm float64) {
-	bps := bpm / 60.0
-	framesPerBeat := len(rave.Frames.Frames)
-	fps := bps * float64(framesPerBeat)
-	fps *= 2 // decrease chance of missing a frame due to timing
 	rave.bpm = bpm
-	rave.interval = time.Duration(float64(time.Second) / bps)
+	rave.interval = time.Duration(float64(time.Minute) / bpm)
 }
 
 func (rave *Rave) View() string {
@@ -171,21 +163,17 @@ func (rave *Rave) ViewFrame(now time.Time, frames SpinnerFrames) (string, int) {
 	return frames.Frames[frame], beats
 }
 
-func (model *Rave) viewDetails() string {
-	return fmt.Sprintf(
-		"%.1fbpm %.1ffps",
-		model.bpm,
-		model.fps,
-	)
+func (rave *Rave) viewDetails() string {
+	return fmt.Sprintf("%.1fbpm", rave.bpm)
 }
 
-func (sched *Rave) Progress(now time.Time) (int, float64) {
-	curBeatStart := sched.lastBeat
+func (rave *Rave) Progress(now time.Time) (int, float64) {
+	curBeatStart := rave.lastBeat
 	sinceLastBeat := now.Sub(curBeatStart)
-	beats := int(sinceLastBeat / sched.interval)
+	beats := int(sinceLastBeat / rave.interval)
 
-	start := sched.lastBeat.Add(time.Duration(beats) * sched.interval)
+	start := rave.lastBeat.Add(time.Duration(beats) * rave.interval)
 
 	// found the current beat, and how far we are within it
-	return beats, float64(now.Sub(start)) / float64(sched.interval)
+	return beats, float64(now.Sub(start)) / float64(rave.interval)
 }
