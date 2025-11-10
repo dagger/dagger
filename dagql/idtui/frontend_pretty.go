@@ -72,6 +72,7 @@ type frontendPretty struct {
 	shellCtx        context.Context
 	shellInterrupt  context.CancelCauseFunc
 	promptFg        termenv.Color
+	promptErr       error
 	editline        *editline.Model
 	editlineFocused bool
 	autoModeSwitch  bool
@@ -1101,7 +1102,11 @@ func (fe *frontendPretty) renderWithSidebar(mainContent, sidebarContent string) 
 }
 
 func (fe *frontendPretty) editlineView() string {
-	return fe.editline.View()
+	view := fe.editline.View()
+	if fe.promptErr != nil {
+		view = fe.viewOut.String("ERROR: "+fe.promptErr.Error()).Foreground(termenv.ANSIBrightRed).String() + "\n" + view
+	}
+	return view
 }
 
 func (fe *frontendPretty) formView() string {
@@ -1281,6 +1286,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		return fe, nil
 
 	case shellDoneMsg:
+		fe.promptErr = msg.err
 		if msg.err == nil {
 			fe.promptFg = termenv.ANSIGreen
 		} else {
