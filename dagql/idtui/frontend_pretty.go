@@ -2249,7 +2249,7 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 
 		// Render RollUp dots after status/duration for collapsed RollUp spans
 		if span.RollUp && !row.Expanded && (row.HasChildren || span.HasLogs) && fe.shell == nil {
-			dots := fe.renderRollUpDots(out, span, fe.FrontendOpts)
+			dots := fe.renderRollUpDots(out, span, row, prefix, fe.FrontendOpts)
 			if dots != "" {
 				fmt.Fprint(out, " ")
 				fmt.Fprint(out, dots)
@@ -2295,7 +2295,7 @@ var brailleDots = []rune{
 }
 
 // renderRollUpDots renders a visual summary of child span states using pre-computed state
-func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, opts dagui.FrontendOpts) string {
+func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, row *dagui.TraceRow, prefix string, opts dagui.FrontendOpts) string {
 	if !span.RollUp {
 		return ""
 	}
@@ -2306,77 +2306,84 @@ func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, opt
 		return ""
 	}
 
+	// Calculate available width for dots
+	// Account for: prefix + indent (2 spaces per depth) + toggler + space + span name (rough estimate)
+	prefixWidth := lipgloss.Width(prefix)
+	indentWidth := row.Depth * 2
+	togglerWidth := 2 // toggler icon + space
+	nameWidth := lipgloss.Width(span.Name)
+
+	// Estimate width used by duration, metrics, status, effect summary
+	// This is a rough estimate - duration ~10 chars, status ~10 chars
+	extraWidth := 25
+
+	usedWidth := prefixWidth + indentWidth + togglerWidth + nameWidth + extraWidth
+	availableWidth := fe.contentWidth - usedWidth
+
+	// Need at least some space for dots (minimum 5 characters for " " + 1 braille char)
+	if availableWidth < 5 {
+		availableWidth = 5
+	}
+
+	// Calculate total spans across all statuses
+	totalSpans := state.SuccessCount + state.CachedCount + state.FailedCount +
+		state.CanceledCount + state.RunningCount + state.PendingCount
+
+	if totalSpans == 0 {
+		return ""
+	}
+
+	// Each Braille char packs 8 dots. Calculate how many chars we can fit.
+	// Reserve 1 char for spacing between groups.
+	maxChars := availableWidth
+	maxDots := maxChars * 8
+
+	// Calculate scale factor: how many spans per dot
+	// Start at 1:1, then scale up as needed (1:1, 2:1, 3:1, 4:1, 5:1, 10:1, etc.)
+	scale := 1
+	for totalSpans/scale > maxDots {
+		if scale < 5 {
+			scale++
+		} else {
+			scale = (scale/5 + 1) * 5 // Jump by 5s after reaching 5
+		}
+	}
+
 	var result strings.Builder
+
+	// Helper to render a group of dots with a given count and color
+	renderGroup := func(count int, color termenv.Color) {
+		if count == 0 {
+			return
+		}
+		// Scale down the count
+		dotCount := (count + scale - 1) / scale // Round up
+		for i := 0; i < dotCount; i += 8 {
+			dotsInChar := dotCount - i
+			if dotsInChar > 8 {
+				dotsInChar = 8
+			}
+			braille := string(brailleDots[dotsInChar])
+			styled := out.String(braille).Foreground(color)
+			result.WriteString(styled.String())
+		}
+	}
+
+	// Show scale indicator if we're not at 1:1
+	if scale > 1 {
+		scaleIndicator := fmt.Sprintf("%d×", scale)
+		styled := out.String(scaleIndicator).Foreground(termenv.ANSIBrightBlack).Faint()
+		result.WriteString(styled.String())
+	}
 
 	// Render in order: success, cached, failed, canceled, running, pending
 	// This creates a "settling" effect from right to left as tasks start and complete
-	// Each group packs up to 8 items per Braille character
-
-	// Success dots (green)
-	for i := 0; i < state.SuccessCount; i += 8 {
-		count := state.SuccessCount - i
-		if count > 8 {
-			count = 8
-		}
-		braille := string(brailleDots[count])
-		styled := out.String(braille).Foreground(termenv.ANSIGreen)
-		result.WriteString(styled.String())
-	}
-
-	// Cached dots (blue)
-	for i := 0; i < state.CachedCount; i += 8 {
-		count := state.CachedCount - i
-		if count > 8 {
-			count = 8
-		}
-		braille := string(brailleDots[count])
-		styled := out.String(braille).Foreground(termenv.ANSIBlue)
-		result.WriteString(styled.String())
-	}
-
-	// Failed dots (red)
-	for i := 0; i < state.FailedCount; i += 8 {
-		count := state.FailedCount - i
-		if count > 8 {
-			count = 8
-		}
-		braille := string(brailleDots[count])
-		styled := out.String(braille).Foreground(termenv.ANSIRed)
-		result.WriteString(styled.String())
-	}
-
-	// Canceled dots (bright black/gray)
-	for i := 0; i < state.CanceledCount; i += 8 {
-		count := state.CanceledCount - i
-		if count > 8 {
-			count = 8
-		}
-		braille := string(brailleDots[count])
-		styled := out.String(braille).Foreground(termenv.ANSIBrightBlack)
-		result.WriteString(styled.String())
-	}
-
-	// Running dots (yellow, packed into Braille characters)
-	for i := 0; i < state.RunningCount; i += 8 {
-		count := state.RunningCount - i
-		if count > 8 {
-			count = 8
-		}
-		braille := string(brailleDots[count])
-		styled := out.String(braille).Foreground(termenv.ANSIYellow)
-		result.WriteString(styled.String())
-	}
-
-	// Pending dots (bright black/gray, packed into Braille characters)
-	for i := 0; i < state.PendingCount; i += 8 {
-		count := state.PendingCount - i
-		if count > 8 {
-			count = 8
-		}
-		braille := string(brailleDots[count])
-		styled := out.String(braille).Foreground(termenv.ANSIBrightBlack)
-		result.WriteString(styled.String())
-	}
+	renderGroup(state.SuccessCount, termenv.ANSIGreen)
+	renderGroup(state.CachedCount, termenv.ANSIBlue)
+	renderGroup(state.FailedCount, termenv.ANSIRed)
+	renderGroup(state.CanceledCount, termenv.ANSIBrightBlack)
+	renderGroup(state.RunningCount, termenv.ANSIYellow)
+	renderGroup(state.PendingCount, termenv.ANSIBrightBlack)
 
 	return result.String()
 }
