@@ -33,12 +33,8 @@ func (t PHPSDK) Source() *dagger.Directory {
 
 func (t PHPSDK) Lint(ctx context.Context) error {
 	return parallel.New().
-		WithJob("PHP CodeSniffer", func(ctx context.Context) error {
-			return t.PhpCodeSniffer(ctx)
-		}).
-		WithJob("PHPStan", func(ctx context.Context) error {
-			return t.PhpStan(ctx)
-		}).
+		WithJob("PHP CodeSniffer", t.PhpCodeSniffer).
+		WithJob("PHPStan", t.PhpStan).
 		Run(ctx)
 }
 

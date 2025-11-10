@@ -10,12 +10,8 @@ import (
 // TODO: remove after merging https://github.com/dagger/dagger/pull/11211
 func (dev *DaggerDev) LintMisc(ctx context.Context) error {
 	return parallel.New().
-		WithJob("Docs", func(ctx context.Context) error {
-			return dev.Docs().Lint(ctx)
-		}).
-		WithJob("Helm chart", func(ctx context.Context) error {
-			return dev.LintHelm(ctx)
-		}).
+		WithJob("Docs", dev.Docs().Lint).
+		WithJob("Helm chart", dev.LintHelm).
 		WithJob("Install scripts", dev.Scripts().Lint).
 		Run(ctx)
 }
@@ -24,15 +20,9 @@ func (dev *DaggerDev) LintMisc(ctx context.Context) error {
 // +check
 func (dev *DaggerDev) ReleaseDryRun(ctx context.Context) error {
 	return parallel.New().
-		WithJob("Helm chart", func(ctx context.Context) error {
-			return dag.Helm().ReleaseDryRun(ctx)
-		}).
-		WithJob("CLI", func(ctx context.Context) error {
-			return dag.DaggerCli().ReleaseDryRun(ctx)
-		}).
-		WithJob("Engine", func(ctx context.Context) error {
-			return dag.DaggerEngine().ReleaseDryRun(ctx)
-		}).
+		WithJob("Helm chart", dag.Helm().ReleaseDryRun).
+		WithJob("CLI", dag.DaggerCli().ReleaseDryRun).
+		WithJob("Engine", dag.DaggerEngine().ReleaseDryRun).
 		WithJob("SDKs", dev.dryRunSDKs).
 		Run(ctx)
 }
@@ -62,9 +52,7 @@ func (dev *DaggerDev) TestSDKs(ctx context.Context) error {
 		Test(context.Context) error
 	}
 	for _, sdk := range allSDKs[tester](dev) {
-		jobs = jobs.WithJob(sdk.Name(), func(ctx context.Context) error {
-			return sdk.Test(ctx)
-		})
+		jobs = jobs.WithJob(sdk.Name(), sdk.Test)
 	}
 	// Some (but not all) sdk test functions are also aggregators which will be replaced by PR 11211. Call them here too.
 	type deprecatedTester interface {
@@ -87,9 +75,7 @@ func (dev *DaggerDev) LintSDKs(ctx context.Context) error {
 		Lint(context.Context) error
 	}
 	for _, sdk := range allSDKs[linter](dev) {
-		jobs = jobs.WithJob(sdk.Name(), func(ctx context.Context) error {
-			return sdk.Lint(ctx)
-		})
+		jobs = jobs.WithJob(sdk.Name(), sdk.Lint)
 	}
 	// Some (but not all) sdk lint functions are also aggregators which will be replaced by PR 11211. Call them here too.
 	type deprecatedLinter interface {
@@ -106,12 +92,8 @@ func (dev *DaggerDev) LintSDKs(ctx context.Context) error {
 // TODO: remove after merging https://github.com/dagger/dagger/pull/11211
 func (t TypescriptSDK) Test(ctx context.Context) error {
 	return parallel.New().
-		WithJob("node", func(ctx context.Context) error {
-			return t.TestNode(ctx)
-		}).
-		WithJob("bun", func(ctx context.Context) error {
-			return t.TestBun(ctx)
-		}).
+		WithJob("node", t.TestNode).
+		WithJob("bun", t.TestBun).
 		Run(ctx)
 }
 
@@ -119,12 +101,8 @@ func (t TypescriptSDK) Test(ctx context.Context) error {
 // TODO: remove after merging https://github.com/dagger/dagger/pull/11211
 func (r RustSDK) Lint(ctx context.Context) error {
 	return parallel.New().
-		WithJob("check format", func(ctx context.Context) error {
-			return r.CheckFormat(ctx)
-		}).
-		WithJob("check compilation", func(ctx context.Context) error {
-			return r.CheckCompilation(ctx)
-		}).
+		WithJob("check format", r.CheckFormat).
+		WithJob("check compilation", r.CheckCompilation).
 		Run(ctx)
 }
 
@@ -132,12 +110,8 @@ func (r RustSDK) Lint(ctx context.Context) error {
 // // TODO: remove after merging https://github.com/dagger/dagger/pull/11211
 func (s Scripts) Lint(ctx context.Context) error {
 	return parallel.New().
-		WithJob("install.sh", func(ctx context.Context) error {
-			return s.LintSh(ctx)
-		}).
-		WithJob("install.ps1", func(ctx context.Context) error {
-			return s.LintPowershell(ctx)
-		}).
+		WithJob("install.sh", s.LintSh).
+		WithJob("install.ps1", s.LintPowershell).
 		Run(ctx)
 }
 
@@ -145,11 +119,7 @@ func (s Scripts) Lint(ctx context.Context) error {
 // TODO: remove after merging https://github.com/dagger/dagger/pull/11211
 func (t TypescriptSDK) Lint(ctx context.Context) error {
 	return parallel.New().
-		WithJob("typescript", func(ctx context.Context) error {
-			return t.LintTypescript(ctx)
-		}).
-		WithJob("docs snippets", func(ctx context.Context) error {
-			return t.LintDocsSnippets(ctx)
-		}).
+		WithJob("typescript", t.LintTypescript).
+		WithJob("docs snippets", t.LintDocsSnippets).
 		Run(ctx)
 }

@@ -120,7 +120,7 @@ class Module:
             raise RegistrationError(str(e), e) from e
         await anyio.Path(TYPE_DEF_FILE).write_text(output)
 
-    async def _typedefs(self) -> dagger.ModuleID:  # noqa: C901, PLR0912
+    async def _typedefs(self) -> dagger.ModuleID:  # noqa: C901, PLR0912, PLR0915
         if not self._main_name:
             msg = "Main object name can't be empty"
             raise ValueError(msg)
