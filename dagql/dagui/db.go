@@ -935,7 +935,7 @@ func (db *DB) CollectErrors(rows *RowsView) []*TraceTree {
 		failed := tree.Span.IsFailedOrCausedFailure()
 
 		if failed {
-			if !tree.Span.RollUp {
+			if !tree.Span.RollUpLogs {
 				reveal[tree] = struct{}{}
 			}
 			if tree.Span.ErrorOrigin != nil {

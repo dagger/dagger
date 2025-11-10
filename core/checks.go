@@ -115,7 +115,8 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 		ctx, span := Tracer(ctx).Start(ctx, check.Name(),
 			telemetry.Reveal(),
 			trace.WithAttributes(
-				attribute.Bool(telemetry.UIRollupAttr, true),
+				attribute.Bool(telemetry.UIRollupLogsAttr, true),
+				attribute.Bool(telemetry.UIRollupSpansAttr, true),
 				attribute.String(telemetry.CheckNameAttr, check.Name()),
 			),
 		)
@@ -126,7 +127,7 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 			check.Passed = false
 			var checkParent dagql.AnyObjectResult
 			if err := (func() (rerr error) {
-				ctx, span := Tracer(ctx).Start(ctx, "load check context", telemetry.Internal(), telemetry.Encapsulate())
+				ctx, span := Tracer(ctx).Start(ctx, "load check context", telemetry.Encapsulate())
 				defer telemetry.End(span, func() error { return rerr })
 				selectPath := []dagql.Selector{{Field: gqlFieldName(r.Module.Name())}}
 				// Select the whole path except the last part, *outside* the check span

@@ -477,7 +477,7 @@ func (fe *frontendPretty) renderErrorLogs(out TermOutput, r *renderer) bool {
 	var renderLogs []*dagui.TraceTree
 	dagui.WalkTree(errTree, func(tree *dagui.TraceTree, _ int) dagui.WalkDecision {
 		logs := fe.logs.Logs[tree.Span.ID]
-		if logs != nil && logs.UsedHeight() > 0 && !tree.Span.RollUp {
+		if logs != nil && logs.UsedHeight() > 0 && !tree.Span.RollUpLogs {
 			renderLogs = append(renderLogs, tree)
 		}
 		return dagui.WalkContinue
@@ -2015,7 +2015,7 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 	if span.Message == "" && // messages are displayed in renderStep
 		(row.Expanded || row.Span.LLMTool != "") {
 		fe.renderStepLogs(out, r, row, prefix, isFocused)
-	} else if (row.Span.RollUp || fe.shell != nil) && row.Depth == 0 && !row.Expanded {
+	} else if (row.Span.RollUpLogs || fe.shell != nil) && row.Depth == 0 && !row.Expanded {
 		// in shell mode, we print top-level command logs unindented, like shells
 		// usually does
 		if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
@@ -2023,7 +2023,7 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 				unindent := *row
 				unindent.Depth = -1
 				fe.renderLogs(out, r, &unindent, logs, logs.UsedHeight(), prefix, false)
-			} else if row.Span.RollUp && row.IsRunningOrChildRunning {
+			} else if row.Span.RollUpLogs && row.IsRunningOrChildRunning {
 				// Only show rolled-up logs while the span is running.
 				fe.renderStepLogs(out, r, row, prefix, isFocused)
 			}
@@ -2248,7 +2248,7 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, row *dagui.Tra
 		}
 
 		// Render RollUp dots after status/duration for collapsed RollUp spans
-		if span.RollUp {
+		if span.RollUpSpans {
 			dots := fe.renderRollUpDots(out, span, row, prefix, fe.FrontendOpts)
 			if dots != "" {
 				fmt.Fprint(out, " ")
@@ -2296,7 +2296,7 @@ var brailleDots = []rune{
 
 // renderRollUpDots renders a visual summary of child span states using pre-computed state
 func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, row *dagui.TraceRow, prefix string, _ dagui.FrontendOpts) string {
-	if !span.RollUp {
+	if !span.RollUpSpans {
 		return ""
 	}
 
@@ -2622,7 +2622,7 @@ func (l *prettyLogs) findRollUpSpan(origID dagui.SpanID) (*multiprefixw.Writer, 
 			// Don't roll up past encapsulation points.
 			break
 		}
-		if span.RollUp {
+		if span.RollUpLogs {
 			// Found a roll-up span; find-or-create a prefixed writer for it.
 			pw, found := l.PrefixWriters[id]
 			if !found {

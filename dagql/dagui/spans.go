@@ -27,6 +27,15 @@ type RollUpState struct {
 	CanceledCount int
 }
 
+func (st *RollUpState) Reset() {
+	st.PendingCount = 0
+	st.RunningCount = 0
+	st.CachedCount = 0
+	st.SuccessCount = 0
+	st.FailedCount = 0
+	st.CanceledCount = 0
+}
+
 type Span struct {
 	SpanSnapshot
 
@@ -179,7 +188,8 @@ type SpanSnapshot struct {
 	Passthrough  bool `json:",omitempty"`
 	Ignore       bool `json:",omitempty"`
 	Reveal       bool `json:",omitempty"`
-	RollUp       bool `json:",omitempty"`
+	RollUpLogs   bool `json:",omitempty"`
+	RollUpSpans  bool `json:",omitempty"`
 
 	// Check name + status
 	CheckName   string `json:",omitempty"`
@@ -264,8 +274,11 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 	case telemetry.UIMessageAttr:
 		snapshot.Message = val.(string)
 
-	case telemetry.UIRollupAttr:
-		snapshot.RollUp = val.(bool)
+	case telemetry.UIRollupLogsAttr:
+		snapshot.RollUpLogs = val.(bool)
+
+	case telemetry.UIRollupSpansAttr:
+		snapshot.RollUpSpans = val.(bool)
 
 	case telemetry.CheckNameAttr:
 		snapshot.CheckName = val.(string)
@@ -423,7 +436,7 @@ func (span *Span) updateRollUpAncestors() {
 		updated[current.ID] = true
 
 		// Update this ancestor if it's a RollUp span
-		if current.RollUp {
+		if current.RollUpSpans {
 			current.computeRollUpState()
 		}
 
@@ -443,20 +456,19 @@ func (span *Span) updateRollUpAncestors() {
 // computeRollUpState pre-computes the state for rendering RollUp progress bars
 // This is called when children change, not on every render frame.
 func (span *Span) computeRollUpState() {
-	if !span.RollUp {
+	if !span.RollUpSpans {
 		return
 	}
 
-	// Collect all descendant spans (recursively)
-	children := span.collectAllDescendants()
-	if len(children) == 0 {
-		span.rollUpState = nil
-		return
+	// Lazily initialize
+	if span.rollUpState == nil {
+		span.rollUpState = &RollUpState{}
 	}
 
-	state := &RollUpState{}
-
-	for _, child := range children {
+	// Reset and recalculate counts
+	state := span.rollUpState
+	state.Reset()
+	for child := range span.Descendants {
 		if child.IsRunningOrEffectsRunning() {
 			state.RunningCount++
 		} else if child.IsPending() {
@@ -472,31 +484,26 @@ func (span *Span) computeRollUpState() {
 			state.SuccessCount++
 		}
 	}
-
-	span.rollUpState = state
 }
 
-// collectAllDescendants recursively collects all descendant spans
-func (span *Span) collectAllDescendants() []*Span {
-	var children []*Span
-	seen := make(map[SpanID]bool)
-
-	var collect func(*Span)
-	collect = func(s *Span) {
+// Descendants recursively iterates through all descendant spans
+func (span *Span) Descendants(f func(*Span) bool) {
+	var collect func(*Span) bool
+	collect = func(s *Span) bool {
 		// Use ChildSpans directly since we don't have opts here
 		for _, child := range s.ChildSpans.Order {
-			if seen[child.ID] {
-				continue
+			if !f(child) {
+				return false
 			}
-			seen[child.ID] = true
-			children = append(children, child)
 			// Recursively collect grandchildren
-			collect(child)
+			if !collect(child) {
+				return false
+			}
 		}
+		return true
 	}
 
 	collect(span)
-	return children
 }
 
 // RollUpState returns the pre-computed RollUp state for rendering progress bars

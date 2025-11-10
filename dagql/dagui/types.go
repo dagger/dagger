@@ -295,7 +295,7 @@ func (row *TraceTree) IsExpanded(opts FrontendOpts) bool {
 
 	// never expand tool calls by default, tends to show a bunch of guts that
 	// distracts from the overall history
-	neverExpand := row.Span.LLMTool != "" || row.Span.RollUp
+	neverExpand := row.Span.LLMTool != "" || row.Span.RollUpLogs || row.Span.RollUpSpans
 
 	return (autoExpand || alwaysExpand) && !neverExpand
 }
