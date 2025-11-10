@@ -183,6 +183,14 @@ func (r *Releaser) Publish(
 	if isPublicRelease {
 		tags = append(tags, "latest")
 	}
+	if !isPublicRelease {
+		engineVersion, err := dag.Version().Version(ctx)
+		if err != nil {
+			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
+		} else {
+			tags = append(tags, engineVersion)
+		}
+	}
 	err := dag.DaggerEngine().Publish(ctx, tags, dagger.DaggerEnginePublishOpts{
 		Image:            registryImage,
 		RegistryUsername: registryUsername,
