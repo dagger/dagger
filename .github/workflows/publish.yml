@@ -147,7 +147,9 @@ jobs:
         shell: bash
 
       - name: "Install Docker"
-        uses: douglascamata/setup-docker-macos-action@v1-alpha.16
+        uses: douglascamata/setup-docker-macos-action@v1.0.1
+        with:
+          lima: v1.2.2
         env:
           HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
       - uses: docker/setup-qemu-action@v3
