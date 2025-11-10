@@ -73,12 +73,9 @@ func (t PHPSDK) Test(ctx context.Context) (MyCheckStatus, error) {
 }
 
 // Regenerate the PHP SDK API + docs
-func (t PHPSDK) Generate(ctx context.Context) (*dagger.Changeset, error) {
+func (t PHPSDK) Generate(ctx context.Context) *dagger.Changeset {
 	genClient := t.generateClient()
-	genDocs, err := t.generateDocs(genClient)
-	if err != nil {
-		return nil, err
-	}
+	genDocs := t.generateDocs(genClient)
 	src := t.Dagger.Source
 	return src.
 		WithChanges(genClient).
@@ -109,7 +106,7 @@ func (t PHPSDK) generateClient() *dagger.Changeset {
 	return absLayer.Changes(t.Dagger.Source)
 }
 
-func (t PHPSDK) generateDocs(genClient *dagger.Changeset) (*dagger.Changeset, error) {
+func (t PHPSDK) generateDocs(genClient *dagger.Changeset) *dagger.Changeset {
 	src := t.Source().WithChanges(genClient)
 
 	src = dag.Directory().
@@ -127,7 +124,7 @@ func (t PHPSDK) generateDocs(genClient *dagger.Changeset) (*dagger.Changeset, er
 		WithoutDirectory("docs/static/reference/php/").
 		WithDirectory("docs/static/reference/php/", relLayer)
 
-	return absLayer.Changes(t.Dagger.Source), nil
+	return absLayer.Changes(t.Dagger.Source)
 }
 
 // Test the publishing process
